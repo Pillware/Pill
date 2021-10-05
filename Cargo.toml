@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "pill/src/core", 
+    "pill/src/engine", 
+    "pill/src/graphics", 
+    "pill_standalone"
+    ]

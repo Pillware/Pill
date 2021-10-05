@@ -1,0 +1,18 @@
+[package]
+name = "pill-engine"
+version = "0.1.0"
+authors = [
+    # Extend this list when submiting PR
+    "Mateusz Szymoński <mateusz.szymonski@gmail.com>"
+    ]
+edition = "2018"
+
+[dependencies]
+pill-core = {path = "../core"}
+
+cgmath = "0.18"
+winit = "0.25"
+
+[features]
+standalone = []
+game = []
