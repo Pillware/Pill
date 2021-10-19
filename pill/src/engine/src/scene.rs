@@ -26,8 +26,7 @@ impl Scene {
         };
     }
 
-    // Without mut self scene cannot modify itself, eg add objects to list. Rc do not allow for mutable variables inside, try refCell !!!!!!
-    // Or check adding &'mut to Option<Box<Scene>>, how these lifetimes work
+    
     pub fn create_gameobject(&mut self, renderer: &mut Box<dyn Pill_Renderer>, name: String, file_path: Box<&Path>) -> Rc<RefCell<GameObject>> {
         println!("[Scene] Creating GameObject from path: {:?}", file_path);
         let new_gameobject = Rc::new(RefCell::new(GameObject::new(renderer, name, file_path)));
@@ -40,4 +39,11 @@ impl Scene {
        
         return Rc::clone(&new_gameobject);
     }
+}
+
+pub fn c_g(scene: &mut Scene, renderer: &mut Box<dyn Pill_Renderer>, name: String, file_path: Box<&Path>) {
+    println!("[Scene] Creating GameObject from path: {:?}", file_path);
+    
+
+
 }

@@ -23,3 +23,5 @@ pub trait Pill_Renderer {
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
     fn create_model(&mut self, path: Box<&Path>) -> usize;
 }
+
+pub type Renderer = Box<dyn Pill_Renderer>;

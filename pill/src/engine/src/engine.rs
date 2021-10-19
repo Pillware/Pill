@@ -1,6 +1,8 @@
 use pill_core::*;
+
+
 //use pill_graphics::{Renderer, RendererError};
-use crate::{graphics::renderer::Pill_Renderer, scene::Scene};
+use crate::{graphics::renderer::Pill_Renderer, scene::Scene, graphics::renderer::Renderer};
 use crate::gameobject::GameObject;
 //use crate::resource_manager::ResourceManager;
 use crate::input::input_event::InputEvent;
@@ -20,6 +22,8 @@ use std::cell::RefCell;
 
 // ---------------------------------------------------------------------
 
+pub type Game = Box<dyn Pill_Game>;
+
 pub trait Pill_Game { 
     fn initialize(&self);
     fn update(&self);
@@ -28,9 +32,9 @@ pub trait Pill_Game {
 pub struct Engine {
     
     // General
-    game : Box<dyn Pill_Game>,
-    pub renderer: Box<dyn Pill_Renderer>,// Rc<dyn Pill_Renderer>, 
-    scene:  Option<Box<Scene>>, // Box<Scene>  //
+    game : Game,
+    pub renderer: Renderer,// Rc<dyn Pill_Renderer>, 
+    scene: Option<Scene>, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
     //resource_manager: Box<ResourceManager>
 
     // Input
@@ -67,7 +71,7 @@ impl Engine {
         //let renderer = &mut *self.renderer;
 
         //let ren = Rc::new(self.renderer);
-        self.scene = Some(Box::new(Scene::new(String::from("TestScene"))));
+        self.scene = Some(Scene::new(String::from("TestScene")));
         //self.scene = Some(Box::new(Scene::new(Rc::clone(&self.renderer), String::from("TestScene"))));
 
         println!("[Engine] Creating testing gameobjects in scene {}", self.scene.as_ref().unwrap().name);
@@ -75,13 +79,13 @@ impl Engine {
 
 
 
-        let object1: Rc<RefCell<GameObject>> = self.scene.as_mut().unwrap().create_gameobject(
-            &mut self.renderer,
-        String::from("TestGameObject_1"), 
-    Box::new(Path::new("D:\\Programming\\Rust\\pill_project\\pill_engine\\pill\\src\\graphics\\res\\models\\cube.obj")),
-        );
+    //     let object1: Rc<RefCell<GameObject>> = self.scene.unwrap().create_gameobject(
+    //         &mut self.renderer,
+    //     String::from("TestGameObject_1"), 
+    // Box::new(Path::new("D:\\Programming\\Rust\\pill_project\\pill_engine\\pill\\src\\graphics\\res\\models\\cube.obj")),
+    //     );
 
-        object1.borrow_mut().set_position(cgmath::Vector3 { x: 0.0, y: 1.0, z: 0.0 });
+    //     object1.borrow_mut().set_position(cgmath::Vector3 { x: 0.0, y: 1.0, z: 0.0 });
 
 
 
@@ -104,7 +108,7 @@ impl Engine {
         self.game.update();
 
 
-        match self.renderer.render(self.scene.as_ref().unwrap().as_ref(), dt) {
+        match self.renderer.render(self.scene.as_ref().unwrap(), dt) {
             Ok(_) => {}
             // Recreate the swap_chain if lost
             //Err(RendererError::SwapChainLost) => self.renderer.resize(self.renderer.state.window_size),
