@@ -6,6 +6,7 @@ authors = [
     "Mateusz Szymoński <mateusz.szymonski@gmail.com>"
     ]
 edition = "2018"
+resolver = "2"
 
 [dependencies]
 pill-core = {path = "../core"}
@@ -16,7 +17,7 @@ winit = "0.25"
 cgmath = "0.18"
 env_logger = "0.8"
 log = "0.4"
-wgpu = "0.9"
+wgpu = { version = "0.11", features = [ "spirv" ] }
 futures = "0.3"
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }

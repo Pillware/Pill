@@ -11,9 +11,9 @@ use crate::scene::Scene;
 
 #[derive(Debug)]
 pub enum RendererError { 
-    SwapChainLost,
-    SwapChainOutOfMemory,
-    SwapChainOther,
+    SurfaceLost,
+    SurfaceOutOfMemory,
+    SurfaceOther,
 }
 
 pub trait Pill_Renderer { 

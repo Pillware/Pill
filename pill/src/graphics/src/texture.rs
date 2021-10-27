@@ -27,12 +27,12 @@ impl Texture {
 
     pub fn create_depth_texture(
         device: &wgpu::Device,
-        swap_chain_descriptor: &wgpu::SwapChainDescriptor,
+        surface_configuration: &wgpu::SurfaceConfiguration,
         label: &str,
     ) -> Self {
         let size = wgpu::Extent3d { // Depth texture needs to be the same size as our screen
-            width: swap_chain_descriptor.width,
-            height: swap_chain_descriptor.height,
+            width: surface_configuration.width,
+            height: surface_configuration.height,
             depth_or_array_layers: 1,
         };
         let descriptor = wgpu::TextureDescriptor {
@@ -42,7 +42,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED, // Rendering to this texture so RENDER_ATTACHMENT flag is needed
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING, // Rendering to this texture so RENDER_ATTACHMENT flag is needed
         };
         let texture = device.create_texture(&descriptor);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -104,11 +104,12 @@ impl Texture {
             } else {
                 wgpu::TextureFormat::Rgba8UnormSrgb
             },
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING  | wgpu::TextureUsages::COPY_DST,
         });
 
         queue.write_texture(
             wgpu::ImageCopyTexture {
+                aspect: wgpu::TextureAspect::All,
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,

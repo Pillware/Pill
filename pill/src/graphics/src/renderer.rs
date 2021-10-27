@@ -1,9 +1,13 @@
 
 use cgmath::Rotation3;
 use pill_core::*;
+
 use pill_engine::RendererError;
 use pill_engine::Scene;
 use pill_engine::Pill_Renderer;
+use wgpu::ShaderModule;
+use wgpu::ShaderModuleDescriptor;
+use wgpu::SurfaceError;
 
 
 
@@ -47,7 +51,7 @@ impl Pill_Renderer for Renderer {
         println!("[Renderer] Init");
     }
 
-    fn render(&mut self, scene: &Scene, dt: std::time::Duration) -> Result<(), RendererError> {
+    fn render(&mut self, scene: &Scene, dt: std::time::Duration) -> Result<(), pill_engine::RendererError> {
         self.state.update(dt);
         self.state.render(scene)
     }
@@ -127,7 +131,7 @@ impl model::Vertex for InstanceRaw {
             array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
             // We need to switch from using a step mode of Vertex to Instance
             // This means that shaders will only change to use the next instance when the shader starts processing a new instance
-            step_mode: wgpu::InputStepMode::Instance,
+            step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
@@ -214,10 +218,9 @@ pub struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    swap_chain_descriptor: wgpu::SwapChainDescriptor,
-    swap_chain: wgpu::SwapChain,
+    surface_configuration: wgpu::SurfaceConfiguration,
     pub window_size: winit::dpi::PhysicalSize<u32>,
-    render_pipeline: wgpu::RenderPipeline,
+    master_render_pipeline: wgpu::RenderPipeline,
     texture_bind_group_layout: wgpu::BindGroupLayout, // !!!
     light_obj_model: model::Model,
     obj_models: HashMap<usize, Box<model::Model>>, //LinkedList<Box<model::Model>>,
@@ -245,14 +248,14 @@ impl State {
     async fn new(window: &Window) -> Self {
         let window_size = window.inner_size();
 
-        
         // The instance is a handle to the GPU
-        let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY); // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
+        let instance = wgpu::Instance::new(wgpu::Backends::all()); // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let surface = unsafe { instance.create_surface(window) }; 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions { // Options passed here are not guaranteed to work for all devices
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
             })
             .await
             .unwrap();
@@ -277,16 +280,15 @@ impl State {
         .await
         .unwrap();
 
-        let swap_chain_descriptor = wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT, // Defines how the swap_chain's underlying textures will be used
-            format: adapter.get_swap_chain_preferred_format(&surface).unwrap(), // Defines how the swap_chain's textures will be stored on the gpu
+        let surface_configuration = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Defines how the swap_chain's underlying textures will be used
+            format: surface.get_preferred_format(&adapter).unwrap(), // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
             present_mode: wgpu::PresentMode::Fifo, // Defines how to sync the swap_chain with the display
         };
 
-        let swap_chain = device.create_swap_chain(&surface, &swap_chain_descriptor);
-
+        surface.configure(&device, &surface_configuration);
 
 
 
@@ -294,7 +296,7 @@ impl State {
 
         
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let projection = camera::Projection::new(swap_chain_descriptor.width, swap_chain_descriptor.height, cgmath::Deg(45.0), 0.1, 100.0);
+        let projection = camera::Projection::new(surface_configuration.width, surface_configuration.height, cgmath::Deg(45.0), 0.1, 100.0);
         let camera_controller = camera::CameraController::new(4.0, 0.4);
        
         let mut camera_uniform = CameraUniform::new();
@@ -303,13 +305,13 @@ impl State {
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
             contents: bytemuck::cast_slice(&[camera_uniform]),
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
@@ -329,11 +331,19 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
+
+
+
+
+
+
+
+
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { // Describes a set of resources and how they can be accessed by a shader
             entries: &[
-                wgpu::BindGroupLayoutEntry { // Entry for the sampled texture at bCamera inding 0
+                wgpu::BindGroupLayoutEntry { // Entry for the sampled texture at binding 0
                     binding: 0,
-                    visibility: wgpu::ShaderStage::FRAGMENT, // Visible only to fragment shader
+                    visibility: wgpu::ShaderStages::FRAGMENT, // Visible only to fragment shader
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
@@ -343,7 +353,7 @@ impl State {
                 },
                 wgpu::BindGroupLayoutEntry { // Entry for the sampler at binding 1
                     binding: 1,
-                    visibility: wgpu::ShaderStage::FRAGMENT, // Visible only to fragment shader
+                    visibility: wgpu::ShaderStages::FRAGMENT, // Visible only to fragment shader
                     ty: wgpu::BindingType::Sampler {
                         comparison: false,
                         filtering: true,
@@ -352,7 +362,7 @@ impl State {
                 },
                 wgpu::BindGroupLayoutEntry { // Normal map
                     binding: 2,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
@@ -362,7 +372,7 @@ impl State {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler { 
                         comparison: false,
                         filtering: true, 
@@ -433,7 +443,7 @@ impl State {
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instance_start_data_raw),
-            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
 
@@ -451,13 +461,13 @@ impl State {
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Light VB"),
             contents: bytemuck::cast_slice(&[light_uniform]),
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST, // To enable updating this buffer COPY_DST flag is needed
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, // To enable updating this buffer COPY_DST flag is needed
         });
 
         let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -484,9 +494,12 @@ impl State {
 
 
 
-        let depth_texture = texture::Texture::create_depth_texture(&device, &swap_chain_descriptor, "depth_texture");
+        let depth_texture = texture::Texture::create_depth_texture(&device, &surface_configuration, "depth_texture");
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        
+
+        let master_render_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &texture_bind_group_layout,
@@ -494,42 +507,66 @@ impl State {
                     &light_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
-        });
+            });
 
-        let render_pipeline = {
-            let shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Normal Shader"),
-                flags: wgpu::ShaderFlags::all(),
-                source: wgpu::ShaderSource::Wgsl(include_str!("../res/shaders/shader.wgsl").into()),
+
+            //let vs_module = device.create_shader_module(&wgpu::include_spirv!("../res/shaders/built/master.vert.spv"));
+            //let fs_module = device.create_shader_module(&wgpu::include_spirv!("../res/shaders/built/master.frag.spv"));
+
+            let vertex_shader = wgpu::ShaderModuleDescriptor {
+                label: Some("shader.vert"),
+                source: wgpu::util::make_spirv(include_bytes!("../res/shaders/built/master.vert.spv")),
             };
+    
+            let fragment_shader = wgpu::ShaderModuleDescriptor {
+                label: Some("shader.vert"),
+                source: wgpu::util::make_spirv(include_bytes!("../res/shaders/built/master.frag.spv")),
+            };
+
+
             create_render_pipeline(
                 &device,
-                &render_pipeline_layout,
-                swap_chain_descriptor.format,
+                &layout,
+                surface_configuration.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::descriptor(), InstanceRaw::descriptor()],
-                shader,
+                &vertex_shader,
+                &fragment_shader,
             )
         };
+
 
         let light_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Light Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &light_bind_group_layout],
+                bind_group_layouts: &[
+                    &camera_bind_group_layout, 
+                    &light_bind_group_layout
+                ],
                 push_constant_ranges: &[],
             });
-            let shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Shader"),
-                flags: wgpu::ShaderFlags::all(),
-                source: wgpu::ShaderSource::Wgsl(include_str!("../res/shaders/light.wgsl").into()),
+
+            //let vs_module = device.create_shader_module(&wgpu::include_spirv!("../res/shaders/built/light.vert.spv"));
+            //let fs_module = device.create_shader_module(&wgpu::include_spirv!("../res/shaders/built/light.frag.spv"));
+
+            let vertex_shader = wgpu::ShaderModuleDescriptor {
+                label: Some("shader.vert"),
+                source: wgpu::util::make_spirv(include_bytes!("../res/shaders/built/light.vert.spv")),
             };
+    
+            let fragment_shader = wgpu::ShaderModuleDescriptor {
+                label: Some("shader.vert"),
+                source: wgpu::util::make_spirv(include_bytes!("../res/shaders/built/light.frag.spv")),
+            };
+
             create_render_pipeline(
                 &device,
                 &layout,
-                swap_chain_descriptor.format,
+                surface_configuration.format,
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::descriptor()],
-                shader,
+                &vertex_shader,
+                &fragment_shader,
             )
         };
 
@@ -541,10 +578,9 @@ impl State {
             surface,
             device,
             queue,
-            swap_chain_descriptor,
-            swap_chain,
+            surface_configuration,
             window_size,
-            render_pipeline,
+            master_render_pipeline,
             texture_bind_group_layout,
             light_obj_model,
             obj_models: HashMap::new(), //Vec<model::Model>,
@@ -570,12 +606,12 @@ impl State {
         if new_window_size.width > 0 && new_window_size.height > 0 {
             self.projection.resize(new_window_size.width, new_window_size.height);
             self.window_size = new_window_size;
-            self.swap_chain_descriptor.width = new_window_size.width;
-            self.swap_chain_descriptor.height = new_window_size.height;
-            self.swap_chain = self.device.create_swap_chain(&self.surface, &self.swap_chain_descriptor);
+            self.surface_configuration.width = new_window_size.width;
+            self.surface_configuration.height = new_window_size.height;
+            self.surface.configure(&self.device, &self.surface_configuration);
             self.depth_texture = texture::Texture::create_depth_texture(
                 &self.device,
-                &self.swap_chain_descriptor,
+                &self.surface_configuration,
                 "depth_texture",
             );
         }
@@ -631,35 +667,38 @@ impl State {
     }
 
     //fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
-    fn render(&mut self, scene: &Scene) -> Result<(), RendererError> { 
+    fn render(&mut self, scene: &Scene) -> Result<(), pill_engine::RendererError> { 
 
         //let frame = self.swap_chain.get_current_frame(); // Get frame to render to
         //let frame = self.swap_chain.get_current_frame()?.output; // Get frame to render to
 
         // Get frame or return mapped error if failed
-        let frame = self.swap_chain.get_current_frame();
+        let frame = self.surface.get_current_texture();
+       
+
+
         let frame = match frame {
-            Ok(frame) => frame.output,
+            Ok(frame) => frame,
             Err(error) => match error {
-                wgpu::SwapChainError::Lost => return Err(RendererError::SwapChainLost),
-                wgpu::SwapChainError::OutOfMemory => return Err(RendererError::SwapChainOutOfMemory),
-                _ => return Err(RendererError::SwapChainOther),
+                wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost),
+                wgpu::SurfaceError::OutOfMemory => return Err(RendererError::SurfaceOutOfMemory),
+                _ => return Err(RendererError::SurfaceOther),
             },
         };
 
+        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self // Build a command buffer that can be sent to the GPU
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        // Build a command buffer that can be sent to the GPU
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
-            });
+        });
 
         { // Additional scope to release mutable borrow of encoder done by begin_render_pass
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
                 label: Some("Render Pass"),
                 color_attachments: &[
                     wgpu::RenderPassColorAttachment { // This is what [[location(0)]] in the fragment shader targets
-                        view: &frame.view, // Specifies what texture to save the colors to (to frame taken from swapchain, so any colors we draw to this attachment will get drawn to the screen)
+                        view: &view, // Specifies what texture to save the colors to (to frame taken from swapchain, so any colors we draw to this attachment will get drawn to the screen)
                         resolve_target: None, // Specifies what texture will receive the resolved output
                         ops: wgpu::Operations { // Tells wgpu what to do with the colors on the screen
                             load: wgpu::LoadOp::Clear(
@@ -689,7 +728,7 @@ impl State {
             //render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
 
             
-            // --- Draw light ---
+            // --- Draw light objects ---
             use crate::model::DrawLight;
             render_pass.set_pipeline(&self.light_render_pipeline);
             render_pass.draw_light_model(
@@ -701,8 +740,8 @@ impl State {
 
             
 
-            // --- Draw objects ---
-            render_pass.set_pipeline(&self.render_pipeline);
+            // --- Draw master objects ---
+            render_pass.set_pipeline(&self.master_render_pipeline);
 
             let mut counter: usize = 0;
             for gameobject in scene.gameobjectCollection.iter() {
@@ -745,7 +784,7 @@ impl State {
         }
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
-
+        frame.present();
         Ok(())
     }
 }
@@ -756,20 +795,23 @@ fn create_render_pipeline(
     color_format: wgpu::TextureFormat,
     depth_format: Option<wgpu::TextureFormat>,
     vertex_layouts: &[wgpu::VertexBufferLayout],
-    shader: wgpu::ShaderModuleDescriptor,
+    vertex_shader: &ShaderModuleDescriptor,
+    fragment_shader: &ShaderModuleDescriptor
+
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(&shader);
+    let vertex_shader = device.create_shader_module(vertex_shader);
+    let fragment_shader = device.create_shader_module(fragment_shader);
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Render Pipeline"),
         layout: Some(layout),
         vertex: wgpu::VertexState { 
-            module: &shader,
+            module: &vertex_shader,
             entry_point: "main",
             buffers: vertex_layouts, // Specifies structure of vertices that will be passed to the vertex shader
         },
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
+            module: &fragment_shader,
             entry_point: "main",
             targets: &[wgpu::ColorTargetState { // Specifies what what color outputs wwgpu should set up
                 format: color_format,
@@ -777,7 +819,7 @@ fn create_render_pipeline(
                     alpha: wgpu::BlendComponent::REPLACE,
                     color: wgpu::BlendComponent::REPLACE,
                 }),
-                write_mask: wgpu::ColorWrite::ALL,
+                write_mask: wgpu::ColorWrites::ALL,
             }],
         }),
         primitive: wgpu::PrimitiveState { // Specifies how to interpret vertices when converting them into triangles

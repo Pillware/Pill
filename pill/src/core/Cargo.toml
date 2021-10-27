@@ -6,6 +6,7 @@ authors = [
     "Mateusz Szymoński <mateusz.szymonski@gmail.com>"
     ]
 edition = "2018"
+resolver = "2"
 
 [dependencies]
 approx = "0.5.0"
