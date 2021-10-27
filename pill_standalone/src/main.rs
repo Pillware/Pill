@@ -91,6 +91,13 @@ fn main() {
                         *control_flow = ControlFlow::Exit
                     },
 
+                    WindowEvent::Resized(physical_size) => {
+                        engine.resize(*physical_size);
+                    },
+
+
+                   
+
                     // Resize window
                     // WindowEvent::Resized(physical_size) => {
                     //     state.resize(*physical_size);

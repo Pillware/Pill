@@ -127,6 +127,12 @@ impl Engine {
     }
 
     #[cfg(feature = "standalone")]
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        println!("[Engine] Resizing");
+        self.renderer.resize(new_size);
+    }
+
+    #[cfg(feature = "standalone")]
     pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyboardInput) {
         let key: VirtualKeyCode = keyboard_input.virtual_keycode.unwrap();
         let state: ElementState = keyboard_input.state;
