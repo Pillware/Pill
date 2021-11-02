@@ -748,6 +748,17 @@ impl State {
                 
                 let gameobject = gameobject.borrow();
 
+
+                // Get transform and rendering components
+                // From rendering component get mesh resource id to find buffers created in renderer
+                // From transform set model matrix
+                // Render
+
+                
+
+
+
+
                 //println!("[Renderer] Rendering gameobject (object): {} ({}/{})", gameobject.name, counter + 1, scene.gameobjectCollection.len());
                 //println!("[Renderer] Object position: {:?}", gameobject.position);
               

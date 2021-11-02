@@ -1,7 +1,7 @@
-use crate::Scene;
-use super::{entity::Entity, transform_component::TransformComponent};
+use crate::{Engine, Scene};
+use super::{entity::{Entity, EntityHandle}, transform_component::TransformComponent};
 
-pub trait Component: Default {
+pub trait Component {
     fn get_component_type(&self) -> String;
-    fn new<'a>(scene: &'a mut Scene, entity: &Entity) -> &'a Self;
+    fn new<'a>(scene: &'a mut Scene, entity_handle: EntityHandle) -> &'a mut Self;
 }

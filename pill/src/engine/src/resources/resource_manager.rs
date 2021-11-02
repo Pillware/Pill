@@ -6,8 +6,21 @@ use std::path::Path;
 use std::collections::{HashMap, LinkedList};
 
 
-pub struct MeshResource {
 
+
+pub struct MeshResource {
+    //submeshes: Vec<SubMesh>,
+}
+
+impl MeshResource {
+    // pub fn new() -> Self {
+    //     // Read data from file using importer
+    //     // For each submesh in file create submesh push it to vector of submeshes
+
+
+    // }
+
+    
 }
 
 pub struct TextureResource {
@@ -25,7 +38,6 @@ pub trait Resource {
 
 
 pub struct ResourceManager {
-    engine: Box<Engine>,
     mesh_resources: HashMap<String, Box<MeshResource>>,
     texture_resources: HashMap<String, Box<TextureResource>>,
     //audio_resources: HashMap<String, Box<AudioResource>>,
@@ -34,12 +46,10 @@ pub struct ResourceManager {
 }
 
 impl ResourceManager {
-    pub fn new(engine: Box<Engine>) -> Self {
+    pub fn new() -> Self {
 	    return ResourceManager { 
-            engine,
             mesh_resources: HashMap::new(),
             texture_resources: HashMap::new(),
-
         };
     }
 

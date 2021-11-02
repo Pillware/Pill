@@ -3,7 +3,8 @@ use pill_core::*;
 
 
 use crate::ecs::component::Component;
-use crate::ecs::entity::Entity;
+use crate::ecs::entity::{Entity, EntityHandle};
+use crate::resources::resource_manager::{Resource, ResourceManager, ResourceSource};
 //use pill_graphics::{Renderer, RendererError};
 use crate::{graphics::renderer::Pill_Renderer, scene::Scene, graphics::renderer::Renderer};
 use crate::gameobject::GameObject;
@@ -40,12 +41,12 @@ pub struct Engine {
     scene: Option<Scene>, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
     //resource_manager: Box<ResourceManager>
 
+    pub resource_manager: ResourceManager,
+
     // Input
     input_queue: VecDeque<InputEvent>,
 
     // Resources
-
-    
 
 }
 
@@ -53,12 +54,14 @@ impl Engine {
 
     // Functions for Standalone
     #[cfg(feature = "standalone")]
-    pub fn new(game: Box<dyn Pill_Game>, renderer: Box<dyn Pill_Renderer>) -> Self { 
+    pub fn new(game: Box<dyn Pill_Game>, renderer: Box<dyn Pill_Renderer>) -> Self {
         println!("[Engine] Creating...");
+
         return Engine { 
             game,
             renderer,
             scene: None,
+            resource_manager: ResourceManager::new(),
             //resource_manager: ResourceManager::new(renderer),
             input_queue: VecDeque::new(),
             
@@ -90,12 +93,23 @@ impl Engine {
 
         //self.create_entity(self.scene.as_mut().unwrap());
 
-        
-        let object1 = create_entity(self.scene.as_mut().unwrap()); // Returns entity which is bound to scene so scene is still borrowed after this function ends!
-        
-        add_component_to_entity::<TransformComponent>(self.scene.as_mut().unwrap(), &object1); 
+        let entity_1 = create_entity(self.scene.as_mut().unwrap()); // Returns entity which is bound to scene so scene is still borrowed after this function ends!
 
-        let object2 = create_entity(self.scene.as_mut().unwrap());
+        let entity_1_transform_component = add_component_to_entity::<TransformComponent>( self.scene.as_mut().unwrap(), entity_1);
+        entity_1_transform_component.position = cgmath::Vector3 { x: 0.0, y: 1.0, z: 0.0 };
+
+        let entity_1_mesh_rendering_component = add_component_to_entity::<MeshRenderingComponent>(self.scene.as_mut().unwrap(), entity_1);
+        
+
+
+
+        let entity_2 = create_entity(self.scene.as_mut().unwrap());
+        
+        let entity_2_transform_component = add_component_to_entity::<TransformComponent>(self.scene.as_mut().unwrap(), entity_2); 
+        entity_2_transform_component.position = cgmath::Vector3 { x: 2.5, y: -0.3, z: 0.0 };
+
+        let entity_2_mesh_rendering_component = add_component_to_entity::<MeshRenderingComponent>(self.scene.as_mut().unwrap(), entity_2);
+
 
 
     //     let object1: Rc<RefCell<GameObject>> = self.scene.unwrap().create_gameobject(
@@ -123,7 +137,11 @@ impl Engine {
 
     // ------------------------------ GAME ------------------------------
 
-    
+    // ----------------------------- ENGINE -----------------------------
+
+    pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
+        self.resource_manager.load_resource(t, path, source)
+    }
 
     // --------------------------- STANDALONE ---------------------------
 
@@ -230,9 +248,7 @@ impl Engine {
 //     self.entities.last().unwrap()
 // }
 
-pub fn create_entity(scene: &mut Scene) -> &Entity  { // Instead returning reference to entity and handling it in game (which may cause problems) return EntityHandle storing index of entity in vector
-    //let x = Entity {name:"aa".to_string(), index: 0 };
-    
+pub fn create_entity(scene: &mut Scene) -> EntityHandle  { // Instead returning reference to entity and handling it in game (which may cause problems) return EntityHandle storing index of entity in vector
     scene.create_entity()
 }
 
@@ -246,11 +262,9 @@ pub fn register_system() {
 
 }
 
-pub fn xxxa<'a>(scene: &'a mut Scene) -> &'a String {
-    &scene.test
-}
 
-pub fn add_component_to_entity<'a, T: Component>(scene: &'a mut Scene, entity: &Entity) -> &'a T {
+
+pub fn add_component_to_entity<'a, T: Component>(scene: &'a mut Scene, entity_handle: EntityHandle) -> &'a mut T {
     // We need to specify to which collection of components new component should be added
     // The problem is that in this function we don't know it because we need to get proper collection first
     // To do this we may use match but problem with it is that when component is added in game code there is no way to create new match arm in code
@@ -262,7 +276,8 @@ pub fn add_component_to_entity<'a, T: Component>(scene: &'a mut Scene, entity: &
     // We need something dynamic, like list of vectors to which we can add new vector for new component when registering it in the engine (but is such data structure effective?)
     // Maybe try register pattern? - hash map where type is a key and vector is value? (In C++ type as key and pointer to value as vector would be good, but in Rust pointers should be avoided)
 
-    println!("[Scene] Adding component {:?} to entity {} in scene {}", std::any::type_name::<T>(), entity.index, scene.name);
-    let component: &T = T::new(scene, entity);
+    println!("[Scene] Adding component {:?} to entity {} in scene {}", std::any::type_name::<T>(), entity_handle, scene.name);
+    let component: &mut T = T::new(scene, entity_handle);
     component
 }
+

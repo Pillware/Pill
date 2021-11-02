@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::ecs::mesh_rendering_component::MeshRenderingComponent;
 use crate::ecs::transform_component::TransformComponent;
-use crate::ecs::entity::Entity;
+use crate::ecs::entity::{Entity, EntityHandle};
 use crate::ecs::component::{self, Component};
 
 
@@ -24,10 +24,10 @@ pub struct Scene {
     pub test: String,
 
     // ECS
-    pub entity_counter: usize,
+    entity_counter: usize,
     pub entities:  Vec<Entity>,
     pub transform_components: Vec<TransformComponent>,
-    mesh_rendering_components: Vec<MeshRenderingComponent>,
+    pub mesh_rendering_components: Vec<MeshRenderingComponent>,
 }
 
 impl Scene {
@@ -45,10 +45,13 @@ impl Scene {
             entities: Vec::<Entity>::new(),
             transform_components: Vec::<TransformComponent>::new(),
             mesh_rendering_components: Vec::<MeshRenderingComponent>::new(),
+
+
+            
         };
     }
 
-    pub fn create_entity(&mut self) -> &Entity {
+    pub fn create_entity(&mut self) -> EntityHandle {
         let entity = Entity { 
             name: String::from("Hello"),
             index: self.entity_counter,
@@ -56,7 +59,12 @@ impl Scene {
         self.entities.insert( self.entity_counter, entity);
         self.entity_counter += 1;
 
-        self.entities.last().unwrap()
+        self.entities.last().unwrap().index
+    }
+    
+    #[cfg(feature = "game")]
+    pub fn get_counter(&mut self) -> &usize {
+        &self.entity_counter
     }
 
     // pub fn add_component_to_entity<T: Component>(&mut self, entity: &Entity) -> &T {
