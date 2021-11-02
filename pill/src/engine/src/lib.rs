@@ -12,3 +12,5 @@ pub use self::engine::Pill_Game;
 pub use self::scene::Scene;
 pub use self::graphics::renderer::Pill_Renderer;
 pub use self::graphics::renderer::RendererError;
+
+mod ecs;

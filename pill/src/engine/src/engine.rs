@@ -1,12 +1,15 @@
 use pill_core::*;
 
 
+
+use crate::ecs::component::Component;
+use crate::ecs::entity::Entity;
 //use pill_graphics::{Renderer, RendererError};
 use crate::{graphics::renderer::Pill_Renderer, scene::Scene, graphics::renderer::Renderer};
 use crate::gameobject::GameObject;
 //use crate::resource_manager::ResourceManager;
 use crate::input::input_event::InputEvent;
-
+use crate::ecs::mesh_rendering_component::MeshRenderingComponent;
 
 use std::collections::VecDeque;
 use std::path::Path;
@@ -40,6 +43,10 @@ pub struct Engine {
     // Input
     input_queue: VecDeque<InputEvent>,
 
+    // Resources
+
+    
+
 }
 
 impl Engine {
@@ -54,11 +61,14 @@ impl Engine {
             scene: None,
             //resource_manager: ResourceManager::new(renderer),
             input_queue: VecDeque::new(),
+            
         }; 
     }
 
     #[cfg(feature = "standalone")]
     pub fn initialize(&mut self) {
+        use crate::ecs::transform_component::TransformComponent;
+
 
         println!("[Engine] Init");
         self.renderer.initialize();
@@ -74,9 +84,18 @@ impl Engine {
         self.scene = Some(Scene::new(String::from("TestScene")));
         //self.scene = Some(Box::new(Scene::new(Rc::clone(&self.renderer), String::from("TestScene"))));
 
+
+
         println!("[Engine] Creating testing gameobjects in scene {}", self.scene.as_ref().unwrap().name);
 
+        //self.create_entity(self.scene.as_mut().unwrap());
 
+        
+        let object1 = create_entity(self.scene.as_mut().unwrap()); // Returns entity which is bound to scene so scene is still borrowed after this function ends!
+        
+        add_component_to_entity::<TransformComponent>(self.scene.as_mut().unwrap(), &object1); 
+
+        let object2 = create_entity(self.scene.as_mut().unwrap());
 
 
     //     let object1: Rc<RefCell<GameObject>> = self.scene.unwrap().create_gameobject(
@@ -100,6 +119,13 @@ impl Engine {
 
         println!("[Engine] Init done");
     }
+
+
+    // ------------------------------ GAME ------------------------------
+
+    
+
+    // --------------------------- STANDALONE ---------------------------
 
     #[cfg(feature = "standalone")]
     pub fn update(&mut self, dt: std::time::Duration) {
@@ -172,7 +198,71 @@ impl Engine {
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
         &self.input_queue
     }
+}
 
 
 
+
+
+
+
+// pub fn create_entity(scene: &mut Scene) -> &Entity {
+//     let entity = Entity { 
+//         name: String::from("Hello"),
+//         index: scene.entity_counter,
+//     };
+//     scene.entities.insert( scene.entity_counter, entity);
+//     scene.entity_counter += 1;
+
+//     scene.entities.last().unwrap()
+// }
+
+
+// pub fn create_entity(scene: &mut Scene) -> &Entity {
+//     let entity = Entity { 
+//         name: String::from("Hello"),
+//         index: scene.entity_counter,
+//     };
+
+//     self.entities.insert( self.entity_counter, entity);
+//     self.entity_counter += 1;
+
+//     self.entities.last().unwrap()
+// }
+
+pub fn create_entity(scene: &mut Scene) -> &Entity  { // Instead returning reference to entity and handling it in game (which may cause problems) return EntityHandle storing index of entity in vector
+    //let x = Entity {name:"aa".to_string(), index: 0 };
+    
+    scene.create_entity()
+}
+
+// pub fn create_entity<'a>(scene: &'a mut Scene)-> Entity { // Instead returning reference to entity and handling it in game (which may cause problems) return EntityHandle storing index of entity in vector
+//     let x = Entity {name:"aa".to_string(), index: 0 };
+//     x
+//     //scene.create_entity()
+// }
+
+pub fn register_system() {
+
+}
+
+pub fn xxxa<'a>(scene: &'a mut Scene) -> &'a String {
+    &scene.test
+}
+
+pub fn add_component_to_entity<'a, T: Component>(scene: &'a mut Scene, entity: &Entity) -> &'a T {
+    // We need to specify to which collection of components new component should be added
+    // The problem is that in this function we don't know it because we need to get proper collection first
+    // To do this we may use match but problem with it is that when component is added in game code there is no way to create new match arm in code
+    // We can define trait function and implement it for all types of components, but this will require from game developer to do this also it game components
+
+    // IMPORTANT DESIGN TOPIC: 
+    // How to design component storing? 
+    // On engine side we can precreate collection (vector) for each of built-in component type, but what if game developer creates game-side component?
+    // We need something dynamic, like list of vectors to which we can add new vector for new component when registering it in the engine (but is such data structure effective?)
+    // Maybe try register pattern? - hash map where type is a key and vector is value? (In C++ type as key and pointer to value as vector would be good, but in Rust pointers should be avoided)
+
+    println!("[Scene] Adding component {:?} to entity {} in scene {}", std::any::type_name::<T>(), entity.index, scene.name);
+    let component: &T = T::new(scene, entity);
+    component
 }
