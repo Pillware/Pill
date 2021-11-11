@@ -5,6 +5,8 @@ use pill_core::*;
 use pill_engine::RendererError;
 use pill_engine::Scene;
 use pill_engine::Pill_Renderer;
+use pill_engine::{ MeshRenderingComponent, TransformComponent };
+
 use wgpu::ShaderModule;
 use wgpu::ShaderModuleDescriptor;
 use wgpu::SurfaceError;
@@ -16,6 +18,7 @@ use model::{DrawModel, Vertex};
 use crate::camera;
 use crate::texture;
 
+use std::borrow::Borrow;
 use std::path;
 use std::path::Path;
 
@@ -744,9 +747,18 @@ impl State {
             render_pass.set_pipeline(&self.master_render_pipeline);
 
             let mut counter: usize = 0;
-            for gameobject in scene.gameobjectCollection.iter() {
+
+            let mesh_rendering_components= scene.get_component_storage::<MeshRenderingComponent>();
+            let transform_components= scene.get_component_storage::<TransformComponent>();
+
+            let mut i = 0;
+
+            for mesh_rendering_component in mesh_rendering_components.data.iter() {
                 
-                let gameobject = gameobject.borrow();
+                i += 1;
+                let transform_component = transform_components.data.get(i).unwrap(); // [TODO] Remove this and iterate over multiple components
+
+                //let gameobject = gameobject.borrow();
 
 
                 // Get transform and rendering components
@@ -771,8 +783,8 @@ impl State {
                 let mut instances: Vec<Instance> = Vec::new();
                 instances.push( 
                     Instance { 
-                        position: gameobject.position.clone(), 
-                        rotation: gameobject.rotation.clone()
+                        position: transform_component.position.clone(), 
+                        rotation: transform_component.rotation.clone()
                     } 
                 );
 
@@ -782,7 +794,7 @@ impl State {
                 render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // This is set in shader once, so we are overwritting it in each call
 
                 // Draw
-                let model = self.obj_models.get(gameobject.resource_id.as_ref().unwrap()).unwrap().as_ref();
+                let model = self.obj_models.get(mesh_rendering_component.resource_id.as_ref().unwrap()).unwrap().as_ref();
                 render_pass.draw_model(
                     model,
                     &self.camera_bind_group,

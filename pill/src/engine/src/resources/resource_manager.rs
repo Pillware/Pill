@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 use crate::scene::Scene;
-use crate::gameobject::GameObject;
+
 use std::any::TypeId;
 use std::path::Path;
 use std::collections::{HashMap, LinkedList};
@@ -47,10 +47,10 @@ pub struct ResourceManager {
 
 impl ResourceManager {
     pub fn new() -> Self {
-	    return ResourceManager { 
+	    Self { 
             mesh_resources: HashMap::new(),
             texture_resources: HashMap::new(),
-        };
+        }
     }
 
     pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) { // Trait bound technique

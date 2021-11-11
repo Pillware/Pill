@@ -1,7 +1,6 @@
 // Modules (.rs files)
 mod engine;
 mod scene;
-mod gameobject;
 mod resources;
 mod graphics;
 mod input;
@@ -12,5 +11,16 @@ pub use self::engine::Pill_Game;
 pub use self::scene::Scene;
 pub use self::graphics::renderer::Pill_Renderer;
 pub use self::graphics::renderer::RendererError;
+
+pub use self::ecs::{
+    MeshRenderingComponent,
+    TransformComponent,
+};
+
+// pub mod aa {
+//     pub use crate:: {
+//         resources::resource_manager,
+//     }
+// }
 
 mod ecs;
