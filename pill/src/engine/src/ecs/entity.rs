@@ -6,6 +6,7 @@ pub struct Entity {
     //pub children: Vec<EntityHandle>, // [TODO] Implement
 }
 
+#[derive(Clone, Copy)]
 pub struct EntityHandle {
     pub index: usize,
 }

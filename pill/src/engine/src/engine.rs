@@ -46,7 +46,7 @@ pub trait Pill_Game {
     fn update(&self, engine: &mut Engine);
 }
 
-pub struct SceneManager {
+struct SceneManager {
     scenes: Vec<Option<Scene>>,
     current_scene: Option<SceneHandle>,
 }
@@ -57,6 +57,14 @@ impl SceneManager {
             scenes: Vec::<Option<Scene>>::new(),
             current_scene: None,
         }
+    }
+
+    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) {
+        let storage = ComponentStorage::<T>::new();
+        self.get_scene_mut(scene).unwrap().components.insert::<T>(storage);
+
+        // let storage = ComponentStorage::<T>::new();
+        // self.components.insert::<T>(storage);
     }
 
     pub fn get_current_scene(&self) -> Result<SceneHandle, EngineError> {
@@ -78,7 +86,7 @@ impl SceneManager {
 
     pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle, EngineError> {
         // [TODO] Store scenes in hashmap instead of vector, processing below will be easier
-        let scene_element = self.scenes.get_mut(scene.index);
+        //let scene_element = self.scenes.get_mut(scene.index);
         let target_scene = self.get_scene_mut(scene)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
         target_scene.create_entity()
     }
@@ -89,12 +97,15 @@ impl SceneManager {
         Ok(())
     }
 
+    pub fn set_current_scene(&mut self, scene: SceneHandle) {
+        self.current_scene = Some(scene);
+    }
 
 
     fn get_scene_mut(&mut self, scene: SceneHandle) -> Result<&mut Scene, EngineError> {
         let scene_element = self.scenes.get_mut(scene.index);
         
-        let target_scene = match scene_element {
+        match scene_element {
             Some(scene_element) => match scene_element {
                 Some(scene) => return Ok(scene),
                 None => return Err(EngineError::InvalidSceneHandle),
@@ -142,8 +153,19 @@ impl Engine {
     pub fn initialize(&mut self) {
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
-        self.scene_manager.create_scene("Default");
         
+        
+        
+        let scene = self.scene_manager.create_scene("Default").unwrap();
+        
+        
+
+
+
+        self.set_current_scene(scene);
+        self.register_component::<TransformComponent>(scene);
+        self.register_component::<MeshRenderingComponent>(scene);
+
         self.initialize_game();
 
 
@@ -154,6 +176,11 @@ impl Engine {
         let entity_1 = self.create_entity(current_scene).unwrap();
         let transform_1 = TransformComponent::default();
         let entity_1_transform_component = self.add_component_to_entity::<TransformComponent>(current_scene, entity_1, transform_1).unwrap();
+
+        let mesh_rendering_1 = MeshRenderingComponent::default();
+        let entity_1_mesh_rendering_component = self.add_component_to_entity::<MeshRenderingComponent>(current_scene, entity_1, mesh_rendering_1).unwrap();
+
+
         //entity_1_transform_component.position = cgmath::Vector3 { x: 0.0, y: 1.0, z: 0.0 };
 
         // let entity_1_mesh_rendering_component = add_component_to_entity::<MeshRenderingComponent>(self.scene.as_mut().unwrap(), entity_1);
@@ -191,6 +218,14 @@ impl Engine {
         self.scene_manager.add_component_to_entity::<T>(scene, entity, component)
     }
 
+    pub fn set_current_scene(&mut self, scene: SceneHandle) {
+        self.scene_manager.set_current_scene(scene);
+    }
+
+    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) {
+        self.scene_manager.register_component::<T>(scene);
+    }
+
     // ----------------------------- ENGINE INTERNAL -----------------------------
 
     pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
@@ -220,16 +255,18 @@ impl Engine {
         //game.update(self);
       //  .update(self);
 
+        let scene_handle = self.scene_manager.get_current_scene().unwrap();
+        let scene = self.scene_manager.get_scene_mut(scene_handle).unwrap();
 
-        // match self.renderer.render(self.scene.as_ref().unwrap(), dt) {
-        //     Ok(_) => {}
-        //     // Recreate the swap_chain if lost
-        //     //Err(RendererError::SwapChainLost) => self.renderer.resize(self.renderer.state.window_size),
-        //     // The system is out of memory, we should probably quit
-        //     //Err(RendererError::SwapChainOutOfMemory) => *control_flow = ControlFlow::Exit,
-        //     // All other errors (Outdated, Timeout) should be resolved by the next frame
-        //     Err(e) => eprintln!("{:?}", e),
-        // }
+        match self.renderer.render(scene, dt) {
+            Ok(_) => {}
+            // Recreate the swap_chain if lost
+            //Err(RendererError::SwapChainLost) => self.renderer.resize(self.renderer.state.window_size),
+            // The system is out of memory, we should probably quit
+            //Err(RendererError::SwapChainOutOfMemory) => *control_flow = ControlFlow::Exit,
+            // All other errors (Outdated, Timeout) should be resolved by the next frame
+            Err(e) => eprintln!("{:?}", e),
+        }
 
         println!("[Engine] Frame finished (duration: {:?})", dt);
     }

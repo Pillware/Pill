@@ -17,6 +17,18 @@ pub use self::ecs::{
     TransformComponent,
 };
 
+//pub extern crate core::types::XXX_core;
+
+pub use self::input::{
+    input_event
+};
+
+
+pub extern crate pill_core;
+
+
+//pub use  self::core::XXX_core;
+
 // pub mod aa {
 //     pub use crate:: {
 //         resources::resource_manager,

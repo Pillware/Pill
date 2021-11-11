@@ -752,12 +752,15 @@ impl State {
             let transform_components= scene.get_component_storage::<TransformComponent>();
 
             let mut i = 0;
-
             for mesh_rendering_component in mesh_rendering_components.data.iter() {
                 
-                i += 1;
-                let transform_component = transform_components.data.get(i).unwrap(); // [TODO] Remove this and iterate over multiple components
+                //let buffer = self.buffers(mesh_rendering_component.mesh);
 
+
+
+
+                let transform_component = transform_components.data.get(i).unwrap(); // [TODO] Remove this and iterate over multiple components
+                i += 1;
                 //let gameobject = gameobject.borrow();
 
 
@@ -794,7 +797,10 @@ impl State {
                 render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // This is set in shader once, so we are overwritting it in each call
 
                 // Draw
-                let model = self.obj_models.get(mesh_rendering_component.resource_id.as_ref().unwrap()).unwrap().as_ref();
+                let resource_id = 0;// mesh_rendering_component.resource_id.unwrap();
+                let model = self.obj_models.get(&resource_id).unwrap().as_ref();
+
+                //let model = self.obj_models.get(mesh_rendering_component.resource_id.as_ref().unwrap()).unwrap().as_ref();
                 render_pass.draw_model(
                     model,
                     &self.camera_bind_group,

@@ -28,6 +28,7 @@ pub struct SceneHandle {
     pub index: usize,
 }
 
+
 impl SceneHandle {
     pub fn new(index: usize) -> Self {
 	    Self { 
@@ -46,7 +47,7 @@ pub struct Scene {
     // ECS
     entity_counter: usize,
     entities: Vec<Entity>,
-    components: ComponentMap,
+    pub(crate) components: ComponentMap,
 }
 
 impl Scene {
