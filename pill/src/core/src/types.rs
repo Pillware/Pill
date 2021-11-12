@@ -45,3 +45,7 @@ pub type Projection3 = na::Projective3<FScalar>;
 // Any transformation
 pub type Transform2 = na::Transform2<FScalar>;
 pub type Transform3 = na::Transform3<FScalar>;
+
+pub struct OBW {
+    x: i32,
+}

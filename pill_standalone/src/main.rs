@@ -1,14 +1,13 @@
-use pill_engine;
+use pill_engine::internal::*;
 use pill_graphics;
 
-use std::iter;
+
 use winit::{ // Import dependencies
     event::*, // Bring all public items into scope
     event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
-    dpi::PhysicalPosition,
+    window::{WindowBuilder},
 };
-use std::rc::Rc;
+
 
 fn main() {
     println!("[Standalone] Hello!");
@@ -21,9 +20,9 @@ fn main() {
     let mut last_render_time = std::time::Instant::now();
 
     // Init engine
-    let game: Box<dyn pill_engine::Pill_Game> = Box::new(pill_game::Game {});
-    let renderer: Box<dyn pill_engine::Pill_Renderer> = Box::new(<pill_graphics::Renderer as pill_engine::Pill_Renderer>::new(&window));
-    let mut engine = pill_engine::Engine::new(game, renderer);
+    let game: Box<dyn Pill_Game> = Box::new(pill_game::Game {});
+    let renderer: Box<dyn Pill_Renderer> = Box::new(<pill_graphics::Renderer as Pill_Renderer>::new(&window));
+    let mut engine = Engine::new(game, renderer);
     engine.initialize();
 
     // Run loop

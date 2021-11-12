@@ -13,7 +13,8 @@ pill-core = {path = "../core"}
 
 cgmath = "0.18"
 winit = "0.25"
+cfg-if = "1.0.0"
 
 [features]
-standalone = []
 game = []
+internal = []

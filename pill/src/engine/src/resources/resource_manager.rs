@@ -1,31 +1,11 @@
+use crate::ecs::ComponentMap;
 use crate::engine::Engine;
 use crate::scene::Scene;
 
 use std::any::TypeId;
 use std::path::Path;
-use std::collections::{HashMap, LinkedList};
+use std::collections::{HashMap};
 
-
-
-
-pub struct MeshResource {
-    //submeshes: Vec<SubMesh>,
-}
-
-impl MeshResource {
-    // pub fn new() -> Self {
-    //     // Read data from file using importer
-    //     // For each submesh in file create submesh push it to vector of submeshes
-
-
-    // }
-
-    
-}
-
-pub struct TextureResource {
-
-}
 
 pub enum ResourceSource {
     Engine,
@@ -38,42 +18,43 @@ pub trait Resource {
 
 
 pub struct ResourceManager {
-    mesh_resources: HashMap<String, Box<MeshResource>>,
-    texture_resources: HashMap<String, Box<TextureResource>>,
+    resources: ComponentMap,
+
+    //mesh_resources: HashMap<String, Box<MeshResource>>,
+    //texture_resources: HashMap<String, Box<TextureResource>>,
     //audio_resources: HashMap<String, Box<AudioResource>>,
-    // font_resources: HashMap<String, Box<FontResource>>,
-    // shader_resources: HashMap<String, Box<ShaderResource>>,
+    //font_resources: HashMap<String, Box<FontResource>>,
+    //shader_resources: HashMap<String, Box<ShaderResource>>,
 }
 
 impl ResourceManager {
     pub fn new() -> Self {
 	    Self { 
-            mesh_resources: HashMap::new(),
-            texture_resources: HashMap::new(),
+            resources: ComponentMap::new(),
         }
     }
 
-    pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) { // Trait bound technique
-        let collection: HashMap<String, Box<T>> = t.get_collection(self);
-        match collection.get(&path) {
-            Some(resource) => {
-                println!("[Resource Manager] Mesh resource already exists, increasing pointer reference count");
-                //mesh_resource 
-            },
-            None => {
-                println!("[Resource Manager] Mesh resource not found, creating new entry");
+    // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) { // Trait bound technique
+    //     let collection: HashMap<String, Box<T>> = t.get_collection(self);
+    //     match collection.get(&path) {
+    //         Some(resource) => {
+    //             println!("[Resource Manager] Mesh resource already exists, increasing pointer reference count");
+    //             //mesh_resource 
+    //         },
+    //         None => {
+    //             println!("[Resource Manager] Mesh resource not found, creating new entry");
 
-                // Create new mesh resource
-                let new_mesh_resource: MeshResource = MeshResource {};
-                self.mesh_resources.insert(path, Box::new(new_mesh_resource));
-                //new_mesh_resource
-            }
-        };
+    //             // Create new mesh resource
+    //             let new_mesh_resource: MeshResource = MeshResource {};
+    //             self.mesh_resources.insert(path, Box::new(new_mesh_resource));
+    //             //new_mesh_resource
+    //         }
+    //     };
 
 
 
         
-    }
+    // }
 
 
 

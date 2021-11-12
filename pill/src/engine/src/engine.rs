@@ -1,10 +1,4 @@
-use pill_core::*;
-
-// use crate::{
-//     ecs::{component::Component, entity::{Entity, EntityHandle},  }
-
-
-use crate::resources::resource_manager::{Resource, ResourceManager, ResourceSource};
+use crate::resources::resource_manager::{ResourceManager};
 use crate::scene::SceneHandle;
 //use pill_graphics::{Renderer, RendererError};
 use crate::{graphics::renderer::Pill_Renderer, scene::Scene, graphics::renderer::Renderer};
@@ -12,22 +6,17 @@ use crate::{graphics::renderer::Pill_Renderer, scene::Scene, graphics::renderer:
 use crate::input::input_event::InputEvent;
 use std::collections::VecDeque;
 
-use std::path::Path;
 use winit::{ // Import dependencies
     event::*, // Bring all public items into scope
-    event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
     dpi::PhysicalPosition,
 };
 
-
-
 use crate::ecs::{
-    Entity, EntityHandle,
+    EntityHandle,
     MeshRenderingComponent,
     TransformComponent,
 
-    ComponentMap, Component, ComponentStorage,
+    Component, ComponentStorage,
 };
 
 
@@ -137,7 +126,7 @@ pub struct Engine {
 impl Engine {
 
     // Functions for Standalone
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn new(game: Box<dyn Pill_Game>, renderer: Box<dyn Pill_Renderer>) -> Self {
         Self { 
             game: Some(game),
@@ -149,7 +138,7 @@ impl Engine {
         }
     }
 
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn initialize(&mut self) {
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
@@ -228,9 +217,9 @@ impl Engine {
 
     // ----------------------------- ENGINE INTERNAL -----------------------------
 
-    pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
-        self.resource_manager.load_resource(t, path, source)
-    }
+    // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
+    //     self.resource_manager.load_resource(t, path, source)
+    // }
 
     pub fn initialize_game(&mut self) {
         let game = self.game.take().unwrap(); // Take game memory out of Engine, we can do this because game is an Option  
@@ -240,7 +229,7 @@ impl Engine {
 
     // --------------------------- STANDALONE ---------------------------
 
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn update(&mut self, dt: std::time::Duration) {
         //self.game.update(self);
        // self.game_manager.update_game(self);
@@ -271,18 +260,18 @@ impl Engine {
         println!("[Engine] Frame finished (duration: {:?})", dt);
     }
 
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn shutdown(&mut self) {
         println!("[Engine] Shutting down");
     }
 
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         println!("[Engine] Resizing");
         self.renderer.resize(new_size);
     }
 
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyboardInput) {
         let key: VirtualKeyCode = keyboard_input.virtual_keycode.unwrap();
         let state: ElementState = keyboard_input.state;
@@ -293,7 +282,7 @@ impl Engine {
         println!("[Engine] Got new keyboard key input: {:?} {:?}", key, state);
     }
 
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &ElementState) {
         let input_event = InputEvent::MouseKey { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
         self.input_queue.push_back(input_event);
@@ -301,7 +290,7 @@ impl Engine {
         println!("[Engine] Got new mouse key input");
     }
 
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn pass_mouse_wheel_input(&mut self, delta: &MouseScrollDelta) {
         let input_event = InputEvent::MouseWheel { delta: *delta };
         self.input_queue.push_back(input_event);
@@ -310,7 +299,7 @@ impl Engine {
         println!("[Engine] Got new mouse wheel input");
     }
 
-    #[cfg(feature = "standalone")]
+    #[cfg(feature = "internal")]
     pub fn pass_mouse_motion_input(&mut self, position: &PhysicalPosition<f64>) {
         let input_event = InputEvent::MouseMotion { position: *position };
         self.input_queue.push_back(input_event);

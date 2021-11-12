@@ -2,10 +2,18 @@
 use cgmath::Rotation3;
 use pill_core::*;
 
-use pill_engine::RendererError;
-use pill_engine::Scene;
-use pill_engine::Pill_Renderer;
-use pill_engine::{ MeshRenderingComponent, TransformComponent };
+use pill_engine::game::SceneHandle;
+use pill_engine::internal::Scene;
+
+use pill_engine::game::OBW;
+
+use pill_engine::internal::*;
+//use pill_engine::internal::*;
+
+
+//use pill_engine::{ MeshRenderingComponent, TransformComponent };
+
+
 
 use wgpu::ShaderModule;
 use wgpu::ShaderModuleDescriptor;
@@ -43,6 +51,18 @@ pub struct Renderer {
 impl Pill_Renderer for Renderer {
     fn new(window: &Window) -> Self { 
         let mut state: State = pollster::block_on(State::new(&window));
+
+        let x =  SceneHandle { index: 4 };
+
+        // let x = Engine {
+        //     game: todo!(),
+        //     renderer: todo!(),
+        //     scene_manager: todo!(),
+        //     input_queue: todo!(),
+        //     resource_manager: todo!(),
+        // };
+
+
         return Renderer {
             state,
         }; 
@@ -54,7 +74,7 @@ impl Pill_Renderer for Renderer {
         println!("[Renderer] Init");
     }
 
-    fn render(&mut self, scene: &Scene, dt: std::time::Duration) -> Result<(), pill_engine::RendererError> {
+    fn render(&mut self, scene: &Scene, dt: std::time::Duration) -> Result<(), RendererError> {
         self.state.update(dt);
         self.state.render(scene)
     }
@@ -64,7 +84,7 @@ impl Pill_Renderer for Renderer {
         self.state.resize(new_window_size)
     }
 
-    fn create_model(&mut self, path: Box<&Path>) -> usize {
+    fn create_model(&mut self, path: Box<&Path>) -> Result<usize, RendererError> {
         let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
         let obj_model = model::Model::load( // Load model and create resources for it
             &self.state.device,
@@ -76,7 +96,11 @@ impl Pill_Renderer for Renderer {
         let id: usize = self.state.obj_models.len();
         self.state.obj_models.insert(id, Box::new(obj_model));
         //self.state.obj_models.push_back(Box::new(obj_model));
-        id // Return id
+        Ok(id) // Return id
+    }
+
+    fn create_texture(&mut self, path: Box<&Path>) -> Result<usize, RendererError> {
+        todo!()
     }
 
 }
@@ -670,7 +694,7 @@ impl State {
     }
 
     //fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
-    fn render(&mut self, scene: &Scene) -> Result<(), pill_engine::RendererError> { 
+    fn render(&mut self, scene: &Scene) -> Result<(), RendererError> { 
 
         //let frame = self.swap_chain.get_current_frame(); // Get frame to render to
         //let frame = self.swap_chain.get_current_frame()?.output; // Get frame to render to

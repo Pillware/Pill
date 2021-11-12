@@ -1,25 +1,9 @@
 
-//use pill_graphics::model::Model;
-
-use crate::engine::{Engine, EngineError};
-use crate::graphics::renderer::Pill_Renderer;
-use std::any::TypeId;
-use std::convert::TryInto;
-use std::path::Path;
-use std::collections::{HashMap, LinkedList};
-use std::rc::Rc;
-use std::cell::RefCell;
-
-
+use crate::engine::{EngineError};
 use crate::ecs::{
     Entity, EntityHandle,
-    MeshRenderingComponent,
-    TransformComponent,
-
     ComponentMap, Component, ComponentStorage,
 };
-
-
 
 // --------- SceneHandle
 

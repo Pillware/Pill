@@ -10,7 +10,8 @@ resolver = "2"
 
 [dependencies]
 pill-core = {path = "../core"}
-pill-engine = {path = "../engine"}
+#pill-engine = {path = "../engine"}
+pill-engine = {path = "../engine", features = ["internal"]}
 
 image = "0.23"
 winit = "0.25"

@@ -25,6 +25,8 @@
 
 //! A hashmap whose keys are defined by types.
 
+#![allow(dead_code)]
+
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::collections::hash_map::{

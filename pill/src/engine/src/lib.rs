@@ -4,35 +4,129 @@ mod scene;
 mod resources;
 mod graphics;
 mod input;
+mod ecs;
 
-// Structs available for other crates
-pub use self::engine::Engine;
-pub use self::engine::Pill_Game;
-pub use self::scene::Scene;
-pub use self::graphics::renderer::Pill_Renderer;
-pub use self::graphics::renderer::RendererError;
-
-pub use self::ecs::{
-    MeshRenderingComponent,
-    TransformComponent,
-};
-
-//pub extern crate core::types::XXX_core;
-
-pub use self::input::{
-    input_event
-};
+// #[macro_use]
+// extern crate cfg_if;
 
 
-pub extern crate pill_core;
+// cfg_if! {
+//     if #[cfg(feature = "game")] {
+//         extern crate pill_core;
+//         pub mod game {
+//             pub use crate::{
+//                 engine::{
+//                     Engine,
+//                     Pill_Game,
+//                 },
+//                 scene::SceneHandle,
+//                 graphics::renderer::{
+//                     Pill_Renderer,
+//                     RendererError,
+//                 },
+//                 ecs::{
+//                     MeshRenderingComponent,
+//                     TransformComponent,
+//                 }
+//             };
+//             pub use pill_core::OBW as ooo;
+           
+//         }
+//         //pub extern crate pill_core;
+       
 
-
-//pub use  self::core::XXX_core;
-
-// pub mod aa {
-//     pub use crate:: {
-//         resources::resource_manager,
 //     }
 // }
 
-mod ecs;
+
+// cfg_if! {
+//     if #[cfg(feature = "internal")] {
+//         pub mod internal {
+//             pub use crate::{
+//                 engine::{
+//                     Engine,
+//                     Pill_Game,
+//                 },
+//                 scene::Scene,
+//                 graphics::renderer::{
+//                     Pill_Renderer,
+//                     RendererError,
+//                 },
+//                 ecs::{
+//                     MeshRenderingComponent,
+//                     TransformComponent,
+//                 }
+//             };
+//         }
+//     }
+// }
+
+
+
+
+
+#[cfg(feature = "game")]
+pub mod game {
+    pub use crate::{
+        engine::{
+            Engine,
+            Pill_Game,
+        },
+        scene::SceneHandle,
+        ecs::{
+            MeshRenderingComponent,
+            TransformComponent,
+        },
+    };
+
+    extern crate pill_core;
+    pub use pill_core::OBW;
+}
+
+#[cfg(feature = "internal")]
+pub mod internal {
+    pub use crate::{
+        engine::{
+            Engine,
+            Pill_Game,
+            
+        },
+        graphics::renderer::Pill_Renderer,
+        graphics::renderer::RendererError,
+        scene::Scene,
+        ecs::{
+            MeshRenderingComponent,
+            TransformComponent,
+        },
+    };
+}
+
+
+// #[cfg(feature = "game")]
+// pub use self::game::*;
+
+// //#[cfg(not(feature = "game"))]
+// #[cfg(feature = "internal")]
+// mod internal {
+//     pub use crate::{
+//         engine::{
+//             Engine,
+//             Pill_Game,
+//         },
+//         scene::Scene,
+//         graphics::renderer::{
+//             Pill_Renderer,
+//             RendererError,
+//         },
+//         ecs::{
+//             MeshRenderingComponent,
+//             TransformComponent,
+//         }
+//     };
+// }
+
+// #[cfg(feature = "internal")]
+// pub use self::internal::*;
+
+// #[cfg(feature = "internal")]
+// pub use self::graphics::renderer::Pill_Renderer;
