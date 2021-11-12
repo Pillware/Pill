@@ -2,17 +2,7 @@
 use cgmath::Rotation3;
 use pill_core::*;
 
-use pill_engine::game::SceneHandle;
-use pill_engine::internal::Scene;
-
-use pill_engine::game::OBW;
-
 use pill_engine::internal::*;
-//use pill_engine::internal::*;
-
-
-//use pill_engine::{ MeshRenderingComponent, TransformComponent };
-
 
 
 use wgpu::ShaderModule;
@@ -51,17 +41,6 @@ pub struct Renderer {
 impl Pill_Renderer for Renderer {
     fn new(window: &Window) -> Self { 
         let mut state: State = pollster::block_on(State::new(&window));
-
-        let x =  SceneHandle { index: 4 };
-
-        // let x = Engine {
-        //     game: todo!(),
-        //     renderer: todo!(),
-        //     scene_manager: todo!(),
-        //     input_queue: todo!(),
-        //     resource_manager: todo!(),
-        // };
-
 
         return Renderer {
             state,
