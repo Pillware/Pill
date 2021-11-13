@@ -14,7 +14,7 @@ pill_engine = {path = "../pill_engine", features = ["internal"]}
 pill_renderer = {path = "../pill_renderer"}
 
 # Game project dependency. This needs to be pointing to the correct game directory
-pill_game = {path = "../../examples/pill_pong"} # Path to project in pill_engine examples directory 
+pill_game = {path = "../../examples/pong"} # Path to project in pill_engine examples directory 
 #pill_game = {path = "../../../pill_pong"} # Path to project in directory next to pill_engine
 
 winit = "0.25"
