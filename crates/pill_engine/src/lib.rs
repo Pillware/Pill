@@ -1,10 +1,9 @@
 // Modules (.rs files)
 mod engine;
-mod scene;
 mod resources;
 mod graphics;
-mod input;
 mod ecs;
+mod input;
 
 #[cfg(feature = "game")]
 pub mod game {
@@ -13,15 +12,15 @@ pub mod game {
             Engine,
             Pill_Game,
         },
-        scene::SceneHandle,
         ecs::{
+            SceneHandle,
             MeshRenderingComponent,
             TransformComponent,
         },
     };
 
     extern crate pill_core;
-    pub use pill_core::OBW;
+    pub use pill_core::Vector2f;
 }
 
 #[cfg(feature = "internal")]
@@ -30,12 +29,13 @@ pub mod internal {
         engine::{
             Engine,
             Pill_Game,
-            
         },
-        graphics::renderer::Pill_Renderer,
-        graphics::renderer::RendererError,
-        scene::Scene,
+        graphics::{
+            Pill_Renderer,
+            RendererError
+        },
         ecs::{
+            Scene,
             MeshRenderingComponent,
             TransformComponent,
         },

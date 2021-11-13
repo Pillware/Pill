@@ -1,6 +1,5 @@
 use pill_engine::internal::*;
-use pill_engine::game::OBW;
-use pill_graphics;
+use pill_renderer;
 
 
 use winit::{ // Import dependencies
@@ -22,7 +21,7 @@ fn main() {
 
     // Init engine
     let game: Box<dyn Pill_Game> = Box::new(pill_game::Game {});
-    let renderer: Box<dyn Pill_Renderer> = Box::new(<pill_graphics::Renderer as Pill_Renderer>::new(&window));
+    let renderer: Box<dyn Pill_Renderer> = Box::new(<pill_renderer::Renderer as Pill_Renderer>::new(&window));
     let mut engine = Engine::new(game, renderer);
     engine.initialize();
 

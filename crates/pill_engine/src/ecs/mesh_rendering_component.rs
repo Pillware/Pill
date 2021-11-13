@@ -1,4 +1,4 @@
-pub use crate::ecs::{Component, ComponentStorage };
+pub use crate::ecs::*;
 
 pub struct MeshRenderingComponent {
     resource_id: Option<usize>,

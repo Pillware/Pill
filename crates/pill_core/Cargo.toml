@@ -1,5 +1,5 @@
 [package]
-name = "pill-engine"
+name = "pill_core"
 version = "0.1.0"
 authors = [
     # Extend this list when submiting PR
@@ -9,12 +9,5 @@ edition = "2018"
 resolver = "2"
 
 [dependencies]
-pill-core = {path = "../core"}
-
-cgmath = "0.18"
-winit = "0.25"
-cfg-if = "1.0.0"
-
-[features]
-game = []
-internal = []
+approx = "0.5.0"
+nalgebra = "0.29"

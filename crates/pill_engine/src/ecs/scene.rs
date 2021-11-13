@@ -1,9 +1,6 @@
 
-use crate::engine::{EngineError};
-use crate::ecs::{
-    Entity, EntityHandle,
-    ComponentMap, Component, ComponentStorage,
-};
+use crate::engine::{ EngineError };
+use crate::ecs::*;
 
 // --------- SceneHandle
 

@@ -1,11 +1,7 @@
-use crate::ecs::ComponentMap;
+use crate::ecs::*;
 use crate::engine::Engine;
-use crate::scene::Scene;
 
-use std::any::TypeId;
-use std::path::Path;
 use std::collections::{HashMap};
-
 
 pub enum ResourceSource {
     Engine,

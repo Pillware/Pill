@@ -3,6 +3,12 @@ mod transform_component;
 mod entity;
 mod component_map;
 mod component_storage;
+mod scene;
+
+pub use scene::{
+    Scene,
+    SceneHandle,
+};
 
 pub use component_map::{ 
     ComponentMap, 

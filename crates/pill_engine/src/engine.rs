@@ -1,24 +1,16 @@
-use crate::resources::resource_manager::{ResourceManager};
-use crate::scene::SceneHandle;
-//use pill_graphics::{Renderer, RendererError};
-use crate::{graphics::renderer::Pill_Renderer, scene::Scene, graphics::renderer::Renderer};
-//use crate::resource_manager::ResourceManager;
-use crate::input::input_event::InputEvent;
+use crate::{ 
+    resources::*,
+    ecs::*,
+    graphics::*,
+    input::*,
+};
+
 use std::collections::VecDeque;
 
 use winit::{ // Import dependencies
     event::*, // Bring all public items into scope
     dpi::PhysicalPosition,
 };
-
-use crate::ecs::{
-    EntityHandle,
-    MeshRenderingComponent,
-    TransformComponent,
-
-    Component, ComponentStorage,
-};
-
 
 // ---------------------------------------------------------------------
 

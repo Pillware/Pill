@@ -1,5 +1,5 @@
 [package]
-name = "pill-graphics"
+name = "pill_renderer"
 version = "0.1.0"
 authors = [
     # Extend this list when submiting PR
@@ -9,9 +9,8 @@ edition = "2018"
 resolver = "2"
 
 [dependencies]
-pill-core = {path = "../core"}
-#pill-engine = {path = "../engine"}
-pill-engine = {path = "../engine", features = ["internal"]}
+pill_core = {path = "../pill_core"}
+pill_engine = {path = "../pill_engine", features = ["internal"]}
 
 image = "0.23"
 winit = "0.25"

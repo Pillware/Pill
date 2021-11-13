@@ -7,7 +7,7 @@ use winit::{ // Import dependencies
     dpi::PhysicalPosition,
 };
 
-use crate::scene::Scene;
+use crate::ecs::Scene;
 
 #[derive(Debug)]
 pub enum RendererError { 

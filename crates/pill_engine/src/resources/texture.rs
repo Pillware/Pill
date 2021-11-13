@@ -1,6 +1,7 @@
 use std::path::Path;
-use crate::{ecs::{Component}, graphics::renderer::Renderer};
-use super::resource_storage::ResourceStorage;
+use crate::ecs::*; 
+use crate::graphics::*;
+use crate::resources::*;
 
 pub struct Texture {
     buffer_index: usize,

@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "pill/src/core", 
-    "pill/src/engine", 
-    "pill/src/graphics", 
-    "pill_standalone"
+    "crates/pill_core", 
+    "crates/pill_engine", 
+    "crates/pill_renderer", 
+    "crates/pill_standalone"
     ]
