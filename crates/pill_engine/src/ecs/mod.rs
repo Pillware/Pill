@@ -5,6 +5,7 @@ mod component_map;
 mod component_storage;
 mod scene;
 mod scene_manager;
+mod system_manager;
 
 pub use scene::{
     Scene,
@@ -35,4 +36,9 @@ pub use transform_component::{
 
 pub use scene_manager::{
     SceneManager,
+};
+
+pub use system_manager::{
+    SystemManager,
+    UpdatePhase,
 };

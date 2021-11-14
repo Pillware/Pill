@@ -5,10 +5,10 @@ use crate::{
     input::*,
 };
 
-use std::collections::VecDeque;
+use std::{any::type_name, collections::VecDeque};
 use anyhow::{Context, Result, Error};
 
-use pill_core::EngineError;
+use pill_core::{EngineError, get_type_name};
 use winit::{ // Import dependencies
     event::*, // Bring all public items into scope
     dpi::PhysicalPosition,
@@ -21,8 +21,7 @@ use winit::{ // Import dependencies
 
 pub type Game = Box<dyn Pill_Game>;
 pub trait Pill_Game { 
-    fn initialize(&self, engine: &mut Engine);
-    fn update(&self, engine: &mut Engine);
+    fn start(&self, engine: &mut Engine);
 }
 
 
@@ -38,6 +37,9 @@ pub struct Engine {
     // Scenes
     scene_manager: SceneManager, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
     
+    // Systems
+    system_manager: SystemManager,
+
     // Input
     input_queue: VecDeque<InputEvent>,
 
@@ -54,6 +56,7 @@ impl Engine {
             game: Some(game),
             renderer,
             scene_manager: SceneManager::new(),
+            system_manager: SystemManager::new(),
 
             input_queue: VecDeque::new(),
             resource_manager: ResourceManager::new(),
@@ -62,31 +65,16 @@ impl Engine {
 
     #[cfg(feature = "internal")]
     pub fn initialize(&mut self) {
+        println!("[Engine] Initializing");
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
         
-        self.initialize_game();
+        // Add built-in systems
 
-
-
-        
-
-
-        //entity_1_transform_component.position = cgmath::Vector3 { x: 0.0, y: 1.0, z: 0.0 };
-
-        // let entity_1_mesh_rendering_component = add_component_to_entity::<MeshRenderingComponent>(self.scene.as_mut().unwrap(), entity_1);
-        
-
-
-
-        // let entity_2 = create_entity(self.scene.as_mut().unwrap());
-        
-        // let entity_2_transform_component = add_component_to_entity::<TransformComponent>(self.scene.as_mut().unwrap(), entity_2); 
-        // entity_2_transform_component.position = cgmath::Vector3 { x: 2.5, y: -0.3, z: 0.0 };
-
-        // let entity_2_mesh_rendering_component = add_component_to_entity::<MeshRenderingComponent>(self.scene.as_mut().unwrap(), entity_2);
-
-        println!("[Engine] Initialization completed");
+        // Initialize game
+        let game = self.game.take().unwrap(); 
+        game.start(self); 
+        self.game = Some(game);
     }
 
 
@@ -97,12 +85,8 @@ impl Engine {
         self.scene_manager.create_scene(name).context("[Engine] Scene creation failed")
     }
 
-    pub fn print_debug_message(&self) {
-        println!("Engine here!");
-    }
-
-    pub fn get_current_scene(&mut self) -> Result<SceneHandle> {
-        self.scene_manager.get_current_scene()
+    pub fn get_active_scene(&mut self) -> Result<SceneHandle> {
+        self.scene_manager.get_active_scene()
     }
 
     pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle> {
@@ -110,48 +94,48 @@ impl Engine {
     }
 
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {
-        println!("[Scene] Adding component {:?} to entity {} in scene {}", std::any::type_name::<T>(), entity.index, scene.index);
+        println!("[Scene] Adding component {} to entity {} in scene {}", get_type_name::<T>(), entity.index, scene.index);
         self.scene_manager.add_component_to_entity::<T>(scene, entity, component)
     }
 
-    pub fn set_current_scene(&mut self, scene: SceneHandle) -> Result<()> {
-        self.scene_manager.set_current_scene(scene)
+    pub fn set_active_scene(&mut self, scene: SceneHandle) -> Result<()> {
+        self.scene_manager.set_active_scene(scene)
     }
 
     pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
         self.scene_manager.register_component::<T>(scene)
     }
 
+    pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine)) -> Result<()> {
+        self.system_manager.add_system(name, system_function, UpdatePhase::Game)
+    }
+
+
+   
     // ----------------------------- ENGINE INTERNAL -----------------------------
 
     // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
     //     self.resource_manager.load_resource(t, path, source)
     // }
 
-    pub fn initialize_game(&mut self) {
-        let game = self.game.take().unwrap(); // Take game memory out of Engine, we can do this because game is an Option  
-        game.initialize(self); // Run initialize function on Game, Engine passed in parameter will contain Option<Game> with None value   
-        self.game = Some(game);  // After update is finished, return memory of Game to the Engine's game variable 
-    }
-
     // --------------------------- STANDALONE ---------------------------
 
     #[cfg(feature = "internal")]
     pub fn update(&mut self, dt: std::time::Duration) {
-        //self.game.update(self);
-       // self.game_manager.update_game(self);
-       //Engine::get_game(&mut self.game_manager).update(self);//.update_game(self);
-        //Self::get_game(&mut self.game_manager).update(self);
 
-        //let game = &self.game_manager.game;
-        //let manager = Engine::get_game_manager(self);
-        //manager.game.update(self);
+        // Run systems
+        let update_phase_count = self.system_manager.update_phases.len();
+        for i in (0..update_phase_count).rev() {
+            let systems_count = self.system_manager.update_phases[i].len();
+            for j in (0..systems_count).rev() {
+                let system = self.system_manager.update_phases[i][j];
+                system(self);
+            }
+        }
 
-        //let game = &self.game_manager.get_game() .game;
-        //game.update(self);
-      //  .update(self);
-
-        let scene_handle = self.scene_manager.get_current_scene().unwrap();
+        
+        // [TODO] Move render to rendering system 
+        let scene_handle = self.scene_manager.get_active_scene().unwrap();
         let scene = self.scene_manager.get_scene_mut(scene_handle).unwrap();
 
         match self.renderer.render(scene, dt) {
@@ -219,66 +203,3 @@ impl Engine {
         &self.input_queue
     }
 }
-
-
-
-
-
-
-
-// pub fn create_entity(scene: &mut Scene) -> &Entity {
-//     let entity = Entity { 
-//         name: String::from("Hello"),
-//         index: scene.entity_counter,
-//     };
-//     scene.entities.insert( scene.entity_counter, entity);
-//     scene.entity_counter += 1;
-
-//     scene.entities.last().unwrap()
-// }
-
-
-// pub fn create_entity(scene: &mut Scene) -> &Entity {
-//     let entity = Entity { 
-//         name: String::from("Hello"),
-//         index: scene.entity_counter,
-//     };
-
-//     self.entities.insert( self.entity_counter, entity);
-//     self.entity_counter += 1;
-
-//     self.entities.last().unwrap()
-// }
-
-
-
-// pub fn create_entity<'a>(scene: &'a mut Scene)-> Entity { // Instead returning reference to entity and handling it in game (which may cause problems) return EntityHandle storing index of entity in vector
-//     let x = Entity {name:"aa".to_string(), index: 0 };
-//     x
-//     //scene.create_entity()
-// }
-
-// pub fn register_system() {
-
-// }
-
-
-
-
-
-// pub fn add_component_to_entity<'a, T: Component>(scene: &'a mut Scene, entity_handle: EntityHandle) -> &'a mut T {
-//     // We need to specify to which collection of components new component should be added
-//     // The problem is that in this function we don't know it because we need to get proper collection first
-//     // To do this we may use match but problem with it is that when component is added in game code there is no way to create new match arm in code
-//     // We can define trait function and implement it for all types of components, but this will require from game developer to do this also it game components
-
-//     // IMPORTANT DESIGN TOPIC: 
-//     // How to design component storing? 
-//     // On engine side we can precreate collection (vector) for each of built-in component type, but what if game developer creates game-side component?
-//     // We need something dynamic, like list of vectors to which we can add new vector for new component when registering it in the engine (but is such data structure effective?)
-//     // Maybe try register pattern? - hash map where type is a key and vector is value? (In C++ type as key and pointer to value as vector would be good, but in Rust pointers should be avoided)
-
-//     println!("[Scene] Adding component {:?} to entity {} in scene {}", std::any::type_name::<T>(), entity_handle.index, scene.name);
-//     let component: &mut T = T::new(scene, entity_handle);
-//     component
-// }

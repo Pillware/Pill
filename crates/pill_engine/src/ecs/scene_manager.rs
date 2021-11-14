@@ -3,19 +3,19 @@ use std::{any::type_name, collections::HashMap};
 use super::{Component, ComponentStorage, Entity, EntityHandle, Scene, SceneHandle};
 use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
-use pill_core::EngineError;
+use pill_core::{EngineError, get_type_name};
 use indexmap::IndexMap;
 
 pub struct SceneManager {
-    scenes:  IndexMap<String, Scene>,
-    current_scene: Option<SceneHandle>,
+    scenes: IndexMap<String, Scene>,
+    active_scene: Option<SceneHandle>,
 }
 
 impl SceneManager {
     pub fn new() -> Self {
 	    Self { 
             scenes: IndexMap::<String, Scene>::new(),
-            current_scene: None,
+            active_scene: None,
         }
     }
 
@@ -24,8 +24,7 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene)?;
 
         // Check if component storage is already registered
-        let component_type = type_name::<T>()[11..].to_string();
-        target_scene.components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(component_type, target_scene.name.clone())))?;
+        target_scene.components.contains_key::<T>().eq(&false).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), target_scene.name.clone())))?;
 
         // Create new component storage
         let component_storage = ComponentStorage::<T>::new();
@@ -35,17 +34,17 @@ impl SceneManager {
         Ok(())
     }
 
-    pub fn get_current_scene(&self) -> Result<SceneHandle> {
-        // Check if current scene is set
-        let current_scene_handle = self.current_scene.ok_or(Error::new(EngineError::CurrentSceneNotSet))?;
+    pub fn get_active_scene(&self) -> Result<SceneHandle> {
+        // Check if active scene is set
+        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
 
-        // Return current scene handle
-        Ok(current_scene_handle.clone())
+        // Return active scene handle
+        Ok(active_scene_handle.clone())
     }
 
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         // Check if scene with that name already exists
-        self.scenes.contains_key(name).eq(&true).ok_or(Error::new(EngineError::SceneWithThisNameAlreadyExists))?;
+        self.scenes.contains_key(name).eq(&false).ok_or(Error::new(EngineError::SceneAlreadyExists))?;
 
         // Create and add new scene
         let new_scene = Scene::new(name.to_string());
@@ -87,12 +86,12 @@ impl SceneManager {
         Ok(())
     }
 
-    pub fn set_current_scene(&mut self, scene: SceneHandle) -> Result<()> {
+    pub fn set_active_scene(&mut self, scene: SceneHandle) -> Result<()> {
         // Check if scene for that handle exists
         self.scenes.get_index_mut(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
 
-        // Set new current scene
-        self.current_scene = Some(scene);
+        // Set new active scene
+        self.active_scene = Some(scene);
         Ok(())
     }
 
