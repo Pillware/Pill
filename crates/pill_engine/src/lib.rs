@@ -1,4 +1,5 @@
-// Modules (.rs files)
+#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
+
 mod engine;
 mod resources;
 mod graphics;
@@ -10,7 +11,7 @@ pub mod game {
     pub use crate::{
         engine::{
             Engine,
-            Pill_Game,
+            PillGame,
         },
         ecs::{
             SceneHandle,
@@ -31,10 +32,10 @@ pub mod internal {
     pub use crate::{
         engine::{
             Engine,
-            Pill_Game,
+            PillGame,
         },
         graphics::{
-            Pill_Renderer,
+            PillRenderer,
             RendererError
         },
         ecs::{

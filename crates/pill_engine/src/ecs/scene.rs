@@ -2,6 +2,8 @@
 use pill_core::EngineError;
 use anyhow::{Result, Context, Error};
 
+use log::{debug, info};
+
 use crate::ecs::*;
 
 // --------- SceneHandle

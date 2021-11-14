@@ -1,3 +1,5 @@
+#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
+
 mod mesh_rendering_component;
 mod transform_component;
 mod entity;

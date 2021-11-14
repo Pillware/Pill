@@ -9,7 +9,7 @@ use wgpu::ShaderModule;
 use wgpu::ShaderModuleDescriptor;
 use wgpu::SurfaceError;
 
-
+use log::{debug, info};
 
 use crate::model;
 use model::{DrawModel, Vertex};
@@ -38,7 +38,7 @@ pub struct Renderer {
     pub state: State,
 }
 
-impl Pill_Renderer for Renderer {
+impl PillRenderer for Renderer {
     fn new(window: &Window) -> Self { 
         let mut state: State = pollster::block_on(State::new(&window));
 
@@ -50,7 +50,7 @@ impl Pill_Renderer for Renderer {
     //pub fn update(&mut self, _dt: std::time::Duration) {}
 
     fn initialize(&self) {
-        println!("[Renderer] Init");
+        info!("Pill Renderer initialize");
     }
 
     fn render(&mut self, scene: &Scene, dt: std::time::Duration) -> Result<(), RendererError> {
@@ -59,7 +59,7 @@ impl Pill_Renderer for Renderer {
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
-        println!("Renderer resizing!");
+        info!("Renderer resizing!");
         self.state.resize(new_window_size)
     }
 

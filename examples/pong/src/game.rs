@@ -2,7 +2,7 @@ use pill_engine::game::*;
 
 pub struct Game { }   
 
-impl Pill_Game for Game {
+impl PillGame for Game {
     fn start(&self, engine: &mut Engine) {
         println!("Let's play pong"); 
 
@@ -17,7 +17,6 @@ impl Pill_Game for Game {
 
         
         let active_scene = engine.get_active_scene().expect("Scene not found");//.unwrap();
-        println!("[Engine] Creating testing gameobjects in scene {}", active_scene.index);
 
         let entity_1 = engine.create_entity(active_scene).unwrap();
         let transform_1 = TransformComponent::default();

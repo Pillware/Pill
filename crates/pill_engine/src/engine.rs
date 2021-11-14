@@ -1,3 +1,5 @@
+
+
 use crate::{ 
     resources::*,
     ecs::*,
@@ -5,8 +7,11 @@ use crate::{
     input::*,
 };
 
+
 use std::{any::type_name, collections::VecDeque};
 use anyhow::{Context, Result, Error};
+
+use log::{debug, info, error};
 
 use pill_core::{EngineError, get_type_name};
 use winit::{ // Import dependencies
@@ -19,8 +24,8 @@ use winit::{ // Import dependencies
 
 
 
-pub type Game = Box<dyn Pill_Game>;
-pub trait Pill_Game { 
+pub type Game = Box<dyn PillGame>;
+pub trait PillGame { 
     fn start(&self, engine: &mut Engine);
 }
 
@@ -51,7 +56,7 @@ impl Engine {
 
     // Functions for Standalone
     #[cfg(feature = "internal")]
-    pub fn new(game: Box<dyn Pill_Game>, renderer: Box<dyn Pill_Renderer>) -> Self {
+    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>) -> Self {
         Self { 
             game: Some(game),
             renderer,
@@ -65,7 +70,8 @@ impl Engine {
 
     #[cfg(feature = "internal")]
     pub fn initialize(&mut self) {
-        println!("[Engine] Initializing");
+
+        info!("Pill Engine initializing");
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
         
@@ -81,7 +87,7 @@ impl Engine {
     // ------------------------------ GAME ------------------------------
 
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
-        println!("[Engine] Creating scene: {}", name);
+        info!("Creating scene: {}", name);
         self.scene_manager.create_scene(name).context("[Engine] Scene creation failed")
     }
 
@@ -94,7 +100,7 @@ impl Engine {
     }
 
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {
-        println!("[Scene] Adding component {} to entity {} in scene {}", get_type_name::<T>(), entity.index, scene.index);
+        info!("Adding component {} to entity {} in scene {}", get_type_name::<T>(), entity.index, scene.index);
         self.scene_manager.add_component_to_entity::<T>(scene, entity, component)
     }
 
@@ -145,20 +151,20 @@ impl Engine {
             // The system is out of memory, we should probably quit
             //Err(RendererError::SwapChainOutOfMemory) => *control_flow = ControlFlow::Exit,
             // All other errors (Outdated, Timeout) should be resolved by the next frame
-            Err(e) => eprintln!("{:?}", e),
+            Err(e) => error!("{:?}", e),
         }
 
-        println!("[Engine] Frame finished (duration: {:?})", dt);
+        info!("Frame finished (duration: {:?})", dt);
     }
 
     #[cfg(feature = "internal")]
     pub fn shutdown(&mut self) {
-        println!("[Engine] Shutting down");
+        info!("Shutting down");
     }
 
     #[cfg(feature = "internal")]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        println!("[Engine] Resizing");
+        info!("Resizing");
         self.renderer.resize(new_size);
     }
 
@@ -170,7 +176,7 @@ impl Engine {
         let input_event = InputEvent::KeyboardKey { key: key, state: state };
         self.input_queue.push_back(input_event);
 
-        println!("[Engine] Got new keyboard key input: {:?} {:?}", key, state);
+        info!("Got new keyboard key input: {:?} {:?}", key, state);
     }
 
     #[cfg(feature = "internal")]
@@ -178,7 +184,7 @@ impl Engine {
         let input_event = InputEvent::MouseKey { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
         self.input_queue.push_back(input_event);
 
-        println!("[Engine] Got new mouse key input");
+        info!("Got new mouse key input");
     }
 
     #[cfg(feature = "internal")]
@@ -187,7 +193,7 @@ impl Engine {
         self.input_queue.push_back(input_event);
 
 
-        println!("[Engine] Got new mouse wheel input");
+        info!("Got new mouse wheel input");
     }
 
     #[cfg(feature = "internal")]
@@ -195,7 +201,7 @@ impl Engine {
         let input_event = InputEvent::MouseMotion { position: *position };
         self.input_queue.push_back(input_event);
 
-        println!("[Engine] Got new mouse motion input");
+        info!("Got new mouse motion input");
     }
 
     // Functions for Engine's built-in systems

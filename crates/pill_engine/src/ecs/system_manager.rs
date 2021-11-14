@@ -53,7 +53,7 @@ impl SystemManager {
         Ok(())
     }
 
-    // [TODO] Removing system may cause iterator to break, check that
+    // [TODO] Removing system may cause system iteration in engine to break, check that
     pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> { 
         // Find collection of systems for given update phase
         let system_collection = self.update_phases.get_mut(&update_phase).unwrap();

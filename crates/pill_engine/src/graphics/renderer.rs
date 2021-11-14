@@ -16,7 +16,7 @@ pub enum RendererError {
     SurfaceOther,
 }
 
-pub trait Pill_Renderer { 
+pub trait PillRenderer { 
     fn new(window: &Window) -> Self where Self: Sized;
     fn initialize(&self);
     fn render(&mut self, scene: &Scene, dt: std::time::Duration) -> Result<(), RendererError>;
@@ -25,4 +25,4 @@ pub trait Pill_Renderer {
     fn create_texture(&mut self, path: Box<&Path>) -> Result<usize, RendererError>;
 }
 
-pub type Renderer = Box<dyn Pill_Renderer>;
+pub type Renderer = Box<dyn PillRenderer>;

@@ -1,6 +1,10 @@
+#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
+
 use pill_engine::internal::*;
 use pill_renderer;
 
+use std::io::Write;
+use log::{LevelFilter, debug, info};
 
 use winit::{ // Import dependencies
     event::*, // Bring all public items into scope
@@ -10,18 +14,35 @@ use winit::{ // Import dependencies
 
 
 fn main() {
-    println!("[Standalone] Hello!");
+    
+    // Configure logging
+    #[cfg(debug_assertions)]
+    env_logger::Builder::new()
+        .format(|buf, record| {
+            writeln!(buf, "[{}] {} {}:{}: {}",
+                record.level(),
+                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                record.args()
+            )
+        })
+        .filter_module("pill_standalone", LevelFilter::Debug)
+        .filter_module("pill_engine", LevelFilter::Debug)
+        .filter_module("pill_renderer", LevelFilter::Debug)
+        .init();
+
+    info!("Pill Standalone initializing");
 
     // Init window
-    env_logger::init();
     let event_loop = EventLoop::new();
     let title = env!("CARGO_PKG_NAME");
     let window = WindowBuilder::new().with_title(title).build(&event_loop).unwrap();
     let mut last_render_time = std::time::Instant::now();
 
     // Init engine
-    let game: Box<dyn Pill_Game> = Box::new(pill_game::Game {});
-    let renderer: Box<dyn Pill_Renderer> = Box::new(<pill_renderer::Renderer as Pill_Renderer>::new(&window));
+    let game: Box<dyn PillGame> = Box::new(pill_game::Game {});
+    let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(&window));
     let mut engine = Engine::new(game, renderer);
     engine.initialize();
 

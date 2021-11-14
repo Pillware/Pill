@@ -20,6 +20,9 @@ indexmap = "1.7.0"
 boolinator = "2.4.0"
 typemap_rev = "0.1.5"
 
+env_logger = "0.9.0"
+log = "0.4"
+
 [features]
 game = []
 internal = []
