@@ -1,7 +1,7 @@
+use std::collections::{HashMap};
+
 use crate::ecs::*;
 use crate::engine::Engine;
-
-use std::collections::{HashMap};
 
 pub enum ResourceSource {
     Engine,

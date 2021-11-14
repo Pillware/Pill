@@ -1,6 +1,6 @@
+use cgmath::{Zero};
 
 pub use crate::ecs::{Component, ComponentStorage };
-use cgmath::{Zero};
 
 pub struct TransformComponent {
     pub position: cgmath::Vector3<f32>,

@@ -1,5 +1,10 @@
+use std::{any::type_name, collections::VecDeque};
+use anyhow::{Context, Result, Error};
+use boolinator::Boolinator;
+use log::{debug, info, error};
+use winit::{ event::*, dpi::PhysicalPosition,};
 
-
+use pill_core::{EngineError, get_type_name};
 use crate::{ 
     resources::*,
     ecs::*,
@@ -7,54 +12,25 @@ use crate::{
     input::*,
 };
 
-
-use std::{any::type_name, collections::VecDeque};
-use anyhow::{Context, Result, Error};
-
-use log::{debug, info, error};
-
-use pill_core::{EngineError, get_type_name};
-use winit::{ // Import dependencies
-    event::*, // Bring all public items into scope
-    dpi::PhysicalPosition,
-};
-
 // ---------------------------------------------------------------------
-
-
-
 
 pub type Game = Box<dyn PillGame>;
 pub trait PillGame { 
     fn start(&self, engine: &mut Engine);
 }
-
-
-
-
-
-pub struct Engine {
-    
-    // General
+pub struct Engine { 
     game: Option<Game>,
     renderer: Renderer,
-
-    // Scenes
     scene_manager: SceneManager, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
-    
-    // Systems
     system_manager: SystemManager,
-
-    // Input
-    input_queue: VecDeque<InputEvent>,
-
-    // Resources
     resource_manager: ResourceManager,
+    input_queue: VecDeque<InputEvent>,
 }
+
+// ---- INTERNAL -----------------------------------------------------------------
 
 impl Engine {
 
-    // Functions for Standalone
     #[cfg(feature = "internal")]
     pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>) -> Self {
         Self { 
@@ -62,69 +38,25 @@ impl Engine {
             renderer,
             scene_manager: SceneManager::new(),
             system_manager: SystemManager::new(),
-
-            input_queue: VecDeque::new(),
             resource_manager: ResourceManager::new(),
+            input_queue: VecDeque::new(),
         }
     }
 
     #[cfg(feature = "internal")]
     pub fn initialize(&mut self) {
-
         info!("Pill Engine initializing");
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
         
         // Add built-in systems
 
+
         // Initialize game
         let game = self.game.take().unwrap(); 
         game.start(self); 
         self.game = Some(game);
     }
-
-
-    // ------------------------------ GAME ------------------------------
-
-    pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
-        info!("Creating scene: {}", name);
-        self.scene_manager.create_scene(name).context("[Engine] Scene creation failed")
-    }
-
-    pub fn get_active_scene(&mut self) -> Result<SceneHandle> {
-        self.scene_manager.get_active_scene()
-    }
-
-    pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle> {
-        self.scene_manager.create_entity(scene)
-    }
-
-    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {
-        info!("Adding component {} to entity {} in scene {}", get_type_name::<T>(), entity.index, scene.index);
-        self.scene_manager.add_component_to_entity::<T>(scene, entity, component)
-    }
-
-    pub fn set_active_scene(&mut self, scene: SceneHandle) -> Result<()> {
-        self.scene_manager.set_active_scene(scene)
-    }
-
-    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
-        self.scene_manager.register_component::<T>(scene)
-    }
-
-    pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine)) -> Result<()> {
-        self.system_manager.add_system(name, system_function, UpdatePhase::Game)
-    }
-
-
-   
-    // ----------------------------- ENGINE INTERNAL -----------------------------
-
-    // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
-    //     self.resource_manager.load_resource(t, path, source)
-    // }
-
-    // --------------------------- STANDALONE ---------------------------
 
     #[cfg(feature = "internal")]
     pub fn update(&mut self, dt: std::time::Duration) {
@@ -138,8 +70,7 @@ impl Engine {
                 system(self);
             }
         }
-
-        
+ 
         // [TODO] Move render to rendering system 
         let scene_handle = self.scene_manager.get_active_scene().unwrap();
         let scene = self.scene_manager.get_scene_mut(scene_handle).unwrap();
@@ -175,7 +106,6 @@ impl Engine {
 
         let input_event = InputEvent::KeyboardKey { key: key, state: state };
         self.input_queue.push_back(input_event);
-
         info!("Got new keyboard key input: {:?} {:?}", key, state);
     }
 
@@ -183,7 +113,6 @@ impl Engine {
     pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &ElementState) {
         let input_event = InputEvent::MouseKey { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
         self.input_queue.push_back(input_event);
-
         info!("Got new mouse key input");
     }
 
@@ -191,8 +120,6 @@ impl Engine {
     pub fn pass_mouse_wheel_input(&mut self, delta: &MouseScrollDelta) {
         let input_event = InputEvent::MouseWheel { delta: *delta };
         self.input_queue.push_back(input_event);
-
-
         info!("Got new mouse wheel input");
     }
 
@@ -200,12 +127,55 @@ impl Engine {
     pub fn pass_mouse_motion_input(&mut self, position: &PhysicalPosition<f64>) {
         let input_event = InputEvent::MouseMotion { position: *position };
         self.input_queue.push_back(input_event);
-
         info!("Got new mouse motion input");
     }
 
-    // Functions for Engine's built-in systems
+    #[cfg(feature = "internal")]
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
         &self.input_queue
     }
+}
+
+// ---------------------------------------------------------------------
+
+impl Engine { 
+
+    // --- ECS
+
+    pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
+        info!("Creating scene: {}", name);
+        self.scene_manager.create_scene(name).context("Scene creation failed")
+    }
+
+    pub fn get_active_scene(&mut self) -> Result<SceneHandle> {
+        self.scene_manager.get_active_scene().context("Getting active scene failed")
+    }
+
+    pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle> {
+        self.scene_manager.create_entity(scene).context("Creating entity failed")
+    }
+
+    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {
+        info!("Adding component {} to entity {} in scene {}", get_type_name::<T>(), entity.index, scene.index);
+        self.scene_manager.add_component_to_entity::<T>(scene, entity, component).context("Adding component to entity failed")
+    }
+
+    pub fn set_active_scene(&mut self, scene: SceneHandle) -> Result<()> {
+        self.scene_manager.set_active_scene(scene).context("Setting active scene failed")
+    }
+
+    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
+        self.scene_manager.register_component::<T>(scene).context("Registering component failed")
+    }
+
+    pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine)) -> Result<()> {
+        self.system_manager.add_system(name, system_function, UpdatePhase::Game).context("Adding system failed")
+    }
+    
+    // --- RESOURCES
+
+    // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
+    //     self.resource_manager.load_resource(t, path, source)
+    // }
+
 }

@@ -1,10 +1,10 @@
 use std::{any::type_name, collections::HashMap};
-
-use super::{Component, ComponentStorage, Entity, EntityHandle, Scene, SceneHandle};
 use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
 use pill_core::{EngineError, get_type_name};
 use indexmap::IndexMap;
+
+use crate::ecs::*;
 
 pub struct SceneManager {
     scenes: IndexMap<String, Scene>,

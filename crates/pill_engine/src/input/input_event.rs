@@ -1,4 +1,7 @@
-use winit::{dpi::PhysicalPosition, event::{ElementState, MouseButton, MouseScrollDelta, VirtualKeyCode}};
+use winit::{
+    dpi::PhysicalPosition, 
+    event::{ElementState, MouseButton, MouseScrollDelta, VirtualKeyCode}
+};
 
 pub enum InputEvent {
     KeyboardKey { key: VirtualKeyCode, state: ElementState },

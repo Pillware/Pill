@@ -1,7 +1,6 @@
 use std::path::Path;
-
-use winit::{ // Import dependencies
-    event::*, // Bring all public items into scope
+use winit::{ 
+    event::*, 
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
     dpi::PhysicalPosition,

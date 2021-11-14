@@ -1,12 +1,12 @@
 use core::fmt;
 use std::{collections::HashMap, fmt::Display};
-
 use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
 use indexmap::IndexMap;
-use pill_core::EngineError;
 
+use pill_core::EngineError;
 use crate::game::Engine;
+
 
 type System = fn(engine: &mut Engine);
 
