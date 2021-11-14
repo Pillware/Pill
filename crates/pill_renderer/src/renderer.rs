@@ -403,7 +403,7 @@ impl State {
             &device,
             &queue,
             &texture_bind_group_layout,
-            Box::new(Path::new("D:\\Programming\\Rust\\pill_project\\pill_engine\\pill\\src\\graphics\\res\\models\\cube.obj"))
+            Box::new(Path::new("D:\\Programming\\Rust\\pill_project\\pill_engine\\crates\\pill_renderer\\res\\models\\cube.obj"))
         )
         .unwrap();
 

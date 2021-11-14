@@ -11,3 +11,5 @@ resolver = "2"
 [dependencies]
 approx = "0.5.0"
 nalgebra = "0.29"
+anyhow = "1.0.45"
+thiserror = "1.0.30"

@@ -4,6 +4,7 @@ mod entity;
 mod component_map;
 mod component_storage;
 mod scene;
+mod scene_manager;
 
 pub use scene::{
     Scene,
@@ -30,4 +31,8 @@ pub use mesh_rendering_component::{
 
 pub use transform_component::{
     TransformComponent,
+};
+
+pub use scene_manager::{
+    SceneManager,
 };

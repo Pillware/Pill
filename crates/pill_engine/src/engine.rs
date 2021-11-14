@@ -6,7 +6,9 @@ use crate::{
 };
 
 use std::collections::VecDeque;
+use anyhow::{Context, Result, Error};
 
+use pill_core::EngineError;
 use winit::{ // Import dependencies
     event::*, // Bring all public items into scope
     dpi::PhysicalPosition,
@@ -14,11 +16,7 @@ use winit::{ // Import dependencies
 
 // ---------------------------------------------------------------------
 
-#[derive(Debug)]
-pub enum EngineError {
-    NoCurrentScene,
-    InvalidSceneHandle,
-}
+
 
 
 pub type Game = Box<dyn Pill_Game>;
@@ -27,75 +25,7 @@ pub trait Pill_Game {
     fn update(&self, engine: &mut Engine);
 }
 
-struct SceneManager {
-    scenes: Vec<Option<Scene>>,
-    current_scene: Option<SceneHandle>,
-}
 
-impl SceneManager {
-    pub fn new() -> Self {
-	    Self { 
-            scenes: Vec::<Option<Scene>>::new(),
-            current_scene: None,
-        }
-    }
-
-    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) {
-        let storage = ComponentStorage::<T>::new();
-        self.get_scene_mut(scene).unwrap().components.insert::<T>(storage);
-
-        // let storage = ComponentStorage::<T>::new();
-        // self.components.insert::<T>(storage);
-    }
-
-    pub fn get_current_scene(&self) -> Result<SceneHandle, EngineError> {
-        match &self.current_scene {
-            Some(scene) => Ok(scene.clone()),
-            None => Err(EngineError::NoCurrentScene),
-        }
-    }
-
-    pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle, EngineError> {
-        // REMOVED [TODO] Implement generational indices, limit number of possible Scenes, allocate fixed space to eliminate "vector changing its memory position on new element push" behaviour 
-        // [TODO] Store scenes in hashmap instead of vector, processing below will be easier
-        let new_scene = Scene::new(name.to_string());
-        self.scenes.push(Some(new_scene));
-
-        let new_scene_index = self.scenes.len() - 1;
-        Ok(SceneHandle::new(new_scene_index))
-    }
-
-    pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle, EngineError> {
-        // [TODO] Store scenes in hashmap instead of vector, processing below will be easier
-        //let scene_element = self.scenes.get_mut(scene.index);
-        let target_scene = self.get_scene_mut(scene)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
-        target_scene.create_entity()
-    }
-
-    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<(), EngineError> {     
-        let target_scene = self.get_scene_mut(scene)?;
-        target_scene.add_component_to_entity::<T>(entity, component);
-        Ok(())
-    }
-
-    pub fn set_current_scene(&mut self, scene: SceneHandle) {
-        self.current_scene = Some(scene);
-    }
-
-
-    fn get_scene_mut(&mut self, scene: SceneHandle) -> Result<&mut Scene, EngineError> {
-        let scene_element = self.scenes.get_mut(scene.index);
-        
-        match scene_element {
-            Some(scene_element) => match scene_element {
-                Some(scene) => return Ok(scene),
-                None => return Err(EngineError::InvalidSceneHandle),
-            },
-            None => return Err(EngineError::InvalidSceneHandle),
-        };
-    }
-
-}
 
 
 
@@ -135,31 +65,11 @@ impl Engine {
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
         
-        
-        
-        let scene = self.scene_manager.create_scene("Default").unwrap();
-        
-        
-
-
-
-        self.set_current_scene(scene);
-        self.register_component::<TransformComponent>(scene);
-        self.register_component::<MeshRenderingComponent>(scene);
-
         self.initialize_game();
 
 
 
-        let current_scene = self.get_current_scene().expect("Scene not found");//.unwrap();
-        println!("[Engine] Creating testing gameobjects in scene {}", current_scene.index);
-
-        let entity_1 = self.create_entity(current_scene).unwrap();
-        let transform_1 = TransformComponent::default();
-        let entity_1_transform_component = self.add_component_to_entity::<TransformComponent>(current_scene, entity_1, transform_1).unwrap();
-
-        let mesh_rendering_1 = MeshRenderingComponent::default();
-        let entity_1_mesh_rendering_component = self.add_component_to_entity::<MeshRenderingComponent>(current_scene, entity_1, mesh_rendering_1).unwrap();
+        
 
 
         //entity_1_transform_component.position = cgmath::Vector3 { x: 0.0, y: 1.0, z: 0.0 };
@@ -182,29 +92,34 @@ impl Engine {
 
     // ------------------------------ GAME ------------------------------
 
+    pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
+        println!("[Engine] Creating scene: {}", name);
+        self.scene_manager.create_scene(name).context("[Engine] Scene creation failed")
+    }
+
     pub fn print_debug_message(&self) {
         println!("Engine here!");
     }
 
-    pub fn get_current_scene(&mut self) -> Result<SceneHandle, EngineError> {
+    pub fn get_current_scene(&mut self) -> Result<SceneHandle> {
         self.scene_manager.get_current_scene()
     }
 
-    pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle, EngineError> {
+    pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle> {
         self.scene_manager.create_entity(scene)
     }
 
-    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<(), EngineError> {
+    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {
         println!("[Scene] Adding component {:?} to entity {} in scene {}", std::any::type_name::<T>(), entity.index, scene.index);
         self.scene_manager.add_component_to_entity::<T>(scene, entity, component)
     }
 
-    pub fn set_current_scene(&mut self, scene: SceneHandle) {
-        self.scene_manager.set_current_scene(scene);
+    pub fn set_current_scene(&mut self, scene: SceneHandle) -> Result<()> {
+        self.scene_manager.set_current_scene(scene)
     }
 
-    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) {
-        self.scene_manager.register_component::<T>(scene);
+    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
+        self.scene_manager.register_component::<T>(scene)
     }
 
     // ----------------------------- ENGINE INTERNAL -----------------------------

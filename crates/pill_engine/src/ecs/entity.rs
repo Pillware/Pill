@@ -10,3 +10,11 @@ pub struct Entity {
 pub struct EntityHandle {
     pub index: usize,
 }
+
+impl EntityHandle {
+    pub fn new(index: usize) -> Self {
+	    Self { 
+            index,
+        }
+    }
+}

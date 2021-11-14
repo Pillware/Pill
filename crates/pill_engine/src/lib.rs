@@ -18,9 +18,12 @@ pub mod game {
             TransformComponent,
         },
     };
-
+    
     extern crate pill_core;
     pub use pill_core::Vector2f;
+
+    extern crate anyhow;
+    pub use anyhow::{ Context, Result, Error };
 }
 
 #[cfg(feature = "internal")]
