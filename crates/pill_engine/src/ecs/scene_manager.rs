@@ -6,6 +6,8 @@ use indexmap::IndexMap;
 
 use crate::ecs::*;
 
+use super::component_storage::StorageEntry;
+
 pub struct SceneManager {
     scenes: IndexMap<String, Scene>,
     active_scene: Option<SceneHandle>,
@@ -80,8 +82,11 @@ impl SceneManager {
         // Get component storage from scene
         let component_storage = target_scene.get_component_storage_mut::<T>();
         
+        // Prepare component entry for storage
+        let component_entry = StorageEntry::new(component, entity.generation);
+
         // Add component to storage
-        component_storage.data.insert(entity.index, component);
+        component_storage.data.insert(entity.index, Some(component_entry));
         Ok(())
     }
 
@@ -150,8 +155,5 @@ mod test {
         //let mut names = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<NameComponent>();
         let mut health_values = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<HealthComponent>();
 
-        for item in health_values.data.iter() {
-            println!("{}", item.value);
-        }
     }
 }
