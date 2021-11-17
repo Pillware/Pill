@@ -59,19 +59,18 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene_mut(scene)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
         
+        // Get index allocator for entity
+        let index_allocator = target_scene.get_allocator_mut();
+
         // Create new entity
-        let new_entity_id = target_scene.entity_counter;
-        let new_entity = Entity { 
-            name: String::from("Hello"),
-            index: new_entity_id,   
-        };
+        let new_entity = index_allocator.allocate_new_entity();
 
         // Insert new entity into scene
         target_scene.entities.insert(target_scene.entity_counter, new_entity);
         target_scene.entity_counter += 1;
 
         // Return handle
-        Ok(EntityHandle::new(new_entity_id))
+        Ok(EntityHandle::new(new_entity.get_index(), new_entity.get_generation()))
     }
 
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {     
@@ -95,10 +94,64 @@ impl SceneManager {
         Ok(())
     }
 
+    pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Get allocator from scene
+        let index_allocator = target_scene.get_allocator_mut();
+
+        Ok(index_allocator)
+    }
+
     pub fn get_scene_mut(&mut self, scene: SceneHandle) -> Result<&mut Scene> {
         // Get scene
         let scene = self.scenes.get_index_mut(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
         Ok(scene)
     }
 
+}
+
+#[cfg(test)]
+mod test {
+    
+    use super::*;
+
+    #[test]
+    fn component_addition() {
+        let mut scene_manager = SceneManager::new();
+        let scene = scene_manager.create_scene("Default").unwrap();
+
+        scene_manager.set_active_scene(scene);
+
+        scene_manager.register_component::<NameComponent>(scene);
+
+        let entity_1 = scene_manager.create_entity(scene).unwrap();
+        scene_manager.add_component_to_entity(scene, entity_1, NameComponent {name: String::from("Text 1")});
+
+        let entity_2 = scene_manager.create_entity(scene).unwrap();
+        scene_manager.add_component_to_entity(scene, entity_2, NameComponent::default());
+
+        let entity_3 = scene_manager.create_entity(scene).unwrap();
+        scene_manager.add_component_to_entity(scene, entity_3, NameComponent {name: String::from("Text 3")});
+        
+        /*let storage = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<NameComponent>();
+
+        for item in storage.data.iter() {
+            println!("{}", item.name)
+        } */
+
+        scene_manager.register_component::<HealthComponent>(scene);
+
+        scene_manager.add_component_to_entity(scene, entity_1, HealthComponent {value: 10});
+        scene_manager.add_component_to_entity(scene, entity_2, HealthComponent {value: 20});
+        scene_manager.add_component_to_entity(scene, entity_3, HealthComponent::default());
+
+        //let mut names = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<NameComponent>();
+        let mut health_values = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<HealthComponent>();
+
+        for item in health_values.data.iter() {
+            println!("{}", item.value);
+        }
+    }
 }

@@ -8,6 +8,9 @@ mod component_storage;
 mod scene;
 mod scene_manager;
 mod system_manager;
+mod allocator;
+mod name_component;
+mod health_component;
 
 pub use scene::{
     Scene,
@@ -24,7 +27,6 @@ pub use component_storage:: {
 };
 
 pub use entity::{
-    Entity,
     EntityHandle
 };
 
@@ -36,6 +38,14 @@ pub use transform_component::{
     TransformComponent,
 };
 
+pub use name_component::{
+    NameComponent,
+};
+
+pub use health_component::{
+    HealthComponent,
+};
+
 pub use scene_manager::{
     SceneManager,
 };
@@ -43,4 +53,9 @@ pub use scene_manager::{
 pub use system_manager::{
     SystemManager,
     UpdatePhase,
+};
+
+pub use allocator::{
+    Generation,
+    Allocator,
 };

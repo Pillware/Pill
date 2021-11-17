@@ -29,8 +29,9 @@ pub struct Scene {
 
     // ECS
     pub(crate) entity_counter: usize,
-    pub(crate) entities: Vec<Entity>,
+    pub(crate) entities: Vec<EntityHandle>,
     pub(crate) components: ComponentMap,
+    pub(crate) allocator: Allocator
 }
 
 impl Scene {
@@ -38,8 +39,9 @@ impl Scene {
         return Self { 
             name,
             entity_counter: 0,
-            entities: Vec::<Entity>::new(),
+            entities: Vec::<EntityHandle>::new(),
             components: ComponentMap::new(),
+            allocator: Allocator::new()
         };
     }
     
@@ -54,5 +56,13 @@ impl Scene {
 
     pub fn get_component_storage_mut<T: Component<Storage = ComponentStorage::<T>>>(&mut self) -> &mut ComponentStorage<T> {
         self.components.get_mut::<T>().unwrap()
+    }
+
+    pub fn get_allocator(&self) -> &Allocator {
+        &self.allocator
+    }
+
+    pub fn get_allocator_mut(&mut self) -> &mut Allocator {
+        &mut self.allocator
     }
 }
