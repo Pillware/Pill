@@ -86,7 +86,7 @@ impl SceneManager {
         let component_entry = StorageEntry::new(component, entity.generation);
 
         // Add component to storage
-        component_storage.data.insert(entity.index, Some(component_entry));
+        component_storage.data.insert(entity.index, component_entry);
         Ok(())
     }
 

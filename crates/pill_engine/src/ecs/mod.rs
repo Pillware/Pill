@@ -24,6 +24,7 @@ pub use component_map::{
 
 pub use component_storage:: {
     ComponentStorage,
+    StorageEntry
 };
 
 pub use entity::{
