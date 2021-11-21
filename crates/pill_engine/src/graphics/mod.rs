@@ -6,4 +6,6 @@ pub use renderer::{
     Renderer,
     RendererError,
     PillRenderer,
+    RenderQueueKey,
+    create_render_queue_key,
 };

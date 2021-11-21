@@ -57,7 +57,7 @@ impl SceneManager {
 
     pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle> {
         // Get scene
-        let target_scene = self.get_scene_mut(scene)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
+        let target_scene = self.get_scene_mut(scene)?;
         
         // Create new entity
         let new_entity_id = target_scene.entity_counter;
@@ -79,7 +79,7 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene)?;
 
         // Get component storage from scene
-        let component_storage = target_scene.get_component_storage_mut::<T>();
+        let component_storage = target_scene.get_component_storage_mut::<T>()?;
         
         // Add component to storage
         component_storage.data.insert(entity.index, component);

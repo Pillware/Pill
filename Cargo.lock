@@ -28,9 +28,9 @@ checksum = "739f4a8db6605981345c5654f3a85b056ce52f37a39d34da03f25bf2151ea16e"
 
 [[package]]
 name = "ahash"
-version = "0.7.4"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43bb833f0bf979d8475d38fbf09ed3b8a55e1885fe93ad3f93239fc6a4f17b98"
+checksum = "fcb51a0695d8f838b1ee009b3fbf66bda078cd64590202a864a8f3e8c4315c47"
 dependencies = [
  "getrandom",
  "once_cell",
@@ -1411,6 +1411,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "boolinator",
+ "bytemuck",
  "cfg-if 1.0.0",
  "cgmath",
  "env_logger 0.9.0",
@@ -1418,6 +1419,7 @@ dependencies = [
  "log",
  "pill_core",
  "thiserror",
+ "tobj",
  "typemap_rev",
  "winit",
 ]
@@ -1822,7 +1824,7 @@ version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "267a53ebc1139c69d3feedc33a381c382b2e3b0c47f44f48679e90c4a69b8dac"
 dependencies = [
- "ahash 0.7.4",
+ "ahash 0.7.6",
 ]
 
 [[package]]

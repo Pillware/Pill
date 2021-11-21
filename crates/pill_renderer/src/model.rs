@@ -23,7 +23,6 @@ pub struct ModelVertex {
     bitangent: [f32; 3],
 }
 
-
 impl Vertex for ModelVertex {
     fn descriptor<'a>() -> wgpu::VertexBufferLayout<'a> { // Defines how a buffer is layed out in memory (To specify howw render_pipeline needs to map the buffer in the shader)
         use std::mem;
@@ -66,7 +65,6 @@ pub struct Material {
     pub name: String,
     pub diffuse_texture: texture::Texture,
     pub normal_texture: texture::Texture,
-    pub bind_group: wgpu::BindGroup,
 }
 
 impl Material {
@@ -82,7 +80,7 @@ impl Material {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -90,7 +88,7 @@ impl Material {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&normal_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&normal_texture.texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -253,15 +251,15 @@ impl Model {
                 v.bitangent = (cgmath::Vector3::from(v.bitangent) * denom).normalize().into();
             }
 
-
-
             let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("{:?} Vertex Buffer", path.as_ref())),
                 contents: bytemuck::cast_slice(&vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             });
+            let x = m.mesh.indices;
             let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("{:?} Index Buffer", path.as_ref())),
+               
                 contents: bytemuck::cast_slice(&m.mesh.indices),
                 usage: wgpu::BufferUsages::INDEX,
             });
@@ -392,6 +390,7 @@ pub trait DrawLight<'a> {
         camera: &'a wgpu::BindGroup,
         light: &'a wgpu::BindGroup,
     );
+
     fn draw_light_mesh_instanced(
         &mut self,
         mesh: &'a Mesh,
@@ -406,6 +405,7 @@ pub trait DrawLight<'a> {
         camera: &'a wgpu::BindGroup,
         light: &'a wgpu::BindGroup,
     );
+
     fn draw_light_model_instanced(
         &mut self,
         model: &'a Model,

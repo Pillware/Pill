@@ -1,7 +1,8 @@
 use anyhow::{Result, Context, Error};
 use log::{debug, info};
 
-use pill_core::EngineError;
+use pill_core::{EngineError, get_type_name};
+use typemap_rev::TypeMap;
 use crate::ecs::*;
 
 
@@ -48,11 +49,11 @@ impl Scene {
         &self.entity_counter
     }
 
-    pub fn get_component_storage<T: Component<Storage = ComponentStorage::<T>>>(&self) -> &ComponentStorage<T> {
-        self.components.get::<T>().unwrap()
+    pub fn get_component_storage<T: Component<Storage = ComponentStorage::<T>>>(&self) -> Result<&ComponentStorage<T>> {
+        self.components.get::<T>().ok_or(Error::new(EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone())))
     }
 
-    pub fn get_component_storage_mut<T: Component<Storage = ComponentStorage::<T>>>(&mut self) -> &mut ComponentStorage<T> {
-        self.components.get_mut::<T>().unwrap()
+    pub fn get_component_storage_mut<T: Component<Storage = ComponentStorage::<T>>>(&mut self) -> Result<&mut ComponentStorage<T>> {
+        self.components.get_mut::<T>().ok_or(Error::new(EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone())))
     }
 }

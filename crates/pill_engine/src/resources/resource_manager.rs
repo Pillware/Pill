@@ -1,20 +1,36 @@
 use std::collections::{HashMap};
+use std::env;
+
+
+use pill_core::{EngineError, get_type_name};
 
 use crate::ecs::*;
 use crate::engine::Engine;
+
+use crate::graphics::Renderer;
+use crate::resources::resource_map::{ Resource, ResourceMap };
+use crate::resources::resource_storage::ResourceStorage;
+use anyhow::{Result, Context, Error};
+
+use super::{Material, Mesh, Texture, TextureHandle, TextureType};
 
 pub enum ResourceSource {
     Engine,
     Game,  
 }
 
-pub trait Resource {
-    fn get_collection<T>(&self, resource_manager: &mut ResourceManager) -> HashMap<String, Box<T>>;
+pub trait ResourceHandle {
+    fn get_index(&self) -> u32; 
 }
 
 
+// pub trait Resource {
+//     fn get_collection<T>(&self, resource_manager: &mut ResourceManager) -> HashMap<String, Box<T>>;
+// }
+
+
 pub struct ResourceManager {
-    resources: ComponentMap,
+    resources: ResourceMap,
 
     //mesh_resources: HashMap<String, Box<MeshResource>>,
     //texture_resources: HashMap<String, Box<TextureResource>>,
@@ -25,8 +41,55 @@ pub struct ResourceManager {
 
 impl ResourceManager {
     pub fn new() -> Self {
-	    Self { 
-            resources: ComponentMap::new(),
+	    let resource_manager = Self { 
+            resources: ResourceMap::new(),
+        };
+
+        resource_manager
+    }
+
+    pub fn get_resource<T: Resource<Storage = ResourceStorage::<T>>, H: ResourceHandle>(&self, resource_handle: &H) -> Result<&T> {
+        // Get resource storage from scene
+        let resource_storage = self.get_resource_storage::<T>()?;
+        
+        // Get resource
+        let index = resource_handle.get_index();
+        let resource = &resource_storage.data[index as usize]; // [TODO] Check if such conversion is safe and efficient
+
+        Ok(&resource)
+    }
+
+    fn get_resource_storage<T: Resource<Storage = ResourceStorage::<T>>>(&self) -> Result<&ResourceStorage<T>> {
+        self.resources.get::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
+    }
+
+    fn get_resource_storage_mut<T: Resource<Storage = ResourceStorage::<T>>>(&mut self) -> Result<&mut ResourceStorage<T>> {
+        self.resources.get_mut::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
+    }
+
+
+    // -- Default resources
+    pub fn create_default_resources(&mut self, renderer: &mut Renderer) {
+        self.resources.insert::<Texture>(ResourceStorage::<Texture>::new());
+        self.resources.insert::<Mesh>(ResourceStorage::<Mesh>::new());
+        self.resources.insert::<Material>(ResourceStorage::<Material>::new());
+
+        // Create default resources
+        let texture_storage = self.get_resource_storage_mut::<Texture>().unwrap();
+
+        let path = env::current_dir().unwrap().join("res").join("textures");
+
+        let default_color_texture = Texture::new(renderer, "DefaultColor", path.join("default_color.png")).unwrap();
+        texture_storage.data.insert("DefaultColor".to_string(), default_color_texture);
+        
+        let default_normal_texture = Texture::new(renderer, "DefaultNormal", path.join("default_normal.png")).unwrap();
+        texture_storage.data.insert("DefaultNormal".to_string(), default_normal_texture);
+    }
+
+    pub fn get_default_texture(&self, texture_type: TextureType) -> TextureHandle {
+        match texture_type {
+            TextureType::Color => TextureHandle { index: 0 },
+            TextureType::Normal => TextureHandle { index: 1 },
         }
     }
 

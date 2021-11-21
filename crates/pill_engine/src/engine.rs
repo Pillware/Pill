@@ -20,10 +20,10 @@ pub trait PillGame {
 }
 pub struct Engine { 
     game: Option<Game>,
-    renderer: Renderer,
+    pub(crate) renderer: Renderer,
     scene_manager: SceneManager, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
     system_manager: SystemManager,
-    resource_manager: ResourceManager,
+    pub(crate) resource_manager: ResourceManager,
     input_queue: VecDeque<InputEvent>,
 }
 
@@ -33,14 +33,22 @@ impl Engine {
 
     #[cfg(feature = "internal")]
     pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>) -> Self {
-        Self { 
+        let scene_manager = SceneManager::new();
+        let resource_manager = ResourceManager::new();
+        let system_manager = SystemManager::new();
+
+        let mut engine = Self { 
             game: Some(game),
             renderer,
-            scene_manager: SceneManager::new(),
-            system_manager: SystemManager::new(),
-            resource_manager: ResourceManager::new(),
+            scene_manager,
+            system_manager,
+            resource_manager,
             input_queue: VecDeque::new(),
-        }
+        };
+
+        engine.resource_manager.create_default_resources(&mut engine.renderer);
+
+        engine
     }
 
     #[cfg(feature = "internal")]
@@ -173,6 +181,7 @@ impl Engine {
     }
     
     // --- RESOURCES
+
 
     // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
     //     self.resource_manager.load_resource(t, path, source)

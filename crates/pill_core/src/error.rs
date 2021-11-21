@@ -14,6 +14,12 @@ pub enum EngineError {
     #[error("System with name {0} is already registered for update phase {1} \n\nSource: ")]
     SystemAlreadyExists(String, String),
     #[error("System with name {0} is not registered for update phase {1} \n\nSource: ")]
-    SystemNotFound(String, String)
+    SystemNotFound(String, String),
+    #[error("Component {0} is not registered for scene {1} \n\nSource: ")]
+    ComponentNotRegistered(String, String),
+    #[error("Resource {0} is not registered in Engine \n\nSource: ")]
+    ResourceNotRegistered(String),
 
+    #[error("Invalid .obj file {0}\nFiles with multiple meshes are not supported \n\nSource: ")]
+    InvalidModelFile(String)
 }
