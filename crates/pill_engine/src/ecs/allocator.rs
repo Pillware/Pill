@@ -1,12 +1,12 @@
-use super::EntityHandle;
+use super::{ComponentMap, EntityHandle};
 
 pub struct Generation {
     alive: bool,
-    generation: u64
+    generation: u32
 }
 
 impl Generation {
-    pub fn new(gen: u64) -> Self {
+    pub fn new(gen: u32) -> Self {
         Self {
             alive: true,
             generation: gen
@@ -17,7 +17,7 @@ impl Generation {
         self.alive
     }
 
-    pub fn get_generation(&self) -> u64 {
+    pub fn get_generation(&self) -> u32 {
         self.generation
     }
 
@@ -29,8 +29,8 @@ impl Generation {
 pub struct Allocator {
     free_indexes: Vec<usize>,
     generations: Vec<Generation>,
-    current_gen: u64,
-    current_index: usize
+    current_gen: u32,
+    current_index: usize,
 }
 
 impl Allocator {
@@ -38,13 +38,17 @@ impl Allocator {
         Self {
             free_indexes: Vec::<usize>::new(),
             generations: Vec::<Generation>::new(),
-            current_gen: 0,
+            current_gen: 1,
             current_index: 0
         }
     }
 
     pub fn get_generations_count(&self) -> usize {
         self.generations.len()
+    }
+
+    pub fn get_max_index(&self) -> &usize {
+        &self.current_index
     }
 
     pub fn has_free_indexes(&self) -> bool {

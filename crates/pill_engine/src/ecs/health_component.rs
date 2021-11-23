@@ -1,5 +1,7 @@
 use std::default;
 
+use typemap_rev::TypeMapKey;
+
 pub use crate::ecs::{Component, ComponentStorage};
 
 pub struct HealthComponent {
@@ -17,3 +19,5 @@ impl Default for HealthComponent {
         }
     }
 }
+
+impl TypeMapKey for HealthComponent { type Value = u32; }

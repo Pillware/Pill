@@ -2,20 +2,20 @@
 pub struct EntityHandle {
     //pub name: String,
     pub index: usize,
-    pub generation: u64,
+    pub generation: u32,
     //pub parent: Option<EntityHandle>, // [TODO] Implement
     //pub children: Vec<EntityHandle>, // [TODO] Implement
 }
 
 impl EntityHandle {
-    pub fn new(id: usize, gen: u64) -> Self {
+    pub fn new(id: usize, gen: u32) -> Self {
 	    Self { 
             index: id,
             generation: gen
         }
     }
 
-    pub fn get_generation(&self) -> u64 {
+    pub fn get_generation(&self) -> u32 {
         self.generation
     }
 

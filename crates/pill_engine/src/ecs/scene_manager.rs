@@ -3,6 +3,7 @@ use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
 use pill_core::{EngineError, get_type_name};
 use indexmap::IndexMap;
+use typemap_rev::TypeMapKey;
 
 use crate::ecs::*;
 
@@ -21,7 +22,44 @@ impl SceneManager {
         }
     }
 
-    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
+    // Getters and setters
+
+    pub fn get_active_scene(&self) -> Result<SceneHandle> {
+        // Check if active scene is set
+        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
+
+        // Return active scene handle
+        Ok(active_scene_handle.clone())
+    }
+
+    pub fn set_active_scene(&mut self, scene: SceneHandle) -> Result<()> {
+        // Check if scene for that handle exists
+        self.scenes.get_index_mut(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+
+        // Set new active scene
+        self.active_scene = Some(scene);
+        Ok(())
+    }
+
+    pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Get allocator from scene
+        let index_allocator = target_scene.get_allocator_mut();
+
+        Ok(index_allocator)
+    }
+
+    pub fn get_scene_mut(&mut self, scene: SceneHandle) -> Result<&mut Scene> {
+        // Get scene
+        let scene = self.scenes.get_index_mut(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
+        Ok(scene)
+    }
+
+    // Utility functions
+
+    pub fn register_component<T: TypeMapKey<Value = u32> + Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
         // Get scene
         let target_scene = self.get_scene_mut(scene)?;
 
@@ -33,15 +71,18 @@ impl SceneManager {
 
         // Add component storage to scene
         target_scene.components.insert::<T>(component_storage);
+
+        // Get storage and max index as count
+        let (storage, count) = target_scene.get_component_storage_mut_with_count::<T>();
+
+        // Add default components up till the size of max index to storage to match size from other storages
+        storage.fill_up(*count);
+
+        // Add bitmask mapping for component
+
+        target_scene.bitmask_controller.set_bitmap::<T>();
+
         Ok(())
-    }
-
-    pub fn get_active_scene(&self) -> Result<SceneHandle> {
-        // Check if active scene is set
-        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
-
-        // Return active scene handle
-        Ok(active_scene_handle.clone())
     }
 
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
@@ -75,44 +116,18 @@ impl SceneManager {
         Ok(EntityHandle::new(new_entity.get_index(), new_entity.get_generation()))
     }
 
+
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {     
         // Get scene
         let target_scene = self.get_scene_mut(scene)?;
 
         // Get component storage from scene
         let component_storage = target_scene.get_component_storage_mut::<T>();
-        
-        // Prepare component entry for storage
-        let component_entry = StorageEntry::new(component, entity.generation);
 
         // Add component to storage
-        component_storage.data.insert(entity.index, component_entry);
+        component_storage.set(entity, component);
+        
         Ok(())
-    }
-
-    pub fn set_active_scene(&mut self, scene: SceneHandle) -> Result<()> {
-        // Check if scene for that handle exists
-        self.scenes.get_index_mut(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
-
-        // Set new active scene
-        self.active_scene = Some(scene);
-        Ok(())
-    }
-
-    pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
-        // Get scene
-        let target_scene = self.get_scene_mut(scene)?;
-
-        // Get allocator from scene
-        let index_allocator = target_scene.get_allocator_mut();
-
-        Ok(index_allocator)
-    }
-
-    pub fn get_scene_mut(&mut self, scene: SceneHandle) -> Result<&mut Scene> {
-        // Get scene
-        let scene = self.scenes.get_index_mut(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
-        Ok(scene)
     }
 
 }
@@ -140,20 +155,14 @@ mod test {
         let entity_3 = scene_manager.create_entity(scene).unwrap();
         scene_manager.add_component_to_entity(scene, entity_3, NameComponent {name: String::from("Text 3")});
         
-        /*let storage = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<NameComponent>();
-
-        for item in storage.data.iter() {
-            println!("{}", item.name)
-        } */
-
+        let storage = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<NameComponent>();
         scene_manager.register_component::<HealthComponent>(scene);
 
         scene_manager.add_component_to_entity(scene, entity_1, HealthComponent {value: 10});
         scene_manager.add_component_to_entity(scene, entity_2, HealthComponent {value: 20});
-        scene_manager.add_component_to_entity(scene, entity_3, HealthComponent::default());
+        
+        let health_storage = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<HealthComponent>();
 
-        //let mut names = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<NameComponent>();
-        let mut health_values = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<HealthComponent>();
-
+        assert_eq!(3, health_storage.data.len());
     }
 }

@@ -1,3 +1,5 @@
+use typemap_rev::TypeMapKey;
+
 pub use crate::ecs::*;
 
 pub struct MeshRenderingComponent {
@@ -16,7 +18,7 @@ impl Default for MeshRenderingComponent {
     }
 }
 
-
+impl TypeMapKey for MeshRenderingComponent {type Value = u32;}
 
 
 

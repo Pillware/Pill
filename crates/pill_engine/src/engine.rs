@@ -2,6 +2,7 @@ use std::{any::type_name, collections::VecDeque};
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
+use typemap_rev::TypeMapKey;
 use winit::{ event::*, dpi::PhysicalPosition,};
 
 use pill_core::{EngineError, get_type_name};
@@ -164,7 +165,7 @@ impl Engine {
         self.scene_manager.set_active_scene(scene).context("Setting active scene failed")
     }
 
-    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
+    pub fn register_component<T: TypeMapKey<Value = u32> + Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
         self.scene_manager.register_component::<T>(scene).context("Registering component failed")
     }
 

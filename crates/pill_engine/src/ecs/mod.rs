@@ -11,6 +11,8 @@ mod system_manager;
 mod allocator;
 mod name_component;
 mod health_component;
+mod bitmask_controller;
+
 
 pub use scene::{
     Scene,
@@ -59,4 +61,8 @@ pub use system_manager::{
 pub use allocator::{
     Generation,
     Allocator,
+};
+
+pub use bitmask_controller::{
+    BitmaskController,
 };

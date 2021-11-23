@@ -1,3 +1,5 @@
+use std::path::Iter;
+
 use anyhow::{Result, Context, Error};
 use log::{debug, info};
 
@@ -31,7 +33,8 @@ pub struct Scene {
     pub(crate) entity_counter: usize,
     pub(crate) entities: Vec<EntityHandle>,
     pub(crate) components: ComponentMap,
-    pub(crate) allocator: Allocator
+    pub(crate) allocator: Allocator,
+    pub(crate) bitmask_controller: BitmaskController
 }
 
 impl Scene {
@@ -41,12 +44,13 @@ impl Scene {
             entity_counter: 0,
             entities: Vec::<EntityHandle>::new(),
             components: ComponentMap::new(),
-            allocator: Allocator::new()
+            allocator: Allocator::new(),
+            bitmask_controller: BitmaskController::new()
         };
     }
     
     #[cfg(feature = "game")]
-    pub fn get_counter(&mut self) -> &usize {
+    pub fn get_counter(&self) -> &usize {
         &self.entity_counter
     }
 
@@ -64,5 +68,9 @@ impl Scene {
 
     pub fn get_allocator_mut(&mut self) -> &mut Allocator {
         &mut self.allocator
+    }
+
+    pub fn get_component_storage_mut_with_count<T: Component<Storage = ComponentStorage::<T>>>(&mut self) -> (&mut ComponentStorage<T>, &usize) {
+        (self.components.get_mut::<T>().unwrap(), self.allocator.get_max_index())
     }
 }

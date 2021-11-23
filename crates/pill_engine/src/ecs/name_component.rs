@@ -1,4 +1,4 @@
-use std::default;
+use typemap_rev::TypeMapKey;
 
 pub use crate::ecs::{Component, ComponentStorage};
 
@@ -17,3 +17,5 @@ impl Default for NameComponent {
         }
     }
 }
+
+impl TypeMapKey for NameComponent {type Value = u32; }
