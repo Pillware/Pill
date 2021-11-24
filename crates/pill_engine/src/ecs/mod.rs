@@ -12,7 +12,7 @@ mod allocator;
 mod name_component;
 mod health_component;
 mod bitmask_controller;
-
+mod bitmask_map;
 
 pub use scene::{
     Scene,
@@ -66,3 +66,5 @@ pub use allocator::{
 pub use bitmask_controller::{
     BitmaskController,
 };
+
+pub use bitmask_map::*;

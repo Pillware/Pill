@@ -17,5 +17,3 @@ impl Default for NameComponent {
         }
     }
 }
-
-impl TypeMapKey for NameComponent {type Value = u32; }

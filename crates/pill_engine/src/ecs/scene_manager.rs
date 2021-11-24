@@ -59,7 +59,7 @@ impl SceneManager {
 
     // Utility functions
 
-    pub fn register_component<T: TypeMapKey<Value = u32> + Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
+    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
         // Get scene
         let target_scene = self.get_scene_mut(scene)?;
 

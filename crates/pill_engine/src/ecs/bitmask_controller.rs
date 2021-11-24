@@ -1,29 +1,28 @@
 use pill_core::na::Storage;
-use typemap_rev::{TypeMap, TypeMapKey};
-
+use super::{BitmaskMap, bitmask_map, Component};
 pub struct BitmaskController {
-    mapping: TypeMap,
+    mapping: BitmaskMap,
     count: u32
 }
 
 impl BitmaskController {
     pub fn new() -> Self {
         Self {
-            mapping: TypeMap::new(),
+            mapping: BitmaskMap::new(),
             count: 0b0000_0000_0000_0000_0000_0000_0000_0001
         }
     }
 
-    pub fn set_bitmap<T: TypeMapKey<Value = u32>>(&mut self) {
-        if self.mapping.contains_key::<T>() == false {
+    pub fn set_bitmap<T: Component>(&mut self) {
+        if self.mapping.contains_component::<T>() == false {
             self.mapping.insert::<T>(self.count.clone());
             self.count = self.count << 1;
         }
     }
 
-    pub fn get_bitmap<T: TypeMapKey<Value = u32>>(&self) -> &u32 {
-        if self.mapping.contains_key::<T>() {
-            &self.mapping.get::<T>().unwrap()
+    pub fn get_bitmap<T: Component>(&self) -> &u32 {
+        if self.mapping.contains_component::<T>() {
+            &self.mapping.get_bitmask::<T>()
         }
         else {
             &0

@@ -19,5 +19,3 @@ impl Default for HealthComponent {
         }
     }
 }
-
-impl TypeMapKey for HealthComponent { type Value = u32; }
