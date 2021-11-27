@@ -1,38 +1,39 @@
 use anyhow::*;
 use image::GenericImageView;
-use pill_engine::internal::ResourceHandle;
+use pill_engine::internal::{RendererTextureHandle, TextureType};
 use std::{num::NonZeroU32, path::{Path, PathBuf}};
 
-#[derive(Clone, Copy)]
-pub struct RendererTextureHandle {
-    pub index: u32,
-}
+// #[derive(Clone, Copy)]
+// pub struct RendererTextureHandle {
+//     pub index: u32,
+// }
 
-impl ResourceHandle for RendererTextureHandle
-{
-    fn get_index(&self) -> u32 {
-        self.index
-    }
-}
+// impl ResourceHandle for RendererTextureHandle
+// {
+//     fn get_index(&self) -> u32 {
+//         self.index
+//     }
+// }
 
-pub struct Texture {
+
+pub struct RendererTexture {
     pub texture: wgpu::Texture,
     pub texture_view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
 
-impl Texture {
+impl RendererTexture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     pub fn new_texture_from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         path: &PathBuf,
-        is_normal_map: bool,
+        texture_type: TextureType,
     ) -> Result<Self> {
         let label = path.to_str();
         let image = image::open(path)?;
-        Self::create_texture(device, queue, &image, label, is_normal_map)
+        Self::create_texture(device, queue, &image, label, texture_type)
     }
 
     pub fn new_texture_from_bytes(
@@ -40,10 +41,10 @@ impl Texture {
         queue: &wgpu::Queue,
         bytes: &[u8],
         label: &str,
-        is_normal_map: bool,
+        texture_type: TextureType,
     ) -> Result<Self> {
         let image = image::load_from_memory(bytes)?;
-        Self::create_texture(device, queue, &image, Some(label), is_normal_map)
+        Self::create_texture(device, queue, &image, Some(label), texture_type)
     }
 
     pub fn new_depth_texture(
@@ -60,7 +61,7 @@ impl Texture {
         queue: &wgpu::Queue,
         image: &image::DynamicImage,
         label: Option<&str>,
-        is_normal_map: bool,
+        texture_type: TextureType,
     ) -> Result<Self> {
         let dimensions = image.dimensions();
         let rgba = image.to_rgba();
@@ -72,6 +73,12 @@ impl Texture {
             depth_or_array_layers: 1,
         };
 
+        // Specify texture format
+        let format = match texture_type {
+            TextureType::Color => wgpu::TextureFormat::Rgba8UnormSrgb,
+            TextureType::Normal => wgpu::TextureFormat::Rgba8Unorm,
+        };
+
         // Create texture
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label,
@@ -79,11 +86,7 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: if is_normal_map {
-                wgpu::TextureFormat::Rgba8Unorm
-            } else {
-                wgpu::TextureFormat::Rgba8UnormSrgb
-            },
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING  | wgpu::TextureUsages::COPY_DST,
         });
 

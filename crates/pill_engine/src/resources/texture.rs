@@ -31,17 +31,18 @@ impl ResourceHandle for TextureHandle
 pub struct Texture {
     name: String,
     path: PathBuf,
-    renderer_resource_index: u32,
+    pub(crate) renderer_resource_handle: RendererTextureHandle,
 }
 
 impl Texture {
-    pub fn new(renderer: &mut Renderer, name: &str, path: PathBuf) -> Result<Self> {  // [TODO] What if renderer fails to create texture?
-        let renderer_resource_index = renderer.create_texture(&path).unwrap();
+    pub fn new(renderer: &mut Renderer, name: &str, path: PathBuf, texture_type: TextureType) -> Result<Self> {  // [TODO] What if renderer fails to create texture?
+        let renderer_resource_handle = renderer.create_texture(&path, texture_type).unwrap();
         let texture = Self { 
             name: name.to_string(),
             path: path,
-            renderer_resource_index,
+            renderer_resource_handle,
         };
+        
         Ok(texture)
     }
 }

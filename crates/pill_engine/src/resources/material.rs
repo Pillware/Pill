@@ -27,41 +27,54 @@ impl ResourceHandle for MaterialHandle
 pub struct Material {
     pub name: String,
     //shader: ShaderHandle,
-    pub color_texture: TextureHandle,
-    pub normal_texture: TextureHandle,
+    pub color_texture_handle: TextureHandle,
+    pub normal_texture_handle: TextureHandle,
     pub order: u32,
-    renderer_resource_index: u32,
+    pub(crate) renderer_resource_handle: RendererMaterialHandle,
 }
 
 impl Material {
     pub fn new(resource_manager: &mut ResourceManager, renderer: &mut Renderer, name: &str) -> Result<Self> {  // [TODO] What if renderer fails to create material?
         
-        let color_texture = resource_manager.get_default_texture(TextureType::Color);
-        let normal_texture = resource_manager.get_default_texture(TextureType::Normal);
-        let renderer_resource_index = renderer.create_material(color_texture, normal_texture).unwrap();
+        let color_texture_handle = resource_manager.get_default_texture(TextureType::Color);
+        let normal_texture_handle = resource_manager.get_default_texture(TextureType::Normal);
+
+        let renderer_color_texture_handle = resource_manager.get_resource::<Texture, TextureHandle>(&color_texture_handle).unwrap().renderer_resource_handle;
+        let renderer_normal_texture_handle = resource_manager.get_resource::<Texture, TextureHandle>(&normal_texture_handle).unwrap().renderer_resource_handle;
+
+        let renderer_resource_handle = renderer.create_material(
+            name,
+            renderer_color_texture_handle, 
+            renderer_normal_texture_handle
+        ).unwrap();
 
         let material = Self { 
             name: name.to_string(),
             //shader: 0,
-            color_texture,
-            normal_texture,
+            color_texture_handle,
+            normal_texture_handle,
             order: 0, 
-            renderer_resource_index,
+            renderer_resource_handle,
         };
 
         Ok(material)
     }
 
-    pub fn assign_color_texture(&mut self, engine: &mut Engine, texture_handle: TextureHandle) {
-        self.color_texture = texture_handle;
-        engine.renderer.update_material(self.renderer_resource_index, self);
-        // [TODO] Revert material if failed to update in renderer
-    }
+    pub fn assign_color_texture(&mut self, engine: &mut Engine, texture_handle: TextureHandle, texture_type: TextureType) {
+        let texture = engine.resource_manager.get_resource::<Texture, TextureHandle>(&texture_handle).unwrap();
+        let renderer_texture_handle = texture.renderer_resource_handle;
 
-    pub fn assign_normal_texture(&mut self, engine: &mut Engine, texture_handle: TextureHandle) {
-        self.normal_texture = texture_handle;
-        engine.renderer.update_material(self.renderer_resource_index, self);
-        // [TODO] Revert material if failed to update in renderer
+        engine.renderer.update_material_texture(self.renderer_resource_handle, renderer_texture_handle, TextureType::Color);
+
+        match texture_type {
+            TextureType::Color => {
+                self.color_texture_handle = texture_handle;
+            },
+            TextureType::Normal => {
+                self.normal_texture_handle = texture_handle;
+            }
+        }
+        // [TODO] Revert material if failed to update in renderer ??
     }
 
     pub fn set_order(&mut self, engine: &mut Engine, order: u32) {

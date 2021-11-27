@@ -33,21 +33,22 @@ impl ResourceHandle for MeshHandle
 pub struct Mesh {
     name: String,
     path: PathBuf,
-    renderer_resource_index: u32,
+    pub(crate) renderer_resource_handle: RendererMeshHandle,
     mesh_data: MeshData,
 }
 
 impl Mesh {
     // [TODO] What if renderer fails to create mesh?
     pub fn new(renderer: &mut Renderer, name: &str, path: PathBuf) -> Result<Self> {  
-        let mesh_data = MeshData::new(&path)?; // read_obj_file(path);
-        let renderer_resource_index = renderer.create_mesh(&mesh_data).unwrap();
+        let mesh_data = MeshData::new(&path)?;
+        let renderer_resource_handle = renderer.create_mesh(name, &mesh_data).unwrap();//?;
 
         let mesh = Self { 
             name: name.to_string(),
             path,
-            renderer_resource_index,
+            renderer_resource_handle,
             mesh_data,
+          
         };
 
         Ok(mesh)
@@ -74,7 +75,7 @@ pub struct MeshVertex {
 pub struct MeshData {
     pub vertices: Vec<MeshVertex>,
     pub indices: Vec<u32>,
-    pub elements_count: u32,
+    pub element_count: u32,
 }
 
 impl MeshData {
@@ -178,7 +179,7 @@ impl MeshData {
         let mesh_data = MeshData {
             vertices: vertices,
             indices: mesh.indices.clone(),
-            elements_count: mesh.indices.len() as u32,
+            element_count: mesh.indices.len() as u32,
         };
 
         Ok(mesh_data)

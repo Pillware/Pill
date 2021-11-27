@@ -1,24 +1,46 @@
 
-use cgmath::Rotation3;
-use pill_core::*;
+use anyhow::{Result, Context, Error};
 
+use cgmath::Rotation3;
+
+
+use pill_core::PillSlotMap;
+use pill_core::PillSlotMapKeyData;
 use pill_engine::internal::*;
 
 
 use wgpu::ShaderModule;
 use wgpu::ShaderModuleDescriptor;
 use wgpu::SurfaceError;
-
+use slab::Slab;
 use log::{debug, info};
 
-use crate::model;
-use crate::model::Material;
-use crate::texture::Texture;
-use model::{DrawModel, Vertex};
+use crate::camera::RendererCamera;
+use crate::instance::Instance;
+use crate::instance::MatrixAngleExt;
+use crate::instance::MatrixModelExt;
+use crate::material::RendererMaterial;
+
+use pill_engine::internal::{
+    RendererCameraHandle,
+    RendererMaterialHandle,
+    RendererMeshHandle,
+    RendererTextureHandle,
+    RendererPipelineHandle,
+};
+
+use crate::mesh::RendererMesh;
+use crate::mesh::Vertex;
+use crate::pipeline::RendererPipeline;
+use crate::texture::RendererTexture;
 use crate::camera;
 use crate::texture;
+//use crate::texture::RendererTextureHandle;
+
 
 use std::borrow::Borrow;
+use std::borrow::BorrowMut;
+use std::mem::size_of;
 use std::path;
 use std::path::Path;
 
@@ -46,6 +68,9 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
     0.0, 0.0, 0.5, 1.0,
 );
 
+fn get_master_pipeline_handle() -> RendererPipelineHandle { // [TODO] Very ugly solucion, maybe store there handles in some hashmap with names of pipelines as keys
+    RendererPipelineHandle { 0: PillSlotMapKeyData { index: 1, version: std::num::NonZeroU8::new(1).unwrap() } }
+}
 
 pub struct Renderer {
     pub state: State,
@@ -59,15 +84,16 @@ impl PillRenderer for Renderer {
         }; 
     }
 
-    //pub fn update(&mut self, _dt: std::time::Duration) {}
-
     fn initialize(&self) {
         info!("Pill Renderer initialize");
     }
 
-    fn render(&mut self, scene: &Scene, dt: std::time::Duration) -> Result<(), RendererError> {
-        self.state.update(dt);
-        self.state.render(scene)
+    fn render(
+        &mut self,
+        render_queue: &Vec<RenderQueueItem>, 
+        transform_component_storage: &ComponentStorage<TransformComponent>
+    ) -> Result<(), RendererError> {
+        self.state.render(render_queue, transform_component_storage)
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
@@ -75,180 +101,99 @@ impl PillRenderer for Renderer {
         self.state.resize(new_window_size)
     }
 
-    // fn create_model(&mut self, path: Box<&Path>) -> Result<usize, RendererError> {
+    fn create_texture(&mut self, path: &PathBuf, texture_type: TextureType) -> Result<RendererTextureHandle, RendererError> {
+        let texture = RendererTexture::new_texture_from_image(&self.state.device, &self.state.queue, path, texture_type).unwrap();
+        let handle = self.state.textures.insert(texture);
+        Ok(handle)
+    }
 
-    //     self.state.load
-    //     let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
-    //     let obj_model = model::Model::load( // Load model and create resources for it
-    //         &self.state.device,
-    //         &self.state.queue,
-    //         &self.state.texture_bind_group_layout,
-    //         path,
-    //     )
-    //     .unwrap();
-    //     //let id: usize = self.state.obj_models.len();
-    //     //self.state.obj_models.insert(id, Box::new(obj_model));
-    //     //self.state.obj_models.push_back(Box::new(obj_model));
-    //     Ok(0) // Return id
+    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle, RendererError> {
+        let mesh = RendererMesh::new(&self.state.device, name, mesh_data).unwrap();
+        let handle = self.state.meshes.insert(mesh);
+        Ok(handle)
+    }
+
+ 
+
+    fn create_material(&mut self, name: &str, color_texture_renderer_handle: RendererTextureHandle, normal_texture_renderer_handle: RendererTextureHandle) -> Result<RendererMaterialHandle, RendererError> {
+        let color_texture = self.state.textures.get(color_texture_renderer_handle).unwrap();
+        let normal_texture = self.state.textures.get(normal_texture_renderer_handle).unwrap();
+
+        let pipeline_handle = get_master_pipeline_handle();
+        let pipeline = self.state.pipelines.get(pipeline_handle).unwrap();
+        let texture_bind_group_layout = pipeline.texture_bind_group_layout;
+
+        let material = RendererMaterial::new(
+            &self.state.device,
+            name, 
+            pipeline_handle,
+            color_texture,
+            color_texture_renderer_handle,
+            normal_texture,
+            normal_texture_renderer_handle,
+            &texture_bind_group_layout,
+        ).unwrap();
+
+        let handle = self.state.materials.insert(material);
+        Ok(handle)
+    }
+
+    fn update_material_texture(&mut self, material_renderer_handle: RendererMaterialHandle, renderer_texture_handle: RendererTextureHandle, texture_type: TextureType) -> Result<(), RendererError> {
+        let material = self.state.materials.get(material_renderer_handle).unwrap();
+       
+        match texture_type {
+            TextureType::Color => {
+                material.color_texture_handle = renderer_texture_handle;
+            },
+            TextureType::Normal => {
+                material.normal_texture_handle = renderer_texture_handle;
+            }
+        }
+
+        Ok(())
+    }
+
+    // fn update_material(&mut self, material_renderer_handle: RendererMaterialHandle, updated_material: &Material) -> Result<(), RendererError> {
+    //     let material = self.state.materials.get(material_renderer_handle).unwrap();
+
+    //     material.color_texture_handle
+
+
     // }
 
-    fn create_texture(&mut self, path: &PathBuf, texture_type: TextureType) -> Result<u32, RendererError> {
-        let texture = Texture::new_texture_from_image(&self.state.device, &self.state.queue, path, texture_type);
-        self.textures.push_back()
+    fn create_camera(&mut self) -> Result<RendererCameraHandle, RendererError> {
+        let pipeline_handle = get_master_pipeline_handle();
+        let pipeline = self.state.pipelines.get(pipeline_handle).unwrap();
+        let camera_bind_group_layout = pipeline.camera_bind_group_layout;
+        
+        let camera = RendererCamera::new(&self.state.device, &camera_bind_group_layout).unwrap();
+
+        let handle = self.state.cameras.insert(camera);
+        Ok(handle)
     }
 
-    fn create_mesh(&mut self, mesh_data: &MeshData) -> anyhow::Result<u32, RendererError> {
-        todo!()
-    }
-
-    fn create_material(&mut self, color_texture: TextureHandle, normal_texture: TextureHandle) -> anyhow::Result<u32, RendererError> {
-        todo!()
-    }
-
-    fn update_material(&mut self, index: u32, updated_material: &Material) -> anyhow::Result<u32, RendererError> {
-        todo!()
-    }
+    
 
 }
-
-
-
-
-
-
-
-struct Instance {
-    position: cgmath::Vector3<f32>,
-    rotation: cgmath::Quaternion<f32>,
-}
-
-impl Instance {
-    fn to_raw(&self) -> InstanceRaw {
-        InstanceRaw {
-            model: (cgmath::Matrix4::from_translation(self.position) * cgmath::Matrix4::from(self.rotation)).into(), // Create model matrix
-            normal: cgmath::Matrix3::from(self.rotation).into(),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
-    model: [[f32; 4]; 4], // It is not possible to use cgmath with bytemuck directly. Conversion from Quaternion into a 4x4 f32 array (matrix) needed
-    normal: [[f32; 3]; 3], // It is matrix3 because we only need the rotation component
-}
-
-impl model::Vertex for InstanceRaw {
-    fn descriptor<'a>() -> wgpu::VertexBufferLayout<'a> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
-            // We need to switch from using a step mode of Vertex to Instance
-            // This means that shaders will only change to use the next instance when the shader starts processing a new instance
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot for each vec4. We don't have to do this in code though.
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
-                    shader_location: 8,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
-                    shader_location: 9,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
-                    shader_location: 10,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
-                    shader_location: 11,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
-}
-
-
-// Uniform buffer, blob of data that is available to every invocation of a set of shaders
-#[repr(C)] // We need this for Rust to store our data correctly for the shaders
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)] // This is so we can store this in a buffer
-struct CameraUniform {
-    view_position: [f32; 4],
-    view_projection: [[f32; 4]; 4], // It is not possible to use cgmath with bytemuck directly. Conversion from Matrix4 into a 4x4 f32 array (matrix) needed
-}
-
-impl CameraUniform {
-    fn new() -> Self {
-        use cgmath::SquareMatrix;
-        Self {
-            view_position: [0.0; 4],
-            view_projection: cgmath::Matrix4::identity().into(),
-        }
-    }
-
-    fn update_view_projection(&mut self, camera: &camera::Camera, projection: &camera::Projection) {
-        // We're using Vector4 because of the uniforms 16 byte spacing requirement
-        self.view_position = camera.position.to_homogeneous().into();
-        self.view_projection = (projection.calc_matrix() * camera.calc_matrix()).into(); // Convert coordinates system from OpenGL (cgmath crate uses it) to DirectX (wgpu uses it)
-    }
-}
-
-
-
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct LightUniform {
-    position: [f32; 3],
-    _padding: u32, // Due to uniforms requiring 16 byte (4 float) spacing, we need to use a padding field here
-    color: [f32; 3],
-}
-
-
 
 pub struct State {
-    textures: Vec<Texture>,
-    materials: Vec<Material>,
-    meshes: Vec<Mesh>,
+    // Resources
+    pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>,
+    materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>,
+    textures: PillSlotMap<RendererTextureHandle, RendererTexture>,
+    meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>,
+    cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>,
+    active_camera: Option<RendererCameraHandle>,
 
+    // Renderer variables
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
-    window_size: winit::dpi::PhysicalSize<u32>,
-    master_render_pipeline: wgpu::RenderPipeline,
-    texture_bind_group_layout: wgpu::BindGroupLayout,
-
-    camera: camera::Camera,
-    projection: camera::Projection,
-    camera_controller: camera::CameraController,
-    camera_uniform: CameraUniform,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
+    window_size: winit::dpi::PhysicalSize<u32>, 
 
     instance_buffer: wgpu::Buffer,
-    depth_texture: texture::Texture,
+    depth_texture: RendererTexture,
 }
 
 
@@ -299,252 +244,83 @@ impl State {
         // Configure surface
         surface.configure(&device, &surface_configuration);
 
-
-
         // Configure collections
-        let textures = Vec::<Texture>::with_capacity(10);
-        
+        let mut pipelines = pill_core::PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(10);
+        let textures = pill_core::PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(10);
+        let materials = pill_core::PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(10);
+        let meshes = pill_core::PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(10);
+        let cameras = pill_core::PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(10);
 
-
-
-
-        
-
-        // [TODO] Move it somewhere!        
-        let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let projection = camera::Projection::new(surface_configuration.width, surface_configuration.height, cgmath::Deg(45.0), 0.1, 100.0);
-        let camera_controller = camera::CameraController::new(4.0, 0.4);
-       
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_projection(&camera, &projection);
-
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[camera_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-            label: Some("camera_bind_group"),
-        });
-
-
-
-
-
-
-
-
-
-        
-
-        //let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res"); // Create path from build directory to res directory
-        let obj_model = model::Model::load( // Load model and create resources for it
-            &device,
-            &queue,
-            &texture_bind_group_layout,
-            Box::new(Path::new("D:\\Programming\\Rust\\pill_project\\pill_engine\\crates\\pill_renderer\\res\\models\\cube.obj")),
-            //res_dir.join("../res/models/cube.obj"),
-        )
-        .unwrap();
-
-        //let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res"); // Create path from build directory to res directory
-        let light_obj_model = model::Model::load( // Load model and create resources for it
-            &device,
-            &queue,
-            &texture_bind_group_layout,
-            Box::new(Path::new("D:\\Programming\\Rust\\pill_project\\pill_engine\\crates\\pill_renderer\\res\\models\\cube.obj"))
-        )
-        .unwrap();
-
-       
-       
-
-
-        // const SPACE_BETWEEN: f32 = 3.0;
-        // let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
-        //     (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-
-        //         let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-        //         let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-        //         let position = cgmath::Vector3 { x, y: 0.0, z };
-
-        //         let rotation = if position.is_zero() {
-        //             // this is needed so an object at (0, 0, 0) won't get scaled to zero as Quaternions can effect scale if they're not created correctly
-        //             cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(),cgmath::Deg(0.0),)
-        //         } else {
-        //             cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
-        //         };
-
-        //         Instance { position, rotation }
-        //     })
-        // })
-        // .collect::<Vec<_>>();
-
-        //let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>(); // Convert from Instance to InstanceRaw (with matrix instead of quaternion)
-        // let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        //     label: Some("Instance Buffer"),
-        //     contents: bytemuck::cast_slice(&instance_data),
-        //     usage: wgpu::BufferUsage::VERTEX,
-        // });
-
-        let mut instance_start_data: Vec<Instance> = Vec::new();
-        instance_start_data.push( 
-            Instance { 
-                position: cgmath::Vector3 { x: 0.0, y: 0.0, z: 0.0 },
-                rotation: cgmath::Quaternion::zero(),
-            } 
-        );
-        let instance_start_data_raw = instance_start_data.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instance_start_data_raw),
+        // Configure instance buffer
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            size: (size_of::<Instance>() * 1000) as u64, //  [TODO] move magic value to config
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
-
-
-
-
-
-
-
-        let light_uniform = LightUniform {
-            position: [2.0, 2.0, 2.0],
-            _padding: 0,
-            color: [1.0, 1.0, 1.0],
-        };
-
-        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Light VB"),
-            contents: bytemuck::cast_slice(&[light_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, // To enable updating this buffer COPY_DST flag is needed
-        });
-
-        
-
-        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &light_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: light_buffer.as_entire_binding(),
-            }],
-            label: None,
-        });
-
-
-
-
-
-
-
-
-        let depth_texture = texture::Texture::new_depth_texture(&device, &surface_configuration, "depth_texture");
-
    
+        // Create depth texture and master pipeline
+        let depth_texture = RendererTexture::new_depth_texture(
+            &device, 
+            &surface_configuration, 
+            "depth_texture"
+        ).unwrap();
 
+        let color_format = surface_configuration.format;
+        let depth_format = Some(wgpu::TextureFormat::Depth32Float);
 
-       
+        let master_pipeline = RendererPipeline::new(
+            &device,
+            color_format,
+            depth_format,
+            &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
+        ).unwrap();
 
+        pipelines.insert(master_pipeline);
+
+        // Create state
         Self {
+            // Resources
+            pipelines,
+            textures,
+            materials,
+            meshes,
+            cameras,
+            active_camera: None,
+
+            // Renderer variables
             surface,
             device,
             queue,
             surface_configuration,
             window_size,
-            master_render_pipeline,
-            texture_bind_group_layout,
-            light_obj_model,
-            obj_model,
-            //obj_models: HashMap::new(), //Vec<model::Model>,
-            camera,
-            projection, 
-            camera_controller,
-            camera_buffer,
-            camera_bind_group,
-            camera_uniform,
-            //instances,
+            
             instance_buffer,
             depth_texture,
-            light_uniform,
-            light_buffer,
-            light_bind_group,
-            light_render_pipeline,
-            mouse_pressed: false,
         }
-        
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         if new_window_size.width > 0 && new_window_size.height > 0 {
-            self.projection.resize(new_window_size.width, new_window_size.height);
+            //self.projection.resize(new_window_size.width, new_window_size.height); // [TODO]
             self.window_size = new_window_size;
             self.surface_configuration.width = new_window_size.width;
             self.surface_configuration.height = new_window_size.height;
             self.surface.configure(&self.device, &self.surface_configuration);
-            self.depth_texture = texture::Texture::new_depth_texture(
+            self.depth_texture = RendererTexture::new_depth_texture(
                 &self.device,
                 &self.surface_configuration,
                 "depth_texture",
-            );
+            ).unwrap();
         }
     }
 
-    fn input(&mut self, event: &DeviceEvent) -> bool { // Returns a bool to indicate whether an event has been fully processed (if the method returns true, the main loop won't process the event any further)
-        match event {
-            DeviceEvent::Key(
-                KeyboardInput {
-                    virtual_keycode: Some(key),
-                    state,
-                    ..
-                }
-            ) => self.camera_controller.process_keyboard(*key, *state),
-            DeviceEvent::MouseWheel { delta, .. } => {
-                self.camera_controller.process_scroll(delta);
-                true
-            }
-            DeviceEvent::Button {
-                button: 1, // Left Mouse Button
-                state,
-            } => {
-                self.mouse_pressed = *state == ElementState::Pressed;
-                true
-            }
-            DeviceEvent::MouseMotion { delta } => {
-                if self.mouse_pressed {
-                    self.camera_controller.process_mouse(delta.0, delta.1);
-                }
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn update(&mut self, dt: std::time::Duration) {
-
-        self.camera_controller.update_camera(&mut self.camera, dt);
-        self.camera_uniform.update_view_projection(&self.camera, &self.projection);
-
-        // self.camera_controller.update_camera(&mut self.camera);
-        // self.camera_uniform.update_view_projection(&self.camera);
-        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform])); // [TODO: What is that?? https://sotrh.github.io/learn-wgpu/beginner/tutorial6-uniforms/#a-controller-for-our-camera]
+    fn render(
+        &mut self, 
+        render_queue: &Vec::<RenderQueueItem>, 
+        transform_component_storage: &ComponentStorage<TransformComponent>
+    ) -> Result<(), RendererError> { 
     
-    
-        // Update the light
-        let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
-
-
-        self.light_uniform.position = (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0)) * old_position).into();
-       // self.light_uniform.position = (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0)) * old_position).into(); // Change position of light
-        self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light_uniform]),);
-    }
-
-    fn render(&mut self, scene: &Scene) -> Result<(), RendererError> { 
-
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
 
@@ -561,12 +337,19 @@ impl State {
 
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
+            label: Some("render_encoder"),
         });
 
+        // Prepare instance data
+
+
+
+
         { // Additional scope to release mutable borrow of encoder done by begin_render_pass
+            
+            // Start encoding render pass
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
-                label: Some("Render Pass"),
+                label: Some("render_pass"),
                 color_attachments: &[
                     wgpu::RenderPassColorAttachment { // This is what [[location(0)]] in the fragment shader targets
                         view: &view, // Specifies what texture to save the colors to (to frame taken from swapchain, so any colors we draw to this attachment will get drawn to the screen)
@@ -585,7 +368,7 @@ impl State {
                     }
                 ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
+                    view: &self.depth_texture.texture_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
@@ -594,84 +377,53 @@ impl State {
                 }),
             });
 
+            // Set pipeline
+            let master_pipeline_handle = get_master_pipeline_handle();
+            let master_pipeline = self.pipelines.get(master_pipeline_handle).unwrap();
+            render_pass.set_pipeline(&master_pipeline.render_pipeline);
 
 
+            // Create instance
+            let mut instances: Vec<Instance> = Vec::new();
 
-            //render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            //render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
+            let position: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(0.0, 0.0, 0.0);
+            let rotation: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(0.0, 0.0, 0.0);
+            let scale: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(1.0, 1.0, 1.0);
 
+            instances.push( 
+                Instance {
+                    model: cgmath::Matrix4::model(position, rotation, scale).into(),
+                    normal: cgmath::Matrix3::from_euler_angles(rotation).into(),
+                }
+            );
             
-            // --- Draw light objects ---
-            use crate::model::DrawLight;
-            render_pass.set_pipeline(&self.light_render_pipeline);
-            render_pass.draw_light_model(
-                &self.light_obj_model,
-                &self.camera_bind_group,
-                &self.light_bind_group,
+            let position: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(0.0, 2.0, 0.0);
+            let rotation: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(15.0, 45.0, 0.0);
+            let scale: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(1.0, 1.0, 4.0);
+
+            instances.push( 
+                Instance {
+                    model: cgmath::Matrix4::model(position, rotation, scale).into(),
+                    normal: cgmath::Matrix3::from_euler_angles(rotation).into(),
+                }
             );
 
+            // Update instance buffer
+            self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
 
-            
+            // Set buffer with instance data
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); 
 
-            // --- Draw master objects ---
-            render_pass.set_pipeline(&self.master_render_pipeline);
+            // Set buffer with mesh vertices
+            render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
 
-            let mut counter: usize = 0;
+            // Set buffer with mesh indices
+            render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
 
-            let mesh_rendering_components= scene.get_component_storage::<MeshRenderingComponent>();
-            let transform_components= scene.get_component_storage::<TransformComponent>();
 
-            let mut i = 0;
-            for mesh_rendering_component in mesh_rendering_components.data.iter() {
-                
-                //let buffer = self.buffers(mesh_rendering_component.mesh);
-                let transform_component = transform_components.data.get(i).unwrap(); // [TODO] Remove this and iterate over multiple components
-                i += 1;
-                //let gameobject = gameobject.borrow();
-
-                // Get transform and rendering components
-                // From rendering component get mesh resource id to find buffers created in renderer
-                // From transform set model matrix
-                // Render
-
-                //println!("[Renderer] Rendering gameobject (object): {} ({}/{})", gameobject.name, counter + 1, scene.gameobjectCollection.len());
-                //println!("[Renderer] Object position: {:?}", gameobject.position);
-              
-                // let old_position: cgmath::Vector3<_> = gameobject.position.clone().into();
-                // let new_position: cgmath::Vector3<_> = (cgmath::Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0)) * old_position).into();
-                // gameobject.position = new_position;
-                //println!("[Renderer] Object position: {:?}", new_position);
-
-                // Create instance
-                let mut instances: Vec<Instance> = Vec::new();
-                instances.push( 
-                    Instance { 
-                        position: transform_component.position.clone(), 
-                        rotation: transform_component.rotation.clone()
-                    } 
-                );
-
-                // Update instance buffer
-                let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-                self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
-                render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // This is set in shader once, so we are overwritting it in each call
-
-                // Draw
-                //let model = self.obj_model;
-                //let resource_id = 0;// mesh_rendering_component.resource_id.unwrap();
-                //let model = self.obj_models.get(&resource_id).unwrap().as_ref();
-                //let model = self.obj_models.get(&resource_id).unwrap().as_ref();
-
-                //let model = self.obj_models.get(mesh_rendering_component.resource_id.as_ref().unwrap()).unwrap().as_ref();
-                render_pass.draw_model(
-                    &self.obj_model,
-                    &self.camera_bind_group,
-                    &self.light_bind_group,
-                );
-
-                // Increase counter
-                counter += 1;
-            }
+            render_pass.set_bind_group(0, &material.bind_group, &[]);
+            render_pass.set_bind_group(1, camera, &[]);
+            render_pass.draw_indexed(0..mesh.num_elements, 0, instances);
         }
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue

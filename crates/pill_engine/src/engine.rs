@@ -21,10 +21,11 @@ pub trait PillGame {
 pub struct Engine { 
     game: Option<Game>,
     pub(crate) renderer: Renderer,
-    scene_manager: SceneManager, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
+    pub(crate) scene_manager: SceneManager, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
     system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
     input_queue: VecDeque<InputEvent>,
+    pub(crate) render_queue: Vec<RenderQueueItem>,
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -44,6 +45,7 @@ impl Engine {
             system_manager,
             resource_manager,
             input_queue: VecDeque::new(),
+            render_queue: Vec::<RenderQueueItem>::with_capacity(1000),
         };
 
         engine.resource_manager.create_default_resources(&mut engine.renderer);
@@ -58,7 +60,7 @@ impl Engine {
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
         
         // Add built-in systems
-
+        self.system_manager.add_system("Rendering System", rendering_system, UpdatePhase::PostGame);
 
         // Initialize game
         let game = self.game.take().unwrap(); 
@@ -79,20 +81,6 @@ impl Engine {
             }
         }
  
-        // [TODO] Move render to rendering system 
-        let scene_handle = self.scene_manager.get_active_scene().unwrap();
-        let scene = self.scene_manager.get_scene_mut(scene_handle).unwrap();
-
-        match self.renderer.render(scene, dt) {
-            Ok(_) => {}
-            // Recreate the swap_chain if lost
-            //Err(RendererError::SwapChainLost) => self.renderer.resize(self.renderer.state.window_size),
-            // The system is out of memory, we should probably quit
-            //Err(RendererError::SwapChainOutOfMemory) => *control_flow = ControlFlow::Exit,
-            // All other errors (Outdated, Timeout) should be resolved by the next frame
-            Err(e) => error!("{:?}", e),
-        }
-
         info!("Frame finished (duration: {:?})", dt);
     }
 
@@ -159,18 +147,11 @@ impl Engine {
         self.scene_manager.get_active_scene().context("Getting active scene failed")
     }
 
-    pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle> {
-        self.scene_manager.create_entity(scene).context("Creating entity failed")
-    }
-
-    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {
-        info!("Adding component {} to entity {} in scene {}", get_type_name::<T>(), entity.index, scene.index);
-        self.scene_manager.add_component_to_entity::<T>(scene, entity, component).context("Adding component to entity failed")
-    }
-
     pub fn set_active_scene(&mut self, scene: SceneHandle) -> Result<()> {
         self.scene_manager.set_active_scene(scene).context("Setting active scene failed")
     }
+
+
 
     pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
         self.scene_manager.register_component::<T>(scene).context("Registering component failed")
@@ -179,8 +160,30 @@ impl Engine {
     pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine)) -> Result<()> {
         self.system_manager.add_system(name, system_function, UpdatePhase::Game).context("Adding system failed")
     }
+
+    // [TODO] Implement remove_system
+
+    pub fn create_entity(&mut self, scene: SceneHandle) -> Result<EntityHandle> {
+        self.scene_manager.create_entity(scene).context("Creating entity failed")
+    }
+    
+    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {
+        info!("Adding component {} to entity {} in scene {}", get_type_name::<T>(), entity.index, scene.index);
+        self.scene_manager.add_component_to_entity::<T>(scene, entity, component).context("Adding component to entity failed")
+    }
+
+
+    
+
+
+    // [TODO] Implement remove_component_from_entity
+
+    // [TODO] Implement get_component_from_entity
+
+
     
     // --- RESOURCES
+
 
 
     // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {

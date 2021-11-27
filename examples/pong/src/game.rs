@@ -23,13 +23,11 @@ impl PillGame for Game {
         // Create entity
         let paddle_1 = engine.create_entity(active_scene).unwrap();
         let transform_1 = TransformComponent::default();
-
-       
-
+        
         engine.add_component_to_entity::<TransformComponent>(active_scene, paddle_1, transform_1).unwrap();
 
-       // let mesh_rendering_1 = MeshRenderingComponent::default();
-       // engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_1, mesh_rendering_1).unwrap();
+        //let mesh_rendering_1 = MeshRenderingComponent::default();
+        //engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_1, mesh_rendering_1).unwrap();
     }
 }
 

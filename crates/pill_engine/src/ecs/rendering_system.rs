@@ -1,0 +1,40 @@
+use std::ops::Range;
+use anyhow::{Result, Context, Error};
+use log::error;
+use crate::{game::{Engine, MeshRenderingComponent, TransformComponent}, graphics::{RenderQueueItem, RenderQueueKey}, resources::{Material, MaterialHandle, Mesh, MeshHandle}};
+
+// [TODO] Use iterators once they are implemented
+pub fn rendering_system(engine: &mut Engine) {
+
+    println!("Rendering"); 
+  
+    let active_scene_handle = engine.get_active_scene().unwrap();
+    let active_scene = engine.scene_manager.get_scene(active_scene_handle).unwrap();
+    let transform_component_storage = active_scene.get_component_storage::<TransformComponent>().unwrap();
+    let mesh_rendering_component_storage = active_scene.get_component_storage::<MeshRenderingComponent>().unwrap();
+
+    // Compose render queue
+    let render_queue = &mut engine.render_queue;
+    render_queue.clear();
+
+    for i in 0..transform_component_storage.data.len() {
+        println!("Rendering system processing entity {}", i);
+
+        let render_queue_item = RenderQueueItem {
+            key: mesh_rendering_component_storage.data[i].render_queue_key,
+            entity_index: i as u32,
+        };
+
+        render_queue.push(render_queue_item);
+    }
+
+    match engine.renderer.render(render_queue, transform_component_storage) {
+        Ok(_) => {}
+        // Recreate the swap_chain if lost
+        //Err(RendererError::SwapChainLost) => self.renderer.resize(self.renderer.state.window_size),
+        // The system is out of memory, we should probably quit
+        //Err(RendererError::SwapChainOutOfMemory) => *control_flow = ControlFlow::Exit,
+        // All other errors (Outdated, Timeout) should be resolved by the next frame
+        Err(e) => error!("{:?}", e),
+    }
+}

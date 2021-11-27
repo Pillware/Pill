@@ -81,6 +81,8 @@ impl SceneManager {
         // Get component storage from scene
         let component_storage = target_scene.get_component_storage_mut::<T>()?;
         
+        // [TODO] Check if that component already exists, probably component mask needs to be checked
+
         // Add component to storage
         component_storage.data.insert(entity.index, component);
         Ok(())
@@ -95,10 +97,18 @@ impl SceneManager {
         Ok(())
     }
 
+    pub fn get_scene(&mut self, scene: SceneHandle) -> Result<&Scene> {
+        // Get scene
+        let scene = self.scenes.get_index(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
+        Ok(scene)
+    }
+
     pub fn get_scene_mut(&mut self, scene: SceneHandle) -> Result<&mut Scene> {
         // Get scene
         let scene = self.scenes.get_index_mut(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
         Ok(scene)
     }
+
+
 
 }

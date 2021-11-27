@@ -8,6 +8,12 @@ mod component_storage;
 mod scene;
 mod scene_manager;
 mod system_manager;
+mod camera_component;
+mod rendering_system;
+
+pub use rendering_system::{
+    rendering_system,
+};
 
 pub use scene::{
     Scene,
@@ -19,8 +25,12 @@ pub use component_map::{
     Component,
 };
 
-pub use component_storage:: {
+pub use component_storage::{
     ComponentStorage,
+};
+
+pub use camera_component::{
+    CameraComponent,
 };
 
 pub use entity::{

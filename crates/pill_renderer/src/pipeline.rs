@@ -3,26 +3,30 @@ use std::path::PathBuf;
 
 use anyhow::{ Result, Context, Error };
 use pill_core::na::SliceRange;
-use pill_engine::internal::ResourceHandle;
+use pill_engine::internal::RendererPipelineHandle;
+
 use wgpu::Device;
 use wgpu::RenderPipeline;
 
-pub struct RendererPipelineHandle {
-    pub index: u32,
-}
+// pub struct RendererPipelineHandle {
+//     pub index: u32,
+// }
 
-impl ResourceHandle for RendererPipelineHandle
-{
-    fn get_index(&self) -> u32 {
-        self.index
-    }
-}
+// impl ResourceHandle for RendererPipelineHandle
+// {
+//     fn get_index(&self) -> u32 {
+//         self.index
+//     }
+// }
 
-pub struct Pipeline {
+
+pub struct RendererPipeline {
     pub render_pipeline: RenderPipeline,
+    pub texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub camera_bind_group_layout: wgpu::BindGroupLayout,
 }
 
-impl Pipeline {
+impl RendererPipeline {
     pub fn new(
         device: &Device,
         color_format: wgpu::TextureFormat,
@@ -40,11 +44,72 @@ impl Pipeline {
 
 
         let fragment_shader = wgpu::ShaderModuleDescriptor {
-            label: Some("shader.vert"),
+            label: Some("shader.frag"),
             source: wgpu::util::make_spirv(include_bytes!("../res/shaders/built/master.frag.spv")),
         };
 
         let fragment_shader = device.create_shader_module(&fragment_shader);
+
+
+        // Create texture binding group layout
+        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { // Describes a set of resources and how they can be accessed by a shader
+            entries: &[
+                wgpu::BindGroupLayoutEntry { // Entry for the sampled texture at binding 0
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT, // Visible only to fragment shader
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // Entry for the sampler at binding 1
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT, // Visible only to fragment shader
+                    ty: wgpu::BindingType::Sampler {
+                        comparison: false,
+                        filtering: true,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry { // Normal map
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler { 
+                        comparison: false,
+                        filtering: true, 
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("texture_bind_group_layout"),
+        });
+
+        // Create master camera binding group layout
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("camera_bind_group_layout"),
+        });
 
         // Define texture bind group layout (Describes a set of resources and how they can be accessed by a shader)
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { 
@@ -107,19 +172,19 @@ impl Pipeline {
         });
 
         // Define light bind group layout
-        let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: None,
-        });
+        // let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        //     entries: &[wgpu::BindGroupLayoutEntry {
+        //         binding: 0,
+        //         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+        //         ty: wgpu::BindingType::Buffer {
+        //             ty: wgpu::BufferBindingType::Uniform,
+        //             has_dynamic_offset: false,
+        //             min_binding_size: None,
+        //         },
+        //         count: None,
+        //     }],
+        //     label: None,
+        // });
 
         // Create pipeline layout descriptor
         let pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor {
@@ -127,7 +192,6 @@ impl Pipeline {
             bind_group_layouts: &[
                 &texture_bind_group_layout,
                 &camera_bind_group_layout,
-                &light_bind_group_layout,
             ],
             push_constant_ranges: &[],
         };
@@ -181,7 +245,9 @@ impl Pipeline {
         let render_pipeline = device.create_render_pipeline(&render_pipeline_descriptor);
 
         let pipeline = Self { 
-            render_pipeline
+            render_pipeline,
+            texture_bind_group_layout,
+            camera_bind_group_layout,
         };
 
         Ok(pipeline)

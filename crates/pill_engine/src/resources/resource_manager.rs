@@ -14,6 +14,47 @@ use anyhow::{Result, Context, Error};
 
 use super::{Material, Mesh, Texture, TextureHandle, TextureType};
 
+// pub struct RendererMaterialHandle {
+//     index: u32,
+// }
+
+// pub struct RendererMeshHandle {
+//     index: u32,
+// }
+
+// pub struct RendererPipelineHandle {
+//     index: u32,
+// }
+
+// pub struct RendererCameraHandle {
+//     index: u32,
+// }
+
+// pub struct RendererTextureHandle {
+//     index: u32,
+// }
+
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct RendererMaterialHandle;
+}
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct RendererMeshHandle;
+}
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct RendererPipelineHandle;
+}
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct RendererCameraHandle;
+}
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct RendererTextureHandle;
+}
+
 pub enum ResourceSource {
     Engine,
     Game,  
@@ -31,7 +72,6 @@ pub trait ResourceHandle {
 
 pub struct ResourceManager {
     resources: ResourceMap,
-
     //mesh_resources: HashMap<String, Box<MeshResource>>,
     //texture_resources: HashMap<String, Box<TextureResource>>,
     //audio_resources: HashMap<String, Box<AudioResource>>,
@@ -59,6 +99,19 @@ impl ResourceManager {
         Ok(&resource)
     }
 
+    // pub fn add_resource<T: Resource<Storage = ResourceStorage::<T>>, H: ResourceHandle>(&self, resource: T) -> Result<&H> {
+    //     // Get resource storage from scene
+    //     let resource_storage = self.get_resource_storage::<T>()?;
+
+    //     // [TODO] Check if that resource already exists (same name)
+    //     //resource_storage.data.insert(resource.path, resource);
+        
+    //     // Get index and creat handle
+
+    //     Ok(&resource)
+    // }
+
+
     fn get_resource_storage<T: Resource<Storage = ResourceStorage::<T>>>(&self) -> Result<&ResourceStorage<T>> {
         self.resources.get::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
     }
@@ -79,10 +132,10 @@ impl ResourceManager {
 
         let path = env::current_dir().unwrap().join("res").join("textures");
 
-        let default_color_texture = Texture::new(renderer, "DefaultColor", path.join("default_color.png")).unwrap();
+        let default_color_texture = Texture::new(renderer, "DefaultColor", path.join("default_color.png"), TextureType::Color).unwrap();
         texture_storage.data.insert("DefaultColor".to_string(), default_color_texture);
         
-        let default_normal_texture = Texture::new(renderer, "DefaultNormal", path.join("default_normal.png")).unwrap();
+        let default_normal_texture = Texture::new(renderer, "DefaultNormal", path.join("default_normal.png"), TextureType::Normal).unwrap();
         texture_storage.data.insert("DefaultNormal".to_string(), default_normal_texture);
     }
 
