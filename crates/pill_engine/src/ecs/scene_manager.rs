@@ -4,6 +4,7 @@ use boolinator::Boolinator;
 use pill_core::{EngineError, get_type_name};
 use indexmap::IndexMap;
 use typemap_rev::TypeMapKey;
+use itertools::*;
 
 use crate::ecs::*;
 
@@ -51,11 +52,39 @@ impl SceneManager {
         Ok(index_allocator)
     }
 
+    pub fn get_bitmask_controller_mut(&mut self, scene: SceneHandle) -> Result<&mut BitmaskController> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Get allocator from scene
+        let controller = target_scene.get_bitmask_controller_mut();
+
+        Ok(controller)
+    }
+
+    pub fn get_bitmask_controller(&mut self, scene: SceneHandle) -> Result<&BitmaskController> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Get allocator from scene
+        let controller = target_scene.get_bitmask_controller_mut();
+
+        Ok(controller)
+    }
+
     pub fn get_scene_mut(&mut self, scene: SceneHandle) -> Result<&mut Scene> {
         // Get scene
         let scene = self.scenes.get_index_mut(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
         Ok(scene)
     }
+
+    pub fn get_component_storage_mut<T: Component<Storage = ComponentStorage<T>>>(&mut self, scene: SceneHandle) -> Result<&mut ComponentStorage<T>> {
+        let target_scene = self.get_scene_mut(scene)?;
+        
+        let storage = target_scene.get_component_storage_mut::<T>();
+        Ok(storage)
+    }
+
 
     // Utility functions
 
@@ -80,7 +109,7 @@ impl SceneManager {
 
         // Add bitmask mapping for component
 
-        target_scene.bitmask_controller.set_bitmap::<T>();
+        target_scene.bitmask_controller.add_bitmap::<T>();
 
         Ok(())
     }
@@ -109,8 +138,21 @@ impl SceneManager {
         let new_entity = index_allocator.allocate_new_entity();
 
         // Insert new entity into scene
-        target_scene.entities.insert(target_scene.entity_counter, new_entity);
+        // target_scene.entities.insert(target_scene.entity_counter, new_entity);
+        if target_scene.entities.len() <= new_entity.get_index() {
+            target_scene.entities.insert(target_scene.entity_counter, new_entity);
+        }
+        else {
+            target_scene.entities[new_entity.get_index()] = new_entity;
+        }
         target_scene.entity_counter += 1;
+
+
+        // Get bitmask controller for new entity's bitmask allocation
+        let target_bitmask_coontroller = target_scene.get_bitmask_controller_mut();
+
+        // Allocate new bitmask entry for the entity
+        target_bitmask_coontroller.add_new_entity_bitmask(0, new_entity.get_index().clone());
 
         // Return handle
         Ok(EntityHandle::new(new_entity.get_index(), new_entity.get_generation()))
@@ -125,9 +167,32 @@ impl SceneManager {
         let component_storage = target_scene.get_component_storage_mut::<T>();
 
         // Add component to storage
-        component_storage.set(entity, component);
-        
+        component_storage.set(entity.clone(), component);
+
+        // Update the bitmask for the given entity
+        target_scene.get_bitmask_controller_mut().update_after_component_insertion::<T>(entity.get_index().clone());
+
         Ok(())
+    }
+
+    pub fn fetch_two_storages<T: Component<Storage = ComponentStorage::<T>>, 
+                            U: Component<Storage = ComponentStorage<U>>,
+                            W: Component<Storage = ComponentStorage<W>>>(&mut self, scene: SceneHandle) {
+        
+        // Get correct indexes for the entities, for which the mask suits the filtering mask
+        let entity_indexes = self.get_bitmask_controller_mut(scene)
+                                                    .unwrap()
+                                                    .filter_by_component::<T>()
+                                                    .filter_by_component::<U>()
+                                                    .filter_by_component::<W>()
+                                                    .fetch_indexes();
+
+        //let first = self.get_component_storage_mut::<T>(scene).unwrap();
+        //let second = self.get_component_storage_mut::<U>(scene).unwrap();
+                                
+        // for (one, two) in izip!(first, second) {
+        //     println!("Hello");
+        // }
     }
 
 }
@@ -138,7 +203,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn component_addition() {
+    fn test_simple_component_addition() {
         let mut scene_manager = SceneManager::new();
         let scene = scene_manager.create_scene("Default").unwrap();
 
@@ -164,5 +229,83 @@ mod test {
         let health_storage = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<HealthComponent>();
 
         assert_eq!(3, health_storage.data.len());
+    }
+
+    struct FirstStruct(u32);
+    struct SecondStruct(bool, String);
+    struct ThirdStruct(FirstStruct, SecondStruct, usize, bool);
+    struct FourthStruct(Option<bool>);
+
+    impl Component for FirstStruct { type Storage = ComponentStorage<Self> ;}
+    impl Component for SecondStruct { type Storage = ComponentStorage<Self> ;}
+    impl Component for ThirdStruct { type Storage = ComponentStorage<Self>; }
+    impl Component for FourthStruct {type Storage = ComponentStorage<Self>; }
+
+    #[test] 
+    fn test_bitmask_addition() {
+        let mut scene_manager = SceneManager::new();
+        let scene = scene_manager.create_scene("Default").unwrap();
+        let entity = scene_manager.create_entity(scene).unwrap();
+
+        scene_manager.register_component::<FirstStruct>(scene);
+        scene_manager.register_component::<SecondStruct>(scene);
+        scene_manager.register_component::<ThirdStruct>(scene);
+        scene_manager.register_component::<FourthStruct>(scene);
+
+        let bitmask_controller = scene_manager.get_bitmask_controller_mut(scene).unwrap();
+
+        assert_eq!(bitmask_controller.get_bitmap::<FirstStruct>(), &0b0001);
+        assert_eq!(bitmask_controller.get_bitmap::<ThirdStruct>(), &0b0100);
+        assert_eq!(bitmask_controller.get_bitmap::<FourthStruct>(), &0b1000);
+        assert_eq!(bitmask_controller.get_bitmap::<SecondStruct>(), &0b0010);
+    }
+
+    #[test]
+    fn test_bitmask_addition_and_update() {
+        let mut scene_manager = SceneManager::new();
+        let scene = scene_manager.create_scene("Default").unwrap();
+        let entity = scene_manager.create_entity(scene).unwrap();
+
+        scene_manager.register_component::<FirstStruct>(scene);
+        scene_manager.register_component::<SecondStruct>(scene);
+        scene_manager.register_component::<ThirdStruct>(scene);
+        scene_manager.register_component::<FourthStruct>(scene);
+
+        {
+        assert_eq!(scene_manager.get_bitmask_controller(scene).unwrap().get_entity_bitmask(entity.get_index()), &0b000);
+        }
+
+        scene_manager.add_component_to_entity(scene, entity, SecondStruct(true, String::from("Default")));
+
+        {
+        assert_eq!(scene_manager.get_bitmask_controller(scene).unwrap().get_entity_bitmask(entity.get_index()), &0b0010);
+        }
+
+        scene_manager.add_component_to_entity(scene, entity, FourthStruct(Some(true)));
+
+        {
+        assert_eq!(scene_manager.get_bitmask_controller(scene).unwrap().get_entity_bitmask(entity.get_index()), &0b1010);
+        }
+    } 
+
+    #[test]
+    fn test_basic_iteration() {
+        let mut scene_manager = SceneManager::new();
+
+        let scene = scene_manager.create_scene("Default").unwrap();
+        let first = scene_manager.create_entity(scene).unwrap();
+        let second = scene_manager.create_entity(scene).unwrap();
+        let third = scene_manager.create_entity(scene).unwrap();
+
+        scene_manager.register_component::<FirstStruct>(scene);
+        scene_manager.register_component::<FourthStruct>(scene);
+
+        scene_manager.add_component_to_entity(scene, first, FirstStruct(10));
+        scene_manager.add_component_to_entity(scene, first, FourthStruct(None));
+        scene_manager.add_component_to_entity(scene, second, FourthStruct(Some(false)));
+        scene_manager.add_component_to_entity(scene, third, FirstStruct(1));
+        scene_manager.add_component_to_entity(scene, third, FourthStruct(Some(true)));
+
+        //scene_manager.fetch_two_storages::<FirstStruct, FourthStruct>(scene);
     }
 }

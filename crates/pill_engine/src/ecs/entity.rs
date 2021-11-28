@@ -1,10 +1,7 @@
 #[derive(Clone, Copy)]
 pub struct EntityHandle {
-    //pub name: String,
     pub index: usize,
     pub generation: u32,
-    //pub parent: Option<EntityHandle>, // [TODO] Implement
-    //pub children: Vec<EntityHandle>, // [TODO] Implement
 }
 
 impl EntityHandle {
@@ -23,7 +20,6 @@ impl EntityHandle {
         self.index
     }
 }
-
 
 #[cfg(test)] 
 mod test {

@@ -35,6 +35,7 @@ impl BitmaskMap {
         self.0.insert(TypeId::of::<T>(), bitmask);
     }
 
+    #[inline]
     pub fn get_bitmask<T>(&self) -> &u32
     where
         T : Component 
@@ -78,5 +79,21 @@ mod test {
         assert_eq!(bitmap.0.len(), 4);
         assert_eq!(bitmap.contains_component::<FourthStruct>(), true);
         assert_eq!(bitmap.contains_component::<FirstStruct>(), true);
+    }
+
+    #[test]
+    fn test_bitmask_fetch() {
+        let mut bitmap = BitmaskMap::new();
+
+        bitmap.insert::<FirstStruct>(0b0001);
+        bitmap.insert::<SecondStruct>(0b0010);
+        bitmap.insert::<ThirdStruct>(0b0011);
+        bitmap.insert::<FourthStruct>(0b0100);
+
+        assert_eq!(bitmap.0.len(), 4);
+        assert_eq!(bitmap.get_bitmask::<FirstStruct>(), &0b001);
+        assert_eq!(bitmap.get_bitmask::<SecondStruct>(), &2);
+        assert_eq!(bitmap.get_bitmask::<ThirdStruct>(), &3);
+        assert_eq!(bitmap.get_bitmask::<FourthStruct>(), &4);
     }
 }

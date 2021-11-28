@@ -18,8 +18,5 @@ impl Default for MeshRenderingComponent {
     }
 }
 
-impl TypeMapKey for MeshRenderingComponent {type Value = u32;}
-
-
 
 

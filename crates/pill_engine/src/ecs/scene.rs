@@ -1,6 +1,7 @@
 use std::path::Iter;
 
 use anyhow::{Result, Context, Error};
+use itertools::izip;
 use log::{debug, info};
 
 use pill_core::EngineError;
@@ -62,12 +63,24 @@ impl Scene {
         self.components.get_mut::<T>().unwrap()
     }
 
+    // pub fn get_two_storages_mut<T: Component<Storage = ComponentStorage::<T>>, U : Component<Storage = ComponentStorage<U>>>(&mut self) -> (&mut ComponentStorage<T>, &mut ComponentStorage<U>) {
+    //     (self.components.get_mut::<T>().unwrap(), self.components.get_mut::<U>().unwrap())
+    // }
+
     pub fn get_allocator(&self) -> &Allocator {
         &self.allocator
     }
 
     pub fn get_allocator_mut(&mut self) -> &mut Allocator {
         &mut self.allocator
+    }
+
+    pub fn get_bitmask_controller(&self) -> &BitmaskController {
+        &self.bitmask_controller
+    }
+
+    pub fn get_bitmask_controller_mut(&mut self) -> &mut BitmaskController {
+        &mut self.bitmask_controller
     }
 
     pub fn get_component_storage_mut_with_count<T: Component<Storage = ComponentStorage::<T>>>(&mut self) -> (&mut ComponentStorage<T>, &usize) {

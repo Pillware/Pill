@@ -109,6 +109,14 @@ impl<T> ComponentStorage<T> {
 
 }
 
+impl<T> Iterator for ComponentStorage<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::slice::SliceIndex;

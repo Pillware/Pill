@@ -77,7 +77,7 @@ impl Allocator {
 
     pub fn is_entity_alive(&mut self, entity: EntityHandle) -> bool {
         let gen_index = entity.clone().get_generation();
-        self.generations[gen_index as usize].is_alive()
+        self.generations[(gen_index - 1) as usize].is_alive()
     }
 
     pub fn deallocate_entity(&mut self, entity: EntityHandle) -> bool {
