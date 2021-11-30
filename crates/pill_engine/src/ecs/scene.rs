@@ -63,6 +63,14 @@ impl Scene {
         self.components.get_mut::<T>().unwrap()
     }
 
+    pub fn get_component_storage_element_mut_at<T: Component<Storage = ComponentStorage::<T>>>(&mut self, index: usize) -> &mut StorageEntry<T> {
+        &mut self.components.get_mut::<T>().unwrap().data[index]
+    }
+
+    pub fn get_component_storage_element_at<T: Component<Storage = ComponentStorage::<T>>>(&mut self, index: usize) -> &StorageEntry<T> {
+        &self.components.get_mut::<T>().unwrap().data[index]
+    }
+
     // pub fn get_two_storages_mut<T: Component<Storage = ComponentStorage::<T>>, U : Component<Storage = ComponentStorage<U>>>(&mut self) -> (&mut ComponentStorage<T>, &mut ComponentStorage<U>) {
     //     (self.components.get_mut::<T>().unwrap(), self.components.get_mut::<U>().unwrap())
     // }

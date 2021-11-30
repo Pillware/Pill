@@ -78,10 +78,23 @@ impl SceneManager {
         Ok(scene)
     }
 
+    pub fn get_scene(&self, scene: SceneHandle) -> Result<&Scene> {
+        // Get scene
+        let scene = self.scenes.get_index(scene.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
+        Ok(scene)
+    }
+
     pub fn get_component_storage_mut<T: Component<Storage = ComponentStorage<T>>>(&mut self, scene: SceneHandle) -> Result<&mut ComponentStorage<T>> {
         let target_scene = self.get_scene_mut(scene)?;
         
         let storage = target_scene.get_component_storage_mut::<T>();
+        Ok(storage)
+    }
+
+    pub fn get_component_storage<T: Component<Storage = ComponentStorage<T>>>(&mut self, scene: SceneHandle) -> Result<&ComponentStorage<T>> {
+        let target_scene = self.get_scene(scene)?;
+        
+        let storage = target_scene.get_component_storage::<T>();
         Ok(storage)
     }
 
@@ -176,20 +189,51 @@ impl SceneManager {
     }
 
     pub fn fetch_two_storages<T: Component<Storage = ComponentStorage::<T>>, 
-                            U: Component<Storage = ComponentStorage<U>>,
-                            W: Component<Storage = ComponentStorage<W>>>(&mut self, scene: SceneHandle) {
+                            U: Component<Storage = ComponentStorage<U>>>(&mut self, scene: SceneHandle) {
         
-        // Get correct indexes for the entities, for which the mask suits the filtering mask
-        let entity_indexes = self.get_bitmask_controller_mut(scene)
+        // Get filtering bitmask, which we can apply to get the correct entities
+        // let filtering_bitmask = self.get_bitmask_controller_mut(scene)
+        //                                             .unwrap()
+        //                                             .filter_by_component::<T>()
+        //                                             .filter_by_component::<U>()
+        //                                             .get_filtering_bitmask();
+
+        //Get filtered indexes for entities
+        let filtered_indexes = self.get_bitmask_controller_mut(scene)
                                                     .unwrap()
                                                     .filter_by_component::<T>()
                                                     .filter_by_component::<U>()
-                                                    .filter_by_component::<W>()
                                                     .fetch_indexes();
+        
+        // Clean filtering bitmask for sake of future filterining bitmasks creation
+        // self.get_bitmask_controller_mut(scene).unwrap().clear_filter();
+        
+        let target_scene = self.get_scene_mut(scene).unwrap();
 
-        //let first = self.get_component_storage_mut::<T>(scene).unwrap();
-        //let second = self.get_component_storage_mut::<U>(scene).unwrap();
-                                
+        let first = target_scene.get_component_storage_element_mut_at::<T>(0);
+        let second = target_scene.get_component_storage_element_at::<U>(0);
+        // let mut T_storage = Vec::<&StorageEntry<T>>::new();
+        // let mut U_storage = Vec::<&StorageEntry<U>>::new();
+        
+        println!("{} {}", first.generation, second.generation);
+        // {
+        //     let storage = &self.get_scene_mut(scene).unwrap().get_component_storage_mut::<T>().data;
+        //     for item in storage {
+        //         T_storage.push(item.clone());
+        //     }
+        // }
+
+        // {
+        //     let storage = &self.get_scene_mut(scene).unwrap().get_component_storage_mut::<U>().data;
+        //     for item in storage {
+        //         U_storage.push(item.clone());
+        //     }
+        // }
+        
+        // for (&first, &second) in izip!(T_storage, U_storage) {
+        //     println!("hmm");
+        // }
+        
         // for (one, two) in izip!(first, second) {
         //     println!("Hello");
         // }

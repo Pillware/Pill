@@ -31,7 +31,7 @@ impl Bitmask {
 }
 
 pub struct BitmaskController {
-    bitmasks: Vec<Bitmask>,
+    pub bitmasks: Vec<Bitmask>,
     filter_bitmask: u32,
     mapping: BitmaskMap,
     count: u32
@@ -110,6 +110,12 @@ impl BitmaskController {
     pub fn filter_by_component<T: Component>(&mut self) -> &mut Self {
         self.filter_bitmask = self.filter_bitmask | self.get_bitmap::<T>();
         self
+    }
+
+    pub fn get_filtering_bitmask(&mut self) -> u32 {
+        let bitmask = self.filter_bitmask.clone();
+        self.clear_filter();
+        bitmask
     }
 
     pub fn fetch_indexes(&mut self) -> Vec<usize> {
