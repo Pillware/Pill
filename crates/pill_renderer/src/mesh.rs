@@ -14,14 +14,14 @@ new_key_type! {
 }
 
 pub trait Vertex {
-     // Defines how a data is layed out in memory (To specify how render_pipeline needs to map the buffer in the shader)
+    // Defines how a data is layed out in memory (To specify how RenderPipeline needs to map the buffer in the shader)
     fn data_layout_descriptor<'a>() -> wgpu::VertexBufferLayout<'a>;
 }
 
 pub struct RendererMesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
-    pub element_count: u32,
+    pub index_count: u32,
 }
 
 impl RendererMesh {
@@ -42,7 +42,7 @@ impl RendererMesh {
         let renderer_mesh = Self {
             vertex_buffer,
             index_buffer,
-            element_count: mesh_data.element_count,
+            index_count: mesh_data.indices.len() as u32,
         };
 
         Ok(renderer_mesh)

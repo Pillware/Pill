@@ -1,6 +1,6 @@
 pub use crate::ecs::*;
 use crate::{
-    game::Engine, 
+    internal::Engine, 
     graphics::{RenderQueueKey, compose_render_queue_key}, 
     resources::{Material, MaterialHandle, Mesh, MeshHandle}
 };

@@ -127,16 +127,24 @@ impl ResourceManager {
         self.resources.insert::<Mesh>(ResourceStorage::<Mesh>::new());
         self.resources.insert::<Material>(ResourceStorage::<Material>::new());
 
-        // Create default resources
-        let texture_storage = self.get_resource_storage_mut::<Texture>().unwrap();
+    //     // Create default resources
+    //     let texture_storage = self.get_resource_storage_mut::<Texture>().unwrap();
 
-        let path = env::current_dir().unwrap().join("res").join("textures");
 
-        let default_color_texture = Texture::new(renderer, "DefaultColor", path.join("default_color.png"), TextureType::Color).unwrap();
-        texture_storage.data.insert("DefaultColor".to_string(), default_color_texture);
+    //     // Load default resource data to executable
+    //     let default_color_texture_bytes = include_bytes!("../../res/textures/default_color.png");
+
+
+
+    //    // let path = env::current_dir().unwrap().join("res").join("textures");
+    //    let path = env::current_dir().unwrap().join("res").join("textures");
+    //     println!("xxxxxxxxx {}", path.display());
+
+    //     let default_color_texture = Texture::new(renderer, "DefaultColor", path.join("default_color.png"), TextureType::Color).unwrap();
+    //     texture_storage.data.insert("DefaultColor".to_string(), default_color_texture);
         
-        let default_normal_texture = Texture::new(renderer, "DefaultNormal", path.join("default_normal.png"), TextureType::Normal).unwrap();
-        texture_storage.data.insert("DefaultNormal".to_string(), default_normal_texture);
+    //     let default_normal_texture = Texture::new(renderer, "DefaultNormal", path.join("default_normal.png"), TextureType::Normal).unwrap();
+    //     texture_storage.data.insert("DefaultNormal".to_string(), default_normal_texture);
     }
 
     pub fn get_default_texture(&self, texture_type: TextureType) -> TextureHandle {

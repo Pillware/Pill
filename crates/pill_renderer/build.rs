@@ -14,8 +14,6 @@ fn main() -> Result<()> {
     let built_shader_directory_path = "res\\shaders\\built";
 
     let shaders_to_compile = [
-        "light.vert", 
-        "light.frag", 
         "master.vert", 
         "master.frag",
         ];

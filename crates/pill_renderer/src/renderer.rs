@@ -5,6 +5,7 @@ use cgmath::Rotation3;
 
 
 use pill_core::PillSlotMap;
+use pill_core::PillSlotMapKey;
 use pill_core::PillSlotMapKeyData;
 use pill_engine::internal::*;
 
@@ -41,6 +42,7 @@ use crate::texture;
 use std::borrow::Borrow;
 use std::borrow::BorrowMut;
 use std::mem::size_of;
+use std::num::NonZeroU8;
 use std::path;
 use std::path::Path;
 
@@ -59,17 +61,9 @@ use winit::{ // Import dependencies
 use std::collections::LinkedList;
 use std::collections::HashMap;
 
-// Matrix to scale and translate scene from OpenGL's coordinate sytem to WGPU's
-#[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.0,
-    0.0, 0.0, 0.5, 1.0,
-);
-
-fn get_master_pipeline_handle() -> RendererPipelineHandle { // [TODO] Very ugly solucion, maybe store there handles in some hashmap with names of pipelines as keys
-    RendererPipelineHandle { 0: PillSlotMapKeyData { index: 1, version: std::num::NonZeroU8::new(1).unwrap() } }
+// [TODO] Assure that it cannot be removed!
+fn get_master_pipeline_handle() -> RendererPipelineHandle { // [TODO] Very ugly solution, maybe store there handles in some hashmap with names of pipelines as keys
+    RendererPipelineHandle::new(1, std::num::NonZeroU8::new(1).unwrap() )
 }
 
 pub struct Renderer {
@@ -78,10 +72,17 @@ pub struct Renderer {
 
 impl PillRenderer for Renderer {
     fn new(window: &Window) -> Self { 
-        let mut state: State = pollster::block_on(State::new(&window));
-        return Renderer {
+        let state: State = pollster::block_on(State::new(&window));
+
+        let mut renderer = Renderer {
             state,
-        }; 
+        };
+
+        // Load default resource data to/from executable
+        let default_color_texture_bytes = include_bytes!("../res/textures/default_color.png");
+        renderer.create_texture_from_bytes(default_color_texture_bytes, "DefaultColor", TextureType::Color);
+
+        renderer
     }
 
     fn initialize(&self) {
@@ -101,27 +102,31 @@ impl PillRenderer for Renderer {
         self.state.resize(new_window_size)
     }
 
-    fn create_texture(&mut self, path: &PathBuf, texture_type: TextureType) -> Result<RendererTextureHandle, RendererError> {
-        let texture = RendererTexture::new_texture_from_image(&self.state.device, &self.state.queue, path, texture_type).unwrap();
-        let handle = self.state.textures.insert(texture);
+    fn create_texture(&mut self, path: &PathBuf, name: &str, texture_type: TextureType) -> Result<RendererTextureHandle, RendererError> {
+        let texture = RendererTexture::new_texture_from_image(&self.state.device, &self.state.queue, path, name, texture_type).unwrap();
+        let handle = self.state.rendering_resource_storage.textures.insert(texture);
+        Ok(handle)
+    }
+
+    fn create_texture_from_bytes(&mut self, bytes: &[u8], name: &str, texture_type: TextureType) -> Result<RendererTextureHandle, RendererError> {
+        let texture = RendererTexture::new_texture_from_bytes(&self.state.device, &self.state.queue, bytes, name, texture_type).unwrap();
+        let handle = self.state.rendering_resource_storage.textures.insert(texture);
         Ok(handle)
     }
 
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle, RendererError> {
         let mesh = RendererMesh::new(&self.state.device, name, mesh_data).unwrap();
-        let handle = self.state.meshes.insert(mesh);
+        let handle = self.state.rendering_resource_storage.meshes.insert(mesh);
         Ok(handle)
     }
 
- 
-
     fn create_material(&mut self, name: &str, color_texture_renderer_handle: RendererTextureHandle, normal_texture_renderer_handle: RendererTextureHandle) -> Result<RendererMaterialHandle, RendererError> {
-        let color_texture = self.state.textures.get(color_texture_renderer_handle).unwrap();
-        let normal_texture = self.state.textures.get(normal_texture_renderer_handle).unwrap();
+        let color_texture = self.state.rendering_resource_storage.textures.get(color_texture_renderer_handle).unwrap();
+        let normal_texture = self.state.rendering_resource_storage.textures.get(normal_texture_renderer_handle).unwrap();
 
         let pipeline_handle = get_master_pipeline_handle();
-        let pipeline = self.state.pipelines.get(pipeline_handle).unwrap();
-        let texture_bind_group_layout = pipeline.texture_bind_group_layout;
+        let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
+        let texture_bind_group_layout = &pipeline.texture_bind_group_layout;
 
         let material = RendererMaterial::new(
             &self.state.device,
@@ -131,15 +136,15 @@ impl PillRenderer for Renderer {
             color_texture_renderer_handle,
             normal_texture,
             normal_texture_renderer_handle,
-            &texture_bind_group_layout,
+            texture_bind_group_layout,
         ).unwrap();
 
-        let handle = self.state.materials.insert(material);
+        let handle = self.state.rendering_resource_storage.materials.insert(material);
         Ok(handle)
     }
 
     fn update_material_texture(&mut self, material_renderer_handle: RendererMaterialHandle, renderer_texture_handle: RendererTextureHandle, texture_type: TextureType) -> Result<(), RendererError> {
-        let material = self.state.materials.get(material_renderer_handle).unwrap();
+        let mut material = self.state.rendering_resource_storage.materials.get_mut(material_renderer_handle).unwrap();
        
         match texture_type {
             TextureType::Color => {
@@ -153,36 +158,41 @@ impl PillRenderer for Renderer {
         Ok(())
     }
 
-    // fn update_material(&mut self, material_renderer_handle: RendererMaterialHandle, updated_material: &Material) -> Result<(), RendererError> {
-    //     let material = self.state.materials.get(material_renderer_handle).unwrap();
-
-    //     material.color_texture_handle
-
-
-    // }
-
     fn create_camera(&mut self) -> Result<RendererCameraHandle, RendererError> {
         let pipeline_handle = get_master_pipeline_handle();
-        let pipeline = self.state.pipelines.get(pipeline_handle).unwrap();
-        let camera_bind_group_layout = pipeline.camera_bind_group_layout;
+        let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
+        let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
         
-        let camera = RendererCamera::new(&self.state.device, &camera_bind_group_layout).unwrap();
+        let camera = RendererCamera::new(&self.state.device, camera_bind_group_layout).unwrap();
 
-        let handle = self.state.cameras.insert(camera);
+        let handle = self.state.rendering_resource_storage.cameras.insert(camera);
         Ok(handle)
     }
+}
 
-    
+pub struct RenderingResourceStorage {
+    pub(crate) pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>,
+    pub(crate) materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>,
+    pub(crate) textures: PillSlotMap<RendererTextureHandle, RendererTexture>,
+    pub(crate) meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>,
+    pub(crate) cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>,
+}
 
+impl RenderingResourceStorage {
+    pub fn new() -> Self {
+        RenderingResourceStorage {
+            pipelines: pill_core::PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(10),
+            textures: pill_core::PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(10),
+            materials: pill_core::PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(10),
+            meshes: pill_core::PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(10),
+            cameras: pill_core::PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(10),
+        }
+    }
 }
 
 pub struct State {
     // Resources
-    pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>,
-    materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>,
-    textures: PillSlotMap<RendererTextureHandle, RendererTexture>,
-    meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>,
-    cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>,
+    rendering_resource_storage: RenderingResourceStorage,
     active_camera: Option<RendererCameraHandle>,
 
     // Renderer variables
@@ -192,8 +202,8 @@ pub struct State {
     surface_configuration: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>, 
 
-    instance_buffer: wgpu::Buffer,
     depth_texture: RendererTexture,
+    mesh_drawer: MeshDrawer,
 }
 
 
@@ -245,21 +255,9 @@ impl State {
         surface.configure(&device, &surface_configuration);
 
         // Configure collections
-        let mut pipelines = pill_core::PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(10);
-        let textures = pill_core::PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(10);
-        let materials = pill_core::PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(10);
-        let meshes = pill_core::PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(10);
-        let cameras = pill_core::PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(10);
+        let mut rendering_resource_storage = RenderingResourceStorage::new();
 
-        // Configure instance buffer
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("instance_buffer"),
-            size: (size_of::<Instance>() * 1000) as u64, //  [TODO] move magic value to config
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-   
-        // Create depth texture and master pipeline
+        // Create depth and color texture
         let depth_texture = RendererTexture::new_depth_texture(
             &device, 
             &surface_configuration, 
@@ -269,6 +267,7 @@ impl State {
         let color_format = surface_configuration.format;
         let depth_format = Some(wgpu::TextureFormat::Depth32Float);
 
+        // Create master pipeline
         let master_pipeline = RendererPipeline::new(
             &device,
             color_format,
@@ -276,16 +275,16 @@ impl State {
             &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
         ).unwrap();
 
-        pipelines.insert(master_pipeline);
+        rendering_resource_storage.pipelines.insert(master_pipeline);
+
+        // Create drawing state
+        let mesh_drawer = MeshDrawer::new(&device, 1000); // [TODO] move magic value to confi
+
 
         // Create state
         Self {
             // Resources
-            pipelines,
-            textures,
-            materials,
-            meshes,
-            cameras,
+            rendering_resource_storage,
             active_camera: None,
 
             // Renderer variables
@@ -295,8 +294,8 @@ impl State {
             surface_configuration,
             window_size,
             
-            instance_buffer,
             depth_texture,
+            mesh_drawer,
         }
     }
 
@@ -340,94 +339,166 @@ impl State {
             label: Some("render_encoder"),
         });
 
-        // Prepare instance data
-
-
-
-
         { // Additional scope to release mutable borrow of encoder done by begin_render_pass
             
-            // Start encoding render pass
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
-                label: Some("render_pass"),
-                color_attachments: &[
-                    wgpu::RenderPassColorAttachment { // This is what [[location(0)]] in the fragment shader targets
-                        view: &view, // Specifies what texture to save the colors to (to frame taken from swapchain, so any colors we draw to this attachment will get drawn to the screen)
-                        resolve_target: None, // Specifies what texture will receive the resolved output
-                        ops: wgpu::Operations { // Tells wgpu what to do with the colors on the screen
-                            load: wgpu::LoadOp::Clear(
-                                wgpu::Color { // Tells wgpu how to handle colors stored from the previous frame
-                                    r: 0.1,
-                                    g: 0.2,
-                                    b: 0.3,
-                                    a: 1.0,
-                                }
-                            ),
-                        store: true,
-                        },
-                    }
-                ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
+            let color_attachment = wgpu::RenderPassColorAttachment { // This is what [[location(0)]] in the fragment shader targets
+                view: &view, // Specifies what texture to save the colors to (to frame taken from swapchain, so any colors we draw to this attachment will get drawn to the screen)
+                resolve_target: None, // Specifies what texture will receive the resolved output
+                ops: wgpu::Operations { // Tells wgpu what to do with the colors on the screen
+                    load: wgpu::LoadOp::Clear(
+                        wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0, } // Tells wgpu how to handle colors stored from the previous frame
+                    ),
+                store: true,
+                },
+            };
+
+            let depth_stencil_attachment = wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_texture.texture_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
                 }),
-            });
+                stencil_ops: None,
+            };
 
-            // Set pipeline
-            let master_pipeline_handle = get_master_pipeline_handle();
-            let master_pipeline = self.pipelines.get(master_pipeline_handle).unwrap();
-            render_pass.set_pipeline(&master_pipeline.render_pipeline);
+            self.mesh_drawer.draw(&self.queue, &mut encoder, &self.rendering_resource_storage, color_attachment, depth_stencil_attachment, &render_queue, &transform_component_storage)
 
-
-            // Create instance
-            let mut instances: Vec<Instance> = Vec::new();
-
-            let position: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(0.0, 0.0, 0.0);
-            let rotation: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(0.0, 0.0, 0.0);
-            let scale: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(1.0, 1.0, 1.0);
-
-            instances.push( 
-                Instance {
-                    model: cgmath::Matrix4::model(position, rotation, scale).into(),
-                    normal: cgmath::Matrix3::from_euler_angles(rotation).into(),
-                }
-            );
-            
-            let position: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(0.0, 2.0, 0.0);
-            let rotation: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(15.0, 45.0, 0.0);
-            let scale: cgmath::Vector3<f32> = cgmath::Vector3::<f32>::new(1.0, 1.0, 4.0);
-
-            instances.push( 
-                Instance {
-                    model: cgmath::Matrix4::model(position, rotation, scale).into(),
-                    normal: cgmath::Matrix3::from_euler_angles(rotation).into(),
-                }
-            );
-
-            // Update instance buffer
-            self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
-
-            // Set buffer with instance data
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); 
-
-            // Set buffer with mesh vertices
-            render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
-
-            // Set buffer with mesh indices
-            render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
-
-
-            render_pass.set_bind_group(0, &material.bind_group, &[]);
-            render_pass.set_bind_group(1, camera, &[]);
-            render_pass.draw_indexed(0..mesh.num_elements, 0, instances);
         }
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();
         Ok(())
+    }
+}
+
+pub struct MeshDrawer {
+    pub current_order: u8,
+    pub current_camera_handle: Option<RendererCameraHandle>,
+    pub current_pipeline_handle: Option<RendererPipelineHandle>,
+    pub current_material_handle: Option<RendererMaterialHandle>,
+    pub current_mesh_handle: Option<RendererMeshHandle>,
+    pub current_mesh_index_count: u32,
+
+    pub max_instance_count: u32,
+    pub instance_count: u32,
+    pub instances: Vec::<Instance>,
+    pub instance_buffer: wgpu::Buffer,
+}
+
+impl MeshDrawer {
+    pub fn new(device: &wgpu::Device, max_instance_count: u32) -> Self {
+
+        // Create instance buffer
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("instance_buffer"),
+            size: (size_of::<Instance>() * max_instance_count as usize) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        MeshDrawer {
+            current_order: 31,
+            current_camera_handle: None,
+            current_pipeline_handle: None,
+            current_material_handle: None,
+            current_mesh_handle: None,
+            current_mesh_index_count: 0,
+
+            max_instance_count,
+            instances: Vec::<Instance>::with_capacity(max_instance_count as usize), 
+            instance_buffer,
+            instance_count: 0,
+        }
+    }
+
+    pub fn draw(
+        &mut self, 
+        queue: &wgpu::Queue, 
+        encoder: &mut wgpu::CommandEncoder, 
+        rendering_resource_storage: &RenderingResourceStorage, 
+        color_attachment: wgpu::RenderPassColorAttachment, 
+        depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
+        render_queue: &Vec::<RenderQueueItem>, 
+        transform_component_storage: &ComponentStorage<TransformComponent>
+    ) {
+         // Start encoding render pass
+         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
+            label: Some("render_pass"),
+            color_attachments: &[color_attachment],
+            depth_stencil_attachment: Some(depth_stencil_attachment),
+        });
+
+        let render_queue_iter = render_queue.iter();
+        for render_queue_item in render_queue_iter {
+            
+            let render_queue_key_fields = decompose_render_queue_key(render_queue_item.key).unwrap();
+
+            // Recreate resource handles
+            let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU8::new(render_queue_key_fields.material_version).unwrap());
+            let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU8::new(render_queue_key_fields.mesh_version).unwrap());
+
+            // Check order
+            // if self.current_order != render_queue_key_fields.order {
+            //     if self.instance_count > 0 {
+            //         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            //         render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);
+            //         self.instances.clear();
+            //         self.instance_count = 0; 
+            //     }
+            //     // Set new order
+            //     self.current_order = 1;// render_queue_key_fields.order.clone();
+            // }
+
+
+            if self.current_material_handle != Some(renderer_material_handle) {
+                if self.instance_count > 0 {
+                    queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances));
+                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);            
+                    self.instances.clear();
+                    self.instance_count = 0; 
+                }
+                // Set new material
+                self.current_material_handle = Some(renderer_material_handle);
+                let material = rendering_resource_storage.materials.get(self.current_material_handle.unwrap()).unwrap();
+                let camera= rendering_resource_storage.cameras.get(self.current_camera_handle.unwrap()).unwrap();
+                render_pass.set_bind_group(0, &material.bind_group, &[]);
+                render_pass.set_bind_group(1, &camera.bind_group, &[]);
+            }
+
+            if self.current_mesh_handle != Some(renderer_mesh_handle) {
+                if self.instance_count > 0 {
+                    queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances));
+                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);    
+                    self.instances.clear();
+                    self.instance_count = 0;            
+                }
+                // Set new mesh
+                self.current_mesh_handle = Some(renderer_mesh_handle);
+                let mesh = rendering_resource_storage.meshes.get(self.current_mesh_handle.unwrap()).unwrap();
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
+                render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
+            }
+
+            // Add new instance
+            let transform_component = transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap();
+            self.instances.push( 
+                Instance {
+                    model: cgmath::Matrix4::model(transform_component.position, transform_component.rotation, transform_component.scale).into(),
+                    normal: cgmath::Matrix3::from_euler_angles(transform_component.rotation).into(),
+                }
+            );
+            self.instance_count += 1;
+        }
+
+        // End of render queue so draw remaining saved objects
+        if self.instance_count > 0 {
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances));
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);    
+            self.instances.clear();
+            self.instance_count = 0;            
+        }
     }
 }

@@ -81,7 +81,9 @@ impl Engine {
             }
         }
  
-        info!("Frame finished (duration: {:?})", dt);
+        let frame_time = dt.as_secs_f32() * 1000.0;
+        let fps =  1000.0 as u128 / dt.as_millis();
+        info!("Frame finished (Time: {:.3}ms, FPS {})", frame_time, fps);
     }
 
     #[cfg(feature = "internal")]

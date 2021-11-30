@@ -75,7 +75,6 @@ pub struct MeshVertex {
 pub struct MeshData {
     pub vertices: Vec<MeshVertex>,
     pub indices: Vec<u32>,
-    pub element_count: u32,
 }
 
 impl MeshData {
@@ -179,7 +178,6 @@ impl MeshData {
         let mesh_data = MeshData {
             vertices: vertices,
             indices: mesh.indices.clone(),
-            element_count: mesh.indices.len() as u32,
         };
 
         Ok(mesh_data)

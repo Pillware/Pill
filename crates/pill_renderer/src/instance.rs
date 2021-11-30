@@ -28,12 +28,12 @@ impl Vertex for Instance {
             // This means that shaders will only change to use the next instance when the shader starts processing a new instance
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
+                // Model matrix (mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot for each vec4. We don't have to do this in code though)
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot for each vec4. We don't have to do this in code though.
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
                     shader_location: 6,
@@ -50,6 +50,7 @@ impl Vertex for Instance {
                     format: wgpu::VertexFormat::Float32x4,
                 },
 
+                // Normal matrix
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
                     shader_location: 9,

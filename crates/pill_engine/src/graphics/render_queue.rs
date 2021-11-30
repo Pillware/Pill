@@ -17,8 +17,8 @@ use crate::resources::{ RendererCameraHandle, RendererMaterialHandle, RendererMe
 
 // --- Render queue item
 pub struct RenderQueueItem {
-    pub(crate) key: RenderQueueKey,
-    pub(crate) entity_index: u32,
+    pub key: RenderQueueKey,
+    pub entity_index: u32,
 }
 
 impl Ord for RenderQueueItem {
@@ -94,11 +94,11 @@ pub fn compose_render_queue_key(engine: &Engine, material_handle: &MaterialHandl
 }
 
 pub struct RenderQueueKeyFields {
-    order: u8,
-    material_index: u8,
-    material_version: u8,
-    mesh_index: u8,
-    mesh_version: u8,
+    pub order: u8,
+    pub material_index: u8,
+    pub material_version: u8,
+    pub mesh_index: u8,
+    pub mesh_version: u8,
 }
 
 // Decomposes pill engine render queue key into separate fields
@@ -162,10 +162,9 @@ fn decompose_render_queue_key_test() {
     let material_version: u8 = 1;
     let mesh_index: u8 = 240;
     let mesh_version: u8 = 52;
+    let mask: u64 = 0b10010_01100110_00000001_11110000_00110100_000000000000000000000000000;
 
-    let expected_mask: u64 = 0b10010_01100110_00000001_11110000_00110100_000000000000000000000000000;
-
-    let render_queue_key_fields = decompose_render_queue_key(expected_mask).unwrap();
+    let render_queue_key_fields = decompose_render_queue_key(mask).unwrap();
 
     assert_eq!(render_queue_key_fields.order, order);
     assert_eq!(render_queue_key_fields.material_index, material_index);

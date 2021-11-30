@@ -50,67 +50,6 @@ impl RendererPipeline {
 
         let fragment_shader = device.create_shader_module(&fragment_shader);
 
-
-        // Create texture binding group layout
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { // Describes a set of resources and how they can be accessed by a shader
-            entries: &[
-                wgpu::BindGroupLayoutEntry { // Entry for the sampled texture at binding 0
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT, // Visible only to fragment shader
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry { // Entry for the sampler at binding 1
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT, // Visible only to fragment shader
-                    ty: wgpu::BindingType::Sampler {
-                        comparison: false,
-                        filtering: true,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry { // Normal map
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler { 
-                        comparison: false,
-                        filtering: true, 
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("texture_bind_group_layout"),
-        });
-
-        // Create master camera binding group layout
-        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("camera_bind_group_layout"),
-        });
-
         // Define texture bind group layout (Describes a set of resources and how they can be accessed by a shader)
         let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { 
             label: Some("texture_bind_group_layout"),
@@ -158,6 +97,7 @@ impl RendererPipeline {
 
         // Define camera bind group layout
         let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("camera_bind_group_layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
@@ -167,28 +107,12 @@ impl RendererPipeline {
                     min_binding_size: None,
                 },
                 count: None,
-            }],
-            label: Some("camera_bind_group_layout"),
+            }]
         });
-
-        // Define light bind group layout
-        // let light_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        //     entries: &[wgpu::BindGroupLayoutEntry {
-        //         binding: 0,
-        //         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-        //         ty: wgpu::BindingType::Buffer {
-        //             ty: wgpu::BufferBindingType::Uniform,
-        //             has_dynamic_offset: false,
-        //             min_binding_size: None,
-        //         },
-        //         count: None,
-        //     }],
-        //     label: None,
-        // });
 
         // Create pipeline layout descriptor
         let pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor {
-            label: Some("Render Pipeline Layout"),
+            label: Some("render_pipeline_layout"),
             bind_group_layouts: &[
                 &texture_bind_group_layout,
                 &camera_bind_group_layout,
@@ -199,8 +123,18 @@ impl RendererPipeline {
         // Create pipeline layout
         let layout = device.create_pipeline_layout(&pipeline_layout_descriptor);
 
+        // Create color target states that specifies what what color outputs wgpu should set up
+        let color_target_states = &[wgpu::ColorTargetState { 
+            format: color_format,
+            blend: Some(wgpu::BlendState {
+                alpha: wgpu::BlendComponent::REPLACE,
+                color: wgpu::BlendComponent::REPLACE,
+            }),
+            write_mask: wgpu::ColorWrites::ALL,
+        }];
+
         let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
+            label: Some("render_pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState { 
                 module: &vertex_shader,
@@ -210,14 +144,7 @@ impl RendererPipeline {
             fragment: Some(wgpu::FragmentState {
                 module: &fragment_shader,
                 entry_point: "main",
-                targets: &[wgpu::ColorTargetState { // Specifies what what color outputs wwgpu should set up
-                    format: color_format,
-                    blend: Some(wgpu::BlendState {
-                        alpha: wgpu::BlendComponent::REPLACE,
-                        color: wgpu::BlendComponent::REPLACE,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                }],
+                targets: color_target_states,
             }),
             primitive: wgpu::PrimitiveState { // Specifies how to interpret vertices when converting them into triangles
                 topology: wgpu::PrimitiveTopology::TriangleList, // Each three vertices will correspond to one triangle

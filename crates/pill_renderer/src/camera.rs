@@ -73,7 +73,7 @@ impl CameraUniform {
 pub struct RendererCamera {
     uniform: CameraUniform,
     buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
+    pub bind_group: wgpu::BindGroup,
 }
 
 impl RendererCamera {

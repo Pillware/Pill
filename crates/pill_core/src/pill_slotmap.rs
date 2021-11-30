@@ -296,6 +296,13 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         }
     }
 
+    pub fn get_version_unchecked(&self, key: K) -> Option<&V> {
+        let kd = key.data();
+        self.slots
+            .get(kd.index as usize)
+            .map(|slot| unsafe { &*slot.u.value })
+    }
+
     pub fn get(&self, key: K) -> Option<&V> {
         let kd = key.data();
         self.slots
@@ -506,6 +513,24 @@ macro_rules! define_new_pill_slotmap_key {
                 self.0
             }
         }
+
+        impl $name {
+            // pub fn new(k: $crate::PillSlotMapKeyData) -> Self {
+            //     $name {
+            //         0: k,
+            //     }
+            // }
+
+            pub fn new(index: u32, version: std::num::NonZeroU8) -> Self {
+                $name {
+                    0: $crate::PillSlotMapKeyData {
+                        index,
+                        version,
+                    },
+                }
+            }
+        }
+
     };
 
     () => {}

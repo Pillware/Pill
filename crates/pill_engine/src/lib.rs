@@ -41,6 +41,8 @@ pub mod internal {
             RendererError,
             RenderQueueKey,
             RenderQueueItem,
+            RenderQueueKeyFields,
+            decompose_render_queue_key,
         },
         ecs::{
             Scene,

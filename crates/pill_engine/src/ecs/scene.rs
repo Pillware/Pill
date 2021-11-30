@@ -43,7 +43,7 @@ impl Scene {
             components: ComponentMap::new(),
         };
     }
-    
+
     #[cfg(feature = "game")]
     pub fn get_counter(&mut self) -> &usize {
         &self.entity_counter

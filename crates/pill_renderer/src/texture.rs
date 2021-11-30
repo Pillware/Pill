@@ -29,30 +29,30 @@ impl RendererTexture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         path: &PathBuf,
+        name: &str,
         texture_type: TextureType,
     ) -> Result<Self> {
-        let label = path.to_str();
         let image = image::open(path)?;
-        Self::create_texture(device, queue, &image, label, texture_type)
+        Self::create_texture(device, queue, &image, Some(name), texture_type)
     }
 
     pub fn new_texture_from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         bytes: &[u8],
-        label: &str,
+        name: &str,
         texture_type: TextureType,
     ) -> Result<Self> {
         let image = image::load_from_memory(bytes)?;
-        Self::create_texture(device, queue, &image, Some(label), texture_type)
+        Self::create_texture(device, queue, &image, Some(name), texture_type)
     }
 
     pub fn new_depth_texture(
         device: &wgpu::Device,
         surface_configuration: &wgpu::SurfaceConfiguration,
-        label: &str,
+        name: &str,
     ) -> Result<Self> {
-        Self::create_depth_texture(device, surface_configuration, label)
+        Self::create_depth_texture(device, surface_configuration, name)
     }
 
 
@@ -60,7 +60,7 @@ impl RendererTexture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         image: &image::DynamicImage,
-        label: Option<&str>,
+        name: Option<&str>,
         texture_type: TextureType,
     ) -> Result<Self> {
         let dimensions = image.dimensions();
@@ -81,7 +81,7 @@ impl RendererTexture {
 
         // Create texture
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label,
+            label: name,
             size,
             mip_level_count: 1,
             sample_count: 1,
