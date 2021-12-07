@@ -12,11 +12,21 @@ impl Component for TransformComponent {
     type Storage = ComponentStorage<TransformComponent>; 
 }
 
+impl TransformComponent {
+    pub fn new(position: cgmath::Vector3<f32>, rotation: cgmath::Vector3<f32>, scale: cgmath::Vector3<f32>) -> Self {  
+        return Self { 
+            position,
+            rotation,
+            scale,
+        };
+    }
+}
+
 impl Default for TransformComponent {
     fn default() -> Self {
         Self { 
             position: cgmath::Vector3::<f32>::zero(),
-            rotation: cgmath::Vector3::<f32>::zero(), // cgmath::Quaternion::<f32>::zero(),
+            rotation: cgmath::Vector3::<f32>::zero(),
             scale: cgmath::Vector3::<f32>::zero(),
         }
     }

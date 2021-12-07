@@ -8,21 +8,9 @@ use crate::resources::*;
 
 use crate::resources::resource_map::Resource;
 
-use super::resource_manager::ResourceHandle;
+//use super::resource_manager::ResourceHandle;
 use anyhow::{Result, Context, Error};
 use pill_core::na::SliceRange;
-
-#[derive(Clone, Copy)]
-pub struct MaterialHandle {
-    pub index: u32,
-}
-
-impl ResourceHandle for MaterialHandle
-{
-    fn get_index(&self) -> u32 {
-        self.index
-    }
-}
 
 pub struct Material {
     pub name: String,
@@ -39,8 +27,8 @@ impl Material {
         let color_texture_handle = resource_manager.get_default_texture(TextureType::Color);
         let normal_texture_handle = resource_manager.get_default_texture(TextureType::Normal);
 
-        let renderer_color_texture_handle = resource_manager.get_resource::<Texture, TextureHandle>(&color_texture_handle).unwrap().renderer_resource_handle;
-        let renderer_normal_texture_handle = resource_manager.get_resource::<Texture, TextureHandle>(&normal_texture_handle).unwrap().renderer_resource_handle;
+        let renderer_color_texture_handle = resource_manager.get_resource::<TextureHandle, Texture>(&color_texture_handle).unwrap().renderer_resource_handle;
+        let renderer_normal_texture_handle = resource_manager.get_resource::<TextureHandle, Texture>(&normal_texture_handle).unwrap().renderer_resource_handle;
 
         let renderer_resource_handle = renderer.create_material(
             name,
@@ -61,7 +49,7 @@ impl Material {
     }
 
     pub fn assign_color_texture(&mut self, engine: &mut Engine, texture_handle: TextureHandle, texture_type: TextureType) {
-        let texture = engine.resource_manager.get_resource::<Texture, TextureHandle>(&texture_handle).unwrap();
+        let texture = engine.resource_manager.get_resource::<TextureHandle, Texture>(&texture_handle).unwrap();
         let renderer_texture_handle = texture.renderer_resource_handle;
 
         engine.renderer.update_material_texture(self.renderer_resource_handle, renderer_texture_handle, TextureType::Color);
@@ -89,7 +77,7 @@ impl Material {
 
 
 impl Resource for Material {
-    type Storage = ResourceStorage<Material>; 
+    type Storage = ResourceStorage<MaterialHandle, Material>; 
 }
 
 

@@ -9,6 +9,11 @@ mod material;
 
 pub use resource_manager::{
     ResourceManager,
+
+    MaterialHandle,
+    TextureHandle,
+    MeshHandle,
+
     RendererCameraHandle,
     RendererMaterialHandle,
     RendererMeshHandle,
@@ -16,6 +21,6 @@ pub use resource_manager::{
     RendererPipelineHandle,
 };
 pub use resource_storage::ResourceStorage;
-pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};
-pub use texture::{Texture, TextureHandle, TextureType};
-pub use material::{Material, MaterialHandle};
+pub use mesh::{Mesh, MeshData, MeshVertex};
+pub use texture::{Texture, TextureType};
+pub use material::{Material};

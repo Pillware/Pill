@@ -80,8 +80,8 @@ where
 
 // Creates pill engine render queue composed from order, material index, material version, mesh index, mesh version
 pub fn compose_render_queue_key(engine: &Engine, material_handle: &MaterialHandle, mesh_handle: &MeshHandle) -> Result<RenderQueueKey> { 
-    let material = engine.resource_manager.get_resource::<Material, MaterialHandle>(material_handle)?;
-    let mesh = engine.resource_manager.get_resource::<Mesh, MeshHandle>(mesh_handle)?;
+    let material = engine.resource_manager.get_resource::<MaterialHandle, Material>(material_handle)?;
+    let mesh = engine.resource_manager.get_resource::<MeshHandle, Mesh>(mesh_handle)?;
    
     let render_queue_key: RenderQueueKey = 
         ((material.order as RenderQueueKey) << RENDERQUEUE_ORDER.mask_shift) | 

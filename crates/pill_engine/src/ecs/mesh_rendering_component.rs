@@ -28,18 +28,17 @@ impl MeshRenderingComponent {
     
         Ok(mesh_rendering_component)
     }
-
 }
 
-
-
-// impl Default for MeshRenderingComponent {
-//     fn default() -> Self {
-//         Self { 
-//             resource_id: None,
-//         }
-//     }
-// }
+impl Default for MeshRenderingComponent {
+    fn default() -> Self {
+        Self { 
+            mesh: Option::None,
+            material: Option::None,
+            render_queue_key: RenderQueueKey::default(),
+        }
+    }
+}
 
 
 

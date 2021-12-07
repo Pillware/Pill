@@ -41,7 +41,7 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Index, IndexMut};
 use std::fmt::Formatter;
 use core::fmt::Debug;
-use std::num::{ NonZeroU8};
+use std::num::{ NonZeroU32};
 
 // Storage inside a slot or metadata for the freelist when vacant.
 union SlotUnion<T> {
@@ -53,7 +53,7 @@ union SlotUnion<T> {
 // Can be occupied or vacant.
 struct Slot<T> {
     u: SlotUnion<T>,
-    version: u8, // Even = vacant, odd = occupied.
+    version: u32, // Even = vacant, odd = occupied.
 }
 
 // Safe API to read a slot.
@@ -141,6 +141,7 @@ pub struct PillSlotMap<K: PillSlotMapKey, V> {
     slots: Vec<Slot<V>>,
     free_head: u32,
     num_elems: u32,
+    version_limit: u32,
     _k: PhantomData<fn(K) -> K>,
 }
 
@@ -151,6 +152,10 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     }
 
     pub fn with_capacity_and_key(capacity: usize) -> Self {
+        Self::with_capacity_and_key_and_version_limit(capacity, u32::MAX)
+    }
+
+    pub fn with_capacity_and_key_and_version_limit(capacity: usize, version_limit: u32) -> Self {
         let mut slots = Vec::with_capacity(capacity + 1);
         slots.push(Slot {
             u: SlotUnion { next_free: 0 },
@@ -161,6 +166,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             slots,
             free_head: 1,
             num_elems: 0,
+            version_limit,
             _k: PhantomData,
         }
     }
@@ -258,7 +264,10 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         slot.u.next_free = self.free_head;
         self.free_head = index as u32;
         self.num_elems -= 1;
-        slot.version = slot.version.wrapping_add(1);
+
+
+        slot.version = if slot.version >= self.version_limit { 0 } else { slot.version + 1 };
+        // slot.version = slot.version.wrapping_add(1);
 
         value
     }
@@ -407,16 +416,16 @@ impl<K: PillSlotMapKey, V> IndexMut<K> for PillSlotMap<K, V> {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PillSlotMapKeyData {
     pub index: u32,
-    pub version: NonZeroU8,
+    pub version: NonZeroU32,
 }
 
 impl PillSlotMapKeyData {
-    fn new(index: u32, version: u8) -> Self {
+    fn new(index: u32, version: u32) -> Self {
         debug_assert!(version > 0);
 
         Self {
             index,
-            version: unsafe { NonZeroU8::new_unchecked(version | 1) },
+            version: unsafe { NonZeroU32::new_unchecked(version | 1) },
         }
     }
 
@@ -451,7 +460,7 @@ impl PillSlotMapKeyData {
     pub fn from_ffi(value: u64) -> Self {
         let index = value & 0xffff_ffff;
         let version = (value >> 32) | 1; // Ensure version is odd.
-        Self::new(index as u32, version as u8)
+        Self::new(index as u32, version as u32)
     }
 }
 
@@ -515,13 +524,7 @@ macro_rules! define_new_pill_slotmap_key {
         }
 
         impl $name {
-            // pub fn new(k: $crate::PillSlotMapKeyData) -> Self {
-            //     $name {
-            //         0: k,
-            //     }
-            // }
-
-            pub fn new(index: u32, version: std::num::NonZeroU8) -> Self {
+            pub fn new(index: u32, version: std::num::NonZeroU32) -> Self {
                 $name {
                     0: $crate::PillSlotMapKeyData {
                         index,

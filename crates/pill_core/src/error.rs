@@ -20,6 +20,12 @@ pub enum EngineError {
     #[error("Resource {0} is not registered in Engine \n\nSource: ")]
     ResourceNotRegistered(String),
 
+    #[error("Resource of type {0} and name {1} already exists \n\nSource: ")]
+    ResourceAlreadyExists(String, String),
+
+    #[error("Resource of type {0} for that handle not found \n\nSource: ")]
+    InvalidResourceHandle(String),
+
     #[error("Invalid .obj file {0}\nFiles with multiple meshes are not supported \n\nSource: ")]
     InvalidModelFile(String)
 }

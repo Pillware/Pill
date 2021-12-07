@@ -14,21 +14,8 @@ use tobj::LoadOptions;
 
 use crate::resources::resource_map::Resource;
 
-use crate::resources::resource_manager::ResourceHandle;
+//use crate::resources::resource_manager::ResourceHandle;
 use anyhow::{Result, Context, Error};
-
-#[derive(Clone, Copy)]
-pub struct MeshHandle {
-    pub index: u32,
-}
-
-impl ResourceHandle for MeshHandle
-{
-    fn get_index(&self) -> u32 {
-        self.index
-    }
-}
-
 
 pub struct Mesh {
     name: String,
@@ -56,7 +43,7 @@ impl Mesh {
 }
 
 impl Resource for Mesh {
-    type Storage = ResourceStorage<Mesh>; 
+    type Storage = ResourceStorage<MeshHandle, Mesh>; 
 }
 
 

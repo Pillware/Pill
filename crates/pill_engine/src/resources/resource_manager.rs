@@ -1,8 +1,10 @@
 use std::collections::{HashMap};
 use std::env;
+use std::num::NonZeroU32;
 
 
-use pill_core::{EngineError, get_type_name};
+use boolinator::Boolinator;
+use pill_core::{EngineError, get_type_name, PillSlotMapKey};
 
 use crate::ecs::*;
 use crate::engine::Engine;
@@ -12,7 +14,7 @@ use crate::resources::resource_map::{ Resource, ResourceMap };
 use crate::resources::resource_storage::ResourceStorage;
 use anyhow::{Result, Context, Error};
 
-use super::{Material, Mesh, Texture, TextureHandle, TextureType};
+use super::{Material, Mesh, Texture, TextureType};
 
 // pub struct RendererMaterialHandle {
 //     index: u32,
@@ -60,9 +62,21 @@ pub enum ResourceSource {
     Game,  
 }
 
-pub trait ResourceHandle {
-    fn get_index(&self) -> u32; 
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct MaterialHandle;
 }
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct MeshHandle;
+}
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct TextureHandle;
+}
+
+// pub trait ResourceHandle {
+//     fn get_index(&self) -> u32; 
+// }
 
 
 // pub trait Resource {
@@ -72,11 +86,6 @@ pub trait ResourceHandle {
 
 pub struct ResourceManager {
     resources: ResourceMap,
-    //mesh_resources: HashMap<String, Box<MeshResource>>,
-    //texture_resources: HashMap<String, Box<TextureResource>>,
-    //audio_resources: HashMap<String, Box<AudioResource>>,
-    //font_resources: HashMap<String, Box<FontResource>>,
-    //shader_resources: HashMap<String, Box<ShaderResource>>,
 }
 
 impl ResourceManager {
@@ -88,44 +97,63 @@ impl ResourceManager {
         resource_manager
     }
 
-    pub fn get_resource<T: Resource<Storage = ResourceStorage::<T>>, H: ResourceHandle>(&self, resource_handle: &H) -> Result<&T> {
+    pub fn get_resource<'a, H, T: Resource<Storage = ResourceStorage::<H, T>>>(&self, resource_handle: &H) -> Result<&T> 
+        where H: PillSlotMapKey + 'static
+    {
         // Get resource storage from scene
-        let resource_storage = self.get_resource_storage::<T>()?;
+        let resource_storage = self.get_resource_storage::<H, T>()?;
         
         // Get resource
-        let index = resource_handle.get_index();
-        let resource = &resource_storage.data[index as usize]; // [TODO] Check if such conversion is safe and efficient
+        let resource = resource_storage.data.get(*resource_handle).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
 
         Ok(&resource)
     }
 
-    // pub fn add_resource<T: Resource<Storage = ResourceStorage::<T>>, H: ResourceHandle>(&self, resource: T) -> Result<&H> {
+
+//     pub fn get_resource<H, T: Resource<Storage = ResourceStorage::<H, T>>>(&self, resource_handle: H) -> Result<&T> 
+//     where H: PillSlotMapKey
+// {
+//     // Get resource storage from scene
+//     let resource_storage = self.get_resource_storage::<H, T>()?;
+    
+//     // Get resource
+//     let resource = resource_storage.data.get(resource_handle).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+
+//     Ok(&resource)
+// }
+
+    // pub fn add_resource<H: PillSlotMapKey, T: Resource<Storage = ResourceStorage::<H, T>>>(&self, name: &str, resource: T) -> Result<&H> {
     //     // Get resource storage from scene
     //     let resource_storage = self.get_resource_storage::<T>()?;
 
-    //     // [TODO] Check if that resource already exists (same name)
-    //     //resource_storage.data.insert(resource.path, resource);
-        
-    //     // Get index and creat handle
+    //     // [TODO] Add double hashmap and check if name is already there, if yes the return error, if not then insert new resource and create entry in double hashmap (actually to entries A->B and B->A)
+    //     // Check if resource already exists
+    //     // resource_storage.data.contains_key(name).eq(&false).ok_or(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), name.to_string())))?;
+
+    //     // Get index and create handle
+    //     resource_storage.data.insert(name, resource);
+
+    //     // Create resource handle
+
 
     //     Ok(&resource)
     // }
 
 
-    fn get_resource_storage<T: Resource<Storage = ResourceStorage::<T>>>(&self) -> Result<&ResourceStorage<T>> {
+    fn get_resource_storage<H: PillSlotMapKey, T: Resource<Storage = ResourceStorage::<H, T>>>(&self) -> Result<&ResourceStorage<H, T>> {
         self.resources.get::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
     }
 
-    fn get_resource_storage_mut<T: Resource<Storage = ResourceStorage::<T>>>(&mut self) -> Result<&mut ResourceStorage<T>> {
+    fn get_resource_storage_mut<H: PillSlotMapKey, T: Resource<Storage = ResourceStorage::<H, T>>>(&mut self) -> Result<&mut ResourceStorage<H, T>> {
         self.resources.get_mut::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
     }
 
 
     // -- Default resources
     pub fn create_default_resources(&mut self, renderer: &mut Renderer) {
-        self.resources.insert::<Texture>(ResourceStorage::<Texture>::new());
-        self.resources.insert::<Mesh>(ResourceStorage::<Mesh>::new());
-        self.resources.insert::<Material>(ResourceStorage::<Material>::new());
+        // self.resources.insert::<Texture>(ResourceStorage::<Texture>::new());
+        // self.resources.insert::<Mesh>(ResourceStorage::<Mesh>::new());
+        // self.resources.insert::<Material>(ResourceStorage::<Material>::new());
 
     //     // Create default resources
     //     let texture_storage = self.get_resource_storage_mut::<Texture>().unwrap();
@@ -149,8 +177,8 @@ impl ResourceManager {
 
     pub fn get_default_texture(&self, texture_type: TextureType) -> TextureHandle {
         match texture_type {
-            TextureType::Color => TextureHandle { index: 0 },
-            TextureType::Normal => TextureHandle { index: 1 },
+            TextureType::Color => TextureHandle::new(0,NonZeroU32::new(1).unwrap()),
+            TextureType::Normal => TextureHandle::new(1,NonZeroU32::new(1).unwrap()),
         }
     }
 
@@ -169,20 +197,6 @@ impl ResourceManager {
     //             self.mesh_resources.insert(path, Box::new(new_mesh_resource));
     //             //new_mesh_resource
     //         }
-    //     };
-
-
-
-        
-    // }
-
-
-
-
-    // pub fn create_resource_gameobject(&self, scene: Box<Scene>, name: String, file_path: Box<Path>) -> Box<GameObject> {
-    //     println!("[Resource Manager] Creating GameObject resource from path: {}", file_path);
-    //     let new_gameobject = Box::new(GameObject::new(self.engine, name, file_path));
-    //     self.gameobjectCollection.append(new_gameobject);
-    //     return new_gameobject;
+    //     }; 
     // }
 }

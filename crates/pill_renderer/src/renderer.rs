@@ -42,6 +42,7 @@ use crate::texture;
 use std::borrow::Borrow;
 use std::borrow::BorrowMut;
 use std::mem::size_of;
+use std::num::NonZeroU32;
 use std::num::NonZeroU8;
 use std::path;
 use std::path::Path;
@@ -63,7 +64,7 @@ use std::collections::HashMap;
 
 // [TODO] Assure that it cannot be removed!
 fn get_master_pipeline_handle() -> RendererPipelineHandle { // [TODO] Very ugly solution, maybe store there handles in some hashmap with names of pipelines as keys
-    RendererPipelineHandle::new(1, std::num::NonZeroU8::new(1).unwrap() )
+    RendererPipelineHandle::new(1, std::num::NonZeroU32::new(1).unwrap() )
 }
 
 pub struct Renderer {
@@ -434,8 +435,8 @@ impl MeshDrawer {
             let render_queue_key_fields = decompose_render_queue_key(render_queue_item.key).unwrap();
 
             // Recreate resource handles
-            let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU8::new(render_queue_key_fields.material_version).unwrap());
-            let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU8::new(render_queue_key_fields.mesh_version).unwrap());
+            let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
+            let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
             // Check order
             // if self.current_order != render_queue_key_fields.order {

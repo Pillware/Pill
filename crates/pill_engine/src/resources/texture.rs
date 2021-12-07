@@ -8,24 +8,11 @@ use crate::resources::*;
 
 use crate::resources::resource_map::Resource;
 
-use super::resource_manager::ResourceHandle;
 use anyhow::{Result, Context, Error};
 
 pub enum TextureType{
     Color,
     Normal,
-}
-
-#[derive(Clone, Copy)]
-pub struct TextureHandle {
-    pub index: u32,
-}
-
-impl ResourceHandle for TextureHandle
-{
-    fn get_index(&self) -> u32 {
-        self.index
-    }
 }
 
 pub struct Texture {
@@ -59,7 +46,7 @@ impl Texture {
 }
 
 impl Resource for Texture {
-    type Storage = ResourceStorage<Texture>; 
+    type Storage = ResourceStorage<TextureHandle, Texture>; 
 }
 
 
