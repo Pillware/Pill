@@ -208,14 +208,14 @@ impl SceneManager {
         // Clean filtering bitmask for sake of future filterining bitmasks creation
         // self.get_bitmask_controller_mut(scene).unwrap().clear_filter();
         
-        let target_scene = self.get_scene_mut(scene).unwrap();
+        // let target_scene = self.get_scene_mut(scene).unwrap();
 
-        let first = target_scene.get_component_storage_element_mut_at::<T>(0);
-        let second = target_scene.get_component_storage_element_at::<U>(0);
-        // let mut T_storage = Vec::<&StorageEntry<T>>::new();
-        // let mut U_storage = Vec::<&StorageEntry<U>>::new();
+        // let first = target_scene.get_component_storage_element_mut_at::<T>(0);
+        // let second = target_scene.get_component_storage_element_mut_at::<U>(0);
+        // // let mut T_storage = Vec::<&StorageEntry<T>>::new();
+        // // let mut U_storage = Vec::<&StorageEntry<U>>::new();
         
-        println!("{} {}", first.generation, second.generation);
+        // println!("{} {}", first.generation)
         // {
         //     let storage = &self.get_scene_mut(scene).unwrap().get_component_storage_mut::<T>().data;
         //     for item in storage {
