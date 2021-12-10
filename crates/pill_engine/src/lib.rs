@@ -62,7 +62,7 @@ pub mod internal {
             TextureHandle,
             MaterialHandle,
 
-
+            Mesh,
             Material,
             MeshData,
             TextureType,

@@ -4,7 +4,7 @@ use boolinator::Boolinator;
 use log::{debug, info, error};
 use winit::{ event::*, dpi::PhysicalPosition,};
 
-use pill_core::{EngineError, get_type_name};
+use pill_core::{EngineError, get_type_name, PillSlotMapKey};
 use crate::{ 
     resources::*,
     ecs::*,
@@ -186,7 +186,11 @@ impl Engine {
     
     // --- RESOURCES
 
+    pub fn add_resource<H: PillSlotMapKey, T: Resource<Storage = ResourceStorage::<H, T>>>(&mut self, name: &str, resource: T) -> Result<H> {
+        let handle = self.resource_manager.add_resource(name, resource)?;
 
+        Ok(handle)
+    }
 
     // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
     //     self.resource_manager.load_resource(t, path, source)

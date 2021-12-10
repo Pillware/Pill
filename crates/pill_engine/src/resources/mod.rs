@@ -19,8 +19,10 @@ pub use resource_manager::{
     RendererMeshHandle,
     RendererTextureHandle,
     RendererPipelineHandle,
+    
 };
 pub use resource_storage::ResourceStorage;
 pub use mesh::{Mesh, MeshData, MeshVertex};
 pub use texture::{Texture, TextureType};
 pub use material::{Material};
+pub use resource_map::Resource;

@@ -22,10 +22,24 @@ pub struct Material {
 }
 
 impl Material {
-    pub fn new(resource_manager: &mut ResourceManager, renderer: &mut Renderer, name: &str) -> Result<Self> {  // [TODO] What if renderer fails to create material?
+    // pub fn new(engine: &mut Engine, name: &str) -> Result<Self> {  // [TODO] What if renderer fails to create material?
         
-        let color_texture_handle = resource_manager.get_default_texture(TextureType::Color);
-        let normal_texture_handle = resource_manager.get_default_texture(TextureType::Normal);
+    //     let material = Material::new_internal(&mut engine.resource_manager, &mut engine.renderer, name).unwrap();
+
+    //     Ok(material)
+    // }
+
+    pub fn default(engine: &mut Engine, name: &str) -> Result<Self> {  // [TODO] What if renderer fails to create material?
+        
+        let material = Material::new_internal(&mut engine.resource_manager, &mut engine.renderer, name).unwrap();
+
+        Ok(material)
+    }
+
+    pub fn new_internal(resource_manager: &mut ResourceManager, renderer: &mut Renderer, name: &str) -> Result<Self> {  // [TODO] What if renderer fails to create material?
+        
+        let color_texture_handle = resource_manager.get_default_texture_handle(TextureType::Color);
+        let normal_texture_handle = resource_manager.get_default_texture_handle(TextureType::Normal);
 
         let renderer_color_texture_handle = resource_manager.get_resource::<TextureHandle, Texture>(&color_texture_handle).unwrap().renderer_resource_handle;
         let renderer_normal_texture_handle = resource_manager.get_resource::<TextureHandle, Texture>(&normal_texture_handle).unwrap().renderer_resource_handle;
@@ -47,6 +61,7 @@ impl Material {
 
         Ok(material)
     }
+
 
     pub fn assign_color_texture(&mut self, engine: &mut Engine, texture_handle: TextureHandle, texture_type: TextureType) {
         let texture = engine.resource_manager.get_resource::<TextureHandle, Texture>(&texture_handle).unwrap();

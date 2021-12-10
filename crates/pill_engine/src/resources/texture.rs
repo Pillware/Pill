@@ -10,6 +10,7 @@ use crate::resources::resource_map::Resource;
 
 use anyhow::{Result, Context, Error};
 
+#[derive(Clone, Copy)]
 pub enum TextureType{
     Color,
     Normal,
@@ -17,7 +18,8 @@ pub enum TextureType{
 
 pub struct Texture {
     name: String,
-    path: PathBuf,
+    path: Option<PathBuf>,
+    texture_type: TextureType,
     pub(crate) renderer_resource_handle: RendererTextureHandle,
 }
 
@@ -26,18 +28,20 @@ impl Texture {
         let renderer_resource_handle = renderer.create_texture(&path, name, texture_type).unwrap();
         let texture = Self { 
             name: name.to_string(),
-            path: path,
+            path: Some(path),
+            texture_type,
             renderer_resource_handle,
         };
         
         Ok(texture)
     }
 
-    pub(crate) fn new_from_bytes(renderer: &mut Renderer, bytes: &[u8], name: &str, path: PathBuf, texture_type: TextureType) -> Result<Self> {
+    pub(crate) fn new_from_bytes(renderer: &mut Renderer, name: &str, bytes: &[u8], texture_type: TextureType) -> Result<Self> {
         let renderer_resource_handle = renderer.create_texture_from_bytes(bytes, name, texture_type).unwrap();
         let texture = Self { 
             name: name.to_string(),
-            path: path,
+            path: None,
+            texture_type,
             renderer_resource_handle,
         };
         

@@ -62,11 +62,11 @@ struct RenderQueueField<T>  {
 
 impl<T> RenderQueueField<T> 
 where
-    T: Copy + Default + Binary + From<u8> + Ord + Shl<Output = T> + Sub<Output = T> + Add<Output = T> + Not<Output = T>,
+    T: Copy + Default + Binary + From<u8> + From<u32>  + Ord + Shl<Output = T> + Sub<Output = T> + Add<Output = T> + Not<Output = T>,
 {
     pub fn new(mask_range: core::ops::Range<T>) -> Self { // Compile-time evaluable function
-        let mask_size = T::from(std::mem::size_of::<T> as u8 * 8);
-        let mask_shift = mask_size - mask_range.end - T::from(1);
+        let mask_size = T::from(std::mem::size_of::<T> as u32 * 8);
+        let mask_shift = mask_size - mask_range.end - T::from(1 as u32);
         let mask: T = pill_core::create_bitmask_from_range::<T>(&mask_range);
 
         RenderQueueField {
@@ -104,7 +104,8 @@ pub struct RenderQueueKeyFields {
 // Decomposes pill engine render queue key into separate fields
 pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> Result<RenderQueueKeyFields> { 
 
-    let order: u8 = ((render_queue_key & RENDERQUEUE_ORDER.mask) >> RENDERQUEUE_ORDER.mask_shift) as u8;
+    // [TODO] What if render queue key is not valid
+    let order: u8 = ((render_queue_key & RENDERQUEUE_ORDER.mask as RenderQueueKey) >> RENDERQUEUE_ORDER.mask_shift as RenderQueueKey) as u8;
     let material_index: u8 = ((render_queue_key & RENDERQUEUE_MATERIAL_INDEX.mask) >> RENDERQUEUE_MATERIAL_INDEX.mask_shift) as u8;
     let material_version: u8 = ((render_queue_key & RENDERQUEUE_MATERIAL_VERSION.mask) >> RENDERQUEUE_MATERIAL_VERSION.mask_shift) as u8;
     let mesh_index: u8 = ((render_queue_key & RENDERQUEUE_MESH_INDEX.mask) >> RENDERQUEUE_MESH_INDEX.mask_shift) as u8;
@@ -125,11 +126,11 @@ pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> Result<Re
 pub type RenderQueueKey = u64;
 
 lazy_static! { // This will be initialized in runtime instead of compile-time (this is the cost of not using const function, const functions do not allow for generic variables bound by traits different than Sized)
-    static ref RENDERQUEUE_ORDER: RenderQueueField<RenderQueueKey> = RenderQueueField::new(0..4);
-    static ref RENDERQUEUE_MATERIAL_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::new(5..10);
-    static ref RENDERQUEUE_MATERIAL_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::new(11..18);
-    static ref RENDERQUEUE_MESH_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::new(19..26);
-    static ref RENDERQUEUE_MESH_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::new(27..34);
+    static ref RENDERQUEUE_ORDER: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(0..4);
+    static ref RENDERQUEUE_MATERIAL_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(5..10);
+    static ref RENDERQUEUE_MATERIAL_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(11..18);
+    static ref RENDERQUEUE_MESH_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(19..26);
+    static ref RENDERQUEUE_MESH_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(27..34);
 }
 
 
@@ -137,7 +138,7 @@ lazy_static! { // This will be initialized in runtime instead of compile-time (t
 
 #[test]
 fn new_render_queue_field_test() {
-    let render_queue_field: RenderQueueField<u64> = RenderQueueField::new(5..10);
+    let render_queue_field: RenderQueueField<u64> = RenderQueueField::<u64>::new(5..10);
 
     let expected_mask: u64 = 0b0000_0111_1110_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
     assert_eq!(render_queue_field.mask, expected_mask);

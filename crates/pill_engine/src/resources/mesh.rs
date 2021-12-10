@@ -26,16 +26,15 @@ pub struct Mesh {
 
 impl Mesh {
     // [TODO] What if renderer fails to create mesh?
-    pub fn new(renderer: &mut Renderer, name: &str, path: PathBuf) -> Result<Self> {  
+    pub fn new(engine: &mut Engine, name: &str, path: PathBuf) -> Result<Self> {  
         let mesh_data = MeshData::new(&path)?;
-        let renderer_resource_handle = renderer.create_mesh(name, &mesh_data).unwrap();//?;
+        let renderer_resource_handle = engine.renderer.create_mesh(name, &mesh_data).unwrap();//?;
 
         let mesh = Self { 
             name: name.to_string(),
             path,
             renderer_resource_handle,
             mesh_data,
-          
         };
 
         Ok(mesh)

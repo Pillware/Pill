@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use boolinator::Boolinator;
 use pill_core::{EngineError, get_type_name, PillSlotMapKey};
 
-use crate::ecs::*;
+use crate::{ecs::*, engine};
 use crate::engine::Engine;
 
 use crate::graphics::Renderer;
@@ -98,7 +98,7 @@ impl ResourceManager {
     }
 
     pub fn get_resource<'a, H, T: Resource<Storage = ResourceStorage::<H, T>>>(&self, resource_handle: &H) -> Result<&T> 
-        where H: PillSlotMapKey + 'static
+        where H: PillSlotMapKey + 'static // [TODO] Remove static lifetime
     {
         // Get resource storage from scene
         let resource_storage = self.get_resource_storage::<H, T>()?;
@@ -122,22 +122,23 @@ impl ResourceManager {
 //     Ok(&resource)
 // }
 
-    // pub fn add_resource<H: PillSlotMapKey, T: Resource<Storage = ResourceStorage::<H, T>>>(&self, name: &str, resource: T) -> Result<&H> {
-    //     // Get resource storage from scene
-    //     let resource_storage = self.get_resource_storage::<T>()?;
+    pub fn add_resource<H: PillSlotMapKey, T: Resource<Storage = ResourceStorage::<H, T>>>(&mut self, name: &str, resource: T) -> Result<H> 
+    {
+        // Get resource storage from scene
+        let resource_storage = self.get_resource_storage_mut::<H, T>()?;
 
-    //     // [TODO] Add double hashmap and check if name is already there, if yes the return error, if not then insert new resource and create entry in double hashmap (actually to entries A->B and B->A)
-    //     // Check if resource already exists
-    //     // resource_storage.data.contains_key(name).eq(&false).ok_or(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), name.to_string())))?;
+        // [TODO] Add double hashmap and check if name is already there, if yes the return error, if not then insert new resource and create entry in double hashmap (actually to entries A->B and B->A)
+        // Check if resource already exists
+        //resource_storage.data.contains_key(name).eq(&false).ok_or(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), name.to_string())))?;
 
-    //     // Get index and create handle
-    //     resource_storage.data.insert(name, resource);
+        // Get index and create handle
+        let handle = resource_storage.data.insert(resource);
 
-    //     // Create resource handle
+        // Create resource handle
 
-
-    //     Ok(&resource)
-    // }
+        Ok(handle)
+        //Ok(&resource)
+    }
 
 
     fn get_resource_storage<H: PillSlotMapKey, T: Resource<Storage = ResourceStorage::<H, T>>>(&self) -> Result<&ResourceStorage<H, T>> {
@@ -151,34 +152,32 @@ impl ResourceManager {
 
     // -- Default resources
     pub fn create_default_resources(&mut self, renderer: &mut Renderer) {
-        // self.resources.insert::<Texture>(ResourceStorage::<Texture>::new());
-        // self.resources.insert::<Mesh>(ResourceStorage::<Mesh>::new());
-        // self.resources.insert::<Material>(ResourceStorage::<Material>::new());
+        self.resources.insert::<Texture>(ResourceStorage::<TextureHandle, Texture>::new());
+        self.resources.insert::<Mesh>(ResourceStorage::<MeshHandle, Mesh>::new());
+        self.resources.insert::<Material>(ResourceStorage::<MaterialHandle, Material>::new());
 
-    //     // Create default resources
-    //     let texture_storage = self.get_resource_storage_mut::<Texture>().unwrap();
+        // Create default resources
+        let texture_storage = self.get_resource_storage_mut::<TextureHandle, Texture>().unwrap();
 
+        // Load default resource data to executable
+        let default_color_texture_bytes = include_bytes!("../../res/textures/default_color.png");
+        let default_normal_texture_bytes = include_bytes!("../../res/textures/default_normal.png");
 
-    //     // Load default resource data to executable
-    //     let default_color_texture_bytes = include_bytes!("../../res/textures/default_color.png");
+        let default_color_texture = Texture::new_from_bytes(renderer, "DefaultColor", default_color_texture_bytes, TextureType::Color).unwrap();
+        let x = texture_storage.data.insert(default_color_texture);
+        println!("{} {}", x.0.index, x.0.version);
 
+        let default_normal_texture = Texture::new_from_bytes(renderer, "DefaultNormal", default_normal_texture_bytes, TextureType::Normal).unwrap();
+        let y = texture_storage.data.insert(default_normal_texture);
+        println!("{} {}", y.0.index, y.0.version);
 
-
-    //    // let path = env::current_dir().unwrap().join("res").join("textures");
-    //    let path = env::current_dir().unwrap().join("res").join("textures");
-    //     println!("xxxxxxxxx {}", path.display());
-
-    //     let default_color_texture = Texture::new(renderer, "DefaultColor", path.join("default_color.png"), TextureType::Color).unwrap();
-    //     texture_storage.data.insert("DefaultColor".to_string(), default_color_texture);
-        
-    //     let default_normal_texture = Texture::new(renderer, "DefaultNormal", path.join("default_normal.png"), TextureType::Normal).unwrap();
-    //     texture_storage.data.insert("DefaultNormal".to_string(), default_normal_texture);
+        let default_material = Material::new_internal(self, renderer, "DefaultMaterial");
     }
 
-    pub fn get_default_texture(&self, texture_type: TextureType) -> TextureHandle {
+    pub fn get_default_texture_handle(&self, texture_type: TextureType) -> TextureHandle {
         match texture_type {
-            TextureType::Color => TextureHandle::new(0,NonZeroU32::new(1).unwrap()),
-            TextureType::Normal => TextureHandle::new(1,NonZeroU32::new(1).unwrap()),
+            TextureType::Color => TextureHandle::new(1,NonZeroU32::new(1).unwrap()),
+            TextureType::Normal => TextureHandle::new(2,NonZeroU32::new(1).unwrap()),
         }
     }
 

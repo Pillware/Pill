@@ -17,9 +17,27 @@ pub fn rendering_system(engine: &mut Engine) {
     let render_queue = &mut engine.render_queue;
     render_queue.clear();
 
-    println!("xxxxx {}", mesh_rendering_component_storage.data.len());
+
+
+    println!("Mesh rendering components to process: {}", mesh_rendering_component_storage.data.len());
     for i in 0..mesh_rendering_component_storage.data.len() { //[TODO] Proper iteration
         debug!("Processing entity {}", i);
+
+        // [TODO] Check if render queue key is correct
+        if mesh_rendering_component_storage.data[i].render_queue_key == 0 {
+            debug!("Invalid render queue key");
+            continue;
+        }
+
+        if mesh_rendering_component_storage.data[i].mesh_handle == None {
+            debug!("Mesh is not assigned");
+            continue;
+        }
+
+        if mesh_rendering_component_storage.data[i].material_handle == None {
+            debug!("Material is not assigned");
+            continue;
+        }
 
         let render_queue_item = RenderQueueItem {
             key: mesh_rendering_component_storage.data[i].render_queue_key,
