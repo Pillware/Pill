@@ -71,7 +71,7 @@ impl CameraUniform {
 
 #[derive(Debug)]
 pub struct RendererCamera {
-    uniform: CameraUniform,
+    pub(crate) uniform: CameraUniform,
     buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
 }
@@ -79,7 +79,7 @@ pub struct RendererCamera {
 impl RendererCamera {
     pub fn new(device: &wgpu::Device, camera_bind_group_layout: &wgpu::BindGroupLayout) -> Result<Self> {
 
-        let mut uniform = CameraUniform::new();
+        let uniform = CameraUniform::new();
 
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("camera_buffer"),
@@ -103,5 +103,10 @@ impl RendererCamera {
         };
 
         Ok(camera)
+    }
+
+    pub fn update(&mut self, queue: &wgpu::Queue, camera_component: &CameraComponent, transform_component: &TransformComponent) {
+        self.uniform.update_view_projection_matrix(camera_component, transform_component);
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 }

@@ -81,7 +81,7 @@ impl PillRenderer for Renderer {
 
         // Load default resource data to/from executable
         let default_color_texture_bytes = include_bytes!("../res/textures/default_color.png");
-        renderer.create_texture_from_bytes(default_color_texture_bytes, "DefaultColor", TextureType::Color);
+        renderer.create_texture_from_bytes(default_color_texture_bytes, "DefaultColor", TextureType::Color).unwrap();
 
         renderer
     }
@@ -92,10 +92,16 @@ impl PillRenderer for Renderer {
 
     fn render(
         &mut self,
+        active_camera_entity_handle: EntityHandle,
         render_queue: &Vec<RenderQueueItem>, 
+        camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>
     ) -> Result<(), RendererError> {
-        self.state.render(render_queue, transform_component_storage)
+        self.state.render(
+            active_camera_entity_handle,
+            render_queue,
+            camera_component_storage,
+            transform_component_storage)
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
@@ -194,7 +200,6 @@ impl RenderingResourceStorage {
 pub struct State {
     // Resources
     rendering_resource_storage: RenderingResourceStorage,
-    active_camera: Option<RendererCameraHandle>,
 
     // Renderer variables
     surface: wgpu::Surface,
@@ -281,12 +286,10 @@ impl State {
         // Create drawing state
         let mesh_drawer = MeshDrawer::new(&device, 1000); // [TODO] move magic value to confi
 
-
         // Create state
         Self {
             // Resources
             rendering_resource_storage,
-            active_camera: None,
 
             // Renderer variables
             surface,
@@ -317,7 +320,9 @@ impl State {
 
     fn render(
         &mut self, 
-        render_queue: &Vec::<RenderQueueItem>, 
+        active_camera_entity_handle: EntityHandle,
+        render_queue: &Vec<RenderQueueItem>, 
+        camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>
     ) -> Result<(), RendererError> { 
     
@@ -342,6 +347,7 @@ impl State {
 
         { // Additional scope to release mutable borrow of encoder done by begin_render_pass
             
+            // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment { // This is what [[location(0)]] in the fragment shader targets
                 view: &view, // Specifies what texture to save the colors to (to frame taken from swapchain, so any colors we draw to this attachment will get drawn to the screen)
                 resolve_target: None, // Specifies what texture will receive the resolved output
@@ -353,6 +359,7 @@ impl State {
                 },
             };
 
+            // Create depth attachment
             let depth_stencil_attachment = wgpu::RenderPassDepthStencilAttachment {
                 view: &self.depth_texture.texture_view,
                 depth_ops: Some(wgpu::Operations {
@@ -362,28 +369,47 @@ impl State {
                 stencil_ops: None,
             };
 
-            self.mesh_drawer.draw(&self.queue, &mut encoder, &self.rendering_resource_storage, color_attachment, depth_stencil_attachment, &render_queue, &transform_component_storage)
+            // Get active camera
+            let active_camera_component = camera_component_storage.data.get(active_camera_entity_handle.index).unwrap().as_ref().unwrap();
+            {      
+                let renderer_camera = self.rendering_resource_storage.cameras.get_mut(active_camera_component.get_renderer_resource_handle()).ok_or(RendererError::RendererResourceNotFound)?;
+                let active_camera_transform_component = transform_component_storage.data.get(active_camera_entity_handle.index).unwrap().as_ref().unwrap();
+                // Update camera uniform buffer
+                renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
+            }
+            let renderer_camera = self.rendering_resource_storage.cameras.get(active_camera_component.get_renderer_resource_handle()).unwrap();
 
+            self.mesh_drawer.draw(
+                &self.queue, 
+                &mut encoder, 
+                &self.rendering_resource_storage, 
+                color_attachment, 
+                depth_stencil_attachment, 
+                &renderer_camera,
+                &render_queue, 
+                &transform_component_storage
+            )
         }
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();
+        debug!("Frame rendering completed successfully");
         Ok(())
     }
 }
 
 pub struct MeshDrawer {
-    pub current_order: u8,
-    pub current_camera_handle: Option<RendererCameraHandle>,
-    pub current_pipeline_handle: Option<RendererPipelineHandle>,
-    pub current_material_handle: Option<RendererMaterialHandle>,
-    pub current_mesh_handle: Option<RendererMeshHandle>,
-    pub current_mesh_index_count: u32,
+    current_order: u8,
+    //current_camera_handle: Option<RendererCameraHandle>,
+    current_pipeline_handle: Option<RendererPipelineHandle>,
+    current_material_handle: Option<RendererMaterialHandle>,
+    current_mesh_handle: Option<RendererMeshHandle>,
+    current_mesh_index_count: u32,
 
-    pub max_instance_count: u32,
-    pub instance_count: u32,
-    pub instances: Vec::<Instance>,
-    pub instance_buffer: wgpu::Buffer,
+    max_instance_count: u32,
+    instance_count: u32,
+    instances: Vec::<Instance>,
+    instance_buffer: wgpu::Buffer,
 }
 
 impl MeshDrawer {
@@ -399,7 +425,7 @@ impl MeshDrawer {
 
         MeshDrawer {
             current_order: 31,
-            current_camera_handle: None,
+            //current_camera_handle: None,
             current_pipeline_handle: None,
             current_material_handle: None,
             current_mesh_handle: None,
@@ -414,16 +440,20 @@ impl MeshDrawer {
 
     pub fn draw(
         &mut self, 
+        // Resources
         queue: &wgpu::Queue, 
         encoder: &mut wgpu::CommandEncoder, 
         rendering_resource_storage: &RenderingResourceStorage, 
         color_attachment: wgpu::RenderPassColorAttachment, 
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
+        // Rendring data
+        camera: &RendererCamera,
         render_queue: &Vec::<RenderQueueItem>, 
         transform_component_storage: &ComponentStorage<TransformComponent>
     ) {
-         // Start encoding render pass
-         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
+
+        // Start encoding render pass
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
             label: Some("render_pass"),
             color_attachments: &[color_attachment],
             depth_stencil_attachment: Some(depth_stencil_attachment),
@@ -438,6 +468,7 @@ impl MeshDrawer {
             let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
             let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
+
             // Check order
             // if self.current_order != render_queue_key_fields.order {
             //     if self.instance_count > 0 {
@@ -450,11 +481,11 @@ impl MeshDrawer {
             //     self.current_order = 1;// render_queue_key_fields.order.clone();
             // }
 
-
             if self.current_material_handle != Some(renderer_material_handle) {
+                // Render accumulated instances
                 if self.instance_count > 0 {
-                    queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances));
-                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
+                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
                     render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);            
                     self.instances.clear();
                     self.instance_count = 0; 
@@ -462,44 +493,59 @@ impl MeshDrawer {
                 // Set new material
                 self.current_material_handle = Some(renderer_material_handle);
                 let material = rendering_resource_storage.materials.get(self.current_material_handle.unwrap()).unwrap();
-                let camera= rendering_resource_storage.cameras.get(self.current_camera_handle.unwrap()).unwrap();
+               
+                // Set pipeline if new material is using different one
+                if self.current_pipeline_handle != Some(material.pipeline_handle) {
+                    self.current_pipeline_handle = Some(material.pipeline_handle);
+                    let pipeline = rendering_resource_storage.pipelines.get( self.current_pipeline_handle.unwrap()).unwrap();
+                    render_pass.set_pipeline(&pipeline.render_pipeline);
+                }
+
                 render_pass.set_bind_group(0, &material.bind_group, &[]);
                 render_pass.set_bind_group(1, &camera.bind_group, &[]);
             }
 
             if self.current_mesh_handle != Some(renderer_mesh_handle) {
+                // Render accumulated instances
                 if self.instance_count > 0 {
-                    queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances));
-                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+                    queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
+                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
                     render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);    
                     self.instances.clear();
                     self.instance_count = 0;            
                 }
                 // Set new mesh
-                self.current_mesh_handle = Some(renderer_mesh_handle);
+                self.current_mesh_handle = Some(renderer_mesh_handle);               
                 let mesh = rendering_resource_storage.meshes.get(self.current_mesh_handle.unwrap()).unwrap();
+                self.current_mesh_index_count = mesh.index_count;
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
                 render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
             }
 
             // Add new instance
-            let transform_component = transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap();
-            self.instances.push( 
-                Instance {
-                    model: cgmath::Matrix4::model(transform_component.position, transform_component.rotation, transform_component.scale).into(),
-                    normal: cgmath::Matrix3::from_euler_angles(transform_component.rotation).into(),
-                }
-            );
+            let transform_component = transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap().as_ref().unwrap();
+            self.instances.push(Instance::new(transform_component));
+
             self.instance_count += 1;
         }
 
+        
         // End of render queue so draw remaining saved objects
         if self.instance_count > 0 {
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances));
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
             render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);    
             self.instances.clear();
             self.instance_count = 0;            
         }
+        
+        // Reset state of mesh drawer
+        self.current_order = 31;
+        self.current_pipeline_handle = None;
+        self.current_material_handle = None;
+        self.current_mesh_handle = None;
+        self.current_mesh_index_count = 0;
+        self.instances.clear();
+        self.instance_count = 0;
     }
 }

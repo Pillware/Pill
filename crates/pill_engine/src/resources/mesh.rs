@@ -12,37 +12,52 @@ use cgmath::InnerSpace;
 use pill_core::EngineError;
 use tobj::LoadOptions;
 
-use crate::resources::resource_map::Resource;
+//use crate::resources::resource_mapxxx::Resource;
 
 //use crate::resources::resource_manager::ResourceHandle;
 use anyhow::{Result, Context, Error};
 
+#[readonly::make]
 pub struct Mesh {
-    name: String,
+    #[readonly]
+    pub name: String,
+    #[readonly]
     path: PathBuf,
-    pub(crate) renderer_resource_handle: RendererMeshHandle,
-    mesh_data: MeshData,
+    pub(crate) renderer_resource_handle: Option<RendererMeshHandle>,
+    mesh_data: Option<MeshData>,
 }
 
 impl Mesh {
-    // [TODO] What if renderer fails to create mesh?
-    pub fn new(engine: &mut Engine, name: &str, path: PathBuf) -> Result<Self> {  
-        let mesh_data = MeshData::new(&path)?;
-        let renderer_resource_handle = engine.renderer.create_mesh(name, &mesh_data).unwrap();//?;
-
-        let mesh = Self { 
+    pub fn new(name: &str, path: PathBuf) -> Self {  
+        Self { 
             name: name.to_string(),
             path,
-            renderer_resource_handle,
-            mesh_data,
-        };
-
-        Ok(mesh)
+            renderer_resource_handle: None,
+            mesh_data: None,
+        }
     }
 }
 
 impl Resource for Mesh {
-    type Storage = ResourceStorage<MeshHandle, Mesh>; 
+    fn initialize(&mut self, engine: &mut Engine) { // [TODO] What if renderer fails to create mesh?
+        let mesh_data = MeshData::new(&self.path).unwrap();
+        self.mesh_data = Some(mesh_data);
+
+        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).unwrap();
+        self.renderer_resource_handle = Some(renderer_resource_handle);
+    }
+
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn destroy(&mut self, engine: &mut Engine) {
+        //todo!()
+    }
+}
+
+impl typemap_rev::TypeMapKey for Mesh {
+    type Value = ResourceStorage<MeshHandle, Mesh>; 
 }
 
 
@@ -74,7 +89,7 @@ impl MeshData {
         };
 
         // Load data
-        let (models, materials) = tobj::load_obj(path.as_path(), &load_options)?;
+        let (models, _materials) = tobj::load_obj(path.as_path(), &load_options)?;
 
         // [TODO] Check if file has any models
         // Check data validity
@@ -174,28 +189,3 @@ impl MeshData {
 
 
 
-
-// pub struct Mesh {
-//     vertices:
-//     indices:
-//     normals:
-//     tangents:
-//     bitangents:
-//     texture_coordinates:
-// }\
-
-
-// pub struct MeshResource {
-//     //submeshes: Vec<SubMesh>,
-// }
-
-// impl MeshResource {
-//     // pub fn new() -> Self {
-//     //     // Read data from file using importer
-//     //     // For each submesh in file create submesh push it to vector of submeshes
-
-
-//     // }
-
-    
-// }

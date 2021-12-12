@@ -32,6 +32,8 @@ pub struct Scene {
     pub(crate) entity_counter: usize,
     pub(crate) entities: Vec<Entity>,
     pub(crate) components: ComponentMap,
+
+    //pub(crate) active_camera_entity_handle: Option<EntityHandle>,
 }
 
 impl Scene {
@@ -41,6 +43,8 @@ impl Scene {
             entity_counter: 0,
             entities: Vec::<Entity>::new(),
             components: ComponentMap::new(),
+
+            //active_camera_entity_handle: None,
         };
     }
 
@@ -56,4 +60,12 @@ impl Scene {
     pub fn get_component_storage_mut<T: Component<Storage = ComponentStorage::<T>>>(&mut self) -> Result<&mut ComponentStorage<T>> {
         self.components.get_mut::<T>().ok_or(Error::new(EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone())))
     }
+
+    // pub fn get_active_camera_entity_handle(&self) -> Result<EntityHandle> {
+    //     match self.active_camera_entity_handle {
+    //         Some(value) => Ok(value),
+    //         None => Err(Error::new(EngineError::NoActiveCamera)),
+    //     }
+    // }
+    
 }

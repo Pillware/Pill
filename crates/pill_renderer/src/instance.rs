@@ -6,15 +6,15 @@ use crate::mesh::Vertex;
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Instance {
-    pub(crate) model: [[f32; 4]; 4], // It is not possible to use cgmath with bytemuck directly. Conversion from Quaternion into a 4x4 f32 array (matrix) needed
-    pub(crate) normal: [[f32; 3]; 3], // It is matrix3 because we only need the rotation componen
+    pub(crate) model_matrix: [[f32; 4]; 4], // It is not possible to use cgmath with bytemuck directly. Conversion from Quaternion into a 4x4 f32 array (matrix) needed
+    pub(crate) normal_matrix: [[f32; 3]; 3], // It is matrix3 because we only need the rotation componen
 }
 
 impl Instance {
     pub fn new(transform_component: &TransformComponent) -> Instance {
         Instance {
-            model: cgmath::Matrix4::identity().into(),
-            normal: cgmath::Matrix3::identity().into(),
+            model_matrix: cgmath::Matrix4::model(transform_component.position, transform_component.rotation, transform_component.scale).into(),
+            normal_matrix: cgmath::Matrix3::from_euler_angles(transform_component.rotation).into(),
         }
     }
 }

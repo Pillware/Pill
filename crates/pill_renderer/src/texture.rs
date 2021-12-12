@@ -64,7 +64,7 @@ impl RendererTexture {
         texture_type: TextureType,
     ) -> Result<Self> {
         let dimensions = image.dimensions();
-        let rgba = image.to_rgba();
+        let rgba = image.to_rgba8();
 
         // Get size
         let size = wgpu::Extent3d {

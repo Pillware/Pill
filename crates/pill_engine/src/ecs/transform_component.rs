@@ -27,7 +27,7 @@ impl Default for TransformComponent {
         Self { 
             position: cgmath::Vector3::<f32>::zero(),
             rotation: cgmath::Vector3::<f32>::zero(),
-            scale: cgmath::Vector3::<f32>::zero(),
+            scale: cgmath::Vector3::<f32>::new(1.0, 1.0, 1.0),
         }
     }
 }

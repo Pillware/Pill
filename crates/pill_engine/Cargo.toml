@@ -34,7 +34,7 @@ log = "0.4"
 # Loaders
 tobj = "3.0"
 
-
+readonly = "0.2"
 
 [features]
 game = []

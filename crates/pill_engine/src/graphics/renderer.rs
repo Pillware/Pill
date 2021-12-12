@@ -2,7 +2,9 @@ use core::fmt;
 use std::{cmp::Ordering, fmt::Display, ops::{Range}, path::{Path, PathBuf}};
 use std::{fmt::Binary, ops::{Add, Not, Shl, Sub}};
 
+
 use pill_core::PillSlotMapKey;
+use thiserror::Error;
 use winit::{ 
     event::*, 
     event_loop::{ControlFlow, EventLoop},
@@ -12,7 +14,7 @@ use winit::{
 
 use core::fmt::Debug;
 use anyhow::{Result, Context, Error};
-use crate::{ecs::{ComponentStorage, TransformComponent}, engine::Engine, resources::{Material, MaterialHandle, Mesh, MeshData, MeshHandle, TextureHandle, TextureType}};
+use crate::{ecs::{ComponentStorage, TransformComponent, CameraComponent, EntityHandle}, engine::Engine, resources::{Material, MaterialHandle, Mesh, MeshData, MeshHandle, TextureHandle, TextureType}};
 use crate::ecs::Scene;
 use lazy_static::lazy_static;
 use crate::resources::{ RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererTextureHandle };
@@ -22,10 +24,15 @@ use super::RenderQueueItem;
 
 // --- Renderer error
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum RendererError { 
+    #[error("Renderer resource not found \n\nSource: ")]
+    RendererResourceNotFound,
+    #[error("Renderer surface lost \n\nSource: ")]
     SurfaceLost,
+    #[error("Renderer surface out of memory \n\nSource: ")]
     SurfaceOutOfMemory,
+    #[error("Undefined renderer surface error \n\nSource: ")]
     SurfaceOther,
 }
 
@@ -36,7 +43,9 @@ pub trait PillRenderer {
     fn initialize(&self);
 
     fn render(&mut self, 
+        active_camera_entity_handle: EntityHandle, // [TODO] Work only in ECS approach in which index of entity equals index of its components
         render_queue: &Vec::<RenderQueueItem>, 
+        camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>
     ) -> Result<(), RendererError>;
     

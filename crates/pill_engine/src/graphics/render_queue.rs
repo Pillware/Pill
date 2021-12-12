@@ -65,7 +65,7 @@ where
     T: Copy + Default + Binary + From<u8> + From<u32>  + Ord + Shl<Output = T> + Sub<Output = T> + Add<Output = T> + Not<Output = T>,
 {
     pub fn new(mask_range: core::ops::Range<T>) -> Self { // Compile-time evaluable function
-        let mask_size = T::from(std::mem::size_of::<T> as u32 * 8);
+        let mask_size = T::from(std::mem::size_of::<T>() as u8 * 8);
         let mask_shift = mask_size - mask_range.end - T::from(1 as u32);
         let mask: T = pill_core::create_bitmask_from_range::<T>(&mask_range);
 
@@ -85,10 +85,10 @@ pub fn compose_render_queue_key(engine: &Engine, material_handle: &MaterialHandl
    
     let render_queue_key: RenderQueueKey = 
         ((material.order as RenderQueueKey) << RENDERQUEUE_ORDER.mask_shift) | 
-        ((material.renderer_resource_handle.data().index as RenderQueueKey) << RENDERQUEUE_MATERIAL_INDEX.mask_shift) | 
-        ((material.renderer_resource_handle.data().version.get() as RenderQueueKey) << RENDERQUEUE_MATERIAL_VERSION.mask_shift) | 
-        ((mesh.renderer_resource_handle.data().index as RenderQueueKey) << RENDERQUEUE_MESH_INDEX.mask_shift ) | 
-        ((mesh.renderer_resource_handle.data().version.get() as RenderQueueKey) << RENDERQUEUE_MESH_VERSION.mask_shift);
+        ((material.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDERQUEUE_MATERIAL_INDEX.mask_shift) | 
+        ((material.renderer_resource_handle.unwrap().data().version.get() as RenderQueueKey) << RENDERQUEUE_MATERIAL_VERSION.mask_shift) | 
+        ((mesh.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDERQUEUE_MESH_INDEX.mask_shift ) | 
+        ((mesh.renderer_resource_handle.unwrap().data().version.get() as RenderQueueKey) << RENDERQUEUE_MESH_VERSION.mask_shift);
 
     Ok(render_queue_key)
 }

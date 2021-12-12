@@ -6,51 +6,61 @@ use crate::engine::Engine;
 use crate::graphics::*;
 use crate::resources::*;
 
-use crate::resources::resource_map::Resource;
+//use crate::resources::resource_mapxxx::Resource;
 
 use anyhow::{Result, Context, Error};
+use typemap_rev::TypeMapKey;
+
 
 #[derive(Clone, Copy)]
-pub enum TextureType{
+pub enum TextureType {
     Color,
     Normal,
 }
 
+
+#[readonly::make]
 pub struct Texture {
-    name: String,
-    path: Option<PathBuf>,
-    texture_type: TextureType,
-    pub(crate) renderer_resource_handle: RendererTextureHandle,
+    #[readonly]
+    pub name: String,
+    #[readonly]
+    pub load_type: ResourceLoadType,
+    #[readonly]
+    pub texture_type: TextureType,
+    pub(crate) renderer_resource_handle: Option<RendererTextureHandle>,
 }
 
 impl Texture {
-    pub fn new(renderer: &mut Renderer, name: &str, path: PathBuf, texture_type: TextureType) -> Result<Self> {  // [TODO] What if renderer fails to create texture?
-        let renderer_resource_handle = renderer.create_texture(&path, name, texture_type).unwrap();
-        let texture = Self { 
-            name: name.to_string(),
-            path: Some(path),
-            texture_type,
-            renderer_resource_handle,
-        };
-        
-        Ok(texture)
-    }
 
-    pub(crate) fn new_from_bytes(renderer: &mut Renderer, name: &str, bytes: &[u8], texture_type: TextureType) -> Result<Self> {
-        let renderer_resource_handle = renderer.create_texture_from_bytes(bytes, name, texture_type).unwrap();
-        let texture = Self { 
+    pub fn new(name: &str, texture_type: TextureType, resource_load_type: ResourceLoadType) -> Self {   
+        Self {
             name: name.to_string(),
-            path: None,
+            load_type: resource_load_type,
             texture_type,
-            renderer_resource_handle,
-        };
-        
-        Ok(texture)
+            renderer_resource_handle: None,
+        }
     }
 }
 
-impl Resource for Texture {
-    type Storage = ResourceStorage<TextureHandle, Texture>; 
+impl Resource for Texture { // [TODO] What if renderer fails to create texture?
+    fn initialize(&mut self, engine: &mut Engine) {
+        let renderer_resource_handle = match &self.load_type {
+            ResourceLoadType::Path(path) => engine.renderer.create_texture(&path, &self.name, self.texture_type).unwrap(),
+            ResourceLoadType::Bytes(bytes) => engine.renderer.create_texture_from_bytes(&bytes, &self.name, self.texture_type).unwrap(),
+        };
+
+        self.renderer_resource_handle = Some(renderer_resource_handle);
+    }
+
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn destroy(&mut self, engine: &mut Engine) {
+        //todo!()
+    }
 }
 
-
+impl TypeMapKey for Texture {
+    type Value = ResourceStorage<TextureHandle, Texture>; 
+}
