@@ -158,40 +158,40 @@ mod test {
 
     use super::{ComponentStorage, StorageEntry};
 
-    #[test]
-    fn basic_component_insertion() {
-        let mut components = ComponentStorage::<u64>::new();
+    // #[test]
+    // fn basic_component_insertion() {
+    //     let mut components = ComponentStorage::<u64>::new();
 
-        let number: u64 = 10;
-        let handle = EntityHandle::new(0, 0);
+    //     let number: u64 = 10;
+    //     let handle = EntityHandle::new(0, 0);
 
-        components.set(handle, number);
+    //     components.set(handle, number);
 
-        assert_eq!(Some(10), components.get(handle.index));
+    //     assert_eq!(Some(10), components.get(handle.index));
 
-        components.set(handle, 20);
-        assert_eq!(Some(20), components.get(handle.index));
+    //     components.set(handle, 20);
+    //     assert_eq!(Some(20), components.get(handle.index));
 
-        let second_handle = EntityHandle::new(0, 1);
-        components.set(second_handle, 30);
-        assert_eq!(None, components.get(handle.index));
-        assert_eq!(Some(30), components.get(second_handle.index));
-    }
+    //     let second_handle = EntityHandle::new(0, 1);
+    //     components.set(second_handle, 30);
+    //     assert_eq!(None, components.get(handle.index));
+    //     assert_eq!(Some(30), components.get(second_handle.index));
+    // }
 
-    #[test]
-    fn mutable_component_test() {
-        let mut components = ComponentStorage::<String>::new();
+    // #[test]
+    // fn mutable_component_test() {
+    //     let mut components = ComponentStorage::<String>::new();
 
-        let first = EntityHandle::new(0, 0);
-        let second = EntityHandle::new(1, 1);
+    //     let first = EntityHandle::new(0, 0);
+    //     let second = EntityHandle::new(1, 1);
 
-        components.set(first, String::from("TEST STRING"));
-        assert_eq!(components.get(first.index), Some(String::from("TEST STRING")));
+    //     components.set(first, String::from("TEST STRING"));
+    //     assert_eq!(components.get(first.index), Some(String::from("TEST STRING")));
 
-        let new_string = components.get(first.index).unwrap().to_owned() + &String::from(" WORKS");
-        components.set(first, new_string.to_string());
-        assert_eq!(components.get(first.index), Some(String::from("TEST STRING WORKS")))
-    }
+    //     let new_string = components.get(first.index).unwrap().to_owned() + &String::from(" WORKS");
+    //     components.set(first, new_string.to_string());
+    //     assert_eq!(components.get(first.index), Some(String::from("TEST STRING WORKS")))
+    // }
 
     #[derive(Debug)]
     struct Health(u32);
@@ -233,6 +233,7 @@ mod test {
         // Add components to entities
         scene_manager.add_component_to_entity(scene, first_entity, Health(15));
         scene_manager.add_component_to_entity(scene, first_entity, Shield(10));
+        scene_manager.add_component_to_entity(scene, first_entity, Name(String::from("Frodo")));
 
         scene_manager.add_component_to_entity(scene, second_entity, Health(5));
         scene_manager.add_component_to_entity(scene, second_entity, Shield(5));
@@ -240,14 +241,31 @@ mod test {
         
         // Get components storages
 
-        let target_scene = scene_manager.get_scene_mut(scene).unwrap();
-        let first_storage = target_scene.get_component_storage_mut::<Health>().borrow_mut().data;
-        let second_storage = target_scene.get_component_storage_mut::<Shield>().borrow_mut();
-        let third_storage = target_scene.get_component_storage::<Name>().borrow();
-        // let third_storage = &target_scene.get_component_storage::<Name>().data;
+        let target_scene = scene_manager.get_scene(scene).unwrap();
+        let first_storage = target_scene.get_component_storage::<Health>().data.borrow();
+        let mut second_storage = target_scene.get_component_storage::<Shield>().data.borrow_mut();
+        let mut third_storage = target_scene.get_component_storage::<Name>().data.borrow_mut();
 
-        for item in first_storage.into_iter() {
-            println!("Hello");
+        // Works
+        // for (first, second) in first_storage.iter().zip(second_storage.iter()) {
+        //     println!("{} {}", first.as_ref().unwrap().0.to_string(), second.as_ref().unwrap().0.to_string());
+        // }
+
+        // Works
+        // for (first, second, third) in izip!(first_storage.iter(), second_storage.iter(), third_storage.iter()) {
+        //     println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_ref().unwrap().0.to_string(), third.as_ref().unwrap().0);
+        // }
+
+        for (first, second, third) in izip!(first_storage.iter(), second_storage.iter_mut(), third_storage.iter_mut()) {
+            println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_mut().unwrap().0.to_string(), third.as_mut().unwrap().0);
+            second.as_mut().unwrap().0 = second.as_mut().unwrap().0 * 3 + first.as_ref().unwrap().0 as i32;
+            for (item) in first_storage.iter() {
+                println!("Once again: Health = {}", item.as_ref().unwrap().0.to_string());
+            }
+        }
+
+        for (first, second, third) in izip!(first_storage.iter(), second_storage.iter_mut(), third_storage.iter_mut()) {
+            println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_mut().unwrap().0.to_string(), third.as_mut().unwrap().0);
         }
 
     }
