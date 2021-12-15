@@ -1,4 +1,4 @@
-use std::{default, io::Error, ops::Index, cell::{RefCell, RefMut}, borrow::Borrow};
+use std::{default, io::Error, ops::Index, cell::{RefCell, RefMut}, borrow::Borrow, os::windows::prelude::OpenOptionsExt};
 
 use pill_core::na::Storage;
 use core::default::Default;
@@ -61,8 +61,9 @@ impl<T> StorageEntry<T> {
 
 }
 
+#[derive(Debug)]
 pub struct ComponentStorage<T> {
-    pub data: RefCell<Vec<Option<T>>>,
+    pub data: Vec<RefCell<Option<T>>>,
 }
 
 unsafe impl<T> Sync for ComponentStorage<T> {}
@@ -70,15 +71,15 @@ unsafe impl<T> Sync for ComponentStorage<T> {}
 impl<T> ComponentStorage<T> {
     pub fn new() -> Self {  
         Self { 
-            data: RefCell::new(Vec::<Option<T>>::new()),
+            data: Vec::<RefCell<Option<T>>>::new()
         }
     }
 
     pub fn set(&mut self, handle: EntityHandle, comp: T) {
-        while self.data.get_mut().len() <= handle.index {
-            self.data.get_mut().push(None)
+        while self.data.len() <= handle.index {
+            self.data.push(RefCell::new(None))
         }
-        self.data.get_mut()[handle.index] = Some(comp);
+        self.data[handle.index] = RefCell::new(Some(comp));
     }
 
     pub fn get(&self, index: usize) -> Option<T> {
@@ -132,7 +133,7 @@ impl<T> ComponentStorage<T> {
 
     pub fn fill_up(&mut self, length : usize) {
         for _ in 0..length {
-            self.data.borrow_mut().push(None);
+            self.data.push(RefCell::new(None));
         }
     }
 
@@ -241,32 +242,86 @@ mod test {
         
         // Get components storages
 
+        // let target_scene = scene_manager.get_scene(scene).unwrap();
+        // let first_storage = target_scene.get_component_storage::<Health>().data.borrow();
+        // let mut second_storage = target_scene.get_component_storage::<Shield>().data.borrow_mut();
+        // let mut third_storage = target_scene.get_component_storage::<Name>().data.borrow_mut();
+
+        // // Works
+        // // for (first, second) in first_storage.iter().zip(second_storage.iter()) {
+        // //     println!("{} {}", first.as_ref().unwrap().0.to_string(), second.as_ref().unwrap().0.to_string());
+        // // }
+
+        // // Works
+        // // for (first, second, third) in izip!(first_storage.iter(), second_storage.iter(), third_storage.iter()) {
+        // //     println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_ref().unwrap().0.to_string(), third.as_ref().unwrap().0);
+        // // }
+
+        // for (first, second, third) in izip!(first_storage.iter(), second_storage.iter_mut(), third_storage.iter_mut()) {
+        //     println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_mut().unwrap().0.to_string(), third.as_mut().unwrap().0);
+        //     second.as_mut().unwrap().0 = second.as_mut().unwrap().0 * 3 + first.as_ref().unwrap().0 as i32;
+        //     for (item) in first_storage.iter() {
+        //         println!("Once again: Health = {}", item.as_ref().unwrap().0.to_string());
+        //     }
+        // }
+
+        // for (first, second, third) in izip!(first_storage.iter(), second_storage.iter_mut(), third_storage.iter_mut()) {
+        //     println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_mut().unwrap().0.to_string(), third.as_mut().unwrap().0);
+        // }
+
         let target_scene = scene_manager.get_scene(scene).unwrap();
-        let first_storage = target_scene.get_component_storage::<Health>().data.borrow();
-        let mut second_storage = target_scene.get_component_storage::<Shield>().data.borrow_mut();
-        let mut third_storage = target_scene.get_component_storage::<Name>().data.borrow_mut();
+        let first_storage = target_scene.get_component_storage::<Health>();
+        let second_storage = target_scene.get_component_storage::<Shield>();
+        let third_storage = target_scene.get_component_storage::<Name>();
+        
+        println!("\nBefore taking damage: \n");
 
-        // Works
-        // for (first, second) in first_storage.iter().zip(second_storage.iter()) {
-        //     println!("{} {}", first.as_ref().unwrap().0.to_string(), second.as_ref().unwrap().0.to_string());
-        // }
-
-        // Works
-        // for (first, second, third) in izip!(first_storage.iter(), second_storage.iter(), third_storage.iter()) {
-        //     println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_ref().unwrap().0.to_string(), third.as_ref().unwrap().0);
-        // }
-
-        for (first, second, third) in izip!(first_storage.iter(), second_storage.iter_mut(), third_storage.iter_mut()) {
-            println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_mut().unwrap().0.to_string(), third.as_mut().unwrap().0);
-            second.as_mut().unwrap().0 = second.as_mut().unwrap().0 * 3 + first.as_ref().unwrap().0 as i32;
-            for (item) in first_storage.iter() {
-                println!("Once again: Health = {}", item.as_ref().unwrap().0.to_string());
-            }
+        for (first, second, third) in izip!(first_storage.data.iter(), second_storage.data.iter(), third_storage.data.iter()) {
+            println!("My name is {}, and my stats are: Health {} Shield {}", 
+                    third.borrow().as_ref().unwrap().0,
+                    first.borrow().as_ref().unwrap().0.to_string(), second.borrow_mut().as_mut().unwrap().0.to_string());
         }
 
-        for (first, second, third) in izip!(first_storage.iter(), second_storage.iter_mut(), third_storage.iter_mut()) {
-            println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_mut().unwrap().0.to_string(), third.as_mut().unwrap().0);
+        let damage = 8;
+        println!("\nLet's deal some damage!");
+
+
+        for(hp, shield, name) in izip!(first_storage.data.iter(), second_storage.data.iter(), third_storage.data.iter()) {
+            println!("{}", hp.borrow_mut().as_ref().unwrap().0);
+            let mut x = name.borrow_mut();
+            let y = x.as_mut().unwrap();
+            // name.borrow_mut().as_mut().unwrap().0 += &String::from("dsdsd");
+            println!("{}", y.0);
+            // shield.borrow_mut().as_mut().unwrap().0 -= 8;
+            // println!("{}", x.0);
+            // if shield.borrow_mut().as_mut().unwrap().0 < 0 {
+            //     println!("As a result, {} lost shield, and it's value is now {}!", name.borrow().as_ref().unwrap().0,
+            //     shield.borrow_mut().as_mut().unwrap().0);
+            //     shield.borrow_mut().as_mut().unwrap().0 -= damage;
+            //     hp.borrow_mut().as_mut().unwrap().0 -= 2;
+            // }
         }
+
+        println!("\nAfter taking damage: \n");
+
+        for (first, second, third) in izip!(first_storage.data.iter(), second_storage.data.iter(), third_storage.data.iter()) {
+            println!("My name is {}, and my stats are: Health {} Shield {}", 
+                    third.borrow().as_ref().unwrap().0,
+                    first.borrow().as_ref().unwrap().0.to_string(),
+                    second.borrow_mut().as_mut().unwrap().0.to_string());
+        }
+
+        // for(hp, shield, name) in izip!(first_storage.data.iter(), second_storage.data.iter(), third_storage.data.iter()) {
+        //     let mut x = name.borrow_mut().as_mut().unwrap();
+        //     shield.borrow_mut().as_mut().unwrap().0 -= 8;
+        //     println!("{}", x.0);
+        //     if shield.borrow_mut().as_mut().unwrap().0 < 0 {
+        //         println!("As a result, {} lost shield, and it's value is now {}!", name.borrow().as_ref().unwrap().0,
+        //         shield.borrow_mut().as_mut().unwrap().0);
+        //         shield.borrow_mut().as_mut().unwrap().0 -= damage;
+        //         hp.borrow_mut().as_mut().unwrap().0 -= 2;
+        //     }
+        // }
 
     }
 }
