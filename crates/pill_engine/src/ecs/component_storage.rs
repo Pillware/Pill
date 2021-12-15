@@ -1,4 +1,4 @@
-use std::{default, io::Error, ops::Index};
+use std::{default, io::Error, ops::Index, cell::{RefCell, RefMut}, borrow::Borrow};
 
 use pill_core::na::Storage;
 use core::default::Default;
@@ -62,48 +62,77 @@ impl<T> StorageEntry<T> {
 }
 
 pub struct ComponentStorage<T> {
-    pub data: Vec<StorageEntry<T>>,
+    pub data: RefCell<Vec<Option<T>>>,
 }
+
+unsafe impl<T> Sync for ComponentStorage<T> {}
 
 impl<T> ComponentStorage<T> {
     pub fn new() -> Self {  
         Self { 
-            data: Vec::<StorageEntry<T>>::new(),
+            data: RefCell::new(Vec::<Option<T>>::new()),
         }
     }
 
     pub fn set(&mut self, handle: EntityHandle, comp: T) {
-        while self.data.len() <= handle.index {
-            self.data.push(StorageEntry::default())
+        while self.data.get_mut().len() <= handle.index {
+            self.data.get_mut().push(None)
         }
-        self.data[handle.index].set_generation(handle.generation);
-        self.data[handle.index].set_component(comp);
+        self.data.get_mut()[handle.index] = Some(comp);
     }
 
-    pub fn get(&self, handle: EntityHandle) -> Option<&T> {
-        if self.data[handle.index].generation == handle.generation {
-            match &self.data[handle.index].component.is_none() {
-                true => return None,
-                false => return self.data[handle.index].component.as_ref()
-            }
-        }
-        None
+    pub fn get(&self, index: usize) -> Option<T> {
+        return None;
+        // if self.data.borrow().len() <= index {
+        //     return None
+        // }
+        // else {
+        //      match &self.data.borrow()[index].is_none() {
+        //          true => return None,
+        //          false => return self.data.borrow()[index]
+        //      }
+        // }
+        // if self.data[handle.index].generation == handle.generation {
+        //     match &self.data[handle.index].component.is_none() {
+        //         true => return None,
+        //         false => return self.data[handle.index].component.as_ref()
+        //     }
+        // }
+        // None
     }
+    
+    // fn borrow_component_vec<ComponentType: 'static>(
+    //     &self,
+    // ) -> Option<RefMut<Vec<Option<ComponentType>>>> {
+    //     for component_vec in self.data.iter() {
+    //         if let Some(component_vec) = component_vec
+    //             .as_any()
+    //             .downcast_ref::<RefCell<Vec<Option<ComponentType>>>>()
+    //         {
+    //             // Here we use `borrow_mut`. 
+    //             // If this `RefCell` is already borrowed from this will panic.
+    //             return Some(component_vec.borrow_mut());
+    //         }
+    //     }
+    //     None
+    // }
 
     pub fn get_mut(&mut self, handle: EntityHandle) -> Option<&mut T> {
-        if self.data[handle.index].generation == handle.generation {
-            match &self.data[handle.index].component.is_none() {
-                true => return None,
-                false => return self.data[handle.index].component.as_mut()
-            }
-        }
-        None
+        return None;
+        // if self.data.borrow_mut().len() <= handle.index {
+        //     return None
+        // }
+        // else {
+        //      match &self.data.borrow_mut()[handle.index].is_none() {
+        //          true => return None,
+        //          false => return self.data.borrow_mut()[handle.index].as_mut()
+        //      }
+        // }
     }
 
     pub fn fill_up(&mut self, length : usize) {
         for _ in 0..length {
-            let entry = StorageEntry::<T>::default();
-            self.data.push(entry);
+            self.data.borrow_mut().push(None);
         }
     }
 
@@ -119,13 +148,13 @@ impl<T> Iterator for ComponentStorage<T> {
 
 #[cfg(test)]
 mod test {
-    use std::slice::SliceIndex;
+    use std::{slice::SliceIndex, borrow::{Borrow, BorrowMut}, cell::RefMut};
 
     use itertools::izip;
     use scene::Scene;
     use scene_manager::SceneManager;
 
-    use crate::ecs::{EntityHandle, scene_manager, Component, scene};
+    use crate::ecs::{EntityHandle, scene_manager, Component, scene, HealthComponent};
 
     use super::{ComponentStorage, StorageEntry};
 
@@ -138,15 +167,15 @@ mod test {
 
         components.set(handle, number);
 
-        assert_eq!(Some(&10), components.get(handle));
+        assert_eq!(Some(10), components.get(handle.index));
 
         components.set(handle, 20);
-        assert_eq!(Some(&20), components.get(handle));
+        assert_eq!(Some(20), components.get(handle.index));
 
         let second_handle = EntityHandle::new(0, 1);
         components.set(second_handle, 30);
-        assert_eq!(None, components.get(handle));
-        assert_eq!(Some(&30), components.get(second_handle));
+        assert_eq!(None, components.get(handle.index));
+        assert_eq!(Some(30), components.get(second_handle.index));
     }
 
     #[test]
@@ -157,21 +186,23 @@ mod test {
         let second = EntityHandle::new(1, 1);
 
         components.set(first, String::from("TEST STRING"));
-        assert_eq!(components.get(first), Some(&String::from("TEST STRING")));
+        assert_eq!(components.get(first.index), Some(String::from("TEST STRING")));
 
-        let new_string = components.get(first).unwrap().to_owned() + &String::from(" WORKS");
+        let new_string = components.get(first.index).unwrap().to_owned() + &String::from(" WORKS");
         components.set(first, new_string.to_string());
-        assert_eq!(components.get(first), Some(&String::from("TEST STRING WORKS")))
+        assert_eq!(components.get(first.index), Some(String::from("TEST STRING WORKS")))
     }
 
+    #[derive(Debug)]
     struct Health(u32);
+    #[derive(Debug)]
     struct Shield(i32);
+    #[derive(Debug)]
     struct Name(String);
-    
+
     impl Component for Health { type Storage = ComponentStorage<Self> ;}
     impl Component for Shield { type Storage = ComponentStorage<Self> ;}
     impl Component for Name { type Storage = ComponentStorage<Self> ;}
-
 
     #[test]
     fn basic_multiple_components_iteration_test() {
@@ -202,7 +233,6 @@ mod test {
         // Add components to entities
         scene_manager.add_component_to_entity(scene, first_entity, Health(15));
         scene_manager.add_component_to_entity(scene, first_entity, Shield(10));
-        scene_manager.add_component_to_entity(scene, first_entity, Name(String::from("Frodo")));
 
         scene_manager.add_component_to_entity(scene, second_entity, Health(5));
         scene_manager.add_component_to_entity(scene, second_entity, Shield(5));
@@ -210,10 +240,15 @@ mod test {
         
         // Get components storages
 
-        let target_scene = scene_manager.get_scene(scene).unwrap();
-        let first_storage = target_scene.get_component_storage::<Health>();
-        let second_storage = target_scene.get_component_storage::<Shield>();
-        let third_storage = target_scene.get_component_storage::<Name>();
+        let target_scene = scene_manager.get_scene_mut(scene).unwrap();
+        let first_storage = target_scene.get_component_storage_mut::<Health>().borrow_mut().data;
+        let second_storage = target_scene.get_component_storage_mut::<Shield>().borrow_mut();
+        let third_storage = target_scene.get_component_storage::<Name>().borrow();
+        // let third_storage = &target_scene.get_component_storage::<Name>().data;
+
+        for item in first_storage.into_iter() {
+            println!("Hello");
+        }
 
     }
 }

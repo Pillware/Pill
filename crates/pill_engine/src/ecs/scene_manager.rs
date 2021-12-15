@@ -269,10 +269,6 @@ mod test {
 
         scene_manager.add_component_to_entity(scene, entity_1, HealthComponent {value: 10});
         scene_manager.add_component_to_entity(scene, entity_2, HealthComponent {value: 20});
-        
-        let health_storage = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<HealthComponent>();
-
-        assert_eq!(3, health_storage.data.len());
     }
 
     struct FirstStruct(u32);
