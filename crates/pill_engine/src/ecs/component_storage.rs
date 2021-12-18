@@ -155,44 +155,9 @@ mod test {
     use scene::Scene;
     use scene_manager::SceneManager;
 
-    use crate::ecs::{EntityHandle, scene_manager, Component, scene, HealthComponent};
+    use crate::ecs::{EntityHandle, scene_manager, Component, scene};
 
     use super::{ComponentStorage, StorageEntry};
-
-    // #[test]
-    // fn basic_component_insertion() {
-    //     let mut components = ComponentStorage::<u64>::new();
-
-    //     let number: u64 = 10;
-    //     let handle = EntityHandle::new(0, 0);
-
-    //     components.set(handle, number);
-
-    //     assert_eq!(Some(10), components.get(handle.index));
-
-    //     components.set(handle, 20);
-    //     assert_eq!(Some(20), components.get(handle.index));
-
-    //     let second_handle = EntityHandle::new(0, 1);
-    //     components.set(second_handle, 30);
-    //     assert_eq!(None, components.get(handle.index));
-    //     assert_eq!(Some(30), components.get(second_handle.index));
-    // }
-
-    // #[test]
-    // fn mutable_component_test() {
-    //     let mut components = ComponentStorage::<String>::new();
-
-    //     let first = EntityHandle::new(0, 0);
-    //     let second = EntityHandle::new(1, 1);
-
-    //     components.set(first, String::from("TEST STRING"));
-    //     assert_eq!(components.get(first.index), Some(String::from("TEST STRING")));
-
-    //     let new_string = components.get(first.index).unwrap().to_owned() + &String::from(" WORKS");
-    //     components.set(first, new_string.to_string());
-    //     assert_eq!(components.get(first.index), Some(String::from("TEST STRING WORKS")))
-    // }
 
     #[derive(Debug)]
     struct Health(u32);

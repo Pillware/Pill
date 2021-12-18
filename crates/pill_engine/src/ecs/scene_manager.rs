@@ -283,6 +283,10 @@ mod test {
 
     use super::*;
 
+    struct HealthComponent(u32);
+
+    impl Component for HealthComponent { type Storage = ComponentStorage<Self> ;}
+
     #[test]
     fn test_simple_component_addition() {
         let mut scene_manager = SceneManager::new();
@@ -304,8 +308,8 @@ mod test {
         let storage = scene_manager.get_scene_mut(scene).unwrap().get_component_storage_mut::<NameComponent>();
         scene_manager.register_component::<HealthComponent>(scene);
 
-        scene_manager.add_component_to_entity(scene, entity_1, HealthComponent {value: 10});
-        scene_manager.add_component_to_entity(scene, entity_2, HealthComponent {value: 20});
+        scene_manager.add_component_to_entity(scene, entity_1, HealthComponent(10));
+        scene_manager.add_component_to_entity(scene, entity_2, HealthComponent(20));
     }
 
     #[derive(Debug)]

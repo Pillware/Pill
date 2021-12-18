@@ -10,7 +10,6 @@ mod scene_manager;
 mod system_manager;
 mod allocator;
 mod name_component;
-mod health_component;
 mod bitmask_controller;
 mod bitmask_map;
 
@@ -43,10 +42,6 @@ pub use transform_component::{
 
 pub use name_component::{
     NameComponent,
-};
-
-pub use health_component::{
-    HealthComponent,
 };
 
 pub use scene_manager::{
