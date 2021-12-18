@@ -197,7 +197,7 @@ impl SceneManager {
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
-        
+
         // Return iterator from scene
         target_scene.get_one_component_storage::<A>()
                     .enumerate()
@@ -412,21 +412,34 @@ mod test {
             first.borrow_mut().as_mut().unwrap().0 *= 10;
         }
 
+        println!("");
+
         for health in scene_manager.fetch_one_component_storage::<Health>(scene) {
             println!("{:?}", health.borrow().as_ref());
         }
+
+        println!("");
 
         for (first, second) in scene_manager.fetch_two_component_storages::<Health, Name>(scene) {
             println!("{:?} {:?}", first.borrow_mut().as_mut(), second.borrow_mut().as_mut());
             first.borrow_mut().as_mut().unwrap().0 *= 10;
         }
 
+        println!("");
+
         scene_manager.register_component::<Charisma>(scene);
-        scene_manager.add_component_to_entity(scene, first_entity, Charisma(8));
+        scene_manager.add_component_to_entity(scene, second_entity, Charisma(8));
         scene_manager.add_component_to_entity(scene, third_entity, Charisma(12));
 
         for (name, health, shield, charisma) in scene_manager.fetch_four_component_storages::<Name, Health, Shield, Charisma>(scene) {
             println!("{:?} {:?} {:?} {:?}", name.borrow_mut().as_mut(), health.borrow_mut().as_mut(), shield.borrow().as_ref(), charisma.borrow().as_ref());
         }
+
+        println!("");
+
+        for(name, health, charisma) in scene_manager.fetch_three_component_storages::<Name, Health, Charisma>(scene) {
+            println!("{:?} {:?} {:?}", name.borrow().as_ref(), charisma.borrow().as_ref(), health.borrow().as_ref())
+        }
+
     }
 }
