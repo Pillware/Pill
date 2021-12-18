@@ -1,12 +1,11 @@
-use std::path::Iter;
+use std::{path::Iter};
 
 use anyhow::{Result, Context, Error};
-use itertools::izip;
+use itertools::{Zip, izip};
 use log::{debug, info};
-
+use std::cell::RefCell;
 use pill_core::EngineError;
 use crate::ecs::*;
-
 
 // --------- SceneHandle
 
@@ -63,10 +62,6 @@ impl Scene {
         self.components.get_mut::<T>().take().unwrap()
     }
 
-    // pub fn get_two_storages_mut<T: Component<Storage = ComponentStorage::<T>>, U : Component<Storage = ComponentStorage<U>>>(&mut self) -> (&mut ComponentStorage<T>, &mut ComponentStorage<U>) {
-    //     (self.components.get_mut::<T>().unwrap(), self.components.get_mut::<U>().unwrap())
-    // }
-
     pub fn get_allocator(&self) -> &Allocator {
         &self.allocator
     }
@@ -85,5 +80,40 @@ impl Scene {
 
     pub fn get_component_storage_mut_with_count<T: Component<Storage = ComponentStorage::<T>>>(&mut self) -> (&mut ComponentStorage<T>, &usize) {
         (self.components.get_mut::<T>().unwrap(), self.allocator.get_max_index())
+    }
+
+    pub fn get_one_component_storage<T: Component<Storage = ComponentStorage::<T>>>(&self) -> std::slice::Iter<'_, RefCell<Option<T>>> {
+        self.get_component_storage::<T>().data.iter()
+    }
+
+    pub fn get_two_component_storages<T: Component<Storage = ComponentStorage::<T>>, U: Component<Storage = ComponentStorage::<U>>>(&self) -> 
+                                                                                                std::iter::Zip<
+                                                                                                std::slice::Iter<'_, RefCell<Option<T>>>, 
+                                                                                                std::slice::Iter<'_, RefCell<Option<U>>>> {
+        self.get_component_storage::<T>().data.iter()
+            .zip(self.get_component_storage::<U>().data.iter())
+    }
+
+    pub fn get_three_component_storages<T: Component<Storage = ComponentStorage::<T>>, U: Component<Storage = ComponentStorage::<U>>, W: Component<Storage = ComponentStorage::<W>>>(&self) -> 
+                                                                                                std::iter::Zip<std::iter::Zip<
+                                                                                                std::slice::Iter<'_, RefCell<Option<T>>>, 
+                                                                                                std::slice::Iter<'_, RefCell<Option<U>>>>, 
+                                                                                                std::slice::Iter<'_, RefCell<Option<W>>>> {
+
+        self.get_component_storage::<T>().data.iter()
+            .zip(self.get_component_storage::<U>().data.iter())
+            .zip(self.get_component_storage::<W>().data.iter())
+    }
+
+    pub fn get_four_component_storages<T: Component<Storage = ComponentStorage::<T>>, U: Component<Storage = ComponentStorage::<U>>, W: Component<Storage = ComponentStorage::<W>>, Y: Component<Storage = ComponentStorage::<Y>>>(&self) -> 
+                                                                                                std::iter::Zip<std::iter::Zip<std::iter::Zip<
+                                                                                                std::slice::Iter<'_, RefCell<Option<T>>>, 
+                                                                                                std::slice::Iter<'_, RefCell<Option<U>>>>, 
+                                                                                                std::slice::Iter<'_, RefCell<Option<W>>>>,
+                                                                                                std::slice::Iter<'_, RefCell<Option<Y>>>> {
+        self.get_component_storage::<T>().data.iter()
+            .zip(self.get_component_storage::<U>().data.iter())
+            .zip(self.get_component_storage::<W>().data.iter())
+            .zip(self.get_component_storage::<Y>().data.iter())
     }
 }

@@ -1,4 +1,4 @@
-use std::{any::type_name, collections::HashMap};
+use std::{any::type_name, collections::HashMap, cell::RefCell, path::Iter};
 use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
 use pill_core::{EngineError, get_type_name};
@@ -188,62 +188,99 @@ impl SceneManager {
         Ok(())
     }
 
-    pub fn fetch_two_storages<T: Component<Storage = ComponentStorage::<T>>, 
-                            U: Component<Storage = ComponentStorage<U>>>(&mut self, scene: SceneHandle) {
+    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&mut self, scene: SceneHandle) -> impl Iterator<Item = &RefCell<Option<A>>> {
+
+        let filtered_indexes = self.get_bitmask_controller_mut(scene)
+                                                    .unwrap()
+                                                    .filter_by_component::<A>()
+                                                    .fetch_indexes();
         
-        // Get filtering bitmask, which we can apply to get the correct entities
-        // let filtering_bitmask = self.get_bitmask_controller_mut(scene)
-        //                                             .unwrap()
-        //                                             .filter_by_component::<T>()
-        //                                             .filter_by_component::<U>()
-        //                                             .get_filtering_bitmask();
+        // Get scene
+        let target_scene = self.get_scene(scene).unwrap();
+        
+        // Return iterator from scene
+        target_scene.get_one_component_storage::<A>()
+                    .enumerate()
+                    .filter(move |(i, t)| filtered_indexes.contains(i))
+                    .map(|(i, t)| t)
+    }
+
+    pub fn fetch_two_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>>(&mut self, scene: SceneHandle) -> impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)> {
 
         //Get filtered indexes for entities
         let filtered_indexes = self.get_bitmask_controller_mut(scene)
                                                     .unwrap()
-                                                    .filter_by_component::<T>()
-                                                    .filter_by_component::<U>()
+                                                    .filter_by_component::<A>()
+                                                    .filter_by_component::<B>()
                                                     .fetch_indexes();
         
-        // Clean filtering bitmask for sake of future filterining bitmasks creation
-        // self.get_bitmask_controller_mut(scene).unwrap().clear_filter();
+        // Get scene
+        let target_scene = self.get_scene(scene).unwrap();
         
-        // let target_scene = self.get_scene_mut(scene).unwrap();
-
-        // let first = target_scene.get_component_storage_element_mut_at::<T>(0);
-        // let second = target_scene.get_component_storage_element_mut_at::<U>(0);
-        // // let mut T_storage = Vec::<&StorageEntry<T>>::new();
-        // // let mut U_storage = Vec::<&StorageEntry<U>>::new();
-        
-        // println!("{} {}", first.generation)
-        // {
-        //     let storage = &self.get_scene_mut(scene).unwrap().get_component_storage_mut::<T>().data;
-        //     for item in storage {
-        //         T_storage.push(item.clone());
-        //     }
-        // }
-
-        // {
-        //     let storage = &self.get_scene_mut(scene).unwrap().get_component_storage_mut::<U>().data;
-        //     for item in storage {
-        //         U_storage.push(item.clone());
-        //     }
-        // }
-        
-        // for (&first, &second) in izip!(T_storage, U_storage) {
-        //     println!("hmm");
-        // }
-        
-        // for (one, two) in izip!(first, second) {
-        //     println!("Hello");
-        // }
+        // Return iterator from scene
+        target_scene.get_two_component_storages::<A, B>()
+                    .enumerate()
+                    .filter(move |(i, (t, u ))| filtered_indexes.contains(i))
+                    .map(|(i, (t, u ))| (t, u))
+                    
     }
 
+    pub fn fetch_three_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>,
+                            C: Component<Storage = ComponentStorage<C>>>(&mut self, scene: SceneHandle) -> impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)> {
+
+        //Get filtered indexes for entities
+        let filtered_indexes = self.get_bitmask_controller_mut(scene)
+                                                    .unwrap()
+                                                    .filter_by_component::<A>()
+                                                    .filter_by_component::<B>()
+                                                    .filter_by_component::<C>()
+                                                    .fetch_indexes();
+        
+        // Get scene
+        let target_scene = self.get_scene(scene).unwrap();
+        
+        // Return iterator from scene
+        target_scene.get_three_component_storages::<A, B, C>()
+                    .enumerate()
+                    .filter(move |(i, ((t, u ), w))| filtered_indexes.contains(i))
+                    .map(|(i, ((t, u), w))| (t, u, w))
+                    
+    }
+
+    pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>,
+                            C: Component<Storage = ComponentStorage<C>>,
+                            D: Component<Storage = ComponentStorage<D>>>(&mut self, scene: SceneHandle) -> impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)> {
+
+        //Get filtered indexes for entities
+        let filtered_indexes = self.get_bitmask_controller_mut(scene)
+                                                    .unwrap()
+                                                    .filter_by_component::<A>()
+                                                    .filter_by_component::<B>()
+                                                    .filter_by_component::<C>()
+                                                    .filter_by_component::<D>()
+                                                    .fetch_indexes();
+        
+        // Get scene
+        let target_scene = self.get_scene(scene).unwrap();
+        
+        // Return iterator from scene
+        target_scene.get_four_component_storages::<A, B, C, D>()
+                    .enumerate()
+                    .filter(move |(i, (((a, b), c), d))| filtered_indexes.contains(i))
+                    .map(|(i, (((a, b), c), d))| (a, b, c, d))
+                    
+    }
+    
 }
 
 #[cfg(test)]
 mod test {
     
+    use std::borrow::Borrow;
+
     use super::*;
 
     #[test]
@@ -271,9 +308,13 @@ mod test {
         scene_manager.add_component_to_entity(scene, entity_2, HealthComponent {value: 20});
     }
 
+    #[derive(Debug)]
     struct FirstStruct(u32);
+    #[derive(Debug)]
     struct SecondStruct(bool, String);
+    #[derive(Debug)]
     struct ThirdStruct(FirstStruct, SecondStruct, usize, bool);
+    #[derive(Debug)]
     struct FourthStruct(Option<bool>);
 
     impl Component for FirstStruct { type Storage = ComponentStorage<Self> ;}
@@ -328,24 +369,64 @@ mod test {
         }
     } 
 
+    #[derive(Debug)]
+    struct Health(u32);
+    #[derive(Debug)]
+    struct Shield(i32);
+    #[derive(Debug)]
+    struct Name(String);
+    #[derive(Debug)]
+    struct Charisma(i32);
+
+    impl Component for Health { type Storage = ComponentStorage<Self> ;}
+    impl Component for Shield { type Storage = ComponentStorage<Self> ;}
+    impl Component for Name { type Storage = ComponentStorage<Self> ;}
+    impl Component for Charisma { type Storage = ComponentStorage<Self> ;}
+
     #[test]
     fn test_basic_iteration() {
         let mut scene_manager = SceneManager::new();
 
         let scene = scene_manager.create_scene("Default").unwrap();
-        let first = scene_manager.create_entity(scene).unwrap();
-        let second = scene_manager.create_entity(scene).unwrap();
-        let third = scene_manager.create_entity(scene).unwrap();
+        let first_entity = scene_manager.create_entity(scene).unwrap();
+        let second_entity = scene_manager.create_entity(scene).unwrap();
+        let third_entity = scene_manager.create_entity(scene).unwrap();
 
-        scene_manager.register_component::<FirstStruct>(scene);
-        scene_manager.register_component::<FourthStruct>(scene);
+        scene_manager.register_component::<Health>(scene);
+        scene_manager.register_component::<Shield>(scene);
+        scene_manager.register_component::<Name>(scene);
 
-        scene_manager.add_component_to_entity(scene, first, FirstStruct(10));
-        scene_manager.add_component_to_entity(scene, first, FourthStruct(None));
-        scene_manager.add_component_to_entity(scene, second, FourthStruct(Some(false)));
-        scene_manager.add_component_to_entity(scene, third, FirstStruct(1));
-        scene_manager.add_component_to_entity(scene, third, FourthStruct(Some(true)));
+        scene_manager.add_component_to_entity(scene, first_entity, Health(20));
+        scene_manager.add_component_to_entity(scene, second_entity, Health(50));
+        scene_manager.add_component_to_entity(scene, third_entity, Health(30));
 
-        //scene_manager.fetch_two_storages::<FirstStruct, FourthStruct>(scene);
+        scene_manager.add_component_to_entity(scene, first_entity, Shield(15));
+        scene_manager.add_component_to_entity(scene, third_entity, Shield(10));
+
+        scene_manager.add_component_to_entity(scene, first_entity, Name(String::from("Gimli")));
+        scene_manager.add_component_to_entity(scene, second_entity, Name(String::from("Legolas")));
+        scene_manager.add_component_to_entity(scene, third_entity, Name(String::from("Aragorn")));
+
+        for (first, second, third) in scene_manager.fetch_three_component_storages::<Health, Name, Shield>(scene) {
+            println!("{:?} {:?}", first.borrow_mut().as_mut(), second.borrow_mut().as_mut());
+            first.borrow_mut().as_mut().unwrap().0 *= 10;
+        }
+
+        for health in scene_manager.fetch_one_component_storage::<Health>(scene) {
+            println!("{:?}", health.borrow().as_ref());
+        }
+
+        for (first, second) in scene_manager.fetch_two_component_storages::<Health, Name>(scene) {
+            println!("{:?} {:?}", first.borrow_mut().as_mut(), second.borrow_mut().as_mut());
+            first.borrow_mut().as_mut().unwrap().0 *= 10;
+        }
+
+        scene_manager.register_component::<Charisma>(scene);
+        scene_manager.add_component_to_entity(scene, first_entity, Charisma(8));
+        scene_manager.add_component_to_entity(scene, third_entity, Charisma(12));
+
+        for (name, health, shield, charisma) in scene_manager.fetch_four_component_storages::<Name, Health, Shield, Charisma>(scene) {
+            println!("{:?} {:?} {:?} {:?}", name.borrow_mut().as_mut(), health.borrow_mut().as_mut(), shield.borrow().as_ref(), charisma.borrow().as_ref());
+        }
     }
 }

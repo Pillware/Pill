@@ -149,7 +149,7 @@ impl<T> Iterator for ComponentStorage<T> {
 
 #[cfg(test)]
 mod test {
-    use std::{slice::SliceIndex, borrow::{Borrow, BorrowMut}, cell::RefMut};
+    use std::{slice::SliceIndex, borrow::{Borrow, BorrowMut}, cell::{RefMut, RefCell}};
 
     use itertools::izip;
     use scene::Scene;
@@ -224,104 +224,32 @@ mod test {
         scene_manager.register_component::<Shield>(scene);
         scene_manager.register_component::<Name>(scene);
 
-        // Create some damage variable
-        let damage = 15;
-
         // Create entities
         let first_entity = scene_manager.create_entity(scene).unwrap();
         let second_entity = scene_manager.create_entity(scene).unwrap();
+        let third_entity = scene_manager.create_entity(scene).unwrap();
 
-        // Add components to entities
+        // Add components to first entity
         scene_manager.add_component_to_entity(scene, first_entity, Health(15));
         scene_manager.add_component_to_entity(scene, first_entity, Shield(10));
         scene_manager.add_component_to_entity(scene, first_entity, Name(String::from("Frodo")));
 
+        // Add components to second entity
         scene_manager.add_component_to_entity(scene, second_entity, Health(5));
         scene_manager.add_component_to_entity(scene, second_entity, Shield(5));
         scene_manager.add_component_to_entity(scene, second_entity, Name(String::from("Sam")));
         
+        // Add components to third entity
+        scene_manager.add_component_to_entity(scene, third_entity, Health(50));
+        scene_manager.add_component_to_entity(scene, third_entity, Name(String::from("Gimli")));
+
         // Get components storages
-
-        // let target_scene = scene_manager.get_scene(scene).unwrap();
-        // let first_storage = target_scene.get_component_storage::<Health>().data.borrow();
-        // let mut second_storage = target_scene.get_component_storage::<Shield>().data.borrow_mut();
-        // let mut third_storage = target_scene.get_component_storage::<Name>().data.borrow_mut();
-
-        // // Works
-        // // for (first, second) in first_storage.iter().zip(second_storage.iter()) {
-        // //     println!("{} {}", first.as_ref().unwrap().0.to_string(), second.as_ref().unwrap().0.to_string());
-        // // }
-
-        // // Works
-        // // for (first, second, third) in izip!(first_storage.iter(), second_storage.iter(), third_storage.iter()) {
-        // //     println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_ref().unwrap().0.to_string(), third.as_ref().unwrap().0);
-        // // }
-
-        // for (first, second, third) in izip!(first_storage.iter(), second_storage.iter_mut(), third_storage.iter_mut()) {
-        //     println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_mut().unwrap().0.to_string(), third.as_mut().unwrap().0);
-        //     second.as_mut().unwrap().0 = second.as_mut().unwrap().0 * 3 + first.as_ref().unwrap().0 as i32;
-        //     for (item) in first_storage.iter() {
-        //         println!("Once again: Health = {}", item.as_ref().unwrap().0.to_string());
-        //     }
-        // }
-
-        // for (first, second, third) in izip!(first_storage.iter(), second_storage.iter_mut(), third_storage.iter_mut()) {
-        //     println!("Component: {} {} {}", first.as_ref().unwrap().0.to_string(), second.as_mut().unwrap().0.to_string(), third.as_mut().unwrap().0);
-        // }
 
         let target_scene = scene_manager.get_scene(scene).unwrap();
         let first_storage = target_scene.get_component_storage::<Health>();
         let second_storage = target_scene.get_component_storage::<Shield>();
         let third_storage = target_scene.get_component_storage::<Name>();
         
-        println!("\nBefore taking damage: \n");
-
-        for (first, second, third) in izip!(first_storage.data.iter(), second_storage.data.iter(), third_storage.data.iter()) {
-            println!("My name is {}, and my stats are: Health {} Shield {}", 
-                    third.borrow().as_ref().unwrap().0,
-                    first.borrow().as_ref().unwrap().0.to_string(), second.borrow_mut().as_mut().unwrap().0.to_string());
-        }
-
-        let damage = 8;
-        println!("\nLet's deal some damage!");
-
-
-        for(hp, shield, name) in izip!(first_storage.data.iter(), second_storage.data.iter(), third_storage.data.iter()) {
-            println!("{}", hp.borrow_mut().as_ref().unwrap().0);
-            let mut x = name.borrow_mut();
-            let y = x.as_mut().unwrap();
-            // name.borrow_mut().as_mut().unwrap().0 += &String::from("dsdsd");
-            println!("{}", y.0);
-            // shield.borrow_mut().as_mut().unwrap().0 -= 8;
-            // println!("{}", x.0);
-            // if shield.borrow_mut().as_mut().unwrap().0 < 0 {
-            //     println!("As a result, {} lost shield, and it's value is now {}!", name.borrow().as_ref().unwrap().0,
-            //     shield.borrow_mut().as_mut().unwrap().0);
-            //     shield.borrow_mut().as_mut().unwrap().0 -= damage;
-            //     hp.borrow_mut().as_mut().unwrap().0 -= 2;
-            // }
-        }
-
-        println!("\nAfter taking damage: \n");
-
-        for (first, second, third) in izip!(first_storage.data.iter(), second_storage.data.iter(), third_storage.data.iter()) {
-            println!("My name is {}, and my stats are: Health {} Shield {}", 
-                    third.borrow().as_ref().unwrap().0,
-                    first.borrow().as_ref().unwrap().0.to_string(),
-                    second.borrow_mut().as_mut().unwrap().0.to_string());
-        }
-
-        // for(hp, shield, name) in izip!(first_storage.data.iter(), second_storage.data.iter(), third_storage.data.iter()) {
-        //     let mut x = name.borrow_mut().as_mut().unwrap();
-        //     shield.borrow_mut().as_mut().unwrap().0 -= 8;
-        //     println!("{}", x.0);
-        //     if shield.borrow_mut().as_mut().unwrap().0 < 0 {
-        //         println!("As a result, {} lost shield, and it's value is now {}!", name.borrow().as_ref().unwrap().0,
-        //         shield.borrow_mut().as_mut().unwrap().0);
-        //         shield.borrow_mut().as_mut().unwrap().0 -= damage;
-        //         hp.borrow_mut().as_mut().unwrap().0 -= 2;
-        //     }
-        // }
-
+        let mut first_iter = target_scene.get_two_component_storages::<Name, Health>().next();
     }
 }
