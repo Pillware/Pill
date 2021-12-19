@@ -18,23 +18,29 @@ layout(set = 2, binding = 0) uniform Light {
 };
 
 void main() {
-    vec4 object_color = texture(sampler2D(t_diffuse, s_diffuse), v_tex_coords);
-    vec4 object_normal = texture(sampler2D(t_normal, s_normal), v_tex_coords);
+    // vec4 object_color = texture(sampler2D(t_diffuse, s_diffuse), v_tex_coords);
+    // vec4 object_normal = texture(sampler2D(t_normal, s_normal), v_tex_coords);
 
-    float ambient_strength = 0.1;
-    vec3 ambient_color = light_color * ambient_strength;
+    // float ambient_strength = 0.1;
+    // vec3 ambient_color = light_color * ambient_strength;
 
-    vec3 normal = normalize(object_normal.rgb * 2.0 - 1.0); // UPDATED!
-    vec3 light_dir = normalize(v_light_position - v_position); // UPDATED!
+    // vec3 normal = normalize(object_normal.rgb * 2.0 - 1.0); // UPDATED!
+    // vec3 light_dir = normalize(v_light_position - v_position); // UPDATED!
     
-    float diffuse_strength = max(dot(normal, light_dir), 0.0);
-    vec3 diffuse_color = light_color * diffuse_strength;
+    // float diffuse_strength = max(dot(normal, light_dir), 0.0);
+    // vec3 diffuse_color = light_color * diffuse_strength;
 
-    vec3 view_dir = normalize(v_view_position - v_position); // UPDATED!
-    vec3 half_dir = normalize(view_dir + light_dir);
-    float specular_strength = pow(max(dot(normal, half_dir), 0.0), 32);
-    vec3 specular_color = specular_strength * light_color;
+    // vec3 view_dir = normalize(v_view_position - v_position); // UPDATED!
+    // vec3 half_dir = normalize(view_dir + light_dir);
+    // float specular_strength = pow(max(dot(normal, half_dir), 0.0), 32);
+    // vec3 specular_color = specular_strength * light_color;
 
-    vec3 result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
-    f_color = vec4(result, object_color.a);
+    // vec3 result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
+
+    //f_color = vec4(result, object_color.a);
+
+
+    //f_color = texture(sampler2D(t_diffuse, s_diffuse), v_tex_coords);
+    vec3 living_coral_color = vec3(1.0, 0.43, 0.38);
+    f_color = vec4(living_coral_color, 1.0);
 }

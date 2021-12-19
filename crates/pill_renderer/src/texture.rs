@@ -1,112 +1,96 @@
 use anyhow::*;
 use image::GenericImageView;
-use std::{num::NonZeroU32, path::Path};
+use pill_engine::internal::{RendererTextureHandle, TextureType};
+use std::{num::NonZeroU32, path::{Path, PathBuf}};
 
-pub struct Texture {
+// #[derive(Clone, Copy)]
+// pub struct RendererTextureHandle {
+//     pub index: u32,
+// }
+
+// impl ResourceHandle for RendererTextureHandle
+// {
+//     fn get_index(&self) -> u32 {
+//         self.index
+//     }
+// }
+
+
+pub struct RendererTexture {
     pub texture: wgpu::Texture,
-    pub view: wgpu::TextureView,
+    pub texture_view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
 
-impl Texture {
+impl RendererTexture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn load<P: AsRef<Path>>(
+    pub fn new_texture_from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        path: P,
-        is_normal_map: bool,
+        path: &PathBuf,
+        name: &str,
+        texture_type: TextureType,
     ) -> Result<Self> {
-        // Needed to appease the borrow checker
-        let path_copy = path.as_ref().to_path_buf();
-        let label = path_copy.to_str();
-
-        let img = image::open(path)?;
-        Self::from_image(device, queue, &img, label, is_normal_map)
+        let image = image::open(path)?;
+        Self::create_texture(device, queue, &image, Some(name), texture_type)
     }
 
-    pub fn create_depth_texture(
-        device: &wgpu::Device,
-        surface_configuration: &wgpu::SurfaceConfiguration,
-        label: &str,
-    ) -> Self {
-        let size = wgpu::Extent3d { // Depth texture needs to be the same size as our screen
-            width: surface_configuration.width,
-            height: surface_configuration.height,
-            depth_or_array_layers: 1,
-        };
-        let descriptor = wgpu::TextureDescriptor {
-            label: Some(label),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING, // Rendering to this texture so RENDER_ATTACHMENT flag is needed
-        };
-        let texture = device.create_texture(&descriptor);
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual),
-            lod_min_clamp: -100.0,
-            lod_max_clamp: 100.0,
-            ..Default::default()
-        });
-
-        Self {
-            texture,
-            view,
-            sampler,
-        }
-    }
-
-
-    pub fn from_bytes(
+    pub fn new_texture_from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         bytes: &[u8],
-        label: &str,
-        is_normal_map: bool,
+        name: &str,
+        texture_type: TextureType,
     ) -> Result<Self> {
-        let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label), is_normal_map)
+        let image = image::load_from_memory(bytes)?;
+        Self::create_texture(device, queue, &image, Some(name), texture_type)
     }
 
-    pub fn from_image(
+    pub fn new_depth_texture(
+        device: &wgpu::Device,
+        surface_configuration: &wgpu::SurfaceConfiguration,
+        name: &str,
+    ) -> Result<Self> {
+        Self::create_depth_texture(device, surface_configuration, name)
+    }
+
+
+    fn create_texture(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        img: &image::DynamicImage,
-        label: Option<&str>,
-        is_normal_map: bool,
+        image: &image::DynamicImage,
+        name: Option<&str>,
+        texture_type: TextureType,
     ) -> Result<Self> {
-        let dimensions = img.dimensions();
-        let rgba = img.to_rgba();
+        let dimensions = image.dimensions();
+        let rgba = image.to_rgba8();
 
+        // Get size
         let size = wgpu::Extent3d {
             width: dimensions.0,
             height: dimensions.1,
             depth_or_array_layers: 1,
         };
+
+        // Specify texture format
+        let format = match texture_type {
+            TextureType::Color => wgpu::TextureFormat::Rgba8UnormSrgb,
+            TextureType::Normal => wgpu::TextureFormat::Rgba8Unorm,
+        };
+
+        // Create texture
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label,
+            label: name,
             size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: if is_normal_map {
-                wgpu::TextureFormat::Rgba8Unorm
-            } else {
-                wgpu::TextureFormat::Rgba8UnormSrgb
-            },
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING  | wgpu::TextureUsages::COPY_DST,
         });
 
+        // Write data to texture
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 aspect: wgpu::TextureAspect::All,
@@ -123,7 +107,10 @@ impl Texture {
             size,
         );
 
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // Create texture view
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        
+        // Create sampler
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -134,10 +121,64 @@ impl Texture {
             ..Default::default()
         });
 
-        Ok(Self {
+        // Create final texture
+        let texture  = Self {
             texture,
-            view,
+            texture_view,
             sampler,
-        })
+        };
+
+        Ok(texture)
+    }
+
+    pub fn create_depth_texture(
+        device: &wgpu::Device,
+        surface_configuration: &wgpu::SurfaceConfiguration,
+        label: &str,
+    ) -> Result<Self> {
+
+        // Get size
+        let size = wgpu::Extent3d { // Depth texture needs to be the same size as window
+            width: surface_configuration.width,
+            height: surface_configuration.height,
+            depth_or_array_layers: 1,
+        };
+
+         // Create texture
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: Self::DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING, // Rendering to this texture so RENDER_ATTACHMENT flag is needed
+        });
+
+        // Create texture view
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create sampler
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            lod_min_clamp: -100.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+
+        // Create final texture
+        let texture  = Self {
+            texture,
+            texture_view,
+            sampler,
+        };
+
+        Ok(texture)
     }
 }

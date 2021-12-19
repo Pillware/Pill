@@ -8,10 +8,20 @@ mod component_storage;
 mod scene;
 mod scene_manager;
 mod system_manager;
+mod camera_component;
+mod rendering_system;
 mod allocator;
-mod name_component;
 mod bitmask_controller;
 mod bitmask_map;
+
+pub use allocator::{
+    Allocator,
+    Generation
+};
+
+pub use rendering_system::{
+    rendering_system,
+};
 
 pub use scene::{
     Scene,
@@ -23,9 +33,12 @@ pub use component_map::{
     Component,
 };
 
-pub use component_storage:: {
+pub use component_storage::{
     ComponentStorage,
-    StorageEntry
+};
+
+pub use camera_component::{
+    CameraComponent,
 };
 
 pub use entity::{
@@ -40,10 +53,6 @@ pub use transform_component::{
     TransformComponent,
 };
 
-pub use name_component::{
-    NameComponent,
-};
-
 pub use scene_manager::{
     SceneManager,
 };
@@ -51,11 +60,6 @@ pub use scene_manager::{
 pub use system_manager::{
     SystemManager,
     UpdatePhase,
-};
-
-pub use allocator::{
-    Generation,
-    Allocator,
 };
 
 pub use bitmask_controller::{

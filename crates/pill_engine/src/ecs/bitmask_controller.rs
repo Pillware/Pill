@@ -134,12 +134,14 @@ impl BitmaskController {
 
 #[cfg(test)]
 mod test {
-    use crate::ecs::{Component, ComponentStorage, MeshRenderingComponent, NameComponent};
+    use crate::ecs::{Component, ComponentStorage, MeshRenderingComponent};
 
     use super::BitmaskController;
 
     struct HealthComponent(u32);
     impl Component for HealthComponent {type Storage = ComponentStorage<Self> ;}
+    struct NameComponent(String);
+    impl Component for NameComponent {type Storage = ComponentStorage<Self> ;}
 
     #[test]
     fn test_bitmask_set() {

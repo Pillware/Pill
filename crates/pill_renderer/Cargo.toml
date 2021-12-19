@@ -12,17 +12,29 @@ resolver = "2"
 pill_core = {path = "../pill_core"}
 pill_engine = {path = "../pill_engine", features = ["internal"]}
 
+# Data containers
+slotmap = "1.0.6"
+slab = "0.4.5"
+
+# Loaders
 image = "0.23"
+tobj = "3.0"
+
+# Errors
+anyhow = "1.0"
+
+# Logging
+env_logger = "0.9.0"
+log = "0.4"
+
+
+
 winit = "0.25"
 cgmath = "0.18"
-env_logger = "0.8"
-log = "0.4"
 wgpu = { version = "0.11", features = [ "spirv" ] }
 futures = "0.3"
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }
-anyhow = "1.0"
-tobj = "3.0"
 
 [build-dependencies]
 anyhow = "1.0"

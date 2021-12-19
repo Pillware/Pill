@@ -6,6 +6,8 @@ mod graphics;
 mod ecs;
 mod input;
 
+
+
 #[cfg(feature = "game")]
 pub mod game {
     pub use crate::{
@@ -36,13 +38,41 @@ pub mod internal {
         },
         graphics::{
             PillRenderer,
-            RendererError
+            RendererError,
+            RenderQueueKey,
+            RenderQueueItem,
+            RenderQueueKeyFields,
+            decompose_render_queue_key,
         },
         ecs::{
             Scene,
+            ComponentStorage,
             MeshRenderingComponent,
             TransformComponent,
+            CameraComponent,
+            EntityHandle,
         },
+        resources::{
+            RendererCameraHandle,
+            RendererMaterialHandle,
+            RendererMeshHandle,
+            RendererPipelineHandle,
+            RendererTextureHandle,
+
+            Texture, 
+            TextureHandle,
+            TextureType,
+
+            Material,
+            MaterialHandle,
+
+            Mesh,
+            MeshHandle,
+            MeshData,
+            MeshVertex,    
+
+            ResourceLoadType,
+        }
     };
 }
 

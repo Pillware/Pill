@@ -151,7 +151,6 @@ impl<T> Iterator for ComponentStorage<T> {
 mod test {
     use std::{slice::SliceIndex, borrow::{Borrow, BorrowMut}, cell::{RefMut, RefCell}};
 
-    use itertools::izip;
     use scene::Scene;
     use scene_manager::SceneManager;
 
