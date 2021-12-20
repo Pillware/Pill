@@ -1,3 +1,4 @@
+use cgmath::Transform;
 #[allow(unused_imports, dead_code, unused_variables)]
 use pill_engine::{game::*, internal::{Material, MaterialHandle, MeshHandle, Mesh, CameraComponent, Texture, TextureHandle, TextureType, ResourceLoadType}};
  
@@ -83,13 +84,10 @@ impl PillGame for Game {
     }
 }
 
-fn print_component(_engine: &mut Engine, active_scene: SceneHandle) -> Result<()> {
-    
-    Ok(())
-}
-
 fn paddle_movement_system(_engine: &mut Engine) -> Result<()> {
     println!("Moving paddles"); 
-
+    for transform in _engine.fetch_one_component_storage::<TransformComponent>()? {
+        transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05;
+    }
     Ok(())   
 }

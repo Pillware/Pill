@@ -1,4 +1,4 @@
-use std::{any::type_name, collections::HashMap};
+use std::{any::type_name, collections::HashMap, cell::RefCell};
 use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
 use pill_core::{EngineError, get_type_name};
@@ -51,7 +51,35 @@ impl SceneManager {
         Ok(active_scene)
     }
 
+    pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
 
+        // Get allocator from scene
+        let index_allocator = target_scene.get_allocator_mut();
+
+        Ok(index_allocator)
+    }
+
+    pub fn get_bitmask_controller_mut(&mut self, scene: SceneHandle) -> Result<&mut BitmaskController> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Get allocator from scene
+        let controller = target_scene.get_bitmask_controller_mut();
+
+        Ok(controller)
+    }
+
+    pub fn get_bitmask_controller(&mut self, scene: SceneHandle) -> Result<&BitmaskController> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Get allocator from scene
+        let controller = target_scene.get_bitmask_controller_mut();
+
+        Ok(controller)
+    }
 
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         // Check if scene with that name already exists
@@ -140,5 +168,92 @@ impl SceneManager {
 
          // Return handle
          Ok(SceneHandle::new(scene_index))
+    }
+
+    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
+
+        let filtered_indexes = self.get_bitmask_controller_mut(scene)
+                                                    .unwrap()
+                                                    .filter_by_component::<A>()
+                                                    .fetch_indexes();
+        
+        // Get scene
+        let target_scene = self.get_scene(scene).unwrap();
+
+        // Return iterator from scene
+
+        Ok(target_scene.get_one_component_storage::<A>()
+                    .enumerate()
+                    .filter(move |(i, t)| filtered_indexes.contains(i))
+                    .map(|(i, t)| t))
+    }
+
+    pub fn fetch_two_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
+
+        //Get filtered indexes for entities
+        let filtered_indexes = self.get_bitmask_controller_mut(scene)
+                                                    .unwrap()
+                                                    .filter_by_component::<A>()
+                                                    .filter_by_component::<B>()
+                                                    .fetch_indexes();
+        
+        // Get scene
+        let target_scene = self.get_scene(scene).unwrap();
+        
+        // Return iterator from scene
+        Ok(target_scene.get_two_component_storages::<A, B>()
+                    .enumerate()
+                    .filter(move |(i, (t, u ))| filtered_indexes.contains(i))
+                    .map(|(i, (t, u ))| (t, u)))
+                    
+    }
+
+    pub fn fetch_three_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>,
+                            C: Component<Storage = ComponentStorage<C>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+
+        //Get filtered indexes for entities
+        let filtered_indexes = self.get_bitmask_controller_mut(scene)
+                                                    .unwrap()
+                                                    .filter_by_component::<A>()
+                                                    .filter_by_component::<B>()
+                                                    .filter_by_component::<C>()
+                                                    .fetch_indexes();
+        
+        // Get scene
+        let target_scene = self.get_scene(scene).unwrap();
+        
+        // Return iterator from scene
+        Ok(target_scene.get_three_component_storages::<A, B, C>()
+                    .enumerate()
+                    .filter(move |(i, ((t, u ), w))| filtered_indexes.contains(i))
+                    .map(|(i, ((t, u), w))| (t, u, w)))
+                    
+    }
+
+    pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>,
+                            C: Component<Storage = ComponentStorage<C>>,
+                            D: Component<Storage = ComponentStorage<D>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+
+        //Get filtered indexes for entities
+        let filtered_indexes = self.get_bitmask_controller_mut(scene)
+                                                    .unwrap()
+                                                    .filter_by_component::<A>()
+                                                    .filter_by_component::<B>()
+                                                    .filter_by_component::<C>()
+                                                    .filter_by_component::<D>()
+                                                    .fetch_indexes();
+        
+        // Get scene
+        let target_scene = self.get_scene(scene).unwrap();
+        
+        // Return iterator from scene
+        Ok(target_scene.get_four_component_storages::<A, B, C, D>()
+                    .enumerate()
+                    .filter(move |(i, (((a, b), c), d))| filtered_indexes.contains(i))
+                    .map(|(i, (((a, b), c), d))| (a, b, c, d)))
+                    
     }
 }

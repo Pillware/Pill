@@ -1,4 +1,4 @@
-use std::{any::type_name, collections::VecDeque};
+use std::{any::type_name, collections::VecDeque, cell::RefCell};
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
@@ -223,9 +223,44 @@ impl Engine {
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context("Adding component to entity failed")
     }
 
+    // Iterators
 
+    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&mut self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
+        // Get iterator
+        let iterator = self.scene_manager.fetch_one_component_storage::<A>(self.scene_manager.get_active_scene_handle()?)?;
+
+        Ok(iterator)
+    }
     
+    pub fn fetch_two_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>>(&mut self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
 
+        // Get iterator
+        let iterator = self.scene_manager.fetch_two_component_storages::<A, B>(self.scene_manager.get_active_scene_handle()?)?;
+
+        Ok(iterator) 
+    }
+
+    pub fn fetch_three_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>,
+                            C: Component<Storage = ComponentStorage<C>>>(&mut self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+
+        //Get iterator
+        let iterator = self.scene_manager.fetch_three_component_storages::<A, B, C>(self.scene_manager.get_active_scene_handle()?)?;
+
+        Ok(iterator)
+    }
+
+    pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>,
+                            C: Component<Storage = ComponentStorage<C>>,
+                            D: Component<Storage = ComponentStorage<D>>>(&mut self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+
+        //Get iterator
+        let iterator = self.scene_manager.fetch_four_component_storages::<A, B, C, D>(self.scene_manager.get_active_scene_handle()?)?;
+
+        Ok(iterator) 
+    }
 
     // [TODO] Implement remove_component_from_entity
 
