@@ -223,6 +223,11 @@ impl Engine {
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context("Adding component to entity failed")
     }
 
+    pub fn delete_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> {
+        info!("Deleting {} {} from {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.index, "Scene".gobj_style(), scene_handle.index);
+        self.scene_manager.delete_component_from_entity::<T>(scene_handle, entity_handle).context("Deleting component from entity failed")
+    }
+
     // Iterators
 
     pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&mut self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
@@ -261,8 +266,6 @@ impl Engine {
 
         Ok(iterator) 
     }
-
-    // [TODO] Implement remove_component_from_entity
 
     // [TODO] Implement get_component_from_entity
 

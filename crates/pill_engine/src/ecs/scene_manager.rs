@@ -125,6 +125,32 @@ impl SceneManager {
         Ok(EntityHandle::new(new_entity.get_index(), new_entity.get_generation()))
     }
 
+    pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene_handle)?;
+
+        // Get index allocator
+        let index_allocator = target_scene.get_allocator_mut();
+
+        // Deallocate entity in the index allocator
+        index_allocator.deallocate_entity(entity_handle.clone());
+        
+        // Remove the entity from the entity vector
+        let mut delete_index = 0;
+        for i in 0..target_scene.entities.len() {
+            if target_scene.entities[i].index == entity_handle.index && target_scene.entities[i].generation == entity_handle.generation {
+                delete_index = i;
+                break;
+            }
+        }
+        target_scene.entities.remove(delete_index);
+
+        // Decrease entity counter
+        target_scene.entity_counter -= 1;
+
+        Ok(())
+    }
+
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {     
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
@@ -138,6 +164,25 @@ impl SceneManager {
         // Update the bitmask for the given entity
         target_scene.get_bitmask_controller_mut().update_after_component_insertion::<T>(entity.get_index().clone());
 
+        // Success
+        Ok(())
+    }
+
+    pub fn delete_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> {
+
+        // Get scene
+        let target_scene = self.get_scene_mut(scene_handle)?;
+
+        // Get component storage from screen
+        let component_storage = target_scene.get_component_storage_mut::<T>()?;
+
+        // Delete the component with given entity's index from the storage
+        component_storage.delete(entity_handle.clone());
+
+        //Update the bitmask for the given entity
+        target_scene.get_bitmask_controller_mut().update_after_component_deletion::<T>(entity_handle.get_index().clone());
+
+        // Success
         Ok(())
     }
 
@@ -184,8 +229,8 @@ impl SceneManager {
 
         Ok(target_scene.get_one_component_storage::<A>()
                     .enumerate()
-                    .filter(move |(i, t)| filtered_indexes.contains(i))
-                    .map(|(i, t)| t))
+                    .filter(move |(i, _t)| filtered_indexes.contains(i))
+                    .map(|(_i, t)| t))
     }
 
     pub fn fetch_two_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
@@ -204,8 +249,8 @@ impl SceneManager {
         // Return iterator from scene
         Ok(target_scene.get_two_component_storages::<A, B>()
                     .enumerate()
-                    .filter(move |(i, (t, u ))| filtered_indexes.contains(i))
-                    .map(|(i, (t, u ))| (t, u)))
+                    .filter(move |(i, (_t, _u ))| filtered_indexes.contains(i))
+                    .map(|(_i, (t, u ))| (t, u)))
                     
     }
 
@@ -227,8 +272,8 @@ impl SceneManager {
         // Return iterator from scene
         Ok(target_scene.get_three_component_storages::<A, B, C>()
                     .enumerate()
-                    .filter(move |(i, ((t, u ), w))| filtered_indexes.contains(i))
-                    .map(|(i, ((t, u), w))| (t, u, w)))
+                    .filter(move |(i, ((_t, _u ), _w))| filtered_indexes.contains(i))
+                    .map(|(_i, ((t, u), w))| (t, u, w)))
                     
     }
 
@@ -252,8 +297,8 @@ impl SceneManager {
         // Return iterator from scene
         Ok(target_scene.get_four_component_storages::<A, B, C, D>()
                     .enumerate()
-                    .filter(move |(i, (((a, b), c), d))| filtered_indexes.contains(i))
-                    .map(|(i, (((a, b), c), d))| (a, b, c, d)))
+                    .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
+                    .map(|(_i, (((a, b), c), d))| (a, b, c, d)))
                     
     }
 }

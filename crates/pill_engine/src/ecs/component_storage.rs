@@ -82,6 +82,12 @@ impl<T> ComponentStorage<T> {
         self.data[handle.index] = RefCell::new(Some(comp));
     }
 
+    pub fn delete(&mut self, entity_handle: EntityHandle) {
+        if self.data.len() > entity_handle.index {
+            self.data[entity_handle.index].replace(None);
+        }
+    }
+
     pub fn get(&self, index: usize) -> Option<T> {
         return None;
         // if self.data.borrow().len() <= index {
