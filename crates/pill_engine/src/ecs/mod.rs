@@ -13,6 +13,11 @@ mod rendering_system;
 mod allocator;
 mod bitmask_controller;
 mod bitmask_map;
+pub(crate) mod entity_builder;
+
+pub use entity_builder::{
+    EntityBuilder
+};
 
 pub use allocator::{
     Allocator,

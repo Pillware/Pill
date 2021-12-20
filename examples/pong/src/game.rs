@@ -16,10 +16,10 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("Paddle movement", paddle_movement_system).unwrap();
 
-        // Register components
-        engine.register_component::<TransformComponent>(scene).unwrap();
-        engine.register_component::<MeshRenderingComponent>(scene).unwrap();
-        engine.register_component::<CameraComponent>(scene).unwrap();
+        // Register components - NO NEED TO DO THAT ANYMORE
+        // engine.register_component::<TransformComponent>(scene).unwrap();
+        // engine.register_component::<MeshRenderingComponent>(scene).unwrap();
+        // engine.register_component::<CameraComponent>(scene).unwrap();
 
         let active_scene = engine.get_active_scene_handle().expect("Scene not found");//.unwrap();
 
@@ -72,9 +72,19 @@ impl PillGame for Game {
         let mut mesh_rendering_1 = MeshRenderingComponent::default();
         mesh_rendering_1.assign_material(engine, &material_1_handle).unwrap();
         mesh_rendering_1.assign_mesh(engine, &mesh_1_handle).unwrap();
+
+        let mut mesh_rendering_2 = MeshRenderingComponent::default();
+        mesh_rendering_2.assign_material(engine, &material_1_handle).unwrap();
+        mesh_rendering_2.assign_mesh(engine, &mesh_1_handle).unwrap();
        
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_1, mesh_rendering_1).unwrap();
 
+        // Add another entity through entity builder
+        engine.build_entity(active_scene).with_component(TransformComponent::new(cgmath::Vector3::<f32>::new(5.0,1.0,3.0),
+                                                                                 cgmath::Vector3::<f32>::new(0.0, 1.0,0.0),
+                                                                                    cgmath::Vector3::<f32>::new(1.0,1.0,1.0),))
+                                        .with_component(mesh_rendering_2)
+                                        .finish();
 
         //println!("{} .... {}", std::env::current_dir().unwrap().display(), PathBuf::from("../res/models/Monkey.obj").display());
         //PathBuf::from("../res/models/Monkey.obj")

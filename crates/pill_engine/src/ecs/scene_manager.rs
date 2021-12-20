@@ -6,16 +6,28 @@ use indexmap::IndexMap;
 
 use crate::ecs::*;
 
+use super::entity_builder::EntityBuilder;
+
 pub struct SceneManager {
     scenes: IndexMap<String, Scene>,
-    active_scene: Option<SceneHandle>,
+    active_scene: Option<SceneHandle>
 }
 
 impl SceneManager {
     pub fn new() -> Self {
 	    Self { 
             scenes: IndexMap::<String, Scene>::new(),
-            active_scene: None,
+            active_scene: None
+        }
+    }
+
+    pub fn build_entity(&mut self, scene: SceneHandle) -> EntityBuilder {
+        let entity_handle = self.create_entity(scene).unwrap();
+
+        EntityBuilder {
+            entity: entity_handle,
+            scene_manager: self,
+            scene_handle: scene.clone()
         }
     }
 
@@ -152,6 +164,11 @@ impl SceneManager {
     }
 
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {     
+        // Register component storage if that hasn't happened yet
+        if self.get_scene_mut(scene_handle)?.components.contains_key::<T>() == false {
+            self.register_component::<T>(scene_handle)?;
+        }
+        
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 

@@ -3,6 +3,7 @@ use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
 use winit::{ event::*, dpi::PhysicalPosition,};
+use crate::ecs::entity_builder::EntityBuilder;
 
 use pill_core::{EngineError, get_type_name, PillSlotMapKey, PillStyle};
 use crate::{ 
@@ -202,7 +203,9 @@ impl Engine {
     // Problem with this approach is that we need to iterate over all entities and if two are enabled we don't actually know which will be used because index of component
     // does not mean that this component is first, it could be created later than other and there was empty slot for this entity so now it is first.
 
-
+    pub fn build_entity(&mut self, scene: SceneHandle) -> EntityBuilder {
+        self.scene_manager.build_entity(scene)
+    }
 
     pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle) -> Result<()> {
         self.scene_manager.register_component::<T>(scene_handle).context("Registering component failed")
@@ -216,6 +219,10 @@ impl Engine {
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
         self.scene_manager.create_entity(scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
+    }
+
+    pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
+        self.scene_manager.remove_entity(entity_handle, scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
     }
     
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {
