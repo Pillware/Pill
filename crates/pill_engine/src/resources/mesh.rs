@@ -10,6 +10,7 @@ use crate::resources::*;
 
 use cgmath::InnerSpace;
 use pill_core::EngineError;
+use pill_core::PillSlotMapKey;
 use tobj::LoadOptions;
 
 //use crate::resources::resource_mapxxx::Resource;
@@ -47,17 +48,32 @@ impl Resource for Mesh {
         self.renderer_resource_handle = Some(renderer_resource_handle);
     }
 
-    fn get_name(&self) -> String {
-        self.name.clone()
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {
+
+        // Destroy renderer resource
+        if let Some(v) = self.renderer_resource_handle {
+            engine.renderer.destroy_mesh(v).unwrap();
+        }
+
+        // Find mesh rendering components that use this material and update them
+        let active_scene = engine.scene_manager.get_active_scene_mut().unwrap();
+        let mesh_rendering_component_storage = active_scene.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
+        for i in 0..mesh_rendering_component_storage.data.len() {
+            if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
+                mesh_rendering_component.mesh_handle = None;
+                mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+            }
+            // [TODO] Instead of this use "mesh_rendering_component.assign_mesh(engine, &default_material.0);". This requires component wrapped with option or refcell
+        }
     }
 
-    fn destroy(&mut self, engine: &mut Engine) {
-        //todo!()
+    fn get_name(&self) -> String {
+        self.name.clone()
     }
 }
 
 impl typemap_rev::TypeMapKey for Mesh {
-    type Value = ResourceStorage<MeshHandle, Mesh>; 
+    type Value = Option<ResourceStorage<MeshHandle, Mesh>>; 
 }
 
 

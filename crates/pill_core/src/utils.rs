@@ -1,5 +1,4 @@
 use std::any::type_name;
-
 use colored::*;
 
 pub fn get_type_name<T>() -> String {
@@ -9,9 +8,25 @@ pub fn get_type_name<T>() -> String {
 }
 
 pub fn get_value_type_name<T>(_: &T) -> String {
-    let full_type_name = std::any::type_name::<T>().to_string();
+    let full_type_name = type_name::<T>().to_string();
     let pure_type_name_start_index = full_type_name.rfind(':').unwrap() + 1;
     full_type_name[pure_type_name_start_index..].to_string()
+}
+
+// Returns true if enum variants are the same and false if not
+pub fn enum_variant_eq<T>(a: &T, b: &T) -> bool {
+    std::mem::discriminant(a) == std::mem::discriminant(b)
+}
+
+// Returns only the name of enum variant
+// E.g. pill_core::get_enum_variant_type_name(MyEnum::Hello(88)); will return Hello
+pub fn get_enum_variant_type_name<T: core::fmt::Debug>(a: &T) -> String {
+    let full_type_name = format!("{:?}", a);
+    let pure_type_name_end_index = full_type_name.rfind('(');
+    match pure_type_name_end_index {
+        Some(v) => full_type_name[..v].to_string(),
+        None => full_type_name.to_string(),
+    }
 }
 
 // Functions for changing the style of output string

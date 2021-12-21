@@ -1,22 +1,23 @@
-use anyhow::*;
+use crate::resources::RendererTexture;
+
 use pill_engine::internal::{MeshData, MeshVertex};
+
+use wgpu::util::DeviceExt;
+use anyhow::*;
 use slotmap::new_key_type;
 use std::ops::Range;
 use std::path::Path;
 use tobj::LoadOptions;
-use wgpu::util::DeviceExt;
 use cgmath::InnerSpace;
 
-use crate::texture;
-
-new_key_type! { 
-    pub struct RendererMeshHandle;
-}
+// --- Vertex ---
 
 pub trait Vertex {
     // Defines how a data is layed out in memory (To specify how RenderPipeline needs to map the buffer in the shader)
     fn data_layout_descriptor<'a>() -> wgpu::VertexBufferLayout<'a>;
 }
+
+// --- Mesh ---
 
 pub struct RendererMesh {
     pub vertex_buffer: wgpu::Buffer,
@@ -53,31 +54,30 @@ impl Vertex for RendererMesh {
     fn data_layout_descriptor<'a>() -> wgpu::VertexBufferLayout<'a> {
         use std::mem;
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<MeshVertex>() as wgpu::BufferAddress, // Specifies how wide a vertex is
-            step_mode: wgpu::VertexStepMode::Vertex, // Specifies how often render pipeline should move to the next vertex
-            attributes: &[ // Describes the individual parts of the vertex (1:1 mapping with Vertex struct)
-                wgpu::VertexAttribute {
-                    offset: 0,  // Offset in bytes that this attribute starts
-                    shader_location: 0, // Location to store this attribute at (this will be [[location(0)]])
-                    format: wgpu::VertexFormat::Float32x3, // Tells the shader the shape of the attribute (Float32x3 is vec3<f32>)
+            array_stride: mem::size_of::<MeshVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute { // Vertex position
+                    offset: 0,  
+                    shader_location: 0, 
+                    format: wgpu::VertexFormat::Float32x3, 
                 },
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // Vertex texture coordinates
                     offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
                 },
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // Vertex normal
                     offset: mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                // Tangent and bitangent
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // Vertex tangent
                     offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // Vertex bitangent
                     offset: mem::size_of::<[f32; 11]>() as wgpu::BufferAddress,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Float32x3,

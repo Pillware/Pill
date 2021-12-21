@@ -1,7 +1,10 @@
-use cgmath::SquareMatrix;
+use crate::resources::renderer_mesh::Vertex;
+
 use pill_engine::game::TransformComponent;
 
-use crate::mesh::Vertex;
+use cgmath::SquareMatrix;
+
+// --- Instance ---
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -28,7 +31,7 @@ impl Vertex for Instance {
             // This means that shaders will only change to use the next instance when the shader starts processing a new instance
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
-                // Model matrix (mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot for each vec4. We don't have to do this in code though)
+                // Model matrix (mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot for each vec4)
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 5,

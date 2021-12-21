@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -9,10 +11,11 @@ use crate::resources::*;
 //use crate::resources::resource_mapxxx::Resource;
 
 use anyhow::{Result, Context, Error};
+use pill_core::PillSlotMapKey;
 use typemap_rev::TypeMapKey;
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum TextureType {
     Color,
     Normal,
@@ -52,15 +55,48 @@ impl Resource for Texture { // [TODO] What if renderer fails to create texture?
         self.renderer_resource_handle = Some(renderer_resource_handle);
     }
 
-    fn get_name(&self) -> String {
-        self.name.clone()
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {
+        
+        // Destroy renderer resource
+        if let Some(v) = self.renderer_resource_handle {
+            engine.renderer.destroy_texture(v).unwrap();
+        }
+
+        // Take resource storage from engine
+        let mut resource_storage = engine.resource_manager.get_resource_storage_mut::<MaterialHandle, Material>().unwrap().take();
+        let materials = &mut resource_storage.as_mut().unwrap().data;
+
+        // Find materials that use this texture and update them
+        for material_entry in materials.iter_mut() {
+            
+            // Find texture to update
+            let mut texture_name: Option<String> = Option::None;
+            for material_texture in material_entry.1.textures.iter() {
+                if let Some(texture_data) = material_texture.1.get_texture_data() {
+                    if texture_data.0.data() == self_handle.data() {
+                        texture_name = Some(material_texture.0.to_string());
+                        break;
+                    }
+                }
+            }
+
+            // Update found texture if any
+            if let Some(name) = texture_name {
+                let material = material_entry.1;
+                let default_texture = engine.resource_manager.get_default_texture(&name).unwrap();
+                material.set_texture(engine, &name, default_texture.0).unwrap();
+            }
+        }
+    
+        // Take resource storage to engine
+        *engine.resource_manager.get_resource_storage_mut::<MaterialHandle, Material>().unwrap() = resource_storage;
     }
 
-    fn destroy(&mut self, engine: &mut Engine) {
-        //todo!()
+    fn get_name(&self) -> String {
+        self.name.clone()
     }
 }
 
 impl TypeMapKey for Texture {
-    type Value = ResourceStorage<TextureHandle, Texture>; 
+    type Value = Option<ResourceStorage<TextureHandle, Texture>>; 
 }

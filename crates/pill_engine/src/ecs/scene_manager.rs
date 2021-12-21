@@ -34,25 +34,6 @@ impl SceneManager {
         Ok(())
     }
 
-    pub fn get_active_scene_handle(&self) -> Result<SceneHandle> {
-        // Check if active scene is set
-        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
-
-        // Return active scene handle
-        Ok(active_scene_handle.clone())
-    }
-
-    pub fn get_active_scene(&self) -> Result<&Scene> {
-        // Check if active scene is set
-        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
-        let active_scene = self.get_scene(active_scene_handle)?;
-
-        // Return active scene handle
-        Ok(active_scene)
-    }
-
-
-
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         // Check if scene with that name already exists
         self.scenes.contains_key(name).eq(&false).ok_or(Error::new(EngineError::SceneAlreadyExists(name.to_string())))?;
@@ -113,6 +94,16 @@ impl SceneManager {
         Ok(())
     }
 
+    
+
+    pub fn get_scene_handle(&self, name: &str) -> Result<SceneHandle> {
+        // Get scene index
+        let scene_index = self.scenes.get_index_of(name).ok_or(Error::new(EngineError::InvalidSceneName(name.to_string())))?;
+
+         // Return handle
+         Ok(SceneHandle::new(scene_index))
+    }
+
     pub fn get_scene(&self, scene_handle: SceneHandle) -> Result<&Scene> {
         // Get scene
         let scene = self.scenes.get_index(scene_handle.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
@@ -125,11 +116,33 @@ impl SceneManager {
         Ok(scene)
     }
 
-    pub fn get_scene_handle(&self, name: &str) -> Result<SceneHandle> {
-        // Get scene index
-        let scene_index = self.scenes.get_index_of(name).ok_or(Error::new(EngineError::InvalidSceneName(name.to_string())))?;
+    
 
-         // Return handle
-         Ok(SceneHandle::new(scene_index))
+
+
+    pub fn get_active_scene_handle(&self) -> Result<SceneHandle> {
+        // Check if active scene is set
+        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
+
+        // Return active scene handle
+        Ok(active_scene_handle.clone())
+    }
+
+    pub fn get_active_scene(&self) -> Result<&Scene> {
+        // Check if active scene is set
+        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
+        let active_scene = self.get_scene(active_scene_handle)?;
+
+        // Return active scene handle
+        Ok(active_scene)
+    }
+
+    pub fn get_active_scene_mut(&mut self) -> Result<&mut Scene> {
+        // Check if active scene is set
+        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
+        let active_scene = self.get_scene_mut(active_scene_handle)?;
+
+        // Return active scene handle
+        Ok(active_scene)
     }
 }

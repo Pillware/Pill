@@ -64,27 +64,18 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         };
 
         // [TODO] Check if render queue key is correct
-        if mesh_rendering_component.render_queue_key == 0 {
+        if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
+            let render_queue_item = RenderQueueItem {
+                key: render_queue_key,
+                entity_index: i as u32,
+            };
+    
+            render_queue.push(render_queue_item);
+        }
+        else {
             debug!("Invalid render queue key");
             continue;
-        }
-
-        if mesh_rendering_component.mesh_handle == None {
-            debug!("Mesh is not assigned");
-            continue;
-        }
-
-        if mesh_rendering_component.material_handle == None {
-            debug!("Material is not assigned");
-            continue;
-        }
-
-        let render_queue_item = RenderQueueItem {
-            key: mesh_rendering_component.render_queue_key,
-            entity_index: i as u32,
-        };
-
-        render_queue.push(render_queue_item);
+        } 
     }
 
     // Sort render queue

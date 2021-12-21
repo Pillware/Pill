@@ -25,5 +25,5 @@ pub use resource_manager::{
 pub use resource_storage::ResourceStorage;
 pub use mesh::{Mesh, MeshData, MeshVertex};
 pub use texture::{Texture, TextureType};
-pub use material::{Material};
+pub use material::{Material, TextureMap, ParameterMap, MaterialParameter, MaterialTexture, MaterialParameterMap};
 //pub use resource_mapxxx::Resource;

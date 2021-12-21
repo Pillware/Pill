@@ -72,6 +72,12 @@ pub mod internal {
             MeshVertex,    
 
             ResourceLoadType,
+            ResourceManager,
+            TextureMap,
+            ParameterMap,
+            MaterialParameter,
+            MaterialTexture,
+            MaterialParameterMap
         }
     };
 }

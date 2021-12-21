@@ -44,8 +44,22 @@ pub enum EngineError {
     ResourceAlreadyExists(String, String),
     #[error("{} {} for that handle not found \n\nSource: ", "Resource".gobj_style(), .0.sobj_style())]
     InvalidResourceHandle(String),
+    #[error("{} {} of type {} not found \n\nSource: ", "Resource".gobj_style(), .0.name_style(), .1.sobj_style(),)]
+    InvalidResourceName(String, String),
     #[error("Invalid .obj file {}\nFiles with multiple meshes are not supported \n\nSource: ", .0.name_style())]
-    InvalidModelFile(String)
+    InvalidModelFile(String),
+
+    // Material textures and parameters
+    #[error("Cannot set {} of type {} to {} of type {} \n\nSource: ", "Texture".gobj_style(), .0.name_style(), "MaterialTexture".sobj_style(), .1.name_style())]
+    WrongTextureType(String, String),
+
+    #[error("{} {} of type {} does not exist \n\nSource: ", "MaterialParameter".sobj_style(), .0.name_style(), .1.sobj_style())]
+    MaterialParameterNotFound(String, String),
+    #[error("{} {} does not exist \n\nSource: ", "MaterialTexture".gobj_style(), .0.name_style())]
+    MaterialTextureNotFound(String),
+
+
+    
 }
 
 pub fn err_prefix() -> ColoredString {

@@ -1,20 +1,10 @@
+use pill_engine::internal::{RendererTextureHandle, TextureType};
+
 use anyhow::*;
 use image::GenericImageView;
-use pill_engine::internal::{RendererTextureHandle, TextureType};
 use std::{num::NonZeroU32, path::{Path, PathBuf}};
 
-// #[derive(Clone, Copy)]
-// pub struct RendererTextureHandle {
-//     pub index: u32,
-// }
-
-// impl ResourceHandle for RendererTextureHandle
-// {
-//     fn get_index(&self) -> u32 {
-//         self.index
-//     }
-// }
-
+// --- Texture ---
 
 pub struct RendererTexture {
     pub texture: wgpu::Texture,
@@ -54,7 +44,6 @@ impl RendererTexture {
     ) -> Result<Self> {
         Self::create_depth_texture(device, surface_configuration, name)
     }
-
 
     fn create_texture(
         device: &wgpu::Device,

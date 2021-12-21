@@ -20,26 +20,6 @@ use anyhow::{Result, Context, Error};
 
 use super::{Material, Mesh, Texture, TextureType};
 
-// pub struct RendererMaterialHandle {
-//     index: u32,
-// }
-
-// pub struct RendererMeshHandle {
-//     index: u32,
-// }
-
-// pub struct RendererPipelineHandle {
-//     index: u32,
-// }
-
-// pub struct RendererCameraHandle {
-//     index: u32,
-// }
-
-// pub struct RendererTextureHandle {
-//     index: u32,
-// }
-
 
 pill_core::define_new_pill_slotmap_key! { 
     pub struct RendererMaterialHandle;
@@ -61,11 +41,6 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
 }
 
-pub enum ResourceSource {
-    Engine,
-    Game,  
-}
-
 pill_core::define_new_pill_slotmap_key! { 
     pub struct MaterialHandle;
 }
@@ -78,25 +53,9 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }
 
-// pub trait ResourceHandle {
-//     fn get_index(&self) -> u32; 
-// }
-
-
-// pub trait Resource {
-//     fn get_collection<T>(&self, resource_manager: &mut ResourceManager) -> HashMap<String, Box<T>>;
-// }
-
-
-// pub trait Resource : TypeMapKey {
-
-// }
-
-
-//pub trait Resource : TypeMapKey<Value = ResourceStorage<H, T>> {
 pub trait Resource : TypeMapKey {
     fn initialize(&mut self, engine: &mut Engine);
-    fn destroy(&mut self, engine: &mut Engine);
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H);
     fn get_name(&self) -> String;
 }
 
@@ -105,25 +64,49 @@ pub enum ResourceLoadType {
     Bytes(Box::<[u8]>),
 }
 
-
 pub struct ResourceManager {
     resources: TypeMap,
 }
 
 impl ResourceManager {
     pub fn new() -> Self {
-	    let resource_manager = Self { 
+	    Self { 
             resources: TypeMap::new(),
-        };
-
-        resource_manager
+        }
     }
 
-    pub fn get_resource<'a, H, T: Resource<Value = ResourceStorage::<H, T>>>(&'a self, resource_handle: &'a H) -> Result<&'a T> 
-        where H: PillSlotMapKey
+    pub fn register_resource_type<H, T>(&mut self) -> Result<()> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        self.resources.insert::<T>(Some(ResourceStorage::<H, T>::new()));
+        Ok(())
+    }
+
+    pub fn add_resource<'a, H, T>(&'a mut self, resource: T) -> Result<H> 
+        where H: PillSlotMapKey + 'a, T: Resource<Value = Option<ResourceStorage::<H, T>>>
     {
         // Get resource storage from scene
-        let resource_storage = self.get_resource_storage::<H, T>()?;
+        let resource_storage = self.get_resource_storage_mut::<H, T>()?.as_mut().unwrap();
+
+        let resource_name = resource.get_name().to_owned();
+        // [TODO] Check if name is valid (not empty string)
+        // Check if resource already exists
+        resource_storage.mapping.contains_key(&resource_name).eq(&false).ok_or(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), resource_name.clone())))?;
+        
+        // Insert new resource
+        let resource_handle = resource_storage.data.insert(resource);
+
+        // Insert new mapping
+        resource_storage.mapping.insert(&resource_name, &resource_handle);
+
+        Ok(resource_handle)
+    }
+    
+    pub fn get_resource<'a, H, T>(&'a self, resource_handle: &'a H) -> Result<&'a T> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        // Get resource storage from scene
+        let resource_storage = self.get_resource_storage::<H, T>()?.as_ref().unwrap();
         
         // Get resource
         let resource = resource_storage.data.get(*resource_handle).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
@@ -131,11 +114,26 @@ impl ResourceManager {
         Ok(resource)
     }
 
-    pub fn get_resource_mut<'a, H, T: Resource<Value = ResourceStorage::<H, T>>>(&'a mut self, resource_handle: &'a H) -> Result<&'a mut T> 
-        where H: PillSlotMapKey
+    pub fn get_resource_by_name<'a, H, T>(&'a self, name: &str) -> Result<&'a T> 
+        where H: PillSlotMapKey + 'a, T: Resource<Value = Option<ResourceStorage::<H, T>>>
     {
         // Get resource storage from scene
-        let resource_storage = self.get_resource_storage_mut::<H, T>()?;
+        let resource_storage = self.get_resource_storage::<H, T>()?.as_ref().unwrap();
+        
+        // Get handle by name
+        let resource_handle = resource_storage.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?;
+   
+        // Get resource
+        let resource = resource_storage.data.get(*resource_handle).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+
+        Ok(resource)
+    }
+
+    pub fn get_resource_mut<'a, H, T>(&'a mut self, resource_handle: &'a H) -> Result<&'a mut T> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        // Get resource storage from scene
+        let resource_storage = self.get_resource_storage_mut::<H, T>()?.as_mut().unwrap();
         
         // Get resource
         let resource = resource_storage.data.get_mut(*resource_handle).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
@@ -143,57 +141,114 @@ impl ResourceManager {
         Ok(resource)
     }
 
-    pub fn add_resource<'a, H: PillSlotMapKey + 'a, T: Resource<Value = ResourceStorage::<H, T>> >(&'a mut self, resource: T) -> Result<H> 
+    pub fn get_resource_by_name_mut<'a, H, T>(&'a mut self, name: &str) -> Result<&'a mut T> 
+        where H: PillSlotMapKey + 'a, T: Resource<Value = Option<ResourceStorage::<H, T>>>
     {
         // Get resource storage from scene
-        let resource_storage = self.get_resource_storage_mut::<H, T>()?;
-
-        // [TODO] Add double hashmap and check if name is already there, if yes the return error, if not then insert new resource and create entry in double hashmap (actually to entries A->B and B->A)
-        // Check if resource already exists
-        //resource_storage.data.contains_key(name).eq(&false).ok_or(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), name.to_string())))?;
+        let resource_storage = self.get_resource_storage_mut::<H, T>()?.as_mut().unwrap();
         
-            
-        // Insert new
-        let resource_handle: H = resource_storage.data.insert(resource);
+        // Get handle by name
+        let resource_handle = resource_storage.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?;
 
-        Ok(resource_handle)
+        // Get resource
+        let resource = resource_storage.data.get_mut(*resource_handle).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+
+        Ok(resource)
     }
 
-    fn get_resource_storage<H: PillSlotMapKey, T: Resource<Value = ResourceStorage::<H, T>>>(&self) -> Result<&ResourceStorage<H, T>> {
+    pub fn remove_resource<H, T>(&mut self, resource_handle: &H) -> Result<(H, T)> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        // Get resource storage from scene
+        let resource_storage = self.get_resource_storage_mut::<H, T>()?.as_mut().unwrap();
+
+        // Check if exists
+        resource_storage.mapping.contains_value(resource_handle).eq(&false).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+
+        // Remove resource
+        let resource = resource_storage.data.remove(*resource_handle).unwrap();
+       
+        // Remove mapping
+        resource_storage.mapping.remove_by_value(resource_handle);
+
+        Ok((resource_handle.clone(), resource))
+    } 
+
+    pub fn remove_resource_by_name<H, T>(&mut self, name: &str) -> Result<(H, T)> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        // Get resource storage from scene
+        let resource_storage = self.get_resource_storage_mut::<H, T>()?.as_mut().unwrap();
+
+        // Get handle by name
+        let resource_handle = resource_storage.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?.clone();
+
+        // Remove resource
+        let resource = resource_storage.data.remove(resource_handle).unwrap();
+       
+        // Remove mapping
+        resource_storage.mapping.remove_by_key(&name.to_string());
+
+        Ok((resource_handle, resource))
+    } 
+        
+    pub(crate) fn get_resource_storage<H, T>(&self) -> Result<&Option<ResourceStorage<H, T>>> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
         self.resources.get::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
     }
 
-    fn get_resource_storage_mut<H: PillSlotMapKey, T: Resource<Value = ResourceStorage::<H, T>>>(&mut self) -> Result<&mut ResourceStorage<H, T>> {
+    pub(crate) fn get_resource_storage_mut<H, T>(&mut self) -> Result<&mut Option<ResourceStorage<H, T>>> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
         self.resources.get_mut::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
     }
 
-    pub fn register_resource_type<H: PillSlotMapKey, T: Resource<Value = ResourceStorage::<H, T>>>(&mut self) -> Result<()> {
-        self.resources.insert::<T>(ResourceStorage::<H, T>::new());
-        Ok(())
+    
+    pub(crate) fn get_default_material(&self) -> Result<(MaterialHandle, RendererMaterialHandle)> {
+        let resource_storage = self.get_resource_storage::<MaterialHandle, Material>()?.as_ref().unwrap();
+
+        let material_handle = resource_storage.mapping.get_value(&"DefaultMaterial".to_string()).unwrap().clone();
+        let material = resource_storage.data.get(material_handle).unwrap();
+        let renderer_resource_handle = material.renderer_resource_handle.unwrap();
+
+        return Ok((material_handle, renderer_resource_handle));
     }
 
-    pub fn get_default_texture_handle(&self, texture_type: TextureType) -> TextureHandle {
-        match texture_type {
-            TextureType::Color => TextureHandle::new(1,NonZeroU32::new(1).unwrap()),
-            TextureType::Normal => TextureHandle::new(2,NonZeroU32::new(1).unwrap()),
-        }
+    //pub(crate) fn get_default_texture_handle(&self, texture_name: &str) -> Result<TextureHandle> {
+    pub(crate) fn get_default_texture(&self, texture_name: &str) -> Result<(TextureHandle, RendererTextureHandle)> {
+        let resource_storage = self.get_resource_storage::<TextureHandle, Texture>()?.as_ref().unwrap();
+
+        let texture_name = match texture_name {
+            "Color" => "DefaultColor",
+            "Normal" => "DefaultNormal",
+            _ => panic!()
+        };
+
+        let texture_handle = resource_storage.mapping.get_value(&texture_name.to_string()).unwrap().clone();
+        let texture = resource_storage.data.get(texture_handle).unwrap();
+        let renderer_resource_handle = texture.renderer_resource_handle.unwrap();
+
+        return Ok((texture_handle, renderer_resource_handle));
+        
+        // match texture_name {
+        //     "Color" => {
+        //         let texture_storage = self.get_resource_storage::<TextureHandle, Texture>().unwrap();
+        //         let texture_handle = texture_storage.mapping.get_value(&"DefaultColor".to_string()).unwrap().clone();
+        //         let texture = texture_storage.data.get(texture_handle).unwrap();
+        //         let renderer_resource_handle = texture.renderer_resource_handle.unwrap();
+
+        //         return Ok((texture_handle, renderer_resource_handle));
+        //     },
+        //         Ok(TextureHandle::new(1,NonZeroU32::new(1).unwrap())),
+        //     "Normal" => Ok(TextureHandle::new(2,NonZeroU32::new(1).unwrap())),
+        //     _ => panic!()
+        // }
+
+        // match texture_name {
+        //     "Color" => Ok(TextureHandle::new(1,NonZeroU32::new(1).unwrap())),
+        //     "Normal" => Ok(TextureHandle::new(2,NonZeroU32::new(1).unwrap())),
+        //     _ => panic!()
+        // }
     }
-
-    // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) { // Trait bound technique
-    //     let collection: HashMap<String, Box<T>> = t.get_collection(self);
-    //     match collection.get(&path) {
-    //         Some(resource) => {
-    //             println!("[Resource Manager] Mesh resource already exists, increasing pointer reference count");
-    //             //mesh_resource 
-    //         },
-    //         None => {
-    //             println!("[Resource Manager] Mesh resource not found, creating new entry");
-
-    //             // Create new mesh resource
-    //             let new_mesh_resource: MeshResource = MeshResource {};
-    //             self.mesh_resources.insert(path, Box::new(new_mesh_resource));
-    //             //new_mesh_resource
-    //         }
-    //     }; 
-    // }
 }

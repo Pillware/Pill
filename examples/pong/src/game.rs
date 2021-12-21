@@ -25,19 +25,25 @@ impl PillGame for Game {
         // Add texture
         let texture_1_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/Camouflage.png");
         let texture_1 = Texture::new("TestTexture", TextureType::Color, ResourceLoadType::Path(texture_1_path));
-        let texture_1_handle = engine.add_resource::<TextureHandle, Texture>(texture_1).unwrap(); 
+        let texture_1_handle = engine.add_resource::<TextureHandle, Texture>(texture_1).unwrap();
+
+      
 
         // Add material
         let mut material_1 = Material::new("TestMaterial");
-        //material_1.assign_texture(engine, texture_1_handle, TextureType::Color); // [TODO] We cannot assign texture to material if it is not registered??
+        material_1.set_texture(engine,"Color", texture_1_handle).unwrap(); // [TODO] We cannot assign texture to material if it is not registered??
+        material_1.set_color(engine, "Tint", cgmath::Vector3::<f32>::new( 1.0, 0.0, 0.0)).unwrap();
         let material_1_handle = engine.add_resource::<MaterialHandle, Material>(material_1).unwrap(); // [TODO] Remove requirement of name here, and assure that resource always has name and take it from there (using trait)
-        
+        // TODO TEST GET RESOURCE
+        //material_1.set_color(engine, "Tint", cgmath::Vector3::<f32>::new( 1.0, 0.0, 0.0)).unwrap();
+
         // Add mesh
         let mesh_1_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Cube.obj"); // examples/pong/res/models/Monkey.obj
         let mesh_1 = Mesh::new("TestMesh", mesh_1_path);
         let mesh_1_handle = engine.add_resource::<MeshHandle, Mesh>(mesh_1).unwrap();
 
-
+        //engine.remove_resource_by_name::<TextureHandle, Texture>("TestTexture").unwrap();
+        
 
 
         // --- Create camera entity
@@ -63,16 +69,18 @@ impl PillGame for Game {
         let transform_1 = TransformComponent::new(
             cgmath::Vector3::<f32>::new(0.0,0.0,0.0), 
             cgmath::Vector3::<f32>::new(0.0, 45.0,0.0),
-               cgmath::Vector3::<f32>::new(1.0,3.0,1.0),
+               cgmath::Vector3::<f32>::new(1.0,1.0,1.0),
         );
         engine.add_component_to_entity::<TransformComponent>(active_scene, paddle_1, transform_1).unwrap();  
         // Add mesh rendering component
         let mut mesh_rendering_1 = MeshRenderingComponent::default();
-        mesh_rendering_1.assign_material(engine, &material_1_handle).unwrap();
-        mesh_rendering_1.assign_mesh(engine, &mesh_1_handle).unwrap();
+        mesh_rendering_1.set_material(engine, &material_1_handle).unwrap();
+        mesh_rendering_1.set_mesh(engine, &mesh_1_handle).unwrap();
        
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_1, mesh_rendering_1).unwrap();
 
+
+        //engine.remove_resource_by_name::<MaterialHandle, Material>("TestMaterial").unwrap();
 
         //println!("{} .... {}", std::env::current_dir().unwrap().display(), PathBuf::from("../res/models/Monkey.obj").display());
         //PathBuf::from("../res/models/Monkey.obj")

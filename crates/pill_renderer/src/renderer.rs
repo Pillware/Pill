@@ -1,57 +1,43 @@
+use crate::resources::{
+    RendererCamera,
+    Instance,
+    RendererMaterial,
+    RendererMesh,
+    RendererPipeline,
+    RendererTexture,
+    Vertex
+};
 
-use anyhow::{Result, Context, Error};
-
-use cgmath::Rotation3;
-
-
-use pill_core::PillSlotMap;
-use pill_core::PillSlotMapKey;
-use pill_core::PillSlotMapKeyData;
-use pill_engine::internal::*;
-
-
-use wgpu::ShaderModule;
-use wgpu::ShaderModuleDescriptor;
-use wgpu::SurfaceError;
-use slab::Slab;
-use log::{debug, info};
-
-use crate::camera::RendererCamera;
-use crate::instance::Instance;
-use crate::instance::MatrixAngleExt;
-use crate::instance::MatrixModelExt;
-use crate::material::RendererMaterial;
-
+use pill_core::{ PillSlotMap, PillSlotMapKey, PillSlotMapKeyData };
 use pill_engine::internal::{
+    PillRenderer, 
+    EntityHandle, 
+    RenderQueueItem, 
+    RendererError, 
+    TextureType,
+    MeshData, 
+    ParameterMap, 
+    TextureMap,
+    TransformComponent,
+    ComponentStorage, 
+    CameraComponent,
     RendererCameraHandle,
     RendererMaterialHandle,
     RendererMeshHandle,
     RendererTextureHandle,
     RendererPipelineHandle,
+    ResourceManager,
 };
 
-use crate::mesh::RendererMesh;
-use crate::mesh::Vertex;
-use crate::pipeline::RendererPipeline;
-use crate::texture::RendererTexture;
-use crate::camera;
-use crate::texture;
-//use crate::texture::RendererTextureHandle;
-
-
-use std::borrow::Borrow;
-use std::borrow::BorrowMut;
 use std::mem::size_of;
-use std::num::NonZeroU32;
-use std::num::NonZeroU8;
-use std::path;
-use std::path::Path;
-
+use std::num::{NonZeroU32, NonZeroU8};
+use std::path::{Path, PathBuf};
+use anyhow::{Result, Context, Error};
+use cgmath::{Rotation3, Zero};
+use slab::Slab;
+use log::{debug, info};
 use std::iter;
-use std::path::PathBuf;
-use cgmath::Zero;
-use cgmath::prelude::*;
-use wgpu::util::DeviceExt;
+use std::collections::{LinkedList, HashMap};
 use winit::{ // Import dependencies
     event::*, // Bring all public items into scope
     event_loop::{ControlFlow, EventLoop},
@@ -59,13 +45,11 @@ use winit::{ // Import dependencies
     dpi::PhysicalPosition,
 };
 
-use std::collections::LinkedList;
-use std::collections::HashMap;
-
 // [TODO] Assure that it cannot be removed!
 fn get_master_pipeline_handle() -> RendererPipelineHandle { // [TODO] Very ugly solution, maybe store there handles in some hashmap with names of pipelines as keys
     RendererPipelineHandle::new(1, std::num::NonZeroU32::new(1).unwrap() )
 }
+
 
 pub struct Renderer {
     pub state: State,
@@ -73,21 +57,12 @@ pub struct Renderer {
 
 impl PillRenderer for Renderer {
     fn new(window: &Window) -> Self { 
+        info!("Initializing Pill Renderer");
         let state: State = pollster::block_on(State::new(&window));
 
-        let mut renderer = Renderer {
+        Self {
             state,
-        };
-
-        // Load default resource data to/from executable
-        let default_color_texture_bytes = include_bytes!("../res/textures/default_color.png");
-        renderer.create_texture_from_bytes(default_color_texture_bytes, "DefaultColor", TextureType::Color).unwrap();
-
-        renderer
-    }
-
-    fn initialize(&self) {
-        info!("Pill Renderer initialize");
+        }
     }
 
     fn render(
@@ -109,63 +84,55 @@ impl PillRenderer for Renderer {
         self.state.resize(new_window_size)
     }
 
-    fn create_texture(&mut self, path: &PathBuf, name: &str, texture_type: TextureType) -> Result<RendererTextureHandle, RendererError> {
+    fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8]) -> Result<()> {
+        
+        // Create shaders
+        let vertex_shader = wgpu::ShaderModuleDescriptor {
+            label: Some("master_vertex_shader"),
+            source: wgpu::util::make_spirv(vertex_shader_bytes),
+        };
+        let vertex_shader = self.state.device.create_shader_module(&vertex_shader);
+
+        let fragment_shader = wgpu::ShaderModuleDescriptor {
+            label: Some("master_fragment_shader"),
+            source: wgpu::util::make_spirv(fragment_shader_bytes),
+        };
+        let fragment_shader = self.state.device.create_shader_module(&fragment_shader);
+
+        // Create master pipeline
+        let master_pipeline = RendererPipeline::new(
+            &self.state.device,
+            vertex_shader,
+            fragment_shader,
+            self.state.color_format,
+            Some(self.state.depth_format),
+            &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
+        ).unwrap();
+
+        self.state.rendering_resource_storage.pipelines.insert(master_pipeline);
+
+        Ok(())
+    }
+
+    fn create_texture(&mut self, path: &PathBuf, name: &str, texture_type: TextureType) -> Result<RendererTextureHandle> {
         let texture = RendererTexture::new_texture_from_image(&self.state.device, &self.state.queue, path, name, texture_type).unwrap();
         let handle = self.state.rendering_resource_storage.textures.insert(texture);
         Ok(handle)
     }
 
-    fn create_texture_from_bytes(&mut self, bytes: &[u8], name: &str, texture_type: TextureType) -> Result<RendererTextureHandle, RendererError> {
+    fn create_texture_from_bytes(&mut self, bytes: &[u8], name: &str, texture_type: TextureType) -> Result<RendererTextureHandle> {
         let texture = RendererTexture::new_texture_from_bytes(&self.state.device, &self.state.queue, bytes, name, texture_type).unwrap();
         let handle = self.state.rendering_resource_storage.textures.insert(texture);
         Ok(handle)
     }
 
-    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle, RendererError> {
+    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.state.device, name, mesh_data).unwrap();
         let handle = self.state.rendering_resource_storage.meshes.insert(mesh);
         Ok(handle)
     }
 
-    fn create_material(&mut self, name: &str, color_texture_renderer_handle: RendererTextureHandle, normal_texture_renderer_handle: RendererTextureHandle) -> Result<RendererMaterialHandle, RendererError> {
-        let color_texture = self.state.rendering_resource_storage.textures.get(color_texture_renderer_handle).unwrap();
-        let normal_texture = self.state.rendering_resource_storage.textures.get(normal_texture_renderer_handle).unwrap();
-
-        let pipeline_handle = get_master_pipeline_handle();
-        let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
-        let texture_bind_group_layout = &pipeline.texture_bind_group_layout;
-
-        let material = RendererMaterial::new(
-            &self.state.device,
-            name, 
-            pipeline_handle,
-            color_texture,
-            color_texture_renderer_handle,
-            normal_texture,
-            normal_texture_renderer_handle,
-            texture_bind_group_layout,
-        ).unwrap();
-
-        let handle = self.state.rendering_resource_storage.materials.insert(material);
-        Ok(handle)
-    }
-
-    fn update_material_texture(&mut self, material_renderer_handle: RendererMaterialHandle, renderer_texture_handle: RendererTextureHandle, texture_type: TextureType) -> Result<(), RendererError> {
-        let mut material = self.state.rendering_resource_storage.materials.get_mut(material_renderer_handle).unwrap();
-       
-        match texture_type {
-            TextureType::Color => {
-                material.color_texture_handle = renderer_texture_handle;
-            },
-            TextureType::Normal => {
-                material.normal_texture_handle = renderer_texture_handle;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn create_camera(&mut self) -> Result<RendererCameraHandle, RendererError> {
+    fn create_camera(&mut self) -> Result<RendererCameraHandle> {
         let pipeline_handle = get_master_pipeline_handle();
         let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
         let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
@@ -174,6 +141,58 @@ impl PillRenderer for Renderer {
 
         let handle = self.state.rendering_resource_storage.cameras.insert(camera);
         Ok(handle)
+    }
+
+    fn create_material(&mut self, name: &str, textures: &TextureMap, parameters: &ParameterMap) -> Result<RendererMaterialHandle> {
+        let pipeline_handle = get_master_pipeline_handle();
+        let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
+
+        let material = RendererMaterial::new(
+            &self.state.device,
+            &self.state.queue,
+            &self.state.rendering_resource_storage,
+            name,
+            pipeline_handle,
+            &pipeline.material_texture_bind_group_layout,
+            textures,
+            &pipeline.material_parameter_bind_group_layout,
+            parameters,
+        ).unwrap();
+
+        let handle = self.state.rendering_resource_storage.materials.insert(material);
+        Ok(handle)
+    }
+
+
+
+    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &TextureMap) -> Result<()> {
+        RendererMaterial::update_textures(&self.state.device, renderer_material_handle, &mut self.state.rendering_resource_storage, textures)
+    }
+
+    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &ParameterMap) -> Result<()> {
+        RendererMaterial::update_parameters(&self.state.device, &self.state.queue, renderer_material_handle, &mut self.state.rendering_resource_storage, parameters)
+    }
+
+
+
+    fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
+        self.state.rendering_resource_storage.textures.remove(renderer_texture_handle).unwrap();
+        Ok(())
+    }
+
+    fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
+        self.state.rendering_resource_storage.materials.remove(renderer_material_handle).unwrap();
+        Ok(())
+    }
+
+    fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
+        self.state.rendering_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
+        Ok(())
+    }
+
+    fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
+        self.state.rendering_resource_storage.meshes.remove(renderer_mesh_handle).unwrap();
+        Ok(())
     }
 }
 
@@ -207,6 +226,9 @@ pub struct State {
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>, 
+
+    color_format: wgpu::TextureFormat,
+    depth_format: wgpu::TextureFormat,
 
     depth_texture: RendererTexture,
     mesh_drawer: MeshDrawer,
@@ -261,7 +283,7 @@ impl State {
         surface.configure(&device, &surface_configuration);
 
         // Configure collections
-        let mut rendering_resource_storage = RenderingResourceStorage::new();
+        let rendering_resource_storage = RenderingResourceStorage::new();
 
         // Create depth and color texture
         let depth_texture = RendererTexture::new_depth_texture(
@@ -271,17 +293,7 @@ impl State {
         ).unwrap();
 
         let color_format = surface_configuration.format;
-        let depth_format = Some(wgpu::TextureFormat::Depth32Float);
-
-        // Create master pipeline
-        let master_pipeline = RendererPipeline::new(
-            &device,
-            color_format,
-            depth_format,
-            &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
-        ).unwrap();
-
-        rendering_resource_storage.pipelines.insert(master_pipeline);
+        let depth_format = wgpu::TextureFormat::Depth32Float;
 
         // Create drawing state
         let mesh_drawer = MeshDrawer::new(&device, 1000); // [TODO] move magic value to confi
@@ -297,6 +309,9 @@ impl State {
             queue,
             surface_configuration,
             window_size,
+
+            color_format,
+            depth_format,
             
             depth_texture,
             mesh_drawer,
@@ -462,7 +477,7 @@ impl MeshDrawer {
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
             
-            let render_queue_key_fields = decompose_render_queue_key(render_queue_item.key).unwrap();
+            let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key).unwrap();
 
             // Recreate resource handles
             let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
@@ -501,8 +516,9 @@ impl MeshDrawer {
                     render_pass.set_pipeline(&pipeline.render_pipeline);
                 }
 
-                render_pass.set_bind_group(0, &material.bind_group, &[]);
-                render_pass.set_bind_group(1, &camera.bind_group, &[]);
+                render_pass.set_bind_group(0, &material.texture_bind_group, &[]);
+                render_pass.set_bind_group(1, &material.parameter_bind_group, &[]);
+                render_pass.set_bind_group(2, &camera.bind_group, &[]);
             }
 
             if self.current_mesh_handle != Some(renderer_mesh_handle) {

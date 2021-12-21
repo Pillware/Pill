@@ -12,6 +12,7 @@ use crate::{
     input::*,
 };
 
+
 // ---------------------------------------------------------------------
 
 pub type Game = Box<dyn PillGame>;
@@ -57,8 +58,6 @@ impl Engine {
     pub fn initialize(&mut self) {
         info!("Pill Engine initializing");
 
-        self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
-        
         // Add built-in systems
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
 
@@ -72,18 +71,17 @@ impl Engine {
     pub fn update(&mut self, dt: std::time::Duration) {
         use pill_core::{PillStyle, get_value_type_name};
 
-
         // Run systems
         let update_phase_count = self.system_manager.update_phases.len();
         for i in (0..update_phase_count).rev() {
             let systems_count = self.system_manager.update_phases[i].len();
             for j in (0..systems_count).rev() {
                 let system = &self.system_manager.update_phases[i][j];
+                if !system.enabled { continue; }
                 let system_name = system.name.to_string();
-                (system.system_function)(self).context(format!("{}", EngineError::SystemUpdateFailed(
-                    system_name, 
-                    get_value_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)
-                ))).unwrap();
+                (system.system_function)(self).context(
+                    format!("{}", EngineError::SystemUpdateFailed(system_name, get_value_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)))
+                ).unwrap();
             }
         }
  
@@ -148,6 +146,11 @@ impl Engine {
 
         // Create default resources
 
+        // Load master shader data to executable
+        let master_vertex_shader_bytes = include_bytes!("../res/shaders/built/master.vert.spv");
+        let master_fragment_shader_bytes = include_bytes!("../res/shaders/built/master.frag.spv");
+        self.renderer.set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes).unwrap();
+
         // Load default resource data to executable
         let default_color_texture_bytes = Box::new(*include_bytes!("../res/textures/default_color.png"));
         let default_normal_texture_bytes = Box::new(*include_bytes!("../res/textures/default_normal.png"));
@@ -168,7 +171,7 @@ impl Engine {
 
 impl Engine { 
 
-    // --- ECS
+    // --- ECS ---
 
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         info!("Creating scene: {}", name);
@@ -222,21 +225,22 @@ impl Engine {
         info!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.index, "Scene".gobj_style(), scene_handle.index);
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context("Adding component to entity failed")
     }
-
-
     
-
-
     // [TODO] Implement remove_component_from_entity
 
     // [TODO] Implement get_component_from_entity
 
 
     
-    // --- RESOURCES
+    // --- Resources ---
 
-    pub fn add_resource<H: PillSlotMapKey, T: Resource<Value = ResourceStorage::<H, T>>>(&mut self, mut resource: T) -> Result<H> {
+    pub fn register_resource_type<H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>>(&mut self) -> Result<()> {
+        self.resource_manager.register_resource_type::<H, T>()
+    }
 
+    pub fn add_resource<H, T>(&mut self, mut resource: T) -> Result<H> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
         resource.initialize(self);
         
         let resource_handle = self.resource_manager.add_resource(resource)?;
@@ -248,14 +252,44 @@ impl Engine {
         Ok(resource_handle)
     }
 
-    pub fn register_resource_type<H: PillSlotMapKey, T: Resource<Value = ResourceStorage::<H, T>>>(&mut self) -> Result<()> {
-        self.resource_manager.register_resource_type::<H, T>()
+    pub fn get_resource<'a, H, T>(&'a self, resource_handle: &'a H) -> Result<&'a T> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        Ok(self.resource_manager.get_resource::<H, T>(resource_handle)?)
     }
 
+    pub fn get_resource_by_name<'a, H, T>(&'a self, name: &str) -> Result<&'a T> 
+        where H: PillSlotMapKey + 'a, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        Ok(self.resource_manager.get_resource_by_name::<H, T>(name)?)
+    }
 
+    pub fn get_resource_mut<'a, H, T>(&'a mut self, resource_handle: &'a H) -> Result<&'a mut T> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        Ok(self.resource_manager.get_resource_mut::<H, T>(resource_handle)?)
+    }
 
-    // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
-    //     self.resource_manager.load_resource(t, path, source)
-    // }
+    pub fn get_resource_by_name_mut<'a, H, T>(&'a mut self, name: &str) -> Result<&'a mut T> 
+        where H: PillSlotMapKey + 'a, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        Ok(self.resource_manager.get_resource_by_name_mut::<H, T>(name)?)
+    }
+
+    pub fn remove_resource<H, T>(&mut self, resource_handle: &H) -> Result<()> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        let mut remove_result = self.resource_manager.remove_resource::<H, T>(resource_handle)?;
+        remove_result.1.destroy(self, *resource_handle);
+        Ok(())
+    }
+
+    pub fn remove_resource_by_name<H, T>(&mut self, name: &str) -> Result<()> 
+        where H: PillSlotMapKey, T: Resource<Value = Option<ResourceStorage::<H, T>>>
+    {
+        let mut remove_result = self.resource_manager.remove_resource_by_name::<H, T>(name)?;
+        remove_result.1.destroy(self, remove_result.0);
+        Ok(())
+    }
 
 }
