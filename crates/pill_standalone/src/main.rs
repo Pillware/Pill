@@ -48,7 +48,7 @@ fn main() {
     let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(&window));
     let mut engine = Engine::new(game, renderer);
     engine.initialize();
-
+    let mut count = 0;
     // Run loop
     event_loop.run(move |event, _, control_flow|  { // Run function takes closure
         *control_flow = ControlFlow::Poll; 

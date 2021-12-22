@@ -1,4 +1,7 @@
+use std::path::Component;
+
 use cgmath::Transform;
+use pill_engine::internal::ComponentStorage;
 #[allow(unused_imports, dead_code, unused_variables)]
 use pill_engine::{game::*, internal::{Material, MaterialHandle, MeshHandle, Mesh, CameraComponent, Texture, TextureHandle, TextureType, ResourceLoadType}};
  
@@ -80,11 +83,16 @@ impl PillGame for Game {
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_1, mesh_rendering_1).unwrap();
 
         // Add another entity through entity builder
-        engine.build_entity(active_scene).with_component(TransformComponent::new(cgmath::Vector3::<f32>::new(5.0,1.0,3.0),
-                                                                                 cgmath::Vector3::<f32>::new(0.0, 1.0,0.0),
-                                                                                    cgmath::Vector3::<f32>::new(1.0,1.0,1.0),))
-                                        .with_component(mesh_rendering_2)
-                                        .finish();
+        let transform2 = TransformComponent::new(cgmath::Vector3::<f32>::new(5.0,1.0,3.0),
+        cgmath::Vector3::<f32>::new(0.0, 1.0,0.0),
+           cgmath::Vector3::<f32>::new(1.0,1.0,1.0),);
+        engine.build_entity(active_scene).with_component(transform2)
+                                         .with_component(mesh_rendering_2)
+                                         .build();
+
+        // Engine::build_entity(engine, scene).with_component(transform2)
+        //                                         .with_component(mesh_rendering_2)
+        //                                         .build();
 
         //println!("{} .... {}", std::env::current_dir().unwrap().display(), PathBuf::from("../res/models/Monkey.obj").display());
         //PathBuf::from("../res/models/Monkey.obj")
@@ -94,10 +102,13 @@ impl PillGame for Game {
     }
 }
 
+
 fn paddle_movement_system(_engine: &mut Engine) -> Result<()> {
     println!("Moving paddles"); 
+    // is A key in global component pressed, if yes the do
     for transform in _engine.fetch_one_component_storage::<TransformComponent>()? {
         transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05;
     }
     Ok(())   
 }
+

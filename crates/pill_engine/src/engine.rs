@@ -2,6 +2,7 @@ use std::{any::type_name, collections::VecDeque, cell::RefCell};
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
+use typemap_rev::{TypeMap, TypeMapKey};
 use winit::{ event::*, dpi::PhysicalPosition,};
 use crate::ecs::entity_builder::EntityBuilder;
 
@@ -25,8 +26,9 @@ pub struct Engine {
     pub(crate) scene_manager: SceneManager, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
     system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
-    input_queue: VecDeque<InputEvent>,
+    pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
+    pub(crate) global_components: ComponentMap
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -47,6 +49,7 @@ impl Engine {
             resource_manager,
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(1000),
+            global_components: ComponentMap::new()
         };
 
         engine.create_default_resources();
@@ -59,8 +62,9 @@ impl Engine {
         info!("Pill Engine initializing");
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
-        
+
         // Add built-in systems
+        self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
 
         // Initialize game
@@ -140,6 +144,11 @@ impl Engine {
         &self.input_queue
     }
 
+    #[cfg(feature = "internal")]
+    pub fn get_input_queue_mut(&mut self) -> &mut VecDeque<InputEvent> {
+        &mut self.input_queue
+    }
+
 
     // -- Default resources
     pub fn create_default_resources(&mut self) {
@@ -213,6 +222,31 @@ impl Engine {
 
     pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine) -> Result<()>) -> Result<()> {
         self.system_manager.add_system(name, system_function, UpdatePhase::Game).context("Adding system failed")
+    }
+
+    pub fn add_global_component<T: Component<Storage = T>>(&mut self, component: T) -> Result<()> {
+        //.ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
+        if self.global_components.contains_key::<T>().eq(&false) {
+            self.global_components.insert::<T>(component);
+        }
+        // self.global_components.insert::<T>(component);
+        Ok(())
+    }
+
+    pub fn get_global_component<T: Component<Storage = T>>(&self) -> Result<Option<&T>> {
+        self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
+        Ok(self.global_components.get::<T>())
+    }
+
+    pub fn get_global_component_mut<T: Component<Storage = T>>(&mut self) -> Result<Option<&mut T>> {
+        self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
+        Ok(self.global_components.get_mut::<T>())
+    }
+
+    pub fn remove_global_component<T: Component<Storage = T>>(&mut self) -> Result<()> {
+        self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
+        self.global_components.remove::<T>();
+        Ok(())
     }
 
     // [TODO] Implement remove_system

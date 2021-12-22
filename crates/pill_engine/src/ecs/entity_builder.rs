@@ -15,7 +15,7 @@ impl<'a> EntityBuilder<'a> {
         self
     }
 
-    pub fn finish(mut self) -> EntityHandle {
+    pub fn build(self) -> EntityHandle {
         self.entity
     }
 }   
