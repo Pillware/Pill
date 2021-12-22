@@ -5,8 +5,7 @@ mod resources;
 mod graphics;
 mod ecs;
 mod input;
-
-
+mod config;
 
 #[cfg(feature = "game")]
 pub mod game {
@@ -16,14 +15,28 @@ pub mod game {
             PillGame,
         },
         ecs::{
+            Scene,
             SceneHandle,
             MeshRenderingComponent,
             TransformComponent,
+            CameraComponent,
+            CameraAspectRatio,
+            EntityHandle,
         },
+        resources::{
+            Texture, 
+            TextureHandle,
+            TextureType,
+            Material,
+            MaterialHandle,
+            Mesh,
+            MeshHandle,
+            ResourceLoadType,
+        }
     };
     
     extern crate pill_core;
-    pub use pill_core::Vector2f;
+    pub use pill_core::{ Vector2f, Vector3f, Color, Vector2i, Vector3i };
 
     extern crate anyhow;
     pub use anyhow::{ Context, Result, Error };
@@ -36,6 +49,7 @@ pub mod internal {
             Engine,
             PillGame,
         },
+        config::*,
         graphics::{
             PillRenderer,
             RendererError,
@@ -43,6 +57,12 @@ pub mod internal {
             RenderQueueItem,
             RenderQueueKeyFields,
             decompose_render_queue_key,
+
+            RendererCameraHandle,
+            RendererMaterialHandle,
+            RendererMeshHandle,
+            RendererPipelineHandle,
+            RendererTextureHandle,
         },
         ecs::{
             Scene,
@@ -51,14 +71,9 @@ pub mod internal {
             TransformComponent,
             CameraComponent,
             EntityHandle,
+            CameraAspectRatio,
         },
         resources::{
-            RendererCameraHandle,
-            RendererMaterialHandle,
-            RendererMeshHandle,
-            RendererPipelineHandle,
-            RendererTextureHandle,
-
             Texture, 
             TextureHandle,
             TextureType,
@@ -73,10 +88,9 @@ pub mod internal {
 
             ResourceLoadType,
             ResourceManager,
-            TextureMap,
-            ParameterMap,
-            MaterialParameter,
             MaterialTexture,
+            MaterialTextureMap,
+            MaterialParameter,
             MaterialParameterMap
         }
     };

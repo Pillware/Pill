@@ -4,26 +4,17 @@ mod resource_manager;
 mod mesh;
 mod texture;
 mod resource_storage;
-//mod resource_map;
 mod material;
+mod resource;
 
-pub use resource_manager::{
-    ResourceManager,
-
-    MaterialHandle,
-    TextureHandle,
-    MeshHandle,
-
-    RendererCameraHandle,
-    RendererMaterialHandle,
-    RendererMeshHandle,
-    RendererTextureHandle,
-    RendererPipelineHandle,
+pub use resource_manager::ResourceManager;
+pub use resource::{
     Resource,
     ResourceLoadType,
 };
+
+
 pub use resource_storage::ResourceStorage;
-pub use mesh::{Mesh, MeshData, MeshVertex};
-pub use texture::{Texture, TextureType};
-pub use material::{Material, TextureMap, ParameterMap, MaterialParameter, MaterialTexture, MaterialParameterMap};
-//pub use resource_mapxxx::Resource;
+pub use mesh::{Mesh, MeshData, MeshVertex, MeshHandle};
+pub use texture::{Texture, TextureType, TextureHandle};
+pub use material::{Material, MaterialTextureMap, MaterialParameter, MaterialTexture, MaterialParameterMap, MaterialHandle};

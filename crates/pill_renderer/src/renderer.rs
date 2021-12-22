@@ -8,7 +8,7 @@ use crate::resources::{
     Vertex
 };
 
-use pill_core::{ PillSlotMap, PillSlotMapKey, PillSlotMapKeyData };
+use pill_core::{ PillSlotMap, PillSlotMapKey, PillSlotMapKeyData, PillStyle };
 use pill_engine::internal::{
     PillRenderer, 
     EntityHandle, 
@@ -16,17 +16,16 @@ use pill_engine::internal::{
     RendererError, 
     TextureType,
     MeshData, 
-    ParameterMap, 
-    TextureMap,
+    MaterialTextureMap,
     TransformComponent,
     ComponentStorage, 
     CameraComponent,
+    MaterialParameterMap,
     RendererCameraHandle,
     RendererMaterialHandle,
     RendererMeshHandle,
-    RendererTextureHandle,
     RendererPipelineHandle,
-    ResourceManager,
+    ResourceManager, RendererTextureHandle,
 };
 
 use std::mem::size_of;
@@ -38,12 +37,7 @@ use slab::Slab;
 use log::{debug, info};
 use std::iter;
 use std::collections::{LinkedList, HashMap};
-use winit::{ // Import dependencies
-    event::*, // Bring all public items into scope
-    event_loop::{ControlFlow, EventLoop},
-    window::{Window, WindowBuilder},
-    dpi::PhysicalPosition,
-};
+
 
 // [TODO] Assure that it cannot be removed!
 fn get_master_pipeline_handle() -> RendererPipelineHandle { // [TODO] Very ugly solution, maybe store there handles in some hashmap with names of pipelines as keys
@@ -56,14 +50,14 @@ pub struct Renderer {
 }
 
 impl PillRenderer for Renderer {
-    fn new(window: &Window) -> Self { 
-        info!("Initializing Pill Renderer");
+    fn new(window: &winit::window::Window) -> Self { 
+        info!("Initializing {}", "Renderer".mobj_style());
         let state: State = pollster::block_on(State::new(&window));
 
         Self {
             state,
         }
-    }
+    }   
 
     fn render(
         &mut self,
@@ -80,7 +74,7 @@ impl PillRenderer for Renderer {
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
-        info!("Renderer resizing!");
+        info!("Resizing {} resources", "Renderer".mobj_style());
         self.state.resize(new_window_size)
     }
 
@@ -143,7 +137,7 @@ impl PillRenderer for Renderer {
         Ok(handle)
     }
 
-    fn create_material(&mut self, name: &str, textures: &TextureMap, parameters: &ParameterMap) -> Result<RendererMaterialHandle> {
+    fn create_material(&mut self, name: &str, textures: &MaterialTextureMap, parameters: &MaterialParameterMap) -> Result<RendererMaterialHandle> {
         let pipeline_handle = get_master_pipeline_handle();
         let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
 
@@ -163,17 +157,13 @@ impl PillRenderer for Renderer {
         Ok(handle)
     }
 
-
-
-    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &TextureMap) -> Result<()> {
+    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &MaterialTextureMap) -> Result<()> {
         RendererMaterial::update_textures(&self.state.device, renderer_material_handle, &mut self.state.rendering_resource_storage, textures)
     }
 
-    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &ParameterMap) -> Result<()> {
+    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &MaterialParameterMap) -> Result<()> {
         RendererMaterial::update_parameters(&self.state.device, &self.state.queue, renderer_material_handle, &mut self.state.rendering_resource_storage, parameters)
     }
-
-
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
         self.state.rendering_resource_storage.textures.remove(renderer_texture_handle).unwrap();
@@ -204,10 +194,10 @@ pub struct RenderingResourceStorage {
     pub(crate) cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>,
 }
 
-impl RenderingResourceStorage {
+impl RenderingResourceStorage { // [TODO] move magic values to config
     pub fn new() -> Self {
         RenderingResourceStorage {
-            pipelines: pill_core::PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(10),
+            pipelines: pill_core::PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(10), 
             textures: pill_core::PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(10),
             materials: pill_core::PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(10),
             meshes: pill_core::PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(10),
@@ -237,7 +227,7 @@ pub struct State {
 
 impl State {
     // Creating some of the wgpu types requires async code
-    async fn new(window: &Window) -> Self {
+    async fn new(window: &winit::window::Window) -> Self {
         let window_size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::Backends::all()); // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -276,7 +266,7 @@ impl State {
             format: surface.get_preferred_format(&adapter).unwrap(), // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
-            present_mode: wgpu::PresentMode::Fifo, // Defines how to sync the swap_chain with the display
+            present_mode: wgpu::PresentMode::Fifo, // Defines how to sync the surface with the display
         };
 
         // Configure surface
@@ -296,7 +286,7 @@ impl State {
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
         // Create drawing state
-        let mesh_drawer = MeshDrawer::new(&device, 1000); // [TODO] move magic value to confi
+        let mesh_drawer = MeshDrawer::new(&device, 1000); // [TODO] move magic value to config
 
         // Create state
         Self {
@@ -320,7 +310,6 @@ impl State {
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         if new_window_size.width > 0 && new_window_size.height > 0 {
-            //self.projection.resize(new_window_size.width, new_window_size.height); // [TODO]
             self.window_size = new_window_size;
             self.surface_configuration.width = new_window_size.width;
             self.surface_configuration.height = new_window_size.height;
@@ -408,7 +397,7 @@ impl State {
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();
-        debug!("Frame rendering completed successfully");
+        //debug!("Frame rendering completed successfully");
         Ok(())
     }
 }
@@ -483,6 +472,24 @@ impl MeshDrawer {
             let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
             let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
+            //println!("RENDER");
+            unsafe {
+                // let material_handle_data = renderer_material_handle.get_data();
+                // println!("mat xxxxxxxx {} {}", material_handle_data.index, material_handle_data.version);
+        
+                // let mesh_handle_data = renderer_mesh_handle.get_data();
+                // println!("mesh xxxxxxxx {} {}", mesh_handle_data.index, mesh_handle_data.version);
+    
+                // let m1 = engine.get_resource_by_name::<Material>("TestMaterial").unwrap();
+                // println!("xxxxxxxx {}", m1.renderer_resource_handle.unwrap().get_data().index);
+    
+                // let m2 = engine.get_resource_by_name::<Material>("TestMaterial2").unwrap();
+                // println!("xxxxxxxx {}", m2.renderer_resource_handle.unwrap().get_data().index);
+    
+                // let x = m2.parameters.get_color("Tint").unwrap();
+                // println!("xxxxxxxxc {} {} {}", x.x, x.y, x.z);
+            }    
+
 
             // Check order
             // if self.current_order != render_queue_key_fields.order {
@@ -497,8 +504,15 @@ impl MeshDrawer {
             // }
 
             if self.current_material_handle != Some(renderer_material_handle) {
+                // unsafe {
+                //     let material_handle_data = renderer_material_handle.get_data();
+                //     println!("mat switch to {} {}", material_handle_data.index, material_handle_data.version);
+                // }
+
                 // Render accumulated instances
                 if self.instance_count > 0 {
+                    println!("render instances {}", self.instance_count);
+
                     queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
                     render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
                     render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);            

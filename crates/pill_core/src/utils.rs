@@ -31,6 +31,7 @@ pub fn get_enum_variant_type_name<T: core::fmt::Debug>(a: &T) -> String {
 
 // Functions for changing the style of output string
 pub trait PillStyle {
+    fn mobj_style(self) -> ColoredString;
     fn gobj_style(self) -> ColoredString;
     fn sobj_style(self) -> ColoredString;
     fn name_style(self) -> ColoredString;
@@ -38,6 +39,11 @@ pub trait PillStyle {
 }
 
 impl PillStyle for &str {
+    // To be used with large module objects (Engine, Renderer, Window, etc) - changes color and adds bold
+    fn mobj_style(self) -> ColoredString {
+        self.color(colored::Color::TrueColor { r: 180, g: 25, b: 100 }).bold()
+    }
+
     // To be used with general objects (Scene, Component, System, Resource, etc) - changes color and adds bold
     fn gobj_style(self) -> ColoredString {
         self.color(colored::Color::BrightCyan)

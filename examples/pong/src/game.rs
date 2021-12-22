@@ -1,6 +1,5 @@
 #[allow(unused_imports, dead_code, unused_variables)]
-use pill_engine::{game::*, internal::{Material, MaterialHandle, MeshHandle, Mesh, CameraComponent, Texture, TextureHandle, TextureType, ResourceLoadType}};
- 
+use pill_engine::game::*;
 
 pub struct Game { }   
 
@@ -20,29 +19,30 @@ impl PillGame for Game {
         engine.register_component::<MeshRenderingComponent>(scene).unwrap();
         engine.register_component::<CameraComponent>(scene).unwrap();
 
-        let active_scene = engine.get_active_scene_handle().expect("Scene not found");//.unwrap();
+        let active_scene = engine.get_active_scene_handle().unwrap();
 
         // Add texture
         let texture_1_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/Camouflage.png");
         let texture_1 = Texture::new("TestTexture", TextureType::Color, ResourceLoadType::Path(texture_1_path));
-        let texture_1_handle = engine.add_resource::<TextureHandle, Texture>(texture_1).unwrap();
+        let texture_1_handle = engine.add_resource::<Texture>(texture_1).unwrap();
+
 
       
 
         // Add material
         let mut material_1 = Material::new("TestMaterial");
-        material_1.set_texture(engine,"Color", texture_1_handle).unwrap(); // [TODO] We cannot assign texture to material if it is not registered??
-        material_1.set_color(engine, "Tint", cgmath::Vector3::<f32>::new( 1.0, 0.0, 0.0)).unwrap();
-        let material_1_handle = engine.add_resource::<MaterialHandle, Material>(material_1).unwrap(); // [TODO] Remove requirement of name here, and assure that resource always has name and take it from there (using trait)
+        material_1.set_texture(engine,"Color", texture_1_handle).unwrap();
+        material_1.set_color(engine, "Tint", Color::new( 0.0, 1.0, 0.0)).unwrap();
+        let material_1_handle = engine.add_resource::<Material>(material_1).unwrap(); // [TODO] Remove requirement of name here, and assure that resource always has name and take it from there (using trait)
         // TODO TEST GET RESOURCE
         //material_1.set_color(engine, "Tint", cgmath::Vector3::<f32>::new( 1.0, 0.0, 0.0)).unwrap();
 
         // Add mesh
-        let mesh_1_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Cube.obj"); // examples/pong/res/models/Monkey.obj
+        let mesh_1_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Monkey.obj"); // examples/pong/res/models/Monkey.obj
         let mesh_1 = Mesh::new("TestMesh", mesh_1_path);
-        let mesh_1_handle = engine.add_resource::<MeshHandle, Mesh>(mesh_1).unwrap();
+        let mesh_1_handle = engine.add_resource::<Mesh>(mesh_1).unwrap();
 
-        //engine.remove_resource_by_name::<TextureHandle, Texture>("TestTexture").unwrap();
+        //engine.remove_resource_by_name::<Texture>("TestTexture").unwrap();
         
 
 
@@ -50,9 +50,9 @@ impl PillGame for Game {
         let camera_holder = engine.create_entity(active_scene).unwrap();
         // Add transform component
         let camera_transform = TransformComponent::new(
-            cgmath::Vector3::<f32>::new(0.0,5.0,10.0), 
-            cgmath::Vector3::<f32>::new(-20.0,-90.0,0.0),
-               cgmath::Vector3::<f32>::new(1.0,1.0,1.0),
+            Vector3f::new(0.0,5.0,10.0), 
+            Vector3f::new(-20.0,-90.0,0.0),
+            Vector3f::new(1.0,1.0,1.0),
         );
         engine.add_component_to_entity::<TransformComponent>(active_scene, camera_holder, camera_transform).unwrap();
         // Add camera component
@@ -67,9 +67,9 @@ impl PillGame for Game {
         let paddle_1 = engine.create_entity(active_scene).unwrap();
         // Add transform component
         let transform_1 = TransformComponent::new(
-            cgmath::Vector3::<f32>::new(0.0,0.0,0.0), 
-            cgmath::Vector3::<f32>::new(0.0, 45.0,0.0),
-               cgmath::Vector3::<f32>::new(1.0,1.0,1.0),
+            Vector3f::new(0.0,0.0,0.0), 
+            Vector3f::new(0.0, 45.0,0.0),
+            Vector3f::new(1.0,1.0,1.0),
         );
         engine.add_component_to_entity::<TransformComponent>(active_scene, paddle_1, transform_1).unwrap();  
         // Add mesh rendering component
@@ -80,18 +80,12 @@ impl PillGame for Game {
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_1, mesh_rendering_1).unwrap();
 
 
-        //engine.remove_resource_by_name::<MaterialHandle, Material>("TestMaterial").unwrap();
-
-        //println!("{} .... {}", std::env::current_dir().unwrap().display(), PathBuf::from("../res/models/Monkey.obj").display());
-        //PathBuf::from("../res/models/Monkey.obj")
-        //println!("{}", mesh_1_path.display());
-
-       
+      
     }
 }
 
 fn paddle_movement_system(_engine: &mut Engine) -> Result<()> {
-    println!("Moving paddles"); 
+    //println!("Moving paddles"); 
 
     Ok(())   
 }

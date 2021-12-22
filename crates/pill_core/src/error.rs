@@ -9,7 +9,7 @@ pub enum EngineError {
     // Scene
     #[error("There is no active {} set \n\nSource: ", "Scene".gobj_style())]
     NoActiveScene,
-    #[error("{} for that handle not found \n\nSource: ", "Scene".gobj_style())]
+    #[error("{} for that {} not found \n\nSource: ", "Scene".gobj_style(), "SceneHandle".sobj_style())]
     InvalidSceneHandle,
     #[error("{} {} already exists \n\nSource: ", "Scene".gobj_style(), .0.name_style())]
     SceneAlreadyExists(String),
@@ -26,7 +26,6 @@ pub enum EngineError {
     #[error("{} {} is not registered for {} {} \n\nSource: ", "Component".gobj_style(), .0.sobj_style(), "Scene".gobj_style(), .1.name_style())]
     ComponentNotRegistered(String, String),
 
-
     // System
     #[error("Failed to update {} {} in update phase {} \n\nSource: ", "System".gobj_style(), .0.sobj_style(), .1.sobj_style())]
     SystemUpdateFailed(String, String),
@@ -34,7 +33,7 @@ pub enum EngineError {
     SystemAlreadyExists(String, String),
     #[error("{} {} is not registered for update phase {} \n\nSource: ", "System".gobj_style(), .0.name_style(), .1.name_style())]
     SystemNotFound(String, String),
-    #[error("{} update phase {} not found \n\nSource: ", "System".gobj_style(), .0.name_style())]
+    #[error("Update phase {} not found \n\nSource: ", .0.name_style())]
     SystemUpdatePhaseNotFound(String),
     
     // Resource
@@ -48,14 +47,19 @@ pub enum EngineError {
     InvalidResourceName(String, String),
     #[error("Invalid .obj file {}\nFiles with multiple meshes are not supported \n\nSource: ", .0.name_style())]
     InvalidModelFile(String),
+    #[error("Cannot remove default {} {} \n\nSource: ", "Resource".gobj_style(), .0.name_style())]
+    RemoveDefaultResource(String),
+    #[error("Cannot add {} with name {}. This name is reserved only for default engine resources \n\nSource: ", "Resource".gobj_style(), .0.name_style())]
+    WrongResourceName(String),
+
 
     // Material textures and parameters
-    #[error("Cannot set {} of type {} to {} of type {} \n\nSource: ", "Texture".gobj_style(), .0.name_style(), "MaterialTexture".sobj_style(), .1.name_style())]
+    #[error("Cannot set {} of type {} to slot of type {} \n\nSource: ", "Texture".sobj_style(), .0.name_style(), .1.name_style())]
     WrongTextureType(String, String),
 
     #[error("{} {} of type {} does not exist \n\nSource: ", "MaterialParameter".sobj_style(), .0.name_style(), .1.sobj_style())]
     MaterialParameterNotFound(String, String),
-    #[error("{} {} does not exist \n\nSource: ", "MaterialTexture".gobj_style(), .0.name_style())]
+    #[error("{} {} does not exist \n\nSource: ", "MaterialTexture".sobj_style(), .0.name_style())]
     MaterialTextureNotFound(String),
 
 

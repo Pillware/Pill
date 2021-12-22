@@ -11,12 +11,17 @@ use crate::resources::*;
 use cgmath::InnerSpace;
 use pill_core::EngineError;
 use pill_core::PillSlotMapKey;
+use pill_core::Vector3f;
 use tobj::LoadOptions;
 
 //use crate::resources::resource_mapxxx::Resource;
 
 //use crate::resources::resource_manager::ResourceHandle;
 use anyhow::{Result, Context, Error};
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct MeshHandle;
+}
 
 #[readonly::make]
 pub struct Mesh {
@@ -40,6 +45,8 @@ impl Mesh {
 }
 
 impl Resource for Mesh {
+    type Handle = MeshHandle;
+
     fn initialize(&mut self, engine: &mut Engine) { // [TODO] What if renderer fails to create mesh?
         let mesh_data = MeshData::new(&self.path).unwrap();
         self.mesh_data = Some(mesh_data);
@@ -48,7 +55,7 @@ impl Resource for Mesh {
         self.renderer_resource_handle = Some(renderer_resource_handle);
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) {
 
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
@@ -56,14 +63,15 @@ impl Resource for Mesh {
         }
 
         // Find mesh rendering components that use this material and update them
-        let active_scene = engine.scene_manager.get_active_scene_mut().unwrap();
-        let mesh_rendering_component_storage = active_scene.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
-        for i in 0..mesh_rendering_component_storage.data.len() {
-            if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
-                mesh_rendering_component.mesh_handle = None;
-                mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+        for scene in engine.scene_manager.scenes.iter_mut() {
+            let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
+            for i in 0..mesh_rendering_component_storage.data.len() {
+                if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
+                    mesh_rendering_component.mesh_handle = None;
+                    mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                }
+                // [TODO] Instead of this use "mesh_rendering_component.set_mesh(engine, &default_material.0);". This requires component wrapped with option or refcell
             }
-            // [TODO] Instead of this use "mesh_rendering_component.assign_mesh(engine, &default_material.0);". This requires component wrapped with option or refcell
         }
     }
 
@@ -73,9 +81,12 @@ impl Resource for Mesh {
 }
 
 impl typemap_rev::TypeMapKey for Mesh {
-    type Value = Option<ResourceStorage<MeshHandle, Mesh>>; 
+    type Value = Option<ResourceStorage<Mesh>>; 
 }
 
+// impl typemap_rev::TypeMapKey for Mesh {
+//     type Value = Option<ResourceStorage<MeshHandle, Mesh>>; 
+// }
 
 #[repr(C)]
 // bytemuck::Pod indicates that Vertex is "Plain Old Data", and thus can be interpretted as a &[u8]
@@ -188,8 +199,8 @@ impl MeshData {
         for (i, n) in triangles_included.into_iter().enumerate() {
             let denom = 1.0 / n as f32;
             let mut v = &mut vertices[i];
-            v.tangent = (cgmath::Vector3::from(v.tangent) * denom).normalize().into();
-            v.bitangent = (cgmath::Vector3::from(v.bitangent) * denom).normalize().into();
+            v.tangent = (Vector3f::from(v.tangent) * denom).normalize().into();
+            v.bitangent = (Vector3f::from(v.bitangent) * denom).normalize().into();
         }
 
         let mesh_data = MeshData {

@@ -3,9 +3,9 @@ use crate::internal::Engine;
 use crate::graphics::*;
 use crate::resources::*;
 
+use pill_core::Color;
 use pill_core::EngineError;
 use pill_core::PillSlotMapKey;
-use pill_core::na::SliceRange;
 
 use anyhow::{Result, Context, Error};
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ use boolinator::*;
 pub enum MaterialParameter {
     Scalar(Option<f32>),
     Bool(Option<bool>),
-    Color(Option<cgmath::Vector3::<f32>>),
+    Color(Option<Color>),
 }
 
 impl MaterialParameter {
@@ -32,20 +32,20 @@ impl MaterialParameter {
     }
 }
 
-pub type ParameterMap = HashMap<String, MaterialParameter>;
-
-pub trait MaterialParameterMap {
-    fn get_scalar(&self, parameter_name: &str) -> Result<f32>;
-    fn get_bool(&self, parameter_name: &str) -> Result<bool>;
-    fn get_color(&self, parameter_name: &str) -> Result<cgmath::Vector3::<f32>>;
-
-    fn set_parameter(&mut self, parameter_name: &str, value: MaterialParameter) -> Result<()>;
+pub struct MaterialParameterMap {
+    pub(crate) data: HashMap<String, MaterialParameter>,
 }
 
-impl MaterialParameterMap for ParameterMap {
-    fn get_scalar(&self, parameter_name: &str) -> Result<f32> {
+impl MaterialParameterMap {
+    pub fn new() -> Self {
+        Self {
+            data: HashMap::<String, MaterialParameter>::new(),
+        }
+    }
+
+    pub fn get_scalar(&self, parameter_name: &str) -> Result<f32> {
         let error = EngineError::MaterialParameterNotFound(parameter_name.to_string(), "Scalar".to_string());
-        match self.get(parameter_name).context(format!("{}", error))? {
+        match self.data.get(parameter_name).context(format!("{}", error))? {
             MaterialParameter::Scalar(v) => match v {
                 Some(vv) => Ok(vv.clone()),
                 None => panic!(),
@@ -54,9 +54,9 @@ impl MaterialParameterMap for ParameterMap {
         }
     }
 
-    fn get_bool(&self, parameter_name: &str) -> Result<bool> {
+    pub fn get_bool(&self, parameter_name: &str) -> Result<bool> {
         let error = EngineError::MaterialParameterNotFound(parameter_name.to_string(), "Bool".to_string());
-        match self.get(parameter_name).context(format!("{}", error))? {
+        match self.data.get(parameter_name).context(format!("{}", error))? {
             MaterialParameter::Bool(v) => match v {
                 Some(vv) => Ok(vv.clone()),
                 None => panic!(),
@@ -65,9 +65,9 @@ impl MaterialParameterMap for ParameterMap {
         }
     }
    
-    fn get_color(&self, parameter_name: &str) -> Result<cgmath::Vector3::<f32>> {
+    pub fn get_color(&self, parameter_name: &str) -> Result<Color> {
         let error = EngineError::MaterialParameterNotFound(parameter_name.to_string(), "Color".to_string());
-        match self.get(parameter_name).context(format!("{}", error))? {
+        match self.data.get(parameter_name).context(format!("{}", error))? {
             MaterialParameter::Color(v) => match v {
                 Some(vv) => Ok(vv.clone()),
                 None => panic!(),
@@ -76,9 +76,9 @@ impl MaterialParameterMap for ParameterMap {
         }
     }
 
-    fn set_parameter(&mut self, parameter_name: &str, value: MaterialParameter) -> Result<()> {
+    pub fn set_parameter(&mut self, parameter_name: &str, value: MaterialParameter) -> Result<()> {
         let error = Error::new(EngineError::MaterialParameterNotFound(parameter_name.to_string(), pill_core::get_enum_variant_type_name(&value).to_string()));
-        let parameter = self.get_mut(parameter_name).context(format!("{}", error))?;
+        let parameter = self.data.get_mut(parameter_name).context(format!("{}", error))?;
 
         if pill_core::enum_variant_eq::<MaterialParameter>(&parameter, &value) {
             *parameter = value; 
@@ -86,7 +86,6 @@ impl MaterialParameterMap for ParameterMap {
           
         Ok(())
     }
-
 }
 
 // --- Material textures ---
@@ -95,6 +94,15 @@ impl MaterialParameterMap for ParameterMap {
 pub enum MaterialTexture {
     Color(Option<(TextureHandle, RendererTextureHandle)>),
     Normal(Option<(TextureHandle, RendererTextureHandle)>),
+}
+
+impl MaterialTexture {
+    pub fn get_type(&self) -> TextureType {
+        match self {
+            MaterialTexture::Color(_) => TextureType::Color,
+            MaterialTexture::Normal(_) => TextureType::Normal,
+        }
+    }
 }
 
 impl MaterialTexture {
@@ -112,37 +120,50 @@ impl MaterialTexture {
     }
 }
 
+pub struct MaterialTextureMap {
+    pub(crate) data: HashMap<String, MaterialTexture>,
+}
 
-pub type TextureMap = HashMap<String, MaterialTexture>;
+impl MaterialTextureMap {
+    pub fn new() -> Self {
+        Self {
+            data: HashMap::<String, MaterialTexture>::new(),
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&MaterialTexture> {
+        self.data.get(name)
+    }
+}
 
 // --- Material ---
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct MaterialHandle;
+}
 
 #[readonly::make]
 pub struct Material {
     #[readonly]
     pub name: String,
     #[readonly]
-    pub textures: TextureMap,
+    textures: MaterialTextureMap,
     #[readonly]
-    pub parameters: ParameterMap,
+    parameters: MaterialParameterMap,
     #[readonly]
     pub order: u32,
-    pub(crate) renderer_resource_handle: Option<RendererMaterialHandle>,
+    pub renderer_resource_handle: Option<RendererMaterialHandle>,
 }
 
 impl Material {
 
-    pub fn g(&mut self) -> &mut TextureMap {
-        &mut self.textures
-    }
-
     pub fn new(name: &str) -> Self {  // [TODO] What if renderer fails to create material?        
-        let mut textures = TextureMap::new();
-        textures.insert("Color".to_string(), MaterialTexture::Color(None));
-        textures.insert("Normal".to_string(), MaterialTexture::Normal(None));
+        let mut textures = MaterialTextureMap::new();
+        textures.data.insert("Color".to_string(), MaterialTexture::Color(None));
+        textures.data.insert("Normal".to_string(), MaterialTexture::Normal(None));
 
-        let mut parameters = ParameterMap::new();
-        parameters.insert("Tint".to_string(), MaterialParameter::Color(None));
+        let mut parameters = MaterialParameterMap::new();
+        parameters.data.insert("Tint".to_string(), MaterialParameter::Color(None));
         
         Self {
             name: name.to_string(),  
@@ -153,13 +174,13 @@ impl Material {
         }
     }
 
-    pub fn set_texture(&mut self, engine: &mut Engine, texture_name: &str, texture_handle: TextureHandle) -> Result<()> {
-        let texture = engine.resource_manager.get_resource::<TextureHandle, Texture>(&texture_handle)?;
+    pub fn set_texture(&mut self, engine: &mut Engine, slot_name: &str, texture_handle: TextureHandle) -> Result<()> {
+        let texture = engine.resource_manager.get_resource::<Texture>(&texture_handle)?;
         let renderer_texture_handle = texture.renderer_resource_handle.unwrap();
 
-        let texture_entry = self.textures
-            .get_mut(texture_name)
-            .ok_or( Error::new(EngineError::MaterialTextureNotFound(texture_name.to_string())))?;
+        let texture_entry = self.textures.data
+            .get_mut(slot_name)
+            .ok_or( Error::new(EngineError::MaterialTextureNotFound(slot_name.to_string())))?;
 
         // Check if texture type is valid for this material texture 
         match texture_entry {
@@ -202,7 +223,7 @@ impl Material {
         self.parameters.get_bool(parameter_name)
     }
 
-    pub fn get_color(&self, parameter_name: &str) -> Result<cgmath::Vector3::<f32>> {
+    pub fn get_color(&self, parameter_name: &str) -> Result<Color> {
         self.parameters.get_color(parameter_name)
     }
 
@@ -214,8 +235,10 @@ impl Material {
         self.set_parameter(engine, parameter_name, MaterialParameter::Bool(Some(value)))
     }
 
-    pub fn set_color(&mut self, engine: &mut Engine, parameter_name: &str, value: cgmath::Vector3::<f32>) -> Result<()> {
-        self.set_parameter(engine, parameter_name, MaterialParameter::Color(Some(value)))
+    pub fn set_color(&mut self, engine: &mut Engine, parameter_name: &str, value: Color) -> Result<()> {
+        // Clamp color channel values between 0.0 and 1.0
+        let valid_color = Color::new(value.x.clamp(0.0, 1.0), value.y.clamp(0.0, 1.0), value.z.clamp(0.0, 1.0));
+        self.set_parameter(engine, parameter_name, MaterialParameter::Color(Some(valid_color)))
     }
 
     fn set_parameter(&mut self, engine: &mut Engine, parameter_name: &str, value: MaterialParameter) -> Result<()> {
@@ -228,6 +251,8 @@ impl Material {
 }
 
 impl Resource for Material {
+    type Handle = MaterialHandle;
+
     fn initialize(&mut self, engine: &mut Engine) {
 
         // Set default textures if non texture is set
@@ -235,18 +260,20 @@ impl Resource for Material {
         // (since initialization of this resource happens in moment it is being added to the engine and
         // since it is possible to set textures before that moment it may happen that textures are already
         // defined by the user so setting default ones is not needed)
+
+        // 0 - Name of slot, 1 - Type of texture in it, 2 - Type of texture in general
         let texture_values = vec![
             ("Color", MaterialTexture::Color(None)), 
             ("Normal", MaterialTexture::Normal(None)), 
-        ]; // [TODO] Move magic values
+        ];
         for texture_value in texture_values {
-            let texture = self.textures.get_mut(texture_value.0);
+            let texture = self.textures.data.get_mut(texture_value.0);
             match texture {
                 Some(v) => {
                     if pill_core::enum_variant_eq::<MaterialTexture>(&texture_value.1, v) {
                         let texture_data= v.get_texture_data_mut();
                         if texture_data.is_none() {
-                            let default_texture_data = engine.resource_manager.get_default_texture(texture_value.0).unwrap();
+                            let default_texture_data = engine.resource_manager.get_default_texture(texture_value.1.get_type()).unwrap();
                             *texture_data = Some(default_texture_data);  
                         }
                     }
@@ -260,10 +287,10 @@ impl Resource for Material {
 
         // Set default parameters if not already set
         let parameter_values = vec![
-            ("Tint", MaterialParameter::Color(Some(cgmath::Vector3::<f32>::new(1.0, 1.0, 1.0))))
+            ("Tint", MaterialParameter::Color(Some(Color::new(1.0, 1.0, 1.0))))
         ]; // [TODO] Move magic values
         for parameter_value in parameter_values {
-            let parameter = self.parameters.get_mut(parameter_value.0);
+            let parameter = self.parameters.data.get_mut(parameter_value.0);
             match parameter {
                 Some(v) => {
                     if pill_core::enum_variant_eq::<MaterialParameter>(&parameter_value.1, v) {
@@ -286,7 +313,7 @@ impl Resource for Material {
         self.renderer_resource_handle = Some(renderer_resource_handle);
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) {
 
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
@@ -295,14 +322,15 @@ impl Resource for Material {
 
         // Find mesh rendering components that use this material and update them
         let default_material = engine.resource_manager.get_default_material().unwrap();
-        let active_scene = engine.scene_manager.get_active_scene_mut().unwrap();
-        let mesh_rendering_component_storage = active_scene.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
-        for i in 0..mesh_rendering_component_storage.data.len() {
-            if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
-                mesh_rendering_component.material_handle = Some(default_material.0);
-                mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+        for scene in engine.scene_manager.scenes.iter_mut() {
+            let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
+            for i in 0..mesh_rendering_component_storage.data.len() {
+                if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
+                    mesh_rendering_component.material_handle = Some(default_material.0);
+                    mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                }
+                // [TODO] Instead of this use "mesh_rendering_component.set_material(engine, &default_material.0);". This requires component wrapped with option or refcell
             }
-            // [TODO] Instead of this use "mesh_rendering_component.assign_material(engine, &default_material.0);". This requires component wrapped with option or refcell
         }
     }
 
@@ -312,5 +340,5 @@ impl Resource for Material {
 }
 
 impl typemap_rev::TypeMapKey for Material {
-    type Value = Option<ResourceStorage<MaterialHandle, Material>>; 
+    type Value = Option<ResourceStorage<Material>>; 
 }

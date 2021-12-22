@@ -14,13 +14,15 @@ use anyhow::{Result, Context, Error};
 use pill_core::PillSlotMapKey;
 use typemap_rev::TypeMapKey;
 
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct TextureHandle;
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum TextureType {
     Color,
     Normal,
 }
-
 
 #[readonly::make]
 pub struct Texture {
@@ -46,6 +48,8 @@ impl Texture {
 }
 
 impl Resource for Texture { // [TODO] What if renderer fails to create texture?
+    type Handle = TextureHandle;
+
     fn initialize(&mut self, engine: &mut Engine) {
         let renderer_resource_handle = match &self.load_type {
             ResourceLoadType::Path(path) => engine.renderer.create_texture(&path, &self.name, self.texture_type).unwrap(),
@@ -63,33 +67,33 @@ impl Resource for Texture { // [TODO] What if renderer fails to create texture?
         }
 
         // Take resource storage from engine
-        let mut resource_storage = engine.resource_manager.get_resource_storage_mut::<MaterialHandle, Material>().unwrap().take();
+        let mut resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>().unwrap().take();
         let materials = &mut resource_storage.as_mut().unwrap().data;
 
         // Find materials that use this texture and update them
         for material_entry in materials.iter_mut() {
             
             // Find texture to update
-            let mut texture_name: Option<String> = Option::None;
-            for material_texture in material_entry.1.textures.iter() {
+            let mut texture_to_change_data: Option<(String, TextureType)> = Option::None;
+            for material_texture in material_entry.1.textures.data.iter() {
                 if let Some(texture_data) = material_texture.1.get_texture_data() {
                     if texture_data.0.data() == self_handle.data() {
-                        texture_name = Some(material_texture.0.to_string());
+                        texture_to_change_data = Some((material_texture.0.to_string(), material_texture.1.get_type()));
                         break;
                     }
                 }
             }
 
             // Update found texture if any
-            if let Some(name) = texture_name {
+            if let Some(data) = texture_to_change_data {
                 let material = material_entry.1;
-                let default_texture = engine.resource_manager.get_default_texture(&name).unwrap();
-                material.set_texture(engine, &name, default_texture.0).unwrap();
+                let default_texture = engine.resource_manager.get_default_texture(data.1).unwrap();
+                material.set_texture(engine, &data.0, default_texture.0).unwrap();
             }
         }
     
         // Take resource storage to engine
-        *engine.resource_manager.get_resource_storage_mut::<MaterialHandle, Material>().unwrap() = resource_storage;
+        *engine.resource_manager.get_resource_storage_mut::<Material>().unwrap() = resource_storage;
     }
 
     fn get_name(&self) -> String {
@@ -98,5 +102,5 @@ impl Resource for Texture { // [TODO] What if renderer fails to create texture?
 }
 
 impl TypeMapKey for Texture {
-    type Value = Option<ResourceStorage<TextureHandle, Texture>>; 
+    type Value = Option<ResourceStorage<Texture>>; 
 }

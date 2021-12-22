@@ -1,4 +1,3 @@
-use pill_core::na::SliceRange;
 use pill_engine::internal::RendererPipelineHandle;
 
 use std::path::Path;

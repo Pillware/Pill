@@ -5,23 +5,7 @@ use pill_core::{EngineError, get_type_name};
 use typemap_rev::TypeMap;
 use crate::ecs::*;
 
-
-// --------- SceneHandle
-
-#[derive(Clone, Copy)]
-pub struct SceneHandle {
-    pub index: usize,
-}
-
-impl SceneHandle {
-    pub fn new(index: usize) -> Self {
-	    Self { 
-            index,
-        }
-    }
-}
-
-// --------- Scene
+// --- Scene ---
 
 pub struct Scene {
 

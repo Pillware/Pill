@@ -61,9 +61,9 @@ impl CameraUniform {
     fn calculate_projection_matrix(camera_component: &CameraComponent) -> Matrix4::<f32> {
         OPENGL_TO_WGPU_MATRIX * cgmath::perspective(
             Deg(camera_component.fov), 
-            camera_component.aspect, 
-            0.1,
-            100.0
+            camera_component.aspect.get_value(), 
+            camera_component.range.start,
+            camera_component.range.end
         )
     }
 }

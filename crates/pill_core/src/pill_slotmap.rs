@@ -612,6 +612,10 @@ macro_rules! define_new_pill_slotmap_key {
                     },
                 }
             }
+
+            pub unsafe fn get_data(&self) -> $crate::PillSlotMapKeyData {
+                self.0.clone()
+            }
         }
 
     };

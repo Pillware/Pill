@@ -1,16 +1,24 @@
+use crate::{ 
+    resources::{
+        ResourceManager,
+        MaterialHandle, 
+        TextureHandle, 
+        Material,
+        MeshHandle,
+        Mesh,
+    }, 
+};
+
+use pill_core::PillSlotMapKey;
+
 use core::fmt;
 use std::{cmp::Ordering, fmt::Display, ops::{Range}, path::{Path, PathBuf}};
 use std::{fmt::Binary, ops::{Add, Not, Shl, Sub}};
 
 use core::fmt::Debug;
 use anyhow::{Result, Context, Error};
-use pill_core::PillSlotMapKey;
-use crate::{ecs::ComponentStorage, game::{Engine, TransformComponent}, resources::{Material, MaterialHandle, Mesh, MeshData, MeshHandle, TextureHandle, TextureType, ResourceManager}};
-use crate::ecs::Scene;
+
 use lazy_static::lazy_static;
-use crate::resources::{ RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererTextureHandle };
-
-
 
 // --- Render queue 
 
@@ -80,8 +88,8 @@ where
 
 // Creates pill engine render queue composed from order, material index, material version, mesh index, mesh version
 pub fn compose_render_queue_key(resource_manager: &ResourceManager, material_handle: &MaterialHandle, mesh_handle: &MeshHandle) -> Result<RenderQueueKey> { 
-    let material = resource_manager.get_resource::<MaterialHandle, Material>(material_handle)?;
-    let mesh = resource_manager.get_resource::<MeshHandle, Mesh>(mesh_handle)?;
+    let material = resource_manager.get_resource::<Material>(material_handle)?;
+    let mesh = resource_manager.get_resource::<Mesh>(mesh_handle)?;
    
     let render_queue_key: RenderQueueKey = 
         ((material.order as RenderQueueKey) << RENDERQUEUE_ORDER.mask_shift) | 
@@ -132,9 +140,6 @@ lazy_static! { // This will be initialized in runtime instead of compile-time (t
     static ref RENDERQUEUE_MESH_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(19..26);
     static ref RENDERQUEUE_MESH_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(27..34);
 }
-
-
-
 
 #[test]
 fn new_render_queue_field_test() {

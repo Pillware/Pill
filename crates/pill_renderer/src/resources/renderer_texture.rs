@@ -1,10 +1,14 @@
-use pill_engine::internal::{RendererTextureHandle, TextureType};
+use pill_engine::internal::{TextureType};
 
 use anyhow::*;
 use image::GenericImageView;
 use std::{num::NonZeroU32, path::{Path, PathBuf}};
 
 // --- Texture ---
+
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct RendererTextureHandle;
+}
 
 pub struct RendererTexture {
     pub texture: wgpu::Texture,

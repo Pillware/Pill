@@ -1,15 +1,12 @@
 use crate::RenderingResourceStorage;
 use crate::resources::RendererTexture;
 
-use pill_core::na::SliceRange;
 use pill_engine::internal::{
     MaterialParameter,
     MaterialParameterMap,
-    ParameterMap,
     RendererError,
-    TextureMap,
+    MaterialTextureMap,
     RendererMaterialHandle,
-    RendererTextureHandle,
     RendererPipelineHandle, 
     TextureHandle,
     MaterialTexture,
@@ -54,9 +51,9 @@ impl RendererMaterial {
         name: &str,
         pipeline_handle: RendererPipelineHandle,
         texture_bind_group_layout: &wgpu::BindGroupLayout,
-        textures: &TextureMap,
+        textures: &MaterialTextureMap,
         parameter_bind_group_layout: &wgpu::BindGroupLayout,
-        parameters: &ParameterMap,
+        parameters: &MaterialParameterMap,
     ) -> Result<Self> {
 
         // Create parameter buffer and write data to it
@@ -66,7 +63,7 @@ impl RendererMaterial {
             contents: bytemuck::cast_slice(&[uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        uniform.tint = parameters.get_color("Tint").unwrap().into(); // [TODO] Move magic value
+        uniform.tint = parameters.get_color("Tint").unwrap().into();
         queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&[uniform]));
 
         // Create texture binding group
@@ -102,7 +99,7 @@ impl RendererMaterial {
         device: &wgpu::Device, 
         material_renderer_handle: RendererMaterialHandle,
         rendering_resource_storage: &mut RenderingResourceStorage, 
-        textures: &TextureMap
+        textures: &MaterialTextureMap
     ) -> Result<()> {
         let material = rendering_resource_storage.materials.get(material_renderer_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
         let material_name = material.name.clone();
@@ -126,7 +123,7 @@ impl RendererMaterial {
         rendering_resource_storage: &RenderingResourceStorage, 
         texture_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
-        textures: &TextureMap
+        textures: &MaterialTextureMap
     ) -> Result<wgpu::BindGroup> {
 
         // [TODO] Move magic names
@@ -166,7 +163,7 @@ impl RendererMaterial {
         queue: &wgpu::Queue, 
         material_renderer_handle: RendererMaterialHandle,
         rendering_resource_storage: &mut RenderingResourceStorage, 
-        parameters: &ParameterMap
+        parameters: &MaterialParameterMap
     ) -> Result<()> {
         let material = rendering_resource_storage.materials.get_mut(material_renderer_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
         let pipeline = rendering_resource_storage.pipelines.get(material.pipeline_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;

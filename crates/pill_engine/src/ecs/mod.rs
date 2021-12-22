@@ -10,6 +10,7 @@ mod scene_manager;
 mod system_manager;
 mod camera_component;
 mod rendering_system;
+mod component;
 
 pub use rendering_system::{
     rendering_system,
@@ -17,7 +18,6 @@ pub use rendering_system::{
 
 pub use scene::{
     Scene,
-    SceneHandle,
 };
 
 pub use component_map::{ 
@@ -31,6 +31,7 @@ pub use component_storage::{
 
 pub use camera_component::{
     CameraComponent,
+    CameraAspectRatio,
 };
 
 pub use entity::{
@@ -48,6 +49,7 @@ pub use transform_component::{
 
 pub use scene_manager::{
     SceneManager,
+    SceneHandle,
 };
 
 pub use system_manager::{

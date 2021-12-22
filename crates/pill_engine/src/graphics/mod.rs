@@ -7,6 +7,11 @@ pub use renderer::{
     Renderer,
     RendererError,
     PillRenderer,
+    RendererCameraHandle,
+    RendererMaterialHandle,
+    RendererMeshHandle,
+    RendererTextureHandle,
+    RendererPipelineHandle,
 };
 
 pub use render_queue::{

@@ -18,7 +18,6 @@ impl Component for MeshRenderingComponent {
 
 impl MeshRenderingComponent {
     pub fn new(engine: &Engine, mesh_handle: &MeshHandle, material_handle: &MaterialHandle) -> Result<Self> {
-       
 
         let mut mesh_rendering_component = Self { 
             mesh_handle: Some(mesh_handle.clone()),
