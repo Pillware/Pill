@@ -30,6 +30,7 @@ use pill_engine::internal::{
 
 use std::mem::size_of;
 use std::num::{NonZeroU32, NonZeroU8};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use anyhow::{Result, Context, Error};
 use cgmath::{Rotation3, Zero};
@@ -37,12 +38,6 @@ use slab::Slab;
 use log::{debug, info};
 use std::iter;
 use std::collections::{LinkedList, HashMap};
-
-
-// [TODO] Assure that it cannot be removed!
-fn get_master_pipeline_handle() -> RendererPipelineHandle { // [TODO] Very ugly solution, maybe store there handles in some hashmap with names of pipelines as keys
-    RendererPipelineHandle::new(1, std::num::NonZeroU32::new(1).unwrap() )
-}
 
 
 pub struct Renderer {
@@ -186,6 +181,10 @@ impl PillRenderer for Renderer {
     }
 }
 
+fn get_master_pipeline_handle() -> RendererPipelineHandle {
+    RendererPipelineHandle::new(1, std::num::NonZeroU32::new(1).unwrap() )
+}
+
 pub struct RenderingResourceStorage {
     pub(crate) pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>,
     pub(crate) materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>,
@@ -242,6 +241,9 @@ impl State {
 
         // Create adapter
         let adapter = instance.request_adapter(&request_adapter_options).await.unwrap();
+        let adapter_info = adapter.get_info();
+        info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
+
 
         // [TODO]: Use iteration
         // let adapter = instance // Iterates over all possible adapters for the backend and gets first that support given surface
@@ -266,7 +268,7 @@ impl State {
             format: surface.get_preferred_format(&adapter).unwrap(), // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
-            present_mode: wgpu::PresentMode::Fifo, // Defines how to sync the surface with the display
+            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
         };
 
         // Configure surface
@@ -344,6 +346,14 @@ impl State {
 
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        // Get active camera and update it
+        let active_camera_component = camera_component_storage.data.get(active_camera_entity_handle.index).unwrap().as_ref().unwrap();
+        let renderer_camera = self.rendering_resource_storage.cameras.get_mut(active_camera_component.get_renderer_resource_handle()).ok_or(RendererError::RendererResourceNotFound)?;
+        let active_camera_transform_component = transform_component_storage.data.get(active_camera_entity_handle.index).unwrap().as_ref().unwrap();
+        renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
+        let renderer_camera = self.rendering_resource_storage.cameras.get(active_camera_component.get_renderer_resource_handle()).unwrap();
+        let clear_color = active_camera_component.clear_color;
+
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render_encoder"),
@@ -352,13 +362,11 @@ impl State {
         { // Additional scope to release mutable borrow of encoder done by begin_render_pass
             
             // Create color attachment
-            let color_attachment = wgpu::RenderPassColorAttachment { // This is what [[location(0)]] in the fragment shader targets
-                view: &view, // Specifies what texture to save the colors to (to frame taken from swapchain, so any colors we draw to this attachment will get drawn to the screen)
+            let color_attachment = wgpu::RenderPassColorAttachment {
+                view: &view, // Specifies what texture to save the colors to
                 resolve_target: None, // Specifies what texture will receive the resolved output
-                ops: wgpu::Operations { // Tells wgpu what to do with the colors on the screen
-                    load: wgpu::LoadOp::Clear(
-                        wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0, } // Tells wgpu how to handle colors stored from the previous frame
-                    ),
+                ops: wgpu::Operations { // Specifies what to do with the colors on the screen
+                    load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
                 store: true,
                 },
             };
@@ -372,16 +380,6 @@ impl State {
                 }),
                 stencil_ops: None,
             };
-
-            // Get active camera
-            let active_camera_component = camera_component_storage.data.get(active_camera_entity_handle.index).unwrap().as_ref().unwrap();
-            {      
-                let renderer_camera = self.rendering_resource_storage.cameras.get_mut(active_camera_component.get_renderer_resource_handle()).ok_or(RendererError::RendererResourceNotFound)?;
-                let active_camera_transform_component = transform_component_storage.data.get(active_camera_entity_handle.index).unwrap().as_ref().unwrap();
-                // Update camera uniform buffer
-                renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
-            }
-            let renderer_camera = self.rendering_resource_storage.cameras.get(active_camera_component.get_renderer_resource_handle()).unwrap();
 
             self.mesh_drawer.draw(
                 &self.queue, 
@@ -411,24 +409,25 @@ pub struct MeshDrawer {
     current_mesh_index_count: u32,
 
     max_instance_count: u32,
-    instance_count: u32,
     instances: Vec::<Instance>,
     instance_buffer: wgpu::Buffer,
+    instance_range: Range<u32>,
 }
 
 impl MeshDrawer {
     pub fn new(device: &wgpu::Device, max_instance_count: u32) -> Self {
 
         // Create instance buffer
+        let buffer_size = (size_of::<Instance>() * max_instance_count as usize) as u64;
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
-            size: (size_of::<Instance>() * max_instance_count as usize) as u64,
+            size: buffer_size,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         MeshDrawer {
-            current_order: 31,
+            current_order: 0,
             //current_camera_handle: None,
             current_pipeline_handle: None,
             current_material_handle: None,
@@ -438,7 +437,7 @@ impl MeshDrawer {
             max_instance_count,
             instances: Vec::<Instance>::with_capacity(max_instance_count as usize), 
             instance_buffer,
-            instance_count: 0,
+            instance_range: 0..0, // Start inclusive, end exclusive (e.g. 0..3 means indices 0, 1, 2.  e.g. 5..7 means indices 5, 6)
         }
     }
 
@@ -455,6 +454,18 @@ impl MeshDrawer {
         render_queue: &Vec::<RenderQueueItem>, 
         transform_component_storage: &ComponentStorage<TransformComponent>
     ) {
+        // Prepare instance data and load it to buffer
+        if render_queue.len() as u32 > self.max_instance_count {
+            panic!() // [TODO] Throw renderer error
+        }
+
+        let render_queue_iter = render_queue.iter();
+        for render_queue_item in render_queue_iter {
+            let transform_component = transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap().as_ref().unwrap();
+            self.instances.push(Instance::new(transform_component));
+        }
+        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
+        self.instances.clear();
 
         // Start encoding render pass
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
@@ -462,6 +473,8 @@ impl MeshDrawer {
             color_attachments: &[color_attachment],
             depth_stencil_attachment: Some(depth_stencil_attachment),
         });
+
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
 
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
@@ -472,52 +485,22 @@ impl MeshDrawer {
             let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
             let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
-            //println!("RENDER");
-            unsafe {
-                // let material_handle_data = renderer_material_handle.get_data();
-                // println!("mat xxxxxxxx {} {}", material_handle_data.index, material_handle_data.version);
-        
-                // let mesh_handle_data = renderer_mesh_handle.get_data();
-                // println!("mesh xxxxxxxx {} {}", mesh_handle_data.index, mesh_handle_data.version);
-    
-                // let m1 = engine.get_resource_by_name::<Material>("TestMaterial").unwrap();
-                // println!("xxxxxxxx {}", m1.renderer_resource_handle.unwrap().get_data().index);
-    
-                // let m2 = engine.get_resource_by_name::<Material>("TestMaterial2").unwrap();
-                // println!("xxxxxxxx {}", m2.renderer_resource_handle.unwrap().get_data().index);
-    
-                // let x = m2.parameters.get_color("Tint").unwrap();
-                // println!("xxxxxxxxc {} {} {}", x.x, x.y, x.z);
-            }    
-
-
             // Check order
-            // if self.current_order != render_queue_key_fields.order {
-            //     if self.instance_count > 0 {
-            //         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            //         render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);
-            //         self.instances.clear();
-            //         self.instance_count = 0; 
-            //     }
-            //     // Set new order
-            //     self.current_order = 1;// render_queue_key_fields.order.clone();
-            // }
+            if self.current_order < render_queue_key_fields.order {
+                if self.get_accumulated_instance_count() > 0 {
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());         
+                    self.instance_range = self.instance_range.end..self.instance_range.end;
+                }
+                // Set new order
+                self.current_order = render_queue_key_fields.order;
+            }
 
+            // Check material
             if self.current_material_handle != Some(renderer_material_handle) {
-                // unsafe {
-                //     let material_handle_data = renderer_material_handle.get_data();
-                //     println!("mat switch to {} {}", material_handle_data.index, material_handle_data.version);
-                // }
-
                 // Render accumulated instances
-                if self.instance_count > 0 {
-                    println!("render instances {}", self.instance_count);
-
-                    queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
-                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
-                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);            
-                    self.instances.clear();
-                    self.instance_count = 0; 
+                if self.get_accumulated_instance_count() > 0 {
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());            
+                    self.instance_range = self.instance_range.end..self.instance_range.end;
                 }
                 // Set new material
                 self.current_material_handle = Some(renderer_material_handle);
@@ -535,14 +518,12 @@ impl MeshDrawer {
                 render_pass.set_bind_group(2, &camera.bind_group, &[]);
             }
 
+            // Check mesh
             if self.current_mesh_handle != Some(renderer_mesh_handle) {
                 // Render accumulated instances
-                if self.instance_count > 0 {
-                    queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
-                    render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
-                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);    
-                    self.instances.clear();
-                    self.instance_count = 0;            
+                if self.get_accumulated_instance_count() > 0 {
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());      
+                    self.instance_range = self.instance_range.end..self.instance_range.end; 
                 }
                 // Set new mesh
                 self.current_mesh_handle = Some(renderer_mesh_handle);               
@@ -553,29 +534,26 @@ impl MeshDrawer {
             }
 
             // Add new instance
-            let transform_component = transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap().as_ref().unwrap();
-            self.instances.push(Instance::new(transform_component));
-
-            self.instance_count += 1;
+            self.instance_range = self.instance_range.start..self.instance_range.end + 1;
         }
 
-        
         // End of render queue so draw remaining saved objects
-        if self.instance_count > 0 {
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
-            render_pass.draw_indexed(0..self.current_mesh_index_count, 0, 0..self.instance_count);    
-            self.instances.clear();
-            self.instance_count = 0;            
+        if self.get_accumulated_instance_count() > 0 {
+            render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());    
+            self.instance_range = self.instance_range.end..self.instance_range.end; 
         }
         
         // Reset state of mesh drawer
-        self.current_order = 31;
+        self.current_order = 0;
         self.current_pipeline_handle = None;
         self.current_material_handle = None;
         self.current_mesh_handle = None;
         self.current_mesh_index_count = 0;
-        self.instances.clear();
-        self.instance_count = 0;
+        self.instance_range = 0..0; 
+        
+    }
+
+    fn get_accumulated_instance_count(&self) -> u32 {
+        self.instance_range.end - self.instance_range.start 
     }
 }

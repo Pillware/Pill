@@ -37,6 +37,10 @@ pub enum EngineError {
     SystemUpdatePhaseNotFound(String),
     
     // Resource
+    #[error("Path to {} is invalid: {} \n\nSource: ", "Asset".gobj_style(), .0.name_style())]
+    InvalidAssetPath(String),
+    #[error("{} format is not supported. Expected .{} but is .{} \n\nSource: ", "Asset".gobj_style(), .0.name_style(), .1.name_style())]
+    InvalidAssetFormat(String, String),
     #[error("{} {} is not registered \n\nSource: ", "Resource".gobj_style(), .0.sobj_style())]
     ResourceNotRegistered(String),
     #[error("{} {} {} already exists \n\nSource: ", "Resource".gobj_style(), .0.sobj_style(), .1.name_style())]

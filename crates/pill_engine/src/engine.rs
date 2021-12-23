@@ -34,7 +34,7 @@ pub struct Engine {
 
 impl Engine {
 
-     fn create_default_resources(&mut self) {
+     fn create_default_resources(&mut self) -> Result<()> {
         self.register_resource_type::<Texture>().unwrap();
         self.register_resource_type::<Mesh>().unwrap();
         self.register_resource_type::<Material>().unwrap();
@@ -52,17 +52,19 @@ impl Engine {
 
         // Create default textures
         let mut default_color_texture = Texture::new(DEFAULT_COLOR_TEXTURE_NAME, TextureType::Color, ResourceLoadType::Bytes(default_color_texture_bytes));
-        default_color_texture.initialize(self);
+        default_color_texture.initialize(self)?;
         self.resource_manager.add_resource(default_color_texture).unwrap();
 
         let mut default_normal_texture = Texture::new(DEFAULT_NORMAL_TEXTURE_NAME, TextureType::Normal, ResourceLoadType::Bytes(default_normal_texture_bytes));
-        default_normal_texture.initialize(self);
+        default_normal_texture.initialize(self)?;
         self.resource_manager.add_resource(default_normal_texture).unwrap();
        
         // Create default material
         let mut default_material = Material::new(DEFAULT_MATERIAL_NAME);
-        default_material.initialize(self);
+        default_material.initialize(self)?;
         self.resource_manager.add_resource(default_material).unwrap();
+
+        Ok(())
     }
 }
 
@@ -86,7 +88,7 @@ impl Engine {
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
         };
 
-        engine.create_default_resources();
+        engine.create_default_resources().unwrap();
 
         engine
     }
@@ -191,7 +193,7 @@ impl Engine {
     }
     
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {
-        debug!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name);
+        debug!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))
     }
     
@@ -246,12 +248,14 @@ impl Engine {
     pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
         where T: Resource<Value = Option<ResourceStorage::<T>>>
     {
+        debug!("Adding {} {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style());
+
         // Check if resource has proper name
         let resource_name = resource.get_name();
         resource_name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::WrongResourceName(resource_name.clone())))?;
 
         // Initialize resource
-        resource.initialize(self);
+        resource.initialize(self).context(format!("Adding {} {} failed", "Resource".gobj_style(), pill_core::get_type_name::<T>().sobj_style()))?;
         
         // Add resource
         let resource_handle = self.resource_manager.add_resource(resource)?;

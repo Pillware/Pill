@@ -5,7 +5,7 @@ use pill_engine::internal::{
 };
 
 use anyhow::{Result, Context, Error};
-use cgmath::{Deg, Matrix4, Angle, EuclideanSpace, Vector3, Point3, InnerSpace};
+use cgmath::{Deg, Matrix4, Angle, EuclideanSpace, Vector3, Point3, InnerSpace, SquareMatrix, Zero};
 use wgpu::util::DeviceExt;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
@@ -27,21 +27,26 @@ const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct CameraUniform {
-    pub(crate) position_matrix: [[f32; 4]; 4], // Camera translation
+    pub(crate) position: [f32; 4], // Camera position
     pub(crate) view_projection_matrix: [[f32; 4]; 4], // Perspective manipulation
 }
 
+
+
+
 impl CameraUniform {
     pub fn new() -> Self {
-        use cgmath::SquareMatrix;
         Self {
-            position_matrix: cgmath::Matrix4::identity().into(),
+            position: cgmath::Vector4::zero().into(),
             view_projection_matrix: cgmath::Matrix4::identity().into(),
         }
     }
 
-    pub fn update_view_projection_matrix(&mut self, camera_component: &CameraComponent, transform_component: &TransformComponent) {
+    pub fn update_data(&mut self, camera_component: &CameraComponent, transform_component: &TransformComponent) {
+        
+        self.position = cgmath::Vector4::<f32> { x: transform_component.position.x, y: transform_component.position.x, z: transform_component.position.x, w: transform_component.position.x }.into();
         self.view_projection_matrix = (CameraUniform::calculate_projection_matrix(camera_component) * CameraUniform::calculate_view_matrix(transform_component)).into();
+
     }
 
     fn calculate_view_matrix(transform_component: &TransformComponent) -> Matrix4::<f32> {
@@ -107,7 +112,7 @@ impl RendererCamera {
     }
 
     pub fn update(&mut self, queue: &wgpu::Queue, camera_component: &CameraComponent, transform_component: &TransformComponent) {
-        self.uniform.update_view_projection_matrix(camera_component, transform_component);
+        self.uniform.update_data(camera_component, transform_component);
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 }

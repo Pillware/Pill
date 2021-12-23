@@ -1,3 +1,4 @@
+use crate::config::*;
 use crate::ecs::*; 
 use crate::internal::Engine;
 use crate::graphics::*;
@@ -159,11 +160,11 @@ impl Material {
 
     pub fn new(name: &str) -> Self {  // [TODO] What if renderer fails to create material?        
         let mut textures = MaterialTextureMap::new();
-        textures.data.insert("Color".to_string(), MaterialTexture::Color(None));
-        textures.data.insert("Normal".to_string(), MaterialTexture::Normal(None));
+        textures.data.insert(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string(), MaterialTexture::Color(None));
+        textures.data.insert(MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string(), MaterialTexture::Normal(None));
 
         let mut parameters = MaterialParameterMap::new();
-        parameters.data.insert("Tint".to_string(), MaterialParameter::Color(None));
+        parameters.data.insert(MASTER_SHADER_TINT_PARAMETER_SLOT.to_string(), MaterialParameter::Color(None));
         
         Self {
             name: name.to_string(),  
@@ -187,13 +188,13 @@ impl Material {
             MaterialTexture::Color(v) => {
                 match texture.texture_type {
                     TextureType::Color => { v.replace((texture_handle, renderer_texture_handle)); },
-                    _ => { return Err(Error::new(EngineError::WrongTextureType(pill_core::get_enum_variant_type_name(&texture.texture_type).to_string(), "Color".to_string()))) },
+                    _ => { return Err(Error::new(EngineError::WrongTextureType(pill_core::get_enum_variant_type_name(&texture.texture_type).to_string(), pill_core::get_enum_variant_type_name(texture_entry).to_string()))) },
                 };
             },
             MaterialTexture::Normal(v) => {
                 match texture.texture_type {
                     TextureType::Normal => { v.replace((texture_handle, renderer_texture_handle)); },
-                    _ => { return Err(Error::new(EngineError::WrongTextureType(pill_core::get_enum_variant_type_name(&texture.texture_type).to_string(), "Normal".to_string()))) },
+                    _ => { return Err(Error::new(EngineError::WrongTextureType(pill_core::get_enum_variant_type_name(&texture.texture_type).to_string(), pill_core::get_enum_variant_type_name(texture_entry).to_string()))) },
                 };
             },
         }
@@ -253,7 +254,7 @@ impl Material {
 impl Resource for Material {
     type Handle = MaterialHandle;
 
-    fn initialize(&mut self, engine: &mut Engine) {
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
 
         // Set default textures if non texture is set
         // Add only if nothing else is already there 
@@ -263,8 +264,8 @@ impl Resource for Material {
 
         // 0 - Name of slot, 1 - Type of texture in it, 2 - Type of texture in general
         let texture_values = vec![
-            ("Color", MaterialTexture::Color(None)), 
-            ("Normal", MaterialTexture::Normal(None)), 
+            (MASTER_SHADER_COLOR_TEXTURE_SLOT, MaterialTexture::Color(None)), 
+            (MASTER_SHADER_NORMAL_TEXTURE_SLOT, MaterialTexture::Normal(None)), 
         ];
         for texture_value in texture_values {
             let texture = self.textures.data.get_mut(texture_value.0);
@@ -287,8 +288,8 @@ impl Resource for Material {
 
         // Set default parameters if not already set
         let parameter_values = vec![
-            ("Tint", MaterialParameter::Color(Some(Color::new(1.0, 1.0, 1.0))))
-        ]; // [TODO] Move magic values
+            (MASTER_SHADER_TINT_PARAMETER_SLOT, MaterialParameter::Color(Some(Color::new(1.0, 1.0, 1.0))))
+        ];
         for parameter_value in parameter_values {
             let parameter = self.parameters.data.get_mut(parameter_value.0);
             match parameter {
@@ -311,6 +312,8 @@ impl Resource for Material {
         ).unwrap();
 
         self.renderer_resource_handle = Some(renderer_resource_handle);
+
+        Ok(())
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) {

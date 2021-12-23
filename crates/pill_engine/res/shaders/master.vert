@@ -14,9 +14,9 @@ layout(location=7) in vec4 model_matrix_2;
 layout(location=8) in vec4 model_matrix_3;
 
 // Input camera data
-layout(set=2, binding=0) uniform Camera {
-    mat4 position; 
-    mat4 view_projection;
+layout(set=2, binding=0) uniform camera {
+    vec3 camera_position; 
+    mat4 camera_view_projection;
 };
 
 // Output data
@@ -49,7 +49,7 @@ void main() {
 
     out_vertex_texture_coordinates = vertex_texture_coordinates;
 
-    gl_Position = view_projection * model_space;
+    gl_Position = camera_view_projection * model_space;
 
     // mat3 normal_matrix = mat3(transpose(inverse(model_matrix)));
     // vec3 normal = normalize(normal_matrix * a_normal);

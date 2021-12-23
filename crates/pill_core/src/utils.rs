@@ -1,5 +1,9 @@
-use std::any::type_name;
+use anyhow::{Context, Result, Error};
+use boolinator::Boolinator;
+use std::{any::type_name, path::PathBuf};
 use colored::*;
+
+use crate::EngineError;
 
 pub fn get_type_name<T>() -> String {
     let full_type_name = type_name::<T>().to_string();
@@ -49,9 +53,9 @@ impl PillStyle for &str {
         self.color(colored::Color::BrightCyan)
     }
 
-    // To be used with specific objects (CameraComponent, Texture, Mesh, etc)- changes color
+    // To be used with specific objects (CameraComponent, Texture, Mesh, etc) - changes color
     fn sobj_style(self) -> ColoredString {
-        self.color(colored::Color::TrueColor { r: 95, g: 210, b: 90 }).bold()
+        self.color(colored::Color::TrueColor { r: 95, g: 210, b: 90 })
     }
 
     // To be used with names - changes color adds quotation marks
@@ -65,3 +69,18 @@ impl PillStyle for &str {
     }
 }
 
+// Path utils
+
+// Check if path to asset is correct (exists and has supported format)
+pub fn validate_asset_path(path: &PathBuf, allowed_format: &str) -> Result<()>
+{
+    path.exists().ok_or(Error::new(EngineError::InvalidAssetPath(path.display().to_string())))?;
+
+    match path.extension() {
+        Some(v) => match v.eq(allowed_format) {
+            true => return Ok(()),
+            false => return Err(Error::new(EngineError::InvalidAssetFormat(allowed_format.to_string(), v.to_str().unwrap().to_string()))),
+        },
+        None => return Err(Error::new(EngineError::InvalidAssetPath(path.display().to_string()))),
+    }
+}

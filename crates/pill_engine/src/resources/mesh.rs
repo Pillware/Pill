@@ -8,6 +8,7 @@ use crate::internal::Engine;
 use crate::graphics::*;
 use crate::resources::*;
 
+use boolinator::Boolinator;
 use cgmath::InnerSpace;
 use pill_core::EngineError;
 use pill_core::PillSlotMapKey;
@@ -47,12 +48,17 @@ impl Mesh {
 impl Resource for Mesh {
     type Handle = MeshHandle;
 
-    fn initialize(&mut self, engine: &mut Engine) { // [TODO] What if renderer fails to create mesh?
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> { // [TODO] What if renderer fails to create mesh?
+        // Check if path to asset is correct
+        pill_core::validate_asset_path(&self.path, "obj")?;
+
         let mesh_data = MeshData::new(&self.path).unwrap();
         self.mesh_data = Some(mesh_data);
 
         let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).unwrap();
         self.renderer_resource_handle = Some(renderer_resource_handle);
+
+        Ok(())
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) {
@@ -107,7 +113,6 @@ pub struct MeshData {
 
 impl MeshData {
     pub fn new(path: &PathBuf) -> Result<Self> {  
-        
         // Load model from path using tinyobjloader crate
         let load_options = LoadOptions {
             triangulate: true,

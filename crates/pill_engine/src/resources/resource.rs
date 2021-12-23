@@ -1,16 +1,16 @@
-use std::path::PathBuf;
-
+use crate::internal::Engine;
 use pill_core::PillSlotMapKey;
-use typemap_rev::TypeMapKey;
 
-use crate::game::Engine;
+use std::path::PathBuf;
+use anyhow::{Context, Result, Error};
+use typemap_rev::TypeMapKey;
 
 // --- Resource ---
 
 pub trait Resource : TypeMapKey {
     type Handle: PillSlotMapKey;
     
-    fn initialize(&mut self, _engine: &mut Engine) {}
+    fn initialize(&mut self, _engine: &mut Engine) -> Result<()> { Ok(()) }
     fn destroy<H: PillSlotMapKey>(&mut self, _engine: &mut Engine, _self_handlee: H) {}
     fn get_name(&self) -> String;
 }

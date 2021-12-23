@@ -7,6 +7,7 @@ use crate::{
     resources::{Material, MaterialHandle, Mesh, MeshHandle }
 };
 use anyhow::{Result, Context, Error};
+use pill_core::Color;
 
 pub enum CameraAspectRatio {
     Automatic(f32),
@@ -26,6 +27,7 @@ pub struct CameraComponent {
     pub aspect: CameraAspectRatio,
     pub fov: f32,
     pub range: Range<f32>,
+    pub clear_color: Color,
     pub(crate) renderer_resource_handle: RendererCameraHandle,
     pub enabled: bool,
 }
@@ -42,6 +44,7 @@ impl CameraComponent {
             aspect: CameraAspectRatio::Automatic(1.0),
             fov: 60.0,
             range: 0.1..100.0,
+            clear_color: Color::new(0.15, 0.15, 0.15),
             renderer_resource_handle,
             enabled: false,
         };

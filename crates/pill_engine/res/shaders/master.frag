@@ -36,32 +36,45 @@ layout(location=0) out vec4 out_final_color;
 // };
 
 
-
+// Input camera data
+layout(set=2, binding=0) uniform camera {
+    vec3 camera_position; 
+    mat4 camera_view_projection;
+};
 
 void main() {
 
     // Settings
     float ambient_light_strength = 0.1;
-    vec3 ambient_light_color = vec3(1.0, 1.0, 1.0);
-
-    vec3 directional_light_position = vec3(10.0, 10.0, 10.0);
-    vec3 directional_light_color = vec3(1.0, 1.0, 1.0);
+    vec3 light_position = vec3(10.0, 10.0, 10.0);
+    vec3 light_color = vec3(1.0, 1.0, 1.0);
 
 
     // Texture
     vec4 object_color = texture(sampler2D(diffuse_texture, diffuse_sampler), vertex_texture_coordinates);
 
     // Ambient lighting
-    vec3 ambient_light_factor = ambient_light_color * ambient_light_strength;
+    vec3 ambient_light_factor = light_color * ambient_light_strength;
 
     // Diffuse lighting
     vec3 normal = normalize(vertex_normal);
-    vec3 directional_light_direction = normalize(directional_light_position - vertex_position);
-    float directional_light_strength = max(dot(normal, directional_light_direction), 0.0);
-    vec3 directional_light_factor = directional_light_color * directional_light_strength;
+    vec3 light_direction = normalize(light_position - vertex_position);
 
+    float diffuse_light_strength = max(dot(normal, light_direction), 0.0);
+    vec3 diffuse_light_factor = light_color * diffuse_light_strength;
+
+    // Specular lighting
+    vec3 view_direction = normalize(camera_position - vertex_position);
+    //vec3 half_direction = normalize(view_direction + light_direction);
+    vec3 reflection_direction = reflect(-light_direction, normal);
+
+    float specular_light_strength = pow(max(dot(view_direction, reflection_direction), 0.0), 32);
+    //float specular_light_strength = pow(max(dot(normal, half_direction), 0.0), 32);
+    vec3 specular_light_factor = light_color * specular_light_strength * 10;
+
+    
     // Final color
-    vec3 final_color = (ambient_light_factor + directional_light_factor) * object_color.xyz * tint;
+    vec3 final_color = (ambient_light_factor + diffuse_light_factor + specular_light_factor) * object_color.xyz * tint;
     out_final_color = vec4(final_color, 1.0);
 
     // vec4 object_normal = texture(sampler2D(t_normal, s_normal), v_tex_coords);

@@ -50,13 +50,20 @@ impl Texture {
 impl Resource for Texture { // [TODO] What if renderer fails to create texture?
     type Handle = TextureHandle;
 
-    fn initialize(&mut self, engine: &mut Engine) {
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let renderer_resource_handle = match &self.load_type {
-            ResourceLoadType::Path(path) => engine.renderer.create_texture(&path, &self.name, self.texture_type).unwrap(),
+            ResourceLoadType::Path(path) => {
+                // Check if path to asset is correct
+                pill_core::validate_asset_path(path, "png")?;
+
+                engine.renderer.create_texture(&path, &self.name, self.texture_type).unwrap()
+            },
             ResourceLoadType::Bytes(bytes) => engine.renderer.create_texture_from_bytes(&bytes, &self.name, self.texture_type).unwrap(),
         };
 
         self.renderer_resource_handle = Some(renderer_resource_handle);
+
+        Ok(())
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {

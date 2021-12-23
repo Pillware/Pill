@@ -1349,6 +1349,7 @@ name = "pill_core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "boolinator",
  "cgmath",
  "colored",
  "thiserror",

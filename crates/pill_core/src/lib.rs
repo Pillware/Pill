@@ -20,4 +20,5 @@ pub use utils::get_type_name;
 pub use utils::get_value_type_name;
 pub use utils::enum_variant_eq;
 pub use utils::get_enum_variant_type_name;
+pub use utils::validate_asset_path;
 pub use utils::PillStyle;

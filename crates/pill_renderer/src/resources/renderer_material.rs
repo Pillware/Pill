@@ -9,8 +9,12 @@ use pill_engine::internal::{
     RendererMaterialHandle,
     RendererPipelineHandle, 
     TextureHandle,
-    MaterialTexture,
+    MaterialTexture, 
+    MASTER_SHADER_COLOR_TEXTURE_SLOT,    
+    MASTER_SHADER_NORMAL_TEXTURE_SLOT,
+    MASTER_SHADER_TINT_PARAMETER_SLOT,
 };
+
 
 use wgpu::util::DeviceExt;
 use std::path::{ Path, PathBuf };
@@ -127,8 +131,8 @@ impl RendererMaterial {
     ) -> Result<wgpu::BindGroup> {
 
         // [TODO] Move magic names
-        let color_texture_renderer_handle = textures.get("Color").unwrap().get_texture_data().unwrap().1;
-        let normal_texture_renderer_handle = textures.get("Color").unwrap().get_texture_data().unwrap().1;
+        let color_texture_renderer_handle = textures.get(MASTER_SHADER_COLOR_TEXTURE_SLOT).unwrap().get_texture_data().unwrap().1;
+        let normal_texture_renderer_handle = textures.get(MASTER_SHADER_NORMAL_TEXTURE_SLOT).unwrap().get_texture_data().unwrap().1;
         let color_texture = rendering_resource_storage.textures.get(color_texture_renderer_handle).unwrap();
         let normal_texture = rendering_resource_storage.textures.get(normal_texture_renderer_handle).unwrap(); 
 
@@ -168,7 +172,7 @@ impl RendererMaterial {
         let material = rendering_resource_storage.materials.get_mut(material_renderer_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
         let pipeline = rendering_resource_storage.pipelines.get(material.pipeline_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
-        material.uniform.tint = parameters.get_color("Tint").unwrap().into(); // [TODO] Move magic value
+        material.uniform.tint = parameters.get_color(MASTER_SHADER_TINT_PARAMETER_SLOT).unwrap().into(); // [TODO] Move magic value
         queue.write_buffer(&material.buffer, 0, bytemuck::cast_slice(&[material.uniform]));
 
         material.parameter_bind_group = RendererMaterial::create_parameter_bind_group(
