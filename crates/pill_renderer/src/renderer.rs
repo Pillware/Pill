@@ -486,7 +486,7 @@ impl MeshDrawer {
             let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
             // Check order
-            if self.current_order < render_queue_key_fields.order {
+            if self.current_order > render_queue_key_fields.order {
                 if self.get_accumulated_instance_count() > 0 {
                     render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());         
                     self.instance_range = self.instance_range.end..self.instance_range.end;
@@ -544,7 +544,7 @@ impl MeshDrawer {
         }
         
         // Reset state of mesh drawer
-        self.current_order = 0;
+        self.current_order = 31;
         self.current_pipeline_handle = None;
         self.current_material_handle = None;
         self.current_mesh_handle = None;

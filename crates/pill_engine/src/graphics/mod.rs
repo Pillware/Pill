@@ -12,12 +12,13 @@ pub use renderer::{
     RendererMeshHandle,
     RendererTextureHandle,
     RendererPipelineHandle,
+    
 };
 
 pub use render_queue::{
-    RenderQueueKey,
     RenderQueueItem,
     compose_render_queue_key,
     decompose_render_queue_key,
     RenderQueueKeyFields,
+    RenderQueueKey
 };

@@ -5,6 +5,7 @@ use colored::*;
 
 use crate::EngineError;
 
+// E.g. pill_core::get_type_name::<Resource>(); will return "Resource"
 pub fn get_type_name<T>() -> String {
     let full_type_name = type_name::<T>().to_string();
     let pure_type_name_start_index = full_type_name.rfind(':').unwrap() + 1;
@@ -23,7 +24,7 @@ pub fn enum_variant_eq<T>(a: &T, b: &T) -> bool {
 }
 
 // Returns only the name of enum variant
-// E.g. pill_core::get_enum_variant_type_name(MyEnum::Hello(88)); will return Hello
+// E.g. pill_core::get_enum_variant_type_name(MyEnum::Hello(88)); will return "Hello"
 pub fn get_enum_variant_type_name<T: core::fmt::Debug>(a: &T) -> String {
     let full_type_name = format!("{:?}", a);
     let pure_type_name_end_index = full_type_name.rfind('(');

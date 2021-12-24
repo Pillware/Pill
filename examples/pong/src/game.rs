@@ -70,7 +70,7 @@ impl PillGame for Game {
         // Add material
         let mut material_1 = Material::new("TestMaterial");
         material_1.set_texture(engine,"Color", texture_1_handle).unwrap();
-        material_1.set_texture(engine,"Normal", texture_3_handle).unwrap();
+        
         material_1.set_color(engine, "Tint", Color::new( 1.0, 1.0, 1.0)).unwrap();
 
 
@@ -86,6 +86,7 @@ impl PillGame for Game {
         // Add material
         let mut material_2 = Material::new("TestMaterial2");
         material_2.set_texture(engine,"Color", texture_2_handle).unwrap();
+        material_2.set_texture(engine,"Normal", texture_3_handle).unwrap();
         material_2.set_color(engine, "Tint", Color::new( 1.0, 0.7, 0.0)).unwrap();
         let material_2_handle = engine.add_resource::<Material>(material_2).unwrap();
 
