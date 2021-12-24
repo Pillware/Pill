@@ -72,6 +72,9 @@ pub mod internal {
             MeshVertex,    
 
             ResourceLoadType,
+        },
+        input::{
+            InputComponent
         }
     };
 }

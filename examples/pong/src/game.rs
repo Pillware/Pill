@@ -1,10 +1,9 @@
-use std::path::Component;
+use std::{path::Component, borrow::BorrowMut};
 
 use cgmath::Transform;
 use pill_engine::internal::ComponentStorage;
 #[allow(unused_imports, dead_code, unused_variables)]
-use pill_engine::{game::*, internal::{Material, MaterialHandle, MeshHandle, Mesh, CameraComponent, Texture, TextureHandle, TextureType, ResourceLoadType}};
- 
+use pill_engine::{game::*, internal::{Material, MaterialHandle, MeshHandle, Mesh, CameraComponent, Texture, TextureHandle, TextureType, ResourceLoadType, InputComponent}};
 
 pub struct Game { }   
 
@@ -103,11 +102,12 @@ impl PillGame for Game {
 }
 
 
-fn paddle_movement_system(_engine: &mut Engine) -> Result<()> {
+fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
     println!("Moving paddles"); 
     // is A key in global component pressed, if yes the do
-    for transform in _engine.fetch_one_component_storage::<TransformComponent>()? {
-        transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05;
+    for transform in engine.fetch_one_component_storage::<TransformComponent>()? {
+            transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05;
+            
     }
     Ok(())   
 }

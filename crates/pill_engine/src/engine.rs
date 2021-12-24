@@ -4,7 +4,7 @@ use boolinator::Boolinator;
 use log::{debug, info, error};
 use typemap_rev::{TypeMap, TypeMapKey};
 use winit::{ event::*, dpi::PhysicalPosition,};
-use crate::ecs::entity_builder::EntityBuilder;
+use crate::{ecs::entity_builder::EntityBuilder, input::input_component::GlobalComponent};
 
 use pill_core::{EngineError, get_type_name, PillSlotMapKey, PillStyle};
 use crate::{ 
@@ -28,7 +28,7 @@ pub struct Engine {
     pub(crate) resource_manager: ResourceManager,
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
-    pub(crate) global_components: ComponentMap
+    pub(crate) global_components: ComponentMap,
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -49,7 +49,7 @@ impl Engine {
             resource_manager,
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(1000),
-            global_components: ComponentMap::new()
+            global_components: ComponentMap::new(),
         };
 
         engine.create_default_resources();
@@ -62,7 +62,7 @@ impl Engine {
         info!("Pill Engine initializing");
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
-
+        self.insert_global_component(GlobalComponent::<InputComponent>::new());
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
@@ -224,26 +224,35 @@ impl Engine {
         self.system_manager.add_system(name, system_function, UpdatePhase::Game).context("Adding system failed")
     }
 
-    pub fn add_global_component<T: Component<Storage = T>>(&mut self, component: T) -> Result<()> {
+    pub fn insert_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self, component: GlobalComponent<T>) -> Result<()> {
         //.ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
-        if self.global_components.contains_key::<T>().eq(&false) {
-            self.global_components.insert::<T>(component);
-        }
-        // self.global_components.insert::<T>(component);
+        self.global_components.insert::<T>(component);
         Ok(())
     }
 
-    pub fn get_global_component<T: Component<Storage = T>>(&self) -> Result<Option<&T>> {
+    // pub fn take_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Option<T> {
+    //     //self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
+    //     if self.global_components.get_mut::<T>().is_none() {
+    //         return None
+    //     }
+    //     if self.global_components.get_mut::<T>().unwrap().component.is_none() {
+    //         return None
+    //     }
+    //     return self.global_components.get_mut::<T>().unwrap().component
+    //     //Ok(self.global_components.get_mut::<T>().unwrap().component.take())
+    // }
+
+    pub fn get_global_component<T: Component<Storage = GlobalComponent<T>>>(&self) -> Result<Option<&GlobalComponent<T>>> {
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
         Ok(self.global_components.get::<T>())
     }
 
-    pub fn get_global_component_mut<T: Component<Storage = T>>(&mut self) -> Result<Option<&mut T>> {
+    pub fn get_global_component_mut<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Result<Option<&mut GlobalComponent<T>>> {
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
         Ok(self.global_components.get_mut::<T>())
     }
 
-    pub fn remove_global_component<T: Component<Storage = T>>(&mut self) -> Result<()> {
+    pub fn remove_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Result<()> {
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
         self.global_components.remove::<T>();
         Ok(())
