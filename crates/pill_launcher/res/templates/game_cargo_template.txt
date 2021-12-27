@@ -1,10 +1,7 @@
 [package]
-name = "pill-game"
+name = "pill_game"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-pill-core = {path = "../Pill-Engine/pill/src/core"}
-pill-engine = {path = "../Pill-Engine/pill/src/engine", features = ["game"]}
+pill_engine = {path = "../../crates/pill_engine", features = ["game"]}

@@ -232,12 +232,12 @@ impl SceneManager {
          Ok(SceneHandle::new(scene_index))
     }
 
-    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
+    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&self, scene: SceneHandle, filtered_indexes: Vec<usize>) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
 
-        let filtered_indexes = self.get_bitmask_controller_mut(scene)
-                                                    .unwrap()
-                                                    .filter_by_component::<A>()
-                                                    .fetch_indexes();
+        // let filtered_indexes = self.get_bitmask_controller_mut(scene)
+        //                                             .unwrap()
+        //                                             .filter_by_component::<A>()
+        //                                             .fetch_indexes();
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();

@@ -16,6 +16,7 @@ pub struct InputComponent {
 }
 
 impl InputComponent {
+
     pub fn press_key(&mut self, key: usize) {
         self.current_keys[key] = true;
     }
@@ -30,12 +31,12 @@ impl InputComponent {
         }
     }
 
-    pub fn is_key_pressed(&self, key: usize) -> &bool {
-        &self.current_keys[key]
+    pub fn is_key_pressed(&self, key: VirtualKeyCode) -> &bool {
+        &self.current_keys[key as usize]
     }
 
-    pub fn is_key_clicked(&self, key: usize) -> &bool {
-        if &self.current_keys[key] == &true && &self.current_keys[key] == &false {
+    pub fn is_key_clicked(&self, key: VirtualKeyCode) -> &bool {
+        if &self.current_keys[key as usize] == &true && &self.current_keys[key as usize] == &false {
             return &true
         }
         else {
@@ -43,8 +44,8 @@ impl InputComponent {
         }
     }
 
-    pub fn is_key_released(&self, key: usize) -> &bool {
-        if &self.current_keys[key] == &false && &self.current_keys[key] == &true {
+    pub fn is_key_released(&self, key: VirtualKeyCode) -> &bool {
+        if &self.current_keys[key as usize] == &false && &self.current_keys[key as usize] == &true {
             return &true
         }
         else {

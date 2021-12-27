@@ -1,8 +1,9 @@
-use pill_core::*;
+use pill_engine::{game::*, internal::*};
 
 pub struct Game { } 
 
-impl pill_engine::Pill_Game for Game {
-    fn initialize(&self) {todo!(); }
-    fn update(&self) { todo!(); }
+impl Pill_Game for Game {
+    fn start(&self, engine: &mut Engine) {
+        println!("Game started succesfully!);
+    }
 }

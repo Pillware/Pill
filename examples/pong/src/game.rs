@@ -3,7 +3,7 @@ use std::{path::Component, borrow::BorrowMut};
 use cgmath::Transform;
 use pill_engine::internal::ComponentStorage;
 #[allow(unused_imports, dead_code, unused_variables)]
-use pill_engine::{game::*, internal::{Material, MaterialHandle, MeshHandle, Mesh, CameraComponent, Texture, TextureHandle, TextureType, ResourceLoadType, InputComponent}};
+use pill_engine::{game::*, internal::*};
 
 pub struct Game { }   
 
@@ -103,12 +103,30 @@ impl PillGame for Game {
 
 
 fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
+    let new_eng = &*engine;
     println!("Moving paddles"); 
-    // is A key in global component pressed, if yes the do
-    for transform in engine.fetch_one_component_storage::<TransformComponent>()? {
-            transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05;
-            
+    let mut v = Vec::<usize>::new();
+    v.push(0);
+    v.push(1);
+    v.push(2);
+    //is A key in global component pressed, if yes the do
+    for transform in new_eng.fetch_one_component_storage::<TransformComponent>(v)? {
+        let comp = new_eng.get_global_component::<InputComponent>()?.unwrap().component.as_ref().unwrap();
+        if comp.is_key_pressed(Key::S) == &true {
+        transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
+
+        if comp.is_key_pressed(Key::W) == &true {
+            transform.borrow_mut().as_mut().unwrap().rotation.y -= 0.05; }
+
+        let mut z = Vec::<usize>::new();
+        z.push(1);
+        z.push(2);
+        for transform_z in new_eng.fetch_one_component_storage::<TransformComponent>(z)? {
+            if comp.is_key_pressed(Key::Z) == &true {
+                transform_z.borrow_mut().as_mut().unwrap().rotation.y -= 20.0; }
+        }
     }
+    //new_eng.get_global_component::<InputComponent>();
     Ok(())   
 }
 

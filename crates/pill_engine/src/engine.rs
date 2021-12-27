@@ -17,6 +17,7 @@ use crate::{
 // ---------------------------------------------------------------------
 
 pub type Game = Box<dyn PillGame>;
+pub type Key = VirtualKeyCode;
 pub trait PillGame { 
     fn start(&self, engine: &mut Engine);
 }
@@ -62,7 +63,7 @@ impl Engine {
         info!("Pill Engine initializing");
 
         self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
-        self.insert_global_component(GlobalComponent::<InputComponent>::new());
+        self.insert_global_component(InputComponent::default());
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
@@ -224,9 +225,10 @@ impl Engine {
         self.system_manager.add_system(name, system_function, UpdatePhase::Game).context("Adding system failed")
     }
 
-    pub fn insert_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self, component: GlobalComponent<T>) -> Result<()> {
+    pub fn insert_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self, component: T) -> Result<()> {
         //.ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
-        self.global_components.insert::<T>(component);
+        self.global_components.insert::<T>(GlobalComponent::<T>::new());
+        self.get_global_component_mut::<T>()?.unwrap().set_component(component)?;
         Ok(())
     }
 
@@ -280,9 +282,9 @@ impl Engine {
 
     // Iterators
 
-    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&mut self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
+    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&self, indexes: Vec<usize>) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
         // Get iterator
-        let iterator = self.scene_manager.fetch_one_component_storage::<A>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_one_component_storage::<A>(self.scene_manager.get_active_scene_handle()?, indexes)?;
 
         Ok(iterator)
     }

@@ -10,19 +10,19 @@ use super::{InputComponent, InputEvent, input_component::GlobalComponent};
 pub fn input_system(engine: &mut Engine) -> Result<()> {
 
     while engine.input_queue.is_empty() == false {
-        //let mut component = engine.take_global_component::<InputComponent>();
         
         let front_event = engine.input_queue.pop_front().unwrap();
+        let comp = engine.get_global_component_mut::<InputComponent>()?.unwrap().component.as_mut().unwrap();
         match front_event {
             InputEvent::KeyboardKey { key, state } => {
                 //if component.is_some() {}
                 //component.overwrite_prev_keys();
                 match state {
                     ElementState::Pressed => { 
-                        //component.press_key(key as usize); 
+                        comp.press_key(key as usize); 
                     }
                     ElementState::Released => { 
-                        //component.release_key(key as usize) 
+                        comp.release_key(key as usize) 
                     }
                 }
             }
