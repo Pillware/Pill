@@ -1,0 +1,31 @@
+use std::process::Command;
+use std::fs::File;
+use std::io::*;
+
+fn main() {
+	let game_name = "fifa22";
+    let file = File::open("../../pill_standalone/Cargo.toml").unwrap();
+    let mut lines = BufReader::new(file).lines().map(|x| x.unwrap()).collect::<Vec<String>>();
+
+    let mut new_file = File::create("../../pill_standalone/Cargo.toml").unwrap();
+    for line in lines {
+        if line.contains("pill-game") {
+            writeln!(new_file, "pill-game = {{path = \"../../pill_scripts/{}\"}} # This needs to be pointing to the correct game directory", game_name);
+        }
+        else {
+            writeln!(new_file, "{}", &line).unwrap();
+        }
+    }
+
+    Command::new("cmd")
+        .args(&["/C", "cargo", "run", "--manifest-path", "../../pill_standalone/Cargo.toml"])
+        .output()
+        .expect("Failed to execute cargo run");
+
+    let dir = "../../pill_standalone/target/debug/".to_owned() + game_name + ".exe";
+
+    Command::new("cmd")
+        .args(&["/C", "copy", "../../pill_standalone/target/debug/pill-standalone.exe", &dir])
+        .output()
+        .expect("Failed to execute cargo run");
+}

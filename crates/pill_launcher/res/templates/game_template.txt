@@ -1,0 +1,8 @@
+use pill_core::*;
+
+pub struct Game { } 
+
+impl pill_engine::Pill_Game for Game {
+    fn initialize(&self) {todo!(); }
+    fn update(&self) { todo!(); }
+}
