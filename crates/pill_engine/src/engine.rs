@@ -228,30 +228,20 @@ impl Engine {
     pub fn insert_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self, component: T) -> Result<()> {
         //.ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
         self.global_components.insert::<T>(GlobalComponent::<T>::new());
-        self.get_global_component_mut::<T>()?.unwrap().set_component(component)?;
+        self.global_components.get_mut::<T>().unwrap().set_component(component)?;
         Ok(())
     }
 
-    // pub fn take_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Option<T> {
-    //     //self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
-    //     if self.global_components.get_mut::<T>().is_none() {
-    //         return None
-    //     }
-    //     if self.global_components.get_mut::<T>().unwrap().component.is_none() {
-    //         return None
-    //     }
-    //     return self.global_components.get_mut::<T>().unwrap().component
-    //     //Ok(self.global_components.get_mut::<T>().unwrap().component.take())
-    // }
-
-    pub fn get_global_component<T: Component<Storage = GlobalComponent<T>>>(&self) -> Result<Option<&GlobalComponent<T>>> {
+    pub fn get_global_component<T: Component<Storage = GlobalComponent<T>>>(&self) -> Result<&T> {
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
-        Ok(self.global_components.get::<T>())
+        let returned_component = self.global_components.get::<T>().unwrap().component.as_ref().unwrap();
+        Ok(returned_component)
     }
 
-    pub fn get_global_component_mut<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Result<Option<&mut GlobalComponent<T>>> {
+    pub fn get_global_component_mut<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Result<&mut T> {
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
-        Ok(self.global_components.get_mut::<T>())
+        let returned_component = self.global_components.get_mut::<T>().unwrap().component.as_mut().unwrap();
+        Ok(returned_component)
     }
 
     pub fn remove_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Result<()> {
@@ -282,18 +272,35 @@ impl Engine {
 
     // Iterators
 
-    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&self, indexes: Vec<usize>) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
+    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
         // Get iterator
-        let iterator = self.scene_manager.fetch_one_component_storage::<A>(self.scene_manager.get_active_scene_handle()?, indexes)?;
+        let iterator = self.scene_manager.fetch_one_component_storage::<A>(self.scene_manager.get_active_scene_handle()?)?;
 
         Ok(iterator)
     }
+
+    pub fn fetch_one_component_storage_with_entity_indexes<A: Component<Storage = ComponentStorage<A>>>(&self) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>)>> {
+        // Get iterator
+        let iterator = self.scene_manager.fetch_one_component_storage_with_entity_indexes::<A>(self.scene_manager.get_active_scene_handle()?)?;
+
+        Ok(iterator)
+    }
+    
     
     pub fn fetch_two_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>>(&mut self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
 
         // Get iterator
         let iterator = self.scene_manager.fetch_two_component_storages::<A, B>(self.scene_manager.get_active_scene_handle()?)?;
+
+        Ok(iterator) 
+    }
+
+    pub fn fetch_two_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>>(&mut self) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>)>> {
+
+        // Get iterator
+        let iterator = self.scene_manager.fetch_two_component_storages_with_entity_indexes::<A, B>(self.scene_manager.get_active_scene_handle()?)?;
 
         Ok(iterator) 
     }
@@ -308,6 +315,16 @@ impl Engine {
         Ok(iterator)
     }
 
+    pub fn fetch_three_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>,
+                            C: Component<Storage = ComponentStorage<C>>>(&mut self) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+
+        //Get iterator
+        let iterator = self.scene_manager.fetch_three_component_storages_with_entity_indexes::<A, B, C>(self.scene_manager.get_active_scene_handle()?)?;
+
+        Ok(iterator)
+    }
+
     pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
                             C: Component<Storage = ComponentStorage<C>>,
@@ -315,6 +332,17 @@ impl Engine {
 
         //Get iterator
         let iterator = self.scene_manager.fetch_four_component_storages::<A, B, C, D>(self.scene_manager.get_active_scene_handle()?)?;
+
+        Ok(iterator) 
+    }
+
+    pub fn fetch_four_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>,
+                            C: Component<Storage = ComponentStorage<C>>,
+                            D: Component<Storage = ComponentStorage<D>>>(&mut self) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+
+        //Get iterator
+        let iterator = self.scene_manager.fetch_four_component_storages_with_entity_indexes::<A, B, C, D>(self.scene_manager.get_active_scene_handle()?)?;
 
         Ok(iterator) 
     }

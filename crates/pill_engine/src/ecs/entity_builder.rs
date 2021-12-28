@@ -1,4 +1,5 @@
 use super::{EntityHandle, SceneManager, SceneHandle, Component, ComponentStorage};
+use anyhow::{Result, Error};
 
 pub struct EntityBuilder<'a> {
     pub entity: EntityHandle,

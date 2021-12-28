@@ -110,8 +110,8 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
     v.push(1);
     v.push(2);
     //is A key in global component pressed, if yes the do
-    for transform in new_eng.fetch_one_component_storage::<TransformComponent>(v)? {
-        let comp = new_eng.get_global_component::<InputComponent>()?.unwrap().component.as_ref().unwrap();
+    for transform in new_eng.fetch_one_component_storage::<TransformComponent>()? {
+        let comp = new_eng.get_global_component::<InputComponent>()?;
         if comp.is_key_pressed(Key::S) == &true {
         transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
 
@@ -121,7 +121,7 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
         let mut z = Vec::<usize>::new();
         z.push(1);
         z.push(2);
-        for transform_z in new_eng.fetch_one_component_storage::<TransformComponent>(z)? {
+        for transform_z in new_eng.fetch_one_component_storage::<TransformComponent>()? {
             if comp.is_key_pressed(Key::Z) == &true {
                 transform_z.borrow_mut().as_mut().unwrap().rotation.y -= 20.0; }
         }

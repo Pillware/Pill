@@ -2,7 +2,6 @@ use std::{default, io::Error, ops::Index, cell::{RefCell, RefMut}, borrow::Borro
 
 use pill_core::na::Storage;
 use core::default::Default;
-
 use super::EntityHandle;
 
 pub struct StorageEntry<T> {
@@ -176,7 +175,7 @@ mod test {
     impl Component for Name { type Storage = ComponentStorage<Self> ;}
 
     #[test]
-    fn basic_multiple_components_iteration_test() {
+    fn basic_multiple_components_iteration_test() -> anyhow::Result<()> {
         // Basic scenario for iterating over entities
         // Two entities containing health, shield, and name components
         // We want to iterate over them to create system for dealing damage to them
@@ -190,9 +189,9 @@ mod test {
         let mut scene = scene_manager.create_scene("Default").unwrap();
 
         // Register components
-        scene_manager.register_component::<Health>(scene);
-        scene_manager.register_component::<Shield>(scene);
-        scene_manager.register_component::<Name>(scene);
+        scene_manager.register_component::<Health>(scene)?;
+        scene_manager.register_component::<Shield>(scene)?;
+        scene_manager.register_component::<Name>(scene)?;
 
         // Create entities
         let first_entity = scene_manager.create_entity(scene).unwrap();
@@ -200,26 +199,28 @@ mod test {
         let third_entity = scene_manager.create_entity(scene).unwrap();
 
         // Add components to first entity
-        scene_manager.add_component_to_entity(scene, first_entity, Health(15));
-        scene_manager.add_component_to_entity(scene, first_entity, Shield(10));
-        scene_manager.add_component_to_entity(scene, first_entity, Name(String::from("Frodo")));
+        scene_manager.add_component_to_entity(scene, first_entity, Health(15))?;
+        scene_manager.add_component_to_entity(scene, first_entity, Shield(10))?;
+        scene_manager.add_component_to_entity(scene, first_entity, Name(String::from("Frodo")))?;
 
         // Add components to second entity
-        scene_manager.add_component_to_entity(scene, second_entity, Health(5));
-        scene_manager.add_component_to_entity(scene, second_entity, Shield(5));
-        scene_manager.add_component_to_entity(scene, second_entity, Name(String::from("Sam")));
+        scene_manager.add_component_to_entity(scene, second_entity, Health(5))?;
+        scene_manager.add_component_to_entity(scene, second_entity, Shield(5))?;
+        scene_manager.add_component_to_entity(scene, second_entity, Name(String::from("Sam")))?;
         
         // Add components to third entity
-        scene_manager.add_component_to_entity(scene, third_entity, Health(50));
-        scene_manager.add_component_to_entity(scene, third_entity, Name(String::from("Gimli")));
+        scene_manager.add_component_to_entity(scene, third_entity, Health(50))?;
+        scene_manager.add_component_to_entity(scene, third_entity, Name(String::from("Gimli")))?;
 
         // Get components storages
 
         let target_scene = scene_manager.get_scene(scene).unwrap();
-        let first_storage = target_scene.get_component_storage::<Health>();
-        let second_storage = target_scene.get_component_storage::<Shield>();
-        let third_storage = target_scene.get_component_storage::<Name>();
+        let first_storage = target_scene.get_component_storage::<Health>()?;
+        let second_storage = target_scene.get_component_storage::<Shield>()?;
+        let third_storage = target_scene.get_component_storage::<Name>()?;
         
-        let mut first_iter = target_scene.get_two_component_storages::<Name, Health>().next();
+        let first_iter = target_scene.get_two_component_storages::<Name, Health>().next();
+
+        Ok(())
     }
 }

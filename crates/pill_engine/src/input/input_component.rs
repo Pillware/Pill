@@ -78,6 +78,11 @@ impl<T> GlobalComponent<T> {
         self.component = Some(comp);
         Ok(())
     }
+
+    pub fn get_component(&self) -> Result<Option<&T>> {
+        let comp = self.component.as_ref();
+        Ok(comp)
+    }
 }
 
 unsafe impl<T> Sync for GlobalComponent<T> {}

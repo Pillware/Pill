@@ -13,7 +13,11 @@ mod rendering_system;
 mod allocator;
 mod bitmask_controller;
 mod bitmask_map;
+mod entity_fetcher;
+
 pub(crate) mod entity_builder;
+
+pub use entity_fetcher::*;
 
 pub use entity_builder::{
     EntityBuilder

@@ -12,7 +12,7 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
     while engine.input_queue.is_empty() == false {
         
         let front_event = engine.input_queue.pop_front().unwrap();
-        let comp = engine.get_global_component_mut::<InputComponent>()?.unwrap().component.as_mut().unwrap();
+        let comp = engine.get_global_component_mut::<InputComponent>()?;
         match front_event {
             InputEvent::KeyboardKey { key, state } => {
                 //if component.is_some() {}
