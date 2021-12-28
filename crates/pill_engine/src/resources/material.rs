@@ -152,8 +152,9 @@ pub struct Material {
     #[readonly]
     parameters: MaterialParameterMap,
     #[readonly]
-    pub order: u32,
+    pub rendering_order: u8,
     pub renderer_resource_handle: Option<RendererMaterialHandle>,
+   
 }
 
 impl Material {
@@ -170,12 +171,13 @@ impl Material {
             name: name.to_string(),  
             textures,
             parameters,
-            order: 0,
+            rendering_order: RENDER_QUEUE_KEY_ORDER.max as u8,
             renderer_resource_handle: None, 
         }
     }
 
     pub fn set_texture(&mut self, engine: &mut Engine, slot_name: &str, texture_handle: TextureHandle) -> Result<()> {
+
         let texture = engine.resource_manager.get_resource::<Texture>(&texture_handle)?;
         let renderer_texture_handle = texture.renderer_resource_handle.unwrap();
 
@@ -209,9 +211,34 @@ impl Material {
         //[TODO] Revert material if failed to update in renderer ??
     }
 
-    pub fn set_order(&mut self, _engine: &mut Engine, order: u32) {
-        // if order >= 2^order_mask_range.end { } // [TODO] Implement failing in not in range
-        self.order = order;
+    pub fn set_order(&mut self, engine: &mut Engine, order: u8) -> Result<()> {
+        match order > RENDER_QUEUE_KEY_ORDER.max as u8 {
+            true => {
+                return Err(Error::new(EngineError::WrongRenderingOrder(order.to_string(), format!("{}-{}", 0, RENDER_QUEUE_KEY_ORDER.max.to_string()))));
+            },
+            false => {
+                self.rendering_order = order;
+
+                let self_handle = engine.get_resource_handle::<Material>(&self.name)?;
+
+                // Update render queue keys in all mesh rendering components that use this material
+                for scene in engine.scene_manager.scenes.iter_mut() { // [TODO] Getting user, duplicated code, create iterator for that
+                    let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
+                    for i in 0..mesh_rendering_component_storage.data.len() {
+                        if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
+                            if let Some(material_handle) = mesh_rendering_component.material_handle {
+                                if material_handle.data() == self_handle.data() {
+                                    mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(())
+            },
+        }
+      
 
         //engine.renderer.update_material(self.renderer_resource_index, self);
     }
@@ -316,7 +343,7 @@ impl Resource for Material {
         Ok(())
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {
 
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
@@ -329,10 +356,14 @@ impl Resource for Material {
             let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
             for i in 0..mesh_rendering_component_storage.data.len() {
                 if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
-                    mesh_rendering_component.material_handle = Some(default_material.0);
-                    mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                    if let Some(material_handle) = mesh_rendering_component.material_handle {
+                        if material_handle.data() == self_handle.data() {
+                            mesh_rendering_component.material_handle = Some(default_material.0);
+                            mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                            // [TODO] Instead of this use "mesh_rendering_component.set_material(engine, &default_material.0);". This requires component wrapped with option or refcell
+                        }
+                    }
                 }
-                // [TODO] Instead of this use "mesh_rendering_component.set_material(engine, &default_material.0);". This requires component wrapped with option or refcell
             }
         }
     }
@@ -341,6 +372,9 @@ impl Resource for Material {
         self.name.clone()
     }
 }
+
+
+
 
 impl typemap_rev::TypeMapKey for Material {
     type Value = Option<ResourceStorage<Material>>; 

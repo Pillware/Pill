@@ -45,7 +45,7 @@ pub enum EngineError {
     ResourceNotRegistered(String),
     #[error("{} {} {} already exists \n\nSource: ", "Resource".gobj_style(), .0.sobj_style(), .1.name_style())]
     ResourceAlreadyExists(String, String),
-    #[error("{} {} for that handle not found \n\nSource: ", "Resource".gobj_style(), .0.sobj_style())]
+    #[error("{} {} for that {} not found \n\nSource: ", "Resource".gobj_style(), .0.sobj_style(), "Handle".sobj_style())]
     InvalidResourceHandle(String),
     #[error("{} {} of type {} not found \n\nSource: ", "Resource".gobj_style(), .0.name_style(), .1.sobj_style(),)]
     InvalidResourceName(String, String),
@@ -58,9 +58,10 @@ pub enum EngineError {
 
 
     // Material textures and parameters
+    #[error("Cannot set {} to {}. Accepted range is {} \n\nSource: ", "RenderingOrder".sobj_style(), .0.name_style(), .1.name_style())]
+    WrongRenderingOrder(String, String),
     #[error("Cannot set {} of type {} to slot of type {} \n\nSource: ", "Texture".sobj_style(), .0.name_style(), .1.name_style())]
     WrongTextureType(String, String),
-
     #[error("{} {} of type {} does not exist \n\nSource: ", "MaterialParameter".sobj_style(), .0.name_style(), .1.sobj_style())]
     MaterialParameterNotFound(String, String),
     #[error("{} {} does not exist \n\nSource: ", "MaterialTexture".sobj_style(), .0.name_style())]

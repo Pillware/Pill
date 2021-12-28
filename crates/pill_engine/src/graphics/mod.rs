@@ -20,5 +20,6 @@ pub use render_queue::{
     compose_render_queue_key,
     decompose_render_queue_key,
     RenderQueueKeyFields,
-    RenderQueueKey
+    RenderQueueKey,
+    RENDER_QUEUE_KEY_ORDER,
 };

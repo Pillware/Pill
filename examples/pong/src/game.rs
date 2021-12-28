@@ -1,4 +1,4 @@
-#[allow(unused_imports, dead_code, unused_variables)]
+#![allow(unused_imports, dead_code, unused_variables)]
 use pill_engine::game::*;
 
 pub struct Game { }   
@@ -120,7 +120,7 @@ impl PillGame for Game {
        
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_1, mesh_rendering_1).unwrap();
 
-
+        
 
 
 
@@ -152,9 +152,14 @@ impl PillGame for Game {
        
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_2, mesh_rendering_2).unwrap();
 
+        
+        let x = engine.get_resource::<Material>(&material_1_handle).unwrap();
+        //x.set_texture(engine, "Color", texture_2_handle);
 
+       
 
-
+        //engine.remove_resource::<Material>(&material_1_handle).unwrap();
+        //engine.remove_resource_by_name::<Material>("TestMaterial").unwrap();
 
         //engine.remove_resource_by_name::<Material>("TestMaterial").unwrap();
 

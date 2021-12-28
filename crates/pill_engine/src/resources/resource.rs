@@ -1,3 +1,5 @@
+#![allow(unused_imports, dead_code, unused_variables)]
+
 use crate::internal::Engine;
 use pill_core::PillSlotMapKey;
 
@@ -10,8 +12,8 @@ use typemap_rev::TypeMapKey;
 pub trait Resource : TypeMapKey {
     type Handle: PillSlotMapKey;
     
-    fn initialize(&mut self, _engine: &mut Engine) -> Result<()> { Ok(()) }
-    fn destroy<H: PillSlotMapKey>(&mut self, _engine: &mut Engine, _self_handlee: H) {}
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> { Ok(()) }
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {}
     fn get_name(&self) -> String;
 }
 

@@ -16,7 +16,7 @@ use std::{
     cmp::Ordering,
     fmt::{Binary, Display},
     ops::{Add, Not, Shl, Sub, Range}, 
-    convert::TryFrom,
+    convert::{TryFrom, TryInto},
     path::{Path, PathBuf}
 };
 use core::fmt::{Debug, self};
@@ -66,29 +66,30 @@ impl Debug for RenderQueueItem {
 
 // --- Render queue field 
 pub struct RenderQueueField<T>  {
-    mask_range: core::ops::Range<T>,
-    mask_shift: T,
-    mask: T,
-    max: T, 
+    pub mask_range: core::ops::Range<T>,
+    pub mask_shift: T,
+    pub mask: T,
+    pub max: T, 
 }
 
 
 
 pub trait Pow {
-    fn pow(self, exp: u32) -> Self;
+    fn pow(self, exp: Self) -> Self;
 }
 
 impl<T> RenderQueueField<T> 
 where
-    T: Copy + Default + Pow + Binary + From<u8> + From<u32> + Ord + Shl<Output = T> + Sub<Output = T> + Add<Output = T> + Not<Output = T>,
+    T: Copy + Default + Pow + Binary + Debug + From<u8> + From<u32> + Ord + Shl<Output = T> + Sub<Output = T> + Add<Output = T> + Not<Output = T>,
 {
     pub fn new(mask_range: core::ops::Range<T>) -> Self { // Compile-time evaluable function
         let one: T = T::from(1 as u8);
         let two: T = T::from(2 as u8);
+        let mask_range_length = mask_range.end - mask_range.start + one; //if mask_range.start == zero { mask_range.end + one } else { mask_range.end - mask_range.start };
         let mask_size: T = T::from(std::mem::size_of::<T>() as u8 * 8);
         let mask_shift: T = mask_size - mask_range.end - one;
         let mask: T = pill_core::create_bitmask_from_range::<T>(&mask_range);
-        let max: T = two.pow(u32::try_from(3).unwrap()) - one;
+        let max: T = two.pow(mask_range_length) - one;
 
         RenderQueueField {
             mask_range,
@@ -103,9 +104,9 @@ where
 pub fn compose_render_queue_key(resource_manager: &ResourceManager, material_handle: &MaterialHandle, mesh_handle: &MeshHandle) -> Result<RenderQueueKey> { 
     let material = resource_manager.get_resource::<Material>(material_handle)?;
     let mesh = resource_manager.get_resource::<Mesh>(mesh_handle)?;
-   
+
     let render_queue_key: RenderQueueKey = 
-        ((RENDER_QUEUE_KEY_ORDER.max - material.order as RenderQueueKey) << RENDER_QUEUE_KEY_ORDER.mask_shift) | // Order has to be inverted for proper sorting
+        ((RENDER_QUEUE_KEY_ORDER.max - material.rendering_order as RenderQueueKey) << RENDER_QUEUE_KEY_ORDER.mask_shift) | // Order has to be inverted for proper sorting
         ((material.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift) | 
         ((material.renderer_resource_handle.unwrap().data().version.get() as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift) | 
         ((mesh.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_INDEX.mask_shift ) | 
@@ -147,7 +148,9 @@ pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> Result<Re
 pub type RenderQueueKey = crate::config::RenderQueueKeyType;
 
 impl Pow for RenderQueueKey {
-    fn pow(self, exp: u32) -> Self { RenderQueueKey::pow(self, exp) }
+    fn pow(self, exp: Self) -> Self {
+        RenderQueueKey::pow(self, exp.try_into().unwrap()) 
+    }
 }
 
 fn get_render_queue_key_item_range(render_queue_item_index: u8) -> Range<RenderQueueKey> {
@@ -155,18 +158,18 @@ fn get_render_queue_key_item_range(render_queue_item_index: u8) -> Range<RenderQ
     let mut end: RenderQueueKey = 0;
     for i in 0..render_queue_item_index + 1
     {
-        start += i.ne(&0).then(|| RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize] - 1).unwrap_or(0);   
+        start += i.ne(&0).then(|| RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize - 1]).unwrap_or(0);   
         end += RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize];
     }
     start..(end - 1)
 }
 
 lazy_static! { // This will be initialized in runtime instead of compile-time (this is the cost of not using const function, const functions do not allow for generic variables bound by traits different than Sized)
-    pub static ref RENDER_QUEUE_KEY_ORDER: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_ORDER_IDX));
-    pub static ref RENDER_QUEUE_KEY_MATERIAL_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MATERIAL_INDEX_IDX));
-    pub static ref RENDER_QUEUE_KEY_MATERIAL_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MATERIAL_VERSION_IDX));
-    pub static ref RENDER_QUEUE_KEY_MESH_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MESH_INDEX_IDX));
-    pub static ref RENDER_QUEUE_KEY_MESH_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<u64>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MESH_VERSION_IDX));
+    pub static ref RENDER_QUEUE_KEY_ORDER: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_ORDER_IDX));
+    pub static ref RENDER_QUEUE_KEY_MATERIAL_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MATERIAL_INDEX_IDX));
+    pub static ref RENDER_QUEUE_KEY_MATERIAL_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MATERIAL_VERSION_IDX));
+    pub static ref RENDER_QUEUE_KEY_MESH_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MESH_INDEX_IDX));
+    pub static ref RENDER_QUEUE_KEY_MESH_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MESH_VERSION_IDX));
 }
 
 #[test]

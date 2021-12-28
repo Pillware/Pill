@@ -67,7 +67,7 @@ impl RendererMaterial {
             contents: bytemuck::cast_slice(&[uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        uniform.tint = parameters.get_color("Tint").unwrap().into();
+        uniform.tint = parameters.get_color(MASTER_SHADER_TINT_PARAMETER_SLOT).unwrap().into();
         queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&[uniform]));
 
         // Create texture binding group

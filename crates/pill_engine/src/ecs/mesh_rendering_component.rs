@@ -9,7 +9,7 @@ use anyhow::{Result, Context, Error};
 pub struct MeshRenderingComponent {
     pub mesh_handle: Option<MeshHandle>,
     pub material_handle: Option<MaterialHandle>,
-    pub(crate) render_queue_key: Option<RenderQueueKey>,
+    pub(crate) render_queue_key: Option<RenderQueueKey>, 
 }
 
 impl Component for MeshRenderingComponent {

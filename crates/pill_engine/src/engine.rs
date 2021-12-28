@@ -279,6 +279,12 @@ impl Engine {
         Ok(self.resource_manager.get_resource_by_name::<T>(name)?)
     }
 
+    pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle> 
+        where T: Resource<Value = Option<ResourceStorage::<T>>>
+    {
+        Ok(self.resource_manager.get_resource_handle::<T>(name)?)
+    }
+
     pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T> 
         where T: Resource<Value = Option<ResourceStorage::<T>>>
     {
@@ -294,28 +300,34 @@ impl Engine {
     pub fn remove_resource<T>(&mut self, resource_handle: &T::Handle) -> Result<()> 
         where T: Resource<Value = Option<ResourceStorage::<T>>>
     {
+        let error_message = format!("Removing {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style());
+      
         // Check if resource is not default
-        let resource_name = self.resource_manager.get_resource::<T>(resource_handle)?.get_name();
-        resource_name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::RemoveDefaultResource(resource_name.clone())))?;
+        let resource_name = self.resource_manager.get_resource::<T>(resource_handle).context(error_message.to_string())?.get_name();
+        resource_name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::RemoveDefaultResource(resource_name.clone()))).context(error_message.to_string())?;
 
         // Remove resource
-        let mut remove_result = self.resource_manager.remove_resource::<T>(resource_handle)?;
+        let mut remove_result = self.resource_manager.remove_resource::<T>(resource_handle).context(error_message.to_string())?;
         remove_result.1.destroy(self, *resource_handle);
+
         Ok(())
     }
 
     pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<()> 
         where T: Resource<Value = Option<ResourceStorage::<T>>>
     {
+        let error_message = format!("Removing {} {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), name.to_string().name_style());
+
         // Check if resource exists
-        self.resource_manager.get_resource_by_name::<T>(name)?;
+        self.resource_manager.get_resource_by_name::<T>(name).context(error_message.to_string())?;
 
         // Check if resource is not default
-        name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::RemoveDefaultResource(name.to_string())))?;
+        name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::RemoveDefaultResource(name.to_string()))).context(error_message.to_string())?;
 
         // Remove resource
-        let mut remove_result = self.resource_manager.remove_resource_by_name::<T>(name)?;
+        let mut remove_result = self.resource_manager.remove_resource_by_name::<T>(name).context(error_message.to_string())?;
         remove_result.1.destroy(self, remove_result.0);
+
         Ok(())
     }
 }

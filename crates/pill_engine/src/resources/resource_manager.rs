@@ -133,7 +133,7 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage_mut::<T>()?.as_mut().unwrap();
 
         // Check if exists
-        resource_storage.mapping.contains_value(resource_handle).eq(&false).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+        resource_storage.mapping.contains_value(resource_handle).eq(&true).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
 
         // Remove resource
         let resource = resource_storage.data.remove(*resource_handle).unwrap();

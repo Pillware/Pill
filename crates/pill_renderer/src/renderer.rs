@@ -25,9 +25,13 @@ use pill_engine::internal::{
     RendererMaterialHandle,
     RendererMeshHandle,
     RendererPipelineHandle,
-    ResourceManager, RendererTextureHandle,
+    ResourceManager, 
+    RendererTextureHandle, RENDER_QUEUE_KEY_ITEMS_LENGTH, RENDER_QUEUE_KEY_ORDER_IDX, RENDER_QUEUE_KEY_ORDER,
+
+    
 };
 
+use std::convert::TryInto;
 use std::mem::size_of;
 use std::num::{NonZeroU32, NonZeroU8};
 use std::ops::Range;
@@ -542,9 +546,9 @@ impl MeshDrawer {
             render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());    
             self.instance_range = self.instance_range.end..self.instance_range.end; 
         }
-        
+
         // Reset state of mesh drawer
-        self.current_order = 31;
+        self.current_order = RENDER_QUEUE_KEY_ORDER.max as u8;
         self.current_pipeline_handle = None;
         self.current_material_handle = None;
         self.current_mesh_handle = None;

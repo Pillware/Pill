@@ -55,5 +55,7 @@ impl CameraComponent {
     pub fn get_renderer_resource_handle(&self) -> RendererCameraHandle {
         self.renderer_resource_handle
     }
+
+
 }
 

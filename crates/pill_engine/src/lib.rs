@@ -63,6 +63,7 @@ pub mod internal {
             RendererMeshHandle,
             RendererPipelineHandle,
             RendererTextureHandle,
+            RENDER_QUEUE_KEY_ORDER
         },
         ecs::{
             Scene,

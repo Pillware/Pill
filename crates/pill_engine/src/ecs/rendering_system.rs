@@ -55,6 +55,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     //println!("Mesh rendering components to process: {}", mesh_rendering_component_storage.data.len());
     for i in 0..mesh_rendering_component_storage.data.len() { //[TODO] Proper iteration
        
+        
         //debug!("Processing entity {}", i);
         //let mesh_rendering_component = mesh_rendering_component_storage.data[i].as_ref().unwrap();
 
