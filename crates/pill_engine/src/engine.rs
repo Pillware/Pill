@@ -3,7 +3,6 @@ use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
 use winit::{ event::*, dpi::PhysicalPosition,};
-
 use crate::{input::input_component::GlobalComponent};
 
 use pill_core::{EngineError, get_type_name, PillSlotMapKey, PillStyle};

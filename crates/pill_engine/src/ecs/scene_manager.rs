@@ -41,6 +41,7 @@ impl SceneManager {
     }
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
+
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
         
@@ -107,11 +108,12 @@ impl SceneManager {
         }
     }
 
+
     // - Allocator
 
     pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
         // Get scene
-        let target_scene = self.get_scene_mut(scene)?;
+        let target_scene = self.get_scene_mut(scene_handle)?;
 
         // Get allocator from scene
         let index_allocator = target_scene.get_allocator_mut();
