@@ -15,11 +15,11 @@ impl Component for TransformComponent {
 
 impl TransformComponent {
     pub fn new(position: Vector3f, rotation: Vector3f, scale: Vector3f) -> Self {  
-        return Self { 
+        Self { 
             position,
             rotation,
             scale,
-        };
+        }
     }
 }
 

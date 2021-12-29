@@ -9,6 +9,7 @@ use pill_core::EngineError;
 use pill_core::PillSlotMapKey;
 
 use anyhow::{Result, Context, Error};
+use typemap_rev::TypeMapKey;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
@@ -35,12 +36,14 @@ impl MaterialParameter {
 
 pub struct MaterialParameterMap {
     pub(crate) data: HashMap<String, MaterialParameter>,
+    pub(crate) mapping: Vec<String>, // Maps index to slot name
 }
 
 impl MaterialParameterMap {
     pub fn new() -> Self {
         Self {
             data: HashMap::<String, MaterialParameter>::new(),
+            mapping: Vec::<String>::new(),
         }
     }
 
@@ -122,13 +125,15 @@ impl MaterialTexture {
 }
 
 pub struct MaterialTextureMap {
-    pub(crate) data: HashMap<String, MaterialTexture>,
+    pub data: HashMap<String, MaterialTexture>,
+    pub(crate) mapping: Vec<String>, // Maps index to slot name
 }
 
 impl MaterialTextureMap {
     pub fn new() -> Self {
         Self {
             data: HashMap::<String, MaterialTexture>::new(),
+            mapping: Vec::<String>::new(),
         }
     }
 
@@ -155,6 +160,7 @@ pub struct Material {
     pub rendering_order: u8,
     pub renderer_resource_handle: Option<RendererMaterialHandle>,
    
+    deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
 
 impl Material {
@@ -162,10 +168,13 @@ impl Material {
     pub fn new(name: &str) -> Self {  // [TODO] What if renderer fails to create material?        
         let mut textures = MaterialTextureMap::new();
         textures.data.insert(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string(), MaterialTexture::Color(None));
+        textures.mapping.insert(0, MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string());
         textures.data.insert(MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string(), MaterialTexture::Normal(None));
+        textures.mapping.insert(1, MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string());
 
         let mut parameters = MaterialParameterMap::new();
         parameters.data.insert(MASTER_SHADER_TINT_PARAMETER_SLOT.to_string(), MaterialParameter::Color(None));
+        textures.mapping.insert(0, MASTER_SHADER_TINT_PARAMETER_SLOT.to_string());
         
         Self {
             name: name.to_string(),  
@@ -173,6 +182,7 @@ impl Material {
             parameters,
             rendering_order: RENDER_QUEUE_KEY_ORDER.max as u8,
             renderer_resource_handle: None, 
+            deferred_update_manager: None,
         }
     }
 
@@ -240,6 +250,8 @@ impl Material {
         }
       
 
+      
+
         //engine.renderer.update_material(self.renderer_resource_index, self);
     }
 
@@ -271,10 +283,17 @@ impl Material {
 
     fn set_parameter(&mut self, engine: &mut Engine, parameter_name: &str, value: MaterialParameter) -> Result<()> {
         self.parameters.set_parameter(parameter_name, value)?;
+
+        //self.deferred_update_manager.post_request();
+
         if self.renderer_resource_handle.is_some() {
             engine.renderer.update_material_parameters(self.renderer_resource_handle.unwrap(), &self.parameters)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn get_textures(&mut self) -> &mut MaterialTextureMap {
+        &mut self.textures
     }
 }
 
@@ -282,6 +301,10 @@ impl Resource for Material {
     type Handle = MaterialHandle;
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
+
+        // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
+        // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
+        self.deferred_update_manager = Some(engine.TEMP_deferred_component.borrow_deferred_update_manager());
 
         // Set default textures if non texture is set
         // Add only if nothing else is already there 
@@ -301,7 +324,7 @@ impl Resource for Material {
                     if pill_core::enum_variant_eq::<MaterialTexture>(&texture_value.1, v) {
                         let texture_data= v.get_texture_data_mut();
                         if texture_data.is_none() {
-                            let default_texture_data = engine.resource_manager.get_default_texture(texture_value.1.get_type()).unwrap();
+                            let default_texture_data = engine.resource_manager.get_default_texture(texture_value.1.get_type()).expect("Critical: No default Resource");
                             *texture_data = Some(default_texture_data);  
                         }
                     }
@@ -343,6 +366,12 @@ impl Resource for Material {
         Ok(())
     }
 
+    // fn deferred_update(&mut self, request: DeferredUpdateRequest) {
+    //     match request {
+    //         DeferredUpdateRequest::MaterialOrder => todo!(),
+    //     }
+    // }
+
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {
 
         // Destroy renderer resource
@@ -373,9 +402,13 @@ impl Resource for Material {
     }
 }
 
+// pub enum MaterialDeferredUpdateRequests {
+//     OrderUpdated,
+
+// }
 
 
 
-impl typemap_rev::TypeMapKey for Material {
-    type Value = Option<ResourceStorage<Material>>; 
+impl TypeMapKey for Material {
+    type Value = ResourceStorage<Material>; 
 }

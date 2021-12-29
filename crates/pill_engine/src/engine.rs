@@ -28,13 +28,15 @@ pub struct Engine {
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
+
+    pub(crate) TEMP_deferred_component: DeferredUpdateGlobalComponent, // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
 
 impl Engine {
 
-     fn create_default_resources(&mut self) -> Result<()> {
+    fn create_default_resources(&mut self) -> Result<()> {
         self.register_resource_type::<Texture>().unwrap();
         self.register_resource_type::<Mesh>().unwrap();
         self.register_resource_type::<Material>().unwrap();
@@ -58,7 +60,7 @@ impl Engine {
         let mut default_normal_texture = Texture::new(DEFAULT_NORMAL_TEXTURE_NAME, TextureType::Normal, ResourceLoadType::Bytes(default_normal_texture_bytes));
         default_normal_texture.initialize(self)?;
         self.resource_manager.add_resource(default_normal_texture).unwrap();
-       
+        
         // Create default material
         let mut default_material = Material::new(DEFAULT_MATERIAL_NAME);
         default_material.initialize(self)?;
@@ -86,6 +88,7 @@ impl Engine {
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(1000),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
+            TEMP_deferred_component: DeferredUpdateGlobalComponent::new(), // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
         };
 
         engine.create_default_resources().unwrap();
@@ -241,12 +244,14 @@ impl Engine {
 
     // --- Resource API ---
 
-    pub fn register_resource_type<T: Resource<Value = Option<ResourceStorage::<T>>>>(&mut self) -> Result<()> {
+    pub fn register_resource_type<T>(&mut self) -> Result<()> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
         self.resource_manager.register_resource_type::<T>()
     }
 
     pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
-        where T: Resource<Value = Option<ResourceStorage::<T>>>
+        where T: Resource<Value = ResourceStorage::<T>>
     {
         debug!("Adding {} {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style());
 
@@ -268,37 +273,37 @@ impl Engine {
     }
 
     pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T> 
-        where T: Resource<Value = Option<ResourceStorage::<T>>>
+        where T: Resource<Value = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource::<T>(resource_handle)?)
     }
 
     pub fn get_resource_by_name<T>(&self, name: &str) -> Result<&T> 
-        where T: Resource<Value = Option<ResourceStorage::<T>>>
+        where T: Resource<Value = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_by_name::<T>(name)?)
     }
 
     pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle> 
-        where T: Resource<Value = Option<ResourceStorage::<T>>>
+        where T: Resource<Value = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_handle::<T>(name)?)
     }
 
     pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T> 
-        where T: Resource<Value = Option<ResourceStorage::<T>>>
+        where T: Resource<Value = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_mut::<T>(resource_handle)?)
     }
 
     pub fn get_resource_by_name_mut<T>(&mut self, name: &str) -> Result<&mut T> 
-        where T: Resource<Value = Option<ResourceStorage::<T>>>
+        where T: Resource<Value = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_by_name_mut::<T>(name)?)
     }
 
     pub fn remove_resource<T>(&mut self, resource_handle: &T::Handle) -> Result<()> 
-        where T: Resource<Value = Option<ResourceStorage::<T>>>
+        where T: Resource<Value = ResourceStorage::<T>>
     {
         let error_message = format!("Removing {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style());
       
@@ -314,7 +319,7 @@ impl Engine {
     }
 
     pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<()> 
-        where T: Resource<Value = Option<ResourceStorage::<T>>>
+        where T: Resource<Value = ResourceStorage::<T>>
     {
         let error_message = format!("Removing {} {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), name.to_string().name_style());
 

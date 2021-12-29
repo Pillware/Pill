@@ -87,12 +87,8 @@ impl Resource for Mesh {
 }
 
 impl typemap_rev::TypeMapKey for Mesh {
-    type Value = Option<ResourceStorage<Mesh>>; 
+    type Value = ResourceStorage<Mesh>; 
 }
-
-// impl typemap_rev::TypeMapKey for Mesh {
-//     type Value = Option<ResourceStorage<MeshHandle, Mesh>>; 
-// }
 
 #[repr(C)]
 // bytemuck::Pod indicates that Vertex is "Plain Old Data", and thus can be interpretted as a &[u8]

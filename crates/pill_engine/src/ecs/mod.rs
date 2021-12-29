@@ -11,6 +11,8 @@ mod system_manager;
 mod camera_component;
 mod rendering_system;
 mod component;
+mod deferred_update_component;
+mod deferred_update_system;
 
 pub use rendering_system::{
     rendering_system,
@@ -56,3 +58,13 @@ pub use system_manager::{
     SystemManager,
     UpdatePhase,
 };
+
+pub use deferred_update_component::{
+    DeferredUpdateGlobalComponent,
+    DeferredUpdateManager,
+    DeferredUpdateManagerPointer,
+};
+
+// pub use deferred_update_system::{
+    
+// };

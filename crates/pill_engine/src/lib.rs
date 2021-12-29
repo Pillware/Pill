@@ -73,6 +73,7 @@ pub mod internal {
             CameraComponent,
             EntityHandle,
             CameraAspectRatio,
+            //DeferredUpdateRequest,
         },
         resources::{
             Texture, 

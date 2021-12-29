@@ -1,4 +1,3 @@
-use std::borrow::BorrowMut;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
@@ -73,34 +72,29 @@ impl Resource for Texture { // [TODO] What if renderer fails to create texture?
             engine.renderer.destroy_texture(v).unwrap();
         }
 
+        // Get default texture of same type
+        let default_texture = engine.resource_manager.get_default_texture(self.texture_type).expect("Critical: No default Resource").clone();
+
         // Take resource storage from engine
-        let mut resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>().unwrap().take();
-        let materials = &mut resource_storage.as_mut().unwrap().data;
+        let resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>().expect("Critical: Resource not registered");
+        let materials = &mut resource_storage.data;
 
         // Find materials that use this texture and update them
         for material_entry in materials.iter_mut() {
             
+            let material = material_entry.1.as_mut().expect("Critical: Resource is None");
             // Find texture to update
-            let mut texture_to_change_data: Option<(String, TextureType)> = Option::None;
-            for material_texture in material_entry.1.textures.data.iter() {
-                if let Some(texture_data) = material_texture.1.get_texture_data() {
-                    if texture_data.0.data() == self_handle.data() {
-                        texture_to_change_data = Some((material_texture.0.to_string(), material_texture.1.get_type()));
+            for texture_slot in material.get_textures().data.iter_mut() {
+                if let Some(texture_slot_data) = texture_slot.1.get_texture_data_mut() {
+                    if texture_slot_data.0.data() == self_handle.data() {
+                        texture_slot_data.0 = default_texture.0.clone();
+                        texture_slot_data.1 = default_texture.1.clone();
+                        engine.renderer.update_material_textures(material.renderer_resource_handle.unwrap(), &material.textures).unwrap();
                         break;
                     }
                 }
             }
-
-            // Update found texture if any
-            if let Some(data) = texture_to_change_data {
-                let material = material_entry.1;
-                let default_texture = engine.resource_manager.get_default_texture(data.1).unwrap();
-                material.set_texture(engine, &data.0, default_texture.0).unwrap();
-            }
         }
-    
-        // Take resource storage to engine
-        *engine.resource_manager.get_resource_storage_mut::<Material>().unwrap() = resource_storage;
     }
 
     fn get_name(&self) -> String {
@@ -109,5 +103,5 @@ impl Resource for Texture { // [TODO] What if renderer fails to create texture?
 }
 
 impl TypeMapKey for Texture {
-    type Value = Option<ResourceStorage<Texture>>; 
+    type Value = ResourceStorage<Texture>; 
 }
