@@ -13,6 +13,8 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
         
         let front_event = engine.input_queue.pop_front().unwrap();
         let comp = engine.get_global_component_mut::<InputComponent>()?;
+        comp.overwrite_prev_keys();
+        
         match front_event {
             InputEvent::KeyboardKey { key, state } => {
                 //if component.is_some() {}
