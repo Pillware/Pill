@@ -7,12 +7,19 @@ pub use renderer::{
     Renderer,
     RendererError,
     PillRenderer,
+    RendererCameraHandle,
+    RendererMaterialHandle,
+    RendererMeshHandle,
+    RendererTextureHandle,
+    RendererPipelineHandle,
+    
 };
 
 pub use render_queue::{
-    RenderQueueKey,
     RenderQueueItem,
     compose_render_queue_key,
     decompose_render_queue_key,
     RenderQueueKeyFields,
+    RenderQueueKey,
+    RENDER_QUEUE_KEY_ORDER,
 };

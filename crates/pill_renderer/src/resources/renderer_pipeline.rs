@@ -1,58 +1,31 @@
-use std::path::Path;
-use std::path::PathBuf;
-
-use anyhow::{ Result, Context, Error };
-use pill_core::na::SliceRange;
 use pill_engine::internal::RendererPipelineHandle;
 
-use wgpu::Device;
-use wgpu::RenderPipeline;
+use std::path::Path;
+use std::path::PathBuf;
+use anyhow::{ Result, Context, Error };
 
-// pub struct RendererPipelineHandle {
-//     pub index: u32,
-// }
-
-// impl ResourceHandle for RendererPipelineHandle
-// {
-//     fn get_index(&self) -> u32 {
-//         self.index
-//     }
-// }
-
+// --- Pipeline ---
 
 pub struct RendererPipeline {
-    pub render_pipeline: RenderPipeline,
-    pub texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub material_texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub material_parameter_bind_group_layout: wgpu::BindGroupLayout,
     pub camera_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl RendererPipeline {
     pub fn new(
-        device: &Device,
+        device: &wgpu::Device,
+        vertex_shader: wgpu::ShaderModule,
+        fragment_shader: wgpu::ShaderModule,
         color_format: wgpu::TextureFormat,
         depth_format: Option<wgpu::TextureFormat>,
         vertex_layouts: &[wgpu::VertexBufferLayout],
     ) -> Result<Self> {
-        
-        // Define shaders
-        let vertex_shader = wgpu::ShaderModuleDescriptor {
-            label: Some("shader.vert"),
-            source: wgpu::util::make_spirv(include_bytes!("../res/shaders/built/master.vert.spv")),
-        };
 
-        let vertex_shader = device.create_shader_module(&vertex_shader);
-
-
-        let fragment_shader = wgpu::ShaderModuleDescriptor {
-            label: Some("shader.frag"),
-            source: wgpu::util::make_spirv(include_bytes!("../res/shaders/built/master.frag.spv")),
-        };
-
-        let fragment_shader = device.create_shader_module(&fragment_shader);
-
-        // Define texture bind group layout (Describes a set of resources and how they can be accessed by a shader)
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { 
-            label: Some("texture_bind_group_layout"),
+        // Define material bind group layout (Describes a set of resources and how they can be accessed by a shader)
+        let material_texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { 
+            label: Some("material_texture_bind_group_layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry { // Entry for the sampled texture at binding 0
                     binding: 0,
@@ -91,6 +64,22 @@ impl RendererPipeline {
                         filtering: true, 
                     },
                     count: None,
+                }, 
+            ],
+        });
+
+        let material_parameter_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { 
+            label: Some("material_parameter_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
             ],
         });
@@ -114,7 +103,8 @@ impl RendererPipeline {
         let pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor {
             label: Some("render_pipeline_layout"),
             bind_group_layouts: &[
-                &texture_bind_group_layout,
+                &material_texture_bind_group_layout,
+                &material_parameter_bind_group_layout,
                 &camera_bind_group_layout,
             ],
             push_constant_ranges: &[],
@@ -173,7 +163,8 @@ impl RendererPipeline {
 
         let pipeline = Self { 
             render_pipeline,
-            texture_bind_group_layout,
+            material_texture_bind_group_layout,
+            material_parameter_bind_group_layout,
             camera_bind_group_layout,
         };
 

@@ -2,41 +2,84 @@ use std::{any::type_name, collections::VecDeque, cell::RefCell};
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
-use typemap_rev::{TypeMap, TypeMapKey};
 use winit::{ event::*, dpi::PhysicalPosition,};
-use crate::{ecs::entity_builder::EntityBuilder, input::input_component::GlobalComponent};
+
+use crate::{input::input_component::GlobalComponent};
 
 use pill_core::{EngineError, get_type_name, PillSlotMapKey, PillStyle};
 use crate::{ 
     resources::*,
     ecs::*,
     graphics::*,
-    input::*,
+    input::*, 
+    config::*,
 };
 
 // ---------------------------------------------------------------------
 
 pub type Game = Box<dyn PillGame>;
 pub type Key = VirtualKeyCode;
+
 pub trait PillGame { 
     fn start(&self, engine: &mut Engine);
 }
 pub struct Engine { 
-    game: Option<Game>,
+    pub(crate) game: Option<Game>,
     pub(crate) renderer: Renderer,
     pub(crate) scene_manager: SceneManager, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
-    system_manager: SystemManager,
+    pub(crate) system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
+    pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
     pub(crate) global_components: ComponentMap,
+
+    pub(crate) TEMP_deferred_component: DeferredUpdateGlobalComponent, // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
 
 impl Engine {
 
-    #[cfg(feature = "internal")]
+    fn create_default_resources(&mut self) -> Result<()> {
+        self.register_resource_type::<Texture>().unwrap();
+        self.register_resource_type::<Mesh>().unwrap();
+        self.register_resource_type::<Material>().unwrap();
+
+        // Create default resources
+
+        // Load master shader data to executable
+        let master_vertex_shader_bytes = include_bytes!("../res/shaders/built/master.vert.spv");
+        let master_fragment_shader_bytes = include_bytes!("../res/shaders/built/master.frag.spv");
+        self.renderer.set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes).unwrap();
+
+        // Load default resource data to executable
+        let default_color_texture_bytes = Box::new(*include_bytes!("../res/textures/default_color.png"));
+        let default_normal_texture_bytes = Box::new(*include_bytes!("../res/textures/default_normal.png"));
+
+        // Create default textures
+        let mut default_color_texture = Texture::new(DEFAULT_COLOR_TEXTURE_NAME, TextureType::Color, ResourceLoadType::Bytes(default_color_texture_bytes));
+        default_color_texture.initialize(self)?;
+        self.resource_manager.add_resource(default_color_texture).unwrap();
+
+        let mut default_normal_texture = Texture::new(DEFAULT_NORMAL_TEXTURE_NAME, TextureType::Normal, ResourceLoadType::Bytes(default_normal_texture_bytes));
+        default_normal_texture.initialize(self)?;
+        self.resource_manager.add_resource(default_normal_texture).unwrap();
+        
+        // Create default material
+        let mut default_material = Material::new(DEFAULT_MATERIAL_NAME);
+        default_material.initialize(self)?;
+        self.resource_manager.add_resource(default_material).unwrap();
+        
+
+        Ok(())
+    }
+}
+
+// ---- INTERNAL API -----------------------------------------------------------------
+
+impl Engine {
+
     pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>) -> Self {
         let scene_manager = SceneManager::new();
         let resource_manager = ResourceManager::new();
@@ -50,20 +93,25 @@ impl Engine {
             resource_manager,
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(1000),
+            window_size: winit::dpi::PhysicalSize::<u32>::default(),
             global_components: ComponentMap::new(),
+            TEMP_deferred_component: DeferredUpdateGlobalComponent::new(), // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
         };
 
-        engine.create_default_resources();
+        engine.create_default_resources().unwrap();
 
         engine
     }
 
-    #[cfg(feature = "internal")]
-    pub fn initialize(&mut self) {
-        info!("Pill Engine initializing");
+    pub fn initialize(&mut self, window_size: winit::dpi::PhysicalSize<u32>) {
+        info!("Initializing {}", "Engine".mobj_style());
 
-        self.renderer.initialize(); // [TODO] Needed? Initialization should happen in constructor?
-        self.insert_global_component(InputComponent::default());
+        // Set window size
+        self.window_size = window_size;
+
+        // Register global components
+        self.insert_global_component(InputComponent::default()).unwrap();
+
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
@@ -74,10 +122,8 @@ impl Engine {
         self.game = Some(game);
     }
 
-    #[cfg(feature = "internal")]
     pub fn update(&mut self, dt: std::time::Duration) {
         use pill_core::{PillStyle, get_value_type_name};
-
 
         // Run systems
         let update_phase_count = self.system_manager.update_phases.len();
@@ -85,11 +131,11 @@ impl Engine {
             let systems_count = self.system_manager.update_phases[i].len();
             for j in (0..systems_count).rev() {
                 let system = &self.system_manager.update_phases[i][j];
+                if !system.enabled { continue; }
                 let system_name = system.name.to_string();
-                (system.system_function)(self).context(format!("{}", EngineError::SystemUpdateFailed(
-                    system_name, 
-                    get_value_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)
-                ))).unwrap();
+                (system.system_function)(self).context(
+                    format!("{}", EngineError::SystemUpdateFailed(system_name, get_value_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)))
+                ).unwrap();
             }
         }
  
@@ -98,18 +144,16 @@ impl Engine {
         info!("Frame finished (Time: {:.3}ms, FPS {:.0})", frame_time, fps);
     }
 
-    #[cfg(feature = "internal")]
     pub fn shutdown(&mut self) {
-        info!("Shutting down");
+        info!("Shutting down {}", "Engine".mobj_style());
     }
 
-    #[cfg(feature = "internal")]
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        info!("Resizing");
-        self.renderer.resize(new_size);
+    pub fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
+        info!("{} resized to {}x{}", "Window".mobj_style(), new_window_size.width, new_window_size.height);
+        self.window_size = new_window_size;
+        self.renderer.resize(new_window_size);
     }
 
-    #[cfg(feature = "internal")]
     pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyboardInput) {
         let key: VirtualKeyCode = keyboard_input.virtual_keycode.unwrap();
         let state: ElementState = keyboard_input.state;
@@ -119,111 +163,64 @@ impl Engine {
         info!("Got new keyboard key input: {:?} {:?}", key, state);
     }
 
-    #[cfg(feature = "internal")]
     pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &ElementState) {
         let input_event = InputEvent::MouseKey { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
         self.input_queue.push_back(input_event);
         info!("Got new mouse key input");
     }
 
-    #[cfg(feature = "internal")]
     pub fn pass_mouse_wheel_input(&mut self, delta: &MouseScrollDelta) {
         let input_event = InputEvent::MouseWheel { delta: *delta };
         self.input_queue.push_back(input_event);
         info!("Got new mouse wheel input");
     }
 
-    #[cfg(feature = "internal")]
     pub fn pass_mouse_motion_input(&mut self, position: &PhysicalPosition<f64>) {
         let input_event = InputEvent::MouseMotion { position: *position };
         self.input_queue.push_back(input_event);
         info!("Got new mouse motion input");
     }
 
-    #[cfg(feature = "internal")]
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
         &self.input_queue
     }
-
-    #[cfg(feature = "internal")]
-    pub fn get_input_queue_mut(&mut self) -> &mut VecDeque<InputEvent> {
-        &mut self.input_queue
-    }
-
-
-    // -- Default resources
-    pub fn create_default_resources(&mut self) {
-        self.register_resource_type::<TextureHandle, Texture>().unwrap();
-        self.register_resource_type::<MeshHandle, Mesh>().unwrap();
-        self.register_resource_type::<MaterialHandle, Material>().unwrap();
-
-        // Create default resources
-
-        // Load default resource data to executable
-        let default_color_texture_bytes = Box::new(*include_bytes!("../res/textures/default_color.png"));
-        let default_normal_texture_bytes = Box::new(*include_bytes!("../res/textures/default_normal.png"));
-
-        // Create default textures
-        let default_color_texture = Texture::new("DefaultColor", TextureType::Color, ResourceLoadType::Bytes(default_color_texture_bytes));
-        self.add_resource(default_color_texture).unwrap();
-        let default_normal_texture = Texture::new("DefaultNormal", TextureType::Normal, ResourceLoadType::Bytes(default_normal_texture_bytes));
-        self.add_resource(default_normal_texture).unwrap();
-
-        // Create default material
-        let default_material = Material::new("DefaultMaterial");
-        self.add_resource(default_material).unwrap();
-    }
 }
 
-// ---------------------------------------------------------------------
+// --- GAME API ------------------------------------------------------------------
 
 impl Engine { 
 
-    // --- ECS
-
-    pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
-        info!("Creating scene: {}", name);
-        self.scene_manager.create_scene(name).context("Scene creation failed")
-    }
-
-    pub fn get_active_scene_handle(&mut self) -> Result<SceneHandle> {
-        self.scene_manager.get_active_scene_handle().context("Getting active scene handle failed")
-    }
-
-    fn get_active_scene(&mut self) -> Result<&Scene> {
-        self.scene_manager.get_active_scene().context("Getting active scene failed")
-    }
-
-    pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
-        self.scene_manager.set_active_scene(scene_handle).context("Setting active scene failed")
-    }
-
-
-    // [TODO] Problem is that EntityHandle does not contain scene handle so we can put as parameters handle to scene and handle to entity that is not even in that scene
-    // So we need to check if camera component exists for that entity in that scene but even that function will work in a wrong way because it may happen that entity in other scene 
-    // will indeed have CameraComponent so this handle it will be assigned but it is actually a handle for entity in different scene...
-    // [TODO] we can make "CameraComponent.set_active(engine);" but only when CameraComponent will store handle to entity (and this handle or component will store the scene)
-    // [TODO] This may change if entity handles will not be available for game developer
-    //pub fn set_active_camera_in_scene(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> { 
-        //let x = self.scene_manager.get_active_scene().context("Getting active scene failed")?;
-        //x.active_camera_entity_handle = entity_handle;
-    //}
-    // Temp solution:
-    // CameraComponents have "enabled" field, rendering system finds first CameraComponent with enabled = true and uses it as active
-    // Problem with this approach is that we need to iterate over all entities and if two are enabled we don't actually know which will be used because index of component
-    // does not mean that this component is first, it could be created later than other and there was empty slot for this entity so now it is first.
-
-    pub fn build_entity(&mut self, scene: SceneHandle) -> EntityBuilder {
-        self.scene_manager.build_entity(scene)
-    }
+    // --- ECS API ---
 
     pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle) -> Result<()> {
-        self.scene_manager.register_component::<T>(scene_handle).context("Registering component failed")
+        self.scene_manager.register_component::<T>(scene_handle).context(format!("Registering {} failed", "Component".gobj_style()))
     }
 
     pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine) -> Result<()>) -> Result<()> {
-        self.system_manager.add_system(name, system_function, UpdatePhase::Game).context("Adding system failed")
+        self.system_manager.add_system(name, system_function, UpdatePhase::Game).context(format!("Adding {} failed", "System".gobj_style()))
     }
+
+    // [TODO] Implement remove_system
+
+    pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
+        self.scene_manager.create_entity(scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
+    }
+
+    pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
+        self.scene_manager.remove_entity(entity_handle, scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
+    }
+    
+    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {
+        debug!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))
+    }
+
+    pub fn delete_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> {
+        info!("Deleting {} {} from {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        self.scene_manager.delete_component_from_entity::<T>(scene_handle, entity_handle).context("Deleting component from entity failed")
+    }
+
+    // - Global Component API
 
     pub fn insert_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self, component: T) -> Result<()> {
         //.ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
@@ -250,27 +247,7 @@ impl Engine {
         Ok(())
     }
 
-    // [TODO] Implement remove_system
-
-    pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
-        self.scene_manager.create_entity(scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
-    }
-
-    pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
-        self.scene_manager.remove_entity(entity_handle, scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
-    }
-    
-    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {
-        info!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.index, "Scene".gobj_style(), scene_handle.index);
-        self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context("Adding component to entity failed")
-    }
-
-    pub fn delete_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> {
-        info!("Deleting {} {} from {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.index, "Scene".gobj_style(), scene_handle.index);
-        self.scene_manager.delete_component_from_entity::<T>(scene_handle, entity_handle).context("Deleting component from entity failed")
-    }
-
-    // Iterators
+    // - Iterator API
 
     pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
         // Get iterator
@@ -347,16 +324,64 @@ impl Engine {
         Ok(iterator) 
     }
 
-    // [TODO] Implement get_component_from_entity
+    // --- Scene API ---
+
+    pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
+        info!("Creating scene: {}", name);
+        self.scene_manager.create_scene(name).context(format!("Creating new {} failed", "Scene".gobj_style()))
+    }
+
+    pub fn get_scene_handle(&self, name: &str) -> Result<SceneHandle> {
+        self.scene_manager.get_scene_handle(name).context(format!("Getting {} failed", "SceneHandle".sobj_style()))
+    }
+
+    pub fn get_scene(&self, scene_handle: SceneHandle) -> Result<&Scene> {
+        self.scene_manager.get_scene(scene_handle).context(format!("Getting {} failed", "Scene".gobj_style()))
+    }
+
+    pub fn get_scene_mut(&mut self, scene_handle: SceneHandle) -> Result<&mut Scene> {
+        self.scene_manager.get_scene_mut(scene_handle).context(format!("Getting {} as mutable failed", "Scene".gobj_style()))
+    }
 
 
-    
-    // --- RESOURCES
+    pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
+        self.scene_manager.set_active_scene(scene_handle).context(format!("Setting active {} failed", "Scene".gobj_style()))
+    }
 
-    pub fn add_resource<H: PillSlotMapKey, T: Resource<Value = ResourceStorage::<H, T>>>(&mut self, mut resource: T) -> Result<H> {
+    pub fn get_active_scene_handle(&mut self) -> Result<SceneHandle> {
+        self.scene_manager.get_active_scene_handle().context(format!("Getting {} of active {} failed", "SceneHandle".sobj_style(), "Scene".gobj_style()))
+    }
 
-        resource.initialize(self);
+    fn get_active_scene(&mut self) -> Result<&Scene> {
+        self.scene_manager.get_active_scene().context(format!("Getting active {} failed", "Scene".gobj_style()))
+    }
+
+    fn get_active_scene_mut(&mut self) -> Result<&mut Scene> {
+        self.scene_manager.get_active_scene_mut().context(format!("Getting active {} as mutable failed", "Scene".gobj_style()))
+    }
+
+
+    // --- Resource API ---
+
+    pub fn register_resource_type<T>(&mut self) -> Result<()> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        self.resource_manager.register_resource_type::<T>()
+    }
+
+    pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        debug!("Adding {} {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style());
+
+        // Check if resource has proper name
+        let resource_name = resource.get_name();
+        resource_name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::WrongResourceName(resource_name.clone())))?;
+
+        // Initialize resource
+        resource.initialize(self).context(format!("Adding {} {} failed", "Resource".gobj_style(), pill_core::get_type_name::<T>().sobj_style()))?;
         
+        // Add resource
         let resource_handle = self.resource_manager.add_resource(resource)?;
 
         // [TODO]: In resource initialization it may happen that renderer resource will be created, and after that add_resource may fail, so resource will not be added to the engine 
@@ -366,14 +391,67 @@ impl Engine {
         Ok(resource_handle)
     }
 
-    pub fn register_resource_type<H: PillSlotMapKey, T: Resource<Value = ResourceStorage::<H, T>>>(&mut self) -> Result<()> {
-        self.resource_manager.register_resource_type::<H, T>()
+    pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        Ok(self.resource_manager.get_resource::<T>(resource_handle)?)
     }
 
+    pub fn get_resource_by_name<T>(&self, name: &str) -> Result<&T> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        Ok(self.resource_manager.get_resource_by_name::<T>(name)?)
+    }
 
+    pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        Ok(self.resource_manager.get_resource_handle::<T>(name)?)
+    }
 
-    // pub fn load_resource<T: Resource>(&mut self, t: T, path: String, source: ResourceSource) {
-    //     self.resource_manager.load_resource(t, path, source)
-    // }
+    pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        Ok(self.resource_manager.get_resource_mut::<T>(resource_handle)?)
+    }
 
+    pub fn get_resource_by_name_mut<T>(&mut self, name: &str) -> Result<&mut T> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        Ok(self.resource_manager.get_resource_by_name_mut::<T>(name)?)
+    }
+
+    pub fn remove_resource<T>(&mut self, resource_handle: &T::Handle) -> Result<()> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        let error_message = format!("Removing {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style());
+      
+        // Check if resource is not default
+        let resource_name = self.resource_manager.get_resource::<T>(resource_handle).context(error_message.to_string())?.get_name();
+        resource_name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::RemoveDefaultResource(resource_name.clone()))).context(error_message.to_string())?;
+
+        // Remove resource
+        let mut remove_result = self.resource_manager.remove_resource::<T>(resource_handle).context(error_message.to_string())?;
+        remove_result.1.destroy(self, *resource_handle);
+
+        Ok(())
+    }
+
+    pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<()> 
+        where T: Resource<Value = ResourceStorage::<T>>
+    {
+        let error_message = format!("Removing {} {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), name.to_string().name_style());
+
+        // Check if resource exists
+        self.resource_manager.get_resource_by_name::<T>(name).context(error_message.to_string())?;
+
+        // Check if resource is not default
+        name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::RemoveDefaultResource(name.to_string()))).context(error_message.to_string())?;
+
+        // Remove resource
+        let mut remove_result = self.resource_manager.remove_resource_by_name::<T>(name).context(error_message.to_string())?;
+        remove_result.1.destroy(self, remove_result.0);
+
+        Ok(())
+    }
 }

@@ -6,28 +6,22 @@ use indexmap::IndexMap;
 
 use crate::ecs::*;
 
-use super::entity_builder::EntityBuilder;
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct SceneHandle;
+}
 
 pub struct SceneManager {
-    scenes: IndexMap<String, Scene>,
-    active_scene: Option<SceneHandle>
+    pub(crate) scenes: pill_core::PillSlotMap<SceneHandle, Scene>, 
+    pub(crate) mapping: pill_core::PillTwinMap<String, SceneHandle>, // Mapping from scene name to scene handle and vice versa
+    active_scene_handle: Option<SceneHandle>,
 }
 
 impl SceneManager {
     pub fn new() -> Self {
 	    Self { 
-            scenes: IndexMap::<String, Scene>::new(),
-            active_scene: None
-        }
-    }
-
-    pub fn build_entity(&mut self, scene: SceneHandle) -> EntityBuilder {
-        let entity_handle = self.create_entity(scene).unwrap();
-
-        EntityBuilder {
-            entity: entity_handle,
-            scene_manager: self,
-            scene_handle: scene.clone()
+            scenes: pill_core::PillSlotMap::<SceneHandle, Scene>::with_key(),
+            mapping: pill_core::PillTwinMap::<String, SceneHandle>::new(),
+            active_scene_handle: None,
         }
     }
 
@@ -44,66 +38,6 @@ impl SceneManager {
         // Add component storage to scene
         target_scene.components.insert::<T>(component_storage);
         Ok(())
-    }
-
-    pub fn get_active_scene_handle(&self) -> Result<SceneHandle> {
-        // Check if active scene is set
-        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
-
-        // Return active scene handle
-        Ok(active_scene_handle.clone())
-    }
-
-    pub fn get_active_scene(&self) -> Result<&Scene> {
-        // Check if active scene is set
-        let active_scene_handle = self.active_scene.ok_or(Error::new(EngineError::NoActiveScene))?;
-        let active_scene = self.get_scene(active_scene_handle)?;
-
-        // Return active scene handle
-        Ok(active_scene)
-    }
-
-    pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
-        // Get scene
-        let target_scene = self.get_scene_mut(scene)?;
-
-        // Get allocator from scene
-        let index_allocator = target_scene.get_allocator_mut();
-
-        Ok(index_allocator)
-    }
-
-    pub fn get_bitmask_controller_mut(&mut self, scene: SceneHandle) -> Result<&mut BitmaskController> {
-        // Get scene
-        let target_scene = self.get_scene_mut(scene)?;
-
-        // Get allocator from scene
-        let controller = target_scene.get_bitmask_controller_mut();
-
-        Ok(controller)
-    }
-
-    pub fn get_bitmask_controller(&self, scene: SceneHandle) -> Result<&BitmaskController> {
-        // Get scene
-        let target_scene = self.get_scene(scene)?;
-
-        // Get allocator from scene
-        let controller = target_scene.get_bitmask_controller();
-
-        Ok(controller)
-    }
-
-    pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
-        // Check if scene with that name already exists
-        self.scenes.contains_key(name).eq(&false).ok_or(Error::new(EngineError::SceneAlreadyExists(name.to_string())))?;
-
-        // Create and add new scene
-        let new_scene = Scene::new(name.to_string());
-        self.scenes.insert(name.to_string(), new_scene);
-       
-        // Return handle
-        let new_scene_index = self.scenes.get_index_of(name).unwrap();
-        Ok(SceneHandle::new(new_scene_index))
     }
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
@@ -163,6 +97,50 @@ impl SceneManager {
         Ok(())
     }
 
+    pub fn build_entity(&mut self, scene: SceneHandle) -> EntityBuilder {
+        let entity_handle = self.create_entity(scene).unwrap();
+
+        EntityBuilder {
+            entity: entity_handle,
+            scene_manager: self,
+            scene_handle: scene.clone()
+        }
+    }
+
+    // - Allocator
+
+    pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Get allocator from scene
+        let index_allocator = target_scene.get_allocator_mut();
+
+        Ok(index_allocator)
+    }
+
+    // - Bitmask Controller
+
+    pub fn get_bitmask_controller_mut(&mut self, scene: SceneHandle) -> Result<&mut BitmaskController> {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Get allocator from scene
+        let controller = target_scene.get_bitmask_controller_mut();
+
+        Ok(controller)
+    }
+
+    pub fn get_bitmask_controller(&self, scene: SceneHandle) -> Result<&BitmaskController> {
+        // Get scene
+        let target_scene = self.get_scene(scene)?;
+
+        // Get allocator from scene
+        let controller = target_scene.get_bitmask_controller();
+
+        Ok(controller)
+    }
+
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {     
         // Register component storage if that hasn't happened yet
         if self.get_scene_mut(scene_handle)?.components.contains_key::<T>() == false {
@@ -203,34 +181,76 @@ impl SceneManager {
         Ok(())
     }
 
-    pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
-        // Check if scene for that handle exists
-        self.scenes.get_index_mut(scene_handle.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+    // - Scene -
 
-        // Set new active scene
-        self.active_scene = Some(scene_handle);
-        Ok(())
+    pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
+        // Check if scene with that name already exists
+        self.mapping.contains_key(&name.to_string()).eq(&false).ok_or(Error::new(EngineError::SceneAlreadyExists(name.to_string())))?;
+
+        // Create new scene
+        let new_scene = Scene::new(name.to_string());
+
+        // Insert new scene
+        let scene_handle = self.scenes.insert(new_scene);
+       
+        // Insert new mapping
+        self.mapping.insert(&name.to_string(), &scene_handle);
+
+        Ok(scene_handle)
+    }
+
+    pub fn get_scene_handle(&self, name: &str) -> Result<SceneHandle> {
+        let scene_handle = self.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidSceneName(name.to_string()))?.clone();
+        Ok(scene_handle)
     }
 
     pub fn get_scene(&self, scene_handle: SceneHandle) -> Result<&Scene> {
-        // Get scene
-        let scene = self.scenes.get_index(scene_handle.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
+        let scene = self.scenes.get(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
         Ok(scene)
     }
 
     pub fn get_scene_mut(&mut self, scene_handle: SceneHandle) -> Result<&mut Scene> {
-        // Get scene
-        let scene = self.scenes.get_index_mut(scene_handle.index).ok_or(Error::new(EngineError::InvalidSceneHandle))?.1;
+        let scene = self.scenes.get_mut(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
         Ok(scene)
     }
 
-    pub fn get_scene_handle(&self, name: &str) -> Result<SceneHandle> {
-        // Get scene index
-        let scene_index = self.scenes.get_index_of(name).ok_or(Error::new(EngineError::InvalidSceneName(name.to_string())))?;
+    // - Active scene -
+    
+    pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
+        // Check if scene for that handle exists
+        self.scenes.get_mut(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
 
-         // Return handle
-         Ok(SceneHandle::new(scene_index))
+        // Set new active scene
+        self.active_scene_handle = Some(scene_handle);
+        Ok(())
     }
+
+    pub fn get_active_scene_handle(&self) -> Result<SceneHandle> {
+        match self.active_scene_handle {
+            Some(v) =>  Ok(v.clone()),
+            None => Err(Error::new(EngineError::NoActiveScene)),
+        }
+    }
+
+    pub fn get_active_scene(&self) -> Result<&Scene> {
+        // Check if active scene is set
+        let active_scene_handle = self.active_scene_handle.ok_or(Error::new(EngineError::NoActiveScene))?;
+        let active_scene = self.get_scene(active_scene_handle)?;
+
+        // Return active scene handle
+        Ok(active_scene)
+    }
+
+    pub fn get_active_scene_mut(&mut self) -> Result<&mut Scene> {
+        // Check if active scene is set
+        let active_scene_handle = self.active_scene_handle.ok_or(Error::new(EngineError::NoActiveScene))?;
+        let active_scene = self.get_scene_mut(active_scene_handle)?;
+
+        // Return active scene handle
+        Ok(active_scene)
+    }
+
+    // - Iterators
 
     pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
 

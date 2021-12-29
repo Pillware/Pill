@@ -3,14 +3,18 @@ use std::{collections::HashMap};
 use indexmap::IndexMap;
 use pill_core::PillSlotMapKey;
 
-pub struct ResourceStorage<H: PillSlotMapKey, T> {
-    pub data: pill_core::PillSlotMap<H, T>, // IndexMap<String, T>, // HashMap<String, Box<T>>,
+use super::Resource;
+
+pub struct ResourceStorage<T: Resource> {
+    pub data: pill_core::PillSlotMap<T::Handle, Option<T>>, 
+    pub mapping: pill_core::PillTwinMap<String, T::Handle>, // Mapping from resource name to resource handle and vice versa
 }
 
-impl<H: PillSlotMapKey, T> ResourceStorage<H, T> {
+impl<T: Resource> ResourceStorage<T> {
     pub fn new() -> Self {  
         return Self { 
-            data: pill_core::PillSlotMap::<H, T>::with_key(), // IndexMap::<String, T>::new(), // HashMap::<String, Box<T>>::new(),
+            data: pill_core::PillSlotMap::<T::Handle, Option<T>>::with_key(),
+            mapping: pill_core::PillTwinMap::<String, T::Handle>::new(),
         };
     }
 }

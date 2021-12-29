@@ -10,22 +10,34 @@ mod scene_manager;
 mod system_manager;
 mod camera_component;
 mod rendering_system;
+mod component;
+mod deferred_update_component;
+mod deferred_update_system;
 mod allocator;
 mod bitmask_controller;
 mod bitmask_map;
 mod entity_fetcher;
+mod entity_builder;
 
-pub(crate) mod entity_builder;
+pub use allocator::{
+    Allocator
+};
 
-pub use entity_fetcher::*;
+pub use bitmask_controller::{
+    Bitmask,
+    BitmaskController
+};
+
+pub use bitmask_map::{
+    BitmaskMap
+};
+
+pub use entity_fetcher::{
+    EntityFetcher
+};
 
 pub use entity_builder::{
     EntityBuilder
-};
-
-pub use allocator::{
-    Allocator,
-    Generation
 };
 
 pub use rendering_system::{
@@ -34,7 +46,6 @@ pub use rendering_system::{
 
 pub use scene::{
     Scene,
-    SceneHandle,
 };
 
 pub use component_map::{ 
@@ -48,6 +59,7 @@ pub use component_storage::{
 
 pub use camera_component::{
     CameraComponent,
+    CameraAspectRatio,
 };
 
 pub use entity::{
@@ -64,6 +76,7 @@ pub use transform_component::{
 
 pub use scene_manager::{
     SceneManager,
+    SceneHandle,
 };
 
 pub use system_manager::{
@@ -71,8 +84,12 @@ pub use system_manager::{
     UpdatePhase,
 };
 
-pub use bitmask_controller::{
-    BitmaskController,
+pub use deferred_update_component::{
+    DeferredUpdateGlobalComponent,
+    DeferredUpdateManager,
+    DeferredUpdateManagerPointer,
 };
 
-pub use bitmask_map::*;
+// pub use deferred_update_system::{
+    
+// };

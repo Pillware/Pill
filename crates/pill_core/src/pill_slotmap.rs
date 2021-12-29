@@ -22,9 +22,8 @@
 
 
 
-
-// This is PillSlotMap with public key variables, removed iterators and with version limit set to 2^8 = 256
-// https://crates.io/crates/PillSlotMap
+// This is SlotMap with public key variables, removed iterators and with version limit set to 2^8 = 256
+// https://crates.io/crates/SlotMap
 
 
 // Needed because assigning to non-Copy union is unsafe in stable but not in nightly.
@@ -41,6 +40,7 @@ use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Index, IndexMut};
 use std::fmt::Formatter;
 use core::fmt::Debug;
+use std::iter::Enumerate;
 use std::num::{ NonZeroU32};
 
 // Storage inside a slot or metadata for the freelist when vacant.
@@ -389,6 +389,27 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         }
         core::mem::transmute_copy::<_, [&mut V; N]>(&ptrs)
     }
+
+    pub fn iter(&self) -> Iter<K, V> {
+        let mut it = self.slots.iter().enumerate();
+        it.next(); // Skip sentinel.
+        Iter {
+            slots: it,
+            num_left: self.len(),
+            _k: PhantomData,
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+        let len = self.len();
+        let mut it = self.slots.iter_mut().enumerate();
+        it.next(); // Skip sentinel.
+        IterMut {
+            num_left: len,
+            slots: it,
+            _k: PhantomData,
+        }
+    }
 }
 
 impl<K: PillSlotMapKey, V> Index<K> for PillSlotMap<K, V> {
@@ -410,6 +431,65 @@ impl<K: PillSlotMapKey, V> IndexMut<K> for PillSlotMap<K, V> {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct Iter<'a, K: 'a + PillSlotMapKey, V: 'a> {
+    num_left: usize,
+    slots: Enumerate<core::slice::Iter<'a, Slot<V>>>,
+    _k: PhantomData<fn(K) -> K>,
+}
+
+#[derive(Debug)]
+pub struct IterMut<'a, K: 'a + PillSlotMapKey, V: 'a> {
+    num_left: usize,
+    slots: Enumerate<core::slice::IterMut<'a, Slot<V>>>,
+    _k: PhantomData<fn(K) -> K>,
+}
+
+impl<'a, K: PillSlotMapKey, V> Iterator for Iter<'a, K, V> {
+    type Item = (K, &'a V);
+
+    fn next(&mut self) -> Option<(K, &'a V)> {
+        while let Some((idx, slot)) = self.slots.next() {
+            if let Occupied(value) = slot.get() {
+                let kd = PillSlotMapKeyData::new(idx as u32, slot.version);
+                self.num_left -= 1;
+                return Some((kd.into(), value));
+            }
+        }
+
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.num_left, Some(self.num_left))
+    }
+}
+
+impl<'a, K: PillSlotMapKey, V> Iterator for IterMut<'a, K, V> {
+    type Item = (K, &'a mut V);
+
+    fn next(&mut self) -> Option<(K, &'a mut V)> {
+        while let Some((idx, slot)) = self.slots.next() {
+            let version = slot.version;
+            if let OccupiedMut(value) = slot.get_mut() {
+                let kd = PillSlotMapKeyData::new(idx as u32, version);
+                self.num_left -= 1;
+                return Some((kd.into(), value));
+            }
+        }
+
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.num_left, Some(self.num_left))
+    }
+}
+
+
+
+
 
 // --- PillSlotMapKeyData
 
@@ -531,6 +611,10 @@ macro_rules! define_new_pill_slotmap_key {
                         version,
                     },
                 }
+            }
+
+            pub unsafe fn get_data(&self) -> $crate::PillSlotMapKeyData {
+                self.0.clone()
             }
         }
 

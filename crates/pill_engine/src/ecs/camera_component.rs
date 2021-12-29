@@ -3,15 +3,31 @@ use std::ops::Range;
 pub use crate::ecs::*;
 use crate::{
     game::Engine, 
-    graphics::{RenderQueueKey, compose_render_queue_key}, 
-    resources::{Material, MaterialHandle, Mesh, MeshHandle, RendererCameraHandle}
+    graphics::{RenderQueueKey, compose_render_queue_key, RendererCameraHandle }, 
+    resources::{Material, MaterialHandle, Mesh, MeshHandle }
 };
 use anyhow::{Result, Context, Error};
+use pill_core::Color;
+
+pub enum CameraAspectRatio {
+    Automatic(f32),
+    Manual(f32)
+}
+
+impl CameraAspectRatio {
+    pub fn get_value(&self) -> f32 {
+        match self {
+            CameraAspectRatio::Automatic(v) => *v,
+            CameraAspectRatio::Manual(v) => *v,
+        }
+    }
+}
 
 pub struct CameraComponent {
-    pub aspect: f32,
+    pub aspect: CameraAspectRatio,
     pub fov: f32,
-    pub range: Range<u32>,
+    pub range: Range<f32>,
+    pub clear_color: Color,
     pub(crate) renderer_resource_handle: RendererCameraHandle,
     pub enabled: bool,
 }
@@ -22,12 +38,13 @@ impl Component for CameraComponent {
 
 impl CameraComponent {
     pub fn new(engine: &mut Engine) -> Result<Self> {
-        let renderer_resource_handle = engine.renderer.create_camera().unwrap();//?;
+        let renderer_resource_handle = engine.renderer.create_camera().unwrap();
 
         let camera_component = Self { 
-            aspect: 1.0, // width as f32 / height as f32
+            aspect: CameraAspectRatio::Automatic(1.0),
             fov: 60.0,
-            range: 1..100,
+            range: 0.1..100.0,
+            clear_color: Color::new(0.15, 0.15, 0.15),
             renderer_resource_handle,
             enabled: false,
         };
@@ -39,10 +56,6 @@ impl CameraComponent {
         self.renderer_resource_handle
     }
 
-    // pub fn set_active(engine: &mut Engine) -> Result<()> {
-    //     let active_scene_handle = engine.get_active_scene().unwrap();
-    //     let active_scene = engine.scene_manager.get_scene(active_scene_handle)?;
-    //     engine.get_active_scene
-    // }
+
 }
 

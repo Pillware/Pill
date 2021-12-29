@@ -1,6 +1,6 @@
 use std::{default, io::Error, ops::Index, cell::{RefCell, RefMut}, borrow::Borrow, os::windows::prelude::OpenOptionsExt};
 
-use pill_core::na::Storage;
+
 use core::default::Default;
 use super::EntityHandle;
 
@@ -68,9 +68,16 @@ pub struct ComponentStorage<T> {
 unsafe impl<T> Sync for ComponentStorage<T> {}
 
 impl<T> ComponentStorage<T> {
+
     pub fn new() -> Self {  
+        let capacity = 100;
+        let mut data = Vec::<RefCell<Option<T>>>::with_capacity(capacity);
+        for _ in 0..capacity {
+            data.push(RefCell::new(None));
+        }
+
         Self { 
-            data: Vec::<RefCell<Option<T>>>::new()
+            data
         }
     }
 

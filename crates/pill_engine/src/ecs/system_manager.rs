@@ -12,7 +12,7 @@ type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
 pub struct System {
     pub(crate) name: String,
     pub(crate) system_function: SystemFunction,
-    enabled: bool,
+    pub(crate) enabled: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]

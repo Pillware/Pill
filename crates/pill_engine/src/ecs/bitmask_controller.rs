@@ -1,4 +1,3 @@
-use pill_core::na::Storage;
 use super::{BitmaskMap, Component, EntityHandle, bitmask_map, EntityFetcher};
 
 pub struct Bitmask {

@@ -1,11 +1,12 @@
-use cgmath::{Zero};
+use pill_core::Vector3f;
+use cgmath::Zero;
 
 pub use crate::ecs::{Component, ComponentStorage };
 
 pub struct TransformComponent {
-    pub position: cgmath::Vector3<f32>,
-    pub rotation: cgmath::Vector3<f32>, // cgmath::Quaternion<f32>,
-    pub scale: cgmath::Vector3<f32>,
+    pub position: Vector3f,
+    pub rotation: Vector3f,
+    pub scale: Vector3f,
 }
 
 impl Component for TransformComponent {
@@ -13,21 +14,21 @@ impl Component for TransformComponent {
 }
 
 impl TransformComponent {
-    pub fn new(position: cgmath::Vector3<f32>, rotation: cgmath::Vector3<f32>, scale: cgmath::Vector3<f32>) -> Self {  
-        return Self { 
+    pub fn new(position: Vector3f, rotation: Vector3f, scale: Vector3f) -> Self {  
+        Self { 
             position,
             rotation,
             scale,
-        };
+        }
     }
 }
 
 impl Default for TransformComponent {
     fn default() -> Self {
         Self { 
-            position: cgmath::Vector3::<f32>::zero(),
-            rotation: cgmath::Vector3::<f32>::zero(),
-            scale: cgmath::Vector3::<f32>::new(1.0, 1.0, 1.0),
+            position: Vector3f::zero(),
+            rotation: Vector3f::zero(),
+            scale: Vector3f::new(1.0, 1.0, 1.0),
         }
     }
 }

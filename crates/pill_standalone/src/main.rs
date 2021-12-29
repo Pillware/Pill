@@ -3,18 +3,10 @@
 use pill_core::PillStyle;
 use pill_engine::internal::*;
 use pill_renderer;
+use winit::event::{Event, WindowEvent};
 
 use std::io::Write;
-use log::{LevelFilter, debug, info};
-
-
-
-use winit::{ // Import dependencies
-    event::*, // Bring all public items into scope
-    event_loop::{ControlFlow, EventLoop},
-    window::{WindowBuilder},
-};
-
+use log::{ debug, info };
 
 fn main() {
     
@@ -30,31 +22,36 @@ fn main() {
                 record.args()
             )
         })
-        .filter_module("pill_standalone", LevelFilter::Debug)
-        .filter_module("pill_engine", LevelFilter::Debug)
-        .filter_module("pill_renderer", LevelFilter::Debug)
+        .filter_module("pill_standalone", log::LevelFilter::Debug)
+        .filter_module("pill_engine", log::LevelFilter::Debug)
+        .filter_module("pill_renderer", log::LevelFilter::Debug)
         .init();
 
-    info!("Pill Standalone initializing");
+    info!("Initializing {}", "Standalone".mobj_style());
 
     // Init window
-    let event_loop = EventLoop::new();
-    let title = env!("CARGO_PKG_NAME");
-    let window = WindowBuilder::new().with_title(title).build(&event_loop).unwrap();
+    let window_event_loop = winit::event_loop::EventLoop::new();
+    let window_title = env!("CARGO_PKG_NAME");
+    let window_size = winit::dpi::PhysicalSize::<u32>::new(600, 600);
+    let window_min_size = winit::dpi::PhysicalSize::<u32>::new(100, 100);
+    let window = winit::window::WindowBuilder::new()
+        .with_title(window_title)
+        .with_inner_size(window_size)
+        .with_min_inner_size(window_min_size)
+        .build(&window_event_loop)
+        .unwrap();
     let mut last_render_time = std::time::Instant::now();
 
     // Init engine
     let game: Box<dyn PillGame> = Box::new(pill_game::Game {});
     let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(&window));
     let mut engine = Engine::new(game, renderer);
-    engine.initialize();
-    let mut count = 0;
+    engine.initialize(window_size);
+
     // Run loop
-    event_loop.run(move |event, _, control_flow|  { // Run function takes closure
-        *control_flow = ControlFlow::Poll; 
+    window_event_loop.run(move |event, _, control_flow|  { // Run function takes closure
+        *control_flow = winit::event_loop::ControlFlow::Poll; 
         match event {
-
-
             Event::MainEventsCleared => {
                 window.request_redraw();
             },
@@ -111,7 +108,7 @@ fn main() {
                     // Close window
                     WindowEvent::CloseRequested => {
                         engine.shutdown();
-                        *control_flow = ControlFlow::Exit
+                        *control_flow = winit::event_loop::ControlFlow::Exit
                     },
 
                     // Resize window
