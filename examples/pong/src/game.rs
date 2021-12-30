@@ -186,6 +186,10 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
             if comp.is_key_clicked(Key::Z) {
                 transform_z.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
         }
+
+        if comp.is_mouse_button_clicked(Mouse::Left) {
+            transform.borrow_mut().as_mut().unwrap().rotation.x -= 0.05;
+        }
     }
     //new_eng.get_global_component::<InputComponent>();
     Ok(())   

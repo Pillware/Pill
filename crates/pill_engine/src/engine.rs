@@ -20,6 +20,7 @@ use crate::{
 
 pub type Game = Box<dyn PillGame>;
 pub type Key = VirtualKeyCode;
+pub type Mouse = MouseButton;
 
 pub trait PillGame { 
     fn start(&self, engine: &mut Engine);
