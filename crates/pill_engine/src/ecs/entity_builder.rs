@@ -11,7 +11,7 @@ impl<'a> EntityBuilder<'a> {
 
     pub fn with_component<T: Component<Storage = ComponentStorage::<T>>>(self, component: T) -> Self {
         {
-        self.scene_manager.add_component_to_entity(self.scene_handle.clone(), self.entity.clone(), component);
+        self.scene_manager.add_component_to_entity(self.scene_handle.clone(), self.entity.clone(), component).unwrap();
         }
         self
     }

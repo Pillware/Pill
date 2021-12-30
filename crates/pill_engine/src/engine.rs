@@ -4,7 +4,7 @@ use boolinator::Boolinator;
 use log::{debug, info, error};
 use winit::{ event::*, dpi::PhysicalPosition,};
 
-use crate::{input::input_component::GlobalComponent};
+use crate::{input::input_component::GlobalComponent, time::{TimeComponent, time_system}};
 
 use pill_core::{EngineError, get_type_name, PillSlotMapKey, PillStyle};
 use crate::{ 
@@ -33,6 +33,7 @@ pub struct Engine {
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
     pub(crate) global_components: ComponentMap,
+    pub(crate) frame_delta_time: f32,
 
     pub(crate) TEMP_deferred_component: DeferredUpdateGlobalComponent, // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
 }
@@ -95,6 +96,7 @@ impl Engine {
             render_queue: Vec::<RenderQueueItem>::with_capacity(1000),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             global_components: ComponentMap::new(),
+            frame_delta_time: 0.0, // TODO: Should it really be initialized with 0? Are there any better default values?
             TEMP_deferred_component: DeferredUpdateGlobalComponent::new(), // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
         };
 
@@ -111,9 +113,11 @@ impl Engine {
 
         // Register global components
         self.insert_global_component(InputComponent::default()).unwrap();
+        self.insert_global_component(TimeComponent::default()).unwrap();
 
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
+        self.system_manager.add_system("TimeSystem", time_system, UpdatePhase::PostGame).unwrap();
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
 
         // Initialize game
@@ -122,7 +126,7 @@ impl Engine {
         self.game = Some(game);
     }
 
-    pub fn update(&mut self, dt: std::time::Duration) {
+    pub fn update(&mut self, delta_time: std::time::Duration) {
         use pill_core::{PillStyle, get_value_type_name};
 
         // Run systems
@@ -139,9 +143,10 @@ impl Engine {
             }
         }
  
-        let frame_time = dt.as_secs_f32() * 1000.0;
-        let fps =  1000.0 / frame_time;
-        info!("Frame finished (Time: {:.3}ms, FPS {:.0})", frame_time, fps);
+        let new_frame_time = delta_time.as_secs_f32() * 1000.0;
+        let fps =  1000.0 / new_frame_time;
+        self.frame_delta_time = new_frame_time;
+        info!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
     }
 
     pub fn shutdown(&mut self) {

@@ -6,6 +6,7 @@ mod graphics;
 mod ecs;
 mod input;
 mod config;
+mod time;
 
 #[cfg(feature = "game")]
 pub mod game {
@@ -99,6 +100,9 @@ pub mod internal {
         },
         input::{
             InputComponent
+        },
+        time::{
+            TimeComponent
         }
     };
 }

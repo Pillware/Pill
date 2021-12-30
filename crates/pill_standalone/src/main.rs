@@ -131,9 +131,9 @@ fn main() {
             // Handle redraw requests
             Event::RedrawRequested(_) => {
                 let now = std::time::Instant::now();
-                let dt = now - last_render_time;
+                let delta_time = now - last_render_time;
                 last_render_time = now;
-                engine.update(dt);
+                engine.update(delta_time);
             }
             _ => {}
         }
