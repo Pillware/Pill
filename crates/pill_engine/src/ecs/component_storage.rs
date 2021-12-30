@@ -70,6 +70,7 @@ unsafe impl<T> Sync for ComponentStorage<T> {}
 impl<T> ComponentStorage<T> {
 
     pub fn new() -> Self {  
+      
         let capacity = 100;
         let mut data = Vec::<RefCell<Option<T>>>::with_capacity(capacity);
         for _ in 0..capacity {

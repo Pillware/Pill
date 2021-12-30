@@ -10,4 +10,3 @@ pub enum InputEvent {
     MouseMotion { position: PhysicalPosition<f64> }
 }
 
-

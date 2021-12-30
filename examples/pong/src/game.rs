@@ -166,7 +166,6 @@ impl PillGame for Game {
         //println!("{} .... {}", std::env::current_dir().unwrap().display(), PathBuf::from("../res/models/Monkey.obj").display());
         //PathBuf::from("../res/models/Monkey.obj")
         //println!("{}", mesh_1_path.display());
-
        
     }
 }
