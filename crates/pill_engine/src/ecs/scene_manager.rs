@@ -44,57 +44,70 @@ impl SceneManager {
 
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
-        
-        // Get index allocator for entity
-        let index_allocator = target_scene.get_allocator_mut();
 
-        // Create new entity
-        let new_entity = index_allocator.allocate_new_entity();
+        // Create new entity with empty bitmask
+        let new_entity = Entity::default();
 
-        // Insert new entity into scene
-        // target_scene.entities.insert(target_scene.entity_counter, new_entity);
-        if target_scene.entities.len() <= new_entity.get_index() {
-            target_scene.entities.insert(target_scene.entity_counter, new_entity);
-        }
-        else {
-            target_scene.entities[new_entity.get_index()] = new_entity;
-        }
-        target_scene.entity_counter += 1;
+        // Insert new entity into pill slot map, with key as returned type
+        let new_entity_handle = target_scene.entities.insert(new_entity);
+
+        // Return handle to new entity
+        Ok(new_entity_handle)
+        // // Get index allocator for entity
+        // let index_allocator = target_scene.get_allocator_mut();
+
+        // // Create new entity
+        // let new_entity = index_allocator.allocate_new_entity();
+
+        // // Insert new entity into scene
+        // // target_scene.entities.insert(target_scene.entity_counter, new_entity);
+        // if target_scene.entities.len() <= new_entity.get_index() {
+        //     target_scene.entities.insert(target_scene.entity_counter, new_entity);
+        // }
+        // else {
+        //     target_scene.entities[new_entity.get_index()] = new_entity;
+        // }
+        // target_scene.entity_counter += 1;
 
 
-        // Get bitmask controller for new entity's bitmask allocation
-        let target_bitmask_coontroller = target_scene.get_bitmask_controller_mut();
+        // // Get bitmask controller for new entity's bitmask allocation
+        // let target_bitmask_coontroller = target_scene.get_bitmask_controller_mut();
 
-        // Allocate new bitmask entry for the entity
-        target_bitmask_coontroller.add_new_entity_bitmask(0, new_entity.get_index().clone());
+        // // Allocate new bitmask entry for the entity
+        // target_bitmask_coontroller.add_new_entity_bitmask(0, new_entity.get_index().clone());
 
-        // Return handle
-        Ok(EntityHandle::new(new_entity.get_index(), new_entity.get_generation()))
+        // // Return handle
+        // Ok(EntityHandle::new(new_entity.get_index(), new_entity.get_generation()))
     }
 
     pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 
-        // Get index allocator
-        let index_allocator = target_scene.get_allocator_mut();
+        // // Get index allocator
+        // let index_allocator = target_scene.get_allocator_mut();
 
-        // Deallocate entity in the index allocator
-        index_allocator.deallocate_entity(entity_handle.clone());
+        // // Deallocate entity in the index allocator
+        // index_allocator.deallocate_entity(entity_handle.clone());
         
-        // Remove the entity from the entity vector
-        let mut delete_index = 0;
-        for i in 0..target_scene.entities.len() {
-            if target_scene.entities[i].index == entity_handle.index && target_scene.entities[i].generation == entity_handle.generation {
-                delete_index = i;
-                break;
-            }
-        }
-        target_scene.entities.remove(delete_index);
+        // // Remove the entity from the entity vector
+        // let mut delete_index = 0;
+        // for i in 0..target_scene.entities.len() {
+        //     if target_scene.entities[i].index == entity_handle.index && target_scene.entities[i].generation == entity_handle.generation {
+        //         delete_index = i;
+        //         break;
+        //     }
+        // }
+        // target_scene.entities.remove(delete_index);
 
-        // Decrease entity counter
-        target_scene.entity_counter -= 1;
+        // // Decrease entity counter
+        // target_scene.entity_counter -= 1;
 
+        // Ok(())
+        // Remove entity from pill slot map
+        target_scene.entities.remove(entity_handle);
+
+        // Success
         Ok(())
     }
 
@@ -143,7 +156,7 @@ impl SceneManager {
         Ok(controller)
     }
 
-    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity: EntityHandle, component: T) -> Result<()> {     
+    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {     
         // Register component storage if that hasn't happened yet
         if self.get_scene_mut(scene_handle)?.components.contains_key::<T>() == false {
             self.register_component::<T>(scene_handle)?;
@@ -156,10 +169,18 @@ impl SceneManager {
         let component_storage = target_scene.get_component_storage_mut::<T>()?;
 
         // Add component to storage
-        component_storage.set(entity.clone(), component);
+        component_storage.set(entity_handle.clone(), component);
 
-        // Update the bitmask for the given entity
-        target_scene.get_bitmask_controller_mut().update_after_component_insertion::<T>(entity.get_index().clone());
+        // // Update the bitmask for the given entity 
+        // target_scene.get_bitmask_controller_mut().update_after_component_insertion::<T>(entity.get_index().clone());
+
+        // Get the bitmask mapped onto the given component to update entity's bitmask
+        let component_bitmask = target_scene.get_bitmask_controller_mut().mapping.get_bitmask::<T>();
+        
+        // Update the bitmask stored in pill slot based on the entity handle
+        target_scene.entities.get_mut(entity_handle).unwrap().bitmask |= component_bitmask;
+
+        
 
         // Success
         Ok(())
@@ -177,7 +198,13 @@ impl SceneManager {
         component_storage.delete(entity_handle.clone());
 
         //Update the bitmask for the given entity
-        target_scene.get_bitmask_controller_mut().update_after_component_deletion::<T>(entity_handle.get_index().clone());
+        //target_scene.get_bitmask_controller_mut().update_after_component_deletion::<T>(entity_handle.get_index().clone());
+
+        // Get the bitmask mapped onto the given component to update entity's bitmask
+        let component_bitmask = target_scene.get_bitmask_controller_mut().mapping.get_bitmask::<T>();
+
+        // Update the bitmask stored in pill slot based on the entity handle
+        target_scene.entities.get_mut(entity_handle).unwrap().bitmask -= component_bitmask;
 
         // Success
         Ok(())
@@ -261,9 +288,9 @@ impl SceneManager {
         //                                             .filter_by_component::<A>()
         //                                             .fetch();
 
-        let filtered_indexes = EntityFetcher::new(self.get_bitmask_controller(scene)?)
+        let filtered_indexes = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
-                                                        .fetch();
+                                                        .fetch_indexes();
 
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
@@ -283,9 +310,9 @@ impl SceneManager {
         //                                             .filter_by_component::<A>()
         //                                             .fetch();
 
-        let filtered_indexes = EntityFetcher::new(self.get_bitmask_controller(scene)?)
+        let (filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
-                                                        .fetch();
+                                                        .fetch_entities_and_indexes();
 
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
@@ -303,10 +330,10 @@ impl SceneManager {
                             B: Component<Storage = ComponentStorage<B>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
 
         //Get filtered indexes for entities
-        let filtered_indexes = EntityFetcher::new(self.get_bitmask_controller(scene)?)
+        let filtered_indexes = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
-                                                        .fetch();
+                                                        .fetch_indexes();
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
@@ -323,10 +350,10 @@ impl SceneManager {
                             B: Component<Storage = ComponentStorage<B>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>)>> {
 
         //Get filtered indexes for entities
-        let filtered_indexes = EntityFetcher::new(self.get_bitmask_controller(scene)?)
+        let (filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
-                                                        .fetch();
+                                                        .fetch_entities_and_indexes();
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
@@ -344,11 +371,11 @@ impl SceneManager {
                             C: Component<Storage = ComponentStorage<C>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
 
         //Get filtered indexes for entities
-        let filtered_indexes = EntityFetcher::new(self.get_bitmask_controller(scene)?)
+        let filtered_indexes = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
                                                         .filter_by_component::<C>()
-                                                        .fetch();
+                                                        .fetch_indexes();
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
@@ -366,11 +393,11 @@ impl SceneManager {
                             C: Component<Storage = ComponentStorage<C>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
 
         //Get filtered indexes for entities
-        let filtered_indexes = EntityFetcher::new(self.get_bitmask_controller(scene)?)
+        let (filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
                                                         .filter_by_component::<C>()
-                                                        .fetch();
+                                                        .fetch_entities_and_indexes();
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
@@ -389,12 +416,12 @@ impl SceneManager {
                             D: Component<Storage = ComponentStorage<D>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
 
         //Get filtered indexes for entities
-        let filtered_indexes = EntityFetcher::new(self.get_bitmask_controller(scene)?)
+        let filtered_indexes = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
                                                         .filter_by_component::<C>()
                                                         .filter_by_component::<D>()
-                                                        .fetch();
+                                                        .fetch_indexes();
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
@@ -413,12 +440,12 @@ impl SceneManager {
                             D: Component<Storage = ComponentStorage<D>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
 
         //Get filtered indexes for entities
-        let filtered_indexes = EntityFetcher::new(self.get_bitmask_controller(scene)?)
+        let (filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
                                                         .filter_by_component::<C>()
                                                         .filter_by_component::<D>()
-                                                        .fetch();
+                                                        .fetch_entities_and_indexes();
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();

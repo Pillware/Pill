@@ -351,16 +351,16 @@ impl State {
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Get active camera and update it
-        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.index).unwrap().borrow();
+        unsafe
+        {
+        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.get_data().index as usize).unwrap().borrow();
         let active_camera_component = camera_storage.as_ref().unwrap();
         let renderer_camera = self.rendering_resource_storage.cameras.get_mut(active_camera_component.get_renderer_resource_handle()).ok_or(RendererError::RendererResourceNotFound)?;
-
-        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.index).unwrap().borrow();
+        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.get_data().index as usize).unwrap().borrow();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
         renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
         let renderer_camera = self.rendering_resource_storage.cameras.get(active_camera_component.get_renderer_resource_handle()).unwrap();
         let clear_color = active_camera_component.clear_color;
-
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render_encoder"),
@@ -404,6 +404,7 @@ impl State {
         frame.present();
         //debug!("Frame rendering completed successfully");
         Ok(())
+        }
     }
 }
 

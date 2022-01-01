@@ -1,4 +1,4 @@
-use std::{ops::Range, borrow::BorrowMut};
+use std::{ops::Range, borrow::BorrowMut, num::NonZeroU32};
 use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
 use log::{debug, error, info, warn};
@@ -29,7 +29,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                         let aspect_ratio = engine.window_size.width as f32 / engine.window_size.height as f32;
                         camera_component.aspect = CameraAspectRatio::Automatic(aspect_ratio);
                     }
-                    active_camera_entity_handle_result = Some(EntityHandle::new(i, i as u32));
+                    active_camera_entity_handle_result = Some(EntityHandle::new(i as u32, NonZeroU32::new(i as u32).unwrap()));
                     break;
                 }
             },

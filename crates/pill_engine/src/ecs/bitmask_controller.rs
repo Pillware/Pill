@@ -34,10 +34,10 @@ impl Bitmask {
 }
 
 pub struct BitmaskController {
-    pub bitmasks: Vec<Option<Bitmask>>,
-    filter_bitmask: u32,
-    mapping: BitmaskMap,
-    count: u32
+    pub(crate) bitmasks: Vec<Option<Bitmask>>,
+    pub(crate) filter_bitmask: u32,
+    pub(crate) mapping: BitmaskMap,
+    pub(crate) count: u32
 }
 
 impl BitmaskController {
@@ -69,12 +69,12 @@ impl BitmaskController {
         }
     }
 
-    pub fn get_bitmap<T: Component>(&self) -> &u32 {
+    pub fn get_bitmap<T: Component>(&self) -> u32 {
         if self.mapping.contains_component::<T>() {
-            &self.mapping.get_bitmask::<T>()
+            self.mapping.get_bitmask::<T>()
         }
         else {
-            &0
+            0
         }
     }
 
@@ -97,7 +97,7 @@ impl BitmaskController {
     pub fn update_after_component_insertion<T : Component>(&mut self, id: usize) {
         match &mut self.bitmasks[id] {
             Some(bitmask) => { 
-                bitmask.apply_or_operator(*self.mapping.get_bitmask::<T>());
+                bitmask.apply_or_operator(self.mapping.get_bitmask::<T>());
             }
             None => ()
         }
@@ -106,7 +106,7 @@ impl BitmaskController {
     pub fn update_after_component_deletion<T : Component>(&mut self, id: usize) {
         match &mut self.bitmasks[id] {
             Some(bitmask) => {
-                bitmask.apply_minus_operator(*self.mapping.get_bitmask::<T>());
+                bitmask.apply_minus_operator(self.mapping.get_bitmask::<T>());
             }
             None => ()
         }
@@ -170,12 +170,12 @@ mod test {
         controller.add_bitmap::<HealthComponent>();
         controller.add_bitmap::<NameComponent>();
 
-        assert_eq!(controller.get_bitmap::<NameComponent>(), &0b0010);
-        assert_eq!(controller.get_bitmap::<HealthComponent>(), &0b0001);
+        assert_eq!(controller.get_bitmap::<NameComponent>(), 0b0010);
+        assert_eq!(controller.get_bitmap::<HealthComponent>(), 0b0001);
 
         controller.add_bitmap::<MeshRenderingComponent>();
-        assert_eq!(controller.get_bitmap::<MeshRenderingComponent>(), &0b0100);
-        assert_eq!(controller.get_bitmap::<HealthComponent>(), &0b0001);
+        assert_eq!(controller.get_bitmap::<MeshRenderingComponent>(), 0b0100);
+        assert_eq!(controller.get_bitmap::<HealthComponent>(), 0b0001);
     }
 
     struct FirstStruct(u32);

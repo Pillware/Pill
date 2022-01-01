@@ -63,6 +63,7 @@ pub use camera_component::{
 };
 
 pub use entity::{
+    Entity,
     EntityHandle
 };
 

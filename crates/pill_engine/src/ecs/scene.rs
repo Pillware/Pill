@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use anyhow::{Result, Context, Error};
 use log::{debug, info};
 
-use pill_core::{EngineError, get_type_name};
+use pill_core::{EngineError, get_type_name, PillSlotMap};
 use typemap_rev::TypeMap;
 use crate::ecs::*;
 
@@ -16,7 +16,7 @@ pub struct Scene {
 
     // ECS
     pub(crate) entity_counter: usize,
-    pub(crate) entities: Vec<EntityHandle>,
+    pub(crate) entities: pill_core::PillSlotMap<EntityHandle, Entity>,
     pub(crate) components: ComponentMap,
     pub(crate) allocator: Allocator,
     pub(crate) bitmask_controller: BitmaskController
@@ -29,7 +29,7 @@ impl Scene {
         return Self { 
             name,
             entity_counter: 0,
-            entities: Vec::<EntityHandle>::new(),
+            entities: pill_core::PillSlotMap::<EntityHandle, Entity>::with_key(),
             components: ComponentMap::new(),
             allocator: Allocator::new(),
             bitmask_controller: BitmaskController::new()
