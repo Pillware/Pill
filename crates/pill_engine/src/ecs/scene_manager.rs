@@ -37,6 +37,14 @@ impl SceneManager {
 
         // Add component storage to scene
         target_scene.components.insert::<T>(component_storage);
+
+        // Get bitmask controller
+        let controller = self.get_bitmask_controller_mut(scene).unwrap();
+
+        // Register bitmask for new component
+        controller.add_bitmap::<T>();
+
+        // Success
         Ok(())
     }
 
@@ -104,6 +112,10 @@ impl SceneManager {
         // target_scene.entity_counter -= 1;
 
         // Ok(())
+        
+        // Set all the components as None
+        
+
         // Remove entity from pill slot map
         target_scene.entities.remove(entity_handle);
 
@@ -171,16 +183,11 @@ impl SceneManager {
         // Add component to storage
         component_storage.set(entity_handle.clone(), component);
 
-        // // Update the bitmask for the given entity 
-        // target_scene.get_bitmask_controller_mut().update_after_component_insertion::<T>(entity.get_index().clone());
-
         // Get the bitmask mapped onto the given component to update entity's bitmask
         let component_bitmask = target_scene.get_bitmask_controller_mut().mapping.get_bitmask::<T>();
         
         // Update the bitmask stored in pill slot based on the entity handle
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask |= component_bitmask;
-
-        
 
         // Success
         Ok(())
@@ -196,9 +203,6 @@ impl SceneManager {
 
         // Delete the component with given entity's index from the storage
         component_storage.delete(entity_handle.clone());
-
-        //Update the bitmask for the given entity
-        //target_scene.get_bitmask_controller_mut().update_after_component_deletion::<T>(entity_handle.get_index().clone());
 
         // Get the bitmask mapped onto the given component to update entity's bitmask
         let component_bitmask = target_scene.get_bitmask_controller_mut().mapping.get_bitmask::<T>();
@@ -283,11 +287,6 @@ impl SceneManager {
 
     pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
 
-        // let filtered_indexes = self.get_bitmask_controller(scene)?
-        //                                             .start_fetching_entities()
-        //                                             .filter_by_component::<A>()
-        //                                             .fetch();
-
         let filtered_indexes = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .fetch_indexes();
@@ -303,14 +302,9 @@ impl SceneManager {
                     .map(|(_i, t)| t))
     }
 
-    pub fn fetch_one_component_storage_with_entity_indexes<A: Component<Storage = ComponentStorage<A>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>)>> {
+    pub fn fetch_one_component_storage_with_entity_handles<A: Component<Storage = ComponentStorage<A>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> {
 
-        // let filtered_indexes = self.get_bitmask_controller(scene)?
-        //                                             .start_fetching_entities()
-        //                                             .filter_by_component::<A>()
-        //                                             .fetch();
-
-        let (filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
+        let (mut filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .fetch_entities_and_indexes();
 
@@ -322,12 +316,12 @@ impl SceneManager {
         Ok(target_scene.get_one_component_storage::<A>()
                     .enumerate()
                     .filter(move |(i, _t)| filtered_indexes.contains(i))
-                    .map(|(i, t)| (i, t)))
+                    .map(move |(_i, t)| (filtered_entities.pop_front().unwrap(), t)))
     }
 
 
     pub fn fetch_two_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
+                            B: Component<Storage = ComponentStorage<B>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
 
         //Get filtered indexes for entities
         let filtered_indexes = EntityFetcher::new(self, scene.clone())
@@ -346,11 +340,11 @@ impl SceneManager {
                     
     }
 
-    pub fn fetch_two_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>)>> {
+    pub fn fetch_two_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> {
 
         //Get filtered indexes for entities
-        let (filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
+        let (mut filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
                                                         .fetch_entities_and_indexes();
@@ -362,13 +356,13 @@ impl SceneManager {
         Ok(target_scene.get_two_component_storages::<A, B>()
                     .enumerate()
                     .filter(move |(i, (_t, _u ))| filtered_indexes.contains(i))
-                    .map(|(i, (t, u ))| (i, t, u)))
+                    .map(move |(_i, (t, u ))| (filtered_entities.pop_front().unwrap(), t, u)))
                     
     }
 
     pub fn fetch_three_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+                            C: Component<Storage = ComponentStorage<C>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
 
         //Get filtered indexes for entities
         let filtered_indexes = EntityFetcher::new(self, scene.clone())
@@ -388,12 +382,12 @@ impl SceneManager {
                     
     }
 
-    pub fn fetch_three_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
+    pub fn fetch_three_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+                            C: Component<Storage = ComponentStorage<C>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
 
         //Get filtered indexes for entities
-        let (filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
+        let (mut filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
                                                         .filter_by_component::<C>()
@@ -406,14 +400,14 @@ impl SceneManager {
         Ok(target_scene.get_three_component_storages::<A, B, C>()
                     .enumerate()
                     .filter(move |(i, ((_t, _u ), _w))| filtered_indexes.contains(i))
-                    .map(|(i, ((t, u), w))| (i, t, u, w)))
+                    .map(move |(_i, ((t, u), w))| (filtered_entities.pop_front().unwrap(), t, u, w)))
                     
     }
 
     pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
                             C: Component<Storage = ComponentStorage<C>>,
-                            D: Component<Storage = ComponentStorage<D>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+                            D: Component<Storage = ComponentStorage<D>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
 
         //Get filtered indexes for entities
         let filtered_indexes = EntityFetcher::new(self, scene.clone())
@@ -434,13 +428,13 @@ impl SceneManager {
                     
     }
 
-    pub fn fetch_four_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
+    pub fn fetch_four_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
                             C: Component<Storage = ComponentStorage<C>>,
-                            D: Component<Storage = ComponentStorage<D>>>(&mut self, scene: SceneHandle) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+                            D: Component<Storage = ComponentStorage<D>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
 
         //Get filtered indexes for entities
-        let (filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
+        let (mut filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .filter_by_component::<B>()
                                                         .filter_by_component::<C>()
@@ -454,7 +448,7 @@ impl SceneManager {
         Ok(target_scene.get_four_component_storages::<A, B, C, D>()
                     .enumerate()
                     .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
-                    .map(|(i, (((a, b), c), d))| (i, a, b, c, d)))
+                    .map(move |(_i, (((a, b), c), d))| (filtered_entities.pop_front().unwrap(), a, b, c, d)))
                     
     }
 }

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, any::TypeId};
 
 use anyhow::{Result, Context, Error};
 use log::{debug, info};
@@ -19,7 +19,7 @@ pub struct Scene {
     pub(crate) entities: pill_core::PillSlotMap<EntityHandle, Entity>,
     pub(crate) components: ComponentMap,
     pub(crate) allocator: Allocator,
-    pub(crate) bitmask_controller: BitmaskController
+    pub(crate) bitmask_controller: BitmaskController,
 
     //pub(crate) active_camera_entity_handle: Option<EntityHandle>,
 }
@@ -32,7 +32,7 @@ impl Scene {
             entities: pill_core::PillSlotMap::<EntityHandle, Entity>::with_key(),
             components: ComponentMap::new(),
             allocator: Allocator::new(),
-            bitmask_controller: BitmaskController::new()
+            bitmask_controller: BitmaskController::new(),
             //active_camera_entity_handle: None,
         };
     }

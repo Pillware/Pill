@@ -100,25 +100,25 @@ impl<T> ComponentStorage<T> {
         }
     }
 
-    pub fn get(&self, index: usize) -> Option<T> {
-        return None;
-        // if self.data.borrow().len() <= index {
-        //     return None
-        // }
-        // else {
-        //      match &self.data.borrow()[index].is_none() {
-        //          true => return None,
-        //          false => return self.data.borrow()[index]
-        //      }
-        // }
-        // if self.data[handle.index].generation == handle.generation {
-        //     match &self.data[handle.index].component.is_none() {
-        //         true => return None,
-        //         false => return self.data[handle.index].component.as_ref()
-        //     }
-        // }
-        // None
-    }
+    // pub fn get(&self, index: usize) -> Option<T> {
+    //     return None;
+    //     if self.data.borrow().len() <= index {
+    //         return None
+    //     }
+    //     else {
+    //          match &self.data.borrow()[index].is_none() {
+    //              true => return None,
+    //              false => return self.data.borrow()[index]
+    //          }
+    //     }
+    //     if self.data[handle.index].generation == handle.generation {
+    //         match &self.data[handle.index].component.is_none() {
+    //             true => return None,
+    //             false => return self.data[handle.index].component.as_ref()
+    //         }
+    //     }
+    //     None
+    // }
     
     // fn borrow_component_vec<ComponentType: 'static>(
     //     &self,
@@ -136,18 +136,18 @@ impl<T> ComponentStorage<T> {
     //     None
     // }
 
-    pub fn get_mut(&mut self, handle: EntityHandle) -> Option<&mut T> {
-        return None;
-        // if self.data.borrow_mut().len() <= handle.index {
-        //     return None
-        // }
-        // else {
-        //      match &self.data.borrow_mut()[handle.index].is_none() {
-        //          true => return None,
-        //          false => return self.data.borrow_mut()[handle.index].as_mut()
-        //      }
-        // }
-    }
+    // pub fn get_mut(&mut self, handle: EntityHandle) -> Option<&mut T> {
+    //     return None;
+    //     if self.data.borrow_mut().len() <= handle.index {
+    //         return None
+    //     }
+    //     else {
+    //          match &self.data.borrow_mut()[handle.index].is_none() {
+    //              true => return None,
+    //              false => return self.data.borrow_mut()[handle.index].as_mut()
+    //          }
+    //     }
+    // }
 
     pub fn fill_up(&mut self, length : usize) {
         for _ in 0..length {

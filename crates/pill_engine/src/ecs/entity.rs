@@ -2,6 +2,7 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct EntityHandle;
 }
 
+#[derive(Debug)]
 pub struct Entity {
     pub(crate) bitmask: u32
 }

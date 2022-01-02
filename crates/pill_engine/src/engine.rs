@@ -209,6 +209,10 @@ impl Engine {
 
     // [TODO] Implement remove_system
 
+    pub fn build_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityBuilder> {
+        Ok(self.scene_manager.build_entity(scene_handle))
+    }
+
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
         self.scene_manager.create_entity(scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
     }
@@ -269,16 +273,16 @@ impl Engine {
         Ok(iterator)
     }
 
-    pub fn fetch_one_component_storage_with_entity_indexes<A: Component<Storage = ComponentStorage<A>>>(&self) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>)>> {
+    pub fn fetch_one_component_storage_with_entity_handles<A: Component<Storage = ComponentStorage<A>>>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> {
         // Get iterator
-        let iterator = self.scene_manager.fetch_one_component_storage_with_entity_indexes::<A>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_one_component_storage_with_entity_handles::<A>(self.scene_manager.get_active_scene_handle()?)?;
 
         Ok(iterator)
     }
     
     
     pub fn fetch_two_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>>(&mut self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
+                            B: Component<Storage = ComponentStorage<B>>>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
 
         // Get iterator
         let iterator = self.scene_manager.fetch_two_component_storages::<A, B>(self.scene_manager.get_active_scene_handle()?)?;
@@ -286,18 +290,18 @@ impl Engine {
         Ok(iterator) 
     }
 
-    pub fn fetch_two_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>>(&mut self) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>)>> {
+    pub fn fetch_two_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
+                            B: Component<Storage = ComponentStorage<B>>>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> {
 
         // Get iterator
-        let iterator = self.scene_manager.fetch_two_component_storages_with_entity_indexes::<A, B>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_two_component_storages_with_entity_handles::<A, B>(self.scene_manager.get_active_scene_handle()?)?;
 
         Ok(iterator) 
     }
 
     pub fn fetch_three_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>>(&mut self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+                            C: Component<Storage = ComponentStorage<C>>>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
 
         //Get iterator
         let iterator = self.scene_manager.fetch_three_component_storages::<A, B, C>(self.scene_manager.get_active_scene_handle()?)?;
@@ -305,12 +309,12 @@ impl Engine {
         Ok(iterator)
     }
 
-    pub fn fetch_three_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
+    pub fn fetch_three_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>>(&mut self) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+                            C: Component<Storage = ComponentStorage<C>>>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
 
         //Get iterator
-        let iterator = self.scene_manager.fetch_three_component_storages_with_entity_indexes::<A, B, C>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_three_component_storages_with_entity_handles::<A, B, C>(self.scene_manager.get_active_scene_handle()?)?;
 
         Ok(iterator)
     }
@@ -318,7 +322,7 @@ impl Engine {
     pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
                             C: Component<Storage = ComponentStorage<C>>,
-                            D: Component<Storage = ComponentStorage<D>>>(&mut self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+                            D: Component<Storage = ComponentStorage<D>>>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
 
         //Get iterator
         let iterator = self.scene_manager.fetch_four_component_storages::<A, B, C, D>(self.scene_manager.get_active_scene_handle()?)?;
@@ -326,13 +330,13 @@ impl Engine {
         Ok(iterator) 
     }
 
-    pub fn fetch_four_component_storages_with_entity_indexes<A: Component<Storage = ComponentStorage::<A>>, 
+    pub fn fetch_four_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
                             B: Component<Storage = ComponentStorage<B>>,
                             C: Component<Storage = ComponentStorage<C>>,
-                            D: Component<Storage = ComponentStorage<D>>>(&mut self) -> Result<impl Iterator<Item = (usize, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+                            D: Component<Storage = ComponentStorage<D>>>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
 
         //Get iterator
-        let iterator = self.scene_manager.fetch_four_component_storages_with_entity_indexes::<A, B, C, D>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_four_component_storages_with_entity_handles::<A, B, C, D>(self.scene_manager.get_active_scene_handle()?)?;
 
         Ok(iterator) 
     }

@@ -8,7 +8,6 @@ use thiserror::Error;
 
 use super::CameraAspectRatio;
 
-// [TODO] Use iterators once they are implemented
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     //debug!("Rendering system starting"); 
     let active_scene = engine.scene_manager.get_active_scene_mut()?;
@@ -39,54 +38,93 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera))?.clone();
 
-    // - Prepare rendering data
-
-    let camera_component_storage = active_scene.get_component_storage::<CameraComponent>()
-        .context(format!("{}: Cannot get active {}", "RenderingSystem".sobj_style(), "Camera".gobj_style()))?;
-    let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
-        .context(format!("{}: Cannot get {}", "RenderingSystem".sobj_style(), "TransformComponents".sobj_style())).unwrap();
-    let mesh_rendering_component_storage = active_scene.get_component_storage::<MeshRenderingComponent>()
-        .context(format!("{}: Cannot get {}", "RenderingSystem".sobj_style(), "MeshRenderingComponents".sobj_style())).unwrap();
-
     // Clear and fill render queue
-    let render_queue = &mut engine.render_queue;
-    render_queue.clear();
+    // let render_queue = &mut engine.render_queue;
+    // render_queue.clear();
+
+    // Dereference engine
+    let referenced_engine = &*engine;
+
+    // Create render queue
+    let mut new_render_queue = Vec::<RenderQueueItem>::new();
+
+    // Iterate through meshed
+    unsafe
+    {
+        for (entity_handle, mesh_rendering_component) in referenced_engine.fetch_one_component_storage_with_entity_handles::<MeshRenderingComponent>().unwrap() {
+
+            if let Some(render_queue_key) = mesh_rendering_component.borrow().as_ref().unwrap().render_queue_key {
+                let render_queue_item = RenderQueueItem {
+                    key: render_queue_key,
+                    entity_index: entity_handle.get_data().index as u32, 
+                };
+        
+                new_render_queue.push(render_queue_item);
+            }
+            else {
+                debug!("Invalid render queue key");
+                continue;
+            } 
+        }
+    }
 
     //println!("Mesh rendering components to process: {}", mesh_rendering_component_storage.data.len());
-    for i in 0..mesh_rendering_component_storage.data.len() { //[TODO] Proper iteration
+    // for i in 0..mesh_rendering_component_storage.data.len() { //[TODO] Proper iteration
        
         
-        //debug!("Processing entity {}", i);
-        //let mesh_rendering_component = mesh_rendering_component_storage.data[i].as_ref().unwrap();
-        let borrowed_rendering_component = mesh_rendering_component_storage.data[i].borrow();
-        let mesh_rendering_component = match borrowed_rendering_component.as_ref() {
-            Some(mesh_rendering_component) => { 
-                //debug!("Processing entity {} - found", i); 
-                mesh_rendering_component 
-            },
-            None => { 
-                //debug!("Processing entity {} - empty", i); 
-                continue 
-            },
-        };
+    //     //debug!("Processing entity {}", i);
+    //     //let mesh_rendering_component = mesh_rendering_component_storage.data[i].as_ref().unwrap();
+    //     let borrowed_rendering_component = mesh_rendering_component_storage.data[i].borrow();
+    //     let mesh_rendering_component = match borrowed_rendering_component.as_ref() {
+    //         Some(mesh_rendering_component) => { 
+    //             //debug!("Processing entity {} - found", i); 
+    //             mesh_rendering_component 
+    //         },
+    //         None => { 
+    //             //debug!("Processing entity {} - empty", i); 
+    //             continue 
+    //         },
+    //     };
 
-        // [TODO] Check if render queue key is correct
-        if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
-            let render_queue_item = RenderQueueItem {
-                key: render_queue_key,
-                entity_index: i as u32, 
-            };
+    //     // [TODO] Check if render queue key is correct
+    //     if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
+    //         let render_queue_item = RenderQueueItem {
+    //             key: render_queue_key,
+    //             entity_index: i as u32, 
+    //         };
     
-            render_queue.push(render_queue_item);
-        }
-        else {
-            debug!("Invalid render queue key");
-            continue;
-        } 
+    //         render_queue.push(render_queue_item);
+    //     }
+    //     else {
+    //         debug!("Invalid render queue key");
+    //         continue;
+    //     } 
+    // }
+    
+    // Prepare engine's render queue
+    let render_queue = &mut engine.render_queue;
+
+    // Clear queue
+    render_queue.clear();
+
+    // Get mesh items from new queue
+    while new_render_queue.is_empty() == false {
+        render_queue.push(new_render_queue.pop().unwrap());
     }
 
     // Sort render queue
     render_queue.sort();
+
+    // - Prepare rendering data
+
+    // Get scene handle
+    let active_scene = engine.scene_manager.get_active_scene_mut()?;
+
+    // Get storages
+    let camera_component_storage = active_scene.get_component_storage::<CameraComponent>()
+        .context(format!("{}: Cannot get active {}", "RenderingSystem".sobj_style(), "Camera".gobj_style()))?;
+    let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
+        .context(format!("{}: Cannot get {}", "RenderingSystem".sobj_style(), "TransformComponents".sobj_style())).unwrap();
 
     // Render
     match engine.renderer.render(

@@ -25,6 +25,8 @@ pub mod game {
             CameraComponent,
             CameraAspectRatio,
             EntityHandle,
+            Component,
+            ComponentStorage
         },
         resources::{
             Texture, 

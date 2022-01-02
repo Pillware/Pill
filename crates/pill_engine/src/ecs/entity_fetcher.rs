@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use super::{BitmaskController, bitmask_controller, SceneManager, scene_manager, SceneHandle, EntityHandle};
 use crate::ecs::Component;
 
@@ -37,17 +39,14 @@ impl<'a> EntityFetcher<'a> {
         }
     }
 
-    pub fn fetch_entities(&self) ->  Vec<EntityHandle> {
-        unsafe 
-        {
-            let mut entities = Vec::<EntityHandle>::new();
-            for (entity_handle, entity) in self.scene_manager.get_scene(self.scene_handle).unwrap().entities.iter() {
-                if (entity.bitmask & self.filter_bitmask) == self.filter_bitmask {
-                    entities.push(entity_handle.clone());
-                }
-            }
-            entities    
+    pub fn fetch_entities(&self) ->  VecDeque<EntityHandle> {
+        let mut entities = VecDeque::<EntityHandle>::new();
+        for (entity_handle, entity) in self.scene_manager.get_scene(self.scene_handle).unwrap().entities.iter() {
+            if (entity.bitmask & self.filter_bitmask) == self.filter_bitmask {
+                entities.push_back(entity_handle.clone());
+             }
         }
+        entities    
         // let mut indexes = Vec::<usize>::new();
         // for i in 0..self.bitmask_controller.bitmasks.len() {
         //     match &self.bitmask_controller.bitmasks[i] {
@@ -62,15 +61,15 @@ impl<'a> EntityFetcher<'a> {
         // indexes
     }
 
-    pub fn fetch_entities_and_indexes(&self) -> (Vec<EntityHandle>, Vec<usize>) {
+    pub fn fetch_entities_and_indexes(&self) -> (VecDeque<EntityHandle>, Vec<usize>) {
         unsafe 
         {
             let mut indexes = Vec::<usize>::new();
-            let mut entities = Vec::<EntityHandle>::new();
+            let mut entities = VecDeque::<EntityHandle>::new();
             for (entity_handle, entity) in self.scene_manager.get_scene(self.scene_handle).unwrap().entities.iter() {
                 if (entity.bitmask & self.filter_bitmask) == self.filter_bitmask {
                     indexes.push(entity_handle.clone().get_data().index as usize);
-                    entities.push(entity_handle.clone());
+                    entities.push_back(entity_handle.clone());
                 }
             }
             (entities, indexes)    

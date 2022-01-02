@@ -1,6 +1,9 @@
 #![allow(unused_imports, dead_code, unused_variables)]
 use pill_engine::{game::*, internal::InputComponent};
 
+struct RemovableComponent {} impl Component for RemovableComponent {type Storage = ComponentStorage<Self>; }
+struct NonCameraComponent {} impl Component for NonCameraComponent {type Storage = ComponentStorage<Self>; }
+
 pub struct Game { }   
 
 impl PillGame for Game {
@@ -13,12 +16,15 @@ impl PillGame for Game {
 
         // Add systems
         engine.add_system("Paddle movement", paddle_movement_system).unwrap();
+        engine.add_system("Delete entity system", delete_entity_system).unwrap();
 
         // Register components
         engine.register_component::<TransformComponent>(scene).unwrap();
         engine.register_component::<MeshRenderingComponent>(scene).unwrap();
+        engine.register_component::<RemovableComponent>(scene).unwrap();
         engine.register_component::<CameraComponent>(scene).unwrap();
-
+        engine.register_component::<NonCameraComponent>(scene).unwrap();
+        
         let active_scene = engine.get_active_scene_handle().unwrap();
 
         
@@ -39,15 +45,6 @@ impl PillGame for Game {
         camera.enabled = true;
         engine.add_component_to_entity::<CameraComponent>(active_scene, camera_holder, camera).unwrap();
 
-
-
-
-
-
-
-
-
-
         // Add texture
         let texture_1_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/Camouflage.png");
         let texture_1 = Texture::new("TestTexture", TextureType::Color, ResourceLoadType::Path(texture_1_path));
@@ -62,10 +59,6 @@ impl PillGame for Game {
         let texture_3_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/Quilted.png");
         let texture_3 = Texture::new("TestTextureNormal", TextureType::Normal, ResourceLoadType::Path(texture_3_path));
         let texture_3_handle = engine.add_resource::<Texture>(texture_3).unwrap();
-
-
-
-
 
         // Add material
         let mut material_1 = Material::new("TestMaterial");
@@ -98,13 +91,13 @@ impl PillGame for Game {
         let mesh_2_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Cube.obj"); // examples/pong/res/models/Monkey.obj
         let mesh_2 = Mesh::new("TestMesh2", mesh_2_path);
         let mesh_2_handle = engine.add_resource::<Mesh>(mesh_2).unwrap();
+
+        let mesh_3_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Airplane.obj"); // examples/pong/res/models/Monkey.obj
+        let mesh_3 = Mesh::new("TestMesh3", mesh_3_path);
+        let mesh_3_handle = engine.add_resource::<Mesh>(mesh_3).unwrap();
         //engine.remove_resource_by_name::<Texture>("TestTexture").unwrap();
         
-
-    
-
-
-        // --- Create entity
+        // --- Create entity 1
         let paddle_1 = engine.create_entity(active_scene).unwrap();
         // Add transform component
         let transform_1 = TransformComponent::new(
@@ -119,24 +112,10 @@ impl PillGame for Game {
         mesh_rendering_1.set_mesh(engine, &mesh_1_handle).unwrap();
        
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, paddle_1, mesh_rendering_1).unwrap();
-
-        
-
-
-
-
-
-
-
-
-
-
+        engine.add_component_to_entity::<NonCameraComponent>(active_scene, paddle_1, NonCameraComponent{}).unwrap();
         
         // --- Create entity 2
         
-
-      
-
         let paddle_2 = engine.create_entity(active_scene).unwrap();
         // Add transform component
         let transform_2 = TransformComponent::new(
@@ -156,7 +135,20 @@ impl PillGame for Game {
         let x = engine.get_resource::<Material>(&material_1_handle).unwrap();
         //x.set_texture(engine, "Color", texture_2_handle);
 
-       
+        // --- Create entity 3
+
+        let transform_3 = TransformComponent::new(
+            Vector3f::new(-20.0,-15.0,-1.0), 
+            Vector3f::new(15.0, 15.0,15.0),
+            Vector3f::new(0.5, 0.5,0.5),
+        );
+
+        // Add mesh rendering component
+        let mut mesh_rendering_3 = MeshRenderingComponent::default();
+        mesh_rendering_3.set_material(engine, &material_1_handle).unwrap();
+        mesh_rendering_3.set_mesh(engine, &mesh_3_handle).unwrap();
+
+        let paddle_3 = engine.build_entity(active_scene).unwrap().with_component(transform_3).with_component(mesh_rendering_3).with_component(RemovableComponent{}).with_component(NonCameraComponent{}).build();
 
         //engine.remove_resource::<Material>(&material_1_handle).unwrap();
         //engine.remove_resource_by_name::<Material>("TestMaterial").unwrap();
@@ -170,27 +162,43 @@ impl PillGame for Game {
     }
 }
 
+fn delete_entity_system(engine: &mut Engine) -> Result<()> {
+    let new_eng = &*engine;
+    let mut removable_entities = Vec::<EntityHandle>::new();
+    
+    for (entity, removable) in new_eng.fetch_one_component_storage_with_entity_handles::<RemovableComponent>()? {
+        let input_component = new_eng.get_global_component::<InputComponent>()?;
+        if input_component.is_key_clicked(Key::Delete) {
+            removable_entities.push(entity.clone());
+        }
+    }
+    for entity in removable_entities.iter() {
+        let scene_handle = engine.get_active_scene_handle().unwrap();
+        engine.remove_entity(*entity, scene_handle).unwrap();
+    }
+
+    Ok(())
+}
+
 fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
     let new_eng = &*engine;
-    println!("Moving paddles"); 
-    //is A key in global component pressed, if yes the do
-    for transform in new_eng.fetch_one_component_storage::<TransformComponent>()? {
-        let comp = new_eng.get_global_component::<InputComponent>()?;
-        if comp.is_key_pressed(Key::S) {
+    
+    for (transform, camera) in new_eng.fetch_two_component_storages::<TransformComponent, NonCameraComponent>()? {
+        let input_component = new_eng.get_global_component::<InputComponent>()?;
+        if input_component.is_key_pressed(Key::S) {
         transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
 
-        if comp.is_key_pressed(Key::W) {
+        if input_component.is_key_pressed(Key::W) {
             transform.borrow_mut().as_mut().unwrap().rotation.y -= 0.05; }
 
         for transform_z in new_eng.fetch_one_component_storage::<TransformComponent>()? {
-            if comp.is_key_clicked(Key::Z) {
+            if input_component.is_key_clicked(Key::Z) {
                 transform_z.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
         }
 
-        if comp.is_mouse_button_clicked(Mouse::Left) {
+        if input_component.is_mouse_button_clicked(Mouse::Left) {
             transform.borrow_mut().as_mut().unwrap().rotation.x -= 0.05;
         }
     }
-    //new_eng.get_global_component::<InputComponent>();
     Ok(())   
 }
