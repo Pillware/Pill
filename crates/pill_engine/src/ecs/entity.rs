@@ -1,20 +1,29 @@
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct EntityHandle;
+}
+
+#[derive(Debug)]
 pub struct Entity {
-    pub name: String,
-    pub index: usize,
-    //pub generational_index: usize, // [TODO] Implement
-    //pub parent: Option<EntityHandle>, // [TODO] Implement
-    //pub children: Vec<EntityHandle>, // [TODO] Implement
+    pub(crate) bitmask: u32
 }
 
-#[derive(Clone, Copy)]
-pub struct EntityHandle {
-    pub index: usize,
+impl Entity {
+     
+    pub fn new(bitmask: u32) -> Self {
+
+        Self {
+            bitmask,
+        }
+    }
+
 }
 
-impl EntityHandle {
-    pub fn new(index: usize) -> Self {
-	    Self { 
-            index,
+impl Default for Entity {
+
+    fn default() -> Self {
+        
+        Self {
+            bitmask: 0
         }
     }
 }

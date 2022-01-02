@@ -1,0 +1,9 @@
+use pill_engine::{game::*, internal::*};
+
+pub struct Game { } 
+
+impl Pill_Game for Game {
+    fn start(&self, engine: &mut Engine) {
+        println!("Game started succesfully!);
+    }
+}

@@ -235,7 +235,7 @@ impl Material {
                 for scene in engine.scene_manager.scenes.iter_mut() { // [TODO] Getting user, duplicated code, create iterator for that
                     let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
                     for i in 0..mesh_rendering_component_storage.data.len() {
-                        if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
+                        if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().borrow_mut().as_mut() {
                             if let Some(material_handle) = mesh_rendering_component.material_handle {
                                 if material_handle.data() == self_handle.data() {
                                     mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
@@ -384,7 +384,7 @@ impl Resource for Material {
         for scene in engine.scene_manager.scenes.iter_mut() {
             let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
             for i in 0..mesh_rendering_component_storage.data.len() {
-                if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().as_mut() {
+                if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().borrow_mut().as_mut() {
                     if let Some(material_handle) = mesh_rendering_component.material_handle {
                         if material_handle.data() == self_handle.data() {
                             mesh_rendering_component.material_handle = Some(default_material.0);

@@ -13,6 +13,32 @@ mod rendering_system;
 mod component;
 mod deferred_update_component;
 mod deferred_update_system;
+mod allocator;
+mod bitmask_controller;
+mod bitmask_map;
+mod entity_fetcher;
+mod entity_builder;
+
+pub use allocator::{
+    Allocator
+};
+
+pub use bitmask_controller::{
+    Bitmask,
+    BitmaskController
+};
+
+pub use bitmask_map::{
+    BitmaskMap
+};
+
+pub use entity_fetcher::{
+    EntityFetcher
+};
+
+pub use entity_builder::{
+    EntityBuilder
+};
 
 pub use rendering_system::{
     rendering_system,

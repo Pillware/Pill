@@ -6,6 +6,7 @@ mod graphics;
 mod ecs;
 mod input;
 mod config;
+mod time;
 
 #[cfg(feature = "game")]
 pub mod game {
@@ -13,6 +14,8 @@ pub mod game {
         engine::{
             Engine,
             PillGame,
+            Key,
+            Mouse,
         },
         ecs::{
             Scene,
@@ -22,6 +25,8 @@ pub mod game {
             CameraComponent,
             CameraAspectRatio,
             EntityHandle,
+            Component,
+            ComponentStorage
         },
         resources::{
             Texture, 
@@ -32,7 +37,8 @@ pub mod game {
             Mesh,
             MeshHandle,
             ResourceLoadType,
-        }
+        },
+
     };
     
     extern crate pill_core;
@@ -94,6 +100,12 @@ pub mod internal {
             MaterialTextureMap,
             MaterialParameter,
             MaterialParameterMap
+        },
+        input::{
+            InputComponent
+        },
+        time::{
+            TimeComponent
         }
     };
 }
