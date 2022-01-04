@@ -2,10 +2,11 @@ use crate::{
     engine::Engine,
     graphics::{ RenderQueueKey, compose_render_queue_key }, 
     resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager },
-    ecs::{ EntityHandle, ComponentStorage, Component, SceneHandle, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer }, 
+    ecs::{ EntityHandle, ComponentStorage, Component, SceneHandle, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, DeferredUpdateComponent }, 
     config::DEFAULT_MATERIAL_HANDLE,
 };
 
+use cgmath::num_traits::Float;
 use pill_core::{ PillTypeMap, PillTypeMapKey, PillStyle, get_type_name, PillSlotMapKey };
 
 use anyhow::{ Result, Context, Error };
@@ -136,9 +137,9 @@ impl PillTypeMapKey for MeshRenderingComponent {
 
 impl Component for MeshRenderingComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        // [TODO]: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
         // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
-        self.deferred_update_manager = Some(engine.TEMP_deferred_component.borrow_deferred_update_manager());
+        let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
+        self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
 
         // Check if material handle is valid
         if self.material_handle.is_some() {

@@ -342,7 +342,7 @@ mod test {
     }
 
     #[test]
-    fn PillTypeMap_counter() {
+    fn pilltypemap_counter() {
         let mut map = PillTypeMap::new();
 
         map.insert::<Counter>(0);
@@ -357,7 +357,7 @@ mod test {
     }
 
     #[test]
-    fn PillTypeMap_entry() {
+    fn pilltypemap_entry() {
         let mut map = PillTypeMap::new();
 
         assert_eq!(map.get::<Counter>(), None);
@@ -372,7 +372,7 @@ mod test {
     }
 
     #[test]
-    fn PillTypeMap_remove() {
+    fn pilltypemap_remove() {
         let mut map = PillTypeMap::new();
 
         map.insert::<Text>(String::from("foobar"));
@@ -389,7 +389,7 @@ mod test {
     }
 
     #[test]
-    fn PillTypeMap_default() {
+    fn pilltypemap_default() {
         fn ensure_default<T: Default>() {}
 
         ensure_default::<PillTypeMap>();

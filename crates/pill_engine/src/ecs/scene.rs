@@ -6,7 +6,7 @@ use crate::{
 use pill_core::{ EngineError, PillTypeMap, PillTypeMapKey, PillSlotMap, get_type_name};
 
 use anyhow::{Result, Context, Error};
-use std::{ cell::RefCell, any::TypeId };
+use std::{ cell::RefCell, any::TypeId, slice::Iter, iter::Zip };
 use log::{debug, info};
 
 use super::BitmaskController;
@@ -80,52 +80,52 @@ impl Scene {
     //     (self.components.get_mut::<T>().unwrap(), self.allocator.get_max_index())
     // }
 
-    pub fn get_one_component_storage<T>(&self) -> std::slice::Iter<'_, RefCell<Option<T>>>
-        where T: Component<Storage = ComponentStorage::<T>>
+    pub fn get_one_component_storage<A>(&self) -> Iter<'_, RefCell<Option<A>>>
+        where A: Component<Storage = ComponentStorage::<A>>
     {
-        self.get_component_storage::<T>().unwrap().data.iter()
+        self.get_component_storage::<A>().unwrap().data.iter()
     }
 
-    pub fn get_two_component_storages<T, U>(&self) -> std::iter::Zip<
-                                                      std::slice::Iter<'_, RefCell<Option<T>>>, 
-                                                      std::slice::Iter<'_, RefCell<Option<U>>>> 
+    pub fn get_two_component_storages<A, B>(&self) -> Zip<
+                                                      Iter<'_, RefCell<Option<A>>>, 
+                                                      Iter<'_, RefCell<Option<B>>>> 
         where 
-        T: Component<Storage = ComponentStorage::<T>>,
-        U: Component<Storage = ComponentStorage::<U>>   
+        A: Component<Storage = ComponentStorage::<A>>,
+        B: Component<Storage = ComponentStorage::<B>>   
     {
-        self.get_component_storage::<T>().unwrap().data.iter()
-            .zip(self.get_component_storage::<U>().unwrap().data.iter())
+        self.get_component_storage::<A>().unwrap().data.iter()
+            .zip(self.get_component_storage::<B>().unwrap().data.iter())
     }
 
-    pub fn get_three_component_storages<T, U, W>(&self) ->  std::iter::Zip<std::iter::Zip<
-                                                            std::slice::Iter<'_, RefCell<Option<T>>>, 
-                                                            std::slice::Iter<'_, RefCell<Option<U>>>>, 
-                                                            std::slice::Iter<'_, RefCell<Option<W>>>> 
+    pub fn get_three_component_storages<A, B, C>(&self) -> Zip<std::iter::Zip<
+                                                           Iter<'_, RefCell<Option<A>>>, 
+                                                           Iter<'_, RefCell<Option<B>>>>, 
+                                                           Iter<'_, RefCell<Option<C>>>> 
         where 
-        T: Component<Storage = ComponentStorage::<T>>,
-        U: Component<Storage = ComponentStorage::<U>>,
-        W: Component<Storage = ComponentStorage::<W>>                                        
+        A: Component<Storage = ComponentStorage::<A>>,
+        B: Component<Storage = ComponentStorage::<B>>,
+        C: Component<Storage = ComponentStorage::<C>>                                        
     {
 
-        self.get_component_storage::<T>().unwrap().data.iter()
-            .zip(self.get_component_storage::<U>().unwrap().data.iter())
-            .zip(self.get_component_storage::<W>().unwrap().data.iter())
+        self.get_component_storage::<A>().unwrap().data.iter()
+            .zip(self.get_component_storage::<B>().unwrap().data.iter())
+            .zip(self.get_component_storage::<C>().unwrap().data.iter())
     }
 
-    // pub fn get_four_component_storages<T, U, W, Z>(&self) -> std::iter::Zip<std::iter::Zip<std::iter::Zip<
-    //                                                          std::slice::Iter<'_, RefCell<Option<T>>>, 
-    //                                                          std::slice::Iter<'_, RefCell<Option<U>>>>, 
-    //                                                          std::slice::Iter<'_, RefCell<Option<W>>>>,
-    //                                                          std::slice::Iter<'_, RefCell<Option<Y>>>> 
-    //     where 
-    //     T: Component<Storage = ComponentStorage::<T>>,
-    //     U: Component<Storage = ComponentStorage::<U>>,
-    //     W: Component<Storage = ComponentStorage::<W>>,
-    //     Y: Component<Storage = ComponentStorage::<Y>>                                          
-    // {
-    //     self.get_component_storage::<T>().unwrap().data.iter()
-    //         .zip(self.get_component_storage::<U>().unwrap().data.iter())
-    //         .zip(self.get_component_storage::<W>().unwrap().data.iter())
-    //         .zip(self.get_component_storage::<Y>().unwrap().data.iter())
-    // }
+    pub fn get_four_component_storages<A, B, C, D>(&self) -> Zip<std::iter::Zip<std::iter::Zip<
+                                                             Iter<'_, RefCell<Option<A>>>, 
+                                                             Iter<'_, RefCell<Option<B>>>>, 
+                                                             Iter<'_, RefCell<Option<C>>>>,
+                                                             Iter<'_, RefCell<Option<D>>>> 
+        where 
+        A: Component<Storage = ComponentStorage::<A>>,
+        B: Component<Storage = ComponentStorage::<B>>,
+        C: Component<Storage = ComponentStorage::<C>>,
+        D: Component<Storage = ComponentStorage::<D>>                                          
+    {
+        self.get_component_storage::<A>().unwrap().data.iter()
+            .zip(self.get_component_storage::<B>().unwrap().data.iter())
+            .zip(self.get_component_storage::<C>().unwrap().data.iter())
+            .zip(self.get_component_storage::<D>().unwrap().data.iter())
+    }
 }

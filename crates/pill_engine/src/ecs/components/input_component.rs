@@ -1,15 +1,14 @@
-use crate::ecs::component_storage::GlobalComponentStorage;
-use crate::ecs::{ Component, ComponentStorage };
+use crate::ecs::{ Component, ComponentStorage, GlobalComponentStorage };
+
+use pill_core::PillTypeMapKey;
 
 use std::{ 
     any::Any,
     cell::RefCell,
     collections::HashMap,
 };
-    
-use pill_core::PillTypeMapKey;
 use winit::dpi::PhysicalPosition;
-use winit::event::{VirtualKeyCode, ElementState, MouseButton, MouseScrollDelta};
+use winit::event::{ VirtualKeyCode, ElementState, MouseButton, MouseScrollDelta };
 use anyhow::{Result, Context, Error};
 
 pub enum InputEvent {
@@ -41,6 +40,24 @@ pub struct InputComponent {
 }
 
 impl InputComponent {
+    pub fn new() -> Self {
+        Self { 
+            current_keyboard_keys: [false; 163],
+            previous_keyboard_keys: [false; 163],
+    
+            current_mouse_buttons: [false; 3],
+            previous_mouse_buttons: [false; 3],
+    
+            current_mouse_pos: PhysicalPosition { x: 0.0, y: 0.0},
+            previous_mouse_pos: PhysicalPosition { x: 0.0, y: 0.0},
+    
+            current_mouse_line_delta: (0.0, 0.0),
+            previous_mouse_line_delta: (0.0, 0.0),
+    
+            current_mouse_pixel_delta: PhysicalPosition {x: 0.0, y: 0.0},
+            previous_mouse_pixel_delta: PhysicalPosition {x: 0.0, y: 0.0},
+        }
+    }
 
     // - All Input Types Functionalities
 
@@ -223,27 +240,6 @@ impl InputComponent {
 
     pub fn set_current_mouse_pos(&mut self, pos: PhysicalPosition<f64>) {
         self.current_mouse_pos = pos;
-    }
-}
-
-impl Default for InputComponent {
-    fn default() -> Self {
-        Self { 
-            current_keyboard_keys: [false; 163],
-            previous_keyboard_keys: [false; 163],
-
-            current_mouse_buttons: [false; 3],
-            previous_mouse_buttons: [false; 3],
-
-            current_mouse_pos: PhysicalPosition { x: 0.0, y: 0.0},
-            previous_mouse_pos: PhysicalPosition { x: 0.0, y: 0.0},
-
-            current_mouse_line_delta: (0.0, 0.0),
-            previous_mouse_line_delta: (0.0, 0.0),
-
-            current_mouse_pixel_delta: PhysicalPosition {x: 0.0, y: 0.0},
-            previous_mouse_pixel_delta: PhysicalPosition {x: 0.0, y: 0.0},
-        }
     }
 }
 

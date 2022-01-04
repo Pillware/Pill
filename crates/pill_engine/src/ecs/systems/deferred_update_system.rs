@@ -1,6 +1,6 @@
 use crate::{
     engine::Engine,
-    ecs::{ DeferredUpdateRequest }
+    ecs::{ DeferredUpdateRequest, DeferredUpdateComponent }
 };
 
 use std::collections::VecDeque;
@@ -8,7 +8,7 @@ use anyhow::{Result, Context, Error};
 
 pub fn deferred_update_system(engine: &mut Engine) -> Result<()> {
     // Get deferred update component
-    let deferred_update_component = &mut engine.TEMP_deferred_component; // engine.get_global_component_mut::<DeferredUpdateComponent>();
+    let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
     
     // Get deferred update manager
     let mut deferred_update_manager = deferred_update_component.manager.0.lock().expect("Critical: Mutex is blocked");

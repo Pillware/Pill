@@ -11,7 +11,7 @@ use std::io::Write;
 pub const LOG_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
 
 fn main() {
-    
+
     // Configure logging
     #[cfg(debug_assertions)]
     env_logger::Builder::new()

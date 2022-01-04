@@ -12,6 +12,12 @@ pub struct TimeComponent {
 }
 
 impl TimeComponent {
+    pub fn new() -> Self {
+        Self { 
+            delta_time: 0.0
+        }
+    }
+
     pub fn update_delta_time(&mut self, new_delta_time: f32) -> Result<()> {
         self.delta_time = new_delta_time;
         Ok(())
@@ -28,12 +34,4 @@ impl PillTypeMapKey for TimeComponent {
 
 impl Component for TimeComponent {
    
-}
-
-impl Default for TimeComponent {
-    fn default() -> Self {
-        Self { 
-            delta_time: 0.0
-         }
-    }
 }

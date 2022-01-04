@@ -2,7 +2,7 @@ use crate::{
     engine::Engine,
     graphics::{ RendererTextureHandle, RendererMaterialHandle, RENDER_QUEUE_KEY_ORDER }, 
     resources::{ TextureHandle, TextureType, Texture, ResourceStorage, Resource },
-    ecs::{ DeferredUpdateManagerPointer, DeferredUpdateResourceRequest, MeshRenderingComponent },
+    ecs::{ DeferredUpdateManagerPointer, DeferredUpdateResourceRequest, MeshRenderingComponent, DeferredUpdateComponent },
     config::*,
 };
 
@@ -280,10 +280,10 @@ impl Resource for Material {
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
-        
-        // [TODO]: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
+
         // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
-        self.deferred_update_manager = Some(engine.TEMP_deferred_component.borrow_deferred_update_manager());
+        let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
+        self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
 
         // Check if assigned textures are of correct type
         for texture_slot in self.textures.data.iter_mut() {

@@ -27,22 +27,19 @@ pub enum EngineError {
     ComponentAlreadyRegistered(String, String),
     #[error("{} {} is not registered for {} {} \n\nSource: ", "Component".gobj_style(), .0.sobj_style(), "Scene".gobj_style(), .1.name_style())]
     ComponentNotRegistered(String, String),
-
     #[error("{} {} is already added to {} \n\nSource: ", "GlobalComponent".gobj_style(), .0.sobj_style(), "Engine".mobj_style())]
     GlobalComponentAlreadyExists(String),
     #[error("{} {} not found in {} \n\nSource: ", "GlobalComponent".gobj_style(), .0.sobj_style(), "Engine".mobj_style())]
     GlobalComponentNotFound(String),
 
-
-
     // System
-    #[error("Failed to update {} {} in update phase {} \n\nSource: ", "System".gobj_style(), .0.sobj_style(), .1.name_style())]
+    #[error("Failed to update {} {} in {} {} \n\nSource: ", "System".gobj_style(), .0.sobj_style(), "UpdatePhase".sobj_style(), .1.name_style())]
     SystemUpdateFailed(String, String),
-    #[error("{} {} is already registered for update phase {} \n\nSource: ", "System".gobj_style(), .0.name_style(), .1.name_style())]
+    #[error("{} {} is already registered for {} {} \n\nSource: ", "System".gobj_style(), .0.name_style(), "UpdatePhase".sobj_style(), .1.name_style())]
     SystemAlreadyExists(String, String),
-    #[error("{} {} is not registered for update phase {} \n\nSource: ", "System".gobj_style(), .0.name_style(), .1.name_style())]
+    #[error("{} {} is not registered for {} {} \n\nSource: ", "System".gobj_style(), .0.name_style(), "UpdatePhase".sobj_style(), .1.name_style())]
     SystemNotFound(String, String),
-    #[error("Update phase {} not found \n\nSource: ", .0.name_style())]
+    #[error("{} {} not found \n\nSource: ", "UpdatePhase".sobj_style(), .0.name_style())]
     SystemUpdatePhaseNotFound(String),
     
     // Resource

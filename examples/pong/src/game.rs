@@ -1,8 +1,6 @@
 #![allow(unused_imports, dead_code, unused_variables, unused_mut)]
 use pill_engine::game::*;
 
-
-
 struct NonCameraComponent {} 
 
 impl PillTypeMapKey for NonCameraComponent {
@@ -161,7 +159,7 @@ impl PillGame for Game {
 
         //mesh_rendering_3.set_material(engine, &material_alpha_handle).unwrap();
         //mesh_rendering_3.set_mesh(engine, &airplane_mesh_handle).unwrap();
-        let airplane_entity = engine.build_entity(active_scene).unwrap()
+        let airplane_entity = engine.build_entity(active_scene)
             .with_component(transform_3)
             .with_component(mesh_rendering_3)
             .with_component(RemovableComponent{})

@@ -9,7 +9,6 @@ mod component;
 mod bitmask_controller;
 mod bitmask_map;
 mod entity_fetcher;
-mod entity_builder;
 
 mod components;
 mod systems;
@@ -87,10 +86,6 @@ pub use entity_fetcher::{
     EntityFetcher
 };
 
-pub use entity_builder::{
-    EntityBuilder
-};
-
 pub use component:: {
     Component,
 };
@@ -102,7 +97,8 @@ pub use component_storage::{
 
 pub use entity::{
     Entity,
-    EntityHandle
+    EntityHandle,
+    EntityBuilder,
 };
 
 pub use scene::{
