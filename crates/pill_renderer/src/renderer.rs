@@ -8,7 +8,6 @@ use crate::resources::{
     Vertex
 };
 
-use pill_core::{ PillSlotMap, PillSlotMapKey, PillSlotMapKeyData, PillStyle };
 use pill_engine::internal::{
     PillRenderer, 
     EntityHandle, 
@@ -26,23 +25,40 @@ use pill_engine::internal::{
     RendererMeshHandle,
     RendererPipelineHandle,
     ResourceManager, 
-    RendererTextureHandle, RENDER_QUEUE_KEY_ITEMS_LENGTH, RENDER_QUEUE_KEY_ORDER_IDX, RENDER_QUEUE_KEY_ORDER,
-
-    
+    RendererTextureHandle, 
+    RENDER_QUEUE_KEY_ITEMS_LENGTH, 
+    RENDER_QUEUE_KEY_ORDER_IDX, 
+    RENDER_QUEUE_KEY_ORDER,
+    get_renderer_resource_handle_from_camera_component,
 };
 
-use std::convert::TryInto;
-use std::mem::size_of;
-use std::num::{NonZeroU32, NonZeroU8};
-use std::ops::Range;
-use std::path::{Path, PathBuf};
-use anyhow::{Result, Context, Error};
-use cgmath::{Rotation3, Zero};
+use pill_core::{ 
+    PillSlotMap, 
+    PillSlotMapKey, 
+    PillSlotMapKeyData, 
+    PillStyle 
+};
+
+use std::{
+    collections::{ LinkedList, HashMap },
+    convert::TryInto,
+    env,
+    iter,
+    num::{ NonZeroU32, NonZeroU8 },
+    path::{ Path, PathBuf },
+    ops::Range,
+    mem::size_of,
+};
+
+use anyhow::{ Result, Context, Error };
+use cgmath::{ Rotation3, Zero };
 use slab::Slab;
 use log::{debug, info};
-use std::iter;
-use std::collections::{LinkedList, HashMap};
 
+// Default resource handle - Master pipeline
+pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+};
 
 pub struct Renderer {
     pub state: State,
@@ -110,34 +126,38 @@ impl PillRenderer for Renderer {
     fn create_texture(&mut self, path: &PathBuf, name: &str, texture_type: TextureType) -> Result<RendererTextureHandle> {
         let texture = RendererTexture::new_texture_from_image(&self.state.device, &self.state.queue, path, name, texture_type).unwrap();
         let handle = self.state.rendering_resource_storage.textures.insert(texture);
+
         Ok(handle)
     }
 
     fn create_texture_from_bytes(&mut self, bytes: &[u8], name: &str, texture_type: TextureType) -> Result<RendererTextureHandle> {
         let texture = RendererTexture::new_texture_from_bytes(&self.state.device, &self.state.queue, bytes, name, texture_type).unwrap();
         let handle = self.state.rendering_resource_storage.textures.insert(texture);
+
         Ok(handle)
     }
 
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.state.device, name, mesh_data).unwrap();
         let handle = self.state.rendering_resource_storage.meshes.insert(mesh);
+
         Ok(handle)
     }
 
     fn create_camera(&mut self) -> Result<RendererCameraHandle> {
-        let pipeline_handle = get_master_pipeline_handle();
+        let pipeline_handle = MASTER_PIPELINE_HANDLE;
         let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
         let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
         
         let camera = RendererCamera::new(&self.state.device, camera_bind_group_layout).unwrap();
 
         let handle = self.state.rendering_resource_storage.cameras.insert(camera);
+
         Ok(handle)
     }
 
     fn create_material(&mut self, name: &str, textures: &MaterialTextureMap, parameters: &MaterialParameterMap) -> Result<RendererMaterialHandle> {
-        let pipeline_handle = get_master_pipeline_handle();
+        let pipeline_handle = MASTER_PIPELINE_HANDLE;
         let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
 
         let material = RendererMaterial::new(
@@ -153,6 +173,7 @@ impl PillRenderer for Renderer {
         ).unwrap();
 
         let handle = self.state.rendering_resource_storage.materials.insert(material);
+
         Ok(handle)
     }
 
@@ -166,27 +187,27 @@ impl PillRenderer for Renderer {
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
         self.state.rendering_resource_storage.textures.remove(renderer_texture_handle).unwrap();
+
         Ok(())
     }
 
     fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
         self.state.rendering_resource_storage.materials.remove(renderer_material_handle).unwrap();
+
         Ok(())
     }
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
         self.state.rendering_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
+        
         Ok(())
     }
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
         self.state.rendering_resource_storage.meshes.remove(renderer_mesh_handle).unwrap();
+
         Ok(())
     }
-}
-
-fn get_master_pipeline_handle() -> RendererPipelineHandle {
-    RendererPipelineHandle::new(1, std::num::NonZeroU32::new(1).unwrap() )
 }
 
 pub struct RenderingResourceStorage {
@@ -272,7 +293,7 @@ impl State {
             format: surface.get_preferred_format(&adapter).unwrap(), // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
-            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
+            present_mode: wgpu::PresentMode::Fifo, // Defines how to sync the surface with the display
         };
 
         // Configure surface
@@ -351,16 +372,15 @@ impl State {
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Get active camera and update it
-        unsafe
-        {
-        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.get_data().index as usize).unwrap().borrow();
+        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap().borrow();
         let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = self.rendering_resource_storage.cameras.get_mut(active_camera_component.get_renderer_resource_handle()).ok_or(RendererError::RendererResourceNotFound)?;
-        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.get_data().index as usize).unwrap().borrow();
+        let renderer_camera = self.rendering_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(RendererError::RendererResourceNotFound)?;
+        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap().borrow();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
         renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
-        let renderer_camera = self.rendering_resource_storage.cameras.get(active_camera_component.get_renderer_resource_handle()).unwrap();
+        let renderer_camera = self.rendering_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
         let clear_color = active_camera_component.clear_color;
+        
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render_encoder"),
@@ -404,7 +424,7 @@ impl State {
         frame.present();
         //debug!("Frame rendering completed successfully");
         Ok(())
-        }
+        
     }
 }
 

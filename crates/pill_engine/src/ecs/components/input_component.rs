@@ -1,14 +1,23 @@
-use std::any::Any;
-use std::cell::RefCell;
-use std::collections::HashMap;
+use crate::ecs::component_storage::GlobalComponentStorage;
+use crate::ecs::{ Component, ComponentStorage };
+
+use std::{ 
+    any::Any,
+    cell::RefCell,
+    collections::HashMap,
+};
+    
+use pill_core::PillTypeMapKey;
 use winit::dpi::PhysicalPosition;
 use winit::event::{VirtualKeyCode, ElementState, MouseButton, MouseScrollDelta};
 use anyhow::{Result, Context, Error};
 
-use crate::input::input_event;
-use crate::ecs::Component;
-
-use super::InputEvent;
+pub enum InputEvent {
+    KeyboardKey { key: VirtualKeyCode, state: ElementState },
+    MouseKey {  key: MouseButton, state: ElementState },
+    MouseWheel { delta: MouseScrollDelta },
+    MouseMotion { position: PhysicalPosition<f64> }
+}
 
 pub struct InputComponent {
     // Keyboard arrays
@@ -61,30 +70,15 @@ impl InputComponent {
     }
 
     pub fn is_key_pressed(&self, key: VirtualKeyCode) -> bool {
-        if &self.current_keyboard_keys[key as usize] == &true && &self.previous_keyboard_keys[key as usize] == &true {
-            return true
-        }
-        else {
-            return false
-        }
+        &self.current_keyboard_keys[key as usize] == &true && &self.previous_keyboard_keys[key as usize] == &true 
     }
 
     pub fn is_key_clicked(&self, key: VirtualKeyCode) -> bool {
-        if &self.current_keyboard_keys[key as usize] == &true && &self.previous_keyboard_keys[key as usize] == &false {
-            return true
-        }
-        else {
-            return false
-        }
+        &self.current_keyboard_keys[key as usize] == &true && &self.previous_keyboard_keys[key as usize] == &false 
     }
 
     pub fn is_key_released(&self, key: VirtualKeyCode) -> bool {
-        if &self.current_keyboard_keys[key as usize] == &false && &self.previous_keyboard_keys[key as usize] == &true {
-            return true
-        }
-        else {
-            return false
-        }
+        &self.current_keyboard_keys[key as usize] == &false && &self.previous_keyboard_keys[key as usize] == &true
     }
 
     // - Mouse Buttons Functionalities
@@ -253,30 +247,10 @@ impl Default for InputComponent {
     }
 }
 
-pub struct GlobalComponent<T> {
-    pub component: Option<T>
+impl PillTypeMapKey for InputComponent {
+    type Storage = GlobalComponentStorage<InputComponent>; 
 }
-
-impl<T> GlobalComponent<T> {
-    pub fn new() -> Self {
-        Self {
-            component: None
-        }
-    }
-
-    pub fn set_component(&mut self, comp: T) -> Result<()>  {
-        self.component = Some(comp);
-        Ok(())
-    }
-
-    pub fn get_component(&self) -> Result<Option<&T>> {
-        let comp = self.component.as_ref();
-        Ok(comp)
-    }
-}
-
-unsafe impl<T> Sync for GlobalComponent<T> {}
 
 impl Component for InputComponent {
-    type Storage = GlobalComponent<Self>;
+   
 }

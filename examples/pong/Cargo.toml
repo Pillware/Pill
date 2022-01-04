@@ -2,7 +2,6 @@
 name = "pill_game"
 version = "0.1.0"
 edition = "2018"
-build = "build.rs"
 resolver = "2"
 
 [dependencies]

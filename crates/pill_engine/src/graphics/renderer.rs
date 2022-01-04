@@ -15,7 +15,9 @@ use crate::{
         MaterialTextureMap, 
         MaterialParameterMap
     },
-    graphics::RenderQueueItem,
+    graphics::{
+        RenderQueueItem,
+    },
 };
 
 use pill_core::PillSlotMapKey;
@@ -26,7 +28,7 @@ use thiserror::Error;
 use anyhow::{Result, Context, Error};
 
 
-// --- Renderer resource handles 
+// --- Renderer resource handles ---
 
 pill_core::define_new_pill_slotmap_key! { 
     pub struct RendererMaterialHandle;
@@ -48,7 +50,7 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
 }
 
-// --- Renderer error
+// --- Renderer error ---
 
 #[derive(Error, Debug)]
 pub enum RendererError { 
@@ -64,7 +66,7 @@ pub enum RendererError {
     SurfaceOther,
 }
 
-// --- Renderer trait definition
+// --- Renderer trait definition ---
 
 pub trait PillRenderer { 
     fn new(window: &winit::window::Window) -> Self where Self: Sized;

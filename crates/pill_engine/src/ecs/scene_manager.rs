@@ -1,10 +1,13 @@
-use std::{any::type_name, collections::HashMap, cell::RefCell};
-use anyhow::{Result, Context, Error};
-use boolinator::Boolinator;
-use pill_core::{EngineError, get_type_name};
-use indexmap::IndexMap;
+use crate::{
+    ecs::{ Scene, Entity, ComponentStorage, Component, EntityHandle, EntityFetcher, EntityBuilder }
+};
 
-use crate::ecs::*;
+use pill_core::{ EngineError, get_type_name, PillSlotMapKey };
+
+use std::{any::type_name, collections::HashMap, cell::RefCell};
+use anyhow::{ Result, Context, Error };
+use boolinator::Boolinator;
+
 
 pill_core::define_new_pill_slotmap_key! { 
     pub struct SceneHandle;
@@ -39,7 +42,7 @@ impl SceneManager {
         target_scene.components.insert::<T>(component_storage);
 
         // Get bitmask controller
-        let controller = self.get_bitmask_controller_mut(scene).unwrap();
+        let controller = target_scene.get_bitmask_controller_mut();
 
         // Register bitmask for new component
         controller.add_bitmap::<T>();
@@ -136,37 +139,37 @@ impl SceneManager {
 
     // - Allocator
 
-    pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
-        // Get scene
-        let target_scene = self.get_scene_mut(scene)?;
+    // pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
+    //     // Get scene
+    //     let target_scene = self.get_scene_mut(scene)?;
 
-        // Get allocator from scene
-        let index_allocator = target_scene.get_allocator_mut();
+    //     // Get allocator from scene
+    //     let index_allocator = target_scene.get_allocator_mut();
 
-        Ok(index_allocator)
-    }
+    //     Ok(index_allocator)
+    // }
 
-    // - Bitmask Controller
+    // // - Bitmask Controller
 
-    pub fn get_bitmask_controller_mut(&mut self, scene: SceneHandle) -> Result<&mut BitmaskController> {
-        // Get scene
-        let target_scene = self.get_scene_mut(scene)?;
+    // pub fn get_bitmask_controller_mut(&mut self, scene: SceneHandle) -> Result<&mut BitmaskController> {
+    //     // Get scene
+    //     let target_scene = self.get_scene_mut(scene)?;
 
-        // Get allocator from scene
-        let controller = target_scene.get_bitmask_controller_mut();
+    //     // Get allocator from scene
+    //     let controller = target_scene.get_bitmask_controller_mut();
 
-        Ok(controller)
-    }
+    //     Ok(controller)
+    // }
 
-    pub fn get_bitmask_controller(&self, scene: SceneHandle) -> Result<&BitmaskController> {
-        // Get scene
-        let target_scene = self.get_scene(scene)?;
+    // pub fn get_bitmask_controller(&self, scene: SceneHandle) -> Result<&BitmaskController> {
+    //     // Get scene
+    //     let target_scene = self.get_scene(scene)?;
 
-        // Get allocator from scene
-        let controller = target_scene.get_bitmask_controller();
+    //     // Get allocator from scene
+    //     let controller = target_scene.get_bitmask_controller();
 
-        Ok(controller)
-    }
+    //     Ok(controller)
+    // }
 
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {     
         // Register component storage if that hasn't happened yet
@@ -181,7 +184,8 @@ impl SceneManager {
         let component_storage = target_scene.get_component_storage_mut::<T>()?;
 
         // Add component to storage
-        component_storage.set(entity_handle.clone(), component);
+        let component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized");
+        component_slot.borrow_mut().insert(component);
 
         // Get the bitmask mapped onto the given component to update entity's bitmask
         let component_bitmask = target_scene.get_bitmask_controller_mut().mapping.get_bitmask::<T>();
@@ -201,8 +205,13 @@ impl SceneManager {
         // Get component storage from screen
         let component_storage = target_scene.get_component_storage_mut::<T>()?;
 
-        // Delete the component with given entity's index from the storage
-        component_storage.delete(entity_handle.clone());
+        {
+            // Delete the component with given entity's index from the storage
+            let component_slot = &mut component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized").borrow_mut();
+            let x = &mut component_slot.as_mut(); // [TODO] Fix
+            *x = None;
+        }
+        
 
         // Get the bitmask mapped onto the given component to update entity's bitmask
         let component_bitmask = target_scene.get_bitmask_controller_mut().mapping.get_bitmask::<T>();
@@ -234,16 +243,19 @@ impl SceneManager {
 
     pub fn get_scene_handle(&self, name: &str) -> Result<SceneHandle> {
         let scene_handle = self.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidSceneName(name.to_string()))?.clone();
+
         Ok(scene_handle)
     }
 
     pub fn get_scene(&self, scene_handle: SceneHandle) -> Result<&Scene> {
         let scene = self.scenes.get(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+
         Ok(scene)
     }
 
     pub fn get_scene_mut(&mut self, scene_handle: SceneHandle) -> Result<&mut Scene> {
         let scene = self.scenes.get_mut(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+
         Ok(scene)
     }
 
@@ -255,6 +267,7 @@ impl SceneManager {
 
         // Set new active scene
         self.active_scene_handle = Some(scene_handle);
+
         Ok(())
     }
 
@@ -270,7 +283,6 @@ impl SceneManager {
         let active_scene_handle = self.active_scene_handle.ok_or(Error::new(EngineError::NoActiveScene))?;
         let active_scene = self.get_scene(active_scene_handle)?;
 
-        // Return active scene handle
         Ok(active_scene)
     }
 
@@ -279,7 +291,6 @@ impl SceneManager {
         let active_scene_handle = self.active_scene_handle.ok_or(Error::new(EngineError::NoActiveScene))?;
         let active_scene = self.get_scene_mut(active_scene_handle)?;
 
-        // Return active scene handle
         Ok(active_scene)
     }
 
@@ -295,7 +306,6 @@ impl SceneManager {
         let target_scene = self.get_scene(scene).unwrap();
 
         // Return iterator from scene
-
         Ok(target_scene.get_one_component_storage::<A>()
                     .enumerate()
                     .filter(move |(i, _t)| filtered_indexes.contains(i))
@@ -404,51 +414,51 @@ impl SceneManager {
                     
     }
 
-    pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>,
-                            D: Component<Storage = ComponentStorage<D>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+    // pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
+    //                         B: Component<Storage = ComponentStorage<B>>,
+    //                         C: Component<Storage = ComponentStorage<C>>,
+    //                         D: Component<Storage = ComponentStorage<D>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
 
-        //Get filtered indexes for entities
-        let filtered_indexes = EntityFetcher::new(self, scene.clone())
-                                                        .filter_by_component::<A>()
-                                                        .filter_by_component::<B>()
-                                                        .filter_by_component::<C>()
-                                                        .filter_by_component::<D>()
-                                                        .fetch_indexes();
+    //     //Get filtered indexes for entities
+    //     let filtered_indexes = EntityFetcher::new(self, scene.clone())
+    //                                                     .filter_by_component::<A>()
+    //                                                     .filter_by_component::<B>()
+    //                                                     .filter_by_component::<C>()
+    //                                                     .filter_by_component::<D>()
+    //                                                     .fetch_indexes();
         
-        // Get scene
-        let target_scene = self.get_scene(scene).unwrap();
+    //     // Get scene
+    //     let target_scene = self.get_scene(scene).unwrap();
         
-        // Return iterator from scene
-        Ok(target_scene.get_four_component_storages::<A, B, C, D>()
-                    .enumerate()
-                    .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
-                    .map(|(_i, (((a, b), c), d))| (a, b, c, d)))
+    //     // Return iterator from scene
+    //     Ok(target_scene.get_four_component_storages::<A, B, C, D>()
+    //                 .enumerate()
+    //                 .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
+    //                 .map(|(_i, (((a, b), c), d))| (a, b, c, d)))
                     
-    }
+    // }
 
-    pub fn fetch_four_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>,
-                            D: Component<Storage = ComponentStorage<D>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+    // pub fn fetch_four_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
+    //                         B: Component<Storage = ComponentStorage<B>>,
+    //                         C: Component<Storage = ComponentStorage<C>>,
+    //                         D: Component<Storage = ComponentStorage<D>>>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
 
-        //Get filtered indexes for entities
-        let (mut filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
-                                                        .filter_by_component::<A>()
-                                                        .filter_by_component::<B>()
-                                                        .filter_by_component::<C>()
-                                                        .filter_by_component::<D>()
-                                                        .fetch_entities_and_indexes();
+    //     //Get filtered indexes for entities
+    //     let (mut filtered_entities, filtered_indexes) = EntityFetcher::new(self, scene.clone())
+    //                                                     .filter_by_component::<A>()
+    //                                                     .filter_by_component::<B>()
+    //                                                     .filter_by_component::<C>()
+    //                                                     .filter_by_component::<D>()
+    //                                                     .fetch_entities_and_indexes();
         
-        // Get scene
-        let target_scene = self.get_scene(scene).unwrap();
+    //     // Get scene
+    //     let target_scene = self.get_scene(scene).unwrap();
         
-        // Return iterator from scene
-        Ok(target_scene.get_four_component_storages::<A, B, C, D>()
-                    .enumerate()
-                    .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
-                    .map(move |(_i, (((a, b), c), d))| (filtered_entities.pop_front().unwrap(), a, b, c, d)))
+    //     // Return iterator from scene
+    //     Ok(target_scene.get_four_component_storages::<A, B, C, D>()
+    //                 .enumerate()
+    //                 .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
+    //                 .map(move |(_i, (((a, b), c), d))| (filtered_entities.pop_front().unwrap(), a, b, c, d)))
                     
-    }
+    // }
 }

@@ -49,51 +49,51 @@ impl BitmaskMap {
         }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    struct FirstStruct(u32);
-    struct SecondStruct(bool, String);
-    struct ThirdStruct(FirstStruct, SecondStruct, usize, bool);
-    struct FourthStruct(Option<bool>);
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+//     struct FirstStruct(u32);
+//     struct SecondStruct(bool, String);
+//     struct ThirdStruct(FirstStruct, SecondStruct, usize, bool);
+//     struct FourthStruct(Option<bool>);
 
-    impl Component for FirstStruct { type Storage = ComponentStorage<Self> ;}
-    impl Component for SecondStruct { type Storage = ComponentStorage<Self> ;}
-    impl Component for ThirdStruct { type Storage = ComponentStorage<Self>; }
-    impl Component for FourthStruct {type Storage = ComponentStorage<Self>; }
+//     impl Component for FirstStruct { type Storage = ComponentStorage<Self> ;}
+//     impl Component for SecondStruct { type Storage = ComponentStorage<Self> ;}
+//     impl Component for ThirdStruct { type Storage = ComponentStorage<Self>; }
+//     impl Component for FourthStruct {type Storage = ComponentStorage<Self>; }
 
-    #[test]
-    fn test_insert() {
-        let mut bitmap = BitmaskMap::new();
+//     #[test]
+//     fn test_insert() {
+//         let mut bitmap = BitmaskMap::new();
 
-        bitmap.insert::<FirstStruct>(1);
-        bitmap.insert::<SecondStruct>(2);
-        bitmap.insert::<ThirdStruct>(0b1111);
+//         bitmap.insert::<FirstStruct>(1);
+//         bitmap.insert::<SecondStruct>(2);
+//         bitmap.insert::<ThirdStruct>(0b1111);
 
-        assert_eq!(bitmap.0.len(), 3);
-        assert_eq!(bitmap.contains_component::<FourthStruct>(), false);
-        assert_eq!(bitmap.contains_component::<FirstStruct>(), true);
+//         assert_eq!(bitmap.0.len(), 3);
+//         assert_eq!(bitmap.contains_component::<FourthStruct>(), false);
+//         assert_eq!(bitmap.contains_component::<FirstStruct>(), true);
 
-        bitmap.insert::<FourthStruct>(0b0000_0000_0000_0000_0000_0000_0000_0001);
+//         bitmap.insert::<FourthStruct>(0b0000_0000_0000_0000_0000_0000_0000_0001);
 
-        assert_eq!(bitmap.0.len(), 4);
-        assert_eq!(bitmap.contains_component::<FourthStruct>(), true);
-        assert_eq!(bitmap.contains_component::<FirstStruct>(), true);
-    }
+//         assert_eq!(bitmap.0.len(), 4);
+//         assert_eq!(bitmap.contains_component::<FourthStruct>(), true);
+//         assert_eq!(bitmap.contains_component::<FirstStruct>(), true);
+//     }
 
-    #[test]
-    fn test_bitmask_fetch() {
-        let mut bitmap = BitmaskMap::new();
+//     #[test]
+//     fn test_bitmask_fetch() {
+//         let mut bitmap = BitmaskMap::new();
 
-        bitmap.insert::<FirstStruct>(0b0001);
-        bitmap.insert::<SecondStruct>(0b0010);
-        bitmap.insert::<ThirdStruct>(0b0011);
-        bitmap.insert::<FourthStruct>(0b0100);
+//         bitmap.insert::<FirstStruct>(0b0001);
+//         bitmap.insert::<SecondStruct>(0b0010);
+//         bitmap.insert::<ThirdStruct>(0b0011);
+//         bitmap.insert::<FourthStruct>(0b0100);
 
-        assert_eq!(bitmap.0.len(), 4);
-        // assert_eq!(bitmap.get_bitmask::<FirstStruct>(), &0b001);
-        // assert_eq!(bitmap.get_bitmask::<SecondStruct>(), &2);
-        // assert_eq!(bitmap.get_bitmask::<ThirdStruct>(), &3);
-        // assert_eq!(bitmap.get_bitmask::<FourthStruct>(), &4);
-    }
-}
+//         assert_eq!(bitmap.0.len(), 4);
+//         // assert_eq!(bitmap.get_bitmask::<FirstStruct>(), &0b001);
+//         // assert_eq!(bitmap.get_bitmask::<SecondStruct>(), &2);
+//         // assert_eq!(bitmap.get_bitmask::<ThirdStruct>(), &3);
+//         // assert_eq!(bitmap.get_bitmask::<FourthStruct>(), &4);
+//     }
+// }

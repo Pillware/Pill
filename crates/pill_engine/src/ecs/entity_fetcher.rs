@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
-use super::{BitmaskController, bitmask_controller, SceneManager, scene_manager, SceneHandle, EntityHandle};
-use crate::ecs::Component;
+use pill_core::PillSlotMapKey;
+
+use crate::ecs::{ Component, SceneManager, scene_manager, SceneHandle, EntityHandle};
 
 pub struct EntityFetcher<'a> {
     pub scene_manager: &'a SceneManager,
@@ -21,22 +22,20 @@ impl<'a> EntityFetcher<'a> {
     } 
 
     pub fn filter_by_component<T: Component>(&mut self) -> &mut Self {
-        self.filter_bitmask = self.filter_bitmask | self.scene_manager.get_bitmask_controller(self.scene_handle).unwrap().get_bitmap::<T>();
+        let target_scene = self.scene_manager.get_scene(self.scene_handle).unwrap();
+        self.filter_bitmask = self.filter_bitmask | target_scene.get_bitmask_controller().get_bitmap::<T>();
         self
     }
 
     pub fn fetch_indexes(&self) -> Vec<usize> 
     {
-        unsafe 
-        {
-            let mut indexes = Vec::<usize>::new();
-            for (entity_handle, entity) in self.scene_manager.get_scene(self.scene_handle).unwrap().entities.iter() {
-                if (entity.bitmask & self.filter_bitmask) == self.filter_bitmask {
-                    indexes.push(entity_handle.clone().get_data().index as usize);
-                }
+        let mut indexes = Vec::<usize>::new();
+        for (entity_handle, entity) in self.scene_manager.get_scene(self.scene_handle).unwrap().entities.iter() {
+            if (entity.bitmask & self.filter_bitmask) == self.filter_bitmask {
+                indexes.push(entity_handle.data().index as usize);
             }
-            indexes    
         }
+        indexes    
     }
 
     pub fn fetch_entities(&self) ->  VecDeque<EntityHandle> {

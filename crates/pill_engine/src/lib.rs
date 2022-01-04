@@ -4,9 +4,9 @@ mod engine;
 mod resources;
 mod graphics;
 mod ecs;
-mod input;
 mod config;
-mod time;
+
+// --- Use ---
 
 #[cfg(feature = "game")]
 pub mod game {
@@ -22,6 +22,7 @@ pub mod game {
             SceneHandle,
             MeshRenderingComponent,
             TransformComponent,
+            InputComponent,
             CameraComponent,
             CameraAspectRatio,
             EntityHandle,
@@ -42,8 +43,16 @@ pub mod game {
     };
     
     extern crate pill_core;
-    pub use pill_core::{ Vector2f, Vector3f, Color, Vector2i, Vector3i };
-
+    pub use pill_core::{ 
+        PillTypeMapKey, 
+        Vector2f, 
+        Vector3f, 
+        Color, 
+        Vector2i, 
+        Vector3i,
+        define_new_pill_slotmap_key,
+    };
+  
     extern crate anyhow;
     pub use anyhow::{ Context, Result, Error };
 }
@@ -78,7 +87,10 @@ pub mod internal {
             TransformComponent,
             CameraComponent,
             EntityHandle,
+            InputComponent,
+            TimeComponent,
             CameraAspectRatio,
+            get_renderer_resource_handle_from_camera_component,
             //DeferredUpdateRequest,
         },
         resources::{
@@ -96,17 +108,13 @@ pub mod internal {
 
             ResourceLoadType,
             ResourceManager,
+
             MaterialTexture,
             MaterialTextureMap,
             MaterialParameter,
-            MaterialParameterMap
+            MaterialParameterMap,
+            get_renderer_texture_handle_from_material_texture,
         },
-        input::{
-            InputComponent
-        },
-        time::{
-            TimeComponent
-        }
     };
 }
 

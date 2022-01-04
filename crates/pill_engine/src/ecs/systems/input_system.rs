@@ -1,11 +1,13 @@
-use std::{collections::{vec_deque, VecDeque}, borrow::{Borrow, BorrowMut}};
+use crate::{ 
+    engine::Engine,
+    ecs::{ InputComponent, InputEvent },
+};
 
-use crate::game::Engine;
+
+use std::{collections::{vec_deque, VecDeque}, borrow::{Borrow, BorrowMut}};
 use anyhow::{Result, Context, Error};
 use lazy_static::__Deref;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta};
-
-use super::{InputComponent, InputEvent, input_component::GlobalComponent};
 
 pub fn input_system(engine: &mut Engine) -> Result<()> {
 

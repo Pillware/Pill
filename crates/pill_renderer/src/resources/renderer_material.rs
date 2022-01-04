@@ -1,6 +1,7 @@
 use crate::RenderingResourceStorage;
 use crate::resources::RendererTexture;
 
+use futures::TryFutureExt;
 use pill_engine::internal::{
     MaterialParameter,
     MaterialParameterMap,
@@ -12,7 +13,7 @@ use pill_engine::internal::{
     MaterialTexture, 
     MASTER_SHADER_COLOR_TEXTURE_SLOT,    
     MASTER_SHADER_NORMAL_TEXTURE_SLOT,
-    MASTER_SHADER_TINT_PARAMETER_SLOT,
+    MASTER_SHADER_TINT_PARAMETER_SLOT, get_default_texture_handles, get_renderer_texture_handle_from_material_texture,
 };
 
 
@@ -130,12 +131,21 @@ impl RendererMaterial {
         textures: &MaterialTextureMap
     ) -> Result<wgpu::BindGroup> {
 
-        // [TODO] Move magic names
-        let color_texture_renderer_handle = textures.get(MASTER_SHADER_COLOR_TEXTURE_SLOT).unwrap().get_texture_data().unwrap().1;
-        let normal_texture_renderer_handle = textures.get(MASTER_SHADER_NORMAL_TEXTURE_SLOT).unwrap().get_texture_data().unwrap().1;
-        let color_texture = rendering_resource_storage.textures.get(color_texture_renderer_handle).unwrap();
-        let normal_texture = rendering_resource_storage.textures.get(normal_texture_renderer_handle).unwrap(); 
+        // Get texture renderer handles, if is it None use default texture for this type of slot
+        let color_texture = textures.data.get(MASTER_SHADER_COLOR_TEXTURE_SLOT).unwrap();
+        let color_renderer_texture_handle = 
+            get_renderer_texture_handle_from_material_texture(color_texture)
+            .unwrap_or_else(|| get_default_texture_handles(color_texture.texture_type).1);
 
+        let normal_texture = textures.data.get(MASTER_SHADER_NORMAL_TEXTURE_SLOT).unwrap();
+        let normal_renderer_textur_handle = 
+            get_renderer_texture_handle_from_material_texture(normal_texture)
+            .unwrap_or_else(|| get_default_texture_handles(normal_texture.texture_type).1);
+
+        let color_texture = rendering_resource_storage.textures.get(color_renderer_texture_handle).unwrap();
+        let normal_texture = rendering_resource_storage.textures.get(normal_renderer_textur_handle).unwrap(); 
+
+        // Set texture resources to the bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
             entries: &[

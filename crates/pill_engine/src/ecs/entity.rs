@@ -8,20 +8,15 @@ pub struct Entity {
 }
 
 impl Entity {
-     
     pub fn new(bitmask: u32) -> Self {
-
         Self {
             bitmask,
         }
     }
-
 }
 
 impl Default for Entity {
-
     fn default() -> Self {
-        
         Self {
             bitmask: 0
         }

@@ -152,61 +152,61 @@ impl BitmaskController {
 }
 
 
-#[cfg(test)]
-mod test {
-    use crate::ecs::{Component, ComponentStorage, MeshRenderingComponent};
+// #[cfg(test)]
+// mod test {
+//     use crate::ecs::{Component, ComponentStorage, MeshRenderingComponent};
 
-    use super::BitmaskController;
+//     use super::BitmaskController;
 
-    struct HealthComponent(u32);
-    impl Component for HealthComponent {type Storage = ComponentStorage<Self> ;}
-    struct NameComponent(String);
-    impl Component for NameComponent {type Storage = ComponentStorage<Self> ;}
+//     struct HealthComponent(u32);
+//     impl Component for HealthComponent {type Storage = ComponentStorage<Self> ;}
+//     struct NameComponent(String);
+//     impl Component for NameComponent {type Storage = ComponentStorage<Self> ;}
 
-    #[test]
-    fn test_bitmask_set() {
+//     #[test]
+//     fn test_bitmask_set() {
 
-        let mut controller = BitmaskController::new();
-        controller.add_bitmap::<HealthComponent>();
-        controller.add_bitmap::<NameComponent>();
+//         let mut controller = BitmaskController::new();
+//         controller.add_bitmap::<HealthComponent>();
+//         controller.add_bitmap::<NameComponent>();
 
-        assert_eq!(controller.get_bitmap::<NameComponent>(), 0b0010);
-        assert_eq!(controller.get_bitmap::<HealthComponent>(), 0b0001);
+//         assert_eq!(controller.get_bitmap::<NameComponent>(), 0b0010);
+//         assert_eq!(controller.get_bitmap::<HealthComponent>(), 0b0001);
 
-        controller.add_bitmap::<MeshRenderingComponent>();
-        assert_eq!(controller.get_bitmap::<MeshRenderingComponent>(), 0b0100);
-        assert_eq!(controller.get_bitmap::<HealthComponent>(), 0b0001);
-    }
+//         controller.add_bitmap::<MeshRenderingComponent>();
+//         assert_eq!(controller.get_bitmap::<MeshRenderingComponent>(), 0b0100);
+//         assert_eq!(controller.get_bitmap::<HealthComponent>(), 0b0001);
+//     }
 
-    struct FirstStruct(u32);
-    struct SecondStruct(bool, String);
-    struct ThirdStruct(u32);
-    struct FourthStruct(Option<bool>);
+//     struct FirstStruct(u32);
+//     struct SecondStruct(bool, String);
+//     struct ThirdStruct(u32);
+//     struct FourthStruct(Option<bool>);
 
-    impl Component for FirstStruct { type Storage = ComponentStorage<Self> ;}
-    impl Component for SecondStruct { type Storage = ComponentStorage<Self> ;}
-    impl Component for ThirdStruct { type Storage = ComponentStorage<Self>; }
-    impl Component for FourthStruct {type Storage = ComponentStorage<Self>; }
+//     impl Component for FirstStruct { type Storage = ComponentStorage<Self> ;}
+//     impl Component for SecondStruct { type Storage = ComponentStorage<Self> ;}
+//     impl Component for ThirdStruct { type Storage = ComponentStorage<Self>; }
+//     impl Component for FourthStruct {type Storage = ComponentStorage<Self>; }
 
-    #[test]
-    fn test_index_fetch() {
-        let mut controller = BitmaskController::new();
+//     #[test]
+//     fn test_index_fetch() {
+//         let mut controller = BitmaskController::new();
 
-        controller.add_bitmap::<FirstStruct>();
-        controller.add_bitmap::<SecondStruct>();
-        controller.add_bitmap::<ThirdStruct>();
+//         controller.add_bitmap::<FirstStruct>();
+//         controller.add_bitmap::<SecondStruct>();
+//         controller.add_bitmap::<ThirdStruct>();
 
-        controller.add_new_entity_bitmask(0b0101, 0);
-        controller.add_new_entity_bitmask(0b0001, 1);
-        controller.add_new_entity_bitmask(0b0000, 2);
-        controller.add_new_entity_bitmask(0b0101, 3);
+//         controller.add_new_entity_bitmask(0b0101, 0);
+//         controller.add_new_entity_bitmask(0b0001, 1);
+//         controller.add_new_entity_bitmask(0b0000, 2);
+//         controller.add_new_entity_bitmask(0b0101, 3);
 
-        let filtered_indexes = controller.filter_by_component::<FirstStruct>().
-                                                filter_by_component::<ThirdStruct>().
-                                                fetch_indexes();
+//         let filtered_indexes = controller.filter_by_component::<FirstStruct>().
+//                                                 filter_by_component::<ThirdStruct>().
+//                                                 fetch_indexes();
 
-        assert_eq!(filtered_indexes.len(), 2);
-        assert_eq!(filtered_indexes[0], 0);
-        assert_eq!(filtered_indexes[1], 3);
-    }
-}
+//         assert_eq!(filtered_indexes.len(), 2);
+//         assert_eq!(filtered_indexes[0], 0);
+//         assert_eq!(filtered_indexes[1], 3);
+//     }
+// }

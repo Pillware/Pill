@@ -1,6 +1,6 @@
 use crate::resources::RendererTexture;
 
-use pill_engine::internal::{MeshData, MeshVertex};
+use pill_engine::internal::{ MeshData, MeshVertex };
 
 use wgpu::util::DeviceExt;
 use anyhow::*;

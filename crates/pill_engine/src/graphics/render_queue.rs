@@ -64,15 +64,14 @@ impl Debug for RenderQueueItem {
     }
 }
 
-// --- Render queue field 
+// --- Render queue field ---
+
 pub struct RenderQueueField<T>  {
     pub mask_range: core::ops::Range<T>,
     pub mask_shift: T,
     pub mask: T,
     pub max: T, 
 }
-
-
 
 pub trait Pow {
     fn pow(self, exp: Self) -> Self;
@@ -144,7 +143,8 @@ pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> Result<Re
     Ok(render_queue_key_fields)
 }
 
-// --- Render queue fields config 
+// --- Render queue fields config ---
+
 pub type RenderQueueKey = crate::config::RenderQueueKeyType;
 
 impl Pow for RenderQueueKey {

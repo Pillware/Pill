@@ -21,16 +21,14 @@
 //  3. This notice may not be removed or altered from any source distribution.
 
 
-
-// This is SlotMap with public key variables, removed iterators and with version limit set to 2^8 = 256
-// https://crates.io/crates/SlotMap
-
+// --- PillSlotMap
+// This is slotmap crate modified by changing names of types, adding public key variables, removing iterators and adding possibility to restrict version limit
+// Original crate: https://crates.io/crates/SlotMap
 
 // Needed because assigning to non-Copy union is unsafe in stable but not in nightly.
 #![allow(unused_unsafe)]
 
 //! Contains the slot map implementation.
-
 #[cfg(all(nightly, any(doc, feature = "unstable")))]
 use alloc::collections::TryReserveError;
 use core::fmt;
@@ -152,23 +150,30 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     }
 
     pub fn with_capacity_and_key(capacity: usize) -> Self {
-        Self::with_capacity_and_key_and_version_limit(capacity, u32::MAX)
+        Self::with_capacity_and_key_and_version_limit(capacity, u32::MAX).unwrap()
     }
 
-    pub fn with_capacity_and_key_and_version_limit(capacity: usize, version_limit: u32) -> Self {
+    // Warning: Version limit has to be odd value
+    pub fn with_capacity_and_key_and_version_limit(capacity: usize, version_limit: u32) -> Result<Self, ()> {
+        if version_limit % 2 == 0 {
+            return Err(())
+        }
+        
         let mut slots = Vec::with_capacity(capacity + 1);
         slots.push(Slot {
             u: SlotUnion { next_free: 0 },
             version: 0,
         });
 
-        Self {
+        let slotmap = Self {
             slots,
             free_head: 1,
             num_elems: 0,
             version_limit,
             _k: PhantomData,
-        }
+        };
+        
+        Ok(slotmap)
     }
 
     pub fn len(&self) -> usize {
@@ -205,6 +210,33 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .map_or(false, |slot| slot.version == kd.version.get())
     }
 
+    pub fn get_next_free_slot_handle(&self) -> K {
+
+        let new_num_elems = self.num_elems + 1;
+        if new_num_elems == core::u32::MAX {
+            panic!("PillSlotMap number of elements overflow");
+        }
+
+        // Check is there are free slots
+        if let Some(slot) = self.slots.get(self.free_head as usize) {
+            let occupied_version = slot.version | 1;
+            let kd = PillSlotMapKeyData::new(self.free_head, occupied_version);
+            return kd.into();
+        }
+
+        // If no free slots available then add one at the end
+        let version = 1;
+        let kd = PillSlotMapKeyData::new(self.slots.len() as u32, version);
+
+        return kd.into();
+    }
+
+    pub fn insert_and_get_mut(&mut self, value: V) -> (K, &mut V) {
+        let key = self.insert_with_key(|_| value);
+        let value = self.get_mut(key).unwrap();
+        (key, value)
+    }
+
     pub fn insert(&mut self, value: V) -> K {
         self.insert_with_key(|_| value)
     }
@@ -219,6 +251,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             panic!("PillSlotMap number of elements overflow");
         }
 
+        // Check is there are free slots
         if let Some(slot) = self.slots.get_mut(self.free_head as usize) {
             let occupied_version = slot.version | 1;
             let kd = PillSlotMapKeyData::new(self.free_head, occupied_version);
@@ -233,9 +266,11 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
                 slot.version = occupied_version;
             }
             self.num_elems = new_num_elems;
+
             return kd.into();
         }
 
+        // If no free slots available then add one at the end
         let version = 1;
         let kd = PillSlotMapKeyData::new(self.slots.len() as u32, version);
 
@@ -267,7 +302,6 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
 
 
         slot.version = if slot.version >= self.version_limit { 0 } else { slot.version + 1 };
-        // slot.version = slot.version.wrapping_add(1);
 
         value
     }
@@ -487,10 +521,6 @@ impl<'a, K: PillSlotMapKey, V> Iterator for IterMut<'a, K, V> {
     }
 }
 
-
-
-
-
 // --- PillSlotMapKeyData
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -556,19 +586,8 @@ impl Default for PillSlotMapKeyData {
     }
 }
 
-pub unsafe trait PillSlotMapKey:
-    From<PillSlotMapKeyData>
-    + Copy
-    + Clone
-    + Default
-    + Eq
-    + PartialEq
-    + Ord
-    + PartialOrd
-    + core::hash::Hash
-    + core::fmt::Debug
-{
-
+pub unsafe trait PillSlotMapKey: 
+    From<PillSlotMapKeyData> + Copy + Clone + Default + Eq + PartialEq + Ord + PartialOrd + core::hash::Hash + core::fmt::Debug {
     fn null() -> Self {
         PillSlotMapKeyData::null().into()
     }
@@ -589,7 +608,7 @@ macro_rules! define_new_pill_slotmap_key {
                  Eq, PartialEq, Ord, PartialOrd,
                  Hash, Debug)]
         #[repr(transparent)]
-        $vis struct $name($crate::PillSlotMapKeyData);
+        $vis struct $name(pub $crate::PillSlotMapKeyData);
 
         impl From<$crate::PillSlotMapKeyData> for $name {
             fn from(k: $crate::PillSlotMapKeyData) -> Self {

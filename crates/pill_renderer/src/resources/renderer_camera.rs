@@ -4,8 +4,8 @@ use pill_engine::internal::{
     CameraComponent
 };
 
-use anyhow::{Result, Context, Error};
-use cgmath::{Deg, Matrix4, Angle, EuclideanSpace, Vector3, Point3, InnerSpace, SquareMatrix, Zero};
+use anyhow::{ Result, Context, Error };
+use cgmath::{ Deg, Matrix4, Angle, EuclideanSpace, Vector3, Point3, InnerSpace, SquareMatrix, Zero };
 use wgpu::util::DeviceExt;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
@@ -30,9 +30,6 @@ pub(crate) struct CameraUniform {
     pub(crate) position: [f32; 4], // Camera position
     pub(crate) view_projection_matrix: [[f32; 4]; 4], // Perspective manipulation
 }
-
-
-
 
 impl CameraUniform {
     pub fn new() -> Self {

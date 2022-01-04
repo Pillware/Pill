@@ -1,31 +1,10 @@
-// ISC License (ISC)
 
-// Copyright (c) 2016, Alex M. M. <acdenissk69@gmail.com>
-
-// Permission to use, copy, modify, and/or distribute this software for any purpose
-// with or without fee is hereby granted, provided that the above copyright notice
-// and this permission notice appear in all copies.
-
-// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-// REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-// FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-// INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-// OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-// TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-// THIS SOFTWARE.
-
-
-
-
-// This is just typemap_rev with modified names (Value->Storage, TypeMap->ComponentMap, TypeMapKey->Component)
-// https://crates.io/crates/typemap_rev
-
-
-
+// --- PillTypeMap
+// This is typemap_rev crate modified by changing names of types
+// Original crate: https://crates.io/crates/typemap_rev
 
 //! A hashmap whose keys are defined by types.
 
-#![allow(dead_code)]
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -36,42 +15,43 @@ use std::collections::hash_map::{
 };
 use std::marker::PhantomData;
 
-
-/// Component is used to declare key types that are eligible for use
-/// with [`ComponentMap`].
+/// PillTypeMapKey is used to declare key types that are eligible for use
+/// with [`PillTypeMap`].
 ///
-/// [`ComponentMap`]: struct.ComponentMap.html
-pub trait Component: Any {
-    /// Defines the value type that corresponds to this `Component`.
-    type Storage: Send + Sync;
+/// [`PillTypeMap`]: struct.PillTypeMap.html
+pub trait PillTypeMapKey: Any {
+    /// Defines the value type that corresponds to this `PillTypeMapKey`.
+    type Storage: Send; //+ Sync;
 }
 
-/// ComponentMap is a simple abstraction around the standard library's [`HashMap`]
+/// PillTypeMap is a simple abstraction around the standard library's [`HashMap`]
 /// type, where types are its keys. This allows for statically-checked value
 /// retrieval.
 ///
 /// [`HashMap`]: std::collections::HashMap
-pub struct ComponentMap(HashMap<TypeId, Box<(dyn Any + Send + Sync)>>);
+//pub struct PillTypeMap(HashMap<TypeId, Box<(dyn Any + Send + Sync)>>);
+pub struct PillTypeMap(HashMap<TypeId, Box<(dyn Any + Send)>>);
 
-impl ComponentMap {
-    /// Creates a new instance of `ComponentMap`.
+
+impl PillTypeMap {
+    /// Creates a new instance of `PillTypeMap`.
     #[inline]
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
-    /// Returns `true` if the map contains a value for the specified [`Component`].
+    /// Returns `true` if the map contains a value for the specified [`PillTypeMapKey`].
     ///
     /// ```rust
-    /// use typemap_rev::{ComponentMap, Component};
+    /// use pill_typemap::{PillTypeMap, PillTypeMapKey};
     ///
     /// struct Number;
     ///
-    /// impl Component for Number {
+    /// impl PillTypeMapKey for Number {
     ///     type Storage = i32;
     /// }
     ///
-    /// let mut map = ComponentMap::new();
+    /// let mut map = PillTypeMap::new();
     /// assert!(!map.contains_key::<Number>());
     /// map.insert::<Number>(42);
     /// assert!(map.contains_key::<Number>());
@@ -79,46 +59,46 @@ impl ComponentMap {
     #[inline]
     pub fn contains_key<T>(&self) -> bool
     where
-        T: Component
+        T: PillTypeMapKey
     {
         self.0.contains_key(&TypeId::of::<T>())
     }
 
-    /// Inserts a new value based on its [`Component`].
+    /// Inserts a new value based on its [`PillTypeMapKey`].
     /// If the value has been already inserted, it will be overwritten
     /// with the new value.
     ///
     /// ```rust
-    /// use typemap_rev::{ComponentMap, Component};
+    /// use pill_typemap::{PillTypeMap, PillTypeMapKey};
     ///
     /// struct Number;
     ///
-    /// impl Component for Number {
+    /// impl PillTypeMapKey for Number {
     ///     type Storage = i32;
     /// }
     ///
-    /// let mut map = ComponentMap::new();
+    /// let mut map = PillTypeMap::new();
     /// map.insert::<Number>(42);
     /// // Overwrite the value of `Number` with -42.
     /// map.insert::<Number>(-42);
     /// ```
     ///
-    /// [`Component`]: trait.Component.html
+    /// [`PillTypeMapKey`]: trait.PillTypeMapKey.html
     #[inline]
     pub fn insert<T>(&mut self, value: T::Storage)
     where
-        T: Component
+        T: PillTypeMapKey
     {
         self.0.insert(TypeId::of::<T>(), Box::new(value));
     }
 
-    /// Retrieve the entry based on its [`Component`]
+    /// Retrieve the entry based on its [`PillTypeMapKey`]
     ///
-    /// [`Component`]: trait.Component.html
+    /// [`PillTypeMapKey`]: trait.PillTypeMapKey.html
     #[inline]
     pub fn entry<T>(&mut self) -> Entry<'_, T>
     where
-        T: Component
+        T: PillTypeMapKey
     {
         match self.0.entry(TypeId::of::<T>()) {
             HashMapEntry::Occupied(entry) => Entry::Occupied(OccupiedEntry {
@@ -132,48 +112,48 @@ impl ComponentMap {
         }
     }
 
-    /// Retrieve a reference to a value based on its [`Component`].
+    /// Retrieve a reference to a value based on its [`PillTypeMapKey`].
     /// Returns `None` if it couldn't be found.
     ///
     /// ```rust
-    /// use typemap_rev::{ComponentMap, Component};
+    /// use pill_typemap::{PillTypeMap, PillTypeMapKey};
     ///
     /// struct Number;
     ///
-    /// impl Component for Number {
+    /// impl PillTypeMapKey for Number {
     ///     type Storage = i32;
     /// }
     ///
-    /// let mut map = ComponentMap::new();
+    /// let mut map = PillTypeMap::new();
     /// map.insert::<Number>(42);
     ///
     /// assert_eq!(*map.get::<Number>().unwrap(), 42);
     /// ```
     ///
-    /// [`Component`]: trait.Component.html
+    /// [`PillTypeMapKey`]: trait.PillTypeMapKey.html
     #[inline]
     pub fn get<T>(&self) -> Option<&T::Storage>
     where
-        T: Component
+        T: PillTypeMapKey
     {
         self.0
             .get(&TypeId::of::<T>())
             .and_then(|b| b.downcast_ref::<T::Storage>())
     }
 
-    /// Retrieve a mutable reference to a value based on its [`Component`].
+    /// Retrieve a mutable reference to a value based on its [`PillTypeMapKey`].
     /// Returns `None` if it couldn't be found.
     ///
     /// ```rust
-    /// use typemap_rev::{ComponentMap, Component};
+    /// use pill_typemap::{PillTypeMap, PillTypeMapKey};
     ///
     /// struct Number;
     ///
-    /// impl Component for Number {
+    /// impl PillTypeMapKey for Number {
     ///     type Storage = i32;
     /// }
     ///
-    /// let mut map = ComponentMap::new();
+    /// let mut map = PillTypeMap::new();
     /// map.insert::<Number>(42);
     ///
     /// assert_eq!(*map.get::<Number>().unwrap(), 42);
@@ -181,38 +161,38 @@ impl ComponentMap {
     /// assert_eq!(*map.get::<Number>().unwrap(), 0);
     /// ```
     ///
-    /// [`Component`]: trait.Component.html
+    /// [`PillTypeMapKey`]: trait.PillTypeMapKey.html
     #[inline]
     pub fn get_mut<T>(&mut self) -> Option<&mut T::Storage>
     where
-        T: Component
+        T: PillTypeMapKey
     {
         self.0
             .get_mut(&TypeId::of::<T>())
             .and_then(|b| b.downcast_mut::<T::Storage>())
     }
 
-    /// Removes a value from the map based on its [`Component`], returning the value or `None` if
+    /// Removes a value from the map based on its [`PillTypeMapKey`], returning the value or `None` if
     /// the key has not been in the map.
     ///
     /// ```rust
-    /// use typemap_rev::{ComponentMap, Component};
+    /// use pill_typemap::{PillTypeMap, PillTypeMapKey};
     ///
     /// struct Text;
     ///
-    /// impl Component for Text {
+    /// impl PillTypeMapKey for Text {
     ///     type Storage = String;
     /// }
     ///
-    /// let mut map = ComponentMap::new();
-    /// map.insert::<Text>(String::from("Hello ComponentMap!"));
+    /// let mut map = PillTypeMap::new();
+    /// map.insert::<Text>(String::from("Hello PillTypeMap!"));
     /// assert!(map.remove::<Text>().is_some());
     /// assert!(map.get::<Text>().is_none());
     /// ```
     #[inline]
     pub fn remove<T>(&mut self) -> Option<T::Storage>
     where
-        T: Component
+        T: PillTypeMapKey
     {
         self.0
             .remove(&TypeId::of::<T>())
@@ -221,24 +201,24 @@ impl ComponentMap {
     }
 }
 
-impl Default for ComponentMap {
+impl Default for PillTypeMap {
     fn default() -> Self {
         Self(HashMap::default())
     }
 }
 
-/// A view into a single entry in the [`ComponentMap`],
+/// A view into a single entry in the [`PillTypeMap`],
 /// which may either be vacant or occupied.
 ///
 /// This heavily mirrors the official [`Entry`] API in the standard library,
 /// but not all of it is provided due to implementation restrictions. Please
 /// refer to its documentations.
 ///
-/// [`ComponentMap`]: struct.ComponentMap.html
+/// [`PillTypeMap`]: struct.PillTypeMap.html
 /// [`Entry`]: std::collections::hash_map::Entry
 pub enum Entry<'a, K>
 where
-    K: Component,
+    K: PillTypeMapKey,
 {
     Occupied(OccupiedEntry<'a, K>),
     Vacant(VacantEntry<'a, K>),
@@ -246,7 +226,7 @@ where
 
 impl<'a, K> Entry<'a, K>
 where
-    K: Component,
+    K: PillTypeMapKey,
 {
     #[inline]
     pub fn or_insert(self, value: K::Storage) -> &'a mut K::Storage {
@@ -284,7 +264,7 @@ where
 
 impl<'a, K> Entry<'a, K>
 where
-    K: Component,
+    K: PillTypeMapKey,
     K::Storage: Default
 {
     #[inline]
@@ -295,15 +275,16 @@ where
 
 pub struct OccupiedEntry<'a, K>
 where
-    K: Component,
+    K: PillTypeMapKey,
 {
-    entry: HashMapOccupiedEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
+    //entry: HashMapOccupiedEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
+    entry: HashMapOccupiedEntry<'a, TypeId, Box<(dyn Any + Send)>>,
     _marker: PhantomData<&'a K::Storage>,
 }
 
 impl<'a, K> OccupiedEntry<'a, K>
 where
-    K: Component,
+    K: PillTypeMapKey,
 {
     #[inline]
     pub fn get(&self) -> &K::Storage {
@@ -333,15 +314,16 @@ where
 
 pub struct VacantEntry<'a, K>
 where
-    K: Component,
+    K: PillTypeMapKey,
 {
-    entry: HashMapVacantEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
+    //entry: HashMapVacantEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
+    entry: HashMapVacantEntry<'a, TypeId, Box<(dyn Any + Send)>>,
     _marker: PhantomData<&'a K::Storage>,
 }
 
 impl<'a, K> VacantEntry<'a, K>
 where
-    K: Component,
+    K: PillTypeMapKey,
 {
     #[inline]
     pub fn insert(self, value: K::Storage) -> &'a mut K::Storage {
@@ -355,13 +337,13 @@ mod test {
 
     struct Counter;
 
-    impl Component for Counter {
+    impl PillTypeMapKey for Counter {
         type Storage = u64;
     }
 
     #[test]
-    fn typemap_counter() {
-        let mut map = ComponentMap::new();
+    fn PillTypeMap_counter() {
+        let mut map = PillTypeMap::new();
 
         map.insert::<Counter>(0);
 
@@ -375,8 +357,8 @@ mod test {
     }
 
     #[test]
-    fn typemap_entry() {
-        let mut map = ComponentMap::new();
+    fn PillTypeMap_entry() {
+        let mut map = PillTypeMap::new();
 
         assert_eq!(map.get::<Counter>(), None);
         *map.entry::<Counter>().or_insert(0) += 42;
@@ -385,13 +367,13 @@ mod test {
 
     struct Text;
 
-    impl Component for Text {
+    impl PillTypeMapKey for Text {
         type Storage = String;
     }
 
     #[test]
-    fn typemap_remove() {
-        let mut map = ComponentMap::new();
+    fn PillTypeMap_remove() {
+        let mut map = PillTypeMap::new();
 
         map.insert::<Text>(String::from("foobar"));
 
@@ -407,12 +389,12 @@ mod test {
     }
 
     #[test]
-    fn typemap_default() {
+    fn PillTypeMap_default() {
         fn ensure_default<T: Default>() {}
 
-        ensure_default::<ComponentMap>();
+        ensure_default::<PillTypeMap>();
 
-        let map = ComponentMap::default();
+        let map = PillTypeMap::default();
         assert!(map.get::<Text>().is_none());
     }
 }

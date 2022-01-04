@@ -1,19 +1,27 @@
-use crate::config::*;
-use crate::ecs::*; 
-use crate::internal::Engine;
-use crate::graphics::*;
-use crate::resources::*;
+use crate::{
+    engine::Engine,
+    graphics::{ RendererTextureHandle, RendererMaterialHandle, RENDER_QUEUE_KEY_ORDER }, 
+    resources::{ TextureHandle, TextureType, Texture, ResourceStorage, Resource },
+    ecs::{ DeferredUpdateManagerPointer, DeferredUpdateResourceRequest, MeshRenderingComponent },
+    config::*,
+};
 
-use pill_core::Color;
-use pill_core::EngineError;
-use pill_core::PillSlotMapKey;
+use pill_core::{ Color, EngineError, PillSlotMapKey, PillTypeMapKey, PillStyle, enum_variant_eq, get_enum_variant_type_name, get_type_name };
 
-use anyhow::{Result, Context, Error};
-use typemap_rev::TypeMapKey;
-use std::collections::HashMap;
-use std::path::Path;
-use std::path::PathBuf;
+use anyhow::{ Result, Context, Error };
 use boolinator::*;
+use std::{ 
+    path::{ Path, PathBuf },
+    collections::HashMap, 
+    ops::{Range, RangeInclusive} 
+};
+
+
+const DEFERRED_REQUEST_VARIANT_ORDER: usize = 0;
+const DEFERRED_REQUEST_VARIANT_PARAMETER: usize = 1;
+
+const DEFERRED_REQUEST_VARIANT_TEXTURE_START: usize = 2;
+const DEFERRED_REQUEST_VARIANT_TEXTURE_END: usize = 10;
 
 // --- Material parameters ---
 
@@ -48,7 +56,7 @@ impl MaterialParameterMap {
     }
 
     pub fn get_scalar(&self, parameter_name: &str) -> Result<f32> {
-        let error = EngineError::MaterialParameterNotFound(parameter_name.to_string(), "Scalar".to_string());
+        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Scalar".to_string());
         match self.data.get(parameter_name).context(format!("{}", error))? {
             MaterialParameter::Scalar(v) => match v {
                 Some(vv) => Ok(vv.clone()),
@@ -59,7 +67,7 @@ impl MaterialParameterMap {
     }
 
     pub fn get_bool(&self, parameter_name: &str) -> Result<bool> {
-        let error = EngineError::MaterialParameterNotFound(parameter_name.to_string(), "Bool".to_string());
+        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Bool".to_string());
         match self.data.get(parameter_name).context(format!("{}", error))? {
             MaterialParameter::Bool(v) => match v {
                 Some(vv) => Ok(vv.clone()),
@@ -70,7 +78,7 @@ impl MaterialParameterMap {
     }
    
     pub fn get_color(&self, parameter_name: &str) -> Result<Color> {
-        let error = EngineError::MaterialParameterNotFound(parameter_name.to_string(), "Color".to_string());
+        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Color".to_string());
         match self.data.get(parameter_name).context(format!("{}", error))? {
             MaterialParameter::Color(v) => match v {
                 Some(vv) => Ok(vv.clone()),
@@ -81,7 +89,7 @@ impl MaterialParameterMap {
     }
 
     pub fn set_parameter(&mut self, parameter_name: &str, value: MaterialParameter) -> Result<()> {
-        let error = Error::new(EngineError::MaterialParameterNotFound(parameter_name.to_string(), pill_core::get_enum_variant_type_name(&value).to_string()));
+        let error = Error::new(EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), pill_core::get_enum_variant_type_name(&value).to_string()));
         let parameter = self.data.get_mut(parameter_name).context(format!("{}", error))?;
 
         if pill_core::enum_variant_eq::<MaterialParameter>(&parameter, &value) {
@@ -94,34 +102,25 @@ impl MaterialParameterMap {
 
 // --- Material textures ---
 
-#[derive(Debug)]
-pub enum MaterialTexture {
-    Color(Option<(TextureHandle, RendererTextureHandle)>),
-    Normal(Option<(TextureHandle, RendererTextureHandle)>),
+pub struct MaterialTexture {
+    pub texture_type: TextureType,
+    pub texture_handle: Option<TextureHandle>,
+    pub(crate) renderer_texture_handle: Option<RendererTextureHandle>,
 }
 
 impl MaterialTexture {
-    pub fn get_type(&self) -> TextureType {
-        match self {
-            MaterialTexture::Color(_) => TextureType::Color,
-            MaterialTexture::Normal(_) => TextureType::Normal,
+    pub fn new(texture_type: TextureType) -> Self {
+        Self {
+            texture_type,
+            texture_handle: None,
+            renderer_texture_handle: None,
         }
     }
 }
 
-impl MaterialTexture {
-    pub fn get_texture_data(&self) -> &Option<(TextureHandle, RendererTextureHandle)> {
-        match self {
-            MaterialTexture::Color(v) => v,
-            MaterialTexture::Normal(v) => v,
-        }
-    }
-    pub fn get_texture_data_mut(&mut self) -> &mut Option<(TextureHandle, RendererTextureHandle)> {
-        match self {
-            MaterialTexture::Color(v) => v,
-            MaterialTexture::Normal(v) => v,
-        }
-    }
+// This needed so that renderer can get renderer texture handle from material texture while it is still hidden in game API
+pub fn get_renderer_texture_handle_from_material_texture(material_texture: &MaterialTexture) -> &Option<RendererTextureHandle> {
+    &material_texture.renderer_texture_handle
 }
 
 pub struct MaterialTextureMap {
@@ -160,21 +159,21 @@ pub struct Material {
     pub rendering_order: u8,
     pub renderer_resource_handle: Option<RendererMaterialHandle>,
    
+    handle: Option<MaterialHandle>,
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
 
 impl Material {
-
     pub fn new(name: &str) -> Self {  // [TODO] What if renderer fails to create material?        
         let mut textures = MaterialTextureMap::new();
-        textures.data.insert(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string(), MaterialTexture::Color(None));
-        textures.mapping.insert(0, MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string());
-        textures.data.insert(MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string(), MaterialTexture::Normal(None));
-        textures.mapping.insert(1, MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string());
+        textures.data.insert(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string(), MaterialTexture::new(TextureType::Color));
+        textures.mapping.push(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string());
+        textures.data.insert(MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string(), MaterialTexture::new(TextureType::Normal));
+        textures.mapping.push(MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string());
 
         let mut parameters = MaterialParameterMap::new();
         parameters.data.insert(MASTER_SHADER_TINT_PARAMETER_SLOT.to_string(), MaterialParameter::Color(None));
-        textures.mapping.insert(0, MASTER_SHADER_TINT_PARAMETER_SLOT.to_string());
+        textures.mapping.push(MASTER_SHADER_TINT_PARAMETER_SLOT.to_string());
         
         Self {
             name: name.to_string(),  
@@ -182,77 +181,45 @@ impl Material {
             parameters,
             rendering_order: RENDER_QUEUE_KEY_ORDER.max as u8,
             renderer_resource_handle: None, 
+            handle: None,
             deferred_update_manager: None,
         }
     }
 
-    pub fn set_texture(&mut self, engine: &mut Engine, slot_name: &str, texture_handle: TextureHandle) -> Result<()> {
+    pub fn set_texture(&mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<()> {
+        // Get texture slot
+        let texture_slot = self.textures.data.get_mut(slot_name)
+            .ok_or( Error::new(EngineError::MaterialTextureSlotNotFound(slot_name.to_string())))?;
 
-        let texture = engine.resource_manager.get_resource::<Texture>(&texture_handle)?;
-        let renderer_texture_handle = texture.renderer_resource_handle.unwrap();
+        // Get texture slot index
+        let texture_slot_index = self.textures.mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping"); 
 
-        let texture_entry = self.textures.data
-            .get_mut(slot_name)
-            .ok_or( Error::new(EngineError::MaterialTextureNotFound(slot_name.to_string())))?;
+        // Set new handle but not renderer resource handle (it will be set by deferred update system)
+        texture_slot.texture_handle.insert(texture_handle.clone());
 
-        // Check if texture type is valid for this material texture 
-        match texture_entry {
-            MaterialTexture::Color(v) => {
-                match texture.texture_type {
-                    TextureType::Color => { v.replace((texture_handle, renderer_texture_handle)); },
-                    _ => { return Err(Error::new(EngineError::WrongTextureType(pill_core::get_enum_variant_type_name(&texture.texture_type).to_string(), pill_core::get_enum_variant_type_name(texture_entry).to_string()))) },
-                };
-            },
-            MaterialTexture::Normal(v) => {
-                match texture.texture_type {
-                    TextureType::Normal => { v.replace((texture_handle, renderer_texture_handle)); },
-                    _ => { return Err(Error::new(EngineError::WrongTextureType(pill_core::get_enum_variant_type_name(&texture.texture_type).to_string(), pill_core::get_enum_variant_type_name(texture_entry).to_string()))) },
-                };
-            },
+        // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
+        if self.renderer_resource_handle.is_some() {          
+            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_TEXTURE_START + texture_slot_index);
         }
-       
-        // Check if material is added to engine, if so then also its renderer resource has to be updated
-        if self.renderer_resource_handle.is_some() {
-            engine.renderer.update_material_textures(self.renderer_resource_handle.unwrap(), &self.textures)?;
+        
+        Ok(())
+    }
+
+    pub fn set_order(&mut self, order: u8) -> Result<()> {
+        if order < RENDER_QUEUE_KEY_ORDER.max as u8 {
+            // Set new order
+            self.rendering_order = order;
+
+            // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
+            if self.renderer_resource_handle.is_some() { 
+                self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_ORDER);
+            }
+        }
+        else {
+            return Err(Error::new(EngineError::WrongRenderingOrder(order.to_string(), format!("{}-{}", 0, RENDER_QUEUE_KEY_ORDER.max.to_string()))));
         }
 
         Ok(())
-
-        //[TODO] Revert material if failed to update in renderer ??
-    }
-
-    pub fn set_order(&mut self, engine: &mut Engine, order: u8) -> Result<()> {
-        match order > RENDER_QUEUE_KEY_ORDER.max as u8 {
-            true => {
-                return Err(Error::new(EngineError::WrongRenderingOrder(order.to_string(), format!("{}-{}", 0, RENDER_QUEUE_KEY_ORDER.max.to_string()))));
-            },
-            false => {
-                self.rendering_order = order;
-
-                let self_handle = engine.get_resource_handle::<Material>(&self.name)?;
-
-                // Update render queue keys in all mesh rendering components that use this material
-                for scene in engine.scene_manager.scenes.iter_mut() { // [TODO] Getting user, duplicated code, create iterator for that
-                    let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
-                    for i in 0..mesh_rendering_component_storage.data.len() {
-                        if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().borrow_mut().as_mut() {
-                            if let Some(material_handle) = mesh_rendering_component.material_handle {
-                                if material_handle.data() == self_handle.data() {
-                                    mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Ok(())
-            },
-        }
-      
-
-      
-
-        //engine.renderer.update_material(self.renderer_resource_index, self);
     }
 
     pub fn get_scalar(&self, parameter_name: &str) -> Result<f32> {
@@ -267,72 +234,75 @@ impl Material {
         self.parameters.get_color(parameter_name)
     }
 
-    pub fn set_scalar(&mut self, engine: &mut Engine, parameter_name: &str, value: f32) -> Result<()> {
-        self.set_parameter(engine, parameter_name, MaterialParameter::Scalar(Some(value)))
+    pub fn set_scalar(&mut self, parameter_name: &str, value: f32) -> Result<()> {
+        self.set_parameter(parameter_name, MaterialParameter::Scalar(Some(value)))
     }
 
-    pub fn set_bool(&mut self, engine: &mut Engine, parameter_name: &str, value: bool) -> Result<()> {
-        self.set_parameter(engine, parameter_name, MaterialParameter::Bool(Some(value)))
+    pub fn set_bool(&mut self, parameter_name: &str, value: bool) -> Result<()> {
+        self.set_parameter(parameter_name, MaterialParameter::Bool(Some(value)))
     }
 
-    pub fn set_color(&mut self, engine: &mut Engine, parameter_name: &str, value: Color) -> Result<()> {
+    pub fn set_color(&mut self, parameter_name: &str, value: Color) -> Result<()> {
         // Clamp color channel values between 0.0 and 1.0
         let valid_color = Color::new(value.x.clamp(0.0, 1.0), value.y.clamp(0.0, 1.0), value.z.clamp(0.0, 1.0));
-        self.set_parameter(engine, parameter_name, MaterialParameter::Color(Some(valid_color)))
+        self.set_parameter(parameter_name, MaterialParameter::Color(Some(valid_color)))
     }
 
-    fn set_parameter(&mut self, engine: &mut Engine, parameter_name: &str, value: MaterialParameter) -> Result<()> {
+    fn set_parameter(&mut self, parameter_name: &str, value: MaterialParameter) -> Result<()> {
+        // Set parameter
         self.parameters.set_parameter(parameter_name, value)?;
 
-        //self.deferred_update_manager.post_request();
-
-        if self.renderer_resource_handle.is_some() {
-            engine.renderer.update_material_parameters(self.renderer_resource_handle.unwrap(), &self.parameters)?;
+        // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
+        if self.renderer_resource_handle.is_some() { 
+            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETER);
         }
+
         Ok(())
     }
 
     pub(crate) fn get_textures(&mut self) -> &mut MaterialTextureMap {
         &mut self.textures
     }
+
+    fn post_deferred_update_request(&mut self, request_variant: usize) {
+        let handle = self.handle.expect("Critical: Cannot post deferred update request. No Handle set in Resource");
+        let request = DeferredUpdateResourceRequest::<Material>::new(handle, request_variant);
+        self.deferred_update_manager.as_mut().expect("Critical: No DeferredUpdateManager").post_update_request(request);
+    }
+}
+
+impl PillTypeMapKey for Material {
+    type Storage = ResourceStorage<Material>; 
 }
 
 impl Resource for Material {
     type Handle = MaterialHandle;
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-
-        // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
+        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+        
+        // [TODO]: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
         // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
         self.deferred_update_manager = Some(engine.TEMP_deferred_component.borrow_deferred_update_manager());
 
-        // Set default textures if non texture is set
-        // Add only if nothing else is already there 
-        // (since initialization of this resource happens in moment it is being added to the engine and
-        // since it is possible to set textures before that moment it may happen that textures are already
-        // defined by the user so setting default ones is not needed)
+        // Check if assigned textures are of correct type
+        for texture_slot in self.textures.data.iter_mut() {
+            if let Some(texture_handle) = texture_slot.1.texture_handle {
+                // Get texture to be set
+                let texture = engine.get_resource::<Texture>(&texture_handle)
+                    .context(error_message.clone()).context(format!("Invalid {} for {} in slot {}", "Handle".sobj_style(), "Texture".sobj_style(), texture_slot.0.name_style()))?;
 
-        // 0 - Name of slot, 1 - Type of texture in it, 2 - Type of texture in general
-        let texture_values = vec![
-            (MASTER_SHADER_COLOR_TEXTURE_SLOT, MaterialTexture::Color(None)), 
-            (MASTER_SHADER_NORMAL_TEXTURE_SLOT, MaterialTexture::Normal(None)), 
-        ];
-        for texture_value in texture_values {
-            let texture = self.textures.data.get_mut(texture_value.0);
-            match texture {
-                Some(v) => {
-                    if pill_core::enum_variant_eq::<MaterialTexture>(&texture_value.1, v) {
-                        let texture_data= v.get_texture_data_mut();
-                        if texture_data.is_none() {
-                            let default_texture_data = engine.resource_manager.get_default_texture(texture_value.1.get_type()).expect("Critical: No default Resource");
-                            *texture_data = Some(default_texture_data);  
-                        }
-                    }
-                    else {
-                        panic!();
-                    }
-                },
-                None => panic!(),
+                // Check if slots are of same type
+                if !enum_variant_eq(&texture.texture_type,&texture_slot.1.texture_type) {
+                    return Err(Error::new(EngineError::WrongTextureType(
+                        get_enum_variant_type_name(&texture.texture_type), 
+                        texture_slot.0.to_string(), 
+                        get_enum_variant_type_name(&texture_slot.1.texture_type)
+                    )));
+                }
+
+                // Set renderer resource handle
+                texture_slot.1.renderer_texture_handle = texture.renderer_resource_handle;
             }
         }
 
@@ -350,29 +320,80 @@ impl Resource for Material {
                         }
                     }
                 },
-                None => panic!(),
+                None => panic!("Critical: Wrong parameters setup"),
             }
         }
 
         // Create new renderer material resource
-        let renderer_resource_handle = engine.renderer.create_material(
-            &self.name,
-            &self.textures,
-            &self.parameters,
-        ).unwrap();
-
+        let renderer_resource_handle = engine.renderer.create_material(&self.name, &self.textures, &self.parameters).context(error_message)?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
     }
 
-    // fn deferred_update(&mut self, request: DeferredUpdateRequest) {
-    //     match request {
-    //         DeferredUpdateRequest::MaterialOrder => todo!(),
-    //     }
-    // }
+    fn pass_handle<H: PillSlotMapKey>(&mut self, self_handle: H) { 
+        self.handle = Some(MaterialHandle::from(self_handle.data()));
+    }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) {
+    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
+        match request {
+            DEFERRED_REQUEST_VARIANT_ORDER => 
+            {
+                // Find mesh rendering components that use this material and update them
+                for scene in engine.scene_manager.scenes.iter() {
+                    for mesh_rendering_component_slot in (&*engine).fetch_one_component_storage::<MeshRenderingComponent>()? {
+                        if let Some(mesh_rendering_component) = mesh_rendering_component_slot.borrow_mut().as_mut() {
+                            if let Some(material_handle) = mesh_rendering_component.material_handle {
+                                // If mesh rendering component has handle to this material 
+                                if material_handle.data() == self.handle.unwrap().data() {
+                                    mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            DEFERRED_REQUEST_VARIANT_PARAMETER => 
+            {
+                // Update renderer counterpart
+                engine.renderer.update_material_parameters(self.renderer_resource_handle.unwrap(), &self.parameters)?;
+            },
+            DEFERRED_REQUEST_VARIANT_TEXTURE_START..=DEFERRED_REQUEST_VARIANT_TEXTURE_END => 
+            {
+                // Check if assigned texture is of correct type
+                let texture_slot_name = self.textures.mapping.get(request - DEFERRED_REQUEST_VARIANT_TEXTURE_START).unwrap();
+                let texture_slot = self.textures.data.get_mut(texture_slot_name).unwrap();
+                if let Some(texture_handle) = texture_slot.texture_handle {
+                    // Get texture to be set
+                    let texture = engine.get_resource::<Texture>(&texture_handle)
+                        .context(format!("Cannot set {}. Invalid {} for {} in slot {}. ",  "Texture".sobj_style(), "Handle".sobj_style(), "Texture".sobj_style(), texture_slot_name.name_style()))?;
+
+                    // Check if slots are of same type
+                    if !enum_variant_eq(&texture.texture_type,&texture_slot.texture_type) {
+                        return Err(Error::new(EngineError::WrongTextureType(
+                            get_enum_variant_type_name(&texture.texture_type), 
+                            texture_slot_name.to_string(), 
+                            get_enum_variant_type_name(&texture_slot.texture_type)
+                        )));
+                    }
+
+                    // Set renderer resource handle
+                    texture_slot.renderer_texture_handle.insert(texture.renderer_resource_handle.unwrap().clone());
+                }
+
+                // Update renderer counterpart
+                engine.renderer.update_material_textures(self.renderer_resource_handle.unwrap(), &self.textures)?;
+            },
+            _ => 
+            {
+                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().sobj_style());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
 
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
@@ -380,35 +401,24 @@ impl Resource for Material {
         }
 
         // Find mesh rendering components that use this material and update them
-        let default_material = engine.resource_manager.get_default_material().unwrap();
-        for scene in engine.scene_manager.scenes.iter_mut() {
-            let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
-            for i in 0..mesh_rendering_component_storage.data.len() {
-                if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().borrow_mut().as_mut() {
+        for scene in engine.scene_manager.scenes.iter() {
+            for mesh_rendering_component_slot in (&*engine).fetch_one_component_storage::<MeshRenderingComponent>()? {
+                if let Some(mesh_rendering_component) = mesh_rendering_component_slot.borrow_mut().as_mut() {
                     if let Some(material_handle) = mesh_rendering_component.material_handle {
+                        // If mesh rendering component has handle to this material 
                         if material_handle.data() == self_handle.data() {
-                            mesh_rendering_component.material_handle = Some(default_material.0);
+                            mesh_rendering_component.material_handle = None;
                             mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
-                            // [TODO] Instead of this use "mesh_rendering_component.set_material(engine, &default_material.0);". This requires component wrapped with option or refcell
                         }
                     }
                 }
             }
         }
+
+        Ok(())
     }
 
     fn get_name(&self) -> String {
         self.name.clone()
     }
-}
-
-// pub enum MaterialDeferredUpdateRequests {
-//     OrderUpdated,
-
-// }
-
-
-
-impl TypeMapKey for Material {
-    type Value = ResourceStorage<Material>; 
 }

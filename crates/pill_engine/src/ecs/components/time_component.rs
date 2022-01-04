@@ -1,12 +1,17 @@
-use crate::ecs::Component;
-use crate::input::input_component::GlobalComponent;
+use crate::{
+    ecs::{ Component, GlobalComponentStorage }, 
+};
+
+use pill_core::PillTypeMapKey;
+
 use anyhow::{Result, Error, Context};
+
+
 pub struct TimeComponent {
     pub delta_time: f32
 }
 
 impl TimeComponent {
-
     pub fn update_delta_time(&mut self, new_delta_time: f32) -> Result<()> {
         self.delta_time = new_delta_time;
         Ok(())
@@ -17,16 +22,18 @@ impl TimeComponent {
     }
 }
 
+impl PillTypeMapKey for TimeComponent {
+    type Storage = GlobalComponentStorage<TimeComponent>; 
+}
+
+impl Component for TimeComponent {
+   
+}
+
 impl Default for TimeComponent {
-    
     fn default() -> Self {
         Self { 
             delta_time: 0.0
          }
     }
-}
-
-
-impl Component for TimeComponent {
-    type Storage = GlobalComponent<Self>;
 }

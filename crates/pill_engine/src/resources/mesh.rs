@@ -1,24 +1,19 @@
-use std::path::Path;
-use std::path::PathBuf;
+use crate::{
+    engine::Engine,
+    graphics::{ RendererMeshHandle }, 
+    resources::{ ResourceStorage, Resource },
+    ecs::{ DeferredUpdateManagerPointer, MeshRenderingComponent },
+    config::*,
+};
 
+use pill_core::{ EngineError, PillSlotMapKey, PillTypeMap, PillTypeMapKey, Vector3f, PillStyle, get_type_name };
 
-
-use crate::ecs::*; 
-use crate::internal::Engine;
-use crate::graphics::*;
-use crate::resources::*;
-
+use std::path::{ Path, PathBuf };
 use boolinator::Boolinator;
 use cgmath::InnerSpace;
-use pill_core::EngineError;
-use pill_core::PillSlotMapKey;
-use pill_core::Vector3f;
 use tobj::LoadOptions;
-
-//use crate::resources::resource_mapxxx::Resource;
-
-//use crate::resources::resource_manager::ResourceHandle;
 use anyhow::{Result, Context, Error};
+
 
 pill_core::define_new_pill_slotmap_key! { 
     pub struct MeshHandle;
@@ -45,49 +40,58 @@ impl Mesh {
     }
 }
 
+impl PillTypeMapKey for Mesh {
+    type Storage = ResourceStorage<Mesh>; 
+}
+
 impl Resource for Mesh {
     type Handle = MeshHandle;
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> { // [TODO] What if renderer fails to create mesh?
+        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+        
         // Check if path to asset is correct
-        pill_core::validate_asset_path(&self.path, "obj")?;
+        pill_core::validate_asset_path(&self.path, "obj").context(error_message.clone())?;
 
-        let mesh_data = MeshData::new(&self.path).unwrap();
+        // Create mesh data
+        let mesh_data = MeshData::new(&self.path).context(error_message.clone())?;
         self.mesh_data = Some(mesh_data);
-
-        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).unwrap();
+  
+        // Create new renderer mesh resource
+        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
 
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_mesh(v).unwrap();
         }
 
-        // Find mesh rendering components that use this material and update them
-        for scene in engine.scene_manager.scenes.iter_mut() {
-            let mesh_rendering_component_storage = scene.1.get_component_storage_mut::<MeshRenderingComponent>().unwrap();
-            for i in 0..mesh_rendering_component_storage.data.len() {
-                if let Some(mesh_rendering_component) = mesh_rendering_component_storage.data.get_mut(i).unwrap().borrow_mut().as_mut() {
-                    mesh_rendering_component.mesh_handle = None;
-                    mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+        // Find mesh rendering components that use this mesh and update them
+        for scene in engine.scene_manager.scenes.iter() {
+            for mesh_rendering_component_slot in engine.scene_manager.fetch_one_component_storage::<MeshRenderingComponent>(scene.0)? {
+                if let Some(mesh_rendering_component) = mesh_rendering_component_slot.borrow_mut().as_mut() {
+                    if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
+                        // If mesh rendering component has handle to this mesh 
+                        if mesh_handle.data() == self_handle.data() {
+                            mesh_rendering_component.mesh_handle = None;
+                            mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                        }
+                    }
                 }
-                // [TODO] Instead of this use "mesh_rendering_component.set_mesh(engine, &default_material.0);". This requires component wrapped with option or refcell
             }
         }
+
+        Ok(())
     }
 
     fn get_name(&self) -> String {
         self.name.clone()
     }
-}
-
-impl typemap_rev::TypeMapKey for Mesh {
-    type Value = ResourceStorage<Mesh>; 
 }
 
 #[repr(C)]

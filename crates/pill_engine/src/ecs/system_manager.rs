@@ -1,13 +1,14 @@
+use crate::engine::Engine;
+
+use pill_core::EngineError;
+
 use core::fmt;
 use std::{collections::HashMap, fmt::Display};
 use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
 use indexmap::IndexMap;
 
-use pill_core::EngineError;
-use crate::game::Engine;
-
-type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
+pub type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
 
 pub struct System {
     pub(crate) name: String,
@@ -62,6 +63,7 @@ impl SystemManager {
 
         // Add system
         system_collection.insert(name.to_string(), system_object);
+
         Ok(())
     }
 
@@ -75,6 +77,7 @@ impl SystemManager {
 
         // Remove system
         system_collection.remove(name);
+
         Ok(())
     }
 
@@ -87,6 +90,7 @@ impl SystemManager {
 
         // Enable system
         system_object.enabled = true;
+
         Ok(())
     }
 
@@ -99,6 +103,7 @@ impl SystemManager {
 
         // Enable system
         system_object.enabled = false;
+        
         Ok(())
     }
 
