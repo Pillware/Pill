@@ -344,7 +344,7 @@ impl Resource for Material {
             {
                 // Find mesh rendering components that use this material and update them
                 for scene in engine.scene_manager.scenes.iter() {
-                    for mesh_rendering_component_slot in (&*engine).fetch_one_component_storage::<MeshRenderingComponent>()? {
+                    for mesh_rendering_component_slot in (&*engine).iterate_one_component::<MeshRenderingComponent>()? {
                         if let Some(mesh_rendering_component) = mesh_rendering_component_slot.borrow_mut().as_mut() {
                             if let Some(material_handle) = mesh_rendering_component.material_handle {
                                 // If mesh rendering component has handle to this material 
@@ -405,7 +405,7 @@ impl Resource for Material {
 
         // Find mesh rendering components that use this material and update them
         for scene in engine.scene_manager.scenes.iter() {
-            for mesh_rendering_component_slot in (&*engine).fetch_one_component_storage::<MeshRenderingComponent>()? {
+            for mesh_rendering_component_slot in (&*engine).iterate_one_component::<MeshRenderingComponent>()? {
                 if let Some(mesh_rendering_component) = mesh_rendering_component_slot.borrow_mut().as_mut() {
                     if let Some(material_handle) = mesh_rendering_component.material_handle {
                         // If mesh rendering component has handle to this material 

@@ -19,12 +19,9 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     // Find first enabled camera and use it as active
     let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
-    for (entity_handle, camera_component) in (&*engine).fetch_one_component_storage_with_entity_handles::<CameraComponent>().unwrap() {
-        let mut x = camera_component.borrow_mut();//.as_mut().unwrap();
-        let camera_component = x.as_mut().unwrap();
-
-        //.as_mut().unwrap();
- 
+    for (entity_handle, camera_component) in (&*engine).iterate_one_component_with_entities::<CameraComponent>().unwrap() {
+        let mut camera_component_mut_slot = camera_component.borrow_mut();
+        let camera_component = camera_component_mut_slot.as_mut().unwrap();
         if camera_component.enabled {
             // Update active camera aspect ratio if it is set to automatic
              if let CameraAspectRatio::Automatic(_) = camera_component.aspect {

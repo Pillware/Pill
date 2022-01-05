@@ -206,15 +206,27 @@ impl Engine {
         self.system_manager.add_system(name, system_function, UpdatePhase::Game).context(format!("Adding {} failed", "System".gobj_style()))
     }
 
-    // [TODO] Implement remove_system
+    pub fn remove_system(&mut self, name: &str) -> Result<()> {
+        debug!("Removing {} {} from {} {}", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style());
 
-    // [TODO] Implement toggle_system
+        self.system_manager.remove_system(name, UpdatePhase::Game).context(format!("Removing {} failed", "System".gobj_style()))
+    }
 
+    pub fn toggle_system(&mut self, name: &str, enabled: bool) -> Result<()> {
+        debug!("Toggling {} {} from {} {} to {} state", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style(), if enabled { "Enabled" } else { "Disabled" });
+
+        self.system_manager.toggle_system(name, UpdatePhase::Game, enabled).context(format!("Toggling {} failed", "System".gobj_style()))
+    }
 
     // --- Entity API ---
 
     pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
-        self.scene_manager.build_entity(scene_handle)
+        let entity_handle = self.create_entity(scene_handle).unwrap();
+        EntityBuilder {
+            engine: self,
+            entity_handle,
+            scene_handle,
+        }
     }
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
@@ -313,7 +325,7 @@ impl Engine {
 
     // --- Iterator API ---
  
-    pub fn fetch_one_component_storage<A>(&self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
+    pub fn iterate_one_component<A>(&self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
         where A: Component<Storage = ComponentStorage<A>>
     {
         // Get scene handle
@@ -325,7 +337,7 @@ impl Engine {
         Ok(iterator)
     }
 
-    pub fn fetch_one_component_storage_with_entity_handles<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> 
+    pub fn iterate_one_component_with_entities<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> 
         where A: Component<Storage = ComponentStorage<A>>
     {
         // Get scene handle
@@ -337,7 +349,7 @@ impl Engine {
         Ok(iterator)
     }
     
-    pub fn fetch_two_component_storages<A, B>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> 
+    pub fn iterate_two_components<A, B>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>
@@ -351,7 +363,7 @@ impl Engine {
         Ok(iterator) 
     }
 
-    pub fn fetch_two_component_storages_with_entity_handles<A, B>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> 
+    pub fn iterate_two_components_with_entities<A, B>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>
@@ -365,7 +377,7 @@ impl Engine {
         Ok(iterator) 
     }
 
-    pub fn fetch_three_component_storages<A, B, C>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
+    pub fn iterate_three_components<A, B, C>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>,
@@ -381,7 +393,7 @@ impl Engine {
         Ok(iterator)
     }
 
-    pub fn fetch_three_component_storages_with_entity_handles<A, B, C>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
+    pub fn iterate_three_components_with_entities<A, B, C>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>,
@@ -397,7 +409,7 @@ impl Engine {
         Ok(iterator)
     }
 
-    pub fn fetch_four_component_storages<A, B, C, D>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
+    pub fn iterate_four_components<A, B, C, D>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>,
@@ -413,7 +425,7 @@ impl Engine {
         Ok(iterator) 
     }
 
-    pub fn fetch_four_component_storages_with_entity_handles<A, B, C, D>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
+    pub fn iterate_four_components_with_entities<A, B, C, D>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>,

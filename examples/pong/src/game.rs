@@ -52,8 +52,8 @@ impl PillGame for Game {
         println!("Let's play pong"); 
 
         // Create scene
-        let scene = engine.create_scene("Default").unwrap();
-        engine.set_active_scene(scene).unwrap();
+        let scene_handle = engine.create_scene("Default").unwrap();
+        engine.set_active_scene(scene_handle).unwrap();
 
         // Add systems
         engine.add_system("PaddleMovement", paddle_movement_system).unwrap();
@@ -61,30 +61,30 @@ impl PillGame for Game {
         engine.add_system("RotationSystem", rotation_movement_system).unwrap();
 
         // Register components
-        engine.register_component::<TransformComponent>(scene).unwrap();
-        engine.register_component::<MeshRenderingComponent>(scene).unwrap();
-        engine.register_component::<RemovableComponent>(scene).unwrap();
-        engine.register_component::<CameraComponent>(scene).unwrap();
-        engine.register_component::<NonCameraComponent>(scene).unwrap();
-        engine.register_component::<RotationComponent>(scene).unwrap();
+        engine.register_component::<TransformComponent>(scene_handle).unwrap();
+        engine.register_component::<MeshRenderingComponent>(scene_handle).unwrap();
+        engine.register_component::<RemovableComponent>(scene_handle).unwrap();
+        engine.register_component::<CameraComponent>(scene_handle).unwrap();
+        engine.register_component::<NonCameraComponent>(scene_handle).unwrap();
+        engine.register_component::<RotationComponent>(scene_handle).unwrap();
         
         engine.add_global_component(StateComponent{ time: 0.0}).unwrap();
 
-        let active_scene = engine.get_active_scene_handle().unwrap();
+        let active_scene_handle = engine.get_active_scene_handle().unwrap();
 
         // --- Create camera entity
-        let camera_holder = engine.create_entity(active_scene).unwrap();
+        let camera_holder = engine.create_entity(active_scene_handle).unwrap();
         // Add transform component
         let camera_transform = TransformComponent::builder()
             .position(Vector3f::new(0.0,5.0,7.0))
             .rotation(Vector3f::new(-20.0,-90.0,0.0))
             .build();
 
-        engine.add_component_to_entity::<TransformComponent>(active_scene, camera_holder, camera_transform).unwrap();
+        engine.add_component_to_entity::<TransformComponent>(active_scene_handle, camera_holder, camera_transform).unwrap();
         // Add camera component
         let mut camera = CameraComponent::new();
         camera.enabled = true;
-        engine.add_component_to_entity::<CameraComponent>(active_scene, camera_holder, camera).unwrap();
+        engine.add_component_to_entity::<CameraComponent>(active_scene_handle, camera_holder, camera).unwrap();
 
 
 
@@ -160,7 +160,7 @@ impl PillGame for Game {
         let airplane_mesh_handle = engine.add_resource::<Mesh>(airplane_mesh).unwrap();
 
         // --- Create entity
-        let monkey_entity = engine.create_entity(active_scene).unwrap();
+        let monkey_entity = engine.create_entity(active_scene_handle).unwrap();
         // Add transform component
         let transform_1 = TransformComponent::builder()
             .position(Vector3f::new(2.0,0.0,0.0))
@@ -168,18 +168,18 @@ impl PillGame for Game {
             .scale(Vector3f::new(1.0,1.0,1.0))
             .build();
 
-        engine.add_component_to_entity::<TransformComponent>(active_scene, monkey_entity, transform_1).unwrap();  
+        engine.add_component_to_entity::<TransformComponent>(active_scene_handle, monkey_entity, transform_1).unwrap();  
         // Add mesh rendering component  
         let mut mesh_rendering_1 = MeshRenderingComponent::builder()
             .mesh(&monkey_mesh_handle)
             .material(&material_alpha_handle)
             .build();
-        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, monkey_entity, mesh_rendering_1).unwrap();
+        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene_handle, monkey_entity, mesh_rendering_1).unwrap();
 
 
         // --- Create entity
         
-        let cube_entity = engine.create_entity(active_scene).unwrap();
+        let cube_entity = engine.create_entity(active_scene_handle).unwrap();
         // Add transform component
         let transform_2 = TransformComponent::builder()
             .position(Vector3f::new(0.0,0.0,-2.0))
@@ -187,18 +187,18 @@ impl PillGame for Game {
             .scale(Vector3f::new(1.0,1.0,1.0))
             .build();
         
-        engine.add_component_to_entity::<TransformComponent>(active_scene, cube_entity, transform_2).unwrap();  
+        engine.add_component_to_entity::<TransformComponent>(active_scene_handle, cube_entity, transform_2).unwrap();  
         // Add mesh rendering component
         let mut mesh_rendering_2 = MeshRenderingComponent::builder()
             .mesh(&cube_mesh_handle)
             .material(&material_beta_handle)
             .build();
-        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, cube_entity, mesh_rendering_2).unwrap();
+        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene_handle, cube_entity, mesh_rendering_2).unwrap();
 
 
         // --- Create entity
         
-        let sphere_entity = engine.create_entity(active_scene).unwrap();
+        let sphere_entity = engine.create_entity(active_scene_handle).unwrap();
         // Add transform component
         let transform_3 = TransformComponent::builder()
             .position(Vector3f::new(-3.0,0.0,0.0))
@@ -206,18 +206,18 @@ impl PillGame for Game {
             .scale(Vector3f::new(2.0,2.0,2.0))
             .build();
         
-        engine.add_component_to_entity::<TransformComponent>(active_scene, sphere_entity, transform_3).unwrap();  
+        engine.add_component_to_entity::<TransformComponent>(active_scene_handle, sphere_entity, transform_3).unwrap();  
         // Add mesh rendering component
         let mut mesh_rendering_3 = MeshRenderingComponent::builder()
             .mesh(&sphere_mesh_handle)
             .material(&material_wall_handle)
             .build();
-        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, sphere_entity, mesh_rendering_3).unwrap();
+        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene_handle, sphere_entity, mesh_rendering_3).unwrap();
 
 
         // --- Create entity
         
-        let bunny_entity = engine.create_entity(active_scene).unwrap();
+        let bunny_entity = engine.create_entity(active_scene_handle).unwrap();
         // Add transform component
         let transform_4 = TransformComponent::builder()
             .position(Vector3f::new(-2.0,0.0,0.0))
@@ -225,19 +225,17 @@ impl PillGame for Game {
             .scale(Vector3f::new(1.0,1.0,1.0))
             .build();
         
-        engine.add_component_to_entity::<TransformComponent>(active_scene, bunny_entity, transform_4).unwrap();  
+        engine.add_component_to_entity::<TransformComponent>(active_scene_handle, bunny_entity, transform_4).unwrap();  
         // Add mesh rendering component
         let mut mesh_rendering_4 = MeshRenderingComponent::builder()
             .mesh(&bunny_mesh_handle)
             .material(&material_plain_handle)
             .build();
-        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, bunny_entity, mesh_rendering_4).unwrap();
-        engine.add_component_to_entity::<RotationComponent>(active_scene, bunny_entity, RotationComponent{}).unwrap();
+        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene_handle, bunny_entity, mesh_rendering_4).unwrap();
+        engine.add_component_to_entity::<RotationComponent>(active_scene_handle, bunny_entity, RotationComponent{}).unwrap();
 
 
         // --- Create entity
-
-
 
         // let transform_3 = TransformComponent::builder()
         //     .position(Vector3f::new(-20.0,-15.0,-1.0))
@@ -250,14 +248,12 @@ impl PillGame for Game {
         //     .mesh(&airplane_mesh_handle)
         //     .material(&material_alpha_handle)
         //     .build();
-        // let airplane_entity = engine.build_entity(active_scene)
+        // let airplane_entity = engine.build_entity(active_scene_handle)
         //     .with_component(transform_3)
         //     .with_component(mesh_rendering_3)
         //     .with_component(RemovableComponent{})
         //     .with_component(NonCameraComponent{})
         //     .build();
-
-
 
 
         // --- Tests
@@ -285,7 +281,7 @@ fn delete_entity_system(engine: &mut Engine) -> Result<()> {
     let new_eng = &*engine;
     let mut removable_entities = Vec::<EntityHandle>::new();
     
-    for (entity, removable) in new_eng.fetch_one_component_storage_with_entity_handles::<RemovableComponent>()? {
+    for (entity, removable) in new_eng.iterate_one_component_with_entities::<RemovableComponent>()? {
         let input_component = new_eng.get_global_component::<InputComponent>()?;
         if input_component.is_key_clicked(Key::Delete) {
             removable_entities.push(entity.clone());
@@ -302,7 +298,7 @@ fn delete_entity_system(engine: &mut Engine) -> Result<()> {
 fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
     let new_eng = &*engine;
     
-    for (transform, camera) in new_eng.fetch_two_component_storages::<TransformComponent, NonCameraComponent>()? {
+    for (transform, camera) in new_eng.iterate_two_components::<TransformComponent, NonCameraComponent>()? {
         let input_component = new_eng.get_global_component::<InputComponent>()?;
         if input_component.is_key_pressed(Key::S) {
         transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
@@ -310,7 +306,7 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
         if input_component.is_key_pressed(Key::W) {
             transform.borrow_mut().as_mut().unwrap().rotation.y -= 0.05; }
 
-        for transform_z in new_eng.fetch_one_component_storage::<TransformComponent>()? {
+        for transform_z in new_eng.iterate_one_component::<TransformComponent>()? {
             if input_component.is_key_clicked(Key::Z) {
                 transform_z.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
         }
@@ -324,8 +320,9 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
 
 fn rotation_movement_system(engine: &mut Engine) -> Result<()> {   
     let delta_time = engine.get_global_component::<TimeComponent>().unwrap().delta_time;
+    let is_space_clicked = engine.get_global_component::<InputComponent>().unwrap().is_key_clicked(Key::Space);
     
-    for (transform, rotation) in (&*engine).fetch_two_component_storages::<TransformComponent, RotationComponent>()? {
+    for (transform, rotation) in (&*engine).iterate_two_components::<TransformComponent, RotationComponent>()? {
         // Rotate
         transform.borrow_mut().as_mut().unwrap().rotation.y -= 0.1 * delta_time; 
         transform.borrow_mut().as_mut().unwrap().rotation.x -= 0.05 * delta_time; 
@@ -341,8 +338,14 @@ fn rotation_movement_system(engine: &mut Engine) -> Result<()> {
     let material = engine.get_resource_by_name_mut::<Material>("Plain")?;
     let specularity = material.get_scalar("Specularity")?;
     let new_specularity = f32::sin( time / 500.0) * 3.0 + 3.0;
-
     material.set_scalar("Specularity", new_specularity)?;
+
+    // Change color on click
+    let mut rng = rand::thread_rng();
+    if is_space_clicked {
+        let new_color = Color::new(rand::Rng::gen(&mut rng), rand::Rng::gen(&mut rng), rand::Rng::gen(&mut rng));
+        material.set_color("Tint", new_color)?;
+    }
 
     Ok(())   
 }

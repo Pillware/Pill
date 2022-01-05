@@ -67,7 +67,6 @@ impl SystemManager {
         Ok(())
     }
 
-    // [TODO] Removing system may cause system iteration in engine to break, check that
     pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> { 
         // Find collection of systems for given update phase
         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
@@ -80,6 +79,21 @@ impl SystemManager {
 
         Ok(())
     }
+
+    pub fn toggle_system(&mut self, name: &str, update_phase: UpdatePhase, enabled: bool) -> Result<()> { 
+        // Find collection of systems for given update phase
+        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
+
+        // Check if system with that name exists
+        let system = system_collection.get_mut(name).ok_or(Error::new(EngineError::SystemNotFound(name.to_string(), format!("{}", update_phase))))?;
+
+        // Set system state
+        system.enabled = enabled;
+
+        Ok(())
+    }
+
+  
 
     pub fn enable_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
         // Find collection of systems for given update phase

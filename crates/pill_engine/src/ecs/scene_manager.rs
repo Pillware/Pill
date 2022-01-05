@@ -125,15 +125,7 @@ impl SceneManager {
         Ok(())
     }
 
-    pub fn build_entity(&mut self, scene: SceneHandle) -> EntityBuilder {
-        let entity_handle = self.create_entity(scene).unwrap();
-
-        EntityBuilder {
-            entity: entity_handle,
-            scene_manager: self,
-            scene_handle: scene.clone()
-        }
-    }
+    
 
 
     // - Allocator
@@ -302,11 +294,16 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
 
+        // Get storages
+        let storages = target_scene.get_component_storage::<A>().unwrap().data.iter();
+
         // Return iterator from scene
-        Ok(target_scene.get_one_component_storage::<A>()
-                    .enumerate()
-                    .filter(move |(i, _t)| filtered_indexes.contains(i))
-                    .map(|(_i, t)| t))
+        let iterator = storages
+            .enumerate()
+            .filter(move |(i, _t)| filtered_indexes.contains(i))
+            .map(|(_i, t)| t);
+
+        Ok(iterator)
     }
 
     pub fn fetch_one_component_storage_with_entity_handles<A>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> 
@@ -321,11 +318,16 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
 
+        // Get storages
+        let storages = target_scene.get_component_storage::<A>().unwrap().data.iter();
+
         // Return iterator from scene
-        Ok(target_scene.get_one_component_storage::<A>()
-                    .enumerate()
-                    .filter(move |(i, _t)| filtered_indexes.contains(i))
-                    .map(move |(_i, t)| (filtered_entities.pop_front().unwrap(), t)))
+        let iterator = storages
+            .enumerate()
+            .filter(move |(i, _t)| filtered_indexes.contains(i))
+            .map(move |(_i, t)| (filtered_entities.pop_front().unwrap(), t));
+
+        Ok(iterator)
     }
 
 
@@ -343,12 +345,17 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
         
+        // Get storages
+        let storages = target_scene.get_component_storage::<A>()?.data.iter()
+            .zip(target_scene.get_component_storage::<B>()?.data.iter());
+
         // Return iterator from scene
-        Ok(target_scene.get_two_component_storages::<A, B>()
-                    .enumerate()
-                    .filter(move |(i, (_t, _u ))| filtered_indexes.contains(i))
-                    .map(|(_i, (t, u ))| (t, u)))
-                    
+        let iterator = storages
+            .enumerate()
+            .filter(move |(i, (_t, _u ))| filtered_indexes.contains(i))
+            .map(|(_i, (t, u ))| (t, u));
+
+        Ok(iterator)
     }
 
     pub fn fetch_two_component_storages_with_entity_handles<A, B>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> 
@@ -365,12 +372,17 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
         
+        // Get storages
+        let storages = target_scene.get_component_storage::<A>()?.data.iter()
+            .zip(target_scene.get_component_storage::<B>()?.data.iter());
+
         // Return iterator from scene
-        Ok(target_scene.get_two_component_storages::<A, B>()
+        let iterator = storages
                     .enumerate()
                     .filter(move |(i, (_t, _u ))| filtered_indexes.contains(i))
-                    .map(move |(_i, (t, u ))| (filtered_entities.pop_front().unwrap(), t, u)))
-                    
+                    .map(move |(_i, (t, u ))| (filtered_entities.pop_front().unwrap(), t, u));
+
+        Ok(iterator)
     }
 
     pub fn fetch_three_component_storages<A, B, C>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
@@ -388,12 +400,19 @@ impl SceneManager {
         
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
-        
+
+        // Get storages
+        let storages = target_scene.get_component_storage::<A>()?.data.iter()
+            .zip(target_scene.get_component_storage::<B>()?.data.iter())
+            .zip(target_scene.get_component_storage::<C>()?.data.iter());
+
         // Return iterator from scene
-        Ok(target_scene.get_three_component_storages::<A, B, C>()
-                    .enumerate()
-                    .filter(move |(i, ((_t, _u ), _w))| filtered_indexes.contains(i))
-                    .map(|(_i, ((t, u), w))| (t, u, w)))
+        let iterator = storages
+            .enumerate()
+            .filter(move |(i, ((_t, _u ), _w))| filtered_indexes.contains(i))
+            .map(|(_i, ((t, u), w))| (t, u, w));
+
+        Ok(iterator)
                     
     }
 
@@ -413,12 +432,18 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
         
+        // Get storages
+        let storages = target_scene.get_component_storage::<A>()?.data.iter()
+            .zip(target_scene.get_component_storage::<B>()?.data.iter())
+            .zip(target_scene.get_component_storage::<C>()?.data.iter());
+
         // Return iterator from scene
-        Ok(target_scene.get_three_component_storages::<A, B, C>()
-                    .enumerate()
-                    .filter(move |(i, ((_t, _u ), _w))| filtered_indexes.contains(i))
-                    .map(move |(_i, ((t, u), w))| (filtered_entities.pop_front().unwrap(), t, u, w)))
-                    
+        let iterator = storages
+            .enumerate()
+            .filter(move |(i, ((_t, _u ), _w))| filtered_indexes.contains(i))
+            .map(move |(_i, ((t, u), w))| (filtered_entities.pop_front().unwrap(), t, u, w));
+
+        Ok(iterator)
     }
 
     pub fn fetch_four_component_storages<A, B, C, D>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
@@ -439,12 +464,19 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
         
+        // Get storages
+        let storages = target_scene.get_component_storage::<A>().unwrap().data.iter()
+            .zip(target_scene.get_component_storage::<B>().unwrap().data.iter())
+            .zip(target_scene.get_component_storage::<C>().unwrap().data.iter())
+            .zip(target_scene.get_component_storage::<D>().unwrap().data.iter());
+
         // Return iterator from scene
-        Ok(target_scene.get_four_component_storages::<A, B, C, D>()
-                    .enumerate()
-                    .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
-                    .map(|(_i, (((a, b), c), d))| (a, b, c, d)))
-                    
+        let iterator = storages
+            .enumerate()
+            .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
+            .map(|(_i, (((a, b), c), d))| (a, b, c, d));
+
+        Ok(iterator)
     }
 
     pub fn fetch_four_component_storages_with_entity_handles<A, B, C, D>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
@@ -465,11 +497,18 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene(scene).unwrap();
         
+        // Get storages
+        let storages = target_scene.get_component_storage::<A>().unwrap().data.iter()
+            .zip(target_scene.get_component_storage::<B>().unwrap().data.iter())
+            .zip(target_scene.get_component_storage::<C>().unwrap().data.iter())
+            .zip(target_scene.get_component_storage::<D>().unwrap().data.iter());
+
         // Return iterator from scene
-        Ok(target_scene.get_four_component_storages::<A, B, C, D>()
+        let iterator = storages
                     .enumerate()
                     .filter(move |(i, (((_a, _b), _c), _d))| filtered_indexes.contains(i))
-                    .map(move |(_i, (((a, b), c), d))| (filtered_entities.pop_front().unwrap(), a, b, c, d)))
-                    
+                    .map(move |(_i, (((a, b), c), d))| (filtered_entities.pop_front().unwrap(), a, b, c, d));
+
+        Ok(iterator)
     }
 }
