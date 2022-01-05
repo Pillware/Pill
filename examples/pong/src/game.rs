@@ -31,6 +31,20 @@ impl Component for RotationComponent {
 }
 
 
+struct StateComponent {
+    pub time: f32,
+} 
+
+impl PillTypeMapKey for StateComponent {
+    type Storage = GlobalComponentStorage<StateComponent>; 
+}
+
+impl GlobalComponent for StateComponent {
+    
+}
+
+
+
 pub struct Game { }   
 
 impl PillGame for Game {
@@ -54,6 +68,8 @@ impl PillGame for Game {
         engine.register_component::<NonCameraComponent>(scene).unwrap();
         engine.register_component::<RotationComponent>(scene).unwrap();
         
+        engine.add_global_component(StateComponent{ time: 0.0}).unwrap();
+
         let active_scene = engine.get_active_scene_handle().unwrap();
 
         // --- Create camera entity
@@ -316,10 +332,17 @@ fn rotation_movement_system(engine: &mut Engine) -> Result<()> {
         transform.borrow_mut().as_mut().unwrap().rotation.z += 0.05 * delta_time; 
     }
 
+    // Count time
+    let state_component = engine.get_global_component_mut::<StateComponent>().unwrap();
+    state_component.time =  state_component.time + delta_time;
+    let time = state_component.time; 
+
     // Modify specularity
-    // let material = engine.get_resource_by_name_mut::<Material>("Plain")?;
-    // let specularity = material.get_scalar("Specularity")?;
-    // material.set_scalar("Specularity", specularity + 0.01)?;
+    let material = engine.get_resource_by_name_mut::<Material>("Plain")?;
+    let specularity = material.get_scalar("Specularity")?;
+    let new_specularity = f32::sin( time / 500.0) * 3.0 + 3.0;
+
+    material.set_scalar("Specularity", new_specularity)?;
 
     Ok(())   
 }

@@ -47,14 +47,18 @@ void main() {
     vec3 diffuse_light_factor = light_color * diffuse_light_strength;
 
     // Specular lighting
-    vec3 view_direction = normalize(TBN_matrix * camera_position - vertex_position);
-    //vec3 half_direction = normalize(view_direction + light_direction);
-    vec3 reflection_direction = reflect(-light_direction, normal);
+    // vec3 view_direction = normalize(TBN_matrix * camera_position - vertex_position);
+    // vec3 reflection_direction = reflect(-light_direction, normal);
 
-    float specular_light_strength = pow(max(dot(view_direction, reflection_direction), 0.0), 32) * specularity;
-    //float specular_light_strength = pow(max(dot(normal, half_direction), 0.0), 32);
-    vec3 specular_light_factor = light_color * specular_light_strength;
+    // float specular_light_strength = pow(max(dot(view_direction, reflection_direction), 0.0), 32) * specularity;
+    // vec3 specular_light_factor = light_color * specular_light_strength;
    
+    // Alt
+    vec3 view_direction = normalize(TBN_matrix * camera_position - vertex_position);
+    vec3 half_direction = normalize(view_direction + light_direction);
+    float specular_light_strength = pow(max(dot(normal, half_direction), 0.0), 32) * specularity;
+    vec3 specular_light_factor = light_color * specular_light_strength;
+
     // Final color
     vec3 final_color = (ambient_light_factor + diffuse_light_factor + specular_light_factor) * object_color.xyz * tint;
     out_final_color = vec4(final_color, 1.0); 

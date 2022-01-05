@@ -28,7 +28,9 @@ pub mod game {
             EntityHandle,
             Component,
             TimeComponent,
-            ComponentStorage
+            ComponentStorage,
+            GlobalComponent,
+            GlobalComponentStorage
         },
         resources::{
             Texture, 
