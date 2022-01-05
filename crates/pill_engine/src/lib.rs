@@ -27,6 +27,7 @@ pub mod game {
             CameraAspectRatio,
             EntityHandle,
             Component,
+            TimeComponent,
             ComponentStorage
         },
         resources::{

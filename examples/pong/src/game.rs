@@ -21,6 +21,16 @@ impl Component for RemovableComponent {
    
 }
 
+struct RotationComponent {} 
+
+impl PillTypeMapKey for RotationComponent {
+    type Storage = ComponentStorage<RotationComponent>; 
+}
+
+impl Component for RotationComponent {
+}
+
+
 pub struct Game { }   
 
 impl PillGame for Game {
@@ -34,6 +44,7 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("PaddleMovement", paddle_movement_system).unwrap();
         engine.add_system("DeleteEntitySystem", delete_entity_system).unwrap();
+        engine.add_system("RotationSystem", rotation_movement_system).unwrap();
 
         // Register components
         engine.register_component::<TransformComponent>(scene).unwrap();
@@ -41,6 +52,7 @@ impl PillGame for Game {
         engine.register_component::<RemovableComponent>(scene).unwrap();
         engine.register_component::<CameraComponent>(scene).unwrap();
         engine.register_component::<NonCameraComponent>(scene).unwrap();
+        engine.register_component::<RotationComponent>(scene).unwrap();
         
         let active_scene = engine.get_active_scene_handle().unwrap();
 
@@ -86,27 +98,31 @@ impl PillGame for Game {
         let wall_normal_texture_handle = engine.add_resource::<Texture>(wall_normal_texture).unwrap();
 
 
-        // Add material
+        // Add materials
         let mut material_alpha = Material::new("Alpha");
         material_alpha.set_texture("Color", camo_texture_handle).unwrap();
         material_alpha.set_color("Tint", Color::new( 1.0, 1.0, 1.0)).unwrap();
         let material_alpha_handle = engine.add_resource::<Material>(material_alpha).unwrap(); 
        
-        // Add material
         let mut material_beta = Material::new("Beta");
         material_beta.set_texture("Color", wut_texture_handle).unwrap();
         material_beta.set_texture("Normal", quilted_texture_handle).unwrap();
         material_beta.set_color("Tint", Color::new( 1.0, 0.7, 0.0)).unwrap();
         let material_beta_handle = engine.add_resource::<Material>(material_beta).unwrap();
 
-        // Add material
         let mut material_wall = Material::new("Wall");
         //material_wall.set_texture("Color", wall_texture_handle).unwrap();
         //material_wall.set_texture("Normal", wall_normal_texture_handle).unwrap();
         material_wall.set_color("Tint", Color::new( 1.0, 1.0, 1.0)).unwrap();
         let material_wall_handle = engine.add_resource::<Material>(material_wall).unwrap();
 
-        // Add mesh
+        let mut material_plain = Material::new("Plain");
+        material_plain.set_color("Tint", Color::new( 1.0, 0.51, 0.22)).unwrap();
+        material_plain.set_scalar("Specularity", 3.0).unwrap();
+        let material_plain_handle = engine.add_resource::<Material>(material_plain).unwrap();
+
+
+        // Add meshes
         let monkey_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Monkey.obj"); 
         let monkey_mesh = Mesh::new("Monkey", monkey_mesh_path);
         let monkey_mesh_handle = engine.add_resource::<Mesh>(monkey_mesh).unwrap();
@@ -115,6 +131,10 @@ impl PillGame for Game {
         let cube_mesh = Mesh::new("Cube", cube_mesh_path);
         let cube_mesh_handle = engine.add_resource::<Mesh>(cube_mesh).unwrap();
       
+        let bunny_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Preview.obj");
+        let bunny_mesh = Mesh::new("Bunny", bunny_mesh_path);
+        let bunny_mesh_handle = engine.add_resource::<Mesh>(bunny_mesh).unwrap();
+
         let sphere_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Sphere.obj");
         let sphere_mesh = Mesh::new("Sphere", sphere_mesh_path);
         let sphere_mesh_handle = engine.add_resource::<Mesh>(sphere_mesh).unwrap();
@@ -178,7 +198,30 @@ impl PillGame for Game {
             .build();
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, sphere_entity, mesh_rendering_3).unwrap();
 
+
         // --- Create entity
+        
+        let bunny_entity = engine.create_entity(active_scene).unwrap();
+        // Add transform component
+        let transform_4 = TransformComponent::builder()
+            .position(Vector3f::new(-2.0,0.0,0.0))
+            .rotation(Vector3f::new(0.0, 0.0,0.0))
+            .scale(Vector3f::new(1.0,1.0,1.0))
+            .build();
+        
+        engine.add_component_to_entity::<TransformComponent>(active_scene, bunny_entity, transform_4).unwrap();  
+        // Add mesh rendering component
+        let mut mesh_rendering_4 = MeshRenderingComponent::builder()
+            .mesh(&bunny_mesh_handle)
+            .material(&material_plain_handle)
+            .build();
+        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, bunny_entity, mesh_rendering_4).unwrap();
+        engine.add_component_to_entity::<RotationComponent>(active_scene, bunny_entity, RotationComponent{}).unwrap();
+
+
+        // --- Create entity
+
+
 
         // let transform_3 = TransformComponent::builder()
         //     .position(Vector3f::new(-20.0,-15.0,-1.0))
@@ -215,6 +258,9 @@ impl PillGame for Game {
         //println!("{} .... {}", std::env::current_dir().unwrap().display(), PathBuf::from("../res/models/Monkey.obj").display());
         //PathBuf::from("../res/models/Monkey.obj")
         //println!("{}", mesh_1_path.display());
+
+     
+       
        
     }
 }
@@ -257,5 +303,23 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
             transform.borrow_mut().as_mut().unwrap().rotation.x -= 0.05;
         }
     }
+    Ok(())   
+}
+
+fn rotation_movement_system(engine: &mut Engine) -> Result<()> {   
+    let delta_time = engine.get_global_component::<TimeComponent>().unwrap().delta_time;
+    
+    for (transform, rotation) in (&*engine).fetch_two_component_storages::<TransformComponent, RotationComponent>()? {
+        // Rotate
+        transform.borrow_mut().as_mut().unwrap().rotation.y -= 0.1 * delta_time; 
+        transform.borrow_mut().as_mut().unwrap().rotation.x -= 0.05 * delta_time; 
+        transform.borrow_mut().as_mut().unwrap().rotation.z += 0.05 * delta_time; 
+    }
+
+    // Modify specularity
+    // let material = engine.get_resource_by_name_mut::<Material>("Plain")?;
+    // let specularity = material.get_scalar("Specularity")?;
+    // material.set_scalar("Specularity", specularity + 0.01)?;
+
     Ok(())   
 }

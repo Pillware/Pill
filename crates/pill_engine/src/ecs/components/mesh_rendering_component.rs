@@ -44,8 +44,11 @@ impl MeshRenderingComponentBuilder {
 
 // --- Mesh Rendering Component ---
 
+#[readonly::make]
 pub struct MeshRenderingComponent {
+    #[readonly]
     pub mesh_handle: Option<MeshHandle>,
+    #[readonly]
     pub material_handle: Option<MaterialHandle>,
     pub(crate) render_queue_key: Option<RenderQueueKey>, 
 
@@ -96,6 +99,14 @@ impl MeshRenderingComponent {
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
 
         Ok(())
+    }
+
+    pub(crate) fn set_material_handle(&mut self, material_handle: Option<MaterialHandle>) {
+        self.material_handle = material_handle;
+    }
+
+    pub(crate) fn set_mesh_handle(&mut self, mesh_handle: Option<MeshHandle>) {
+        self.mesh_handle = mesh_handle;
     }
 
     pub(crate) fn update_render_queue_key(&mut self, resource_manager: &ResourceManager) -> Result<()> {

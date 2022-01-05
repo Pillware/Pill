@@ -78,7 +78,7 @@ impl Resource for Mesh {
                     if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
                         // If mesh rendering component has handle to this mesh 
                         if mesh_handle.data() == self_handle.data() {
-                            mesh_rendering_component.mesh_handle = None;
+                            mesh_rendering_component.set_mesh_handle(Option::<MeshHandle>::None);
                             mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
                         }
                     }
@@ -142,8 +142,8 @@ impl MeshData {
                     mesh.positions[i * 3 + 2],
                 ],
                 texture_coordinates: [
-                    mesh.texcoords[i * 2], 
-                    mesh.texcoords[i * 2 + 1]
+                    *mesh.texcoords.get(i * 2).unwrap_or(&0.0),
+                    *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0)
                 ],
                 normal: [
                     mesh.normals[i * 3],

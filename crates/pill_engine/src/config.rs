@@ -18,6 +18,7 @@ pub const DEFAULT_MATERIAL_NAME: &str = "PillDefaultMaterial";
 pub const MASTER_SHADER_COLOR_TEXTURE_SLOT: &str = "Color";
 pub const MASTER_SHADER_NORMAL_TEXTURE_SLOT: &str = "Normal";
 pub const MASTER_SHADER_TINT_PARAMETER_SLOT: &str = "Tint";
+pub const MASTER_SHADER_SPECULARITY_PARAMETER_SLOT: &str = "Specularity";
 
 // Render queue key
 pub type RenderQueueKeyType = u64; // Defines size of renderer queue key (Should be u8, u16, u32, or u64)

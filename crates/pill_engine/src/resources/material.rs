@@ -174,6 +174,8 @@ impl Material {
         let mut parameters = MaterialParameterMap::new();
         parameters.data.insert(MASTER_SHADER_TINT_PARAMETER_SLOT.to_string(), MaterialParameter::Color(None));
         textures.mapping.push(MASTER_SHADER_TINT_PARAMETER_SLOT.to_string());
+        parameters.data.insert(MASTER_SHADER_SPECULARITY_PARAMETER_SLOT.to_string(), MaterialParameter::Scalar(None));
+        textures.mapping.push(MASTER_SHADER_SPECULARITY_PARAMETER_SLOT.to_string());
         
         Self {
             name: name.to_string(),  
@@ -308,7 +310,8 @@ impl Resource for Material {
 
         // Set default parameters if not already set
         let parameter_values = vec![
-            (MASTER_SHADER_TINT_PARAMETER_SLOT, MaterialParameter::Color(Some(Color::new(1.0, 1.0, 1.0))))
+            (MASTER_SHADER_TINT_PARAMETER_SLOT, MaterialParameter::Color(Some(Color::new(1.0, 1.0, 1.0)))),
+            (MASTER_SHADER_SPECULARITY_PARAMETER_SLOT, MaterialParameter::Scalar(Some(0.0)))
         ];
         for parameter_value in parameter_values {
             let parameter = self.parameters.data.get_mut(parameter_value.0);
@@ -407,7 +410,7 @@ impl Resource for Material {
                     if let Some(material_handle) = mesh_rendering_component.material_handle {
                         // If mesh rendering component has handle to this material 
                         if material_handle.data() == self_handle.data() {
-                            mesh_rendering_component.material_handle = None;
+                            mesh_rendering_component.set_material_handle(Option::<MaterialHandle>::None);
                             mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
                         }
                     }

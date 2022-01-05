@@ -6,8 +6,9 @@ use pill_core::PillTypeMapKey;
 
 use anyhow::{Result, Error, Context};
 
-
+#[readonly::make]
 pub struct TimeComponent {
+    #[readonly]
     pub delta_time: f32
 }
 
@@ -18,13 +19,9 @@ impl TimeComponent {
         }
     }
 
-    pub fn update_delta_time(&mut self, new_delta_time: f32) -> Result<()> {
+    pub(crate) fn update_delta_time(&mut self, new_delta_time: f32) -> Result<()> {
         self.delta_time = new_delta_time;
         Ok(())
-    }
-
-    pub fn get_delta_time(&self) -> Result<f32> {
-        Ok(self.delta_time)
     }
 }
 
