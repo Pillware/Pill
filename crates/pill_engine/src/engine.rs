@@ -198,15 +198,7 @@ impl Engine {
 
 impl Engine { 
 
-    // --- ECS API ---
-
-    pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()> 
-        where T: Component<Storage = ComponentStorage::<T>>
-    {
-        debug!("Registering {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Scene".sobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-
-        self.scene_manager.register_component::<T>(scene_handle).context(format!("Registering {} failed", "Component".gobj_style()))
-    }
+    // --- System API ---
 
     pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine) -> Result<()>) -> Result<()> {
         debug!("Adding {} {} to {} {}", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style());
@@ -217,6 +209,9 @@ impl Engine {
     // [TODO] Implement remove_system
 
     // [TODO] Implement toggle_system
+
+
+    // --- Entity API ---
 
     pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
         self.scene_manager.build_entity(scene_handle)
@@ -232,6 +227,16 @@ impl Engine {
         debug!("Removing {} from {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
 
         self.scene_manager.remove_entity(entity_handle, scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
+    }
+
+    // --- Component API ---
+
+    pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()> 
+        where T: Component<Storage = ComponentStorage::<T>>
+    {
+        debug!("Registering {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Scene".sobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
+        self.scene_manager.register_component::<T>(scene_handle).context(format!("Registering {} failed", "Component".gobj_style()))
     }
 
     pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, mut component: T) -> Result<()> 
@@ -253,6 +258,7 @@ impl Engine {
         
         let mut component = self.scene_manager.delete_component_from_entity::<T>(scene_handle, entity_handle).context("Deleting component from entity failed").unwrap();
 
+        // Destroy component
         component.destroy(self, entity_handle, scene_handle)?;
 
         Ok(())
@@ -260,11 +266,14 @@ impl Engine {
 
     // --- Global Component API ---
 
-    pub fn add_global_component<T>(&mut self, component: T) -> Result<()> 
-        where T: Component<Storage = GlobalComponentStorage::<T>>
+    pub fn add_global_component<T>(&mut self, mut component: T) -> Result<()> 
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Check if component of this type is not already added
         self.global_components.contains_key::<T>().eq(&false).ok_or(Error::new(EngineError::GlobalComponentAlreadyExists(get_type_name::<T>())))?;
+
+        // Initialize component
+        component.initialize(self)?;
 
         // Add component
         self.global_components.insert::<T>(GlobalComponentStorage::<T>::new(component));
@@ -273,7 +282,7 @@ impl Engine {
     }
 
     pub fn get_global_component<T>(&self) -> Result<&T> 
-        where T: Component<Storage = GlobalComponentStorage::<T>>
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Get component
         let component = &self.global_components.get::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data;
@@ -282,7 +291,7 @@ impl Engine {
     }
 
     pub fn get_global_component_mut<T>(&mut self) -> Result<&mut T> 
-        where T: Component<Storage = GlobalComponentStorage::<T>>
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Get component
         let component = &mut self.global_components.get_mut::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data;
@@ -291,7 +300,7 @@ impl Engine {
     }
 
     pub fn remove_global_component<T>(&mut self) -> Result<()> 
-        where T: Component<Storage = GlobalComponentStorage::<T>>
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Check if component of this type is added
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?;
@@ -327,7 +336,6 @@ impl Engine {
 
         Ok(iterator)
     }
-    
     
     pub fn fetch_two_component_storages<A, B>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> 
         where 
@@ -455,7 +463,6 @@ impl Engine {
     fn get_active_scene_mut(&mut self) -> Result<&mut Scene> {
         self.scene_manager.get_active_scene_mut().context(format!("Getting active {} as mutable failed", "Scene".gobj_style()))
     }
-
 
     // --- Resource API ---
 

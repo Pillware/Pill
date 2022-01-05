@@ -88,6 +88,7 @@ pub use entity_fetcher::{
 
 pub use component:: {
     Component,
+    GlobalComponent,
 };
 
 pub use component_storage::{

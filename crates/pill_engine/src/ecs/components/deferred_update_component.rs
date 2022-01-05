@@ -3,7 +3,7 @@
 use crate::{
     engine::Engine,
     resources::{ MeshHandle, Material, Resource, ResourceStorage }, 
-    ecs::{ Component, EntityHandle, ComponentStorage, SceneHandle, GlobalComponentStorage }
+    ecs::{ Component, EntityHandle, ComponentStorage, SceneHandle, GlobalComponentStorage, GlobalComponent }
 };
 
 use pill_core::{ PillSlotMapKey, PillStyle, get_type_name, PillTypeMapKey };
@@ -196,6 +196,6 @@ impl PillTypeMapKey for DeferredUpdateComponent {
     type Storage = GlobalComponentStorage<DeferredUpdateComponent>; 
 }
 
-impl Component for DeferredUpdateComponent {
+impl GlobalComponent for DeferredUpdateComponent {
    
 }

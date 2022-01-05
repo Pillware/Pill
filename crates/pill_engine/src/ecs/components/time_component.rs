@@ -1,5 +1,5 @@
 use crate::{
-    ecs::{ Component, GlobalComponentStorage }, 
+    ecs::{ Component, GlobalComponentStorage, GlobalComponent }, 
 };
 
 use pill_core::PillTypeMapKey;
@@ -32,6 +32,6 @@ impl PillTypeMapKey for TimeComponent {
     type Storage = GlobalComponentStorage<TimeComponent>; 
 }
 
-impl Component for TimeComponent {
+impl GlobalComponent for TimeComponent {
    
 }

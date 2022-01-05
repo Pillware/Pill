@@ -124,10 +124,12 @@ impl MeshRenderingComponent {
     }
 
     fn post_deferred_update_request(&mut self, request_variant: usize) {
-        let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
-        let scene_handle = self.scene_handle.expect("Critical: Cannot post deferred update request. No SceneHandle set in Component");
-        let request = DeferredUpdateComponentRequest::<MeshRenderingComponent>::new(entity_handle, scene_handle, request_variant);
-        self.deferred_update_manager.as_mut().expect("Critical: No DeferredUpdateManager").post_update_request(request);
+        if self.deferred_update_manager.is_some() {
+            let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
+            let scene_handle = self.scene_handle.expect("Critical: Cannot post deferred update request. No SceneHandle set in Component");
+            let request = DeferredUpdateComponentRequest::<MeshRenderingComponent>::new(entity_handle, scene_handle, request_variant);
+            self.deferred_update_manager.as_mut().expect("Critical: No DeferredUpdateManager").post_update_request(request);
+        }
     }
 }
 

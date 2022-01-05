@@ -75,6 +75,16 @@ impl PillGame for Game {
         let quilted_texture = Texture::new("Quilted", TextureType::Normal, ResourceLoadType::Path(quilted_texture_path));
         let quilted_texture_handle = engine.add_resource::<Texture>(quilted_texture).unwrap();
 
+        // Add texture
+        let wall_texture_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/Wall.png");
+        let wall_texture = Texture::new("Wall", TextureType::Color, ResourceLoadType::Path(wall_texture_path));
+        let wall_texture_handle = engine.add_resource::<Texture>(wall_texture).unwrap();
+
+        // Add texture
+        let wall_normal_texture_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/WallNormal.png");
+        let wall_normal_texture = Texture::new("WallNormal", TextureType::Normal, ResourceLoadType::Path(wall_normal_texture_path));
+        let wall_normal_texture_handle = engine.add_resource::<Texture>(wall_normal_texture).unwrap();
+
 
         // Add material
         let mut material_alpha = Material::new("Alpha");
@@ -89,6 +99,13 @@ impl PillGame for Game {
         material_beta.set_color("Tint", Color::new( 1.0, 0.7, 0.0)).unwrap();
         let material_beta_handle = engine.add_resource::<Material>(material_beta).unwrap();
 
+        // Add material
+        let mut material_wall = Material::new("Wall");
+        //material_wall.set_texture("Color", wall_texture_handle).unwrap();
+        //material_wall.set_texture("Normal", wall_normal_texture_handle).unwrap();
+        material_wall.set_color("Tint", Color::new( 1.0, 1.0, 1.0)).unwrap();
+        let material_wall_handle = engine.add_resource::<Material>(material_wall).unwrap();
+
         // Add mesh
         let monkey_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Monkey.obj"); 
         let monkey_mesh = Mesh::new("Monkey", monkey_mesh_path);
@@ -98,6 +115,10 @@ impl PillGame for Game {
         let cube_mesh = Mesh::new("Cube", cube_mesh_path);
         let cube_mesh_handle = engine.add_resource::<Mesh>(cube_mesh).unwrap();
       
+        let sphere_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Sphere.obj");
+        let sphere_mesh = Mesh::new("Sphere", sphere_mesh_path);
+        let sphere_mesh_handle = engine.add_resource::<Mesh>(sphere_mesh).unwrap();
+
         let airplane_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Airplane.obj");
         let airplane_mesh = Mesh::new("Airplane", airplane_mesh_path);
         let airplane_mesh_handle = engine.add_resource::<Mesh>(airplane_mesh).unwrap();
@@ -111,25 +132,23 @@ impl PillGame for Game {
             .scale(Vector3f::new(1.0,1.0,1.0))
             .build();
 
-
         engine.add_component_to_entity::<TransformComponent>(active_scene, monkey_entity, transform_1).unwrap();  
         // Add mesh rendering component  
         let mut mesh_rendering_1 = MeshRenderingComponent::builder()
             .mesh(&monkey_mesh_handle)
             .material(&material_alpha_handle)
             .build();
-        //mesh_rendering_1.set_material(engine, &material_alpha_handle).unwrap();
-        //mesh_rendering_1.set_mesh(engine, &monkey_mesh_handle).unwrap();
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, monkey_entity, mesh_rendering_1).unwrap();
 
 
         // --- Create entity
+        
         let cube_entity = engine.create_entity(active_scene).unwrap();
         // Add transform component
         let transform_2 = TransformComponent::builder()
             .position(Vector3f::new(0.0,0.0,-2.0))
             .rotation(Vector3f::new(35.0, 35.0,35.0))
-            .scale(Vector3f::new(3.0,3.0,3.0))
+            .scale(Vector3f::new(1.0,1.0,1.0))
             .build();
         
         engine.add_component_to_entity::<TransformComponent>(active_scene, cube_entity, transform_2).unwrap();  
@@ -138,33 +157,48 @@ impl PillGame for Game {
             .mesh(&cube_mesh_handle)
             .material(&material_beta_handle)
             .build();
-            
-        //mesh_rendering_2.set_material(engine, &material_beta_handle).unwrap();
-        //mesh_rendering_2.set_mesh(engine, &cube_mesh_handle).unwrap();
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, cube_entity, mesh_rendering_2).unwrap();
 
 
         // --- Create entity
+        
+        let sphere_entity = engine.create_entity(active_scene).unwrap();
+        // Add transform component
         let transform_3 = TransformComponent::builder()
-            .position(Vector3f::new(-20.0,-15.0,-1.0))
-            .rotation(Vector3f::new(15.0, 15.0,15.0))
-            .scale(Vector3f::new(0.5, 0.5,0.5))
+            .position(Vector3f::new(-3.0,0.0,0.0))
+            .rotation(Vector3f::new(0.0, 0.0,0.0))
+            .scale(Vector3f::new(2.0,2.0,2.0))
             .build();
-
+        
+        engine.add_component_to_entity::<TransformComponent>(active_scene, sphere_entity, transform_3).unwrap();  
         // Add mesh rendering component
         let mut mesh_rendering_3 = MeshRenderingComponent::builder()
-            .mesh(&airplane_mesh_handle)
-            .material(&material_alpha_handle)
+            .mesh(&sphere_mesh_handle)
+            .material(&material_wall_handle)
             .build();
+        engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, sphere_entity, mesh_rendering_3).unwrap();
 
-        //mesh_rendering_3.set_material(engine, &material_alpha_handle).unwrap();
-        //mesh_rendering_3.set_mesh(engine, &airplane_mesh_handle).unwrap();
-        let airplane_entity = engine.build_entity(active_scene)
-            .with_component(transform_3)
-            .with_component(mesh_rendering_3)
-            .with_component(RemovableComponent{})
-            .with_component(NonCameraComponent{})
-            .build();
+        // --- Create entity
+
+        // let transform_3 = TransformComponent::builder()
+        //     .position(Vector3f::new(-20.0,-15.0,-1.0))
+        //     .rotation(Vector3f::new(15.0, 15.0,15.0))
+        //     .scale(Vector3f::new(0.5, 0.5,0.5))
+        //     .build();
+
+        // // Add mesh rendering component
+        // let mut mesh_rendering_3 = MeshRenderingComponent::builder()
+        //     .mesh(&airplane_mesh_handle)
+        //     .material(&material_alpha_handle)
+        //     .build();
+        // let airplane_entity = engine.build_entity(active_scene)
+        //     .with_component(transform_3)
+        //     .with_component(mesh_rendering_3)
+        //     .with_component(RemovableComponent{})
+        //     .with_component(NonCameraComponent{})
+        //     .build();
+
+
 
 
         // --- Tests

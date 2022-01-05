@@ -1,4 +1,4 @@
-use crate::ecs::{ Component, ComponentStorage, GlobalComponentStorage };
+use crate::ecs::{ Component, ComponentStorage, GlobalComponentStorage, GlobalComponent };
 
 use pill_core::PillTypeMapKey;
 
@@ -247,6 +247,6 @@ impl PillTypeMapKey for InputComponent {
     type Storage = GlobalComponentStorage<InputComponent>; 
 }
 
-impl Component for InputComponent {
+impl GlobalComponent for InputComponent {
    
 }
