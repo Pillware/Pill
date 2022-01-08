@@ -77,7 +77,6 @@ impl Engine {
         default_material.initialize(self)?;
         self.resource_manager.add_resource(default_material).unwrap();
         
-
         Ok(())
     }
 }

@@ -9,9 +9,8 @@ pub fn time_system(engine: &mut Engine) -> Result<()> {
     let delta_time = (&*engine).frame_delta_time;
 
     let component = engine.get_global_component_mut::<TimeComponent>()?;
-    
-    component.update_delta_time(delta_time)?;
+
+    component.update(delta_time)?;
 
     Ok(())
 }
-

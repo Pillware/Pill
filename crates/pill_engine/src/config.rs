@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 use lazy_static::lazy_static;
 
 // Convention: All resource names starting with "PillDefault" are restricted, cannot be added and removed from game
-pub const DEFAULT_RESOURCE_PREFIX: &str = "PillDefaultColor";
+pub const DEFAULT_RESOURCE_PREFIX: &str = "PillDefault";
 pub const DEFAULT_COLOR_TEXTURE_NAME: &str = "PillDefaultColor";
 pub const DEFAULT_NORMAL_TEXTURE_NAME: &str = "PillDefaultNormal";
 pub const DEFAULT_MATERIAL_NAME: &str = "PillDefaultMaterial";

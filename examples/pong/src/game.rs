@@ -44,6 +44,28 @@ impl GlobalComponent for StateComponent {
 }
 
 
+struct TestResource {
+    pub name: String,
+}
+
+define_new_pill_slotmap_key! { 
+    pub struct TestResourceHandle;
+}
+
+impl PillTypeMapKey for TestResource {
+    type Storage = ResourceStorage<TestResource>; 
+}
+
+impl Resource for TestResource {
+    type Handle = TestResourceHandle;
+
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+}
+
+
+
 
 pub struct Game { }   
 
@@ -184,7 +206,7 @@ impl PillGame for Game {
         let transform_2 = TransformComponent::builder()
             .position(Vector3f::new(0.0,0.0,-2.0))
             .rotation(Vector3f::new(35.0, 35.0,35.0))
-            .scale(Vector3f::new(1.0,1.0,1.0))
+            .scale(Vector3f::new(2.0,2.0,2.0))
             .build();
         
         engine.add_component_to_entity::<TransformComponent>(active_scene_handle, cube_entity, transform_2).unwrap();  
@@ -194,7 +216,7 @@ impl PillGame for Game {
             .material(&material_beta_handle)
             .build();
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene_handle, cube_entity, mesh_rendering_2).unwrap();
-
+        engine.add_component_to_entity::<RotationComponent>(active_scene_handle, cube_entity, RotationComponent{}).unwrap();
 
         // --- Create entity
         
@@ -261,6 +283,7 @@ impl PillGame for Game {
         //material.set_color("Tint", Color::new( 0.0, 0.0, 1.0));
         //material.set_texture("Color", wut_texture_handle).unwrap();
         //material.set_texture("Normal", wut_texture_handle).unwrap();
+        material.remove_texture("Color").unwrap();
         //engine.remove_resource_by_name::<Texture>("WUT").unwrap();
         //engine.remove_resource_by_name::<Texture>("Quilted").unwrap();
         //engine.remove_resource_by_name::<Material>("Alpha").unwrap();
@@ -319,6 +342,7 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
 }
 
 fn rotation_movement_system(engine: &mut Engine) -> Result<()> {   
+    let time = engine.get_global_component::<TimeComponent>().unwrap().time;
     let delta_time = engine.get_global_component::<TimeComponent>().unwrap().delta_time;
     let is_space_clicked = engine.get_global_component::<InputComponent>().unwrap().is_key_clicked(Key::Space);
     
@@ -330,9 +354,9 @@ fn rotation_movement_system(engine: &mut Engine) -> Result<()> {
     }
 
     // Count time
-    let state_component = engine.get_global_component_mut::<StateComponent>().unwrap();
-    state_component.time =  state_component.time + delta_time;
-    let time = state_component.time; 
+    //let state_component = engine.get_global_component_mut::<StateComponent>().unwrap();
+    //state_component.time =  state_component.time + delta_time;
+    //let time = state_component.time; 
 
     // Modify specularity
     let material = engine.get_resource_by_name_mut::<Material>("Plain")?;

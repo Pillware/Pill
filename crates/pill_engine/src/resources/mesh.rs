@@ -47,11 +47,15 @@ impl PillTypeMapKey for Mesh {
 impl Resource for Mesh {
     type Handle = MeshHandle;
 
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> { // [TODO] What if renderer fails to create mesh?
         let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
         
         // Check if path to asset is correct
-        pill_core::validate_asset_path(&self.path, "obj").context(error_message.clone())?;
+        pill_core::validate_asset_path(&self.path, &["obj"]).context(error_message.clone())?;
 
         // Create mesh data
         let mesh_data = MeshData::new(&self.path).context(error_message.clone())?;
@@ -88,10 +92,6 @@ impl Resource for Mesh {
 
         Ok(())
     }
-
-    fn get_name(&self) -> String {
-        self.name.clone()
-    }
 }
 
 #[repr(C)]
@@ -123,9 +123,12 @@ impl MeshData {
         // Load data
         let (models, _materials) = tobj::load_obj(path.as_path(), &load_options)?;
 
-        // [TODO] Check if file has any models
         // Check data validity
         if models.len() > 1 {
+            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(path.clone().into_os_string().into_string().unwrap())));
+        }
+
+        if models.len() < 1 {
             return Err(Error::new(EngineError::InvalidModelFile(path.clone().into_os_string().into_string().unwrap())));
         }
 
@@ -142,8 +145,8 @@ impl MeshData {
                     mesh.positions[i * 3 + 2],
                 ],
                 texture_coordinates: [
+                    *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0),
                     *mesh.texcoords.get(i * 2).unwrap_or(&0.0),
-                    *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0)
                 ],
                 normal: [
                     mesh.normals[i * 3],

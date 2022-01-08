@@ -6,7 +6,7 @@ use colored::*;
 
 
 #[derive(Error, Debug)]
-pub enum EngineError {
+pub enum EngineError<'a> {
 
     // Scene
     #[error("There is no active {} set \n\nSource: ", "Scene".gobj_style())]
@@ -45,8 +45,8 @@ pub enum EngineError {
     // Resource
     #[error("Path to {} is invalid: {} \n\nSource: ", "Asset".gobj_style(), .0.name_style())]
     InvalidAssetPath(String),
-    #[error("{} format is not supported. Expected .{} but is .{} \n\nSource: ", "Asset".gobj_style(), .0.name_style(), .1.name_style())]
-    InvalidAssetFormat(String, String),
+    #[error("{} format is not supported. Expected one of: {:?} but is .{} \n\nSource: ", "Asset".gobj_style(), .0, .1.name_style())]
+    InvalidAssetFormat(&'a [&'a str], String),
     #[error("{} {} is not registered \n\nSource: ", "Resource".gobj_style(), .0.sobj_style())]
     ResourceNotRegistered(String),
     #[error("{} {} {} already exists \n\nSource: ", "Resource".gobj_style(), .0.sobj_style(), .1.name_style())]
@@ -55,8 +55,10 @@ pub enum EngineError {
     InvalidResourceHandle(String),
     #[error("{} {} of type {} not found \n\nSource: ", "Resource".gobj_style(), .0.name_style(), .1.sobj_style(),)]
     InvalidResourceName(String, String),
-    #[error("Invalid .obj file {}\nFiles with multiple meshes are not supported \n\nSource: ", .0.name_style())]
+    #[error("Invalid .obj file {} \n\nSource: ", .0.name_style())]
     InvalidModelFile(String),
+    #[error("Invalid .obj file {}\nFiles with multiple meshes are not supported \n\nSource: ", .0.name_style())]
+    InvalidModelFileMultipleMeshes(String),
     #[error("Cannot remove default {} {} \n\nSource: ", "Resource".gobj_style(), .0.name_style())]
     RemoveDefaultResource(String),
     #[error("Cannot add {} with name {}. This name is reserved only for default engine resources \n\nSource: ", "Resource".gobj_style(), .0.name_style())]

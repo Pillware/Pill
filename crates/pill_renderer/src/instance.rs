@@ -1,4 +1,4 @@
-use crate::resources::renderer_mesh::Vertex;
+use crate::resources::Vertex;
 
 use pill_engine::game::TransformComponent;
 

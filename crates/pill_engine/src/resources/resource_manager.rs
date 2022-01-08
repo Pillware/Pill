@@ -79,7 +79,7 @@ impl ResourceManager {
         Ok(())
     }
 
-    pub fn add_resource<'a, T>(&'a mut self, resource: T) -> Result<(T::Handle, &mut T)> 
+    pub fn add_resource<T>(&mut self, resource: T) -> Result<(T::Handle, &mut T)> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         // Get resource storage
@@ -199,18 +199,4 @@ impl ResourceManager {
 
         Ok(resource)
     }
-
-    // --- Misc ---
-
-    pub fn get_next_resource_slot_handle<T>(&self) -> Result<T::Handle> 
-        where T: Resource<Storage = ResourceStorage::<T>>
-    {
-        // Get resource storage
-        let resource_storage = self.get_resource_storage::<T>()?;
-        
-        // Get handle by name
-        let resource_handle = resource_storage.data.get_next_free_slot_handle();
-      
-        Ok(resource_handle)
-    } 
 }

@@ -33,6 +33,8 @@ pub mod game {
             GlobalComponentStorage
         },
         resources::{
+            Resource,
+            ResourceStorage,
             Texture, 
             TextureHandle,
             TextureType,

@@ -17,7 +17,7 @@ use std::{
 };
 
 
-const DEFERRED_REQUEST_VARIANT_ORDER: usize = 0;
+const DEFERRED_REQUEST_VARIANT_RENDERING_ORDER: usize = 0;
 const DEFERRED_REQUEST_VARIANT_PARAMETER: usize = 1;
 
 const DEFERRED_REQUEST_VARIANT_TEXTURE_START: usize = 2;
@@ -43,7 +43,7 @@ impl MaterialParameter {
 }
 
 pub struct MaterialParameterMap {
-    pub(crate) data: HashMap<String, MaterialParameter>,
+    pub data: HashMap<String, MaterialParameter>,
     pub(crate) mapping: Vec<String>, // Maps index to slot name
 }
 
@@ -207,14 +207,34 @@ impl Material {
         Ok(())
     }
 
-    pub fn set_order(&mut self, order: u8) -> Result<()> {
+    pub fn remove_texture(&mut self, slot_name: &str) -> Result<()> {
+        // Get texture slot
+        let texture_slot = self.textures.data.get_mut(slot_name)
+            .ok_or( Error::new(EngineError::MaterialTextureSlotNotFound(slot_name.to_string())))?;
+
+        // Get texture slot index
+        let texture_slot_index = self.textures.mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping"); 
+
+        // Set new handle and renderer resource handle
+        texture_slot.texture_handle = None;
+        texture_slot.renderer_texture_handle = None;
+
+        // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
+        if self.renderer_resource_handle.is_some() {          
+            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_TEXTURE_START + texture_slot_index);
+        }
+        
+        Ok(())
+    }
+
+    pub fn set_rendering_order(&mut self, order: u8) -> Result<()> {
         if order < RENDER_QUEUE_KEY_ORDER.max as u8 {
             // Set new order
             self.rendering_order = order;
 
             // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
             if self.renderer_resource_handle.is_some() { 
-                self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_ORDER);
+                self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_RENDERING_ORDER);
             }
         }
         else {
@@ -280,6 +300,10 @@ impl PillTypeMapKey for Material {
 impl Resource for Material {
     type Handle = MaterialHandle;
 
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
 
@@ -340,7 +364,7 @@ impl Resource for Material {
 
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
         match request {
-            DEFERRED_REQUEST_VARIANT_ORDER => 
+            DEFERRED_REQUEST_VARIANT_RENDERING_ORDER => 
             {
                 // Find mesh rendering components that use this material and update them
                 for scene in engine.scene_manager.scenes.iter() {
@@ -419,9 +443,5 @@ impl Resource for Material {
         }
 
         Ok(())
-    }
-
-    fn get_name(&self) -> String {
-        self.name.clone()
     }
 }

@@ -1,4 +1,3 @@
-mod instance;
 mod renderer_texture;
 mod renderer_mesh;
 mod renderer_camera;
@@ -6,12 +5,6 @@ mod renderer_material;
 mod renderer_pipeline;
 
 // --- Use ---
-
-pub use instance::{ 
-    Instance, 
-    MatrixAngleExt, 
-    MatrixModelExt 
-};
 
 pub use renderer_mesh::{ 
     RendererMesh, 

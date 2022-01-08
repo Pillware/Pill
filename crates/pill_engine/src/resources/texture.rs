@@ -51,29 +51,36 @@ impl PillTypeMapKey for Texture {
 impl Resource for Texture { // [TODO] What if renderer fails to create texture?
     type Handle = TextureHandle;
 
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());    
 
         // Create new renderer texture resource
-        let renderer_resource_handle = match &self.load_type {
+        let image_data = match &self.load_type {
             ResourceLoadType::Path(path) => {
                 // Check if path to asset is correct
-                pill_core::validate_asset_path(path, "png")?;
-                // Create renderer texture resource
-                engine.renderer.create_texture(&path, &self.name, self.texture_type).context(error_message.clone())?
+                pill_core::validate_asset_path(path, &["png", "jpg", "gif", "tif"])?;
+
+                // Load data
+                image::open(path)?
             },
             ResourceLoadType::Bytes(bytes) => {
-                // Create renderer texture resource
-                engine.renderer.create_texture_from_bytes(&bytes, &self.name, self.texture_type).context(error_message.clone())?
+                // Load data
+                image::load_from_memory(bytes)?
             },
         };
+
+        // Create renderer texture resource
+        let renderer_resource_handle = engine.renderer.create_texture(&self.name, &image_data, self.texture_type).context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
-        
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_texture(v).unwrap();
@@ -106,9 +113,5 @@ impl Resource for Texture { // [TODO] What if renderer fails to create texture?
         }
 
         Ok(())
-    }
-
-    fn get_name(&self) -> String {
-        self.name.clone()
     }
 }

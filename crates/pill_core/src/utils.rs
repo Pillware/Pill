@@ -82,14 +82,14 @@ impl PillStyle for &str {
 // --- Path utils ---
 
 // Check if path to asset is correct (exists and has supported format)
-pub fn validate_asset_path(path: &PathBuf, allowed_format: &str) -> Result<()>
+pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static str]) -> Result<()> // Vec<String>
 {
     path.exists().ok_or(Error::new(EngineError::InvalidAssetPath(path.display().to_string())))?;
 
     match path.extension() {
-        Some(v) => match v.eq(allowed_format) {
+        Some(v) => match allowed_formats.contains(&v.to_str().unwrap()) { //} v.eq(allowed_format) {
             true => return Ok(()),
-            false => return Err(Error::new(EngineError::InvalidAssetFormat(allowed_format.to_string(), v.to_str().unwrap().to_string()))),
+            false => return Err(Error::new(EngineError::InvalidAssetFormat(allowed_formats, v.to_str().unwrap().to_string()))),
         },
         None => return Err(Error::new(EngineError::InvalidAssetPath(path.display().to_string()))),
     }

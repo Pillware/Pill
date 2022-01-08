@@ -1,7 +1,6 @@
-use crate::RenderingResourceStorage;
+use crate::RendererResourceStorage;
 use crate::resources::RendererTexture;
 
-use futures::TryFutureExt;
 use pill_engine::internal::{
     MaterialParameter,
     MaterialParameterMap,
@@ -16,7 +15,7 @@ use pill_engine::internal::{
     MASTER_SHADER_TINT_PARAMETER_SLOT, get_default_texture_handles, get_renderer_texture_handle_from_material_texture, MASTER_SHADER_SPECULARITY_PARAMETER_SLOT,
 };
 
-
+use futures::TryFutureExt;
 use wgpu::util::DeviceExt;
 use std::path::{ Path, PathBuf };
 use anyhow::{Result, Context, Error};
@@ -54,7 +53,7 @@ impl RendererMaterial {
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue, 
-        rendering_resource_storage: &RenderingResourceStorage,
+        rendering_resource_storage: &RendererResourceStorage,
         name: &str,
         pipeline_handle: RendererPipelineHandle,
         texture_bind_group_layout: &wgpu::BindGroupLayout,
@@ -106,7 +105,7 @@ impl RendererMaterial {
     pub fn update_textures(
         device: &wgpu::Device, 
         material_renderer_handle: RendererMaterialHandle,
-        rendering_resource_storage: &mut RenderingResourceStorage, 
+        rendering_resource_storage: &mut RendererResourceStorage, 
         textures: &MaterialTextureMap
     ) -> Result<()> {
         let material = rendering_resource_storage.materials.get(material_renderer_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
@@ -128,7 +127,7 @@ impl RendererMaterial {
 
     pub fn create_texture_bind_group(
         device: &wgpu::Device, 
-        rendering_resource_storage: &RenderingResourceStorage, 
+        rendering_resource_storage: &RendererResourceStorage, 
         texture_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
         textures: &MaterialTextureMap
@@ -179,7 +178,7 @@ impl RendererMaterial {
         device: &wgpu::Device, 
         queue: &wgpu::Queue, 
         material_renderer_handle: RendererMaterialHandle,
-        rendering_resource_storage: &mut RenderingResourceStorage, 
+        rendering_resource_storage: &mut RendererResourceStorage, 
         parameters: &MaterialParameterMap
     ) -> Result<()> {
         let material = rendering_resource_storage.materials.get_mut(material_renderer_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;

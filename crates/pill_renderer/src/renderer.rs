@@ -1,11 +1,14 @@
-use crate::resources::{
-    RendererCamera,
-    Instance,
-    RendererMaterial,
-    RendererMesh,
-    RendererPipeline,
-    RendererTexture,
-    Vertex
+use crate::{
+    resources::{
+        RendererCamera,
+        RendererMaterial,
+        RendererMesh,
+        RendererPipeline,
+        RendererTexture,
+        Vertex
+    }, 
+    instance::Instance, 
+    renderer_resource_storage::RendererResourceStorage
 };
 
 use pill_engine::internal::{
@@ -74,20 +77,6 @@ impl PillRenderer for Renderer {
         }
     }   
 
-    fn render(
-        &mut self,
-        active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
-        camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>
-    ) -> Result<(), RendererError> {
-        self.state.render(
-            active_camera_entity_handle,
-            render_queue,
-            camera_component_storage,
-            transform_component_storage)
-    }
-
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         info!("Resizing {} resources", "Renderer".mobj_style());
         self.state.resize(new_window_size)
@@ -118,52 +107,33 @@ impl PillRenderer for Renderer {
             &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
         ).unwrap();
 
-        self.state.rendering_resource_storage.pipelines.insert(master_pipeline);
+        self.state.renderer_resource_storage.pipelines.insert(master_pipeline);
 
         Ok(())
     }
 
-    fn create_texture(&mut self, path: &PathBuf, name: &str, texture_type: TextureType) -> Result<RendererTextureHandle> {
-        let texture = RendererTexture::new_texture_from_image(&self.state.device, &self.state.queue, path, name, texture_type).unwrap();
-        let handle = self.state.rendering_resource_storage.textures.insert(texture);
-
-        Ok(handle)
-    }
-
-    fn create_texture_from_bytes(&mut self, bytes: &[u8], name: &str, texture_type: TextureType) -> Result<RendererTextureHandle> {
-        let texture = RendererTexture::new_texture_from_bytes(&self.state.device, &self.state.queue, bytes, name, texture_type).unwrap();
-        let handle = self.state.rendering_resource_storage.textures.insert(texture);
-
-        Ok(handle)
-    }
-
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
-        let mesh = RendererMesh::new(&self.state.device, name, mesh_data).unwrap();
-        let handle = self.state.rendering_resource_storage.meshes.insert(mesh);
+        let mesh = RendererMesh::new(&self.state.device, name, mesh_data)?;
+        let handle = self.state.renderer_resource_storage.meshes.insert(mesh);
 
         Ok(handle)
     }
 
-    fn create_camera(&mut self) -> Result<RendererCameraHandle> {
-        let pipeline_handle = MASTER_PIPELINE_HANDLE;
-        let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
-        let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
-        
-        let camera = RendererCamera::new(&self.state.device, camera_bind_group_layout).unwrap();
-
-        let handle = self.state.rendering_resource_storage.cameras.insert(camera);
+    fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle> {
+        let texture = RendererTexture::new_texture(&self.state.device, &self.state.queue, Some(name), image_data, texture_type)?;
+        let handle = self.state.renderer_resource_storage.textures.insert(texture);
 
         Ok(handle)
     }
 
     fn create_material(&mut self, name: &str, textures: &MaterialTextureMap, parameters: &MaterialParameterMap) -> Result<RendererMaterialHandle> {
         let pipeline_handle = MASTER_PIPELINE_HANDLE;
-        let pipeline = self.state.rendering_resource_storage.pipelines.get(pipeline_handle).unwrap();
+        let pipeline = self.state.renderer_resource_storage.pipelines.get(pipeline_handle).unwrap();
 
         let material = RendererMaterial::new(
             &self.state.device,
             &self.state.queue,
-            &self.state.rendering_resource_storage,
+            &self.state.renderer_resource_storage,
             name,
             pipeline_handle,
             &pipeline.material_texture_bind_group_layout,
@@ -172,67 +142,73 @@ impl PillRenderer for Renderer {
             parameters,
         ).unwrap();
 
-        let handle = self.state.rendering_resource_storage.materials.insert(material);
+        let handle = self.state.renderer_resource_storage.materials.insert(material);
+
+        Ok(handle)
+    }
+
+    fn create_camera(&mut self) -> Result<RendererCameraHandle> {
+        let pipeline_handle = MASTER_PIPELINE_HANDLE;
+        let pipeline = self.state.renderer_resource_storage.pipelines.get(pipeline_handle).unwrap();
+        let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
+        
+        let camera = RendererCamera::new(&self.state.device, camera_bind_group_layout)?;
+
+        let handle = self.state.renderer_resource_storage.cameras.insert(camera);
 
         Ok(handle)
     }
 
     fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &MaterialTextureMap) -> Result<()> {
-        RendererMaterial::update_textures(&self.state.device, renderer_material_handle, &mut self.state.rendering_resource_storage, textures)
+        RendererMaterial::update_textures(&self.state.device, renderer_material_handle, &mut self.state.renderer_resource_storage, textures)
     }
 
     fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &MaterialParameterMap) -> Result<()> {
-        RendererMaterial::update_parameters(&self.state.device, &self.state.queue, renderer_material_handle, &mut self.state.rendering_resource_storage, parameters)
+        RendererMaterial::update_parameters(&self.state.device, &self.state.queue, renderer_material_handle, &mut self.state.renderer_resource_storage, parameters)
+    }
+
+    fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
+        self.state.renderer_resource_storage.meshes.remove(renderer_mesh_handle).unwrap();
+
+        Ok(())
     }
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
-        self.state.rendering_resource_storage.textures.remove(renderer_texture_handle).unwrap();
+        self.state.renderer_resource_storage.textures.remove(renderer_texture_handle).unwrap();
 
         Ok(())
     }
 
     fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
-        self.state.rendering_resource_storage.materials.remove(renderer_material_handle).unwrap();
+        self.state.renderer_resource_storage.materials.remove(renderer_material_handle).unwrap();
 
         Ok(())
     }
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
-        self.state.rendering_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
+        self.state.renderer_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
         
         Ok(())
     }
 
-    fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
-        self.state.rendering_resource_storage.meshes.remove(renderer_mesh_handle).unwrap();
-
-        Ok(())
-    }
-}
-
-pub struct RenderingResourceStorage {
-    pub(crate) pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>,
-    pub(crate) materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>,
-    pub(crate) textures: PillSlotMap<RendererTextureHandle, RendererTexture>,
-    pub(crate) meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>,
-    pub(crate) cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>,
-}
-
-impl RenderingResourceStorage { // [TODO] move magic values to config
-    pub fn new() -> Self {
-        RenderingResourceStorage {
-            pipelines: pill_core::PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(10), 
-            textures: pill_core::PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(10),
-            materials: pill_core::PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(10),
-            meshes: pill_core::PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(10),
-            cameras: pill_core::PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(10),
-        }
+    fn render(
+        &mut self,
+        active_camera_entity_handle: EntityHandle,
+        render_queue: &Vec<RenderQueueItem>, 
+        camera_component_storage: &ComponentStorage<CameraComponent>,
+        transform_component_storage: &ComponentStorage<TransformComponent>
+    ) -> Result<(), RendererError> {
+        self.state.render(
+            active_camera_entity_handle,
+            render_queue,
+            camera_component_storage,
+            transform_component_storage)
     }
 }
 
 pub struct State {
     // Resources
-    rendering_resource_storage: RenderingResourceStorage,
+    renderer_resource_storage: RendererResourceStorage,
 
     // Renderer variables
     surface: wgpu::Surface,
@@ -300,7 +276,7 @@ impl State {
         surface.configure(&device, &surface_configuration);
 
         // Configure collections
-        let rendering_resource_storage = RenderingResourceStorage::new();
+        let renderer_resource_storage = RendererResourceStorage::new();
 
         // Create depth and color texture
         let depth_texture = RendererTexture::new_depth_texture(
@@ -318,7 +294,7 @@ impl State {
         // Create state
         Self {
             // Resources
-            rendering_resource_storage,
+            renderer_resource_storage,
 
             // Renderer variables
             surface,
@@ -326,10 +302,8 @@ impl State {
             queue,
             surface_configuration,
             window_size,
-
             color_format,
             depth_format,
-            
             depth_texture,
             mesh_drawer,
         }
@@ -374,11 +348,11 @@ impl State {
         // Get active camera and update it
         let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap().borrow();
         let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = self.rendering_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(RendererError::RendererResourceNotFound)?;
+        let renderer_camera = self.renderer_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(RendererError::RendererResourceNotFound)?;
         let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap().borrow();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
         renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
-        let renderer_camera = self.rendering_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
+        let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
         let clear_color = active_camera_component.clear_color;
         
         // Build a command buffer that can be sent to the GPU
@@ -411,7 +385,7 @@ impl State {
             self.mesh_drawer.draw(
                 &self.queue, 
                 &mut encoder, 
-                &self.rendering_resource_storage, 
+                &self.renderer_resource_storage, 
                 color_attachment, 
                 depth_stencil_attachment, 
                 &renderer_camera,
@@ -422,15 +396,13 @@ impl State {
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();
-        //debug!("Frame rendering completed successfully");
+
         Ok(())
-        
     }
 }
 
 pub struct MeshDrawer {
     current_order: u8,
-    //current_camera_handle: Option<RendererCameraHandle>,
     current_pipeline_handle: Option<RendererPipelineHandle>,
     current_material_handle: Option<RendererMaterialHandle>,
     current_mesh_handle: Option<RendererMeshHandle>,
@@ -474,7 +446,7 @@ impl MeshDrawer {
         // Resources
         queue: &wgpu::Queue, 
         encoder: &mut wgpu::CommandEncoder, 
-        rendering_resource_storage: &RenderingResourceStorage, 
+        renderer_resource_storage: &RendererResourceStorage, 
         color_attachment: wgpu::RenderPassColorAttachment, 
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         // Rendring data
@@ -533,12 +505,12 @@ impl MeshDrawer {
                 }
                 // Set new material
                 self.current_material_handle = Some(renderer_material_handle);
-                let material = rendering_resource_storage.materials.get(self.current_material_handle.unwrap()).unwrap();
+                let material = renderer_resource_storage.materials.get(self.current_material_handle.unwrap()).unwrap();
                
                 // Set pipeline if new material is using different one
                 if self.current_pipeline_handle != Some(material.pipeline_handle) {
                     self.current_pipeline_handle = Some(material.pipeline_handle);
-                    let pipeline = rendering_resource_storage.pipelines.get( self.current_pipeline_handle.unwrap()).unwrap();
+                    let pipeline = renderer_resource_storage.pipelines.get( self.current_pipeline_handle.unwrap()).unwrap();
                     render_pass.set_pipeline(&pipeline.render_pipeline);
                 }
 
@@ -556,7 +528,7 @@ impl MeshDrawer {
                 }
                 // Set new mesh
                 self.current_mesh_handle = Some(renderer_mesh_handle);               
-                let mesh = rendering_resource_storage.meshes.get(self.current_mesh_handle.unwrap()).unwrap();
+                let mesh = renderer_resource_storage.meshes.get(self.current_mesh_handle.unwrap()).unwrap();
                 self.current_mesh_index_count = mesh.index_count;
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
                 render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
