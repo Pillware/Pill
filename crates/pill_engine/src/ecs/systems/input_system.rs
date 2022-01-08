@@ -21,61 +21,36 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
     
         match front_event {
 
-            // - Keyboard Event
+            // - Keyboard keys
+
             InputEvent::KeyboardKey { key, state } => {
-                match state {
-                    ElementState::Pressed => { 
-                        input_component.set_key_pressed(key as usize); 
-                    }
-                    ElementState::Released => { 
-                        input_component.set_key_released(key as usize) 
-                    }
-                }
+                input_component.set_key(key, state); 
             }
 
-            // - Mouse Button Event
-            InputEvent::MouseKey {key, state} => {
-                match key {
+            // - Mouse buttons
 
-                    MouseButton::Left => {
-                        match state {
-                            ElementState::Pressed => input_component.set_left_mouse_button_pressed(),
-                            ElementState::Released => input_component.set_left_mouse_button_released()
-                        }
-                    }
-                    MouseButton::Middle => {
-                        match state {
-                            ElementState::Pressed => input_component.set_middle_mouse_button_pressed(),
-                            ElementState::Released => input_component.set_middle_mouse_button_released()
-                        }
-                    }
-
-                    MouseButton::Right => {
-                        match state {
-                            ElementState::Pressed => input_component.set_right_mouse_button_pressed(),
-                            ElementState::Released => input_component.set_right_mouse_button_released()
-                        }
-                    }
-                    _ => ()
-                }
+            InputEvent::MouseButton {key, state} => {
+                input_component.set_mouse_button(key, state);
             }
 
-            InputEvent::MouseMotion { position} => {
-
-                input_component.set_current_mouse_position(position);
-
-            }
+            // - Mouse scroll
 
             InputEvent::MouseWheel { delta } => {
                 match delta {
                     MouseScrollDelta::LineDelta(x, y) => {
-                        input_component.set_current_mouse_line_delta(x, y);
+                        input_component.set_mouse_scroll_line_delta(x, y);
                     },
 
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        input_component.set_current_mouse_position(pos);
+                    MouseScrollDelta::PixelDelta(delta) => {
+                        input_component.set_mouse_scroll_delta(delta);
                     },
                 }
+            }
+
+            // - Mouse motion
+
+            InputEvent::MouseMotion { position} => {
+                input_component.set_mouse_position(position);
             }
         }
 

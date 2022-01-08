@@ -171,7 +171,7 @@ impl Engine {
     }
 
     pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &ElementState) {
-        let input_event = InputEvent::MouseKey { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
+        let input_event = InputEvent::MouseButton { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
         self.input_queue.push_back(input_event);
         info!("Got new mouse key input");
     }

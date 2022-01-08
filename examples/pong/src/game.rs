@@ -306,7 +306,7 @@ fn delete_entity_system(engine: &mut Engine) -> Result<()> {
     
     for (entity, removable) in new_eng.iterate_one_component_with_entities::<RemovableComponent>()? {
         let input_component = new_eng.get_global_component::<InputComponent>()?;
-        if input_component.is_key_clicked(Key::Delete) {
+        if input_component.get_key_pressed(Key::Delete) {
             removable_entities.push(entity.clone());
         }
     }
@@ -323,18 +323,18 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
     
     for (transform, camera) in new_eng.iterate_two_components::<TransformComponent, NonCameraComponent>()? {
         let input_component = new_eng.get_global_component::<InputComponent>()?;
-        if input_component.is_key_pressed(Key::S) {
+        if input_component.get_key_pressed(Key::S) {
         transform.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
 
-        if input_component.is_key_pressed(Key::W) {
+        if input_component.get_key_pressed(Key::W) {
             transform.borrow_mut().as_mut().unwrap().rotation.y -= 0.05; }
 
         for transform_z in new_eng.iterate_one_component::<TransformComponent>()? {
-            if input_component.is_key_clicked(Key::Z) {
+            if input_component.get_key_pressed(Key::Z) {
                 transform_z.borrow_mut().as_mut().unwrap().rotation.y += 0.05; }
         }
 
-        if input_component.is_mouse_button_clicked(Mouse::Left) {
+        if input_component.get_mouse_button_pressed(Mouse::Left) {
             transform.borrow_mut().as_mut().unwrap().rotation.x -= 0.05;
         }
     }
@@ -344,7 +344,7 @@ fn paddle_movement_system(engine: &mut Engine) -> Result<()> {
 fn rotation_movement_system(engine: &mut Engine) -> Result<()> {   
     let time = engine.get_global_component::<TimeComponent>().unwrap().time;
     let delta_time = engine.get_global_component::<TimeComponent>().unwrap().delta_time;
-    let is_space_clicked = engine.get_global_component::<InputComponent>().unwrap().is_key_clicked(Key::Space);
+    let is_space_pressed = engine.get_global_component::<InputComponent>().unwrap().get_key_pressed(Key::Space);
     
     for (transform, rotation) in (&*engine).iterate_two_components::<TransformComponent, RotationComponent>()? {
         // Rotate
@@ -366,7 +366,7 @@ fn rotation_movement_system(engine: &mut Engine) -> Result<()> {
 
     // Change color on click
     let mut rng = rand::thread_rng();
-    if is_space_clicked {
+    if is_space_pressed {
         let new_color = Color::new(rand::Rng::gen(&mut rng), rand::Rng::gen(&mut rng), rand::Rng::gen(&mut rng));
         material.set_color("Tint", new_color)?;
     }
