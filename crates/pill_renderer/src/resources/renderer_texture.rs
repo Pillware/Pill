@@ -1,8 +1,8 @@
-use pill_engine::internal::{TextureType};
+use pill_engine::internal::TextureType;
 
 use anyhow::*;
 use image::GenericImageView;
-use std::{num::NonZeroU32, path::{Path, PathBuf}};
+use std::{ num::NonZeroU32, path::{Path, PathBuf} };
 
 // --- Texture ---
 
@@ -19,45 +19,15 @@ pub struct RendererTexture {
 impl RendererTexture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn new_texture_from_image(
+    pub fn new_texture(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        path: &PathBuf,
-        name: &str,
-        texture_type: TextureType,
-    ) -> Result<Self> {
-        let image = image::open(path)?;
-        Self::create_texture(device, queue, &image, Some(name), texture_type)
-    }
-
-    pub fn new_texture_from_bytes(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        bytes: &[u8],
-        name: &str,
-        texture_type: TextureType,
-    ) -> Result<Self> {
-        let image = image::load_from_memory(bytes)?;
-        Self::create_texture(device, queue, &image, Some(name), texture_type)
-    }
-
-    pub fn new_depth_texture(
-        device: &wgpu::Device,
-        surface_configuration: &wgpu::SurfaceConfiguration,
-        name: &str,
-    ) -> Result<Self> {
-        Self::create_depth_texture(device, surface_configuration, name)
-    }
-
-    fn create_texture(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        image: &image::DynamicImage,
         name: Option<&str>,
+        image_data: &image::DynamicImage,
         texture_type: TextureType,
     ) -> Result<Self> {
-        let dimensions = image.dimensions();
-        let rgba = image.to_rgba8();
+        let dimensions = image_data.dimensions();
+        let rgba = image_data.to_rgba8();
 
         // Get size
         let size = wgpu::Extent3d {
@@ -80,7 +50,7 @@ impl RendererTexture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING  | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         });
 
         // Write data to texture
@@ -124,7 +94,7 @@ impl RendererTexture {
         Ok(texture)
     }
 
-    pub fn create_depth_texture(
+    pub fn new_depth_texture(
         device: &wgpu::Device,
         surface_configuration: &wgpu::SurfaceConfiguration,
         label: &str,

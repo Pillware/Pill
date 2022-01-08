@@ -1,27 +1,77 @@
-#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
+#![cfg_attr(debug_assertions, allow(dead_code, unused_variables))]
 
-mod mesh_rendering_component;
-mod transform_component;
 mod entity;
-mod component_map;
 mod component_storage;
 mod scene;
 mod scene_manager;
 mod system_manager;
-mod camera_component;
-mod rendering_system;
 mod component;
-mod deferred_update_component;
-mod deferred_update_system;
-mod allocator;
 mod bitmask_controller;
 mod bitmask_map;
 mod entity_fetcher;
-mod entity_builder;
 
-pub use allocator::{
-    Allocator
+mod components;
+mod systems;
+
+// --- Use ---
+
+// - Components
+
+pub use components::camera_component::{
+    CameraComponent,
+    CameraAspectRatio,
+    get_renderer_resource_handle_from_camera_component,
 };
+
+pub use components::deferred_update_component::{
+    DeferredUpdateComponent,
+    DeferredUpdateManager,
+    DeferredUpdateManagerPointer,
+    DeferredUpdateRequest,
+    DeferredUpdateComponentRequest,
+    DeferredUpdateResourceRequest
+};
+
+pub use components::input_component::{
+    InputComponent,
+    InputEvent,
+};
+
+pub use components::transform_component::{
+    TransformComponent,
+};
+
+pub use components::mesh_rendering_component::{
+    MeshRenderingComponent,
+};
+
+pub use components::time_component::{
+    TimeComponent,
+};
+
+// - Systems
+
+pub use systems::rendering_system::{
+    rendering_system,
+};
+
+pub use systems::deferred_update_system::{
+    deferred_update_system,
+};
+
+pub use systems::input_system::{
+    input_system,
+};
+
+pub use systems::time_system::{
+    time_system,
+};
+
+// - Other
+
+// pub use allocator::{
+//     Allocator
+// };
 
 pub use bitmask_controller::{
     Bitmask,
@@ -36,43 +86,24 @@ pub use entity_fetcher::{
     EntityFetcher
 };
 
-pub use entity_builder::{
-    EntityBuilder
-};
-
-pub use rendering_system::{
-    rendering_system,
-};
-
-pub use scene::{
-    Scene,
-};
-
-pub use component_map::{ 
-    ComponentMap, 
+pub use component:: {
     Component,
+    GlobalComponent,
 };
 
 pub use component_storage::{
     ComponentStorage,
-};
-
-pub use camera_component::{
-    CameraComponent,
-    CameraAspectRatio,
+    GlobalComponentStorage,
 };
 
 pub use entity::{
     Entity,
-    EntityHandle
+    EntityHandle,
+    EntityBuilder,
 };
 
-pub use mesh_rendering_component::{
-    MeshRenderingComponent,
-};
-
-pub use transform_component::{
-    TransformComponent,
+pub use scene::{
+    Scene,
 };
 
 pub use scene_manager::{
@@ -84,13 +115,3 @@ pub use system_manager::{
     SystemManager,
     UpdatePhase,
 };
-
-pub use deferred_update_component::{
-    DeferredUpdateGlobalComponent,
-    DeferredUpdateManager,
-    DeferredUpdateManagerPointer,
-};
-
-// pub use deferred_update_system::{
-    
-// };

@@ -1,15 +1,17 @@
-#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
+#![cfg_attr(debug_assertions, allow(dead_code))]
 
 use pill_core::PillStyle;
-use pill_engine::internal::*;
+use pill_engine::internal::{ PillGame, PillRenderer, Engine };
 use pill_renderer;
-use winit::event::{Event, WindowEvent};
 
+use winit::event::{Event, WindowEvent};
+use log::{ info };
 use std::io::Write;
-use log::{ debug, info };
+
+pub const LOG_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
 
 fn main() {
-    
+
     // Configure logging
     #[cfg(debug_assertions)]
     env_logger::Builder::new()
@@ -22,9 +24,9 @@ fn main() {
                 record.args()
             )
         })
-        .filter_module("pill_standalone", log::LevelFilter::Debug)
-        .filter_module("pill_engine", log::LevelFilter::Debug)
-        .filter_module("pill_renderer", log::LevelFilter::Debug)
+        .filter_module("pill_standalone", LOG_LEVEL)
+        .filter_module("pill_engine", LOG_LEVEL)
+        .filter_module("pill_renderer", LOG_LEVEL)
         .init();
 
     info!("Initializing {}", "Standalone".mobj_style());

@@ -1,22 +1,27 @@
-use std::{any::type_name, collections::VecDeque, cell::RefCell};
-use anyhow::{Context, Result, Error};
-use boolinator::Boolinator;
-use log::{debug, info, error};
-use winit::{ event::*, dpi::PhysicalPosition,};
-use crate::{input::input_component::GlobalComponent, time::{TimeComponent, time_system}};
-
-
-
-use pill_core::{EngineError, get_type_name, PillSlotMapKey, PillStyle};
 use crate::{ 
     resources::*,
     ecs::*,
     graphics::*,
-    input::*, 
     config::*,
 };
 
-// ---------------------------------------------------------------------
+use pill_core::{ 
+    EngineError, 
+    PillSlotMapKey, 
+    PillStyle, 
+    PillTypeMap,
+    get_type_name, 
+    get_value_type_name, 
+    get_enum_variant_type_name, 
+};
+
+use std::{ any::type_name, collections::VecDeque, cell::RefCell };
+use anyhow::{Context, Result, Error};
+use boolinator::Boolinator;
+use log::{debug, info, error};
+use winit::{ event::*, dpi::PhysicalPosition,};
+
+// -------------------------------------------------------------------------------
 
 pub type Game = Box<dyn PillGame>;
 pub type Key = VirtualKeyCode;
@@ -25,6 +30,7 @@ pub type Mouse = MouseButton;
 pub trait PillGame { 
     fn start(&self, engine: &mut Engine);
 }
+
 pub struct Engine { 
     pub(crate) game: Option<Game>,
     pub(crate) renderer: Renderer,
@@ -34,22 +40,19 @@ pub struct Engine {
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
-    pub(crate) global_components: ComponentMap,
+    pub(crate) global_components: PillTypeMap,
     pub(crate) frame_delta_time: f32,
-
-    pub(crate) TEMP_deferred_component: DeferredUpdateGlobalComponent, // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
 
 impl Engine {
-
     fn create_default_resources(&mut self) -> Result<()> {
         self.register_resource_type::<Texture>().unwrap();
         self.register_resource_type::<Mesh>().unwrap();
         self.register_resource_type::<Material>().unwrap();
 
-        // Create default resources
+        // - Create default resources
 
         // Load master shader data to executable
         let master_vertex_shader_bytes = include_bytes!("../res/shaders/built/master.vert.spv");
@@ -74,7 +77,6 @@ impl Engine {
         default_material.initialize(self)?;
         self.resource_manager.add_resource(default_material).unwrap();
         
-
         Ok(())
     }
 }
@@ -88,7 +90,7 @@ impl Engine {
         let resource_manager = ResourceManager::new();
         let system_manager = SystemManager::new();
 
-        let mut engine = Self { 
+        Self { 
             game: Some(game),
             renderer,
             scene_manager,
@@ -97,14 +99,9 @@ impl Engine {
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(1000),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
-            global_components: ComponentMap::new(),
-            frame_delta_time: 0.0, // TODO: Should it really be initialized with 0? Are there any better default values?
-            TEMP_deferred_component: DeferredUpdateGlobalComponent::new(), // TODO: REPLACE WITH PROPER GLOBAL COMPONENTS IMPLEMENTATION
-        };
-
-        engine.create_default_resources().unwrap();
-
-        engine
+            global_components: PillTypeMap::new(),
+            frame_delta_time: 0.0,
+        }
     }
 
     pub fn initialize(&mut self, window_size: winit::dpi::PhysicalSize<u32>) {
@@ -114,23 +111,26 @@ impl Engine {
         self.window_size = window_size;
 
         // Register global components
-        self.insert_global_component(InputComponent::default()).unwrap();
-        self.insert_global_component(TimeComponent::default()).unwrap();
+        self.add_global_component(InputComponent::new()).unwrap();
+        self.add_global_component(TimeComponent::new()).unwrap();
+        self.add_global_component(DeferredUpdateComponent::new()).unwrap();
 
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
         self.system_manager.add_system("TimeSystem", time_system, UpdatePhase::PostGame).unwrap();
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
+        self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame).unwrap();
+
+        // Create default resources
+        self.create_default_resources().expect("Critical: Creating default resources failed");
 
         // Initialize game
         let game = self.game.take().unwrap(); 
-        game.start(self); 
+        game.start(self);
         self.game = Some(game);
     }
 
     pub fn update(&mut self, delta_time: std::time::Duration) {
-        use pill_core::{PillStyle, get_value_type_name};
-
         // Run systems
         let update_phase_count = self.system_manager.update_phases.len();
         for i in (0..update_phase_count).rev() {
@@ -139,9 +139,9 @@ impl Engine {
                 let system = &self.system_manager.update_phases[i][j];
                 if !system.enabled { continue; }
                 let system_name = system.name.to_string();
-                (system.system_function)(self).context(
-                    format!("{}", EngineError::SystemUpdateFailed(system_name, get_value_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)))
-                ).unwrap();
+                //debug!("{} {} starting", "System".gobj_style(), system_name.sobj_style()); 
+                (system.system_function)(self)
+                    .context(format!("{}", EngineError::SystemUpdateFailed(system_name, get_enum_variant_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)))).unwrap();
             }
         }
  
@@ -193,150 +193,249 @@ impl Engine {
     }
 }
 
-// --- GAME API ------------------------------------------------------------------
+// --- API ------------------------------------------------------------------
 
 impl Engine { 
 
-    // --- ECS API ---
-
-    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle) -> Result<()> {
-        self.scene_manager.register_component::<T>(scene_handle).context(format!("Registering {} failed", "Component".gobj_style()))
-    }
+    // --- System API ---
 
     pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine) -> Result<()>) -> Result<()> {
+        debug!("Adding {} {} to {} {}", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style());
+
         self.system_manager.add_system(name, system_function, UpdatePhase::Game).context(format!("Adding {} failed", "System".gobj_style()))
     }
 
-    // [TODO] Implement remove_system
+    pub fn remove_system(&mut self, name: &str) -> Result<()> {
+        debug!("Removing {} {} from {} {}", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style());
 
-    pub fn build_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityBuilder> {
-        Ok(self.scene_manager.build_entity(scene_handle))
+        self.system_manager.remove_system(name, UpdatePhase::Game).context(format!("Removing {} failed", "System".gobj_style()))
+    }
+
+    pub fn toggle_system(&mut self, name: &str, enabled: bool) -> Result<()> {
+        debug!("Toggling {} {} from {} {} to {} state", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style(), if enabled { "Enabled" } else { "Disabled" });
+
+        self.system_manager.toggle_system(name, UpdatePhase::Game, enabled).context(format!("Toggling {} failed", "System".gobj_style()))
+    }
+
+    // --- Entity API ---
+
+    pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
+        let entity_handle = self.create_entity(scene_handle).unwrap();
+        EntityBuilder {
+            engine: self,
+            entity_handle,
+            scene_handle,
+        }
     }
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
+        debug!("Creating {} in {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
         self.scene_manager.create_entity(scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
     }
 
     pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
+        debug!("Removing {} from {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
         self.scene_manager.remove_entity(entity_handle, scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
     }
-    
-    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {
-        unsafe 
-        {
-            debug!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.get_data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-        }
+
+    // --- Component API ---
+
+    pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()> 
+        where T: Component<Storage = ComponentStorage::<T>>
+    {
+        debug!("Registering {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Scene".sobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
+        self.scene_manager.register_component::<T>(scene_handle).context(format!("Registering {} failed", "Component".gobj_style()))
+    }
+
+    pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, mut component: T) -> Result<()> 
+        where T : Component<Storage = ComponentStorage::<T>>
+    {
+        debug!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        
+        // Initialize component
+        component.initialize(self).context(format!("Adding {} {} failed", "Component".gobj_style(), get_type_name::<T>().sobj_style()))?;
+        
+        // Add component
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))
     }
 
-    pub fn delete_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> {
-        unsafe
-        {
-        info!("Deleting {} {} from {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.get_data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-        }
-        self.scene_manager.delete_component_from_entity::<T>(scene_handle, entity_handle).context("Deleting component from entity failed")
-    }
+    pub fn delete_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> 
+        where T : Component<Storage = ComponentStorage::<T>>
+    {
+        debug!("Deleting {} {} from {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        
+        let mut component = self.scene_manager.delete_component_from_entity::<T>(scene_handle, entity_handle).context("Deleting component from entity failed").unwrap();
 
-    // - Global Component API
+        // Destroy component
+        component.destroy(self, entity_handle, scene_handle)?;
 
-    pub fn insert_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self, component: T) -> Result<()> {
-        //.ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
-        self.global_components.insert::<T>(GlobalComponent::<T>::new());
-        self.global_components.get_mut::<T>().unwrap().set_component(component)?;
         Ok(())
     }
 
-    pub fn get_global_component<T: Component<Storage = GlobalComponent<T>>>(&self) -> Result<&T> {
-        self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
-        let returned_component = self.global_components.get::<T>().unwrap().component.as_ref().unwrap();
-        Ok(returned_component)
+    // --- Global Component API ---
+
+    pub fn add_global_component<T>(&mut self, mut component: T) -> Result<()> 
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
+    {
+        // Check if component of this type is not already added
+        self.global_components.contains_key::<T>().eq(&false).ok_or(Error::new(EngineError::GlobalComponentAlreadyExists(get_type_name::<T>())))?;
+
+        // Initialize component
+        component.initialize(self)?;
+
+        // Add component
+        self.global_components.insert::<T>(GlobalComponentStorage::<T>::new(component));
+
+        Ok(())
     }
 
-    pub fn get_global_component_mut<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Result<&mut T> {
-        self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
-        let returned_component = self.global_components.get_mut::<T>().unwrap().component.as_mut().unwrap();
-        Ok(returned_component)
+    pub fn get_global_component<T>(&self) -> Result<&T> 
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
+    {
+        // Get component
+        let component = &self.global_components.get::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data;
+        
+        Ok(component)
     }
 
-    pub fn remove_global_component<T: Component<Storage = GlobalComponent<T>>>(&mut self) -> Result<()> {
-        self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), String::from("Engine"))))?;
+    pub fn get_global_component_mut<T>(&mut self) -> Result<&mut T> 
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
+    {
+        // Get component
+        let component = &mut self.global_components.get_mut::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data;
+
+        Ok(component)
+    }
+
+    pub fn remove_global_component<T>(&mut self) -> Result<()> 
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
+    {
+        // Check if component of this type is added
+        self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?;
+
+        // Remove component
         self.global_components.remove::<T>();
+        
         Ok(())
     }
 
-    // - Iterator API
+    // --- Iterator API ---
+ 
+    pub fn iterate_one_component<A>(&self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
+        where A: Component<Storage = ComponentStorage<A>>
+    {
+        // Get scene handle
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
 
-    pub fn fetch_one_component_storage<A: Component<Storage = ComponentStorage<A>>>(&self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> {
         // Get iterator
-        let iterator = self.scene_manager.fetch_one_component_storage::<A>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_one_component_storage::<A>(scene_handle)?;
 
         Ok(iterator)
     }
 
-    pub fn fetch_one_component_storage_with_entity_handles<A: Component<Storage = ComponentStorage<A>>>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> {
+    pub fn iterate_one_component_with_entities<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> 
+        where A: Component<Storage = ComponentStorage<A>>
+    {
+        // Get scene handle
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+
         // Get iterator
-        let iterator = self.scene_manager.fetch_one_component_storage_with_entity_handles::<A>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_one_component_storage_with_entity_handles::<A>(scene_handle)?;
 
         Ok(iterator)
     }
     
-    
-    pub fn fetch_two_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> {
+    pub fn iterate_two_components<A, B>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> 
+        where 
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>
+    {
+        // Get scene handle
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
 
         // Get iterator
-        let iterator = self.scene_manager.fetch_two_component_storages::<A, B>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_two_component_storages::<A, B>(scene_handle)?;
 
         Ok(iterator) 
     }
 
-    pub fn fetch_two_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> {
+    pub fn iterate_two_components_with_entities<A, B>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> 
+        where 
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>
+    {
+        // Get scene handle
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
 
         // Get iterator
-        let iterator = self.scene_manager.fetch_two_component_storages_with_entity_handles::<A, B>(self.scene_manager.get_active_scene_handle()?)?;
+        let iterator = self.scene_manager.fetch_two_component_storages_with_entity_handles::<A, B>(scene_handle)?;
 
         Ok(iterator) 
     }
 
-    pub fn fetch_three_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+    pub fn iterate_three_components<A, B, C>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
+        where 
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>,
+        C: Component<Storage = ComponentStorage<C>>
+    {
 
-        //Get iterator
-        let iterator = self.scene_manager.fetch_three_component_storages::<A, B, C>(self.scene_manager.get_active_scene_handle()?)?;
+        // Get scene handle
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+
+        // Get iterator
+        let iterator = self.scene_manager.fetch_three_component_storages::<A, B, C>(scene_handle)?;
 
         Ok(iterator)
     }
 
-    pub fn fetch_three_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> {
+    pub fn iterate_three_components_with_entities<A, B, C>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
+        where 
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>,
+        C: Component<Storage = ComponentStorage<C>>
+    {
 
-        //Get iterator
-        let iterator = self.scene_manager.fetch_three_component_storages_with_entity_handles::<A, B, C>(self.scene_manager.get_active_scene_handle()?)?;
+        // Get scene handle
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+
+        // Get iterator
+        let iterator = self.scene_manager.fetch_three_component_storages_with_entity_handles::<A, B, C>(scene_handle)?;
 
         Ok(iterator)
     }
 
-    pub fn fetch_four_component_storages<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>,
-                            D: Component<Storage = ComponentStorage<D>>>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+    pub fn iterate_four_components<A, B, C, D>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
+        where 
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>,
+        C: Component<Storage = ComponentStorage<C>>,
+        D: Component<Storage = ComponentStorage<D>>
+    {
+        // Get scene handle
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
 
-        //Get iterator
-        let iterator = self.scene_manager.fetch_four_component_storages::<A, B, C, D>(self.scene_manager.get_active_scene_handle()?)?;
+        // Get iterator
+        let iterator = self.scene_manager.fetch_four_component_storages::<A, B, C, D>(scene_handle)?;
 
         Ok(iterator) 
     }
 
-    pub fn fetch_four_component_storages_with_entity_handles<A: Component<Storage = ComponentStorage::<A>>, 
-                            B: Component<Storage = ComponentStorage<B>>,
-                            C: Component<Storage = ComponentStorage<C>>,
-                            D: Component<Storage = ComponentStorage<D>>>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> {
+    pub fn iterate_four_components_with_entities<A, B, C, D>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
+        where 
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>,
+        C: Component<Storage = ComponentStorage<C>>,
+        D: Component<Storage = ComponentStorage<D>>
+    {
+        // Get scene handle
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
 
-        //Get iterator
-        let iterator = self.scene_manager.fetch_four_component_storages_with_entity_handles::<A, B, C, D>(self.scene_manager.get_active_scene_handle()?)?;
+        // Get iterator
+        let iterator = self.scene_manager.fetch_four_component_storages_with_entity_handles::<A, B, C, D>(scene_handle)?;
 
         Ok(iterator) 
     }
@@ -360,7 +459,6 @@ impl Engine {
         self.scene_manager.get_scene_mut(scene_handle).context(format!("Getting {} as mutable failed", "Scene".gobj_style()))
     }
 
-
     pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
         self.scene_manager.set_active_scene(scene_handle).context(format!("Setting active {} failed", "Scene".gobj_style()))
     }
@@ -377,17 +475,16 @@ impl Engine {
         self.scene_manager.get_active_scene_mut().context(format!("Getting active {} as mutable failed", "Scene".gobj_style()))
     }
 
-
     // --- Resource API ---
 
     pub fn register_resource_type<T>(&mut self) -> Result<()> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         self.resource_manager.register_resource_type::<T>()
     }
 
     pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         debug!("Adding {} {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style());
 
@@ -396,50 +493,51 @@ impl Engine {
         resource_name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::WrongResourceName(resource_name.clone())))?;
 
         // Initialize resource
-        resource.initialize(self).context(format!("Adding {} {} failed", "Resource".gobj_style(), pill_core::get_type_name::<T>().sobj_style()))?;
+        resource.initialize(self).context(format!("Adding {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style()))?;
         
-        // Add resource
-        let resource_handle = self.resource_manager.add_resource(resource)?;
+        // Add resource and get it back
+        let add_result = self.resource_manager.add_resource(resource)?;
+        let resource_handle = add_result.0; 
+        let resource = add_result.1;
 
-        // [TODO]: In resource initialization it may happen that renderer resource will be created, and after that add_resource may fail, so resource will not be added to the engine 
-        // but rendering resource will be left there without any user. This should be handled! 
-        // (We can first check if there will be a place in resource_manager and then start procedure, or if add_resource will fail then deinitialize resource what will remove renderer resource)
+        // Pass handle to resource to this resource so it can store it if needed
+        resource.pass_handle::<T::Handle>(resource_handle);
 
         Ok(resource_handle)
     }
 
     pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource::<T>(resource_handle)?)
     }
 
     pub fn get_resource_by_name<T>(&self, name: &str) -> Result<&T> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_by_name::<T>(name)?)
     }
 
     pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_handle::<T>(name)?)
     }
 
     pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_mut::<T>(resource_handle)?)
     }
 
     pub fn get_resource_by_name_mut<T>(&mut self, name: &str) -> Result<&mut T> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_by_name_mut::<T>(name)?)
     }
 
     pub fn remove_resource<T>(&mut self, resource_handle: &T::Handle) -> Result<()> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         let error_message = format!("Removing {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style());
       
@@ -449,13 +547,13 @@ impl Engine {
 
         // Remove resource
         let mut remove_result = self.resource_manager.remove_resource::<T>(resource_handle).context(error_message.to_string())?;
-        remove_result.1.destroy(self, *resource_handle);
+        remove_result.1.destroy(self, *resource_handle)?;
 
         Ok(())
     }
 
     pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<()> 
-        where T: Resource<Value = ResourceStorage::<T>>
+        where T: Resource<Storage = ResourceStorage::<T>>
     {
         let error_message = format!("Removing {} {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), name.to_string().name_style());
 
@@ -467,7 +565,7 @@ impl Engine {
 
         // Remove resource
         let mut remove_result = self.resource_manager.remove_resource_by_name::<T>(name).context(error_message.to_string())?;
-        remove_result.1.destroy(self, remove_result.0);
+        remove_result.1.destroy(self, remove_result.0)?;
 
         Ok(())
     }

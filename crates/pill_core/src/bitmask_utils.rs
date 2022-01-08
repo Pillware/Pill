@@ -1,4 +1,4 @@
-use std::{fmt::Binary, ops::{Add, Not, Shl, Sub}};
+use std::{ fmt::Binary, ops::{Add, Not, Shl, Sub} };
 
 // Creates bitmasks of any size with bits in range passed as parameter set to 1
 // Where range order is: from MSB to LSB

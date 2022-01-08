@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use core::hash::Hash;
-use anyhow::{Result, Context, Error};
+use anyhow::{ Result, Context, Error };
 
 // PillTwinMap is container storing bidirectional mapping from one type to another and vice versa
 // From outside, in this container, in the same time key is value, and value is key
@@ -57,47 +57,3 @@ impl<K: Eq + Hash + Clone, V: Eq + Hash + Clone> PillTwinMap<K, V> {
         self.value_key_map.contains_key(value)
     }
 }
-
-
-
-// pub struct PillTwinMap<A: Eq + Hash + Clone, B: Eq + Hash + Clone> {
-//     alpha_map: HashMap<B, A>,
-//     beta_map: HashMap<A, B>,
-// }
-
-// impl<A: Eq + Hash + Clone, B: Eq + Hash + Clone> PillTwinMap<A, B> {
-//     pub fn new() -> Self {
-//         Self {
-//             alpha_map: HashMap::<B, A>::new(),
-//             beta_map: HashMap::<A, B>::new(),
-//         }
-//     }
-    
-//     pub fn get_alpha(&self, beta: &B) -> Option<&A> { 
-//         self.alpha_map.get(beta)
-//     }
-
-//     pub fn get_beta(&self, alpha: &A) -> Option<&B> { 
-//         self.beta_map.get(alpha)
-//     }
-
-//     pub fn insert(&mut self, alpha: &A, beta: &B) {
-//         self.alpha_map.insert( beta.clone(), alpha.clone());
-//         self.beta_map.insert(alpha.clone(), beta.clone());
-//     }
-
-//     pub fn remove_by_beta(&mut self, beta: &B) {
-//         match self.alpha_map.remove_entry(beta) {
-//             Some(v) => { self.beta_map.remove_entry(&v.1); },
-//             None => {},
-//         };
-//     }
-
-//     pub fn contains_alpha(&self, alpha: &A) -> bool {
-//         self.beta_map.contains_key(alpha)
-//     }
-
-//     pub fn contains_beta(&self, beta: &B) -> bool {
-//         self.alpha_map.contains_key(beta)
-//     }
-// }

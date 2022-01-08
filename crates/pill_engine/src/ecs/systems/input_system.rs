@@ -3,7 +3,6 @@ use crate::{
     ecs::{ InputComponent, InputEvent },
 };
 
-
 use std::{collections::{vec_deque, VecDeque}, borrow::{Borrow, BorrowMut}};
 use anyhow::{Result, Context, Error};
 use lazy_static::__Deref;

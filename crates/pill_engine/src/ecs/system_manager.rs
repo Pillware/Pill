@@ -1,13 +1,14 @@
+use crate::engine::Engine;
+
+use pill_core::EngineError;
+
 use core::fmt;
 use std::{collections::HashMap, fmt::Display};
 use anyhow::{Result, Context, Error};
 use boolinator::Boolinator;
 use indexmap::IndexMap;
 
-use pill_core::EngineError;
-use crate::game::Engine;
-
-type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
+pub type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
 
 pub struct System {
     pub(crate) name: String,
@@ -62,10 +63,10 @@ impl SystemManager {
 
         // Add system
         system_collection.insert(name.to_string(), system_object);
+
         Ok(())
     }
 
-    // [TODO] Removing system may cause system iteration in engine to break, check that
     pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> { 
         // Find collection of systems for given update phase
         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
@@ -75,8 +76,24 @@ impl SystemManager {
 
         // Remove system
         system_collection.remove(name);
+
         Ok(())
     }
+
+    pub fn toggle_system(&mut self, name: &str, update_phase: UpdatePhase, enabled: bool) -> Result<()> { 
+        // Find collection of systems for given update phase
+        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
+
+        // Check if system with that name exists
+        let system = system_collection.get_mut(name).ok_or(Error::new(EngineError::SystemNotFound(name.to_string(), format!("{}", update_phase))))?;
+
+        // Set system state
+        system.enabled = enabled;
+
+        Ok(())
+    }
+
+  
 
     pub fn enable_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
         // Find collection of systems for given update phase
@@ -87,6 +104,7 @@ impl SystemManager {
 
         // Enable system
         system_object.enabled = true;
+
         Ok(())
     }
 
@@ -99,6 +117,7 @@ impl SystemManager {
 
         // Enable system
         system_object.enabled = false;
+        
         Ok(())
     }
 

@@ -39,6 +39,7 @@ pub struct InputComponent {
 
     pub(crate) current_mouse_pixel_delta: PhysicalPosition<f64>,
     pub(crate) previous_mouse_pixel_delta: PhysicalPosition<f64>,
+
 }
 
 impl InputComponent {
@@ -222,7 +223,7 @@ impl InputComponent {
     }
 
     // - Mouse Motion Functionality
-
+      
     pub fn get_current_mouse_position(&self) -> PhysicalPosition<f64> {
         self.current_mouse_position
     }

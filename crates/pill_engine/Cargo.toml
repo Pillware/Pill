@@ -11,17 +11,8 @@ resolver = "2"
 [dependencies]
 pill_core = {path = "../pill_core"}
 
-cgmath = "0.18"
-winit = "0.25"
-cfg-if = "1.0.0"
-boolinator = "2.4.0"
-bytemuck = { version = "1.4", features = [ "derive" ] }
-lazy_static = "1.4.0"
-
 # Data containers
 indexmap = "1.7.0"
-typemap_rev = "0.1.5"
-#slotmap = "1.0.6"
 
 # Errors
 anyhow = "1.0.45"
@@ -32,9 +23,17 @@ env_logger = "0.9.0"
 log = "0.4"
 
 # Loaders
+image = "0.23"
 tobj = "3.0"
 
+# Other
 readonly = "0.2"
+cgmath = "0.18"
+winit = "0.25"
+cfg-if = "1.0.0"
+boolinator = "2.4.0"
+bytemuck = { version = "1.4", features = [ "derive" ] }
+lazy_static = "1.4.0"
 
 [build-dependencies]
 anyhow = "1.0"
