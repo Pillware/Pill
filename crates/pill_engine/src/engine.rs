@@ -15,7 +15,7 @@ use pill_core::{
     get_enum_variant_type_name, 
 };
 
-use std::{ any::type_name, collections::VecDeque, cell::RefCell };
+use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell };
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
@@ -51,6 +51,7 @@ impl Engine {
         self.register_resource_type::<Texture>().unwrap();
         self.register_resource_type::<Mesh>().unwrap();
         self.register_resource_type::<Material>().unwrap();
+        self.register_resource_type::<Sound>().unwrap();
 
         // - Create default resources
 
@@ -77,6 +78,7 @@ impl Engine {
         default_material.initialize(self)?;
         self.resource_manager.add_resource(default_material).unwrap();
         
+
         Ok(())
     }
 }
@@ -114,11 +116,13 @@ impl Engine {
         self.add_global_component(InputComponent::new()).unwrap();
         self.add_global_component(TimeComponent::new()).unwrap();
         self.add_global_component(DeferredUpdateComponent::new()).unwrap();
+        self.add_global_component(WorldAudioComponent::new()).unwrap();
 
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
         self.system_manager.add_system("TimeSystem", time_system, UpdatePhase::PostGame).unwrap();
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
+        self.system_manager.add_system("AudioSystem", audio_system, UpdatePhase::PostGame).unwrap();
         self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame).unwrap();
 
         // Create default resources
@@ -216,7 +220,7 @@ impl Engine {
 
         self.system_manager.toggle_system(name, UpdatePhase::Game, enabled).context(format!("Toggling {} failed", "System".gobj_style()))
     }
-
+    
     // --- Entity API ---
 
     pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
@@ -311,10 +315,27 @@ impl Engine {
     }
 
     pub fn remove_global_component<T>(&mut self) -> Result<()> 
-        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
+        where T: Component<Storage = GlobalComponentStorage::<T>>
     {
         // Check if component of this type is added
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?;
+
+        // Get the type of the component
+        let component_type = TypeId::of::<T>();
+
+        // Check if the type of the component is the same as of the ones, which cannot be removed
+        if component_type == TypeId::of::<InputComponent>() {
+            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
+        }
+        else if component_type == TypeId::of::<TimeComponent>() {
+            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
+        }
+        else if component_type == TypeId::of::<WorldAudioComponent>() {
+            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
+        }
+        else if component_type == TypeId::of::<DeferredUpdateComponent>() {
+            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
+        }
 
         // Remove component
         self.global_components.remove::<T>();
@@ -347,6 +368,7 @@ impl Engine {
 
         Ok(iterator)
     }
+    
     
     pub fn iterate_two_components<A, B>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> 
         where 
@@ -465,6 +487,10 @@ impl Engine {
 
     pub fn get_active_scene_handle(&mut self) -> Result<SceneHandle> {
         self.scene_manager.get_active_scene_handle().context(format!("Getting {} of active {} failed", "SceneHandle".sobj_style(), "Scene".gobj_style()))
+    }
+
+    pub fn remove_scene(&mut self, scene_handle: SceneHandle) -> Result<Scene> {
+        self.scene_manager.remove_scene(scene_handle).context(format!("Removing {} with usage of {} failed", "Scene".sobj_style(), "SceneHandle".gobj_style()))
     }
 
     fn get_active_scene(&mut self) -> Result<&Scene> {

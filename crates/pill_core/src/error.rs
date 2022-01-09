@@ -31,6 +31,8 @@ pub enum EngineError<'a> {
     GlobalComponentAlreadyExists(String),
     #[error("{} {} not found in {} \n\nSource: ", "GlobalComponent".gobj_style(), .0.sobj_style(), "Engine".mobj_style())]
     GlobalComponentNotFound(String),
+    #[error("{} {} is global component in {} and cannot be removed \n\nSource: ", "GlobalComponent".gobj_style(), .0.sobj_style(), "Engine".mobj_style())]
+    GlobalComponentCannotBeRemoved(String),
 
     // System
     #[error("Failed to update {} {} in {} {} \n\nSource: ", "System".gobj_style(), .0.sobj_style(), "UpdatePhase".sobj_style(), .1.name_style())]

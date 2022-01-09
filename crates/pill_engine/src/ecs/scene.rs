@@ -32,27 +32,77 @@ impl Scene {
         };
     }
 
-    pub(crate) fn get_counter(&mut self) -> &usize {
+    #[cfg(feature = "game")]
+    pub fn get_counter(&mut self) -> &usize {
         &self.entity_counter
     }
 
-    pub(crate) fn get_component_storage<T>(&self) -> Result<&ComponentStorage<T>> 
+    pub fn get_component_storage<T>(&self) -> Result<&ComponentStorage<T>> 
         where T: Component<Storage = ComponentStorage::<T>>
     {
         self.components.get::<T>().ok_or(Error::new(EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone())))
     }
 
-    pub(crate) fn get_component_storage_mut<T>(&mut self) -> Result<&mut ComponentStorage<T>> 
+    pub fn get_component_storage_mut<T>(&mut self) -> Result<&mut ComponentStorage<T>> 
         where T: Component<Storage = ComponentStorage::<T>>
     {
         self.components.get_mut::<T>().ok_or(Error::new(EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone())))
     }
 
-    pub(crate) fn get_bitmask_controller(&self) -> &BitmaskController {
+    pub fn get_bitmask_controller(&self) -> &BitmaskController {
         &self.bitmask_controller
     }
 
-    pub(crate) fn get_bitmask_controller_mut(&mut self) -> &mut BitmaskController {
+    pub fn get_bitmask_controller_mut(&mut self) -> &mut BitmaskController {
         &mut self.bitmask_controller
+    }
+
+    pub fn get_one_component_storage<A>(&self) -> Iter<'_, RefCell<Option<A>>>
+        where A: Component<Storage = ComponentStorage::<A>>
+    {
+        self.get_component_storage::<A>().unwrap().data.iter()
+    }
+
+    pub fn get_two_component_storages<A, B>(&self) -> Zip<
+                                                      Iter<'_, RefCell<Option<A>>>, 
+                                                      Iter<'_, RefCell<Option<B>>>> 
+        where 
+        A: Component<Storage = ComponentStorage::<A>>,
+        B: Component<Storage = ComponentStorage::<B>>   
+    {
+        self.get_component_storage::<A>().unwrap().data.iter()
+            .zip(self.get_component_storage::<B>().unwrap().data.iter())
+    }
+
+    pub fn get_three_component_storages<A, B, C>(&self) -> Zip<std::iter::Zip<
+                                                           Iter<'_, RefCell<Option<A>>>, 
+                                                           Iter<'_, RefCell<Option<B>>>>, 
+                                                           Iter<'_, RefCell<Option<C>>>> 
+        where 
+        A: Component<Storage = ComponentStorage::<A>>,
+        B: Component<Storage = ComponentStorage::<B>>,
+        C: Component<Storage = ComponentStorage::<C>>                                        
+    {
+
+        self.get_component_storage::<A>().unwrap().data.iter()
+            .zip(self.get_component_storage::<B>().unwrap().data.iter())
+            .zip(self.get_component_storage::<C>().unwrap().data.iter())
+    }
+
+    pub fn get_four_component_storages<A, B, C, D>(&self) -> Zip<std::iter::Zip<std::iter::Zip<
+                                                             Iter<'_, RefCell<Option<A>>>, 
+                                                             Iter<'_, RefCell<Option<B>>>>, 
+                                                             Iter<'_, RefCell<Option<C>>>>,
+                                                             Iter<'_, RefCell<Option<D>>>> 
+        where 
+        A: Component<Storage = ComponentStorage::<A>>,
+        B: Component<Storage = ComponentStorage::<B>>,
+        C: Component<Storage = ComponentStorage::<C>>,
+        D: Component<Storage = ComponentStorage::<D>>                                          
+    {
+        self.get_component_storage::<A>().unwrap().data.iter()
+            .zip(self.get_component_storage::<B>().unwrap().data.iter())
+            .zip(self.get_component_storage::<C>().unwrap().data.iter())
+            .zip(self.get_component_storage::<D>().unwrap().data.iter())
     }
 }

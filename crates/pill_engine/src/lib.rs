@@ -26,11 +26,14 @@ pub mod game {
             CameraComponent,
             CameraAspectRatio,
             EntityHandle,
-            Component,
+            AudioSourceComponent,
+            AudioListenerComponent,
+            WorldAudioComponent,
             TimeComponent,
+            Component,
             ComponentStorage,
             GlobalComponent,
-            GlobalComponentStorage
+            GlobalComponentStorage,
         },
         resources::{
             Resource,
@@ -43,6 +46,7 @@ pub mod game {
             Mesh,
             MeshHandle,
             ResourceLoadType,
+            Sound
         },
 
     };
@@ -95,6 +99,9 @@ pub mod internal {
             InputComponent,
             TimeComponent,
             CameraAspectRatio,
+            AudioSourceComponent,
+            AudioListenerComponent,
+            WorldAudioComponent,
             get_renderer_resource_handle_from_camera_component,
             //DeferredUpdateRequest,
         },

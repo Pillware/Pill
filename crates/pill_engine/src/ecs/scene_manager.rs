@@ -4,7 +4,7 @@ use crate::{
 
 use pill_core::{ EngineError, get_type_name, PillSlotMapKey };
 
-use std::{any::type_name, collections::HashMap, cell::RefCell};
+use std::{any::type_name, collections::HashMap, cell::RefCell, any::Any, any::TypeId, process::Command};
 use anyhow::{ Result, Context, Error };
 use boolinator::Boolinator;
 
@@ -56,67 +56,24 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene_handle)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
 
         // Create new entity with empty bitmask
-        let new_entity = Entity::default();
+        let new_entity = Entity::default(scene_handle.clone());
 
         // Insert new entity into pill slot map, with key as returned type
         let new_entity_handle = target_scene.entities.insert(new_entity);
 
         // Return handle to new entity
         Ok(new_entity_handle)
-        // // Get index allocator for entity
-        // let index_allocator = target_scene.get_allocator_mut();
-
-        // // Create new entity
-        // let new_entity = index_allocator.allocate_new_entity();
-
-        // // Insert new entity into scene
-        // // target_scene.entities.insert(target_scene.entity_counter, new_entity);
-        // if target_scene.entities.len() <= new_entity.get_index() {
-        //     target_scene.entities.insert(target_scene.entity_counter, new_entity);
-        // }
-        // else {
-        //     target_scene.entities[new_entity.get_index()] = new_entity;
-        // }
-        // target_scene.entity_counter += 1;
-
-
-        // // Get bitmask controller for new entity's bitmask allocation
-        // let target_bitmask_coontroller = target_scene.get_bitmask_controller_mut();
-
-        // // Allocate new bitmask entry for the entity
-        // target_bitmask_coontroller.add_new_entity_bitmask(0, new_entity.get_index().clone());
-
-        // // Return handle
-        // Ok(EntityHandle::new(new_entity.get_index(), new_entity.get_generation()))
     }
 
     pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 
-        // // Get index allocator
-        // let index_allocator = target_scene.get_allocator_mut();
+        // Get the bitmask for the entity
+        let entity_bitmask = target_scene.entities.get_mut(entity_handle).unwrap().bitmask.clone();
 
-        // // Deallocate entity in the index allocator
-        // index_allocator.deallocate_entity(entity_handle.clone());
-        
-        // // Remove the entity from the entity vector
-        // let mut delete_index = 0;
-        // for i in 0..target_scene.entities.len() {
-        //     if target_scene.entities[i].index == entity_handle.index && target_scene.entities[i].generation == entity_handle.generation {
-        //         delete_index = i;
-        //         break;
-        //     }
-        // }
-        // target_scene.entities.remove(delete_index);
-
-        // // Decrease entity counter
-        // target_scene.entity_counter -= 1;
-
-        // Ok(())
-        
-        // Set all the components as None
-        
+        // Call destroy on every component belonging to entity
+        // TODO - Is it even doable? You can't get to know what the component types T are, even if we iterate over keys from bitmask mapping
 
         // Remove entity from pill slot map
         target_scene.entities.remove(entity_handle);
@@ -124,43 +81,6 @@ impl SceneManager {
         // Success
         Ok(())
     }
-
-    
-
-
-    // - Allocator
-
-    // pub fn get_allocator_mut(&mut self, scene: SceneHandle) -> Result<&mut Allocator> {
-    //     // Get scene
-    //     let target_scene = self.get_scene_mut(scene)?;
-
-    //     // Get allocator from scene
-    //     let index_allocator = target_scene.get_allocator_mut();
-
-    //     Ok(index_allocator)
-    // }
-
-    // // - Bitmask Controller
-
-    // pub fn get_bitmask_controller_mut(&mut self, scene: SceneHandle) -> Result<&mut BitmaskController> {
-    //     // Get scene
-    //     let target_scene = self.get_scene_mut(scene)?;
-
-    //     // Get allocator from scene
-    //     let controller = target_scene.get_bitmask_controller_mut();
-
-    //     Ok(controller)
-    // }
-
-    // pub fn get_bitmask_controller(&self, scene: SceneHandle) -> Result<&BitmaskController> {
-    //     // Get scene
-    //     let target_scene = self.get_scene(scene)?;
-
-    //     // Get allocator from scene
-    //     let controller = target_scene.get_bitmask_controller();
-
-    //     Ok(controller)
-    // }
 
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {     
         // Register component storage if that hasn't happened yet
@@ -245,6 +165,30 @@ impl SceneManager {
         Ok(scene)
     }
 
+    pub fn remove_scene(&mut self, scene_handle: SceneHandle) -> Result<Scene> {
+        let scene = self.scenes.get_mut(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+
+        // Prepare entities for deletion 
+        let mut fetched_entities = Vec::<EntityHandle>::new();
+        for (entity_handle, entity) in scene.entities.iter() {
+            if entity.scene_handle == scene_handle {
+                fetched_entities.push(entity_handle.clone());
+            }
+        }
+
+        // Delete every entity
+        for entity_handle in fetched_entities.iter() {
+            self.remove_entity(*entity_handle, scene_handle)?;
+        }
+
+        // Remove scene
+        // TODO - add custom error
+        let scene = self.scenes.remove(scene_handle).unwrap();
+
+        // Return deleted scene
+        Ok(scene)
+    }
+
     // - Active scene -
     
     pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
@@ -282,7 +226,7 @@ impl SceneManager {
 
     // - Iterators
 
-    pub fn fetch_one_component_storage<A>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
+pub fn fetch_one_component_storage<A>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
         where 
         A: Component<Storage = ComponentStorage::<A>>
     {
