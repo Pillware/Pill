@@ -9,6 +9,8 @@ use std::{io::{Write, BufReader, BufRead}, fs::File, env};
 use log::{ debug, info };
 use ini::Ini;
 
+pub const LOG_LEVEL: log::LevelFilter = log::LevelFilter::Debug;
+
 fn main() {
     
     // Configure logging
@@ -23,9 +25,9 @@ fn main() {
                 record.args()
             )
         })
-        .filter_module("pill_standalone", log::LevelFilter::Debug)
-        .filter_module("pill_engine", log::LevelFilter::Debug)
-        .filter_module("pill_renderer", log::LevelFilter::Debug)
+        .filter_module("pill_standalone", LOG_LEVEL)
+        .filter_module("pill_engine", LOG_LEVEL)
+        .filter_module("pill_renderer", LOG_LEVEL)
         .init();
 
     info!("Initializing {}", "Standalone".mobj_style());

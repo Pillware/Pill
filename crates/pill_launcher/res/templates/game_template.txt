@@ -14,6 +14,8 @@ impl PillGame for Game {
         engine.register_component::<TransformComponent>(scene).unwrap();
         engine.register_component::<MeshRenderingComponent>(scene).unwrap();
         engine.register_component::<CameraComponent>(scene).unwrap();
+        engine.register_component::<AudioListenerComponent>(scene).unwrap();
+        engine.register_component::<AudioSourceComponent>(scene).unwrap();
         
         let active_scene = engine.get_active_scene_handle().unwrap();
         
