@@ -3,7 +3,7 @@ pub use crate::ecs::{Component, ComponentStorage};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
-pub struct BitmaskMap(HashMap<TypeId, u32>);
+pub struct BitmaskMap(pub(crate) HashMap<TypeId, u32>);
 
 impl BitmaskMap {
 

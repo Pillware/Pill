@@ -32,6 +32,7 @@ impl Scene {
         };
     }
 
+    #[cfg(feature = "game")]
     pub(crate) fn get_counter(&mut self) -> &usize {
         &self.entity_counter
     }

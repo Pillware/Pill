@@ -6,6 +6,7 @@ mod texture;
 mod resource_storage;
 mod material;
 mod resource;
+mod sound;
 
 // --- Use ---
 
@@ -17,6 +18,10 @@ pub use resource::{
 };
 
 pub use resource_storage::ResourceStorage;
+
+pub use sound::{
+    Sound,
+};
 
 pub use mesh::{ 
     Mesh, 

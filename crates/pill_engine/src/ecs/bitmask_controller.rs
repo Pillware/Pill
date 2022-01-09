@@ -1,4 +1,4 @@
-use crate::ecs::{ BitmaskMap, Component, EntityHandle, bitmask_map, EntityFetcher };
+use crate::ecs::{BitmaskMap, Component, EntityHandle, bitmask_map, EntityFetcher};
 
 pub struct Bitmask {
     bitmask: u32

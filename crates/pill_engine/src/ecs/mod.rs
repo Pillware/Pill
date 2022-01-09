@@ -23,6 +23,18 @@ pub use components::camera_component::{
     get_renderer_resource_handle_from_camera_component,
 };
 
+pub use components::world_audio_component::{
+    WorldAudioComponent,
+};
+
+pub use components::audio_listener_component::{
+    AudioListenerComponent,
+};
+
+pub use components::audio_source_component::{
+    AudioSourceComponent
+};
+
 pub use components::deferred_update_component::{
     DeferredUpdateComponent,
     DeferredUpdateManager,
@@ -65,6 +77,10 @@ pub use systems::input_system::{
 
 pub use systems::time_system::{
     time_system,
+};
+
+pub use systems::audio_system::{
+    audio_system,
 };
 
 // - Other

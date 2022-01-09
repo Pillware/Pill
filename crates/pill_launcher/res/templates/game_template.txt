@@ -1,9 +1,37 @@
+#![allow(unused_imports, dead_code, unused_variables)]
 use pill_engine::{game::*, internal::*};
 
-pub struct Game { } 
+pub struct Game { pub path: String } 
 
-impl Pill_Game for Game {
+impl PillGame for Game {
     fn start(&self, engine: &mut Engine) {
-        println!("Game started succesfully!);
+
+        // Create scene
+        let scene = engine.create_scene("Default").unwrap();
+        engine.set_active_scene(scene).unwrap();
+
+        // Register components
+        engine.register_component::<TransformComponent>(scene).unwrap();
+        engine.register_component::<MeshRenderingComponent>(scene).unwrap();
+        engine.register_component::<CameraComponent>(scene).unwrap();
+        engine.register_component::<AudioListenerComponent>(scene).unwrap();
+        engine.register_component::<AudioSourceComponent>(scene).unwrap();
+        
+        let active_scene = engine.get_active_scene_handle().unwrap();
+        
+        // --- Create camera entity
+        let camera_holder = engine.create_entity(active_scene).unwrap();
+        // Add transform component
+        let camera_transform = TransformComponent::builder()
+            .position(Vector3f::new(0.0,5.0,7.0))
+            .rotation(Vector3f::new(-20.0,-90.0,0.0))
+            .build();
+
+        engine.add_component_to_entity::<TransformComponent>(active_scene, camera_holder, camera_transform).unwrap();
+        // Add camera component
+        let mut camera = CameraComponent::new();
+        camera.enabled = true;
+        engine.add_component_to_entity::<CameraComponent>(active_scene, camera_holder, camera).unwrap();
+
     }
 }

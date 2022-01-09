@@ -8,3 +8,6 @@ resolver = "2"
 pill_engine = {path = "../../crates/pill_engine", features = ["game"]}
 cgmath = "0.18"
 rand = "0.8.4"
+
+# Audio
+rodio = { version = "0.14", default-features = false, features = ["mp3", "wav"] }
