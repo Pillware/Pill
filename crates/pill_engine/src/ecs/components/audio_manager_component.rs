@@ -115,7 +115,7 @@ impl AudioManagerComponent {
 
     // --- Other functionalities
 
-    // Give back 
+    // Give back the free index
     pub fn return_spatial_sink_handle(&mut self, index: usize) {
         if self.busy_spatial_sink_indexes.contains(&index) {
             if let Some(pos) = self.busy_spatial_sink_indexes.iter().position(|x| *x == index) {
@@ -125,7 +125,7 @@ impl AudioManagerComponent {
         }
     }
 
-    // Get free index for ambient sound sink if there is any
+    // Give back the free index
     pub fn return_ambient_sink_handle(&mut self, index: usize) {
         if self.busy_ambient_sink_indexes.contains(&index) {
             if let Some(pos) = self.busy_ambient_sink_indexes.iter().position(|x| *x == index) {

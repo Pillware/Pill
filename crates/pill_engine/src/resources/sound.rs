@@ -15,6 +15,12 @@ use std::io::{Cursor, BufReader};
 use std::fs::{File };
 use anyhow::{ Result, Context, Error };
 
+#[derive(PartialEq)]
+pub enum SoundType {
+    Sound2D,
+    Sound3D
+}
+
 pill_core::define_new_pill_slotmap_key! { 
     pub struct SoundHandle;
 }

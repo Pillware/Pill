@@ -21,7 +21,8 @@ pub use resource_storage::ResourceStorage;
 
 pub use sound::{
     Sound,
-    SoundHandle
+    SoundHandle,
+    SoundType,
 };
 
 pub use mesh::{ 

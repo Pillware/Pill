@@ -78,6 +78,7 @@ impl PillGame for Game {
         engine.add_system("DeleteEntitySystem", delete_entity_system).unwrap();
         engine.add_system("ExitSystem", exit_system).unwrap();
         engine.add_system("RotationSystem", rotation_movement_system).unwrap();
+        engine.add_system("SoundPauseSystem", sound_pause_system).unwrap();
 
         // Register components
         engine.register_component::<TransformComponent>(scene).unwrap();
@@ -103,7 +104,7 @@ impl PillGame for Game {
         let sound_gothic_handle = engine.add_resource::<Sound>(Sound::new("Vista Point", sound_path.clone())).unwrap();
         
         sound_path.pop();
-        sound_path.push("ocean-waves.mp3");
+        sound_path.push("croket-theme.mp3");
         let sound_waves_handle = engine.add_resource::<Sound>(Sound::new("Croket Theme", sound_path.clone())).unwrap();
 
         // --- Create camera entity
@@ -238,7 +239,7 @@ impl PillGame for Game {
         //mesh_rendering_2.set_mesh(engine, &cube_mesh_handle).unwrap();
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, cube_entity, mesh_rendering_2).unwrap();
         engine.add_component_to_entity::<NonCameraComponent>(active_scene, cube_entity, NonCameraComponent{}).unwrap();
-        engine.add_component_to_entity::<AudioSourceComponent>(active_scene, cube_entity, AudioSourceComponent::default()).unwrap();
+        engine.add_component_to_entity::<AudioSourceComponent>(active_scene, cube_entity, AudioSourceComponent::as_spatial()).unwrap();
         engine.add_component_to_entity::<RotationComponent>(active_scene_handle, cube_entity, RotationComponent{}).unwrap();
 
         // --- Create entity
@@ -277,21 +278,12 @@ impl PillGame for Game {
             .build();
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene_handle, bunny_entity, mesh_rendering_4).unwrap();
         engine.add_component_to_entity::<RotationComponent>(active_scene_handle, bunny_entity, RotationComponent{}).unwrap();
-
-        // --- Create entity
-        let ambient_entity = engine.build_entity(active_scene_handle).with_component(AudioSourceComponent::as_ambient()).build();
-
-        // Add ambient sound
-        let ambient_component = engine.get_component_by_entity::<AudioSourceComponent>(ambient_entity, active_scene_handle).unwrap().unwrap();
-        ambient_component.borrow_mut().as_mut().unwrap().pass_handles(ambient_entity.clone(), active_scene_handle.clone());
-        ambient_component.borrow_mut().as_mut().unwrap().add_new_sound(sound_gothic_handle);
-        ambient_component.borrow_mut().as_mut().unwrap().set_sound_volume(0.1);
         
-        // Add sound to audio source component
-        for (entity, sound_source, transform) in (&*engine).iterate_two_components_with_entities::<AudioSourceComponent, TransformComponent>().unwrap() {
-            sound_source.borrow_mut().as_mut().unwrap().pass_handles(entity.clone(), active_scene_handle.clone());
-            sound_source.borrow_mut().as_mut().unwrap().add_new_sound(sound_waves_handle);
-        }
+        // Add ambient sound
+        let spatial_component = engine.get_component_by_entity::<AudioSourceComponent>(cube_entity, active_scene_handle).unwrap().unwrap();
+        spatial_component.borrow_mut().as_mut().unwrap().pass_handles(cube_entity.clone(), active_scene_handle.clone());
+        spatial_component.borrow_mut().as_mut().unwrap().add_new_sound(sound_gothic_handle);
+        spatial_component.borrow_mut().as_mut().unwrap().set_sound_volume(3.5);
 
         // --- Tests
         let material = engine.get_resource_mut::<Material>(&material_alpha_handle).unwrap();
@@ -412,4 +404,19 @@ fn rotation_movement_system(engine: &mut Engine) -> Result<()> {
     }
 
     Ok(())   
+}
+
+fn sound_pause_system(engine: &mut Engine) -> Result<()> {
+    let time = engine.get_global_component::<TimeComponent>().unwrap().time;
+    if time > 10000.0 && time < 30000.0 {
+        for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
+            source.borrow_mut().as_mut().unwrap().pause_sound();
+        }
+    }
+    if time >  30000.0 {
+        for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
+            source.borrow_mut().as_mut().unwrap().play_sound();
+        }
+    }
+    Ok(())
 }
