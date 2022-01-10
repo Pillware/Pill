@@ -19,6 +19,7 @@ const DEFERRED_REQUEST_VARIANT_PAUSE_SOUND: usize = 2;
 const DEFERRED_REQUEST_VARIANT_CHANGE_SOURCE_POSITION: usize = 3;
 const DEFERRED_REQUEST_VARIANT_GET_IS_SOUND_QUEUE_EMPTY: usize = 4;
 const DEFERRED_REQUEST_VARIANT_SET_VOLUME: usize = 5;
+const DEFERRED_REQUEST_VARIANT_CLEAR_PLAYLIST: usize = 6;
 
 pub struct AudioSourceComponent {
 
@@ -142,6 +143,11 @@ impl AudioSourceComponent {
     // Pause the source
     pub fn pause_sound(&mut self) {
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PAUSE_SOUND);
+    }
+
+    // Clear whole sound playlist 
+    pub fn clear_sound_playlist(&mut self) {
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_CLEAR_PLAYLIST);
     }
 
     // Check if source is spatial
@@ -280,6 +286,15 @@ impl Component for AudioSourceComponent {
                     match self.sound_type {
                         SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_index.unwrap()).pause(),
                         SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_index.unwrap()).pause(),
+                    } 
+                }
+            },
+            DEFERRED_REQUEST_VARIANT_CLEAR_PLAYLIST => {
+                if self.sink_index.is_some() {
+                    let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                    match self.sound_type {
+                        SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_index.unwrap()).stop(),
+                        SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_index.unwrap()).stop(),
                     } 
                 }
             },

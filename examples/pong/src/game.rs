@@ -407,16 +407,25 @@ fn rotation_movement_system(engine: &mut Engine) -> Result<()> {
 }
 
 fn sound_pause_system(engine: &mut Engine) -> Result<()> {
+
     let time = engine.get_global_component::<TimeComponent>().unwrap().time;
     if time > 10000.0 && time < 30000.0 {
         for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
             source.borrow_mut().as_mut().unwrap().pause_sound();
         }
     }
+
     if time >  30000.0 {
         for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
             source.borrow_mut().as_mut().unwrap().play_sound();
         }
     }
+
+    if time > 35000.0 {
+        for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
+            source.borrow_mut().as_mut().unwrap().clear_sound_playlist();
+        }
+    }
+
     Ok(())
 }
