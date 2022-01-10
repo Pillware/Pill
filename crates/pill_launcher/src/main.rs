@@ -61,6 +61,8 @@ fn create_game_config(path: &Path, game_name: &String) -> Result<()> {
     // Engine settings
     let max_entity_count = "1000";
     let render_queue_capacity = "1000";
+    let max_ambient_sink_count = "10";
+    let max_spatial_sink_count = "10";
 
     // Renderer settings
     let max_pipelines_count = "10";
@@ -85,7 +87,9 @@ fn create_game_config(path: &Path, game_name: &String) -> Result<()> {
     config.with_section(Some("ENGINE"))
             .set("PATH", engine_path.to_str().unwrap())
             .set("MAX_ENTITY_COUNT", max_entity_count)
-            .set("MAX_RENDER_QUEUE_CAPACITY", render_queue_capacity);
+            .set("MAX_RENDER_QUEUE_CAPACITY", render_queue_capacity)
+            .set("MAX_AMBIENT_SINK_COUNT", max_ambient_sink_count)
+            .set("MAX_SPATIAL_SINK_COUNT", max_spatial_sink_count);
     config.with_section(Some("RENDERER"))
             .set("MAX_PIPELINES_COUNT", max_pipelines_count)
             .set("MAX_TEXTURES_COUNT", max_textures_count)

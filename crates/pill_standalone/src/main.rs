@@ -100,6 +100,8 @@ fn main() {
     // Set default engine values
     let mut max_entity_count = 1000;
     let mut max_render_queue_capacity = 1000;
+    let mut max_ambient_sink_count = 10;
+    let mut max_spatial_sink_count = 10;
 
     // Set default renderer values
     let mut max_pipelines_count = 10;
@@ -125,6 +127,8 @@ fn main() {
                 "FULLSCREEN" => is_game_fullscreen = value.parse::<bool>().unwrap_or(false),
                 "MAX_ENTITY_COUNT" => max_entity_count = value.parse::<usize>().unwrap_or(1000),
                 "MAX_RENDER_QUEUE_CAPACITY" => max_render_queue_capacity = value.parse::<usize>().unwrap_or(1000),
+                "MAX_AMBIENT_SINK_COUNT" => max_ambient_sink_count = value.parse::<usize>().unwrap_or(10),
+                "MAX_SPATIAL_SINK_COUNT" => max_spatial_sink_count = value.parse::<usize>().unwrap_or(10),
                 "MAX_PIPELINES_COUNT" => max_pipelines_count = value.parse::<usize>().unwrap_or(10),
                 "MAX_TEXTURES_COUNT" => max_textures_count = value.parse::<usize>().unwrap_or(10),
                 "MAX_MATERIALS_COUNT" => max_materials_count = value.parse::<usize>().unwrap_or(10),
@@ -174,7 +178,7 @@ fn main() {
     // Init engine
     let game: Box<dyn PillGame> = Box::new(pill_game::Game { path: String::from(game_path.to_str().unwrap())});
     let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(&window, max_pipelines_count, max_textures_count, max_materials_count, max_meshes_count, max_cameras_count));
-    let mut engine = Engine::new(game, renderer, max_render_queue_capacity, max_entity_count);
+    let mut engine = Engine::new(game, renderer, max_render_queue_capacity, max_entity_count, max_ambient_sink_count, max_spatial_sink_count);
     engine.initialize(window_size);
 
     // Run loop

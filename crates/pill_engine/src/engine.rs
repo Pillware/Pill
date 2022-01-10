@@ -42,6 +42,8 @@ pub struct Engine {
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
     pub(crate) global_components: PillTypeMap,
     pub(crate) frame_delta_time: f32,
+    pub(crate) max_ambient_sink_count: usize,
+    pub(crate) max_spatial_sink_count: usize,
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -87,7 +89,7 @@ impl Engine {
 
 impl Engine {
 
-    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, max_render_queue_capacity: usize, max_entity_count: usize) -> Self {
+    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, max_render_queue_capacity: usize, max_entity_count: usize, max_ambient_sink_count: usize, max_spatial_sink_count: usize) -> Self {
         let scene_manager = SceneManager::new(max_entity_count);
         let resource_manager = ResourceManager::new();
         let system_manager = SystemManager::new();
@@ -103,6 +105,8 @@ impl Engine {
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             global_components: PillTypeMap::new(),
             frame_delta_time: 0.0,
+            max_ambient_sink_count,
+            max_spatial_sink_count
         }
     }
 
@@ -116,7 +120,7 @@ impl Engine {
         self.add_global_component(InputComponent::new()).unwrap();
         self.add_global_component(TimeComponent::new()).unwrap();
         self.add_global_component(DeferredUpdateComponent::new()).unwrap();
-        self.add_global_component(AudioManagerComponent::default()).unwrap();
+        self.add_global_component(AudioManagerComponent::new(self.max_ambient_sink_count.clone(), self.max_spatial_sink_count.clone())).unwrap();
 
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();

@@ -79,10 +79,14 @@ impl AudioSourceComponent {
         }
     }
     
+    // --- Getters
+
+    // Give the handle (index) back to the AudioManagerComponent
     pub(crate) fn get_back_sink_handle(&mut self) -> Option<usize> {
         self.sink_index.take()
     }
 
+    // Set the emitter position for the sink
     pub(crate) fn set_source_position(&mut self, new_position: Vector3<f32>) {
         let mut new_source_position = [0.0; 3];
 
@@ -95,14 +99,46 @@ impl AudioSourceComponent {
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_CHANGE_SOURCE_POSITION);
     }
 
+    // Get the information whether the sink is empty or not
+    pub fn get_is_sound_queue_empty(&mut self) -> bool {
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_GET_IS_SOUND_QUEUE_EMPTY);
+        self.is_song_queue_empty
+    }
+
+    // --- Setters
+
+    // Set the source as spatial - possible only when there is no song playing
+    pub fn set_as_spatial(&mut self) {
+        if self.get_is_sound_queue_empty() {
+            self.is_spatial = true;
+        }
+    }
+    
+    // Set the source as ambient - possible only when there is no song playing
+    pub fn set_as_ambient(&mut self) {
+        if self.get_is_sound_queue_empty() {
+            self.is_spatial = false;
+        }
+    }
+
+    // Set the volume of the played song
+    pub fn set_sound_volume(&mut self, sound_volume: f32) {
+        self.sound_volume = sound_volume;
+
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_VOLUME);
+    }
+
+    // Check if source is spatial
     pub fn is_spatial(&self) -> bool {
         self.is_spatial
     }
 
+    // Check if source is ambient
     pub fn is_ambient(&self) -> bool {
         !self.is_spatial
     }
 
+    // Append new sound to the sound sink
     pub fn add_new_sound(&mut self, sound_handle: SoundHandle)
     {
         self.sound_handle = Some(sound_handle);
@@ -110,33 +146,12 @@ impl AudioSourceComponent {
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_ADD_SOUND);
     }
 
-    pub fn set_as_spatial(&mut self) {
-        if self.get_is_sound_queue_empty() {
-            self.is_spatial = true;
-        }
-    }
-
-    pub fn set_as_ambient(&mut self) {
-        if self.get_is_sound_queue_empty() {
-            self.is_spatial = false;
-        }
-    }
-
-    pub fn set_sound_volume(&mut self, sound_volume: f32) {
-        self.sound_volume = sound_volume;
-
-        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_VOLUME);
-    }
-
-    pub fn get_is_sound_queue_empty(&mut self) -> bool {
-        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_GET_IS_SOUND_QUEUE_EMPTY);
-        self.is_song_queue_empty
-    }
-
+    // Check if the source has the handle (index) to the possibly assigned sink
     pub fn has_sink_handle(&self) -> bool {
         self.sink_index.is_some()
     }
 
+    // Post deferred update request
     fn post_deferred_update_request(&mut self, request_variant: usize) {
         if self.deferred_update_manager.is_some() {
             let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
