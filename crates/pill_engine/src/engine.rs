@@ -87,8 +87,8 @@ impl Engine {
 
 impl Engine {
 
-    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>) -> Self {
-        let scene_manager = SceneManager::new();
+    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, max_render_queue_capacity: usize, max_entity_count: usize) -> Self {
+        let scene_manager = SceneManager::new(max_entity_count);
         let resource_manager = ResourceManager::new();
         let system_manager = SystemManager::new();
 
@@ -99,7 +99,7 @@ impl Engine {
             system_manager,
             resource_manager,
             input_queue: VecDeque::new(),
-            render_queue: Vec::<RenderQueueItem>::with_capacity(1000),
+            render_queue: Vec::<RenderQueueItem>::with_capacity(max_render_queue_capacity),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             global_components: PillTypeMap::new(),
             frame_delta_time: 0.0,

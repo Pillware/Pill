@@ -92,17 +92,28 @@ fn main() {
         }
     }
 
-    // Set default values 
+    // Set default window values 
     let mut window_title = env!("CARGO_PKG_NAME");
     let mut window_width = 600;
     let mut window_height = 600;
+
+    // Set default engine values
+    let mut max_entity_count = 1000;
+    let mut max_render_queue_capacity = 1000;
+
+    // Set default renderer values
+    let mut max_pipelines_count = 10;
+    let mut max_textures_count = 10;
+    let mut max_materials_count = 10;
+    let mut max_meshes_count = 10;
+    let mut max_cameras_count = 10;
 
     // Read game's config.ini
     let mut config_path = std::path::PathBuf::new();
     config_path.push(game_path.clone());
     config_path.push("config.ini");
 
-    //let mut game_final_release = false;
+    // Pass in the values read from config file
     let mut is_game_fullscreen = false;
     let config_file = Ini::load_from_file(config_path).unwrap();
     for (_, properties) in config_file.iter() {
@@ -112,6 +123,13 @@ fn main() {
                 "WINDOW_WIDTH" => window_width = value.parse::<u32>().unwrap_or(600),
                 "WINDOW_HEIGTH" => window_height = value.parse::<u32>().unwrap_or(600),
                 "FULLSCREEN" => is_game_fullscreen = value.parse::<bool>().unwrap_or(false),
+                "MAX_ENTITY_COUNT" => max_entity_count = value.parse::<usize>().unwrap_or(1000),
+                "MAX_RENDER_QUEUE_CAPACITY" => max_render_queue_capacity = value.parse::<usize>().unwrap_or(1000),
+                "MAX_PIPELINES_COUNT" => max_pipelines_count = value.parse::<usize>().unwrap_or(10),
+                "MAX_TEXTURES_COUNT" => max_textures_count = value.parse::<usize>().unwrap_or(10),
+                "MAX_MATERIALS_COUNT" => max_materials_count = value.parse::<usize>().unwrap_or(10),
+                "MAX_MESHES_COUNT" => max_meshes_count = value.parse::<usize>().unwrap_or(10),
+                "MAX_CAMERAS_COUNT" => max_cameras_count = value.parse::<usize>().unwrap_or(10),
                 _ => {}
             }
         }
@@ -155,8 +173,8 @@ fn main() {
 
     // Init engine
     let game: Box<dyn PillGame> = Box::new(pill_game::Game { path: String::from(game_path.to_str().unwrap())});
-    let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(&window));
-    let mut engine = Engine::new(game, renderer);
+    let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(&window, max_pipelines_count, max_textures_count, max_materials_count, max_meshes_count, max_cameras_count));
+    let mut engine = Engine::new(game, renderer, max_render_queue_capacity, max_entity_count);
     engine.initialize(window_size);
 
     // Run loop

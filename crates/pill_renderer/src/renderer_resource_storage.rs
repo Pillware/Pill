@@ -26,13 +26,13 @@ pub struct RendererResourceStorage {
 }
 
 impl RendererResourceStorage { // [TODO] move magic values to config
-    pub fn new() -> Self {
+    pub fn new(max_pipelines_count: usize, max_textures_count: usize, max_materials_count: usize, max_meshes_count: usize, max_cameras_count: usize) -> Self {
         RendererResourceStorage {
-            pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(10), 
-            textures: PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(10),
-            materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(10),
-            meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(10),
-            cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(10),
+            pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(max_pipelines_count), 
+            textures: PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(max_textures_count),
+            materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(max_materials_count),
+            meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(max_meshes_count),
+            cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(max_cameras_count),
         }
     }
 }

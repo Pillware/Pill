@@ -61,7 +61,13 @@ fn create_game_config(path: &Path, game_name: &String) -> Result<()> {
     // Engine settings
     let max_entity_count = "1000";
     let render_queue_capacity = "1000";
-    let max_resource_capacity = "10";
+
+    // Renderer settings
+    let max_pipelines_count = "10";
+    let max_textures_count = "10";
+    let max_materials_count = "10";
+    let max_meshes_count = "10";
+    let max_cameras_count = "10";
 
     // Engine path
     let mut engine_path = std::env::current_exe()?;
@@ -79,8 +85,13 @@ fn create_game_config(path: &Path, game_name: &String) -> Result<()> {
     config.with_section(Some("ENGINE"))
             .set("PATH", engine_path.to_str().unwrap())
             .set("MAX_ENTITY_COUNT", max_entity_count)
-            .set("MAX_RENDER_QUEUE_CAPACITY", render_queue_capacity)
-            .set("MAX_RESOURCE_CAPACITY", max_resource_capacity);
+            .set("MAX_RENDER_QUEUE_CAPACITY", render_queue_capacity);
+    config.with_section(Some("RENDERER"))
+            .set("MAX_PIPELINES_COUNT", max_pipelines_count)
+            .set("MAX_TEXTURES_COUNT", max_textures_count)
+            .set("MAX_MATERIALS_COUNT", max_materials_count)
+            .set("MAX_MESHES_COUNT", max_meshes_count)
+            .set("MAX_CAMERAS_COUNT", max_cameras_count);
     config.with_section(Some("GAME"));
 
     // Write config to file
