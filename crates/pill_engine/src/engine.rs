@@ -116,7 +116,7 @@ impl Engine {
         self.add_global_component(InputComponent::new()).unwrap();
         self.add_global_component(TimeComponent::new()).unwrap();
         self.add_global_component(DeferredUpdateComponent::new()).unwrap();
-        self.add_global_component(WorldAudioComponent::new()).unwrap();
+        self.add_global_component(AudioManagerComponent::default()).unwrap();
 
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
@@ -245,6 +245,15 @@ impl Engine {
     }
 
     // --- Component API ---
+    pub fn get_component_by_entity<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<Option<&RefCell<Option<T>>>>
+        where T: Component<Storage = ComponentStorage<T>>
+    {   
+        debug!("Fetching component {} from {} {} in {} {}", get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
+        let component = self.scene_manager.fetch_component_by_entity::<T>(entity_handle, scene_handle)?;
+
+        Ok(component)
+    }
 
     pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()> 
         where T: Component<Storage = ComponentStorage::<T>>
@@ -330,7 +339,7 @@ impl Engine {
         else if component_type == TypeId::of::<TimeComponent>() {
             return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
         }
-        else if component_type == TypeId::of::<WorldAudioComponent>() {
+        else if component_type == TypeId::of::<AudioManagerComponent>() {
             return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
         }
         else if component_type == TypeId::of::<DeferredUpdateComponent>() {

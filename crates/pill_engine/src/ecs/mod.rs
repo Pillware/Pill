@@ -23,8 +23,8 @@ pub use components::camera_component::{
     get_renderer_resource_handle_from_camera_component,
 };
 
-pub use components::world_audio_component::{
-    WorldAudioComponent,
+pub use components::audio_manager_component::{
+    AudioManagerComponent,
 };
 
 pub use components::audio_listener_component::{

@@ -50,6 +50,18 @@ impl SceneManager {
         Ok(())
     }
 
+    pub fn fetch_component_by_entity<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<Option<&RefCell<Option<T>>>>
+        where 
+        T: Component<Storage = ComponentStorage::<T>>
+    {
+        for (entity, component) in self.fetch_one_component_storage_with_entity_handles::<T>(scene_handle)? {
+            if entity == entity_handle {
+                return Ok(Some(component))
+            }
+        }
+        Ok(None)
+    }   
+
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
 
         // Get scene
@@ -226,7 +238,7 @@ impl SceneManager {
 
     // - Iterators
 
-pub fn fetch_one_component_storage<A>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
+    pub fn fetch_one_component_storage<A>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
         where 
         A: Component<Storage = ComponentStorage::<A>>
     {
