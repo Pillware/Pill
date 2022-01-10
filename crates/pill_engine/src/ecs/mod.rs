@@ -91,15 +91,15 @@ pub use systems::audio_system::{
 
 pub use bitmask_controller::{
     Bitmask,
-    BitmaskController
+    BitmaskController,
 };
 
 pub use bitmask_map::{
-    BitmaskMap
+    BitmaskMap,
 };
 
 pub use entity_fetcher::{
-    EntityFetcher
+    EntityFetcher,
 };
 
 pub use component:: {

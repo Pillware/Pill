@@ -1,6 +1,6 @@
 
 use crate::{
-    ecs::{ Entity, ComponentStorage, Component, EntityHandle }
+    ecs::{ Entity, ComponentStorage, Component, EntityHandle, BitmaskController }
 };
 
 use pill_core::{ EngineError, PillTypeMap, PillTypeMapKey, PillSlotMap, get_type_name};
@@ -8,8 +8,6 @@ use pill_core::{ EngineError, PillTypeMap, PillTypeMapKey, PillSlotMap, get_type
 use anyhow::{Result, Context, Error};
 use std::{ cell::RefCell, any::TypeId, slice::Iter, iter::Zip };
 use log::{debug, info};
-
-use super::BitmaskController;
 
 // --- Scene ---
 
