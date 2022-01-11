@@ -23,8 +23,8 @@ pub use components::camera_component::{
     get_renderer_resource_handle_from_camera_component,
 };
 
-pub use components::world_audio_component::{
-    WorldAudioComponent,
+pub use components::audio_manager_component::{
+    AudioManagerComponent,
 };
 
 pub use components::audio_listener_component::{
@@ -91,15 +91,15 @@ pub use systems::audio_system::{
 
 pub use bitmask_controller::{
     Bitmask,
-    BitmaskController
+    BitmaskController,
 };
 
 pub use bitmask_map::{
-    BitmaskMap
+    BitmaskMap,
 };
 
 pub use entity_fetcher::{
-    EntityFetcher
+    EntityFetcher,
 };
 
 pub use component:: {

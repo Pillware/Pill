@@ -16,19 +16,24 @@ pill_core::define_new_pill_slotmap_key! {
 pub struct SceneManager {
     pub(crate) scenes: pill_core::PillSlotMap<SceneHandle, Scene>, 
     pub(crate) mapping: pill_core::PillTwinMap<String, SceneHandle>, // Mapping from scene name to scene handle and vice versa
+    pub(crate) max_entity_count: usize,
     active_scene_handle: Option<SceneHandle>,
 }
 
 impl SceneManager {
-    pub fn new() -> Self {
+    pub fn new(max_entity_count: usize) -> Self {
 	    Self { 
             scenes: pill_core::PillSlotMap::<SceneHandle, Scene>::with_key(),
             mapping: pill_core::PillTwinMap::<String, SceneHandle>::new(),
+            max_entity_count,
             active_scene_handle: None,
         }
     }
 
     pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
+        // Prepare the capacity for component storage
+        let component_storage_capacity = self.max_entity_count.clone();
+
         // Get scene
         let target_scene = self.get_scene_mut(scene)?;
 
@@ -36,7 +41,7 @@ impl SceneManager {
         target_scene.components.contains_key::<T>().eq(&false).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), target_scene.name.clone())))?;
 
         // Create new component storage
-        let component_storage = ComponentStorage::<T>::new();
+        let component_storage = ComponentStorage::<T>::new(component_storage_capacity);
 
         // Add component storage to scene
         target_scene.components.insert::<T>(component_storage);
@@ -49,6 +54,18 @@ impl SceneManager {
 
         Ok(())
     }
+
+    pub fn fetch_component_by_entity<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<Option<&RefCell<Option<T>>>>
+        where 
+        T: Component<Storage = ComponentStorage::<T>>
+    {
+        for (entity, component) in self.fetch_one_component_storage_with_entity_handles::<T>(scene_handle)? {
+            if entity == entity_handle {
+                return Ok(Some(component))
+            }
+        }
+        Ok(None)
+    }   
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
 
@@ -226,7 +243,7 @@ impl SceneManager {
 
     // - Iterators
 
-pub fn fetch_one_component_storage<A>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
+    pub fn fetch_one_component_storage<A>(&self, scene: SceneHandle) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
         where 
         A: Component<Storage = ComponentStorage::<A>>
     {

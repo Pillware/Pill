@@ -1,118 +1,203 @@
-use crate::ecs::{ Component, ComponentStorage, GlobalComponentStorage };
+use crate::{
+    engine::Engine,
+    ecs::{ Component, ComponentStorage, GlobalComponentStorage, SceneHandle, DeferredUpdateManagerPointer, DeferredUpdateComponentRequest, DeferredUpdateComponent,},
+    internal::{EntityHandle,},
+    resources::{Sound, SoundHandle, SoundType}, 
+    game::AudioManagerComponent
+};
+
+use pill_core::{PillTypeMapKey, get_type_name, PillStyle};
 
 use cgmath::Vector3;
-use pill_core::PillTypeMapKey;
+use anyhow::{ Result, Context, Error };
 
-const DEFAULT_LEFT_EAR_POSITION : [f32; 3] = [-1.0, 0.0, 0.0];
-const DEFAULT_RIGHT_EAR_POSITION : [f32; 3] = [1.0, 0.0, 0.0];
 const DEFAULT_SOUND_SOURCE_POSITION : [f32; 3] = [0.0, 0.0, 0.0];
+
+const DEFERRED_REQUEST_VARIANT_ADD_SOUND: usize = 0;
+const DEFERRED_REQUEST_VARIANT_PLAY_SOUND: usize = 1;
+const DEFERRED_REQUEST_VARIANT_PAUSE_SOUND: usize = 2;
+const DEFERRED_REQUEST_VARIANT_CHANGE_SOURCE_POSITION: usize = 3;
+const DEFERRED_REQUEST_VARIANT_GET_IS_SOUND_QUEUE_EMPTY: usize = 4;
+const DEFERRED_REQUEST_VARIANT_SET_VOLUME: usize = 5;
+const DEFERRED_REQUEST_VARIANT_CLEAR_PLAYLIST: usize = 6;
 
 pub struct AudioSourceComponent {
 
+    sink_index: Option<usize>,
+    sound_type: SoundType,
+
     source_position: [f32; 3],
-    audio_stream: rodio::OutputStream,
-    audio_stream_handle: rodio::OutputStreamHandle,
-    audio_spatial_sink: rodio::SpatialSink
+    sound_volume: f32,
+    is_song_queue_empty: bool,
+
+    sound_handle: Option<SoundHandle>,
+    entity_handle: Option<EntityHandle>,
+    scene_handle: Option<SceneHandle>,
+    deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
 
 impl AudioSourceComponent {
-    pub fn new(source_position: [f32; 3], left_ear: Option<[f32; 3]>, right_ear: Option<[f32; 3]>) -> Self {
-
-        let (audio_stream, audio_stream_handle) = rodio::OutputStream::try_default().unwrap();
-
-        let left_ear_position = match left_ear {
-            Some(position) => position,
-            None => DEFAULT_LEFT_EAR_POSITION.clone()
-        };
-
-        let right_ear_position = match right_ear {
-            Some(position) => position,
-            None => DEFAULT_RIGHT_EAR_POSITION.clone()
-        };
-
-        let audio_spatial_sink = rodio::SpatialSink::try_new(&audio_stream_handle, source_position.clone(), left_ear_position, right_ear_position).unwrap();
+    pub fn new(source_position: [f32; 3]) -> Self {
 
         Self {
             source_position,
-            audio_stream,
-            audio_stream_handle, 
-            audio_spatial_sink
+            sound_volume: 1.0,
+            sink_index: None,
+            is_song_queue_empty: false,
+            sound_type: SoundType::Sound3D,
+            sound_handle: None,
+            entity_handle: None,
+            scene_handle: None,
+            deferred_update_manager: None,
         }
     }
 
-    pub fn get_source_position(&self) -> [f32; 3] {
-        self.source_position.clone()
+    pub fn as_spatial() -> Self {
+        Self {
+            source_position: DEFAULT_SOUND_SOURCE_POSITION.clone(),
+            sound_volume: 1.0,
+            sink_index: None,
+            is_song_queue_empty: false,
+            sound_type: SoundType::Sound3D,
+            sound_handle: None,
+            entity_handle: None,
+            scene_handle: None,
+            deferred_update_manager: None,
+        }
     }
 
-    pub fn set_source_position(&self, new_position: Vector3<f32>) {
+    pub fn as_ambient() -> Self {
+        Self {
+            source_position: DEFAULT_SOUND_SOURCE_POSITION.clone(),
+            sound_volume: 1.0,
+            sink_index: None,
+            is_song_queue_empty: false,
+            sound_type: SoundType::Sound2D,
+            sound_handle: None,
+            entity_handle: None,
+            scene_handle: None,
+            deferred_update_manager: None,
+        }
+    }
+    
+    // --- Getters
+
+    // Give the handle (index) back to the AudioManagerComponent
+    pub(crate) fn get_back_sink_handle(&mut self) -> Option<usize> {
+        self.sink_index.take()
+    }
+
+    // Set the emitter position for the sink
+    pub(crate) fn set_source_position(&mut self, new_position: Vector3<f32>) {
         let mut new_source_position = [0.0; 3];
 
         new_source_position[0] = new_position[0];
         new_source_position[1] = new_position[1];
         new_source_position[2] = new_position[2];
-        self.audio_spatial_sink.set_emitter_position(new_source_position);
+
+        self.source_position = new_source_position;
+
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_CHANGE_SOURCE_POSITION);
     }
 
-    pub fn set_listener_left_ear_position(&self, new_position: [f32; 3]) {
-        self.audio_spatial_sink.set_left_ear_position(new_position);
-    }
-
-    pub fn set_listener_right_ear_position(&self, new_position: [f32; 3]) {
-        self.audio_spatial_sink.set_right_ear_position(new_position);
-    }
-
-    pub fn get_source_volume(&self) -> f32 {
-        self.audio_spatial_sink.volume()
-    }
-
-    pub fn set_source_volume(&self, new_volume: f32) {
-        self.audio_spatial_sink.set_volume(new_volume);
-    }
-
-    pub fn add_new_sound<S>(&self, sound: S)
-    where
-        S: rodio::Source + Send + 'static,
-        S::Item: rodio::Sample + Send + std::fmt::Debug,
-    {
-        self.audio_spatial_sink.append(sound);
-    }
-
-    pub fn toggle_sound(&self) {
-        if self.audio_spatial_sink.is_paused() {
-            self.audio_spatial_sink.play();
+    // Get the information whether the sink is empty or not
+    pub fn get_is_sound_queue_empty(&mut self) -> bool {
+        if self.sink_index.is_none() {
+            return true
         }
         else {
-            self.audio_spatial_sink.pause();
+            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_GET_IS_SOUND_QUEUE_EMPTY);
+            return self.is_song_queue_empty
         }
     }
 
-    pub fn set_sound_sink_empty(&self) {
-        self.audio_spatial_sink.stop();
+    // --- Setters
+
+    // Set the source as spatial - possible only when there is no song playing
+    pub fn set_as_spatial(&mut self) {
+        if self.get_is_sound_queue_empty() {
+            self.sound_type = SoundType::Sound3D;
+        }
+    }
+    
+    // Set the source as ambient - possible only when there is no song playing
+    pub fn set_as_ambient(&mut self) {
+        if self.get_is_sound_queue_empty() {
+            self.sound_type = SoundType::Sound2D;
+        }
     }
 
-    pub fn set_sound_paused(&self) {
-        self.audio_spatial_sink.pause();
+    // Set the volume of the played song
+    pub fn set_sound_volume(&mut self, sound_volume: f32) {
+        self.sound_volume = sound_volume;
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_VOLUME);
     }
 
-    pub fn set_sound_playing(&self) {
-        self.audio_spatial_sink.play();
+    // --- Other functionalities
+
+    // Play the sound
+    pub fn play_sound(&mut self) {
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PLAY_SOUND);
     }
- 
+
+    // Pause the source
+    pub fn pause_sound(&mut self) {
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PAUSE_SOUND);
+    }
+
+    // Clear whole sound playlist 
+    pub fn clear_sound_playlist(&mut self) {
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_CLEAR_PLAYLIST);
+    }
+
+    // Check if source is spatial
+    pub fn is_spatial(&self) -> bool {
+        self.sound_type == SoundType::Sound3D
+    }
+
+    // Check if source is ambient
+    pub fn is_ambient(&self) -> bool {
+        self.sound_type == SoundType::Sound2D
+    }
+
+    // Append new sound to the sound sink
+    pub fn add_new_sound(&mut self, sound_handle: SoundHandle)
+    {
+        self.sound_handle = Some(sound_handle);
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_ADD_SOUND);
+    }
+
+    // Check if the source has the handle (index) to the possibly assigned sink
+    pub fn has_sink_handle(&self) -> bool {
+        self.sink_index.is_some()
+    }
+
+    // Post deferred update request
+    fn post_deferred_update_request(&mut self, request_variant: usize) {
+        if self.deferred_update_manager.is_some() {
+            let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
+            let scene_handle = self.scene_handle.expect("Critical: Cannot post deferred update request. No SceneHandle set in Component");
+            let request = DeferredUpdateComponentRequest::<AudioSourceComponent>::new(entity_handle, scene_handle, request_variant);
+            self.deferred_update_manager.as_mut().expect("Critical: No DeferredUpdateManager").post_update_request(request);
+        }
+    }
 }
 
 impl Default for AudioSourceComponent {
-
     fn default() -> Self {
         
         let source_position = DEFAULT_SOUND_SOURCE_POSITION.clone();
-        let (audio_stream, audio_stream_handle) = rodio::OutputStream::try_default().unwrap();
-        let audio_spatial_sink = rodio::SpatialSink::try_new(&audio_stream_handle, DEFAULT_SOUND_SOURCE_POSITION.clone(), DEFAULT_LEFT_EAR_POSITION.clone(), DEFAULT_RIGHT_EAR_POSITION.clone()).unwrap();
 
         Self {
             source_position,
-            audio_stream,
-            audio_stream_handle, 
-            audio_spatial_sink
+            sound_volume: 1.0,
+            is_song_queue_empty: false,
+            sink_index: None,
+            sound_type: SoundType::Sound3D,
+            sound_handle: None,
+            entity_handle: None,
+            scene_handle: None,
+            deferred_update_manager: None,   
         }
     }
 }
@@ -123,4 +208,129 @@ impl PillTypeMapKey for AudioSourceComponent {
 
 unsafe impl Send for AudioSourceComponent { }
 
-impl Component for AudioSourceComponent { }
+impl Component for AudioSourceComponent { 
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
+        // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
+        let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
+        self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
+
+        Ok(())
+    }
+
+    fn pass_handles(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) {
+        self.entity_handle = Some(entity_handle);
+        self.scene_handle = Some(scene_handle);
+    }
+
+    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
+        match request {
+            DEFERRED_REQUEST_VARIANT_ADD_SOUND => 
+            {   
+                if self.sink_index.is_none() {
+                    let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
+                    let sink_handle = match self.sound_type {
+                        SoundType::Sound2D => audio_manager.get_ambient_sink_handle(),
+                        SoundType::Sound3D => audio_manager.get_spatial_sink_handle()
+                    };
+                    if sink_handle.is_some() {
+                        self.sink_index = sink_handle;
+                    }
+                }
+                if self.sink_index.is_some() && self.sound_handle.is_some() {
+                    let sound_handle = self.sound_handle.unwrap().clone();
+                    let sound = (&*engine).get_resource::<Sound>(&sound_handle)?.clone();
+                    let audio_manager = engine.get_global_component::<AudioManagerComponent>()?;
+                    match self.sound_type {
+                        SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_index.unwrap()).append(sound.sound_data.as_ref().unwrap().get_source_sound()),
+                        SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_index.unwrap()).append(sound.sound_data.as_ref().unwrap().get_source_sound())
+                    }
+                    
+                }
+            },
+            DEFERRED_REQUEST_VARIANT_CHANGE_SOURCE_POSITION => {
+                if self.sink_index.is_some() && self.sound_type == SoundType::Sound3D {
+                    let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                    audio_manager.get_spatial_sink(self.sink_index.unwrap()).set_emitter_position(self.source_position);
+                }
+            },
+            DEFERRED_REQUEST_VARIANT_SET_VOLUME => {
+                if self.sink_index.is_some() {
+                    let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                    match self.sound_type {
+                        SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_index.unwrap()).set_volume(self.sound_volume),
+                        SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_index.unwrap()).set_volume(self.sound_volume),
+                    } 
+                }
+            },
+            DEFERRED_REQUEST_VARIANT_GET_IS_SOUND_QUEUE_EMPTY => {
+                if self.sink_index.is_some() {
+                    let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                    match self.sound_type {
+                        SoundType::Sound3D => { self.is_song_queue_empty = audio_manager.get_spatial_sink(self.sink_index.unwrap()).empty(); },
+                        SoundType::Sound2D => { self.is_song_queue_empty = audio_manager.get_ambient_sink(self.sink_index.unwrap()).empty(); }
+                    }
+                }
+            },
+            DEFERRED_REQUEST_VARIANT_PLAY_SOUND => {
+                if self.sink_index.is_some() {
+                    let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                    match self.sound_type {
+                        SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_index.unwrap()).play(),
+                        SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_index.unwrap()).play(),
+                    } 
+                }
+            },
+            DEFERRED_REQUEST_VARIANT_PAUSE_SOUND => {
+                if self.sink_index.is_some() {
+                    let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                    match self.sound_type {
+                        SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_index.unwrap()).pause(),
+                        SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_index.unwrap()).pause(),
+                    } 
+                }
+            },
+            DEFERRED_REQUEST_VARIANT_CLEAR_PLAYLIST => {
+                if self.sink_index.is_some() {
+                    let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                    match self.sound_type {
+                        SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_index.unwrap()).stop(),
+                        SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_index.unwrap()).stop(),
+                    } 
+                }
+            },
+            _ => 
+            {
+                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().sobj_style());
+            }
+        }
+
+        Ok(()) 
+    }
+
+    fn destroy(&mut self, engine: &mut Engine, self_entity_handle: EntityHandle, self_scene_handle: SceneHandle) -> Result<()> {
+
+        // Fully clear playlist if there are any songs
+        self.clear_sound_playlist();
+
+        // Manage handles
+        let sink_handle = self.sink_index.take();
+        self.sound_handle = None;
+
+        // If sink handle is none, then there is nothing to return to sink pool
+        if sink_handle.is_none() {
+            return Ok(())
+        }
+
+        // Get global audio manager
+        let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
+
+        // Return index to free sink pool
+        match self.sound_type {
+            SoundType::Sound2D => audio_manager.return_ambient_sink_handle(sink_handle.unwrap()),
+            SoundType::Sound3D => audio_manager.return_spatial_sink_handle(sink_handle.unwrap())
+        }
+
+        // Success
+        Ok(())
+    }
+}

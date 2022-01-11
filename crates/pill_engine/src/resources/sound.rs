@@ -15,6 +15,12 @@ use std::io::{Cursor, BufReader};
 use std::fs::{File };
 use anyhow::{ Result, Context, Error };
 
+#[derive(PartialEq)]
+pub enum SoundType {
+    Sound2D,
+    Sound3D
+}
+
 pill_core::define_new_pill_slotmap_key! { 
     pub struct SoundHandle;
 }
@@ -70,6 +76,7 @@ pub struct SoundData {
 impl SoundData {
     pub fn new(path: &PathBuf) -> Result<Self> {
 
+        // Open paths to sound file
         let mut sound_file = match File::open(path) {
             Err(err) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
             file => file.unwrap()
@@ -77,22 +84,27 @@ impl SoundData {
 
         let mut sound_data = Vec::new();
 
+        // Read bytes to vector
         sound_file.read_to_end(&mut sound_data).unwrap();
 
+        // Create SoundData
         let sound_data = SoundData {
             source_buffer: sound_data
         };
 
+        // Succesfully return data
         Ok(sound_data)
     }
 
     pub fn get_source_sound(&self) -> Decoder<Cursor<Vec<u8>>> {
         let mut sound_source = Vec::<u8>::new();
 
+        // Read bytes from the buffer
         for buffer in self.source_buffer.iter() {
             sound_source.push(buffer.clone());
         }
 
+        // Return decoded bytes as the sound, which can be played
         Decoder::new(Cursor::new(sound_source)).unwrap()
     }
 }
