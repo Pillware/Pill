@@ -306,4 +306,31 @@ impl Component for AudioSourceComponent {
 
         Ok(()) 
     }
+
+    fn destroy(&mut self, engine: &mut Engine, self_entity_handle: EntityHandle, self_scene_handle: SceneHandle) -> Result<()> {
+
+        // Fully clear playlist if there are any songs
+        self.clear_sound_playlist();
+
+        // Manage handles
+        let sink_handle = self.sink_index.take();
+        self.sound_handle = None;
+
+        // If sink handle is none, then there is nothing to return to sink pool
+        if sink_handle.is_none() {
+            return Ok(())
+        }
+
+        // Get global audio manager
+        let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
+
+        // Return index to free sink pool
+        match self.sound_type {
+            SoundType::Sound2D => audio_manager.return_ambient_sink_handle(sink_handle.unwrap()),
+            SoundType::Sound3D => audio_manager.return_spatial_sink_handle(sink_handle.unwrap())
+        }
+
+        // Success
+        Ok(())
+    }
 }
