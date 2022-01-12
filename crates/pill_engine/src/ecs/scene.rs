@@ -1,6 +1,6 @@
 
 use crate::{
-    ecs::{ Entity, ComponentStorage, Component, EntityHandle, BitmaskController }
+    ecs::{ Entity, ComponentStorage, Component, EntityHandle, BitmaskMap }
 };
 
 use pill_core::{ EngineError, PillTypeMap, PillTypeMapKey, PillSlotMap, get_type_name};
@@ -16,7 +16,7 @@ pub struct Scene {
     pub(crate) entity_counter: usize,
     pub(crate) entities: PillSlotMap<EntityHandle, Entity>,
     pub(crate) components: PillTypeMap,
-    pub(crate) bitmask_controller: BitmaskController,  
+    pub(crate) bitmask_mapping: BitmaskMap,  
 }
 
 impl Scene {
@@ -26,7 +26,7 @@ impl Scene {
             entity_counter: 0,
             entities: PillSlotMap::<EntityHandle, Entity>::with_key(),
             components: PillTypeMap::new(),
-            bitmask_controller: BitmaskController::new(),
+            bitmask_mapping: BitmaskMap::new(),
         };
     }
 
@@ -47,11 +47,11 @@ impl Scene {
         self.components.get_mut::<T>().ok_or(Error::new(EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone())))
     }
 
-    pub(crate) fn get_bitmask_controller(&self) -> &BitmaskController {
-        &self.bitmask_controller
+    pub(crate) fn get_bitmask_mapping(&self) -> &BitmaskMap {
+        &self.bitmask_mapping
     }
 
-    pub(crate) fn get_bitmask_controller_mut(&mut self) -> &mut BitmaskController {
-        &mut self.bitmask_controller
+    pub(crate) fn get_bitmask_mapping_mut(&mut self) -> &mut BitmaskMap {
+        &mut self.bitmask_mapping
     }
 }

@@ -78,7 +78,7 @@ impl PillGame for Game {
         engine.add_system("DeleteEntitySystem", delete_entity_system).unwrap();
         engine.add_system("ExitSystem", exit_system).unwrap();
         engine.add_system("RotationSystem", rotation_movement_system).unwrap();
-        engine.add_system("SoundPauseSystem", sound_pause_system).unwrap();
+        //engine.add_system("SoundPauseSystem", sound_pause_system).unwrap();
 
         // Register components
         engine.register_component::<TransformComponent>(scene).unwrap();

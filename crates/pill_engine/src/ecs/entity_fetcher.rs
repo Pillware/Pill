@@ -23,7 +23,7 @@ impl<'a> EntityFetcher<'a> {
 
     pub fn filter_by_component<T: Component>(&mut self) -> &mut Self {
         let target_scene = self.scene_manager.get_scene(self.scene_handle).unwrap();
-        self.filter_bitmask = self.filter_bitmask | target_scene.get_bitmask_controller().get_bitmap::<T>();
+        self.filter_bitmask = self.filter_bitmask | target_scene.get_bitmask_mapping().get_bitmap::<T>();
         self
     }
 

@@ -47,7 +47,7 @@ impl SceneManager {
         target_scene.components.insert::<T>(component_storage);
 
         // Get bitmask controller
-        let controller = target_scene.get_bitmask_controller_mut();
+        let controller = target_scene.get_bitmask_mapping_mut();
 
         // Register bitmask for new component
         controller.add_bitmap::<T>();
@@ -116,7 +116,7 @@ impl SceneManager {
         component_slot.borrow_mut().insert(component);
 
         // Get the bitmask mapped onto the given component to update entity's bitmask
-        let component_bitmask = target_scene.get_bitmask_controller_mut().mapping.get_bitmask::<T>();
+        let component_bitmask = target_scene.get_bitmask_mapping_mut().get_bitmap::<T>();
         
         // Update the bitmask stored in pill slot based on the entity handle
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask |= component_bitmask;
@@ -131,7 +131,7 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene_handle)?;
 
         // Get the bitmask mapped onto the given component to update entity's bitmask
-        let component_bitmask = target_scene.get_bitmask_controller_mut().mapping.get_bitmask::<T>();
+        let component_bitmask = target_scene.get_bitmask_mapping_mut().get_bitmap::<T>();
 
         // Update the bitmask stored in pill slot based on the entity handle
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask -= component_bitmask;
@@ -200,7 +200,7 @@ impl SceneManager {
 
         // Remove scene
         // TODO - add custom error
-        let scene = self.scenes.remove(scene_handle).unwrap();
+        let scene = self.scenes.remove(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
 
         // Return deleted scene
         Ok(scene)
