@@ -24,7 +24,7 @@ pub struct Mesh {
     #[readonly]
     pub name: String,
     #[readonly]
-    path: PathBuf,
+    pub path: PathBuf,
     pub(crate) renderer_resource_handle: Option<RendererMeshHandle>,
     mesh_data: Option<MeshData>,
 }
@@ -96,7 +96,7 @@ impl Resource for Mesh {
 
 #[repr(C)]
 // bytemuck::Pod indicates that Vertex is "Plain Old Data", and thus can be interpretted as a &[u8]
-// bytemuck::Zeroable indicates that we can use std::mem::zeroed()
+// bytemuck::Zeroable indicates that Vertex can be used with std::mem::zeroed()
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshVertex {
     position: [f32; 3],

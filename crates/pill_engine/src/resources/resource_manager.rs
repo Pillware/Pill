@@ -71,10 +71,10 @@ impl ResourceManager {
 
     // --- Register - Add - Remove ---
 
-    pub fn register_resource_type<T>(&mut self) -> Result<()> 
+    pub fn register_resource_type<T>(&mut self, max_resource_count: usize) -> Result<()> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        self.resources.insert::<T>(ResourceStorage::<T>::new());
+        self.resources.insert::<T>(ResourceStorage::<T>::new(max_resource_count));
 
         Ok(())
     }

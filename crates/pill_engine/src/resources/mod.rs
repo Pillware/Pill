@@ -22,7 +22,6 @@ pub use resource_storage::ResourceStorage;
 pub use sound::{
     Sound,
     SoundHandle,
-    SoundType,
 };
 
 pub use mesh::{ 

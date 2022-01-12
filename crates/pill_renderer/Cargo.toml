@@ -1,10 +1,6 @@
 [package]
 name = "pill_renderer"
 version = "0.1.0"
-authors = [
-    # Extend this list when submiting PR
-    "Mateusz Szymoński <mateusz.szymonski@gmail.com>"
-    ]
 edition = "2018"
 resolver = "2"
 
@@ -27,12 +23,11 @@ anyhow = "1.0"
 env_logger = "0.9.0"
 log = "0.4"
 
-
-
+# Other
 winit = "0.25"
 cgmath = "0.18"
 wgpu = { version = "0.11", features = [ "spirv" ] }
 futures = "0.3"
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }
-
+config = "0.11"

@@ -32,35 +32,40 @@ pub trait PillGame {
 }
 
 pub struct Engine { 
+    pub(crate) config: config::Config,
     pub(crate) game: Option<Game>,
     pub(crate) renderer: Renderer,
-    pub(crate) scene_manager: SceneManager, // [TODO: What will happen with objects registered in renderer if we change the scene for which they were registered?]
+    pub(crate) scene_manager: SceneManager,
     pub(crate) system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
+    pub(crate) global_components: PillTypeMap,
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
-    pub(crate) global_components: PillTypeMap,
     pub(crate) frame_delta_time: f32,
-    pub(crate) max_ambient_sink_count: usize,
-    pub(crate) max_spatial_sink_count: usize,
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
 
 impl Engine {
     fn create_default_resources(&mut self) -> Result<()> {
-        self.register_resource_type::<Texture>().unwrap();
-        self.register_resource_type::<Mesh>().unwrap();
-        self.register_resource_type::<Material>().unwrap();
-        self.register_resource_type::<Sound>().unwrap();
+
+        let max_texture_count = self.config.get_int("MAX_TEXTURE_COUNT").unwrap_or(MAX_TEXTURE_COUNT as i64) as usize;
+        let max_mesh_count = self.config.get_int("MAX_MESH_COUNT").unwrap_or(MAX_MESH_COUNT as i64) as usize;
+        let max_material_count = self.config.get_int("MAX_MATERIAL_COUNT").unwrap_or(MAX_MATERIAL_COUNT as i64) as usize;
+        let max_sound_count = self.config.get_int("MAX_SOUND_COUNT").unwrap_or(MAX_SOUND_COUNT as i64) as usize;
+
+        self.register_resource_type::<Texture>(max_texture_count)?;
+        self.register_resource_type::<Mesh>(max_mesh_count)?;
+        self.register_resource_type::<Material>(max_material_count)?;
+        self.register_resource_type::<Sound>(max_sound_count)?;
 
         // - Create default resources
 
         // Load master shader data to executable
         let master_vertex_shader_bytes = include_bytes!("../res/shaders/built/master.vert.spv");
         let master_fragment_shader_bytes = include_bytes!("../res/shaders/built/master.frag.spv");
-        self.renderer.set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes).unwrap();
+        self.renderer.set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes)?;
 
         // Load default resource data to executable
         let default_color_texture_bytes = Box::new(*include_bytes!("../res/textures/default_color.png"));
@@ -69,18 +74,17 @@ impl Engine {
         // Create default textures
         let mut default_color_texture = Texture::new(DEFAULT_COLOR_TEXTURE_NAME, TextureType::Color, ResourceLoadType::Bytes(default_color_texture_bytes));
         default_color_texture.initialize(self)?;
-        self.resource_manager.add_resource(default_color_texture).unwrap();
+        self.resource_manager.add_resource(default_color_texture)?;
 
         let mut default_normal_texture = Texture::new(DEFAULT_NORMAL_TEXTURE_NAME, TextureType::Normal, ResourceLoadType::Bytes(default_normal_texture_bytes));
         default_normal_texture.initialize(self)?;
-        self.resource_manager.add_resource(default_normal_texture).unwrap();
+        self.resource_manager.add_resource(default_normal_texture)?;
         
         // Create default material
         let mut default_material = Material::new(DEFAULT_MATERIAL_NAME);
         default_material.initialize(self)?;
-        self.resource_manager.add_resource(default_material).unwrap();
+        self.resource_manager.add_resource(default_material)?;
         
-
         Ok(())
     }
 }
@@ -89,53 +93,55 @@ impl Engine {
 
 impl Engine {
 
-    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, max_render_queue_capacity: usize, max_entity_count: usize, max_ambient_sink_count: usize, max_spatial_sink_count: usize) -> Self {
-        let scene_manager = SceneManager::new(max_entity_count);
-        let resource_manager = ResourceManager::new();
-        let system_manager = SystemManager::new();
+    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, config: config::Config) -> Self {
+        let max_entity_count = config.get_int("MAX_ENTITY_COUNT").unwrap_or(MAX_ENTITY_COUNT as i64) as usize;
 
         Self { 
+            config,
             game: Some(game),
             renderer,
-            scene_manager,
-            system_manager,
-            resource_manager,
-            input_queue: VecDeque::new(),
-            render_queue: Vec::<RenderQueueItem>::with_capacity(max_render_queue_capacity),
-            window_size: winit::dpi::PhysicalSize::<u32>::default(),
+            scene_manager: SceneManager::new(max_entity_count),
+            system_manager: SystemManager::new(),
+            resource_manager: ResourceManager::new(),
             global_components: PillTypeMap::new(),
+            input_queue: VecDeque::new(),
+            render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
+            window_size: winit::dpi::PhysicalSize::<u32>::default(),
             frame_delta_time: 0.0,
-            max_ambient_sink_count,
-            max_spatial_sink_count
         }
     }
 
-    pub fn initialize(&mut self, window_size: winit::dpi::PhysicalSize<u32>) {
+    pub fn initialize(&mut self, window_size: winit::dpi::PhysicalSize<u32>) -> Result<()> {
         info!("Initializing {}", "Engine".mobj_style());
 
         // Set window size
         self.window_size = window_size;
 
         // Register global components
-        self.add_global_component(InputComponent::new()).unwrap();
-        self.add_global_component(TimeComponent::new()).unwrap();
-        self.add_global_component(DeferredUpdateComponent::new()).unwrap();
-        self.add_global_component(AudioManagerComponent::new(self.max_ambient_sink_count.clone(), self.max_spatial_sink_count.clone())).unwrap();
+        self.add_global_component(InputComponent::new())?;
+        self.add_global_component(TimeComponent::new())?;
+        self.add_global_component(DeferredUpdateComponent::new())?;
+
+        let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUND_COUNT").unwrap_or(MAX_CONCURRENT_2D_SOUND_COUNT as i64) as usize;
+        let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUND_COUNT").unwrap_or(MAX_CONCURRENT_3D_SOUND_COUNT as i64) as usize;
+        self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
 
         // Add built-in systems
-        self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame).unwrap();
-        self.system_manager.add_system("TimeSystem", time_system, UpdatePhase::PostGame).unwrap();
-        self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame).unwrap();
-        self.system_manager.add_system("AudioSystem", audio_system, UpdatePhase::PostGame).unwrap();
-        self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame).unwrap();
+        self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame)?;
+        self.system_manager.add_system("TimeSystem", time_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system("AudioSystem", audio_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame)?;
 
         // Create default resources
-        self.create_default_resources().expect("Critical: Creating default resources failed");
+        self.create_default_resources().context("Failed to create default resources")?;
 
         // Initialize game
-        let game = self.game.take().unwrap(); 
+        let game = self.game.take().ok_or(EngineError::Other("Cannot get game".to_string()))?; 
         game.start(self);
         self.game = Some(game);
+
+        Ok(())
     }
 
     pub fn update(&mut self, delta_time: std::time::Duration) {
@@ -150,13 +156,13 @@ impl Engine {
                 //debug!("{} {} starting", "System".gobj_style(), system_name.sobj_style()); 
                 (system.system_function)(self)
                     .context(format!("{}", EngineError::SystemUpdateFailed(system_name, get_enum_variant_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)))).unwrap();
-            }
+            } //self.confing.get_bool("PANIC_ON_GAME_SYSTEM_ERROR")
         }
  
         let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps =  1000.0 / new_frame_time;
         self.frame_delta_time = new_frame_time;
-//        info!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
+        debug!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
     }
 
     pub fn shutdown(&mut self) {
@@ -164,36 +170,37 @@ impl Engine {
     }
 
     pub fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
-        info!("{} resized to {}x{}", "Window".mobj_style(), new_window_size.width, new_window_size.height);
+        debug!("{} resized to {}x{}", "Window".mobj_style(), new_window_size.width, new_window_size.height);
         self.window_size = new_window_size;
         self.renderer.resize(new_window_size);
     }
 
     pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyboardInput) {
-        let key: VirtualKeyCode = keyboard_input.virtual_keycode.unwrap();
-        let state: ElementState = keyboard_input.state;
+        if let Some(key) = keyboard_input.virtual_keycode {
+            let state: ElementState = keyboard_input.state;
 
-        let input_event = InputEvent::KeyboardKey { key: key, state: state };
-        self.input_queue.push_back(input_event);
-        info!("Got new keyboard key input: {:?} {:?}", key, state);
+            let input_event = InputEvent::KeyboardKey { key: key, state: state };
+            self.input_queue.push_back(input_event);
+            debug!("Got new keyboard key input: {:?} {:?}", key, state);
+        }
     }
 
     pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &ElementState) {
         let input_event = InputEvent::MouseButton { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
         self.input_queue.push_back(input_event);
-        info!("Got new mouse key input");
+        debug!("Got new mouse key input");
     }
 
     pub fn pass_mouse_wheel_input(&mut self, delta: &MouseScrollDelta) {
         let input_event = InputEvent::MouseWheel { delta: *delta };
         self.input_queue.push_back(input_event);
-        info!("Got new mouse wheel input");
+        debug!("Got new mouse wheel input");
     }
 
     pub fn pass_mouse_motion_input(&mut self, position: &PhysicalPosition<f64>) {
         let input_event = InputEvent::MouseMotion { position: *position };
         self.input_queue.push_back(input_event);
-        info!("Got new mouse motion input");
+        debug!("Got new mouse motion input");
     }
 
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
@@ -328,7 +335,7 @@ impl Engine {
     }
 
     pub fn remove_global_component<T>(&mut self) -> Result<()> 
-        where T: Component<Storage = GlobalComponentStorage::<T>>
+        where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Check if component of this type is added
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?;
@@ -516,10 +523,10 @@ impl Engine {
 
     // --- Resource API ---
 
-    pub fn register_resource_type<T>(&mut self) -> Result<()> 
+    pub fn register_resource_type<T>(&mut self, max_resource_count: usize) -> Result<()> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        self.resource_manager.register_resource_type::<T>()
+        self.resource_manager.register_resource_type::<T>(max_resource_count)
     }
 
     pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 

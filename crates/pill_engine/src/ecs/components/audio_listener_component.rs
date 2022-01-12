@@ -4,33 +4,43 @@ use pill_core::PillTypeMapKey;
 
 use cgmath::Vector3;
 
-pub struct AudioListenerComponent {
 
-    enabled: bool
+// --- Builder ---
+
+pub struct AudioListenerComponentBuilder {
+    component: AudioListenerComponent,
+}
+
+impl AudioListenerComponentBuilder {
+    pub fn default() -> Self {
+        Self {
+            component: AudioListenerComponent::new(),
+        }
+    }
     
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.component.enabled = enabled;
+        self
+    }
+
+    pub fn build(self) -> AudioListenerComponent {
+        self.component
+    }
+}
+
+// --- Audio Listener Component ---
+
+pub struct AudioListenerComponent {
+    pub enabled: bool
 }
 
 impl AudioListenerComponent {
+    pub fn builder() -> AudioListenerComponentBuilder {
+        AudioListenerComponentBuilder::default()
+    }
 
-    pub fn new(left_ear_position: [f32; 3], right_ear_position: [f32; 3]) -> Self {
+    pub fn new() -> Self {
         Self {
-            enabled: false
-        }
-    }
-
-    pub fn set_enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
-    }
-
-    pub fn get_enabled(&self) -> bool {
-        self.enabled.clone()
-    }
-}
-
-impl Default for AudioListenerComponent {
-
-    fn default() -> Self {
-        Self { 
             enabled: false
         }
     }

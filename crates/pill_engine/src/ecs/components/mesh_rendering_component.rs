@@ -13,6 +13,8 @@ use anyhow::{ Result, Context, Error };
 
 
 const DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE: usize = 0;
+const DEFERRED_REQUEST_VARIANT_SET_MATERIAL: usize = 1;
+const DEFERRED_REQUEST_VARIANT_SET_MESH: usize = 2;
 
 // --- Builder ---
 
@@ -73,32 +75,24 @@ impl MeshRenderingComponent {
         }
     }
 
-    pub fn set_material(&mut self, material_handle: &MaterialHandle) -> Result<()> {
+    pub fn set_material(&mut self, material_handle: &MaterialHandle) {
         self.material_handle = Some(material_handle.clone());
-        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
-
-        Ok(())
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_MATERIAL);
     }
 
-    pub fn set_mesh(&mut self, mesh_handle: &MeshHandle) -> Result<()> {
+    pub fn set_mesh(&mut self, mesh_handle: &MeshHandle) {
         self.mesh_handle = Some(mesh_handle.clone());
-        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
-
-        Ok(())
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_MESH);
     }
 
-    pub fn remove_material(&mut self) -> Result<()> {
+    pub fn remove_material(&mut self) {
         self.material_handle = None;
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
-
-        Ok(())
     }
 
-    pub fn remove_mesh(&mut self) -> Result<()> {
+    pub fn remove_mesh(&mut self) {
         self.mesh_handle = None;
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
-
-        Ok(())
     }
 
     pub(crate) fn set_material_handle(&mut self, material_handle: Option<MaterialHandle>) {
@@ -150,7 +144,7 @@ impl PillTypeMapKey for MeshRenderingComponent {
 
 impl Component for MeshRenderingComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
+        // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
         let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
         self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
 
@@ -179,6 +173,22 @@ impl Component for MeshRenderingComponent {
 
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
         match request {
+            DEFERRED_REQUEST_VARIANT_SET_MATERIAL => 
+            {
+                // Check if material handle is valid
+                engine.get_resource::<Material>(&self.material_handle.unwrap())
+                    .context(format!("Setting {} {} failed", "Resource".gobj_style(), "Material".sobj_style()))?;
+                
+                self.update_render_queue_key(&engine.resource_manager)?;
+            },
+            DEFERRED_REQUEST_VARIANT_SET_MESH =>
+            {
+                // Check if mesh handle is valid
+                engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
+                    .context(format!("Setting {} {} failed", "Resource".gobj_style(), "Mesh".sobj_style()))?;
+
+                self.update_render_queue_key(&engine.resource_manager)?;
+            },
             DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE => 
             {
                 // Update mesh rendering queue

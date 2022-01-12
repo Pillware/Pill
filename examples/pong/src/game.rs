@@ -1,4 +1,6 @@
 #![allow(unused_imports, dead_code, unused_variables, unused_mut)]
+use std::path::PathBuf;
+
 use pill_engine::{game::*};
 
 struct NonCameraComponent {} 
@@ -63,7 +65,7 @@ impl Resource for TestResource {
 
 
 
-pub struct Game { pub path: String }   
+pub struct Game { }   
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) {
@@ -97,59 +99,65 @@ impl PillGame for Game {
         let active_scene = engine.get_active_scene_handle().unwrap();
 
         // --- Add custom sounds (for testing purposed - for deletion later!)
-        let mut sound_path = std::path::PathBuf::new();
+        //let mut sound_path = std::path::PathBuf::new();
 
-        sound_path.push(&self.path);
-        sound_path.push("res/audio/vista-point.mp3");
-        let sound_gothic_handle = engine.add_resource::<Sound>(Sound::new("Vista Point", sound_path.clone())).unwrap();
+        //sound_path.push(&self.path);
+        // sound_path.push("res/audio/vista-point.mp3");
+        // let sound_gothic_handle = engine.add_resource::<Sound>(Sound::new("Vista Point", sound_path.clone())).unwrap();
         
-        sound_path.pop();
-        sound_path.push("croket-theme.mp3");
-        let sound_waves_handle = engine.add_resource::<Sound>(Sound::new("Croket Theme", sound_path.clone())).unwrap();
+        // sound_path.pop();
+        // sound_path.push("croket-theme.mp3");
+        // let sound_waves_handle = engine.add_resource::<Sound>(Sound::new("Croket Theme", sound_path.clone())).unwrap();
+        
+        // sound_path.pop();
+        // sound_path.push("ocean-waves.mp3");
+        // let sound_waves_handle = engine.add_resource::<Sound>(Sound::new("Ocean Waves", sound_path.clone())).unwrap();
+
+
 
         // --- Create camera entity
         let camera_holder = engine.create_entity(active_scene).unwrap();
+        
         // Add transform component
         let camera_transform = TransformComponent::builder()
             .position(Vector3f::new(0.0,5.0,7.0))
             .rotation(Vector3f::new(-20.0,-90.0,0.0))
             .build();
-
         engine.add_component_to_entity::<TransformComponent>(active_scene, camera_holder, camera_transform).unwrap();
+        
         // Add camera component
-        let mut camera = CameraComponent::new();
-        camera.enabled = true;
+        let mut camera = CameraComponent::builder().enabled(true).build();
         engine.add_component_to_entity::<CameraComponent>(active_scene, camera_holder, camera).unwrap();
+        
         // Add audio listener component
-        let mut audio_listener = AudioListenerComponent::default();
-        audio_listener.set_enabled(true);
+        let mut audio_listener = AudioListenerComponent::builder().enabled(true).build();
         engine.add_component_to_entity::<AudioListenerComponent>(active_scene, camera_holder, audio_listener).unwrap();
+        // ---
+
+
+
+
 
         // Create game path for resource
 
         // Add texture
-        let camo_texture_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/Camouflage.png");
-        let camo_texture = Texture::new("Camo", TextureType::Color, ResourceLoadType::Path(camo_texture_path));
+        let camo_texture = Texture::new("Camouflage", TextureType::Color, ResourceLoadType::Path("./res/textures/Camouflage.png".into()));
         let camo_texture_handle = engine.add_resource::<Texture>(camo_texture).unwrap();
 
         // Add texture
-        let wut_texture_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/WUT.png");
-        let wut_texture = Texture::new("WUT", TextureType::Color, ResourceLoadType::Path(wut_texture_path));
+        let wut_texture = Texture::new("WUT", TextureType::Color, ResourceLoadType::Path("./res/textures/WUT.png".into()));
         let wut_texture_handle = engine.add_resource::<Texture>(wut_texture).unwrap();
 
         // Add texture
-        let quilted_texture_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/Quilted.png");
-        let quilted_texture = Texture::new("Quilted", TextureType::Normal, ResourceLoadType::Path(quilted_texture_path));
+        let quilted_texture = Texture::new("Quilted", TextureType::Normal, ResourceLoadType::Path("./res/textures/Quilted.png".into()));
         let quilted_texture_handle = engine.add_resource::<Texture>(quilted_texture).unwrap();
 
         // Add texture
-        let wall_texture_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/Wall.png");
-        let wall_texture = Texture::new("Wall", TextureType::Color, ResourceLoadType::Path(wall_texture_path));
+        let wall_texture = Texture::new("Wall", TextureType::Color, ResourceLoadType::Path("./res/textures/Wall.png".into()));
         let wall_texture_handle = engine.add_resource::<Texture>(wall_texture).unwrap();
 
         // Add texture
-        let wall_normal_texture_path = std::env::current_dir().unwrap().join("examples/pong/res/textures/WallNormal.png");
-        let wall_normal_texture = Texture::new("WallNormal", TextureType::Normal, ResourceLoadType::Path(wall_normal_texture_path));
+        let wall_normal_texture = Texture::new("WallNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/WallNormal.png".into()));
         let wall_normal_texture_handle = engine.add_resource::<Texture>(wall_normal_texture).unwrap();
 
 
@@ -178,24 +186,19 @@ impl PillGame for Game {
 
 
         // Add meshes
-        let monkey_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Monkey.obj"); 
-        let monkey_mesh = Mesh::new("Monkey", monkey_mesh_path);
+        let monkey_mesh = Mesh::new("Monkey", "./res/models/Monkey.obj".into());
         let monkey_mesh_handle = engine.add_resource::<Mesh>(monkey_mesh).unwrap();
 
-        let cube_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Cube.obj");
-        let cube_mesh = Mesh::new("Cube", cube_mesh_path);
+        let cube_mesh = Mesh::new("Cube", "./res/models/Cube.obj".into());
         let cube_mesh_handle = engine.add_resource::<Mesh>(cube_mesh).unwrap();
 
-        let bunny_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Preview.obj");
-        let bunny_mesh = Mesh::new("Bunny", bunny_mesh_path);
+        let bunny_mesh = Mesh::new("Bunny", "./res/models/Bunny.obj".into());
         let bunny_mesh_handle = engine.add_resource::<Mesh>(bunny_mesh).unwrap();
 
-        let sphere_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Sphere.obj");
-        let sphere_mesh = Mesh::new("Sphere", sphere_mesh_path);
+        let sphere_mesh = Mesh::new("Sphere", "./res/models/Sphere.obj".into());
         let sphere_mesh_handle = engine.add_resource::<Mesh>(sphere_mesh).unwrap();
 
-        let airplane_mesh_path = std::env::current_dir().unwrap().join("examples/pong/res/models/Airplane.obj");
-        let airplane_mesh = Mesh::new("Airplane", airplane_mesh_path);
+        let airplane_mesh = Mesh::new("Airplane", "./res/models/Airplane.obj".into());
         let airplane_mesh_handle = engine.add_resource::<Mesh>(airplane_mesh).unwrap();
 
         // --- Create entity
@@ -225,7 +228,7 @@ impl PillGame for Game {
         let transform_2 = TransformComponent::builder()
             .position(Vector3f::new(0.0,0.0,-2.0))
             .rotation(Vector3f::new(35.0, 35.0,35.0))
-            .scale(Vector3f::new(3.0,3.0,3.0))
+            .scale(Vector3f::new(1.0,1.0,1.0))
             .build();
         
         engine.add_component_to_entity::<TransformComponent>(active_scene, cube_entity, transform_2).unwrap();  
@@ -239,8 +242,13 @@ impl PillGame for Game {
         //mesh_rendering_2.set_mesh(engine, &cube_mesh_handle).unwrap();
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene, cube_entity, mesh_rendering_2).unwrap();
         engine.add_component_to_entity::<NonCameraComponent>(active_scene, cube_entity, NonCameraComponent{}).unwrap();
-        engine.add_component_to_entity::<AudioSourceComponent>(active_scene, cube_entity, AudioSourceComponent::as_spatial()).unwrap();
+        engine.add_component_to_entity::<AudioSourceComponent>(active_scene, cube_entity, AudioSourceComponent::new()).unwrap();
         engine.add_component_to_entity::<RotationComponent>(active_scene_handle, cube_entity, RotationComponent{}).unwrap();
+
+
+        
+
+
 
         // --- Create entity
         let sphere_entity = engine.create_entity(active_scene_handle).unwrap();
@@ -280,10 +288,25 @@ impl PillGame for Game {
         engine.add_component_to_entity::<RotationComponent>(active_scene_handle, bunny_entity, RotationComponent{}).unwrap();
         
         // Add ambient sound
-        let spatial_component = engine.get_component_by_entity::<AudioSourceComponent>(cube_entity, active_scene_handle).unwrap().unwrap();
-        spatial_component.borrow_mut().as_mut().unwrap().pass_handles(cube_entity.clone(), active_scene_handle.clone());
-        spatial_component.borrow_mut().as_mut().unwrap().add_new_sound(sound_gothic_handle);
-        spatial_component.borrow_mut().as_mut().unwrap().set_sound_volume(3.5);
+        // let spatial_component = engine.get_component_by_entity::<AudioSourceComponent>(cube_entity, active_scene_handle).unwrap().unwrap();
+        // spatial_component.borrow_mut().as_mut().unwrap().pass_handles(cube_entity.clone(), active_scene_handle.clone());
+        // spatial_component.borrow_mut().as_mut().unwrap().add_new_sound(sound_gothic_handle);
+        // spatial_component.borrow_mut().as_mut().unwrap().set_sound_volume(3.5);
+
+
+    //     // Simple audio test
+    //     // Add soundtrack to global audio component
+    //     let ambient_sound = (&*engine).get_resource_by_name::<Sound>("Vista Point").unwrap().clone();
+    //     let world_audio_component = (&*engine).get_global_component::<WorldAudioComponent>().unwrap();
+    //     world_audio_component.add_new_sound(ambient_sound.sound_data.as_ref().unwrap().get_source_sound());
+    //    // world_audio_component.add_new_sound(sound_gothic_handle);
+
+    //     // Add sound to audio source component
+    //     for (sound_source, transform) in (&*engine).iterate_two_components::<AudioSourceComponent, TransformComponent>().unwrap() {
+    //         let ocean_sound = (&*engine).get_resource_by_name::<Sound>("Ocean Waves").unwrap().clone();
+    //         sound_source.borrow().as_ref().unwrap().add_new_sound(ocean_sound.sound_data.as_ref().unwrap().get_source_sound());
+    //         sound_source.borrow().as_ref().unwrap().set_source_volume(5.0);
+    //     }
 
         // --- Tests
         let material = engine.get_resource_mut::<Material>(&material_alpha_handle).unwrap();
@@ -408,24 +431,24 @@ fn rotation_movement_system(engine: &mut Engine) -> Result<()> {
 
 fn sound_pause_system(engine: &mut Engine) -> Result<()> {
 
-    let time = engine.get_global_component::<TimeComponent>().unwrap().time;
-    if time > 10000.0 && time < 30000.0 {
-        for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
-            source.borrow_mut().as_mut().unwrap().pause_sound();
-        }
-    }
+    // let time = engine.get_global_component::<TimeComponent>().unwrap().time;
+    // if time > 10000.0 && time < 30000.0 {
+    //     for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
+    //         source.borrow_mut().as_mut().unwrap().pause_sound();
+    //     }
+    // }
 
-    if time >  30000.0 {
-        for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
-            source.borrow_mut().as_mut().unwrap().play_sound();
-        }
-    }
+    // if time >  30000.0 {
+    //     for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
+    //         source.borrow_mut().as_mut().unwrap().play_sound();
+    //     }
+    // }
 
-    if time > 35000.0 {
-        for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
-            source.borrow_mut().as_mut().unwrap().clear_sound_playlist();
-        }
-    }
+    // if time > 35000.0 {
+    //     for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
+    //         source.borrow_mut().as_mut().unwrap().clear_sound_playlist();
+    //     }
+    // }
 
     Ok(())
 }

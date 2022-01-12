@@ -1,217 +1,76 @@
-extern crate clap;
-extern crate fs_extra;
-extern crate ini;
+#![allow(non_snake_case, dead_code)]
 
-use std::path::{PathBuf, Path};
-use std::process::Command;
-use std::fs::{self, File,};
-use std::io::{BufRead, BufReader, Write};
-use fs_extra::dir::{CopyOptions};
-use ini::Ini;
+use std::{
+    path::{ PathBuf },
+    process::Command,
+    fs::{self, File},
+    io::{ BufRead, BufReader, Write },
+    env
+};
+use config::Config;
+use fs_extra::dir::CopyOptions;
 use anyhow::*;
-
-use clap::{Arg, App};
+use clap::{ Arg, App };
+use path_absolutize::Absolutize;
 
 // - Cargo commands 
 
-fn cargo_build_command(path: &Path, additional_bin_info: Option<&String>) -> Result<()> {
+enum Location {
+    MainEngine, // Main engine project directory (containing creates, examples, etc)
+    Engine,
+    Standalone,
+    Launcher,
+}
 
-    match additional_bin_info {
-        Some(bin_path) => { Command::new("cmd")
-                                    .args(&["/C", "cargo", "build", "--manifest-path", path.to_str().unwrap(), "--bin", bin_path, "--release"])
-                                    .status()
-                                    .expect("Failed to execute command");
-        }
-        None => { Command::new("cmd")
-                        .args(&["/C", "cargo", "build", "--manifest-path", path.to_str().unwrap()])
-                        .status()
-                        .expect("Failed to execute command");
-        }
+// Returns absolute paths
+fn get_path(location: Location) -> PathBuf {
+    let main_engine_directory = env::current_exe().unwrap().parent().unwrap().to_path_buf()
+        .join("..").join("..").join("..").join("..")
+        .absolutize().unwrap().to_path_buf();
+
+    match location {
+        Location::MainEngine => main_engine_directory,
+        Location::Engine => main_engine_directory.join("crates").join("pill_engine"),
+        Location::Standalone => main_engine_directory.join("crates").join("pill_standalone"),
+        Location::Launcher => main_engine_directory.join("crates").join("pill_launcher"),
+    } 
+}
+
+fn cargo_build_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
+    let mut arguments = vec!["/C", "cargo", "build", "--manifest-path", path.to_str().unwrap()];
+    if compile_mode == "release" {
+        arguments.push("--release")
     }
+    
+    Command::new("cmd").args(arguments).status().context("Failed to execute command")?;
     
     Ok(())
 }
 
-fn cargo_run_command(path: &Path, additional_bin_info: Option<&String>) -> Result<()> {
+fn cargo_run_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
+    let mut arguments = vec!["/C", "cargo", "run", "--manifest-path", path.to_str().unwrap()];
+    if compile_mode == "release" {
+        arguments.push("--release")
+    }
     
-    match additional_bin_info {
-        Some(bin_path) => { Command::new("cmd")
-                                    .args(&["/C", "cargo", "run", "--manifest-path", path.to_str().unwrap(), "--bin", bin_path])
-                                    .status()
-                                    .expect("Failed to execute command");
-        }
-        None => { Command::new("cmd")
-                        .args(&["/C", "cargo", "run", "--manifest-path", path.to_str().unwrap()])
-                        .status()
-                        .expect("Failed to execute command");
-        }
-    }
-    Ok(())
-}
-
-// - Game config functionalities 
-
-fn create_game_config(path: &Path, game_name: &String) -> Result<()> {
+    Command::new("cmd").args(arguments).status().context("Failed to execute command")?;
     
-    // Window settings
-    let window_width = "1000";
-    let window_heigth = "900";
-    let is_fullscreen = "false";
-
-    // Engine settings
-    let max_entity_count = "1000";
-    let render_queue_capacity = "1000";
-    let max_ambient_sink_count = "10";
-    let max_spatial_sink_count = "10";
-
-    // Renderer settings
-    let max_pipelines_count = "10";
-    let max_textures_count = "10";
-    let max_materials_count = "10";
-    let max_meshes_count = "10";
-    let max_cameras_count = "10";
-
-    // Engine path
-    let mut engine_path = std::env::current_exe()?;
-    engine_path.pop();
-    engine_path.pop();
-
-    // Create config file
-    let mut config = Ini::new();
-    config.with_section(Some("APPLICATION"))
-            .set("NAME", game_name);
-    config.with_section(Some("WINDOW"))
-            .set("WINDOW_WIDTH", window_width)
-            .set("WINDOW_HEIGHT", window_heigth)
-            .set("FULLSCREEN", is_fullscreen.to_uppercase());
-    config.with_section(Some("ENGINE"))
-            .set("PATH", engine_path.to_str().unwrap())
-            .set("MAX_ENTITY_COUNT", max_entity_count)
-            .set("MAX_RENDER_QUEUE_CAPACITY", render_queue_capacity)
-            .set("MAX_AMBIENT_SINK_COUNT", max_ambient_sink_count)
-            .set("MAX_SPATIAL_SINK_COUNT", max_spatial_sink_count);
-    config.with_section(Some("RENDERER"))
-            .set("MAX_PIPELINES_COUNT", max_pipelines_count)
-            .set("MAX_TEXTURES_COUNT", max_textures_count)
-            .set("MAX_MATERIALS_COUNT", max_materials_count)
-            .set("MAX_MESHES_COUNT", max_meshes_count)
-            .set("MAX_CAMERAS_COUNT", max_cameras_count);
-    config.with_section(Some("GAME"));
-
-    // Write config to file
-    let mut config_path = PathBuf::new();
-    config_path.push(path);
-    config_path.push("config.ini");
-    config.write_to_file(config_path)?;
-    Ok(())     
-}
-
-// - Custom file functions
-
-fn create_file_from_template(template_path: &Path, out_path: &Path) -> Result<()> {
-
-    // Open/Create files from path
-    let template_file = File::open(template_path).unwrap();
-    let mut out_file = File::create(out_path).unwrap();
-
-    // Read lines from template file
-    let template_lines = BufReader::new(template_file).lines()
-        .map(|x| x.unwrap()).collect::<Vec<String>>();
-
-    // Write files to out file
-    for line in template_lines {
-        writeln!(out_file, "{}", &line)?;
-    }
-
     Ok(())
 }
 
-fn create_cargo_from_template(template_path: &Path, out_path: &Path) -> Result<()> {
+fn modify_file<A: FnMut(String) -> String>(input_path: &PathBuf, output_path: &PathBuf, mut action: A) -> Result<()> {
+    // Open files from path
+    let input_file = File::open(input_path).unwrap();
 
-    // Open/Create files from path
-    let template_file = File::open(template_path).unwrap();
-    let mut out_file = File::create(out_path).unwrap();
+    // Read lines from input file
+    let lines = BufReader::new(input_file).lines().map(|v| v.unwrap()).collect::<Vec<String>>();
 
-    // Read lines from template file
-    let template_lines = BufReader::new(template_file).lines()
-        .map(|x| x.unwrap()).collect::<Vec<String>>();
+    // Create new file (overwrite if input and output paths are the same)
+    let mut output_file = File::create(output_path).unwrap();
 
-    // Write files to out file
-    for line in template_lines {
-
-        // If line containg information about pill-engine path, set the correct path
-        // Assumption: pill_launcher.exe is located in Pill-Engine/scripts directory
-        if line.contains("pill_engine") {
-            
-            let mut engine_path = std::env::current_exe()?;
-            engine_path.pop();
-            engine_path.pop();
-            engine_path.push("crates");
-            engine_path.push("pill_engine");
-            writeln!(out_file, "pill_engine = {{path = {:?}, features = [\"game\"]}}", engine_path.to_str().unwrap())?;
-        }
-
-        // Else just rewrite the path as usual
-        else {
-            writeln!(out_file, "{}", &line)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn overwrite_cargo_from_template(cargo_path: &Path, game_path: &Path) -> Result<()> {
-
-    // Open/Create files from path
-    let from_path = File::open(cargo_path).unwrap();
-
-    // Read lines from template file
-    let template_lines = BufReader::new(from_path).lines()
-        .map(|x| x.unwrap()).collect::<Vec<String>>();
-
-    let mut out_path = File::create(cargo_path).unwrap();
-    // Write files to out file
-    for line in template_lines {
-
-        if line.contains("pill_game") {
-            
-            writeln!(out_path, "pill_game = {{path = {:?}}} # This needs to be pointing to the correct game directory", game_path.to_str().unwrap())?;
-        }
-        
-        // Else just rewrite the path as usual
-        else {
-            writeln!(out_path, "{}", &line)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn overwrite_config(config_path: &Path, release_value: bool) -> Result<()> {
-
-    // Open/Create files from path
-    let from_path = File::open(config_path).unwrap();
-
-    // Read lines from template file
-    let template_lines = BufReader::new(from_path).lines()
-        .map(|x| x.unwrap()).collect::<Vec<String>>();
-
-    let mut out_path = File::create(config_path).unwrap();
-    // Write files to out file
-    for line in template_lines {
-
-        if line.contains("FINAL_RELEASE") {
-            let release_str = match release_value {
-                true => "true",
-                false => "false"
-            };
-            writeln!(out_path, "FINAL_RELEASE={}", release_str)?;
-        }
-        
-        // Else just rewrite the path as usual
-        else {
-            writeln!(out_path, "{}", &line)?;
-        }
+    // Write files to output file
+    for line in lines {
+        writeln!(output_file, "{}", action(line)).unwrap();
     }
 
     Ok(())
@@ -219,188 +78,170 @@ fn overwrite_config(config_path: &Path, release_value: bool) -> Result<()> {
 
 // - CLI functionalities
 
-fn create_game_project(path: &String, game_name: &String) -> Result<()> {
-    
-    // Prepare path
-    
-    let new_path = path.replace("/", "\\");
-    let mut game_path = PathBuf::new();
+fn create_game_project(game_path: &String, game_name: &String) -> Result<()> {
+    // Prepare paths
+    let display_game_path = PathBuf::from(game_path).join(game_name).absolutize().unwrap().to_path_buf();
+    let game_path = PathBuf::from(game_path.replace("/", "\\")).join(game_name);
+
+    println!("Creating new game project {} in directory {}", game_name, display_game_path.display());
 
     // Starting to create directories
     println!("Creating directories...");
-    game_path.push(new_path);
-    game_path.push(game_name);
 
-    game_path.push("src");
-    fs::create_dir_all(game_path.as_path()).unwrap();
-    game_path.pop();
+    // Game project
+    fs::create_dir_all(game_path.as_path())?;
 
-    game_path.push("res");
-    fs::create_dir_all(game_path.as_path()).unwrap();
-    game_path.push("models");
-    fs::create_dir_all(game_path.to_str().unwrap())?;
+    // src
+    fs::create_dir_all(game_path.join("src").as_path())?;
 
-    game_path.pop();
-    game_path.push("textures");
-    fs::create_dir_all(game_path.to_str().unwrap())?;
+    // res
+    fs::create_dir_all(game_path.join("..").as_path())?;
+    fs::create_dir_all(game_path.join("res").join("textures").as_path())?;
+    fs::create_dir_all(game_path.join("res").join("models").as_path())?;
+    fs::create_dir_all(game_path.join("res").join("audio").as_path())?;
 
-    game_path.pop();
-    game_path.push("audio");
-    fs::create_dir_all(game_path.to_str().unwrap())?;
-    game_path.pop();
-    game_path.pop();
-
-    // Get the path needed for fetching the templates
-    // Assumed pill-launcher.exe destination: /pill_engine/scripts
-    let mut template_path = std::env::current_exe()?;
-    template_path.pop();
-    template_path.pop();
-    template_path.push("crates");
-    template_path.push("pill_launcher");
-    template_path.push("res");
-    template_path.push("templates");
+    // Get templates (assuming that they are stored in res folder of pill_launcher crate)
+    let template_path = get_path(Location::Launcher).join("res").join("templates");
     
-    // Create game file in the correct directory
-    println!("Creating base game file...");
-    template_path.push("game_template.txt");
-    game_path.push("src");
-    game_path.push("game.rs");
-    create_file_from_template(&template_path, &game_path)?;
-    template_path.pop();
-    game_path.pop();
+    // Create game files
+    println!("Creating config file...");
+    let action = |line: String| -> String {
+        if line.starts_with("TITLE") { return format!("TITLE={}", game_name) }
+        if line.starts_with("WINDOW_TITLE") { return format!("WINDOW_TITLE={}", game_name) }
+        line
+    };
+    modify_file(&template_path.join("game_config_template.txt"), &game_path.join("res").join("config.ini"), action)?;
 
-    // Create lib file in the correct directory
-    println!("Creating base lib files...");
-    template_path.push("lib_template.txt");
-    game_path.push("lib.rs");
-    create_file_from_template(&template_path, &game_path)?;
-    template_path.pop();
-    game_path.pop();
-    game_path.pop();
+    println!("Creating lib file...");
+    fs::copy(template_path.join("game_lib_template.txt"), game_path.join("src").join("lib.rs"))?;
+
+    println!("Creating game file...");
+    fs::copy(template_path.join("game_template.txt"), game_path.join("src").join("game.rs"))?;
 
     // Create correct cargo.toml file in the correct directory
-    println!("Creating cargo.toml...");
-    template_path.push("game_cargo_template.txt");
-    game_path.push("Cargo.toml");
-    create_cargo_from_template(&template_path, &game_path)?;
-
-    // Create config file
-    game_path.pop();
-    println!("Creating game configuration file...");
-    create_game_config(&game_path, game_name)?;
+    println!("Creating manifest file...");
+    let action = |line: String| -> String {
+        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
+        line
+    };
+    modify_file(&template_path.join("game_cargo_template.txt"), &game_path.join("Cargo.toml"), action)?;
 
     // Success
-    println!("Project creation completed!");
+    println!("Game project creation completed!");
+
     Ok(())
 }
 
-fn run_game_project(path: &String) -> Result<()> {
-
-    // Prepare paths for line fetch from standalone's cargo.toml
-    // Assumption: pill_launcher.exe is in Pill-Engine/scripts directory
-
-    let mut standalone_path = std::env::current_exe()?;
-    standalone_path.pop();
-    standalone_path.pop();
-    standalone_path.push("crates");
-    standalone_path.push("pill_standalone");
-    standalone_path.push("cargo.toml");
-
-    let mut game_path = PathBuf::new();
-    game_path.push(path);
-
-    // Overwrite standalone's cargo.toml dependency folder for game
-    overwrite_cargo_from_template(&standalone_path, &game_path).unwrap();
-
-    // Overwrite release version about config
-    game_path.push("config.ini");
-    overwrite_config(&game_path, false).unwrap();
-    game_path.pop();
-
-    // Go to Pill-Engine and run cargo run --bin pill_standalone
-    let mut pill_engine_path = std::env::current_exe()?;
-    pill_engine_path.pop();
-    pill_engine_path.pop();
-    pill_engine_path.push("Cargo.toml");
-    cargo_run_command(&pill_engine_path, Some(&String::from("pill_standalone"))).unwrap();
-
-    // Success
-    println!("Game run succesully!");
-    Ok(())
-}
-
-fn build_game(path: &String, out_path: &String) -> Result<()> {
-
-    // Prepare paths
-    // Assumption: pill_launcher.exe is in Pill-Engine/scripts directory
-
-    let mut standalone_path = std::env::current_exe()?;
-    standalone_path.pop();
-    standalone_path.pop();
-    standalone_path.push("crates");
-    standalone_path.push("pill_standalone");
-    standalone_path.push("cargo.toml");
-
-    let mut game_path = PathBuf::new();
-    game_path.push(path);
-
-    let mut target_release_path = std::env::current_exe()?;
-    target_release_path.pop();
-    target_release_path.pop();
-    target_release_path.push("target");
-    target_release_path.push("release");
-    target_release_path.push("pill_standalone.exe");
-
-    let mut build_path = std::path::PathBuf::new();
-    build_path.push(&out_path);
-
-    // Overwrite standalone's cargo.toml dependency folder for game
-    overwrite_cargo_from_template(&standalone_path, &game_path).unwrap();
-
-    // Create build directory in game's folder
-    game_path.push("build");
-    fs::create_dir_all(&game_path)?;
-
-    // Overwrite config file in game path
-    game_path.pop();
-    game_path.push("config.ini");
-    overwrite_config(&game_path, true).unwrap();
-    game_path.pop();
-
-    // Go to Pill-Engine and run cargo build --bin pill_standalone --release command
-    let mut pill_engine_path = std::env::current_exe()?;
-    pill_engine_path.pop();
-    pill_engine_path.pop();
-    pill_engine_path.push("Cargo.toml");
-    standalone_path.pop();
-
-    cargo_build_command(&pill_engine_path, Some(&String::from("pill_standalone"))).unwrap();
-
-    // Copy released .exe to build directory
-    game_path.push("build");
-    game_path.push("final_release.exe");
-    fs::copy(&target_release_path, &game_path).unwrap();
-    game_path.pop();
-
-    // Create additional path for config.ini and resources for copying to game build directory
-    let options = CopyOptions::new();
-    let mut res_path = std::path::PathBuf::new();
-    res_path.push(&game_path);
-    res_path.pop();
-    res_path.push("config.ini");
-    game_path.push("config.ini");
-    println!("{:?}", res_path.as_path());
-    fs::copy(&res_path, &game_path)?;
-
-    game_path.pop();
-    res_path.pop();
-    res_path.push("res");
-    println!("{:?}", res_path.as_path());
+// Runs "cargo run" command on pill_standalone
+fn run_game_project(game_path: &String, compile_mode: &String) -> Result<()> {
+    // Prepare game path
+    let mut game_path = PathBuf::from(game_path);
+    if game_path.to_str().unwrap() == "." { // Use current directory absolute path if no argument is specified
+        game_path = env::current_dir().unwrap();
+    }
+    else {
+        game_path = game_path.absolutize().unwrap().to_path_buf();
+        env::set_current_dir(&game_path).unwrap(); // Change current directory path cargo will think that it is in game folder and will be access to res directory
+    }
     
-    fs_extra::dir::copy(&res_path.as_path(), &game_path, &options).unwrap();
-    println!("{:?}", out_path);
-    // Move game path to the chosen directory
-    fs_extra::dir::move_dir(&game_path, &out_path, &options).unwrap();
+    // Check if it is valid game project directory
+    if !game_path.join("Cargo.toml").exists() {
+        return Err(Error::msg("Invalid game project directory"))
+    }
+    if !game_path.join("res").join("config.ini").exists() {
+        return Err(Error::msg("Invalid game project directory"))
+    }
+
+    // Update engine project dependency in game's cargo.toml
+    let action = |line: String| -> String {
+        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
+        line
+    };
+    modify_file(&game_path.join("Cargo.toml"), &game_path.join("Cargo.toml"), action)?;
+
+    // Update game project dependency in standalone's cargo.toml
+    let action = |line: String| -> String {
+        if line.contains("pill_game") { return format!("pill_game = {{path = \"{}\"}}", game_path.to_str().unwrap().replace("\\", "/")) }
+        line
+    };
+    modify_file(&get_path(Location::Standalone).join("Cargo.toml"), &get_path(Location::Standalone).join("Cargo.toml"), action)?;
+
+    // Run cargo command
+    cargo_run_command(&get_path(Location::Standalone).join("Cargo.toml"), &compile_mode)?;
+
+    Ok(())
+}
+
+// Runs "cargo build" command on pill_standalone, clears build directory in game project folder and copy exe and res folder to it
+fn build_game_project(game_path: &String, build_path: &String, compile_mode: &String) -> Result<()> {
+    // Prepare game path
+    let mut game_path = PathBuf::from(game_path);
+    if game_path.to_str().unwrap() == "." { // Use current directory absolute path if no argument is specified
+        game_path = env::current_dir().unwrap();
+    }
+    else {
+        game_path = game_path.absolutize().unwrap().to_path_buf();
+        env::set_current_dir(&game_path).unwrap(); // Change current directory path cargo will think that it is in game folder and will be access to res directory
+    }
+
+    // Prepare build path
+    let mut build_path = PathBuf::from(build_path);
+    if build_path.to_str().unwrap() == "." { // Use current directory absolute path if no argument is specified
+        fs::create_dir_all(game_path.join("build").as_path())?; // Create build directory if it is not there
+        build_path = env::current_dir().unwrap().join("build"); 
+    }
+    else {
+        build_path = build_path.absolutize().unwrap().to_path_buf();
+    }
+
+    // Check if it is valid game project directory
+    if !game_path.join("Cargo.toml").exists() {
+        return Err(Error::msg("Invalid game project directory"))
+    }
+    if !game_path.join("res").join("config.ini").exists() {
+        return Err(Error::msg("Invalid game project directory"))
+    }
+
+    // Update engine project dependency in game's cargo.toml
+    let action = |line: String| -> String {
+        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
+        line
+    };
+    modify_file(&game_path.join("Cargo.toml"), &game_path.join("Cargo.toml"), action)?;
+
+    // Update game project dependency in standalone's cargo.toml
+    let action = |line: String| -> String {
+        if line.contains("pill_game") { return format!("pill_game = {{path = \"{}\"}}", game_path.to_str().unwrap().replace("\\", "/")) }
+        line
+    };
+    modify_file(&get_path(Location::Standalone).join("Cargo.toml"), &get_path(Location::Standalone).join("Cargo.toml"), action)?;
+
+    let engine_build_path = &get_path(Location::MainEngine).join("target").join(compile_mode).join("pill_standalone.exe");
+    let game_project_resources_path = game_path.join("res");
+
+    // Get game name from config file
+    let mut config_file = Config::default();
+    config_file.merge(config::File::with_name(game_project_resources_path.join("config.ini").to_str().unwrap())).unwrap();
+    let game_title = config_file.get_str("TITLE").expect("Cannot find value for TITLE in game config file");
+
+    // Clear build directory
+    if build_path.exists() {
+        fs::remove_dir_all(build_path.clone()).context(format!("Cannot clear build directory: {}", build_path.clone().to_str().unwrap()))?;
+    } 
+    else {
+        fs::create_dir(build_path.clone()).unwrap();
+    }
+
+    // Run cargo command
+    cargo_build_command(&get_path(Location::Standalone).join("Cargo.toml"), &compile_mode)?;
+
+    // Copy built executable to build directory and rename it according to variable in config file
+    fs::copy(&engine_build_path, &build_path.join(game_title + ".exe"))?;
+    
+    // Copy game res directory to build directory
+    let mut copy_options = CopyOptions::new();
+    copy_options.overwrite = true;
+    fs_extra::dir::copy(&game_project_resources_path, &build_path, &copy_options).context("Cannot copy game res directory")?;
 
     // Success
     println!("Game built succesully!");
@@ -408,87 +249,83 @@ fn build_game(path: &String, out_path: &String) -> Result<()> {
 }
 
 fn main() {
-    let app = App::new("Pill Engine Game Launcher")
-        .about("CLI for launching or creating game project for Pill Engine")
-        .author("Created By Mateusz Szymoński & Łukasz Zalewski");
+    let app = App::new("Pill Engine Launcher").about("Tool for managing Pill Engine game projects");
 
     // Definition of the options for the CLI
-    let action_option = Arg::new("action")
-        .short('a')
-        .long("action") 
+    let action_option = Arg::with_name("action")
+        .short("a")
+        .long("action")
         .takes_value(true)
-        .help("Define taken action: creating the game, running the game, or making final build of the game")
-        .required(true);
-
-    let name_option = Arg::new("name")
-        .short('n')
+        .possible_values(&["create", "run", "build"]) 
+        .required(true)
+        .help("Specify action to perform: creating/running/building the game project");
+        
+    let name_option = Arg::with_name("name")
+        .short("n")
         .long("name")
         .takes_value(true)
-        .help("Choose name of new game; usefull only during game project creation")
-        .default_value("NEW_GAME")
-        .required(false);
+        .required_if("action", "create")
+        .help("Specify name of new game project");
 
-    let path_option = Arg::new("path")
-        .short('p')
+    let path_option = Arg::with_name("path")
+        .short("p")
         .long("path")
         .takes_value(true)
-        .help("Pass the path for new game, or to game meant for running or building")
         .default_value(".")
-        .required(false);
-
-    let build_path_option = Arg::new("build-path")
-        .short('b')
+        .required(false)
+        .help("Specify the path for game project creating/running/building");
+        
+    let build_path_option = Arg::with_name("build-path")
+        .short("b")
         .long("build-path")
         .takes_value(true)
-        .help("Choose the path for built files; usefull only during game building process")
         .default_value(".")
+        .required(false)
+        .help("Specify game project build directory");
+
+    let compile_mode_option = Arg::with_name("compile-mode")
+        .short("c")
+        .long("compile-mode")
+        .takes_value(true)
+        .help("Specify compile mode")
+        .possible_values(&["debug", "release"]) 
+        .default_value("debug")
         .required(false);
 
     // Addition of the options to the CLI
-    let app = app.arg(action_option).arg(name_option).arg(path_option).arg(build_path_option);
+    let app = app.arg(action_option).arg(name_option).arg(path_option).arg(build_path_option).arg(compile_mode_option);
 
     // Extraction of the arguments
     let matches = app.get_matches();
 
-    let users_action = matches.value_of("action")
-        .expect("Action has to be defined");
+    // Arguments
+    let action = matches.value_of("action").expect("Action has to be specified");
+    let game_path = matches.value_of("path");
+    let game_name = matches.value_of("name");
+    let build_path = matches.value_of("build-path");
+    let compile_mode = matches.value_of("compile-mode");
 
-    let users_path = matches.value_of("path");
-
-    let users_game_name = matches.value_of("name");
-
-    let users_build_path = matches.value_of("build-path");
-
-    match users_action {
-
-        // "create" action
-        "create" => {  
-
-            let game_name = String::from(users_game_name.unwrap());
-            let game_path = String::from(users_path.unwrap());
+    match action {
+        "create" => {
+            let game_name = String::from(game_name.unwrap());
+            let game_path = String::from(game_path.unwrap());
             
-            create_game_project(&game_path, &game_name).unwrap();
-            
+            create_game_project(&game_path, &game_name).context("Failed to create new game project").unwrap();
         },
-        
-        // "run" action
         "run" => {
-            
-            let game_path = String::from(users_path.unwrap());
+            let game_path = String::from(game_path.unwrap());
+            let compile_mode = String::from(compile_mode.unwrap());
 
-            run_game_project(&game_path).unwrap();
+            run_game_project(&game_path, &compile_mode).context("Failed to run game project").unwrap();
         },
-
-        // "build" action
         "build" => {
+            let game_path = String::from(game_path.unwrap());
+            let build_path = String::from(build_path.unwrap());
+            let compile_mode = String::from(compile_mode.unwrap());
 
-            let game_path = String::from(users_path.unwrap());
-            let build_path = String::from(users_build_path.unwrap());
-
-            build_game(&game_path, &build_path).unwrap();
-
+            build_game_project(&game_path, &build_path, &compile_mode).context("Failed to build game project").unwrap();
         },
-        _ => { 
+        _ => {
             println!("Undefined action");
         }
     };

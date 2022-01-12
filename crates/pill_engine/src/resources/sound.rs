@@ -2,24 +2,21 @@ use crate::{
     engine::Engine,
     graphics::{ RendererTextureHandle }, 
     resources::{ ResourceStorage, Resource, ResourceLoadType, Material },
-    ecs::{ DeferredUpdateManagerPointer },
+    ecs::{ DeferredUpdateManagerPointer, AudioSourceComponent, SoundType, AudioManagerComponent },
     config::*,
 };
 
 use pill_core::{ PillSlotMapKey, PillTypeMapKey, PillStyle, get_type_name, EngineError };
 
-use rodio::{Source, source::Buffered, Decoder};
-use std::{collections::HashSet, io::{BufRead, Read}};
-use std::path::{ Path, PathBuf };
-use std::io::{Cursor, BufReader};
-use std::fs::{File };
+use std::{ 
+    collections::HashSet, 
+    io::{ BufRead, Read, Cursor},
+    path::{ Path, PathBuf },
+    fs::File,
+};
 use anyhow::{ Result, Context, Error };
+use rodio::{ Source, source::Buffered, Decoder };
 
-#[derive(PartialEq)]
-pub enum SoundType {
-    Sound2D,
-    Sound3D
-}
 
 pill_core::define_new_pill_slotmap_key! { 
     pub struct SoundHandle;
@@ -30,8 +27,8 @@ pub struct Sound {
     #[readonly]
     pub name: String,
     #[readonly]
-    path: PathBuf,
-    pub sound_data: Option<SoundData>
+    pub path: PathBuf,
+    pub(crate) sound_data: Option<SoundData>
 }
 
 impl Sound {
@@ -41,7 +38,7 @@ impl Sound {
             path, 
             sound_data: None
         }
-    }
+    }    
 }
 
 impl PillTypeMapKey for Sound {
@@ -54,7 +51,7 @@ impl Resource for Sound {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());    
         
-         // Check if path to sound file is correct
+        // Check if path to asset is correct
         pill_core::validate_asset_path(&self.path, &["mp3", "wav"]).context(error_message.clone())?;
 
         // Create sound data
@@ -67,6 +64,41 @@ impl Resource for Sound {
     fn get_name(&self) -> String {
         self.name.clone()
     }
+
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
+        // Find audio source components that use this sound and update them
+        let mut sinks_to_return = Vec::<(usize, SoundType)>::new();
+        
+        for scene in engine.scene_manager.scenes.iter() {
+            for audio_source_component_slot in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
+                if let Some(audio_source_component) = audio_source_component_slot.borrow_mut().as_mut() {
+                    if let Some(sound_handle) = audio_source_component.sound_handle {
+                        // If audio source component has handle to this sound
+                        if sound_handle.data() == self_handle.data() {
+                            if let Some(sink_handle) = audio_source_component.sink_handle {
+                                sinks_to_return.push((sink_handle, audio_source_component.sound_type));
+                            }
+                            else {
+                                audio_source_component.remove_sound();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Top playing and return sink handles
+        let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
+        for sink in sinks_to_return {
+            match sink.1 {
+                SoundType::Sound3D => { audio_manager.get_spatial_sink(sink.0).stop(); },
+                SoundType::Sound2D => { audio_manager.get_ambient_sink(sink.0).stop(); },
+            }
+            audio_manager.return_sink(sink.0, &sink.1);
+        }
+
+        Ok(())
+    }
 }
 
 pub struct SoundData {
@@ -75,16 +107,14 @@ pub struct SoundData {
 
 impl SoundData {
     pub fn new(path: &PathBuf) -> Result<Self> {
-
-        // Open paths to sound file
+        // Open sound file
         let mut sound_file = match File::open(path) {
             Err(err) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
-            file => file.unwrap()
+            file => file?
         };
 
-        let mut sound_data = Vec::new();
-
         // Read bytes to vector
+        let mut sound_data = Vec::new();
         sound_file.read_to_end(&mut sound_data).unwrap();
 
         // Create SoundData
@@ -92,7 +122,6 @@ impl SoundData {
             source_buffer: sound_data
         };
 
-        // Succesfully return data
         Ok(sound_data)
     }
 

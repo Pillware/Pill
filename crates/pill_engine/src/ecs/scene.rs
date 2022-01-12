@@ -13,7 +13,6 @@ use log::{debug, info};
 
 pub struct Scene {
     pub(crate) name: String,
-    pub(crate) entity_counter: usize,
     pub(crate) entities: PillSlotMap<EntityHandle, Entity>,
     pub(crate) components: PillTypeMap,
     pub(crate) bitmask_controller: BitmaskController,  
@@ -23,16 +22,10 @@ impl Scene {
     pub fn new(name: String) -> Self {  
         return Self { 
             name,
-            entity_counter: 0,
             entities: PillSlotMap::<EntityHandle, Entity>::with_key(),
             components: PillTypeMap::new(),
             bitmask_controller: BitmaskController::new(),
         };
-    }
-
-    #[cfg(feature = "game")]
-    pub(crate) fn get_counter(&mut self) -> &usize {
-        &self.entity_counter
     }
 
     pub(crate) fn get_component_storage<T>(&self) -> Result<&ComponentStorage<T>> 

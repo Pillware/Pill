@@ -25,6 +25,7 @@ pub use components::camera_component::{
 
 pub use components::audio_manager_component::{
     AudioManagerComponent,
+    SoundType,
 };
 
 pub use components::audio_listener_component::{
@@ -84,10 +85,6 @@ pub use systems::audio_system::{
 };
 
 // - Other
-
-// pub use allocator::{
-//     Allocator
-// };
 
 pub use bitmask_controller::{
     Bitmask,

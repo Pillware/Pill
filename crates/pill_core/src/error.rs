@@ -8,6 +8,10 @@ use colored::*;
 #[derive(Error, Debug)]
 pub enum EngineError<'a> {
 
+    // Config
+    #[error("Invalid {} config file \n\nSource: ", "Game".mobj_style())]
+    InvalidGameConfig(),
+
     // Scene
     #[error("There is no active {} set \n\nSource: ", "Scene".gobj_style())]
     NoActiveScene,
@@ -31,7 +35,7 @@ pub enum EngineError<'a> {
     GlobalComponentAlreadyExists(String),
     #[error("{} {} not found in {} \n\nSource: ", "GlobalComponent".gobj_style(), .0.sobj_style(), "Engine".mobj_style())]
     GlobalComponentNotFound(String),
-    #[error("{} {} is global component in {} and cannot be removed \n\nSource: ", "GlobalComponent".gobj_style(), .0.sobj_style(), "Engine".mobj_style())]
+    #[error("{} is {} that cannot be removed \n\nSource: ", .0.sobj_style(), "GlobalComponent".gobj_style())]
     GlobalComponentCannotBeRemoved(String),
 
     // System
@@ -75,6 +79,11 @@ pub enum EngineError<'a> {
     MaterialParameterSlotNotFound(String, String),
     #[error("{} slot {} does not exist \n\nSource: ", "MaterialTexture".sobj_style(), .0.name_style())]
     MaterialTextureSlotNotFound(String),
+
+    // Other
+    #[error("{} error: {} \n\nSource: ", "Engine".mobj_style(), .0)]
+    Other(String)
+
 }
 
 pub fn err_prefix() -> ColoredString {

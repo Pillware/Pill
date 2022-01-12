@@ -68,9 +68,9 @@ pub struct Renderer {
 }
 
 impl PillRenderer for Renderer {
-    fn new(window: &winit::window::Window, max_pipelines_count: usize, max_textures_count: usize, max_materials_count: usize, max_meshes_count: usize, max_cameras_count: usize) -> Self { 
+    fn new(window: &winit::window::Window, config: config::Config) -> Self { 
         info!("Initializing {}", "Renderer".mobj_style());
-        let state: State = pollster::block_on(State::new(&window, max_pipelines_count, max_textures_count, max_materials_count, max_meshes_count, max_cameras_count));
+        let state: State = pollster::block_on(State::new(&window, config));
 
         Self {
             state,
@@ -227,7 +227,7 @@ pub struct State {
 
 impl State {
     // Creating some of the wgpu types requires async code
-    async fn new(window: &winit::window::Window, max_pipelines_count: usize, max_textures_count: usize, max_materials_count: usize, max_meshes_count: usize, max_cameras_count: usize) -> Self {
+    async fn new(window: &winit::window::Window, config: config::Config) -> Self {
         let window_size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::Backends::all()); // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -276,7 +276,7 @@ impl State {
         surface.configure(&device, &surface_configuration);
 
         // Configure collections
-        let renderer_resource_storage = RendererResourceStorage::new(max_pipelines_count, max_textures_count, max_materials_count, max_meshes_count, max_cameras_count);
+        let renderer_resource_storage = RendererResourceStorage::new(config);
 
         // Create depth and color texture
         let depth_texture = RendererTexture::new_depth_texture(
