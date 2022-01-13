@@ -183,6 +183,7 @@ impl Engine {
         let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps =  1000.0 / new_frame_time;
         self.frame_delta_time = new_frame_time;
+        info!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
         debug!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
     }
 

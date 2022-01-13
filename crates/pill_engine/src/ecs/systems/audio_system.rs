@@ -6,23 +6,75 @@ use crate::{
 use pill_core::Vector3f;
 
 use anyhow::{Result, Context, Error};
-use cgmath::Vector3;
+use cgmath::{Vector3, Matrix3};
+use std::f32::consts::PI;
+
+fn get_rotation_matrix(angles: Vector3<f32>) -> Result<Matrix3<f32>> {
+    
+    // Get the angles from the vector 
+    let mut alfa = angles[0];
+    let mut beta = angles[1];
+    let mut gamma = angles[2];
+
+    // Convert from degrees to radians
+    alfa = alfa * PI / 180.0;
+    beta = beta * PI / 180.0;
+    gamma = gamma * PI / 180.0;
+
+    // Prepare rotation matrices
+    let alfa_rotation_matrix = Matrix3::new(alfa.cos(), alfa.sin(), 0.0,
+                                                        -alfa.sin(), alfa.cos(), 0.0,
+                                                        0.0, 0.0, 1.0);
+
+    let beta_rotation_matrix = Matrix3::new(beta.cos(), 0.0, -beta.sin(),
+                                                        0.0, 1.0, 0.0,
+                                                        beta.sin(), 0.0, beta.cos());
+
+    let gamma_totation_matrix = Matrix3::new(1.0, 0.0, 0.0,
+                                                        0.0, gamma.cos(), gamma.sin(),
+                                                        0.0, -gamma.sin(), gamma.cos());
+
+    // Get the final rotation matrix 
+    let rotation_matrix = alfa_rotation_matrix * beta_rotation_matrix * gamma_totation_matrix;
+    
+    // Return rotation matrix
+    Ok(rotation_matrix)
+}
 
 pub fn audio_system(engine: &mut Engine) -> Result<()> {
+
     // --- Update ear positions
     let mut left_ear_position = Vector3f::new(-1.0, 0.0, 0.0);
     let mut right_ear_position = Vector3f::new(1.0, 0.0, 0.0);
 
     // Update ear positions
     for (audio_listener, transform) in (&*engine).iterate_two_components::<AudioListenerComponent, TransformComponent>()? {
+
         if audio_listener.borrow_mut().as_mut().unwrap().enabled {
-            let transform_position = transform.borrow().as_ref().unwrap().position.clone();
-            left_ear_position = transform_position;
-            right_ear_position = transform_position;
+            
+            // Get the retotation matrix
+            let left_rotation_matrix = get_rotation_matrix(transform.borrow().as_ref().unwrap().rotation)?;
+            let right_rotation_matrix = get_rotation_matrix(-transform.borrow().as_ref().unwrap().rotation)?;
+            
+            // Get two points for left and right ear relative to the origin multiplied to rotation matrix
+            left_ear_position = left_rotation_matrix * left_ear_position;
+            right_ear_position = right_rotation_matrix * right_ear_position;
+
+            // Add the original position
+            left_ear_position += transform.borrow().as_ref().unwrap().position;
+            right_ear_position += transform.borrow().as_ref().unwrap().position;
+
             break;
         }
     }
 
+    // Update the sinks with new positions for left and right ear 
+
+    let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
+    for sink in audio_manager.spatial_sink_pool.iter_mut() {
+        sink.set_left_ear_position(left_ear_position.into());
+        sink.set_right_ear_position(right_ear_position.into());
+    }
     // Update spatial sinks ear positions
     {
         let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;

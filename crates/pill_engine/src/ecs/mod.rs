@@ -6,7 +6,6 @@ mod scene;
 mod scene_manager;
 mod system_manager;
 mod component;
-mod bitmask_controller;
 mod bitmask_map;
 mod entity_fetcher;
 
@@ -85,11 +84,6 @@ pub use systems::audio_system::{
 };
 
 // - Other
-
-pub use bitmask_controller::{
-    Bitmask,
-    BitmaskController,
-};
 
 pub use bitmask_map::{
     BitmaskMap,

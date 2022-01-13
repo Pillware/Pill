@@ -38,7 +38,7 @@ impl Sound {
             path, 
             sound_data: None
         }
-    }    
+    }  
 }
 
 impl PillTypeMapKey for Sound {
