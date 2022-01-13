@@ -291,22 +291,6 @@ impl PillGame for Game {
         another_spatial_component.borrow_mut().as_mut().unwrap().set_volume(3.0);
         another_spatial_component.borrow_mut().as_mut().unwrap().play();
 
-        // --- Tests
-        let material = engine.get_resource_mut::<Material>(&material_alpha_handle).unwrap();
-        //material.set_color("Tint", Color::new( 0.0, 0.0, 1.0));
-        //material.set_texture("Color", wut_texture_handle).unwrap();
-        //material.set_texture("Normal", wut_texture_handle).unwrap();
-        //engine.remove_resource_by_name::<Texture>("WUT").unwrap();
-        //engine.remove_resource_by_name::<Texture>("Quilted").unwrap();
-        //engine.remove_resource_by_name::<Material>("Alpha").unwrap();
-        //engine.remove_resource_by_name::<Mesh>("Monkey").unwrap();
-
-
-        //println!("{} .... {}", std::env::current_dir().unwrap().display(), PathBuf::from("../res/models/Monkey.obj").display());
-        //PathBuf::from("../res/models/Monkey.obj")
-        //println!("{}", mesh_1_path.display());
-        //std::thread::sleep(std::time::Duration::from_secs(30));
-
         Ok(())
     }
 }
