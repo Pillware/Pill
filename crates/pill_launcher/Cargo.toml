@@ -8,7 +8,7 @@ name = "PillLauncher"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "2.34.0" }
+clap = "2.34.0"
 fs_extra = "1.2.0"
 anyhow = "1.0"
 path-absolutize = "3.0.11"

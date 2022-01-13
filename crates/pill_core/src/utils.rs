@@ -102,3 +102,24 @@ pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static s
         pill_core::define_new_pill_slotmap_key! { }
     }; 
 }
+
+// --- Other ---
+
+#[inline]
+pub fn get_game_error_message(result: Result<()>) -> Option<String> {
+    if result.is_err() { 
+        let mut message = String::new();
+        for (i, error) in result.err().unwrap().chain().enumerate() {
+            let message_part = match i == 0 {
+                true => format!("Game error: {} \n", error),
+                false => format!("  {}: {} \n", i - 1, error),
+            };
+            message.push_str(message_part.as_str());
+        }
+        Some(message)
+    }
+    else {
+        None
+    }
+}
+    
