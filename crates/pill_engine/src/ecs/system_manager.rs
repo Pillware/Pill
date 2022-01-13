@@ -12,11 +12,12 @@ pub type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
 
 pub struct System {
     pub(crate) name: String,
+    pub(crate) update_phase: UpdatePhase,
     pub(crate) system_function: SystemFunction,
     pub(crate) enabled: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum UpdatePhase {
     PreGame,
     Game,
@@ -57,6 +58,7 @@ impl SystemManager {
         // Create system object
         let system_object = System {
             name: name.to_string(),
+            update_phase, 
             system_function,
             enabled: true,
         };
@@ -92,8 +94,6 @@ impl SystemManager {
 
         Ok(())
     }
-
-  
 
     pub fn enable_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
         // Find collection of systems for given update phase

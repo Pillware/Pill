@@ -155,43 +155,35 @@ impl<T> DeferredUpdateGlobalComponentRequest<T>
 }
 
 impl<T> DeferredUpdateRequest for DeferredUpdateGlobalComponentRequest<T> 
-where T: GlobalComponent<Storage = GlobalComponentStorage<T>>
+    where T: GlobalComponent<Storage = GlobalComponentStorage<T>>
 {
     fn process(&mut self, engine: &mut Engine) -> Result<()> {
         let mut component = Option::<T>::None;
         
-        // {
-        //     let component_slot = engine.global_components.0.get_mut(slice) .get_global_component_mut::<T>();
+        {
+            // Get component storage
+            let component_storage = engine.global_components.get_mut::<T>().expect("Critical: Component not registered");
 
-        //     // Get scene 
-        //     let scene = engine.scene_manager.get_scene_mut(self.scene_handle).unwrap();
-
-        //     // Get component storage
-        //     let component_storage = scene.get_component_storage_mut::<T>().expect("Critical: Component not registered");
-
-        //     // Get component slot
-        //     let mut component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap().borrow_mut();
+            // Get component slot
+            let component_slot = &mut component_storage.data;
         
-        //     // Take component from slot
-        //     component = Some(component_slot.take().expect("Critical: Component is None"));
-        // }
+            // Take component from slot
+            component = Some(component_slot.take().expect("Critical: Component is None"));
+        }
         
-        // // Process
-        // component.as_mut().unwrap().deferred_update(engine, self.request_variant).context(format!("Deferred update of {} {} failed", "Component".gobj_style(), get_type_name::<T>().sobj_style()))?;
+        // Process
+        component.as_mut().unwrap().deferred_update(engine, self.request_variant).context(format!("Deferred update of {} {} failed", "GlobalComponent".gobj_style(), get_type_name::<T>().sobj_style()))?;
 
-        // {
-        //     // Get scene 
-        //     let scene = engine.scene_manager.get_scene_mut(self.scene_handle).unwrap();
+        {
+            // Get component storage
+            let component_storage = engine.global_components.get_mut::<T>().expect("Critical: Component not registered");
 
-        //     // Get component storage
-        //     let component_storage = scene.get_component_storage_mut::<T>().expect("Critical: Component not registered");
-
-        //     // Get component slot
-        //     let mut component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap().borrow_mut();
+            // Get component slot
+            let component_slot = &mut component_storage.data;
         
-        //     // Put component back to slot
-        //     component_slot.insert(component.take().unwrap());
-        // }
+            // Put component back to slot
+            component_slot.insert(component.take().unwrap());
+        }
 
         Ok(())
     }

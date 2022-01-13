@@ -12,7 +12,7 @@ use pill_core::{
     PillTypeMap,
     get_type_name, 
     get_value_type_name, 
-    get_enum_variant_type_name, 
+    get_enum_variant_type_name, get_game_error_message, 
 };
 
 use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell };
@@ -28,7 +28,7 @@ pub type Key = VirtualKeyCode;
 pub type Mouse = MouseButton;
 
 pub trait PillGame { 
-    fn start(&self, engine: &mut Engine);
+    fn start(&self, engine: &mut Engine) -> Result<()>;
 }
 
 pub struct Engine { 
@@ -137,14 +137,25 @@ impl Engine {
         self.create_default_resources().context("Failed to create default resources")?;
 
         // Initialize game
-        let game = self.game.take().ok_or(EngineError::Other("Cannot get game".to_string()))?; 
-        game.start(self);
+        let game = self.game.take().ok_or(EngineError::Other("Cannot get game".to_string()))?;
+        let stop_on_game_errors = self.config.get_bool("PANIC_ON_GAME_ERRORS").unwrap_or(PANIC_ON_GAME_ERRORS);
+        let result = game.start(self);
+        match stop_on_game_errors {
+            true => result.context(format!("{} error", "Game".mobj_style()))?,
+            false => { 
+                if let Some(message) = get_game_error_message(result) {
+                    error!("{}", message);
+                } 
+            },
+        }
         self.game = Some(game);
 
         Ok(())
     }
 
     pub fn update(&mut self, delta_time: std::time::Duration) {
+        let stop_on_game_errors = self.config.get_bool("PANIC_ON_GAME_ERRORS").unwrap_or(PANIC_ON_GAME_ERRORS);
+        
         // Run systems
         let update_phase_count = self.system_manager.update_phases.len();
         for i in (0..update_phase_count).rev() {
@@ -153,12 +164,22 @@ impl Engine {
                 let system = &self.system_manager.update_phases[i][j];
                 if !system.enabled { continue; }
                 let system_name = system.name.to_string();
-                //debug!("{} {} starting", "System".gobj_style(), system_name.sobj_style()); 
-                (system.system_function)(self)
-                    .context(format!("{}", EngineError::SystemUpdateFailed(system_name, get_enum_variant_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)))).unwrap();
-            } //self.confing.get_bool("PANIC_ON_GAME_SYSTEM_ERROR")
+
+                if system.update_phase.clone() == UpdatePhase::Game && stop_on_game_errors {
+                    let mut result = (system.system_function)(self);
+                    result = result.context(EngineError::SystemUpdateFailed(system_name, get_enum_variant_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)));
+                    if let Some(message) = get_game_error_message(result) {
+                        error!("{}", message);
+                    }
+                }
+                else {
+                    let result = (system.system_function)(self);
+                    result.context(EngineError::SystemUpdateFailed(system_name, get_enum_variant_type_name(self.system_manager.update_phases.get_index(i).unwrap().0))).unwrap();
+                }
+            }
         }
  
+        // Update FPS counter
         let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps =  1000.0 / new_frame_time;
         self.frame_delta_time = new_frame_time;
@@ -179,7 +200,6 @@ impl Engine {
     pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyboardInput) {
         if let Some(key) = keyboard_input.virtual_keycode {
             let state: ElementState = keyboard_input.state;
-
             let input_event = InputEvent::KeyboardKey { key: key, state: state };
             self.input_queue.push_back(input_event);
             debug!("Got new keyboard key input: {:?} {:?}", key, state);
@@ -321,7 +341,7 @@ impl Engine {
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Get component
-        let component = &self.global_components.get::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data;
+        let component = self.global_components.get::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data.as_ref().unwrap();
         
         Ok(component)
     }
@@ -330,7 +350,7 @@ impl Engine {
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Get component
-        let component = &mut self.global_components.get_mut::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data;
+        let component = self.global_components.get_mut::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data.as_mut().unwrap();
 
         Ok(component)
     }
