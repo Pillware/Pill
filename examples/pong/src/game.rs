@@ -98,22 +98,11 @@ impl PillGame for Game {
 
         let active_scene = engine.get_active_scene_handle().unwrap();
 
-        // --- Add custom sounds (for testing purposed - for deletion later!)
-        //let mut sound_path = std::path::PathBuf::new();
-
-        //sound_path.push(&self.path);
-        // sound_path.push("res/audio/vista-point.mp3");
-        // let sound_gothic_handle = engine.add_resource::<Sound>(Sound::new("Vista Point", sound_path.clone())).unwrap();
-        
-        // sound_path.pop();
-        // sound_path.push("croket-theme.mp3");
-        // let sound_waves_handle = engine.add_resource::<Sound>(Sound::new("Croket Theme", sound_path.clone())).unwrap();
-        
-        // sound_path.pop();
-        // sound_path.push("ocean-waves.mp3");
-        // let sound_waves_handle = engine.add_resource::<Sound>(Sound::new("Ocean Waves", sound_path.clone())).unwrap();
-
-
+        // --- Add custom sounds
+        let mut sound_path = std::path::PathBuf::new();
+        let sound_gothic_handle = engine.add_resource::<Sound>(Sound::new("Vista Point", "./res/audio/vista-point.mp3".into())).unwrap();
+        let croket_theme_handle = engine.add_resource::<Sound>(Sound::new("Croket Theme", "./res/audio/croket-theme.mp3".into())).unwrap();
+        let sound_waves_handle = engine.add_resource::<Sound>(Sound::new("Ocean Waves", "./res/audio/ocean-waves.mp3".into())).unwrap();
 
         // --- Create camera entity
         let camera_holder = engine.create_entity(active_scene).unwrap();
@@ -266,6 +255,7 @@ impl PillGame for Game {
             .material(&material_wall_handle)
             .build();
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene_handle, sphere_entity, mesh_rendering_3).unwrap();
+        engine.add_component_to_entity::<AudioSourceComponent>(active_scene_handle, sphere_entity, AudioSourceComponent::new()).unwrap();
 
 
         // --- Create entity
@@ -287,26 +277,19 @@ impl PillGame for Game {
         engine.add_component_to_entity::<MeshRenderingComponent>(active_scene_handle, bunny_entity, mesh_rendering_4).unwrap();
         engine.add_component_to_entity::<RotationComponent>(active_scene_handle, bunny_entity, RotationComponent{}).unwrap();
         
-        // Add ambient sound
-        // let spatial_component = engine.get_component_by_entity::<AudioSourceComponent>(cube_entity, active_scene_handle).unwrap().unwrap();
-        // spatial_component.borrow_mut().as_mut().unwrap().pass_handles(cube_entity.clone(), active_scene_handle.clone());
-        // spatial_component.borrow_mut().as_mut().unwrap().add_new_sound(sound_gothic_handle);
-        // spatial_component.borrow_mut().as_mut().unwrap().set_sound_volume(3.5);
+        // Add first sound
+        let spatial_component = engine.get_component_by_entity::<AudioSourceComponent>(cube_entity, active_scene_handle).unwrap().unwrap();
+        spatial_component.borrow_mut().as_mut().unwrap().pass_handles(cube_entity.clone(), active_scene_handle.clone());
+        spatial_component.borrow_mut().as_mut().unwrap().set_sound(sound_gothic_handle);
+        spatial_component.borrow_mut().as_mut().unwrap().set_volume(5.0);
+        spatial_component.borrow_mut().as_mut().unwrap().play();
 
-
-    //     // Simple audio test
-    //     // Add soundtrack to global audio component
-    //     let ambient_sound = (&*engine).get_resource_by_name::<Sound>("Vista Point").unwrap().clone();
-    //     let world_audio_component = (&*engine).get_global_component::<WorldAudioComponent>().unwrap();
-    //     world_audio_component.add_new_sound(ambient_sound.sound_data.as_ref().unwrap().get_source_sound());
-    //    // world_audio_component.add_new_sound(sound_gothic_handle);
-
-    //     // Add sound to audio source component
-    //     for (sound_source, transform) in (&*engine).iterate_two_components::<AudioSourceComponent, TransformComponent>().unwrap() {
-    //         let ocean_sound = (&*engine).get_resource_by_name::<Sound>("Ocean Waves").unwrap().clone();
-    //         sound_source.borrow().as_ref().unwrap().add_new_sound(ocean_sound.sound_data.as_ref().unwrap().get_source_sound());
-    //         sound_source.borrow().as_ref().unwrap().set_source_volume(5.0);
-    //     }
+        // Add second sound
+        let another_spatial_component = engine.get_component_by_entity::<AudioSourceComponent>(sphere_entity, active_scene_handle).unwrap().unwrap();
+        another_spatial_component.borrow_mut().as_mut().unwrap().pass_handles(sphere_entity.clone(), active_scene_handle.clone());
+        another_spatial_component.borrow_mut().as_mut().unwrap().set_sound(sound_waves_handle);
+        another_spatial_component.borrow_mut().as_mut().unwrap().set_volume(3.0);
+        another_spatial_component.borrow_mut().as_mut().unwrap().play();
 
         // --- Tests
         let material = engine.get_resource_mut::<Material>(&material_alpha_handle).unwrap();
@@ -427,28 +410,4 @@ fn rotation_movement_system(engine: &mut Engine) -> Result<()> {
     }
 
     Ok(())   
-}
-
-fn sound_pause_system(engine: &mut Engine) -> Result<()> {
-
-    // let time = engine.get_global_component::<TimeComponent>().unwrap().time;
-    // if time > 10000.0 && time < 30000.0 {
-    //     for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
-    //         source.borrow_mut().as_mut().unwrap().pause_sound();
-    //     }
-    // }
-
-    // if time >  30000.0 {
-    //     for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
-    //         source.borrow_mut().as_mut().unwrap().play_sound();
-    //     }
-    // }
-
-    // if time > 35000.0 {
-    //     for source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
-    //         source.borrow_mut().as_mut().unwrap().clear_sound_playlist();
-    //     }
-    // }
-
-    Ok(())
 }

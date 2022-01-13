@@ -96,8 +96,8 @@ impl AudioSourceComponent {
         }
     }
 
-    pub fn set_sound(&mut self, volume: f32) {
-        self.volume = volume;
+    pub fn set_sound(&mut self, sound_handle: SoundHandle) {
+        self.sound_handle = Some(sound_handle);
         if self.sink_handle.is_some() {
             self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_VOLUME);
         }
