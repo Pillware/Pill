@@ -6,7 +6,23 @@ use crate::{
 use pill_core::PillSlotMapKeyData;
 
 use std::num::NonZeroU32;
-use lazy_static::lazy_static;
+
+// --- ECS ---
+
+pub const MAX_ENTITY_COUNT: usize = 1000;
+pub const MAX_CONCURRENT_2D_SOUND_COUNT: usize = 10;
+pub const MAX_CONCURRENT_3D_SOUND_COUNT: usize = 10;
+pub const MAX_CAMERA_COUNT: usize = 10;
+
+// --- Resources ---
+
+pub const RESOURCE_VERSION_LIMIT: usize = 255;
+
+pub const MAX_PIPELINE_COUNT: usize = 10;
+pub const MAX_TEXTURE_COUNT: usize = 10;
+pub const MAX_MATERIAL_COUNT: usize = 10;
+pub const MAX_MESH_COUNT: usize = 10;
+pub const MAX_SOUND_COUNT: usize = 10;
 
 // Convention: All resource names starting with "PillDefault" are restricted, cannot be added and removed from game
 pub const DEFAULT_RESOURCE_PREFIX: &str = "PillDefault";
@@ -67,11 +83,4 @@ pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMat
 pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle) {
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
-
-// This will be initialized in runtime instead of compile-time 
-// (this is the cost of not using const function, const functions do not allow for generic variables bound by traits different than Sized)
-lazy_static! { 
-    
-}
-
 

@@ -69,7 +69,7 @@ pub enum RendererError {
 // --- Renderer trait definition ---
 
 pub trait PillRenderer { 
-    fn new(window: &winit::window::Window, max_pipelines_count: usize, max_textures_count: usize, max_materials_count: usize, max_meshes_count: usize, max_cameras_count: usize) -> Self where Self: Sized;
+    fn new(window: &winit::window::Window, config: config::Config) -> Self where Self: Sized;
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
     fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8],) -> Result<()>; // [TODO] This can be later changed to create_pipeline, if shader parsing will be implemeneted

@@ -1,4 +1,4 @@
-use crate::resources::Resource;
+use crate::{resources::Resource, config::RESOURCE_VERSION_LIMIT};
 
 use pill_core::{ PillSlotMap, PillSlotMapKey, PillTwinMap };
 
@@ -11,11 +11,9 @@ pub struct ResourceStorage<T: Resource> {
 }
 
 impl<T: Resource> ResourceStorage<T> {
-    pub fn new() -> Self {  
-        let capacity = 100;
-        let version_limit = 255;
+    pub fn new(max_resource_count: usize) -> Self {  
         Self { 
-            data: PillSlotMap::<T::Handle, Option<T>>::with_capacity_and_key_and_version_limit(capacity, version_limit).unwrap(),
+            data: PillSlotMap::<T::Handle, Option<T>>::with_capacity_and_key_and_version_limit(max_resource_count, RESOURCE_VERSION_LIMIT as u32).unwrap(),
             mapping: PillTwinMap::<String, T::Handle>::new(),
         }
     }

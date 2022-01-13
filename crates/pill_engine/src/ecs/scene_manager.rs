@@ -4,7 +4,11 @@ use crate::{
 
 use pill_core::{ EngineError, get_type_name, PillSlotMapKey };
 
-use std::{any::type_name, collections::HashMap, cell::RefCell, any::Any, any::TypeId, process::Command};
+use std::{ 
+    any::{ type_name, Any, TypeId },
+    collections::HashMap, 
+    cell::RefCell
+};
 use anyhow::{ Result, Context, Error };
 use boolinator::Boolinator;
 
@@ -68,7 +72,6 @@ impl SceneManager {
     }   
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
-
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
 

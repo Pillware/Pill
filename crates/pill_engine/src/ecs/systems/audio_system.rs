@@ -1,7 +1,9 @@
 use crate::{
     engine::Engine,
-    ecs::{ ComponentStorage, Component, CameraComponent, EntityHandle, TransformComponent, AudioListenerComponent, AudioSourceComponent, scene, AudioManagerComponent}
+    ecs::{ EntityHandle, TransformComponent, AudioListenerComponent, AudioSourceComponent, scene, AudioManagerComponent, SoundType }, 
 };
+
+use pill_core::Vector3f;
 
 use anyhow::{Result, Context, Error};
 use cgmath::{Vector3, Matrix3};
@@ -40,13 +42,12 @@ fn get_rotation_matrix(angles: Vector3<f32>) -> Result<Matrix3<f32>> {
 }
 
 pub fn audio_system(engine: &mut Engine) -> Result<()> {
-    
-    // --- Update the position for left and right ear in AudioListenerComponent
 
-    let mut left_ear_position = Vector3::<f32>::new(-1.0, 0.0, 0.0);
-    let mut right_ear_position = Vector3::<f32>::new(1.0, 0.0, 0.0);
+    // --- Update ear positions
+    let mut left_ear_position = Vector3f::new(-1.0, 0.0, 0.0);
+    let mut right_ear_position = Vector3f::new(1.0, 0.0, 0.0);
 
-    // Fetch the entity, which contains both Transform and AudioListenerComponent 
+    // Update ear positions
     for (audio_listener, transform) in (&*engine).iterate_two_components::<AudioListenerComponent, TransformComponent>()? {
 
         if audio_listener.borrow_mut().as_mut().unwrap().get_enabled() {
@@ -74,59 +75,58 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
         sink.set_left_ear_position(left_ear_position.into());
         sink.set_right_ear_position(right_ear_position.into());
     }
-
-    // --- Update the position for each sound emitter represented by entity containing AudioSourceComponent
-
-    // Fetch the entities, which contain both Tranform and AudioListenerComponent 
+    // Update spatial sinks ear positions
+    {
+        let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
+        for sink in audio_manager.spatial_sink_pool.iter_mut() {
+            sink.set_left_ear_position(left_ear_position.into());
+            sink.set_right_ear_position(right_ear_position.into());
+        }
+    }
+   
+    // Update emitter position in all sinks based on transform components of entities to which audio source components are added
     for (audio_source, transform) in (&*engine).iterate_two_components::<AudioSourceComponent, TransformComponent>()? {
-
-        // Update the position with the function within each audio source 
-        audio_source.borrow_mut().as_mut().unwrap().set_source_position(transform.borrow().as_ref().unwrap().position.clone());
+        let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+        if let Some(index) = audio_source.borrow_mut().as_mut().unwrap().sink_handle {
+            audio_manager.get_spatial_sink(index).set_emitter_position(transform.borrow().as_ref().unwrap().position.clone().into());
+        }
     } 
 
-    // --- Return free sinks back to AudioManager
+    // --- Return free sinks to AudioManager
+    let mut sinks_to_return = Vec::<(usize, SoundType)>::new();
 
-    // Prepare vectors for returning free indexes
-    let mut ambient_sink_pool = Vec::<usize>::new();
-    let mut spatial_sink_pool = Vec::<usize>::new();
-
-    // Iterate over each audio source
+    // Iterate over each audio source and find sinks that stopped playing
+    let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
     for audio_source in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
+        // Check if the audio source has sink handle assigned
+        if let Some(sink_handle) = audio_source.borrow().as_ref().unwrap().sink_handle {
+            // Check if is playing
+            let sound_type = audio_source.borrow().as_ref().unwrap().sound_type.clone();
+            let playing = match sound_type {
+                SoundType::Sound2D => {
+                    let sink = audio_manager.get_ambient_sink(sink_handle);
+                    !sink.is_paused()
+                },
+                SoundType::Sound3D => {
+                    let sink = audio_manager.get_spatial_sink(sink_handle);
+                    !sink.is_paused()
+                },
+            };
 
-        // Check if the audio source has sink handle assigned; if not, continue looking over other sources
-        if !audio_source.borrow().as_ref().unwrap().has_sink_handle() {
-            continue;
-        }
+            if !playing {
+                // Return sink handle
+                let sink_handle = audio_source.borrow_mut().as_mut().unwrap().return_sink().unwrap();
+                sinks_to_return.push((sink_handle, sound_type));
 
-        // Check if the audio source is playing any sound; if yes, continue looking over other sources
-        if !audio_source.borrow_mut().as_mut().unwrap().get_is_sound_queue_empty() {
-            continue;
-        }
-
-        // Return back the handle as the index to the pool of free indexes used for sink assignment
-        let handle = audio_source.borrow_mut().as_mut().unwrap().get_back_sink_handle();
-        match audio_source.borrow().as_ref().unwrap().is_spatial() {
-            true => {
-                spatial_sink_pool.push(handle.unwrap());
-            },
-            false => {
-                ambient_sink_pool.push(handle.unwrap());
             }
         }
     }
 
-    // Get the audio manager
+    // Return sink handles
     let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
-
-    // Return back the indexes
-    for index in ambient_sink_pool {
-        audio_manager.return_ambient_sink_handle(index);
+    for sink in sinks_to_return {
+        audio_manager.return_sink(sink.0, &sink.1);
     }
 
-    for index in spatial_sink_pool {
-        audio_manager.return_spatial_sink_handle(index);
-    }
-
-    // Success
     Ok(())
 }

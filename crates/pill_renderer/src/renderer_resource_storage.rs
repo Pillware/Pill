@@ -16,6 +16,11 @@ use pill_engine::internal::{
     RendererTextureHandle, 
 };
 
+pub const MAX_PIPELINE_COUNT: usize = 10;
+pub const MAX_TEXTURE_COUNT: usize = 10;
+pub const MAX_MATERIAL_COUNT: usize = 10;
+pub const MAX_MESH_COUNT: usize = 10;
+pub const MAX_CAMERA_COUNT: usize = 10;
 
 pub struct RendererResourceStorage {
     pub(crate) pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>,
@@ -25,14 +30,20 @@ pub struct RendererResourceStorage {
     pub(crate) cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>,
 }
 
-impl RendererResourceStorage { // [TODO] move magic values to config
-    pub fn new(max_pipelines_count: usize, max_textures_count: usize, max_materials_count: usize, max_meshes_count: usize, max_cameras_count: usize) -> Self {
+impl RendererResourceStorage {
+    pub fn new(config: config::Config) -> Self {
+        let max_pipeline_count = config.get_int("MAX_PIPELINE_COUNT").unwrap_or(MAX_PIPELINE_COUNT as i64) as usize;
+        let max_texture_count = config.get_int("MAX_TEXTURE_COUNT").unwrap_or(MAX_TEXTURE_COUNT as i64) as usize;
+        let max_material_count = config.get_int("MAX_MATERIAL_COUNT").unwrap_or(MAX_MATERIAL_COUNT as i64) as usize;
+        let max_mesh_count = config.get_int("MAX_MESH_COUNT").unwrap_or(MAX_MESH_COUNT as i64) as usize;
+        let max_camera_count = config.get_int("MAX_CAMERA_COUNT").unwrap_or(MAX_CAMERA_COUNT as i64) as usize;
+
         RendererResourceStorage {
-            pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(max_pipelines_count), 
-            textures: PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(max_textures_count),
-            materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(max_materials_count),
-            meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(max_meshes_count),
-            cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(max_cameras_count),
+            pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(max_pipeline_count), 
+            textures: PillSlotMap::<RendererTextureHandle, RendererTexture>::with_capacity_and_key(max_texture_count),
+            materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(max_material_count),
+            meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(max_mesh_count),
+            cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(max_camera_count),
         }
     }
 }
