@@ -50,7 +50,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
     // Update ear positions
     for (audio_listener, transform) in (&*engine).iterate_two_components::<AudioListenerComponent, TransformComponent>()? {
 
-        if audio_listener.borrow_mut().as_mut().unwrap().get_enabled() {
+        if audio_listener.borrow_mut().as_mut().unwrap().enabled {
             
             // Get the retotation matrix
             let left_rotation_matrix = get_rotation_matrix(transform.borrow().as_ref().unwrap().rotation)?;

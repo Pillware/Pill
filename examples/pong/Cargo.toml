@@ -5,7 +5,7 @@ edition = "2018"
 resolver = "2"
 
 [dependencies]
-pill_engine = {path = "D:/Programming/Rust/pill_project/Pill-Engine/crates/pill_engine", features = ["game"]}
+pill_engine = {path = "D:/Programming/Rust/Pill-Engine/crates/pill_engine", features = ["game"]}
 cgmath = "0.18"
 rand = "0.8.4"
 
