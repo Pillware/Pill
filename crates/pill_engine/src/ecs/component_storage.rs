@@ -25,13 +25,13 @@ impl<T> ComponentStorage<T> {
 // --- Global component storage ---
 
 pub struct GlobalComponentStorage<T> {
-    pub data: T,
+    pub data: Option<T>,
 }
 
 impl<T> GlobalComponentStorage<T> {
     pub fn new(data: T) -> Self {  
         Self { 
-            data,
+            data: Some(data),
         }
     }
 }

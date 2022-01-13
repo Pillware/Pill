@@ -68,7 +68,7 @@ impl Resource for TestResource {
 pub struct Game { }   
 
 impl PillGame for Game {
-    fn start(&self, engine: &mut Engine) {
+    fn start(&self, engine: &mut Engine) -> Result<()> {
         println!("Let's play pong"); 
 
         // Create scene
@@ -306,6 +306,8 @@ impl PillGame for Game {
         //PathBuf::from("../res/models/Monkey.obj")
         //println!("{}", mesh_1_path.display());
         //std::thread::sleep(std::time::Duration::from_secs(30));
+
+        Ok(())
     }
 }
 

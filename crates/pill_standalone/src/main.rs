@@ -58,12 +58,12 @@ fn main() {
     info!("Initializing {}", "Standalone".mobj_style());
     
     // Read window config
-    let window_title = config.get_str("WINDOW_TITLE").context(format!("{}", EngineError::InvalidGameConfig())).unwrap(); 
+    let window_title = config.get_str("WINDOW_TITLE").context(EngineError::InvalidGameConfig()).unwrap(); 
     let window_width = config.get_int("WINDOW_WIDTH").unwrap_or(1280) as u32;
     let window_height = config.get_int("WINDOW_HEIGHT").unwrap_or(720) as u32;
     let window_fullscreen = config.get_bool("WINDOW_FULLSCREEN").unwrap_or(false);
 
-    let default_icon = include_bytes!("../res/icon.ico");
+    let default_icon_bytes = include_bytes!("../res/icon.raw");
     let icon_path = resource_folder_path.join("icon.ico"); // Icon has to in res folder of the game and has to be named icon.ico
     let window_icon = match icon_path.exists() {
         true => match winit::window::Icon::from_path(icon_path, None) {
@@ -73,7 +73,7 @@ fn main() {
                 None 
             }
         },
-        false => match winit::window::Icon::from_rgba(default_icon.to_vec(), 128, 128) {
+        false => match winit::window::Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128) { 
             Ok(icon) => Some(icon),
             Err(_) => { 
                 warn!("Failed to load window icon"); 

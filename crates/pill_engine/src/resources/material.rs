@@ -57,7 +57,7 @@ impl MaterialParameterMap {
 
     pub fn get_scalar(&self, parameter_name: &str) -> Result<f32> {
         let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Scalar".to_string());
-        match self.data.get(parameter_name).context(format!("{}", error))? {
+        match self.data.get(parameter_name).context(error.clone())? {
             MaterialParameter::Scalar(v) => match v {
                 Some(vv) => Ok(vv.clone()),
                 None => panic!(),
@@ -68,7 +68,7 @@ impl MaterialParameterMap {
 
     pub fn get_bool(&self, parameter_name: &str) -> Result<bool> {
         let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Bool".to_string());
-        match self.data.get(parameter_name).context(format!("{}", error))? {
+        match self.data.get(parameter_name).context(error.clone())? {
             MaterialParameter::Bool(v) => match v {
                 Some(vv) => Ok(vv.clone()),
                 None => panic!(),
@@ -79,7 +79,7 @@ impl MaterialParameterMap {
    
     pub fn get_color(&self, parameter_name: &str) -> Result<Color> {
         let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Color".to_string());
-        match self.data.get(parameter_name).context(format!("{}", error))? {
+        match self.data.get(parameter_name).context(error.clone())? {
             MaterialParameter::Color(v) => match v {
                 Some(vv) => Ok(vv.clone()),
                 None => panic!(),
@@ -90,7 +90,7 @@ impl MaterialParameterMap {
 
     pub fn set_parameter(&mut self, parameter_name: &str, value: MaterialParameter) -> Result<()> {
         let error = Error::new(EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), pill_core::get_enum_variant_type_name(&value).to_string()));
-        let parameter = self.data.get_mut(parameter_name).context(format!("{}", error))?;
+        let parameter = self.data.get_mut(parameter_name).context(error)?;
 
         if pill_core::enum_variant_eq::<MaterialParameter>(&parameter, &value) {
             *parameter = value; 

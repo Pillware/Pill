@@ -5,7 +5,7 @@ use thiserror::Error;
 use colored::*;
 
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum EngineError<'a> {
 
     // Config

@@ -27,8 +27,11 @@ fn main() {
         let icon_path = PathBuf::from(icon_path).join("res").join("icon.ico");
 
         if icon_path.exists() {
-            windows_resource.set_icon(icon_path.to_str().unwrap());
-            windows_resource.compile().unwrap();
-        }   
+            windows_resource.set_icon(icon_path.to_str().unwrap());          
+        }  
+        else {
+            windows_resource.set_icon("./res/icon.ico");
+        }
+        windows_resource.compile().unwrap();
     }
 }

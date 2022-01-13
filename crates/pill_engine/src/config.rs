@@ -7,6 +7,10 @@ use pill_core::PillSlotMapKeyData;
 
 use std::num::NonZeroU32;
 
+// --- General ---
+
+pub const PANIC_ON_GAME_ERRORS: bool = true;
+
 // --- ECS ---
 
 pub const MAX_ENTITY_COUNT: usize = 1000;
