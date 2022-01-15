@@ -94,31 +94,4 @@ impl SystemManager {
 
         Ok(())
     }
-
-    pub fn enable_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
-        // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
-
-        // Get system object
-        let system_object = system_collection.get_mut(name).ok_or(Error::new(EngineError::SystemNotFound(name.to_string(), format!("{}", update_phase))))?;
-
-        // Enable system
-        system_object.enabled = true;
-
-        Ok(())
-    }
-
-    pub fn disable_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
-        // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
-
-        // Get system object
-        let system_object = system_collection.get_mut(name).ok_or(Error::new(EngineError::SystemNotFound(name.to_string(), format!("{}", update_phase))))?;
-
-        // Enable system
-        system_object.enabled = false;
-        
-        Ok(())
-    }
-
 }

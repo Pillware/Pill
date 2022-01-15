@@ -6,16 +6,16 @@ use pill_renderer;
 
 use anyhow::{ Error, Result, Context };
 use winit::{
-    event::{ Event, WindowEvent }, 
+    event::{ Event, WindowEvent, DeviceEvent }, 
     platform::windows::{ WindowBuilderExtWindows, IconExtWindows },
 };
 use std::{
-    io::{Write, BufReader, BufRead}, 
+    io::{ Write, BufReader, BufRead }, 
     fs::File, 
     env, 
     collections::HashMap, 
-    path::PathBuf}
-;
+    path::PathBuf
+};
 use log::{ debug, info, warn };
 
 fn main() {
@@ -122,6 +122,21 @@ fn main() {
                 window.request_redraw();
             }
 
+            // Handle device events
+            Event::DeviceEvent {
+                ref event,
+                ..
+            } => {
+                match event {
+                    DeviceEvent::MouseMotion { 
+                        delta, 
+                    } => {
+                        engine.pass_mouse_motion_input(delta);
+                    },
+                    _ => {}
+                }
+            }
+
             // Handle window events
             Event::WindowEvent {
                 ref event,
@@ -129,51 +144,38 @@ fn main() {
             } 
             if window_id == window.id() => {
                 match event {        
-
-                    // Pass keyboard input to engine
-                    WindowEvent::KeyboardInput { 
+                    WindowEvent::KeyboardInput { // Pass keyboard input to engine
                         input,
                         .. // Skip other
                     } => { 
                         engine.pass_keyboard_key_input(&input);
                     },
-
-                    // Pass mouse key input to engine
-                    WindowEvent::MouseInput { 
+                    WindowEvent::MouseInput {   // Pass mouse key input to engine
                         button,
                         state,
                         .. // Skip other
                     } => { 
                         engine.pass_mouse_key_input( &button, &state);
                     },
-
-                    // Pass mouse scroll input to engine
-                    WindowEvent::MouseWheel { 
+                    WindowEvent::MouseWheel { // Pass mouse scroll input to engine
                         delta,
                         .. // Skip other
                     } => { 
                         engine.pass_mouse_wheel_input(&delta);
                     },
-
-                    // Pass mouse motion input to engine
-                    WindowEvent::CursorMoved {
+                    WindowEvent::CursorMoved { // Pass mouse motion input to engine
                         position,
                         .. // Skip other
                     }=> { 
-                        engine.pass_mouse_motion_input(&position);
+                        engine.pass_mouse_position_input(&position);
                     },
-
-                    // Close window
-                    WindowEvent::CloseRequested => {
+                    WindowEvent::CloseRequested => { // Close window
                         engine.shutdown();
                         *control_flow = winit::event_loop::ControlFlow::Exit
                     },
-
-                    // Resize window
-                    WindowEvent::Resized(physical_size) => {
+                    WindowEvent::Resized(physical_size) => { // Resize window
                         engine.resize(*physical_size);
                     },
-
                     _ => {}
                 }
             }

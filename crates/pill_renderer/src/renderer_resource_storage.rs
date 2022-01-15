@@ -31,7 +31,7 @@ pub struct RendererResourceStorage {
 }
 
 impl RendererResourceStorage {
-    pub fn new(config: config::Config) -> Self {
+    pub fn new(config: &config::Config) -> Self {
         let max_pipeline_count = config.get_int("MAX_PIPELINE_COUNT").unwrap_or(MAX_PIPELINE_COUNT as i64) as usize;
         let max_texture_count = config.get_int("MAX_TEXTURE_COUNT").unwrap_or(MAX_TEXTURE_COUNT as i64) as usize;
         let max_material_count = config.get_int("MAX_MATERIAL_COUNT").unwrap_or(MAX_MATERIAL_COUNT as i64) as usize;

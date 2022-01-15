@@ -15,7 +15,8 @@ pub enum InputEvent {
     KeyboardKey { key: VirtualKeyCode, state: ElementState },
     MouseButton {  key: MouseButton, state: ElementState },
     MouseWheel { delta: MouseScrollDelta },
-    MouseMotion { position: PhysicalPosition<f64> }
+    MouseMotion { delta: (f64, f64) },
+    MousePosition { position: PhysicalPosition<f64> }
 }
 
 pub struct InputComponent {
@@ -31,14 +32,13 @@ pub struct InputComponent {
 
     // Mouse positions
     pub(crate) current_mouse_position: PhysicalPosition<f64>,
-    pub(crate) previous_mouse_position: PhysicalPosition<f64>,
+
+    pub(crate) current_mouse_motion: (f64, f64),
 
     // Mouse scroll wheels delta
     pub(crate) current_mouse_scroll_line_delta: (f32, f32),
-    pub(crate) previous_mouse_scroll_line_delta: (f32, f32),
 
     pub(crate) current_mouse_scroll_delta: PhysicalPosition<f64>,
-    pub(crate) previous_mouse_scroll_delta: PhysicalPosition<f64>,
 }
 
 impl InputComponent {
@@ -52,26 +52,17 @@ impl InputComponent {
             released_mouse_buttons: [false; 3],
             mouse_buttons: [false; 3],
     
-            current_mouse_position: PhysicalPosition { x: 0.0, y: 0.0},
-            previous_mouse_position: PhysicalPosition { x: 0.0, y: 0.0},
-    
+            current_mouse_motion: (0.0, 0.0),
+
+            current_mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
+
             current_mouse_scroll_line_delta: (0.0, 0.0),
-            previous_mouse_scroll_line_delta: (0.0, 0.0),
     
-            current_mouse_scroll_delta: PhysicalPosition {x: 0.0, y: 0.0},
-            previous_mouse_scroll_delta: PhysicalPosition {x: 0.0, y: 0.0},
+            current_mouse_scroll_delta: PhysicalPosition { x: 0.0, y: 0.0 },
         }
     }
 
-    // - All Input Types
-
-    pub(crate) fn overwrite_previous_positions(&mut self) {
-        self.previous_mouse_position = self.current_mouse_position;
-        self.current_mouse_scroll_delta = self.current_mouse_scroll_delta;
-        self.previous_mouse_scroll_line_delta = self.previous_mouse_scroll_line_delta;
-    }
-
-    pub(crate) fn overwrite_buttons(&mut self) {
+    pub(crate) fn set_keys(&mut self) {
         for i in 0..163 {
             if self.keyboard_keys[i] && self.pressed_keyboard_keys[i] {
                 self.pressed_keyboard_keys[i] = false;
@@ -80,6 +71,9 @@ impl InputComponent {
                 self.released_keyboard_keys[i] = false;
             }
         }
+    }
+
+    pub(crate) fn set_mouse_buttons(&mut self) {
         for i in 0..3 {
             if self.mouse_buttons[i] && self.pressed_mouse_buttons[i] {
                 self.pressed_mouse_buttons[i] = false;
@@ -90,8 +84,7 @@ impl InputComponent {
         }
     }
 
-    // - Keyboard keys
-
+    // Keyboard keys
     pub(crate) fn set_key(&mut self, key: VirtualKeyCode, state: ElementState) {
         match state {
             ElementState::Pressed => {
@@ -122,8 +115,7 @@ impl InputComponent {
         self.released_keyboard_keys[key as usize]
     }
 
-    // - Mouse buttons
-
+    // Mouse buttons
     pub(crate) fn set_mouse_button(&mut self, button: MouseButton, state: ElementState) {
         let index = match button {
             MouseButton::Left => 0,
@@ -176,8 +168,7 @@ impl InputComponent {
         }
     }
 
-    // - Mouse scroll
-
+    // Mouse scroll
     pub fn get_mouse_scroll_line_delta(&self) -> (f32, f32) {
         self.current_mouse_scroll_line_delta
     }
@@ -196,6 +187,14 @@ impl InputComponent {
 
     // - Mouse motion
       
+    pub fn get_mouse_motion(&self) -> (f64, f64) {
+        self.current_mouse_motion
+    }
+
+    pub(crate) fn set_mouse_motion(&mut self, delta: (f64, f64)) {
+        self.current_mouse_motion = delta;
+    }
+
     pub fn get_mouse_position(&self) -> PhysicalPosition<f64> {
         self.current_mouse_position
     }

@@ -78,7 +78,7 @@ impl SceneManager {
         // Create new entity with empty bitmask
         let new_entity = Entity::default(scene_handle.clone());
 
-        // Insert new entity into pill slot map, with key as returned type
+        // Insert new entity into storage, with key as returned type
         let new_entity_handle = target_scene.entities.insert(new_entity);
 
         // Return handle to new entity
@@ -92,13 +92,12 @@ impl SceneManager {
         // Get the bitmask for the entity
         let entity_bitmask = target_scene.entities.get_mut(entity_handle).unwrap().bitmask.clone();
 
-        // Call destroy on every component belonging to entity
-        // TODO - Is it even doable? You can't get to know what the component types T are, even if we iterate over keys from bitmask mapping
+        // Remove all components
+        // TODO
 
-        // Remove entity from pill slot map
+        // Remove entity from storage
         target_scene.entities.remove(entity_handle);
 
-        // Success
         Ok(())
     }
 
@@ -121,14 +120,13 @@ impl SceneManager {
         // Get the bitmask mapped onto the given component to update entity's bitmask
         let component_bitmask = target_scene.get_bitmask_mapping_mut().get_bitmap::<T>();
         
-        // Update the bitmask stored in pill slot based on the entity handle
+        // Update the bitmask based on the entity handle
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask |= component_bitmask;
 
-        // Success
         Ok(())
     }
 
-    pub fn delete_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<T> {
+    pub fn remove_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<T> {
 
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
@@ -136,7 +134,7 @@ impl SceneManager {
         // Get the bitmask mapped onto the given component to update entity's bitmask
         let component_bitmask = target_scene.get_bitmask_mapping_mut().get_bitmap::<T>();
 
-        // Update the bitmask stored in pill slot based on the entity handle
+        // Update the bitmask based on the entity handle
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask -= component_bitmask;
 
         // Get component storage from screen
@@ -148,6 +146,12 @@ impl SceneManager {
 
         Ok(component)
     }
+
+    pub fn remove_component_from_entity_x<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) {
+
+       
+    }
+
 
     // - Scene -
 
@@ -202,7 +206,6 @@ impl SceneManager {
         }
 
         // Remove scene
-        // TODO - add custom error
         let scene = self.scenes.remove(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
 
         // Return deleted scene
