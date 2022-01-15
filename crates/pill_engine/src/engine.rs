@@ -1,3 +1,4 @@
+/// Necessary imports
 use crate::{ 
     resources::*,
     ecs::*,
@@ -23,14 +24,25 @@ use winit::{ event::*, dpi::PhysicalPosition,};
 
 // -------------------------------------------------------------------------------
 
+/// Simplified type of the Box<dyn PillGame> for the PillGame
 pub type Game = Box<dyn PillGame>;
+
+/// Simplified type of the VirtualKeyCode
+/// 
+/// Used for easy access to InputComponent information about the pressed keys
 pub type Key = VirtualKeyCode;
+
+/// Simplified type of the MouseButton
+/// 
+/// Used for easy access to InputComponent information about the pressed mouse buttons
 pub type Mouse = MouseButton;
 
+/// Trait used for PillGame functionality definition
 pub trait PillGame { 
     fn start(&self, engine: &mut Engine) -> Result<()>;
 }
 
+/// Engine structure
 pub struct Engine { 
     pub(crate) config: config::Config,
     pub(crate) game: Option<Game>,
@@ -91,8 +103,14 @@ impl Engine {
 
 // ---- INTERNAL API -----------------------------------------------------------------
 
+/// Implementation of the Engine Internal API 
+/// 
+/// Created for pill_standalone
 impl Engine {
 
+    /// Associated function creating new engine
+    /// 
+    /// Takes fame, renderer, and config as the parameters
     pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, config: config::Config) -> Self {
         let max_entity_count = config.get_int("MAX_ENTITY_COUNT").unwrap_or(MAX_ENTITY_COUNT as i64) as usize;
 
@@ -111,6 +129,7 @@ impl Engine {
         }
     }
 
+    /// Method used for engine initialization
     pub fn initialize(&mut self, window_size: winit::dpi::PhysicalSize<u32>) -> Result<()> {
         info!("Initializing {}", "Engine".mobj_style());
 
@@ -153,6 +172,8 @@ impl Engine {
         Ok(())
     }
 
+
+    /// Method used for running game systems
     pub fn update(&mut self, delta_time: std::time::Duration) {
         let stop_on_game_errors = self.config.get_bool("PANIC_ON_GAME_ERRORS").unwrap_or(PANIC_ON_GAME_ERRORS);
         
@@ -187,16 +208,25 @@ impl Engine {
         debug!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
     }
 
+    /// Function used for shutdown information printing
+    /// 
+    /// Used by pill_standalone
     pub fn shutdown(&mut self) {
         info!("Shutting down {}", "Engine".mobj_style());
     }
 
+    /// Function used for window resizing option
+    /// 
+    /// Used by pill_standalone
     pub fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         debug!("{} resized to {}x{}", "Window".mobj_style(), new_window_size.width, new_window_size.height);
         self.window_size = new_window_size;
         self.renderer.resize(new_window_size);
     }
 
+    /// Function used for keyboard input passing
+    /// 
+    /// Used by pill_standalone
     pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyboardInput) {
         if let Some(key) = keyboard_input.virtual_keycode {
             let state: ElementState = keyboard_input.state;
@@ -206,24 +236,36 @@ impl Engine {
         }
     }
 
+    /// Function used for mouse key input passing
+    /// 
+    /// Used by pill_standalone
     pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &ElementState) {
         let input_event = InputEvent::MouseButton { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
         self.input_queue.push_back(input_event);
         debug!("Got new mouse key input");
     }
 
+    /// Function used for mouse wheel input passing
+    /// 
+    /// Used by pill_standalone
     pub fn pass_mouse_wheel_input(&mut self, delta: &MouseScrollDelta) {
         let input_event = InputEvent::MouseWheel { delta: *delta };
         self.input_queue.push_back(input_event);
         debug!("Got new mouse wheel input");
     }
 
+    /// Function used for mouse motion input passing
+    /// 
+    /// Used by pill_standalone
     pub fn pass_mouse_motion_input(&mut self, position: &PhysicalPosition<f64>) {
         let input_event = InputEvent::MouseMotion { position: *position };
         self.input_queue.push_back(input_event);
         debug!("Got new mouse motion input");
     }
 
+    /// Function used for retuning input queue
+    /// 
+    /// Used by pill_standalone
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
         &self.input_queue
     }
@@ -231,22 +273,30 @@ impl Engine {
 
 // --- API ------------------------------------------------------------------
 
+/// Implementation of the engine's API methods 
+/// 
+/// Used by Game Developers
 impl Engine { 
 
     // --- System API ---
 
+    /// Method used for custom game systems implementation
+    ///
+    /// Systems need to be first creating with different functions, and then added by usage of this method
     pub fn add_system(&mut self, name: &str, system_function: fn(engine: &mut Engine) -> Result<()>) -> Result<()> {
         debug!("Adding {} {} to {} {}", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style());
 
         self.system_manager.add_system(name, system_function, UpdatePhase::Game).context(format!("Adding {} failed", "System".gobj_style()))
     }
 
+    /// Function used for custom game system removal
     pub fn remove_system(&mut self, name: &str) -> Result<()> {
         debug!("Removing {} {} from {} {}", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style());
 
         self.system_manager.remove_system(name, UpdatePhase::Game).context(format!("Removing {} failed", "System".gobj_style()))
     }
 
+    /// Function used for custom system toggling
     pub fn toggle_system(&mut self, name: &str, enabled: bool) -> Result<()> {
         debug!("Toggling {} {} from {} {} to {} state", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style(), if enabled { "Enabled" } else { "Disabled" });
 
@@ -255,6 +305,9 @@ impl Engine {
     
     // --- Entity API ---
 
+    /// Method used for entity creation
+    /// 
+    /// Returns EntityBuilder, which gives the ability to chain the methods for components addition
     pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
         let entity_handle = self.create_entity(scene_handle).unwrap();
         EntityBuilder {
@@ -264,12 +317,16 @@ impl Engine {
         }
     }
 
+    /// Method used for entity creation
+    /// 
+    /// Return EntityHandle in case of success
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
         debug!("Creating {} in {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
 
         self.scene_manager.create_entity(scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
     }
 
+    /// Method used for entity removal
     pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
         debug!("Removing {} from {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
 
@@ -277,6 +334,10 @@ impl Engine {
     }
 
     // --- Component API ---
+
+    /// Method used for fetching component belonging to entity
+    /// 
+    /// Returns None if the component does not exist, or RefCell to the Option of the component
     pub fn get_component_by_entity<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<Option<&RefCell<Option<T>>>>
         where T: Component<Storage = ComponentStorage<T>>
     {   
@@ -287,6 +348,7 @@ impl Engine {
         Ok(component)
     }
 
+    /// Method used for new component type registering
     pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()> 
         where T: Component<Storage = ComponentStorage::<T>>
     {
@@ -295,6 +357,7 @@ impl Engine {
         self.scene_manager.register_component::<T>(scene_handle).context(format!("Registering {} failed", "Component".gobj_style()))
     }
 
+    /// Method used for component to entity addition
     pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, mut component: T) -> Result<()> 
         where T : Component<Storage = ComponentStorage::<T>>
     {
@@ -307,6 +370,7 @@ impl Engine {
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))
     }
 
+    /// Method used for component from entity delition
     pub fn delete_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> 
         where T : Component<Storage = ComponentStorage::<T>>
     {
@@ -322,6 +386,7 @@ impl Engine {
 
     // --- Global Component API ---
 
+    /// Method used for addition of a custom global component 
     pub fn add_global_component<T>(&mut self, mut component: T) -> Result<()> 
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
@@ -337,6 +402,7 @@ impl Engine {
         Ok(())
     }
 
+    /// Method used for fetching immutable reference of chosen global component
     pub fn get_global_component<T>(&self) -> Result<&T> 
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
@@ -346,6 +412,7 @@ impl Engine {
         Ok(component)
     }
 
+    /// Method used for fetching mutable reference of chosen global component
     pub fn get_global_component_mut<T>(&mut self) -> Result<&mut T> 
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
@@ -355,6 +422,7 @@ impl Engine {
         Ok(component)
     }
 
+    /// Method used for removal of a custom global component
     pub fn remove_global_component<T>(&mut self) -> Result<()> 
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
@@ -385,7 +453,10 @@ impl Engine {
     }
 
     // --- Iterator API ---
- 
+    
+    /// Method returning an iterator to one ComponentStorage
+    /// 
+    /// Only components of existant entities are returned
     pub fn iterate_one_component<A>(&self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
         where A: Component<Storage = ComponentStorage<A>>
     {
@@ -398,6 +469,9 @@ impl Engine {
         Ok(iterator)
     }
 
+    /// Method returning an iterator to one ComponentStorage with adequate entities
+    /// 
+    /// Only components of existant entities are returned
     pub fn iterate_one_component_with_entities<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> 
         where A: Component<Storage = ComponentStorage<A>>
     {
@@ -410,7 +484,9 @@ impl Engine {
         Ok(iterator)
     }
     
-    
+    /// Method returning an iterator to two ComponentStorages
+    /// 
+    /// Only components of existant entities are returned
     pub fn iterate_two_components<A, B>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
@@ -425,6 +501,9 @@ impl Engine {
         Ok(iterator) 
     }
 
+    /// Method returning an iterator to two ComponentStorages with adequate entities
+    /// 
+    /// Only components of existant entities are returned
     pub fn iterate_two_components_with_entities<A, B>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
@@ -439,6 +518,9 @@ impl Engine {
         Ok(iterator) 
     }
 
+    /// Method returning an iterator to three ComponentStorages
+    /// 
+    /// Only components of existant entities are returned
     pub fn iterate_three_components<A, B, C>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
@@ -455,6 +537,9 @@ impl Engine {
         Ok(iterator)
     }
 
+    /// Method returning an iterator to three ComponentStorages with adequate entieis
+    /// 
+    /// Only components of existant entities are returned
     pub fn iterate_three_components_with_entities<A, B, C>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
@@ -471,6 +556,9 @@ impl Engine {
         Ok(iterator)
     }
 
+    /// Method returning an iterator to four ComponentStorages
+    /// 
+    /// Only components of existant entities are returned
     pub fn iterate_four_components<A, B, C, D>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
@@ -487,6 +575,9 @@ impl Engine {
         Ok(iterator) 
     }
 
+    /// Method returning an iterator to four ComponentStorage with adequate entities 
+    /// 
+    /// Only components of existant entities are returned
     pub fn iterate_four_components_with_entities<A, B, C, D>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
@@ -505,35 +596,57 @@ impl Engine {
 
     // --- Scene API ---
 
+    /// Method responsible for scene creation
+    /// 
+    /// If the operation is succesful, returns SceneHandle
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         info!("Creating scene: {}", name);
         self.scene_manager.create_scene(name).context(format!("Creating new {} failed", "Scene".gobj_style()))
     }
 
+    /// Method returning handle to the scene chosen by the name
+    /// 
+    /// If the operation in succesful, returns SceneHandle
     pub fn get_scene_handle(&self, name: &str) -> Result<SceneHandle> {
         self.scene_manager.get_scene_handle(name).context(format!("Getting {} failed", "SceneHandle".sobj_style()))
     }
 
+    /// Method returning scene by the specific SceneHandle
+    /// 
+    /// If the operation is succesful, returns immutable reference to the Scene
     pub fn get_scene(&self, scene_handle: SceneHandle) -> Result<&Scene> {
         self.scene_manager.get_scene(scene_handle).context(format!("Getting {} failed", "Scene".gobj_style()))
     }
 
+    /// Method returning scene by the specific SceneHandle
+    /// 
+    /// If the operation is succesful, returns mutable reference to the Scene
     pub fn get_scene_mut(&mut self, scene_handle: SceneHandle) -> Result<&mut Scene> {
         self.scene_manager.get_scene_mut(scene_handle).context(format!("Getting {} as mutable failed", "Scene".gobj_style()))
     }
 
+    /// Method seting active scene by the chosen SceneHandle
     pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
         self.scene_manager.set_active_scene(scene_handle).context(format!("Setting active {} failed", "Scene".gobj_style()))
     }
 
+    /// Method returning handle to the active scene
+    /// 
+    /// If the operation is succesful, returns SceneHandle
     pub fn get_active_scene_handle(&mut self) -> Result<SceneHandle> {
         self.scene_manager.get_active_scene_handle().context(format!("Getting {} of active {} failed", "SceneHandle".sobj_style(), "Scene".gobj_style()))
     }
 
+    /// Method removing scene by the specified SceneHandle
+    /// 
+    /// If the operation is succesful, returns removed Scene
     pub fn remove_scene(&mut self, scene_handle: SceneHandle) -> Result<Scene> {
         self.scene_manager.remove_scene(scene_handle).context(format!("Removing {} with usage of {} failed", "Scene".sobj_style(), "SceneHandle".gobj_style()))
     }
 
+    /// Method returning scene by the specific SceneHandle
+    /// 
+    /// If the operation is succesful, returns mutable reference to the Scene
     fn get_active_scene(&mut self) -> Result<&Scene> {
         self.scene_manager.get_active_scene().context(format!("Getting active {} failed", "Scene".gobj_style()))
     }
@@ -544,12 +657,16 @@ impl Engine {
 
     // --- Resource API ---
 
+    /// Method used for registering new resource type
     pub fn register_resource_type<T>(&mut self, max_resource_count: usize) -> Result<()> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         self.resource_manager.register_resource_type::<T>(max_resource_count)
     }
 
+    /// Method used for addition of a new resource
+    /// 
+    /// If the operation is succesful, returns handle to the resource
     pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
@@ -573,36 +690,52 @@ impl Engine {
         Ok(resource_handle)
     }
 
+    /// Method used for fetching resource by specified handle
+    /// 
+    /// If the operation is succesfull, returns the resource
     pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource::<T>(resource_handle)?)
     }
 
+    /// Method used for fetching resource by specified name
+    /// 
+    /// If the operation is succesfull, returns reference to the resource
     pub fn get_resource_by_name<T>(&self, name: &str) -> Result<&T> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_by_name::<T>(name)?)
     }
 
+    /// Method used for fetching resource by specified name
+    /// 
+    /// If the operation is succesfull, returns handle to the resource
     pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_handle::<T>(name)?)
     }
 
+    /// Method used for fetching resource by specified handle
+    /// 
+    /// If the operation is succesfull, returns mutable reference to the resource
     pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_mut::<T>(resource_handle)?)
     }
 
+    /// Method used for fetching resource by specified name
+    /// 
+    /// If the operation is succesfull, returns mutable reference to the resource
     pub fn get_resource_by_name_mut<T>(&mut self, name: &str) -> Result<&mut T> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_by_name_mut::<T>(name)?)
     }
 
+    /// Method used for removing resource by specified handle of the resource
     pub fn remove_resource<T>(&mut self, resource_handle: &T::Handle) -> Result<()> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
@@ -619,6 +752,7 @@ impl Engine {
         Ok(())
     }
 
+    /// Method used for removing resource by specified name of the resource
     pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<()> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {

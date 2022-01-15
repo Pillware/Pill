@@ -1832,10 +1832,8 @@ dependencies = [
 name = "pill_game"
 version = "0.1.0"
 dependencies = [
- "cgmath",
  "pill_engine",
  "rand",
- "rodio",
 ]
 
 [[package]]

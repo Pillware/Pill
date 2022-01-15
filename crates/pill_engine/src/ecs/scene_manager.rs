@@ -96,10 +96,31 @@ impl SceneManager {
         // TODO - Is it even doable? You can't get to know what the component types T are, even if we iterate over keys from bitmask mapping
 
         // Remove entity from pill slot map
-        target_scene.entities.remove(entity_handle);
+        target_scene.entities.remove(entity_handle); 
 
         // Success
         Ok(())
+    }
+
+    pub fn delete_component_from_entity_z<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, typ: TypeId) -> Result<T> {
+
+        // Get scene
+        let target_scene = self.get_scene_mut(scene_handle)?;
+
+        // Get the bitmask mapped onto the given component to update entity's bitmask
+        let component_bitmask = target_scene.get_bitmask_mapping_mut().get_bitmap::<T>();
+
+        // Update the bitmask stored in pill slot based on the entity handle
+        target_scene.entities.get_mut(entity_handle).unwrap().bitmask -= component_bitmask;
+
+        // Get component storage from screen
+        let component_storage = target_scene.get_component_storage_mut::<T>()?;
+
+        // Delete the component with given entity's index from the storage
+        let mut component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized").borrow_mut();
+        let component: T = component_slot.take().unwrap();
+
+        Ok(component)
     }
 
     pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {     
@@ -127,6 +148,8 @@ impl SceneManager {
         // Success
         Ok(())
     }
+
+    
 
     pub fn delete_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<T> {
 
