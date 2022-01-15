@@ -58,6 +58,8 @@ use cgmath::{ Rotation3, Zero };
 use slab::Slab;
 use log::{debug, info};
 
+pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 1000;
+
 // Default resource handle - Master pipeline
 pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
     0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
@@ -151,9 +153,7 @@ impl PillRenderer for Renderer {
         let pipeline_handle = MASTER_PIPELINE_HANDLE;
         let pipeline = self.state.renderer_resource_storage.pipelines.get(pipeline_handle).unwrap();
         let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
-        
         let camera = RendererCamera::new(&self.state.device, camera_bind_group_layout)?;
-
         let handle = self.state.renderer_resource_storage.cameras.insert(camera);
 
         Ok(handle)
@@ -209,19 +209,18 @@ impl PillRenderer for Renderer {
 pub struct State {
     // Resources
     renderer_resource_storage: RendererResourceStorage,
-
     // Renderer variables
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>, 
-
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
-
     depth_texture: RendererTexture,
     mesh_drawer: MeshDrawer,
+    // Other
+    config: config::Config,
 }
 
 
@@ -230,7 +229,7 @@ impl State {
     async fn new(window: &winit::window::Window, config: config::Config) -> Self {
         let window_size = window.inner_size();
 
-        let instance = wgpu::Instance::new(wgpu::Backends::all()); // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
+        let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(window) }; 
         
         // Specify adapter options (Options passed here are not guaranteed to work for all devices)
@@ -276,7 +275,7 @@ impl State {
         surface.configure(&device, &surface_configuration);
 
         // Configure collections
-        let renderer_resource_storage = RendererResourceStorage::new(config);
+        let renderer_resource_storage = RendererResourceStorage::new(&config);
 
         // Create depth and color texture
         let depth_texture = RendererTexture::new_depth_texture(
@@ -289,13 +288,12 @@ impl State {
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
         // Create drawing state
-        let mesh_drawer = MeshDrawer::new(&device, 1000); // [TODO] move magic value to config
+        let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
 
         // Create state
         Self {
             // Resources
             renderer_resource_storage,
-
             // Renderer variables
             surface,
             device,
@@ -306,6 +304,8 @@ impl State {
             depth_format,
             depth_texture,
             mesh_drawer,
+            // Other
+            config,
         }
     }
 
@@ -402,7 +402,7 @@ impl State {
 }
 
 pub struct MeshDrawer {
-    current_order: u8,
+    current_rendering_order: u8,
     current_pipeline_handle: Option<RendererPipelineHandle>,
     current_material_handle: Option<RendererMaterialHandle>,
     current_mesh_handle: Option<RendererMeshHandle>,
@@ -427,8 +427,7 @@ impl MeshDrawer {
         });
 
         MeshDrawer {
-            current_order: 0,
-            //current_camera_handle: None,
+            current_rendering_order: 0,
             current_pipeline_handle: None,
             current_material_handle: None,
             current_mesh_handle: None,
@@ -486,14 +485,17 @@ impl MeshDrawer {
             let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
             let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
-            // Check order
-            if self.current_order > render_queue_key_fields.order {
+            // Check max instance per draw call count
+            //if self.
+
+            // Check rendering order
+            if self.current_rendering_order > render_queue_key_fields.order {
                 if self.get_accumulated_instance_count() > 0 {
                     render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());         
                     self.instance_range = self.instance_range.end..self.instance_range.end;
                 }
                 // Set new order
-                self.current_order = render_queue_key_fields.order;
+                self.current_rendering_order = render_queue_key_fields.order;
             }
 
             // Check material
@@ -545,13 +547,12 @@ impl MeshDrawer {
         }
 
         // Reset state of mesh drawer
-        self.current_order = RENDER_QUEUE_KEY_ORDER.max as u8;
+        self.current_rendering_order = RENDER_QUEUE_KEY_ORDER.max as u8;
         self.current_pipeline_handle = None;
         self.current_material_handle = None;
         self.current_mesh_handle = None;
         self.current_mesh_index_count = 0;
         self.instance_range = 0..0; 
-        
     }
 
     fn get_accumulated_instance_count(&self) -> u32 {

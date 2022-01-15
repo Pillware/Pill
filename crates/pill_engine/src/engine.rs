@@ -204,7 +204,6 @@ impl Engine {
         let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps =  1000.0 / new_frame_time;
         self.frame_delta_time = new_frame_time;
-        info!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
         debug!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
     }
 
@@ -257,15 +256,18 @@ impl Engine {
     /// Function used for mouse motion input passing
     /// 
     /// Used by pill_standalone
-    pub fn pass_mouse_motion_input(&mut self, position: &PhysicalPosition<f64>) {
-        let input_event = InputEvent::MouseMotion { position: *position };
+    pub fn pass_mouse_motion_input(&mut self, delta: &(f64, f64)) {
+        let input_event = InputEvent::MouseMotion { delta: *delta };
         self.input_queue.push_back(input_event);
         debug!("Got new mouse motion input");
     }
 
-    /// Function used for retuning input queue
-    /// 
-    /// Used by pill_standalone
+    pub fn pass_mouse_position_input(&mut self, position: &PhysicalPosition<f64>) {
+        let input_event = InputEvent::MousePosition { position: *position };
+        self.input_queue.push_back(input_event);
+        debug!("Got new mouse position input");
+    }
+
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
         &self.input_queue
     }
@@ -370,13 +372,13 @@ impl Engine {
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))
     }
 
-    /// Method used for component from entity delition
-    pub fn delete_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> 
+    /// Method used for component from entity removal
+    pub fn remove_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> 
         where T : Component<Storage = ComponentStorage::<T>>
     {
-        debug!("Deleting {} {} from {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        debug!("Removing {} {} from {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
         
-        let mut component = self.scene_manager.delete_component_from_entity::<T>(scene_handle, entity_handle).context("Deleting component from entity failed").unwrap();
+        let mut component = self.scene_manager.remove_component_from_entity::<T>(scene_handle, entity_handle).context("Removing component from entity failed").unwrap();
 
         // Destroy component
         component.destroy(self, entity_handle, scene_handle)?;

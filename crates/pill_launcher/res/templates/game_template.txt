@@ -5,29 +5,29 @@ pub struct Game { }
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         // Create scene
-        let scene = engine.create_scene("Default").unwrap();
-        engine.set_active_scene(scene).unwrap();
-        let active_scene = engine.get_active_scene_handle().unwrap();
+        let scene = engine.create_scene("Default")?;
+        engine.set_active_scene(scene)?;
+        let active_scene = engine.get_active_scene_handle()?;
 
         // Register components
-        engine.register_component::<TransformComponent>(scene).unwrap();
-        engine.register_component::<MeshRenderingComponent>(scene).unwrap();
-        engine.register_component::<CameraComponent>(scene).unwrap();
-        engine.register_component::<AudioListenerComponent>(scene).unwrap();
-        engine.register_component::<AudioSourceComponent>(scene).unwrap();
+        engine.register_component::<TransformComponent>(scene)?;
+        engine.register_component::<MeshRenderingComponent>(scene)?;
+        engine.register_component::<CameraComponent>(scene)?;
+        engine.register_component::<AudioListenerComponent>(scene)?;
+        engine.register_component::<AudioSourceComponent>(scene)?;
         
         // Add systems
-        engine.add_system("Hello", hello_system).unwrap();
+        engine.add_system("Hello", hello_system)?;
 
         // Create camera entity
-        let camera = engine.create_entity(active_scene).unwrap();
+        let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
             .position(Vector3f::new(0.0,5.0,7.0))
             .rotation(Vector3f::new(-20.0,-90.0,0.0))
             .build();
-        engine.add_component_to_entity::<TransformComponent>(active_scene, camera, transform_component).unwrap();
+        engine.add_component_to_entity(active_scene, camera, transform_component)?;
         let camera_component = CameraComponent::builder().enabled(true).build();
-        engine.add_component_to_entity::<CameraComponent>(active_scene, camera, camera_component).unwrap();
+        engine.add_component_to_entity(active_scene, camera, camera_component)?;
 
         Ok(())
     }
