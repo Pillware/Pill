@@ -131,7 +131,7 @@ fn main() {
                     DeviceEvent::MouseMotion { 
                         delta, 
                     } => {
-                        engine.pass_mouse_motion_input(delta);
+                        engine.pass_mouse_delta_input(delta);
                     },
                     _ => {}
                 }
@@ -155,7 +155,7 @@ fn main() {
                         state,
                         .. // Skip other
                     } => { 
-                        engine.pass_mouse_key_input( &button, &state);
+                        engine.pass_mouse_key_input(&button, &state);
                     },
                     WindowEvent::MouseWheel { // Pass mouse scroll input to engine
                         delta,

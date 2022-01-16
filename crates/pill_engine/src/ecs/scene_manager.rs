@@ -50,26 +50,11 @@ impl SceneManager {
         // Add component storage to scene
         target_scene.components.insert::<T>(component_storage);
 
-        // Get bitmask controller
-        let controller = target_scene.get_bitmask_mapping_mut();
-
         // Register bitmask for new component
-        controller.add_bitmap::<T>();
+        target_scene.bitmask_mapping.add_bitmask::<T>();
 
         Ok(())
     }
-
-    pub fn fetch_component_by_entity<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<Option<&RefCell<Option<T>>>>
-        where 
-        T: Component<Storage = ComponentStorage::<T>>
-    {
-        for (entity, component) in self.fetch_one_component_storage_with_entity_handles::<T>(scene_handle)? {
-            if entity == entity_handle {
-                return Ok(Some(component))
-            }
-        }
-        Ok(None)
-    }   
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
         // Get scene
@@ -139,7 +124,7 @@ impl SceneManager {
         component_slot.borrow_mut().insert(component);
 
         // Get the bitmask mapped onto the given component to update entity's bitmask
-        let component_bitmask = target_scene.get_bitmask_mapping_mut().get_bitmap::<T>();
+        let component_bitmask = target_scene.bitmask_mapping.get_bitmask::<T>();
         
         // Update the bitmask based on the entity handle
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask |= component_bitmask;
@@ -153,7 +138,7 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene_handle)?;
 
         // Get the bitmask mapped onto the given component to update entity's bitmask
-        let component_bitmask = target_scene.get_bitmask_mapping_mut().get_bitmap::<T>();
+        let component_bitmask = target_scene.bitmask_mapping.get_bitmask::<T>();
 
         // Update the bitmask based on the entity handle
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask -= component_bitmask;
@@ -167,6 +152,30 @@ impl SceneManager {
 
         Ok(component)
     }
+
+    pub fn get_entity_component<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<&RefCell<Option<T>>>
+        where T: Component<Storage = ComponentStorage::<T>>
+    {
+        let scene = self.get_scene(scene_handle)?;
+        let storage = scene.components.get::<T>().unwrap();
+        //let component = storage.data.get(entity_handle.0.index as usize).unwrap();
+
+        // Check if entity has requested component
+        let entity = scene.entities.get(entity_handle).unwrap();
+        //let scene_has = scene.bitmask_mapping.contains_component::<T>();
+        match entity.bitmask & scene.bitmask_mapping.get_bitmask::<T>() != 0 {
+            true => Ok(storage.data.get(entity_handle.0.index as usize).unwrap()),
+            false => Err(Error::msg("Not found")),
+        }
+
+        // for (entity, component) in self.fetch_one_component_storage_with_entity_handles::<T>(scene_handle)? {
+        //     if entity == entity_handle {
+        //         return Ok(Some(component))
+        //     }
+        // }
+
+        //Ok(None)
+    }  
 
     pub fn remove_component_from_entity_x<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) {
 

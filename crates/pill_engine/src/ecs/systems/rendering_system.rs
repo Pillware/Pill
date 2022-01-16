@@ -7,7 +7,7 @@ use crate::{
 
 use pill_core::{ EngineError, PillStyle, PillSlotMapKey };
 
-use std::{ops::Range, borrow::BorrowMut, num::NonZeroU32};
+use std::{ ops::Range };
 use anyhow::{ Result, Context, Error };
 use boolinator::Boolinator;
 use log::{ debug };
@@ -34,7 +34,6 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     }
     let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera))?.clone();
 
-    
     // - Prepare rendering data
 
     // Clear and fill render queue
@@ -43,7 +42,6 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     // Iterate mesh rendering components
     for (entity_handle, mesh_rendering_component) in (engine).scene_manager.fetch_one_component_storage_with_entity_handles::<MeshRenderingComponent>(active_scene_handle).unwrap() {
-
         // Add valid mesh rendering components to render queue
         if let Some(render_queue_key) = mesh_rendering_component.borrow().as_ref().unwrap().render_queue_key {
             let render_queue_item = RenderQueueItem {
@@ -79,11 +77,11 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         transform_component_storage
     ) {
         Ok(_) => Ok(()),
-        // Recreate the surface if it is lost
+        // Recreate lost surface
         Err(RendererError::SurfaceLost) => Ok(engine.renderer.resize(engine.window_size)),
-        // The system is out of memory, we should probably quit
-        //Err(RendererError::SurfaceOutOfMemory) => *control_flow = ControlFlow::Exit, // [TODO]
-        // All other errors (Outdated, Timeout) should be resolved by the next frame
+        // System is out of memory
+        Err(RendererError::SurfaceOutOfMemory) => { panic!("Critical: Renderer error, system out of memory")}
+        // All other errors (Outdated, Timeout)
         Err(renderer_error) => Err(Error::new(renderer_error)),
     }
 }
