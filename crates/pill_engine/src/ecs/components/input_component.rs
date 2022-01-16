@@ -1,6 +1,9 @@
-use crate::ecs::{ GlobalComponent, GlobalComponentStorage };
+use crate::{
+    engine::{ KeyboardKey, MouseButton },
+    ecs::{ GlobalComponent, GlobalComponentStorage },
+};
 
-use pill_core::PillTypeMapKey;
+use pill_core::{ PillTypeMapKey, Vector2f };
 
 use std::{ 
     any::Any,
@@ -8,15 +11,15 @@ use std::{
     collections::HashMap,
 };
 use winit::dpi::PhysicalPosition;
-use winit::event::{ VirtualKeyCode, ElementState, MouseButton, MouseScrollDelta };
-use anyhow::{Result, Context, Error};
+use winit::event::{ ElementState, MouseScrollDelta };
+use anyhow::{ Result, Context, Error };
 
 pub enum InputEvent {
-    KeyboardKey { key: VirtualKeyCode, state: ElementState },
-    MouseButton {  key: MouseButton, state: ElementState },
+    KeyboardKey { key: KeyboardKey, state: ElementState },
+    MouseButton { key: MouseButton, state: ElementState },
     MouseWheel { delta: MouseScrollDelta },
-    MouseMotion { delta: (f64, f64) },
-    MousePosition { position: PhysicalPosition<f64> }
+    MouseDelta { delta: Vector2f },
+    MousePosition { position: Vector2f }
 }
 
 pub struct InputComponent {
@@ -30,15 +33,13 @@ pub struct InputComponent {
     pub(crate) released_mouse_buttons: [bool; 3],
     pub(crate) mouse_buttons: [bool; 3],
 
-    // Mouse positions
-    pub(crate) current_mouse_position: PhysicalPosition<f64>,
-
-    pub(crate) current_mouse_motion: (f64, f64),
+    // Mouse motion
+    pub(crate) current_mouse_delta: Vector2f,
+    pub(crate) current_mouse_position: Vector2f,
 
     // Mouse scroll wheels delta
-    pub(crate) current_mouse_scroll_line_delta: (f32, f32),
-
-    pub(crate) current_mouse_scroll_delta: PhysicalPosition<f64>,
+    pub(crate) current_mouse_scroll_delta: Vector2f,
+    pub(crate) current_mouse_scroll_pixel_delta: Vector2f,
 }
 
 impl InputComponent {
@@ -52,13 +53,11 @@ impl InputComponent {
             released_mouse_buttons: [false; 3],
             mouse_buttons: [false; 3],
     
-            current_mouse_motion: (0.0, 0.0),
+            current_mouse_delta: Vector2f::new(0.0, 0.0),
+            current_mouse_position: Vector2f::new(0.0, 0.0),
 
-            current_mouse_position: PhysicalPosition { x: 0.0, y: 0.0 },
-
-            current_mouse_scroll_line_delta: (0.0, 0.0),
-    
-            current_mouse_scroll_delta: PhysicalPosition { x: 0.0, y: 0.0 },
+            current_mouse_scroll_delta: Vector2f::new(0.0, 0.0),
+            current_mouse_scroll_pixel_delta: Vector2f::new(0.0, 0.0),
         }
     }
 
@@ -84,8 +83,14 @@ impl InputComponent {
         }
     }
 
+    pub(crate) fn set_mouse_motion(&mut self) {
+        self.current_mouse_delta = Vector2f::new(0.0,0.0);
+        self.current_mouse_scroll_delta = Vector2f::new(0.0, 0.0);
+        self.current_mouse_scroll_pixel_delta = Vector2f::new(0.0, 0.0);
+    }
+
     // Keyboard keys
-    pub(crate) fn set_key(&mut self, key: VirtualKeyCode, state: ElementState) {
+    pub(crate) fn set_key(&mut self, key: KeyboardKey, state: ElementState) {
         match state {
             ElementState::Pressed => {
                 if self.keyboard_keys[key as usize] {
@@ -103,15 +108,15 @@ impl InputComponent {
         }
     }
 
-    pub fn get_key_pressed(&self, key: VirtualKeyCode) -> bool {
+    pub fn get_key_pressed(&self, key: KeyboardKey) -> bool {
         self.pressed_keyboard_keys[key as usize]
     }
 
-    pub fn get_key(&self, key: VirtualKeyCode) -> bool {
+    pub fn get_key(&self, key: KeyboardKey) -> bool {
         self.keyboard_keys[key as usize]
     }
 
-    pub fn get_key_released(&self, key: VirtualKeyCode) -> bool {
+    pub fn get_key_released(&self, key: KeyboardKey) -> bool {
         self.released_keyboard_keys[key as usize]
     }
 
@@ -169,37 +174,37 @@ impl InputComponent {
     }
 
     // Mouse scroll
-    pub fn get_mouse_scroll_line_delta(&self) -> (f32, f32) {
-        self.current_mouse_scroll_line_delta
-    }
-
-    pub(crate) fn set_mouse_scroll_line_delta(&mut self, x: f32, y: f32) {
-        self.current_mouse_scroll_line_delta = (x, y);
-    }
-
-    pub fn get_mouse_scroll_delta(&self) -> PhysicalPosition<f64> {
+    pub fn get_mouse_scroll_delta(&self) -> Vector2f {
         self.current_mouse_scroll_delta
     }
 
-    pub(crate) fn set_mouse_scroll_delta(&mut self, delta: PhysicalPosition<f64>) {
+    pub(crate) fn set_mouse_scroll_delta(&mut self, delta: Vector2f) {
         self.current_mouse_scroll_delta = delta;
+    }
+
+    pub fn get_mouse_scroll_pixel_delta(&self) -> Vector2f {
+        self.current_mouse_scroll_pixel_delta
+    }
+
+    pub(crate) fn set_mouse_scroll_pixel_delta(&mut self, delta: Vector2f) {
+        self.current_mouse_scroll_pixel_delta = delta;
     }
 
     // - Mouse motion
       
-    pub fn get_mouse_motion(&self) -> (f64, f64) {
-        self.current_mouse_motion
+    pub fn get_mouse_delta(&self) -> Vector2f {
+        self.current_mouse_delta
     }
 
-    pub(crate) fn set_mouse_motion(&mut self, delta: (f64, f64)) {
-        self.current_mouse_motion = delta;
+    pub(crate) fn set_mouse_delta(&mut self, delta: Vector2f) {
+        self.current_mouse_delta = delta;
     }
 
-    pub fn get_mouse_position(&self) -> PhysicalPosition<f64> {
+    pub fn get_mouse_position(&self) -> Vector2f {
         self.current_mouse_position
     }
 
-    pub(crate) fn set_mouse_position(&mut self, position: PhysicalPosition<f64>) {
+    pub(crate) fn set_mouse_position(&mut self, position: Vector2f) {
         self.current_mouse_position = position;
     }
 }

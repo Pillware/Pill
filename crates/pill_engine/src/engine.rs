@@ -12,20 +12,20 @@ use pill_core::{
     PillTypeMap,
     get_type_name, 
     get_value_type_name, 
-    get_enum_variant_type_name, get_game_error_message, 
+    get_enum_variant_type_name, get_game_error_message, Vector2f, 
 };
 
 use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell };
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
-use winit::{ event::*, dpi::PhysicalPosition,};
+use winit::{ dpi::PhysicalPosition,};
 
 // -------------------------------------------------------------------------------
 
 pub type Game = Box<dyn PillGame>;
-pub type Key = VirtualKeyCode;
-pub type Mouse = MouseButton;
+pub type KeyboardKey = winit::event::VirtualKeyCode;
+pub type MouseButton = winit::event::MouseButton;
 
 pub trait PillGame { 
     fn start(&self, engine: &mut Engine) -> Result<()>;
@@ -196,35 +196,35 @@ impl Engine {
         self.renderer.resize(new_window_size);
     }
 
-    pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyboardInput) {
+    pub fn pass_keyboard_key_input(&mut self, keyboard_input: &winit::event::KeyboardInput) {
         if let Some(key) = keyboard_input.virtual_keycode {
-            let state: ElementState = keyboard_input.state;
+            let state: winit::event::ElementState = keyboard_input.state;
             let input_event = InputEvent::KeyboardKey { key: key, state: state };
             self.input_queue.push_back(input_event);
             debug!("Got new keyboard key input: {:?} {:?}", key, state);
         }
     }
 
-    pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &ElementState) {
+    pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &winit::event::ElementState) {
         let input_event = InputEvent::MouseButton { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
         self.input_queue.push_back(input_event);
         debug!("Got new mouse key input");
     }
 
-    pub fn pass_mouse_wheel_input(&mut self, delta: &MouseScrollDelta) {
+    pub fn pass_mouse_wheel_input(&mut self, delta: &winit::event::MouseScrollDelta) {
         let input_event = InputEvent::MouseWheel { delta: *delta };
         self.input_queue.push_back(input_event);
         debug!("Got new mouse wheel input");
     }
 
-    pub fn pass_mouse_motion_input(&mut self, delta: &(f64, f64)) {
-        let input_event = InputEvent::MouseMotion { delta: *delta };
+    pub fn pass_mouse_delta_input(&mut self, delta: &(f64, f64)) {
+        let input_event = InputEvent::MouseDelta { delta: Vector2f::new(delta.0 as f32, delta.1 as f32) };
         self.input_queue.push_back(input_event);
         debug!("Got new mouse motion input");
     }
-
+ 
     pub fn pass_mouse_position_input(&mut self, position: &PhysicalPosition<f64>) {
-        let input_event = InputEvent::MousePosition { position: *position };
+        let input_event = InputEvent::MousePosition { position: Vector2f::new(position.x as f32, position.y as f32) };
         self.input_queue.push_back(input_event);
         debug!("Got new mouse position input");
     }
@@ -282,15 +282,6 @@ impl Engine {
     }
 
     // --- Component API ---
-    pub fn get_component_by_entity<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<Option<&RefCell<Option<T>>>>
-        where T: Component<Storage = ComponentStorage<T>>
-    {   
-        debug!("Fetching component {} from {} {} in {} {}", get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-
-        let component = self.scene_manager.fetch_component_by_entity::<T>(entity_handle, scene_handle)?;
-
-        Ok(component)
-    }
 
     pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()> 
         where T: Component<Storage = ComponentStorage::<T>>
@@ -309,7 +300,13 @@ impl Engine {
         component.initialize(self).context(format!("Adding {} {} failed", "Component".gobj_style(), get_type_name::<T>().sobj_style()))?;
         
         // Add component
-        self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))
+        self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))?;
+        let component = self.scene_manager.get_entity_component::<T>(entity_handle, scene_handle).unwrap();
+
+        // Pass handles to entity and scene to this component so it can store it if needed
+        component.borrow_mut().as_mut().unwrap().pass_handles(scene_handle, entity_handle);
+
+        Ok(())
     }
 
     pub fn remove_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> 
@@ -320,9 +317,19 @@ impl Engine {
         let mut component = self.scene_manager.remove_component_from_entity::<T>(scene_handle, entity_handle).context("Removing component from entity failed").unwrap();
 
         // Destroy component
-        component.destroy(self, entity_handle, scene_handle)?;
+        component.destroy(self, scene_handle, entity_handle)?;
 
         Ok(())
+    }
+
+    pub fn get_entity_component<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<&RefCell<Option<T>>>
+        where T: Component<Storage = ComponentStorage<T>>
+    {   
+        debug!("Getting {} {} from {} {} in {} {}", get_type_name::<T>().sobj_style(), "Component".gobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
+        let component = self.scene_manager.get_entity_component::<T>(entity_handle, scene_handle)?;
+
+        Ok(component)
     }
 
     // --- Global Component API ---
@@ -572,8 +579,8 @@ impl Engine {
         let resource_handle = add_result.0; 
         let resource = add_result.1;
 
-        // Pass handle to resource to this resource so it can store it if needed
-        resource.pass_handle::<T::Handle>(resource_handle);
+        // Pass handle to this resource so it can store it if needed
+        resource.pass_handle(resource_handle);
 
         Ok(resource_handle)
     }

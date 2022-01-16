@@ -14,8 +14,8 @@ pub mod game {
         engine::{
             Engine,
             PillGame,
-            Key,
-            Mouse,
+            KeyboardKey,
+            MouseButton,
         },
         ecs::{
             Scene,

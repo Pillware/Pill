@@ -188,9 +188,9 @@ impl Component for AudioSourceComponent {
         Ok(())
     }
 
-    fn pass_handles(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) {
-        self.entity_handle = Some(entity_handle);
-        self.scene_handle = Some(scene_handle);
+    fn pass_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {
+        self.scene_handle = Some(self_scene_handle);
+        self.entity_handle = Some(self_entity_handle);
     }
 
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
@@ -265,7 +265,7 @@ impl Component for AudioSourceComponent {
         Ok(()) 
     }
 
-    fn destroy(&mut self, engine: &mut Engine, self_entity_handle: EntityHandle, self_scene_handle: SceneHandle) -> Result<()> {
+    fn destroy(&mut self, engine: &mut Engine, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) -> Result<()> {
         if self.sink_handle.is_some() {
             self.stop_playing(engine)?;
         }

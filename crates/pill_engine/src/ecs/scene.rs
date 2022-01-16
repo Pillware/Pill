@@ -39,12 +39,4 @@ impl Scene {
     {
         self.components.get_mut::<T>().ok_or(Error::new(EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone())))
     }
-
-    pub(crate) fn get_bitmask_mapping(&self) -> &BitmaskMap {
-        &self.bitmask_mapping
-    }
-
-    pub(crate) fn get_bitmask_mapping_mut(&mut self) -> &mut BitmaskMap {
-        &mut self.bitmask_mapping
-    }
 }
