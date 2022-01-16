@@ -35,7 +35,7 @@ impl PillGame for Game {
 
 fn hello_system(engine: &mut Engine) -> Result<()> {
     let input_component = engine.get_global_component_mut::<InputComponent>()?;
-    if input_component.get_key_pressed(Key::Space) {
+    if input_component.get_key_pressed(KeyboardKey::Space) {
         println!("Hello Pill");
     }
 
