@@ -542,7 +542,6 @@ impl MeshDrawer {
                 // Add new instance
                 self.instance_range = self.instance_range.start..self.instance_range.end + 1;
             }
-            
         }
 
         // End of render queue so draw remaining saved objects

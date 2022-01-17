@@ -34,6 +34,7 @@ pub mod game {
             ComponentStorage,
             GlobalComponent,
             GlobalComponentStorage,
+            SoundType,
         },
         resources::{
             Resource,

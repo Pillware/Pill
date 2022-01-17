@@ -91,6 +91,9 @@ fn create_game_project(game_path: &String, game_name: &String) -> Result<()> {
     // Game project
     fs::create_dir_all(game_path.as_path())?;
 
+    // build
+    fs::create_dir_all(game_path.join("build").as_path())?;
+
     // src
     fs::create_dir_all(game_path.join("src").as_path())?;
 
