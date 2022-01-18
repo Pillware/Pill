@@ -92,7 +92,7 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene_handle)?;
 
         // Get the bitmask mapped onto the given component to update entity's bitmask
-        let component_bitmask = target_scene.get_bitmask_mapping_mut().get_bitmap::<T>();
+        let component_bitmask = target_scene.bitmask_mapping.get_bitmask::<T>();
 
         // Update the bitmask stored in pill slot based on the entity handle
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask -= component_bitmask;
