@@ -1,11 +1,13 @@
 use crate::{
     resources::{ TextureHandle, MaterialHandle, TextureType }, 
     graphics::{ RendererTextureHandle, RendererMaterialHandle },
+    ecs::{ InputComponent, AudioManagerComponent, DeferredUpdateComponent, TimeComponent }
 };
 
 use pill_core::PillSlotMapKeyData;
 
-use std::num::NonZeroU32;
+use std::{num::NonZeroU32, any::TypeId};
+use lazy_static::lazy_static;
 
 // --- General ---
 
@@ -88,3 +90,11 @@ pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
 
+lazy_static! {
+    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
+        TypeId::of::<InputComponent>(),
+        TypeId::of::<TimeComponent>(),
+        TypeId::of::<AudioManagerComponent>(),
+        TypeId::of::<DeferredUpdateComponent>(),
+    );
+}

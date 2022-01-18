@@ -485,9 +485,6 @@ impl MeshDrawer {
             let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
             let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
-            // Check max instance per draw call count
-            //if self.
-
             // Check rendering order
             if self.current_rendering_order > render_queue_key_fields.order {
                 if self.get_accumulated_instance_count() > 0 {
@@ -536,8 +533,15 @@ impl MeshDrawer {
                 render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
             }
 
-            // Add new instance
-            self.instance_range = self.instance_range.start..self.instance_range.end + 1;
+            // Check max instance per draw call count
+            if self.get_accumulated_instance_count() >= self.max_instance_count {
+                render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());      
+                self.instance_range = self.instance_range.end..self.instance_range.end; 
+            } 
+            else {
+                // Add new instance
+                self.instance_range = self.instance_range.start..self.instance_range.end + 1;
+            }
         }
 
         // End of render queue so draw remaining saved objects

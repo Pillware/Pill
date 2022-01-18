@@ -16,7 +16,7 @@ use pill_core::{
     get_enum_variant_type_name, get_game_error_message, Vector2f, 
 };
 
-use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell };
+use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell, ops::RangeBounds };
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
@@ -414,20 +414,8 @@ impl Engine {
         // Check if component of this type is added
         self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?;
 
-        // Get the type of the component
-        let component_type = TypeId::of::<T>();
-
         // Check if the type of the component is the same as of the ones, which cannot be removed
-        if component_type == TypeId::of::<InputComponent>() {
-            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
-        }
-        else if component_type == TypeId::of::<TimeComponent>() {
-            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
-        }
-        else if component_type == TypeId::of::<AudioManagerComponent>() {
-            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
-        }
-        else if component_type == TypeId::of::<DeferredUpdateComponent>() {
+        if ENGINE_GLOBAL_COMPONENTS.contains(&TypeId::of::<T>()) {
             return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
         }
 
@@ -596,21 +584,6 @@ impl Engine {
         self.scene_manager.get_scene_handle(name).context(format!("Getting {} failed", "SceneHandle".sobj_style()))
     }
 
-    /// Method returning scene by the specific SceneHandle
-    /// 
-    /// If the operation is succesful, returns immutable reference to the Scene
-    pub fn get_scene(&self, scene_handle: SceneHandle) -> Result<&Scene> {
-        self.scene_manager.get_scene(scene_handle).context(format!("Getting {} failed", "Scene".gobj_style()))
-    }
-
-    /// Method returning scene by the specific SceneHandle
-    /// 
-    /// If the operation is succesful, returns mutable reference to the Scene
-    pub fn get_scene_mut(&mut self, scene_handle: SceneHandle) -> Result<&mut Scene> {
-        self.scene_manager.get_scene_mut(scene_handle).context(format!("Getting {} as mutable failed", "Scene".gobj_style()))
-    }
-
-    /// Method seting active scene by the chosen SceneHandle
     pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
         self.scene_manager.set_active_scene(scene_handle).context(format!("Setting active {} failed", "Scene".gobj_style()))
     }
@@ -622,22 +595,10 @@ impl Engine {
         self.scene_manager.get_active_scene_handle().context(format!("Getting {} of active {} failed", "SceneHandle".sobj_style(), "Scene".gobj_style()))
     }
 
-    /// Method removing scene by the specified SceneHandle
-    /// 
-    /// If the operation is succesful, returns removed Scene
-    pub fn remove_scene(&mut self, scene_handle: SceneHandle) -> Result<Scene> {
-        self.scene_manager.remove_scene(scene_handle).context(format!("Removing {} with usage of {} failed", "Scene".sobj_style(), "SceneHandle".gobj_style()))
-    }
+    pub fn remove_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
+        self.scene_manager.remove_scene(scene_handle).context(format!("Removing {} with usage of {} failed", "Scene".sobj_style(), "SceneHandle".gobj_style()))?;
 
-    /// Method returning scene by the specific SceneHandle
-    /// 
-    /// If the operation is succesful, returns mutable reference to the Scene
-    fn get_active_scene(&mut self) -> Result<&Scene> {
-        self.scene_manager.get_active_scene().context(format!("Getting active {} failed", "Scene".gobj_style()))
-    }
-
-    fn get_active_scene_mut(&mut self) -> Result<&mut Scene> {
-        self.scene_manager.get_active_scene_mut().context(format!("Getting active {} as mutable failed", "Scene".gobj_style()))
+        Ok(())
     }
 
     // --- Resource API ---
