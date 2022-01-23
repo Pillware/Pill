@@ -6,7 +6,6 @@ mod scene;
 mod scene_manager;
 mod system_manager;
 mod component;
-mod bitmask_map;
 mod entity_fetcher;
 
 mod components;
@@ -85,22 +84,20 @@ pub use systems::audio_system::{
 
 // - Other
 
-pub use bitmask_map::{
-    BitmaskMap,
-};
-
-pub use entity_fetcher::{
-    EntityFetcher,
-};
-
 pub use component:: {
     Component,
     GlobalComponent,
+    ComponentDestroyer,
+    ConcreteComponentDestroyer
 };
 
 pub use component_storage::{
     ComponentStorage,
     GlobalComponentStorage,
+};
+
+pub use entity_fetcher::{
+    EntityFetcher,
 };
 
 pub use entity::{

@@ -18,7 +18,6 @@ pub mod game {
             MouseButton,
         },
         ecs::{
-            Scene,
             SceneHandle,
             MeshRenderingComponent,
             TransformComponent,

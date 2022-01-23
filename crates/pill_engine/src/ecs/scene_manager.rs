@@ -1,17 +1,12 @@
 use crate::{
-    ecs::{ Scene, Entity, ComponentStorage, Component, EntityHandle, EntityFetcher, EntityBuilder }
+    ecs::{ Scene, Entity, ComponentStorage, Component, EntityHandle, EntityFetcher, EntityBuilder, ComponentDestroyer }
 };
 
 use pill_core::{ EngineError, get_type_name, PillSlotMapKey };
 
-use std::{ 
-    any::{ type_name, Any, TypeId },
-    collections::HashMap, 
-    cell::RefCell
-};
+use std::{ any::{ type_name, Any, TypeId }, collections::HashMap,  cell::RefCell };
 use anyhow::{ Result, Context, Error };
 use boolinator::Boolinator;
-
 
 pill_core::define_new_pill_slotmap_key! { 
     pub struct SceneHandle;
@@ -34,34 +29,14 @@ impl SceneManager {
         }
     }
 
-    pub fn register_component<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene: SceneHandle) -> Result<()> {
-        // Prepare the capacity for component storage
-        let component_storage_capacity = self.max_entity_count.clone();
-
-        // Get scene
-        let target_scene = self.get_scene_mut(scene)?;
-
-        // Check if component storage is already registered
-        target_scene.components.contains_key::<T>().eq(&false).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), target_scene.name.clone())))?;
-
-        // Create new component storage
-        let component_storage = ComponentStorage::<T>::new(component_storage_capacity);
-
-        // Add component storage to scene
-        target_scene.components.insert::<T>(component_storage);
-
-        // Register bitmask for new component
-        target_scene.bitmask_mapping.add_bitmask::<T>();
-
-        Ok(())
-    }
+    // --- Entity ---
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
         // Get scene
-        let target_scene = self.get_scene_mut(scene_handle)?; // [TODO] Check if this will automatically return error and not Err(..) is needed. What if it returns Ok, function progresses? 
+        let target_scene = self.get_scene_mut(scene_handle)?;
 
         // Create new entity with empty bitmask
-        let new_entity = Entity::default(scene_handle.clone());
+        let new_entity = Entity::new(scene_handle.clone());
 
         // Insert new entity into storage, with key as returned type
         let new_entity_handle = target_scene.entities.insert(new_entity);
@@ -70,28 +45,63 @@ impl SceneManager {
         Ok(new_entity_handle)
     }
 
-    pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
+    pub fn remove_entity(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<Vec::<Box<dyn ComponentDestroyer>>> {
+        // Initialize collection for component destroyers to return to engine
+        let mut component_destroyers = Vec::<Box<dyn ComponentDestroyer>>::new();
+        
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 
-        // Get the bitmask for the entity
-        let entity_bitmask = target_scene.entities.get_mut(entity_handle).unwrap().bitmask.clone();
+        // Get entity bitmask
+        let entity_bitmask = target_scene.entities.get_mut(entity_handle).unwrap().bitmask;
 
-        // Remove all components
-        // TODO
+        // Get typeids of all components this entity has
+        let components_typeids = target_scene.get_components_typeids_from_bitmask(entity_bitmask);
 
+        // Get component destroyers to return to engine so it can call them
+        for typeid in components_typeids {
+            let component_destroyer = target_scene.get_component_destoyer(&typeid).unwrap();
+            component_destroyers.push(component_destroyer);
+        }
+       
         // Remove entity from storage
         target_scene.entities.remove(entity_handle);
 
-        Ok(())
+        Ok(component_destroyers)
     }
 
-    pub fn add_component_to_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> {     
-        // Register component storage if that hasn't happened yet
-        if self.get_scene_mut(scene_handle)?.components.contains_key::<T>() == false {
-            self.register_component::<T>(scene_handle)?;
-        }
-        
+    // --- Component ---
+
+    pub fn register_component<T>(&mut self, scene: SceneHandle) -> Result<()> 
+        where T: Component<Storage = ComponentStorage::<T>>
+    {
+        // Prepare the capacity for component storage
+        let component_storage_capacity = self.max_entity_count.clone();
+
+        // Get scene
+        let target_scene = self.get_scene_mut(scene)?;
+
+        // Check if component storage is already registered
+        target_scene.is_component_registered::<T>().eq(&false).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), target_scene.name.clone())))?;
+
+        // Create new component storage
+        let component_storage = ComponentStorage::<T>::new(component_storage_capacity);
+
+        // Add component storage to scene
+        target_scene.components.insert::<T>(component_storage);
+
+        // Add bitmask for new component
+        target_scene.add_component_bitmask::<T>();
+
+        // Add component destroyer
+        target_scene.add_component_destroyer::<T>();
+
+        Ok(())
+    }
+    
+    pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> 
+        where T: Component<Storage = ComponentStorage::<T>>
+    {     
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 
@@ -101,31 +111,32 @@ impl SceneManager {
         // Add component to storage
         let component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized");
         component_slot.borrow_mut().insert(component);
-
-        // Get the bitmask mapped onto the given component to update entity's bitmask
-        let component_bitmask = target_scene.bitmask_mapping.get_bitmask::<T>();
         
-        // Update the bitmask based on the entity handle
+        // Get the component bitmask
+        let component_bitmask = target_scene.get_component_bitmask::<T>()?;
+        
+        // Update entity bitmask
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask |= component_bitmask;
 
         Ok(())
     }
 
-    pub fn remove_component_from_entity<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<T> {
-
+    pub fn remove_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<T> 
+        where T: Component<Storage = ComponentStorage::<T>>
+    {
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 
-        // Get the bitmask mapped onto the given component to update entity's bitmask
-        let component_bitmask = target_scene.bitmask_mapping.get_bitmask::<T>();
+        // Get component bitmask
+        let component_bitmask = target_scene.get_component_bitmask::<T>()?;
 
-        // Update the bitmask based on the entity handle
+        // Update entity bitmask
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask -= component_bitmask;
 
-        // Get component storage from screen
+        // Get component storage from scene
         let component_storage = target_scene.get_component_storage_mut::<T>()?;
 
-        // Delete the component with given entity's index from the storage
+        // Delete the component from storage
         let mut component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized").borrow_mut();
         let component: T = component_slot.take().unwrap();
 
@@ -135,34 +146,25 @@ impl SceneManager {
     pub fn get_entity_component<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<&RefCell<Option<T>>>
         where T: Component<Storage = ComponentStorage::<T>>
     {
-        let scene = self.get_scene(scene_handle)?;
-        let storage = scene.components.get::<T>().unwrap();
-        //let component = storage.data.get(entity_handle.0.index as usize).unwrap();
+        // Get scene
+        let target_scene = self.get_scene(scene_handle)?;
+
+        // Get storage
+        let storage = target_scene.components.get::<T>().unwrap();
 
         // Check if entity has requested component
-        let entity = scene.entities.get(entity_handle).unwrap();
-        //let scene_has = scene.bitmask_mapping.contains_component::<T>();
-        match entity.bitmask & scene.bitmask_mapping.get_bitmask::<T>() != 0 {
+        let entity = target_scene.entities.get(entity_handle).unwrap();
+
+        // Get the bitmask mapped onto the given component to update entity's bitmask
+        let component_bitmask = target_scene.get_component_bitmask::<T>()?;
+
+        match entity.bitmask & component_bitmask != 0 {
             true => Ok(storage.data.get(entity_handle.0.index as usize).unwrap()),
             false => Err(Error::msg("Not found")),
         }
-
-        // for (entity, component) in self.fetch_one_component_storage_with_entity_handles::<T>(scene_handle)? {
-        //     if entity == entity_handle {
-        //         return Ok(Some(component))
-        //     }
-        // }
-
-        //Ok(None)
     }  
 
-    pub fn remove_component_from_entity_x<T: Component<Storage = ComponentStorage::<T>>>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) {
-
-       
-    }
-
-
-    // - Scene -
+    // --- Scene ---
 
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         // Check if scene with that name already exists
@@ -201,19 +203,6 @@ impl SceneManager {
     pub fn remove_scene(&mut self, scene_handle: SceneHandle) -> Result<Scene> {
         let scene = self.scenes.get_mut(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
 
-        // Prepare entities for deletion 
-        let mut fetched_entities = Vec::<EntityHandle>::new();
-        for (entity_handle, entity) in scene.entities.iter() {
-            if entity.scene_handle == scene_handle {
-                fetched_entities.push(entity_handle.clone());
-            }
-        }
-
-        // Delete every entity
-        for entity_handle in fetched_entities.iter() {
-            self.remove_entity(*entity_handle, scene_handle)?;
-        }
-
         // Remove scene
         let scene = self.scenes.remove(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
 
@@ -221,7 +210,7 @@ impl SceneManager {
         Ok(scene)
     }
 
-    // - Active scene -
+    // --- Active scene ---
     
     pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
         // Check if scene for that handle exists
@@ -262,7 +251,7 @@ impl SceneManager {
         where 
         A: Component<Storage = ComponentStorage::<A>>
     {
-
+        // Get filtered indexes for entities
         let filtered_indexes = EntityFetcher::new(self, scene.clone())
                                                         .filter_by_component::<A>()
                                                         .fetch_indexes();

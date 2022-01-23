@@ -5,16 +5,15 @@ pub struct Game { }
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         // Create scene
-        let scene = engine.create_scene("Default")?;
-        engine.set_active_scene(scene)?;
-        let active_scene = engine.get_active_scene_handle()?;
+        let active_scene = engine.create_scene("Default")?;
+        engine.set_active_scene(active_scene)?;
 
         // Register components
-        engine.register_component::<TransformComponent>(scene)?;
-        engine.register_component::<MeshRenderingComponent>(scene)?;
-        engine.register_component::<CameraComponent>(scene)?;
-        engine.register_component::<AudioListenerComponent>(scene)?;
-        engine.register_component::<AudioSourceComponent>(scene)?;
+        engine.register_component::<TransformComponent>(active_scene)?;
+        engine.register_component::<MeshRenderingComponent>(active_scene)?;
+        engine.register_component::<CameraComponent>(active_scene)?;
+        engine.register_component::<AudioListenerComponent>(active_scene)?;
+        engine.register_component::<AudioSourceComponent>(active_scene)?;
         
         // Add systems
         engine.add_system("Hello", hello_system)?;

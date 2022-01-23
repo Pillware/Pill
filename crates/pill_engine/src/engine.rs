@@ -206,7 +206,7 @@ impl Engine {
     }
 
     pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &winit::event::ElementState) {
-        let input_event = InputEvent::MouseButton { key: *key, state: *state }; // Here using * we actually are copying the value of key because MouseButton implements a Copy trait
+        let input_event = InputEvent::MouseButton { key: *key, state: *state };
         self.input_queue.push_back(input_event);
         debug!("Got new mouse key input");
     }
@@ -278,7 +278,14 @@ impl Engine {
     pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
         debug!("Removing {} from {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
 
-        self.scene_manager.remove_entity(entity_handle, scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
+        let component_destroyers = self.scene_manager.remove_entity(scene_handle, entity_handle).context(format!("Creating {} failed", "Entity".gobj_style()))?;
+
+        // Destroy components using destroyers
+        for mut component_destroyer in component_destroyers {
+            component_destroyer.destroy(self, scene_handle, entity_handle)?;
+        }
+
+        Ok(())
     }
 
     // --- Component API ---
@@ -296,6 +303,11 @@ impl Engine {
     {
         debug!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
         
+        // Check if already added
+        let target_scene = self.scene_manager.get_scene(scene_handle)?;
+        let entity_has_component = target_scene.entity_has_component::<T>(entity_handle)?;
+        entity_has_component.eq(&false).ok_or(Error::new(EngineError::ComponentAlreadyExists(get_type_name::<T>())))?;
+
         // Initialize component
         component.initialize(self).context(format!("Adding {} {} failed", "Component".gobj_style(), get_type_name::<T>().sobj_style()))?;
         
@@ -370,16 +382,15 @@ impl Engine {
     pub fn remove_global_component<T>(&mut self) -> Result<()> 
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
-        // Check if component of this type is added
-        self.global_components.contains_key::<T>().eq(&true).ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?;
-
         // Check if the type of the component is the same as of the ones, which cannot be removed
         if ENGINE_GLOBAL_COMPONENTS.contains(&TypeId::of::<T>()) {
             return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>())));
         }
 
-        // Remove component
-        self.global_components.remove::<T>();
+        // Remove and destroy component
+        let global_component_storage = self.global_components.remove::<T>().ok_or(EngineError::GlobalComponentNotFound(get_type_name::<T>()))?;
+        let mut global_component = global_component_storage.data.unwrap();
+        global_component.destroy(self)?;
         
         Ok(())
     }
@@ -523,6 +534,21 @@ impl Engine {
     }
 
     pub fn remove_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
+        // Get scene
+        let scene = self.scene_manager.get_scene(scene_handle)?;
+
+        // Get entity handles
+        let mut entity_handles = Vec::<EntityHandle>::new();
+        for (entity_handle, _) in scene.entities.iter() {
+            entity_handles.push(entity_handle.clone());
+        }
+
+        // Remove entities
+        for entity_handle in entity_handles {
+            self.remove_entity(entity_handle, scene_handle)?;
+        }
+
+        // Remove scene
         self.scene_manager.remove_scene(scene_handle).context(format!("Removing {} with usage of {} failed", "Scene".sobj_style(), "SceneHandle".gobj_style()))?;
 
         Ok(())
@@ -598,7 +624,7 @@ impl Engine {
         let resource_name = self.resource_manager.get_resource::<T>(resource_handle).context(error_message.to_string())?.get_name();
         resource_name.starts_with(DEFAULT_RESOURCE_PREFIX).eq(&false).ok_or(Error::new(EngineError::RemoveDefaultResource(resource_name.clone()))).context(error_message.to_string())?;
 
-        // Remove resource
+        // Remove and destroy resource
         let mut remove_result = self.resource_manager.remove_resource::<T>(resource_handle).context(error_message.to_string())?;
         remove_result.1.destroy(self, *resource_handle)?;
 

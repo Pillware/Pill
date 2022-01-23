@@ -51,7 +51,7 @@ impl Resource for Mesh {
         self.name.clone()
     }
 
-    fn initialize(&mut self, engine: &mut Engine) -> Result<()> { // [TODO] What if renderer fails to create mesh?
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> { 
         let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
         
         // Check if path to asset is correct

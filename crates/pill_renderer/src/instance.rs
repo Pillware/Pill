@@ -74,7 +74,6 @@ impl Vertex for Instance {
     }
 }
 
-// [TODO] Move this to core
 pub trait MatrixAngleExt<S: cgmath::BaseFloat> {
     fn from_euler_angles(v: cgmath::Vector3<S>) -> Self;
 }
