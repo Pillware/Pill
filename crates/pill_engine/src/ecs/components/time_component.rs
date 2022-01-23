@@ -9,9 +9,9 @@ use anyhow::{Result, Error, Context};
 #[readonly::make]
 pub struct TimeComponent {
     #[readonly]
-    pub time: f32, // Time elapsed from the start of the engine/game in milliseconds
+    pub time: f32, // Time elapsed from the start of the engine/game in seconds
     #[readonly]
-    pub delta_time: f32, // Time of last frame in milliseconds
+    pub delta_time: f32, // Time of last frame in seconds
 }
 
 impl TimeComponent {
@@ -23,8 +23,8 @@ impl TimeComponent {
     }
 
     pub(crate) fn update(&mut self, delta_time: f32) -> Result<()> {
-        self.time += delta_time;
-        self.delta_time = delta_time;
+        self.time += delta_time / 1000.0;
+        self.delta_time = delta_time / 1000.0;
         
         Ok(())
     }
