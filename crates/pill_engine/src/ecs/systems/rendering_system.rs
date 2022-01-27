@@ -41,7 +41,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     render_queue.clear();
 
     // Iterate mesh rendering components
-    for (entity_handle, mesh_rendering_component) in (engine).scene_manager.fetch_one_component_storage_with_entity_handles::<MeshRenderingComponent>(active_scene_handle).unwrap() {
+    for (entity_handle, transform_component, mesh_rendering_component) in (engine).scene_manager.fetch_two_component_storages_with_entity_handles::<TransformComponent ,MeshRenderingComponent>(active_scene_handle).unwrap() {
         // Add valid mesh rendering components to render queue
         if let Some(render_queue_key) = mesh_rendering_component.borrow().as_ref().unwrap().render_queue_key {
             let render_queue_item = RenderQueueItem {

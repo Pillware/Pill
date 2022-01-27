@@ -145,7 +145,7 @@ impl RendererPipeline {
                 clamp_depth: false, // Requires Features::DEPTH_CLAMPING
                 conservative: false, // Requires Features::CONSERVATIVE_RASTERIZATION
             },
-            depth_stencil: depth_format.map(|format| wgpu::DepthStencilState { // [TODO: Investigate this map]
+            depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
                 format,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less, // Specifies when to discard a new pixel. Using LESS means pixels will be drawn front to back

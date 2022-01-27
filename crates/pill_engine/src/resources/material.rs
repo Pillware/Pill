@@ -164,7 +164,7 @@ pub struct Material {
 }
 
 impl Material {
-    pub fn new(name: &str) -> Self {  // [TODO] What if renderer fails to create material?        
+    pub fn new(name: &str) -> Self {     
         let mut textures = MaterialTextureMap::new();
         textures.data.insert(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string(), MaterialTexture::new(TextureType::Color));
         textures.mapping.push(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string());

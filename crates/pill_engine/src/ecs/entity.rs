@@ -31,23 +31,15 @@ impl<'a> EntityBuilder<'a> {
 
 // --- Entity ---
 
-#[derive(Debug)]
 pub struct Entity {
-    pub(crate) bitmask: u32,
+    pub(crate) bitmask: u16,
     pub(crate) scene_handle: SceneHandle
 }
 
 impl Entity {
-    pub fn new(bitmask: u32, scene_handle: SceneHandle) -> Self {
+    pub fn new(scene_handle: SceneHandle) -> Self {
         Self {
-            bitmask,
-            scene_handle,
-        }
-    }
-
-    pub fn default(scene_handle: SceneHandle) -> Self {
-        Self {
-            bitmask: 0,
+            bitmask: 0b0000_0000_0000_0000,
             scene_handle,
         }
     }

@@ -32,6 +32,8 @@ pub use pill_typemap::{
 
 pub use bitmask_utils::{
     create_bitmask_from_range,
+    create_bitmask_with_one,
+    get_indices_of_set_elements,
 };
 
 pub use utils::{ 

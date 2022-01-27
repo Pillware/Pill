@@ -244,7 +244,6 @@ impl State {
         let adapter_info = adapter.get_info();
         info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
 
-
         // [TODO]: Use iteration
         // let adapter = instance // Iterates over all possible adapters for the backend and gets first that support given surface
         //     .enumerate_adapters(wgpu::Backends::PRIMARY)
@@ -454,14 +453,10 @@ impl MeshDrawer {
         transform_component_storage: &ComponentStorage<TransformComponent>
     ) {
         // Prepare instance data and load it to buffer
-        if render_queue.len() as u32 > self.max_instance_count {
-            panic!() // [TODO] Throw renderer error
-        }
-
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
-            let transform_storage =  transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap().borrow();
-            let transform_component = transform_storage.as_ref().unwrap();
+            let transform_slot =  transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap().borrow();
+            let transform_component = transform_slot.as_ref().unwrap();
             self.instances.push(Instance::new(transform_component));
         }
         queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer

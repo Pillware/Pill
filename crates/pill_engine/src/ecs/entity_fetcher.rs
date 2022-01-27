@@ -1,17 +1,19 @@
-use std::collections::VecDeque;
+use crate::{
+    ecs::{ Component, SceneManager, SceneHandle, EntityHandle, ComponentStorage }
+};
 
 use pill_core::PillSlotMapKey;
 
-use crate::ecs::{ Component, SceneManager, scene_manager, SceneHandle, EntityHandle};
+use std::collections::VecDeque;
+
 
 pub struct EntityFetcher<'a> {
     pub scene_manager: &'a SceneManager,
     pub scene_handle: SceneHandle,
-    pub filter_bitmask: u32
+    pub filter_bitmask: u16
 }
 
 impl<'a> EntityFetcher<'a> {
-
     pub fn new(scene_manager: &'a SceneManager, scene_handle: SceneHandle) -> Self {
         EntityFetcher {
             scene_manager,
@@ -20,9 +22,12 @@ impl<'a> EntityFetcher<'a> {
         }
     } 
 
-    pub fn filter_by_component<T: Component>(&mut self) -> &mut Self {
+    pub fn filter_by_component<T>(&mut self) -> &mut Self 
+        where T: Component<Storage = ComponentStorage::<T>>
+    {
         let target_scene = self.scene_manager.get_scene(self.scene_handle).unwrap();
-        self.filter_bitmask = self.filter_bitmask | target_scene.bitmask_mapping.get_bitmask::<T>();
+        let component_bitmask = target_scene.get_component_bitmask::<T>().unwrap();
+        self.filter_bitmask = self.filter_bitmask | component_bitmask;
         self
     }
 

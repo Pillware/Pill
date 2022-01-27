@@ -34,6 +34,7 @@ boolinator = "2.4.0"
 bytemuck = { version = "1.4", features = [ "derive" ] }
 lazy_static = "1.4.0"
 config = "0.11"
+dyn-clone = "1.0.4"
 
 [build-dependencies]
 anyhow = "1.0"

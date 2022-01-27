@@ -48,7 +48,7 @@ impl PillTypeMapKey for Texture {
     type Storage = ResourceStorage<Texture>; 
 }
 
-impl Resource for Texture { // [TODO] What if renderer fails to create texture?
+impl Resource for Texture {
     type Handle = TextureHandle;
 
     fn get_name(&self) -> String {
