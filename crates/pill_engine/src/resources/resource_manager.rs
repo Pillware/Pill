@@ -85,15 +85,16 @@ impl ResourceManager {
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
         let resource_name = resource.get_name().to_owned();
-        let max_resource_count = resource_storage.max_resource_count;
 
-        // Check if addition of new resource doesn't overreach the maximum possible count
-        (resource_storage.data.len() + 1 >= max_resource_count).eq(&false)
-            .ok_or(Error::new(EngineError::ResourceMaximumCountReached))?;
+        // Check if there is space for resource
+        if resource_storage.data.len() >= resource_storage.max_resource_count {
+            return Err(Error::new(EngineError::ResourceLimitReached(get_type_name::<T>())));
+        }
 
         // Check if resource already exists
-        resource_storage.mapping.contains_key(&resource_name).eq(&false)
-            .ok_or(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), resource_name.clone())))?;
+        if resource_storage.mapping.contains_key(&resource_name) {
+            return Err(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), resource_name.clone())));
+        }
 
         // Insert new resource
         let resource_handle = resource_storage.data.insert(Some(resource));
@@ -111,11 +112,9 @@ impl ResourceManager {
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
-        // Check if exists
-        resource_storage.mapping.contains_value(resource_handle).eq(&true).ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
-
         // Remove resource
-        let resource = resource_storage.data.remove(*resource_handle).unwrap().expect("Critical: Resource is None");
+        let resource = resource_storage.data.remove(*resource_handle)
+            .ok_or(EngineError::InvalidResourceHandle(get_type_name::<T>()))?.expect("Critical: Resource is None");
 
         // Remove mapping
         resource_storage.mapping.remove_by_value(resource_handle);
@@ -130,7 +129,8 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Get handle by name
-        let resource_handle = resource_storage.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?.clone();
+        let resource_handle = resource_storage.mapping.get_value(&name.to_string())
+            .ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?.clone();
 
         // Remove resource
         let resource = resource_storage.data.remove(resource_handle).unwrap().expect("Critical: Resource is None");
@@ -150,7 +150,8 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage::<T>()?;
 
         // Get resource handle
-        let resource_handle = resource_storage.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidSceneName(name.to_string()))?.clone();
+        let resource_handle = resource_storage.mapping.get_value(&name.to_string())
+            .ok_or(EngineError::InvalidSceneName(name.to_string()))?.clone();
         
         Ok(resource_handle)
     }

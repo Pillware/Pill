@@ -38,9 +38,10 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 
-        // Check if addition of new entity doesn't overreach the maximum possible count
-        (target_scene.entities.len() + 1 >= max_entity_count).eq(&false)
-            .ok_or(Error::new(EngineError::EntityMaximumCountReached))?;
+        // Check if there is space for entity
+        if target_scene.entities.len() >= max_entity_count {
+            return Err(Error::new(EngineError::EntityLimitReached))
+        }
 
         // Create new entity with empty bitmask
         let new_entity = Entity::new(scene_handle.clone());
@@ -88,8 +89,10 @@ impl SceneManager {
         // Get scene
         let target_scene = self.get_scene_mut(scene)?;
 
-        // Check if component storage is already registered
-        target_scene.is_component_registered::<T>().eq(&false).ok_or(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), target_scene.name.clone())))?;
+        // Check if component is already registered
+        if target_scene.is_component_registered::<T>() {
+            return Err(Error::new(EngineError::ComponentAlreadyRegistered(get_type_name::<T>(), target_scene.name.clone())));
+        }
 
         // Create new component storage
         let component_storage = ComponentStorage::<T>::new(component_storage_capacity);
@@ -175,7 +178,9 @@ impl SceneManager {
 
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         // Check if scene with that name already exists
-        self.mapping.contains_key(&name.to_string()).eq(&false).ok_or(Error::new(EngineError::SceneAlreadyExists(name.to_string())))?;
+        if self.mapping.contains_key(&name.to_string()) {
+            return Err(Error::new(EngineError::SceneAlreadyExists(name.to_string())))
+        }
 
         // Create new scene
         let new_scene = Scene::new(name.to_string());

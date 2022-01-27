@@ -23,7 +23,6 @@ pub trait Component : PillTypeMapKey + Send {
     fn destroy(&mut self, engine: &mut Engine, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) -> Result<()> { Ok(()) } // Called when component is being removed from the engine
 }
 
-
 // --- Global Component ---
 
 pub trait GlobalComponent : PillTypeMapKey + Send {  
