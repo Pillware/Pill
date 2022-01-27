@@ -2,7 +2,7 @@
   <img src="media/pill_logo_horizontal.png" img width=65%>
 </p>
 
-Pill Engine - Data-driven game engine written in Rust
+Data-driven game engine written in Rust
 
 ## Aim
 - Simple
