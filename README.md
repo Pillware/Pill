@@ -18,7 +18,6 @@ Data-driven game engine written in Rust
 - Resource system (Mesh, Texture, Material, Sound)
 - Material system
 - Error chaining
-- Configurable
 - Custom components and resources support
 - Launcher tool
 
