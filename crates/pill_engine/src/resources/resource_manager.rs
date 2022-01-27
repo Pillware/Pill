@@ -85,6 +85,11 @@ impl ResourceManager {
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
         let resource_name = resource.get_name().to_owned();
+        let max_resource_count = resource_storage.max_resource_count;
+
+        // Check if addition of new resource doesn't overreach the maximum possible count
+        (resource_storage.data.len() + 1 >= max_resource_count).eq(&false)
+            .ok_or(Error::new(EngineError::ResourceMaximumCountReached))?;
 
         // Check if resource already exists
         resource_storage.mapping.contains_key(&resource_name).eq(&false)

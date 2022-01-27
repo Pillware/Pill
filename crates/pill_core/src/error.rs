@@ -29,6 +29,10 @@ pub enum EngineError<'a> {
     #[error("There is no active {} set in active {}",  "Camera".gobj_style(), "Scene".gobj_style())]
     NoActiveCamera,
 
+    // Entity
+    #[error("New {} cannot be created. Maximum number of entities in {} reached. \n\nSource: ", "Entity".gobj_style(), "Scene".gobj_style())]
+    EntityMaximumCountReached,
+
     // Component
     #[error("{} {} is already registered for {} {}", "Component".gobj_style(), .0.sobj_style(), "Scene".gobj_style(), .1.name_style())]
     ComponentAlreadyRegistered(String, String),
@@ -74,6 +78,8 @@ pub enum EngineError<'a> {
     RemoveDefaultResource(String),
     #[error("Cannot add {} with name {}. This name is reserved only for default engine resources", "Resource".gobj_style(), .0.name_style())]
     WrongResourceName(String),
+    #[error("New {} cannot be registered. Maximum number of resources reached. \n\nSource: ", "Resource".gobj_style())]
+    ResourceMaximumCountReached,
 
     // Material textures and parameters
     #[error("Cannot set {} to {}. Accepted range is {}", "RenderingOrder".sobj_style(), .0.name_style(), .1.name_style())]

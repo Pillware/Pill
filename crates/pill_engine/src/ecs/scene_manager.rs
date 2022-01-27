@@ -32,8 +32,15 @@ impl SceneManager {
     // --- Entity ---
 
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
+        // Get maximum count of entities
+        let max_entity_count = self.max_entity_count;
+
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
+
+        // Check if addition of new entity doesn't overreach the maximum possible count
+        (target_scene.entities.len() + 1 >= max_entity_count).eq(&false)
+            .ok_or(Error::new(EngineError::EntityMaximumCountReached))?;
 
         // Create new entity with empty bitmask
         let new_entity = Entity::new(scene_handle.clone());
