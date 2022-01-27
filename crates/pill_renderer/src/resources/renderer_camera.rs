@@ -40,10 +40,16 @@ impl CameraUniform {
     }
 
     pub fn update_data(&mut self, camera_component: &CameraComponent, transform_component: &TransformComponent) {
-        
-        self.position = cgmath::Vector4::<f32> { x: transform_component.position.x, y: transform_component.position.x, z: transform_component.position.x, w: transform_component.position.x }.into();
-        self.view_projection_matrix = (CameraUniform::calculate_projection_matrix(camera_component) * CameraUniform::calculate_view_matrix(transform_component)).into();
+        // Update position
+        self.position = cgmath::Vector4::<f32> { 
+            x: transform_component.position.x, 
+            y: transform_component.position.y, 
+            z: transform_component.position.z, 
+            w: 0.0
+        }.into();
 
+        // Update view-projection
+        self.view_projection_matrix = (CameraUniform::calculate_projection_matrix(camera_component) * CameraUniform::calculate_view_matrix(transform_component)).into();
     }
 
     fn calculate_view_matrix(transform_component: &TransformComponent) -> Matrix4::<f32> {

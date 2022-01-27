@@ -57,10 +57,10 @@ pub struct Engine {
 impl Engine {
     fn create_default_resources(&mut self) -> Result<()> {
 
-        let max_texture_count = self.config.get_int("MAX_TEXTURE_COUNT").unwrap_or(MAX_TEXTURE_COUNT as i64) as usize;
-        let max_mesh_count = self.config.get_int("MAX_MESH_COUNT").unwrap_or(MAX_MESH_COUNT as i64) as usize;
-        let max_material_count = self.config.get_int("MAX_MATERIAL_COUNT").unwrap_or(MAX_MATERIAL_COUNT as i64) as usize;
-        let max_sound_count = self.config.get_int("MAX_SOUND_COUNT").unwrap_or(MAX_SOUND_COUNT as i64) as usize;
+        let max_texture_count = self.config.get_int("MAX_TEXTURES").unwrap_or(MAX_TEXTURES as i64) as usize;
+        let max_mesh_count = self.config.get_int("MAX_MESHES").unwrap_or(MAX_MESHES as i64) as usize;
+        let max_material_count = self.config.get_int("MAX_MATERIALS").unwrap_or(MAX_MATERIALS as i64) as usize;
+        let max_sound_count = self.config.get_int("MAX_SOUNDS").unwrap_or(MAX_SOUNDS as i64) as usize;
 
         self.register_resource_type::<Texture>(max_texture_count)?;
         self.register_resource_type::<Mesh>(max_mesh_count)?;
@@ -101,7 +101,7 @@ impl Engine {
 /// Pill Engine internal API
 impl Engine {
     pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, config: config::Config) -> Self {
-        let max_entity_count = config.get_int("MAX_ENTITY_COUNT").unwrap_or(MAX_ENTITY_COUNT as i64) as usize;
+        let max_entity_count = config.get_int("MAX_ENTITY_COUNT").unwrap_or(MAX_ENTITIES as i64) as usize;
 
         Self { 
             config,
@@ -132,8 +132,8 @@ impl Engine {
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
 
-        let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUND_COUNT").unwrap_or(MAX_CONCURRENT_2D_SOUND_COUNT as i64) as usize;
-        let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUND_COUNT").unwrap_or(MAX_CONCURRENT_3D_SOUND_COUNT as i64) as usize;
+        let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUND_COUNT").unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
+        let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUND_COUNT").unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
         self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
 
         // Add built-in systems
@@ -593,7 +593,7 @@ impl Engine {
     }
 
     /// Returns handle to the active scene
-    pub fn get_active_scene_handle(&mut self) -> Result<SceneHandle> {
+    pub fn get_active_scene_handle(&self) -> Result<SceneHandle> {
         self.scene_manager.get_active_scene_handle().context(format!("Getting {} of active {} failed", "SceneHandle".sobj_style(), "Scene".gobj_style()))
     }
 

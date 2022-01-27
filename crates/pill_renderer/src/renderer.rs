@@ -59,6 +59,7 @@ use slab::Slab;
 use log::{debug, info};
 
 pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 1000;
+pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 1000;
 
 // Default resource handle - Master pipeline
 pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
@@ -243,13 +244,6 @@ impl State {
         let adapter = instance.request_adapter(&request_adapter_options).await.unwrap();
         let adapter_info = adapter.get_info();
         info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
-
-        // [TODO]: Use iteration
-        // let adapter = instance // Iterates over all possible adapters for the backend and gets first that support given surface
-        //     .enumerate_adapters(wgpu::Backends::PRIMARY)
-        //     .filter(|adapter| { adapter.is_surface_supported(&surface) }) // Check if this adapter supports our surface
-        //     .next()
-        //     .unwrap();
         
         // Create device descriptor
         let device_descriptor = wgpu::DeviceDescriptor {
@@ -381,7 +375,7 @@ impl State {
                 stencil_ops: None,
             };
 
-            self.mesh_drawer.draw(
+            self.mesh_drawer.record_draw_commands(
                 &self.queue, 
                 &mut encoder, 
                 &self.renderer_resource_storage, 
@@ -433,13 +427,13 @@ impl MeshDrawer {
             current_mesh_index_count: 0,
 
             max_instance_count,
-            instances: Vec::<Instance>::with_capacity(max_instance_count as usize), 
+            instances: Vec::<Instance>::with_capacity(INITIAL_INSTANCE_VECTOR_CAPACITY), 
             instance_buffer,
             instance_range: 0..0, // Start inclusive, end exclusive (e.g. 0..3 means indices 0, 1, 2.  e.g. 5..7 means indices 5, 6)
         }
     }
 
-    pub fn draw(
+    pub fn record_draw_commands(
         &mut self, 
         // Resources
         queue: &wgpu::Queue, 

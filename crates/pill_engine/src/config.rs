@@ -15,20 +15,20 @@ pub const PANIC_ON_GAME_ERRORS: bool = true;
 
 // --- ECS ---
 
-pub const MAX_ENTITY_COUNT: usize = 1000;
-pub const MAX_CONCURRENT_2D_SOUND_COUNT: usize = 10;
-pub const MAX_CONCURRENT_3D_SOUND_COUNT: usize = 10;
-pub const MAX_CAMERA_COUNT: usize = 10;
+pub const MAX_ENTITIES: usize = 1000;
+pub const MAX_CONCURRENT_2D_SOUNDS: usize = 10;
+pub const MAX_CONCURRENT_3D_SOUNDS: usize = 10;
+pub const MAX_CAMERAS: usize = 10;
 
 // --- Resources ---
 
 pub const RESOURCE_VERSION_LIMIT: usize = 255;
 
-pub const MAX_PIPELINE_COUNT: usize = 10;
-pub const MAX_TEXTURE_COUNT: usize = 10;
-pub const MAX_MATERIAL_COUNT: usize = 10;
-pub const MAX_MESH_COUNT: usize = 10;
-pub const MAX_SOUND_COUNT: usize = 10;
+pub const MAX_PIPELINES: usize = 10;
+pub const MAX_TEXTURES: usize = 10;
+pub const MAX_MATERIALS: usize = 10;
+pub const MAX_MESHES: usize = 10;
+pub const MAX_SOUNDS: usize = 10;
 
 // Convention: All resource names starting with "PillDefault" are restricted, cannot be added and removed from game
 pub const DEFAULT_RESOURCE_PREFIX: &str = "PillDefault";

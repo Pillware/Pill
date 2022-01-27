@@ -11,15 +11,10 @@ use std::f32::consts::PI;
 
 fn get_rotation_matrix(angles: Vector3<f32>) -> Result<Matrix3<f32>> {
     
-    // Get the angles from the vector 
-    let mut alfa = angles[0];
-    let mut beta = angles[1];
-    let mut gamma = angles[2];
-
-    // Convert from degrees to radians
-    alfa = alfa * PI / 180.0;
-    beta = beta * PI / 180.0;
-    gamma = gamma * PI / 180.0;
+    // Get the angles from the vector and convert them to radians
+    let alfa = angles[0].to_radians();
+    let beta = angles[1].to_radians();
+    let gamma = angles[2].to_radians();
 
     // Prepare rotation matrices
     let alfa_rotation_matrix = Matrix3::new(alfa.cos(), alfa.sin(), 0.0,
@@ -69,12 +64,12 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
     }
 
     // Update the sinks with new positions for left and right ear 
-
     let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
     for sink in audio_manager.spatial_sink_pool.iter_mut() {
         sink.set_left_ear_position(left_ear_position.into());
         sink.set_right_ear_position(right_ear_position.into());
     }
+
     // Update spatial sinks ear positions
     {
         let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;

@@ -67,39 +67,23 @@ impl Resource for Sound {
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Find audio source components that use this sound and update them
-        let mut sinks_to_return = Vec::<(usize, SoundType)>::new();
-        
         for scene in engine.scene_manager.scenes.iter() {
             for audio_source_component_slot in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
                 if let Some(audio_source_component) = audio_source_component_slot.borrow_mut().as_mut() {
                     if let Some(sound_handle) = audio_source_component.sound_handle {
                         // If audio source component has handle to this sound
                         if sound_handle.data() == self_handle.data() {
-                            if let Some(sink_handle) = audio_source_component.sink_handle {
-                                sinks_to_return.push((sink_handle, audio_source_component.sound_type));
-                            }
-                            else {
-                                audio_source_component.remove_sound();
-                            }
+                            audio_source_component.remove_sound();
                         }
                     }
                 }
             }
         }
 
-        // Top playing and return sink handles
-        let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
-        for sink in sinks_to_return {
-            match sink.1 {
-                SoundType::Sound3D => { audio_manager.get_spatial_sink(sink.0).stop(); },
-                SoundType::Sound2D => { audio_manager.get_ambient_sink(sink.0).stop(); },
-            }
-            audio_manager.return_sink(sink.0, &sink.1);
-        }
-
         Ok(())
     }
 }
+
 
 pub struct SoundData {
     pub(crate) source_buffer: Vec<u8>

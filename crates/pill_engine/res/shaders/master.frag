@@ -31,7 +31,6 @@ void main() {
     vec3 light_position = vec3(10.0, 10.0, 10.0);
     vec3 light_color = vec3(1.0, 1.0, 1.0);
 
-
     // Texture
     vec4 object_color = texture(sampler2D(diffuse_texture, diffuse_sampler), vertex_texture_coordinates);
     vec4 object_normal = texture(sampler2D(normal_texture, normal_sampler), vertex_texture_coordinates);
@@ -47,13 +46,6 @@ void main() {
     vec3 diffuse_light_factor = light_color * diffuse_light_strength;
 
     // Specular lighting
-    // vec3 view_direction = normalize(TBN_matrix * camera_position - vertex_position);
-    // vec3 reflection_direction = reflect(-light_direction, normal);
-
-    // float specular_light_strength = pow(max(dot(view_direction, reflection_direction), 0.0), 32) * specularity;
-    // vec3 specular_light_factor = light_color * specular_light_strength;
-   
-    // Alt
     vec3 view_direction = normalize(TBN_matrix * camera_position - vertex_position);
     vec3 half_direction = normalize(view_direction + light_direction);
     float specular_light_strength = pow(max(dot(normal, half_direction), 0.0), 32) * specularity;

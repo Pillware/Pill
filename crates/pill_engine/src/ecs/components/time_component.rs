@@ -1,5 +1,5 @@
 use crate::{
-    ecs::{ Component, GlobalComponentStorage, GlobalComponent }, 
+    ecs::components::{ Component, GlobalComponentStorage, GlobalComponent }, 
 };
 
 use pill_core::PillTypeMapKey;

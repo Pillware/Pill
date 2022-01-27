@@ -1,19 +1,24 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_variables))]
 
 mod entity;
-mod component_storage;
 mod scene;
 mod scene_manager;
-mod system_manager;
-mod component;
 mod entity_fetcher;
-
 mod components;
 mod systems;
 
 // --- Use ---
 
 // - Components
+
+pub use components:: {
+    Component,
+    GlobalComponent,
+    ComponentDestroyer,
+    ConcreteComponentDestroyer,
+    ComponentStorage,
+    GlobalComponentStorage,
+};
 
 pub use components::camera_component::{
     CameraComponent,
@@ -62,6 +67,11 @@ pub use components::time_component::{
 
 // - Systems
 
+pub use systems::{
+    SystemManager,
+    UpdatePhase,
+};
+
 pub use systems::rendering_system::{
     rendering_system,
 };
@@ -84,18 +94,6 @@ pub use systems::audio_system::{
 
 // - Other
 
-pub use component:: {
-    Component,
-    GlobalComponent,
-    ComponentDestroyer,
-    ConcreteComponentDestroyer
-};
-
-pub use component_storage::{
-    ComponentStorage,
-    GlobalComponentStorage,
-};
-
 pub use entity_fetcher::{
     EntityFetcher,
 };
@@ -113,9 +111,4 @@ pub use scene::{
 pub use scene_manager::{
     SceneManager,
     SceneHandle,
-};
-
-pub use system_manager::{
-    SystemManager,
-    UpdatePhase,
 };

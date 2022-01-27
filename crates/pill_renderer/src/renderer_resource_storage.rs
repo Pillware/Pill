@@ -16,11 +16,11 @@ use pill_engine::internal::{
     RendererTextureHandle, 
 };
 
-pub const MAX_PIPELINE_COUNT: usize = 10;
-pub const MAX_TEXTURE_COUNT: usize = 10;
-pub const MAX_MATERIAL_COUNT: usize = 10;
-pub const MAX_MESH_COUNT: usize = 10;
-pub const MAX_CAMERA_COUNT: usize = 10;
+pub const MAX_PIPELINES: usize = 10;
+pub const MAX_TEXTURES: usize = 10;
+pub const MAX_MATERIALS: usize = 10;
+pub const MAX_MESHES: usize = 10;
+pub const MAX_CAMERAS: usize = 10;
 
 pub struct RendererResourceStorage {
     pub(crate) pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>,
@@ -32,11 +32,11 @@ pub struct RendererResourceStorage {
 
 impl RendererResourceStorage {
     pub fn new(config: &config::Config) -> Self {
-        let max_pipeline_count = config.get_int("MAX_PIPELINE_COUNT").unwrap_or(MAX_PIPELINE_COUNT as i64) as usize;
-        let max_texture_count = config.get_int("MAX_TEXTURE_COUNT").unwrap_or(MAX_TEXTURE_COUNT as i64) as usize;
-        let max_material_count = config.get_int("MAX_MATERIAL_COUNT").unwrap_or(MAX_MATERIAL_COUNT as i64) as usize;
-        let max_mesh_count = config.get_int("MAX_MESH_COUNT").unwrap_or(MAX_MESH_COUNT as i64) as usize;
-        let max_camera_count = config.get_int("MAX_CAMERA_COUNT").unwrap_or(MAX_CAMERA_COUNT as i64) as usize;
+        let max_pipeline_count = config.get_int("MAX_PIPELINES").unwrap_or(MAX_PIPELINES as i64) as usize;
+        let max_texture_count = config.get_int("MAX_TEXTURES").unwrap_or(MAX_TEXTURES as i64) as usize;
+        let max_material_count = config.get_int("MAX_MATERIALS").unwrap_or(MAX_MATERIALS as i64) as usize;
+        let max_mesh_count = config.get_int("MAX_MESHS").unwrap_or(MAX_MESHES as i64) as usize;
+        let max_camera_count = config.get_int("MAX_CAMERAS").unwrap_or(MAX_CAMERAS as i64) as usize;
 
         RendererResourceStorage {
             pipelines: PillSlotMap::<RendererPipelineHandle, RendererPipeline>::with_capacity_and_key(max_pipeline_count), 
