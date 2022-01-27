@@ -4,7 +4,7 @@
 
 Data-driven game engine written in Rust
 
-## Aim
+## Design Goals
 - Simple
 - Fast
 - Extensible
