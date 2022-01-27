@@ -3,7 +3,7 @@ Simple demo showcasing the capabilities of Pill Engine
 
 ## Getting Started
 1. [Install Pill Engine](https://github.com/MattSzymonski/Pill-Engine#getting-started "Install Pill Engine")!
-2. Run demo 
+2. Run demo  
 `PillLauncher.exe -a run -p <ENGINE-PATH>\Pill-Engine\examples\Floating-Pills`
 
 ## Controls
