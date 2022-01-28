@@ -37,11 +37,11 @@ https://www.rust-lang.org/tools/install
 Check [demo](examples/Floating-Pills "demo")!
 
 ## Documentation
-- For game developer - [docs](docs/game_dev/doc/pill_engine/game/index.html "docs")
-[comment]: <> (Command: cargo doc --no-deps --features game --manifest-path "crates/pill_engine/Cargo.toml" --target-dir "docs/game_dev" --release)
-- For engine developer - [docs](docs/engine_dev/doc/pill_engine/all.html "docs")
-[comment]: <> (Note: First set pill_game dependency in pill_standalone to "../../examples/Empty")
-[comment]: <> (Command: cargo doc --no-deps --document-private-items --features internal,game --target-dir "docs/engine_dev" --release)
+- For game developer - [docs](https://htmlpreview.github.io/?https://github.com/MattSzymonski/Pill-Engine/blob/main/docs/game_dev/doc/pill_engine/game/index.html "docs")
+<!--- Command: cargo doc --no-deps --features game --manifest-path "crates/pill_engine/Cargo.toml" --target-dir "docs/game_dev" --release --->
+- For engine developer - [docs](https://htmlpreview.github.io/?https://github.com/MattSzymonski/Pill-Engine/blob/main/docs/engine_dev/doc/pill_engine/all.html "docs")
+<!--- Note: Before generating docs set pill_game dependency in pill_standalone to "../../examples/Empty" --->
+<!--- Command: cargo doc --no-deps --document-private-items --features internal,game --target-dir "docs/engine_dev" --release --->
 
 <p align="center">
   <img src="media/pill_pile.png" img width=100%>
