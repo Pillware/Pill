@@ -3,3 +3,6 @@ target/
 build/
 .vscode/
 *.lock
+
+docs/*/debug
+docs/*/release

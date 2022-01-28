@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["DEFERRED_REQUEST_VARIANT_SET_MATERIAL",""],["DEFERRED_REQUEST_VARIANT_SET_MESH",""],["DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE",""]],"struct":[["MeshRenderingComponent",""],["MeshRenderingComponentBuilder",""]]});

@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["pill_renderer"] = [{"text":"impl <a class=\"trait\" href=\"pill_engine/graphics/renderer/trait.PillRenderer.html\" title=\"trait pill_engine::graphics::renderer::PillRenderer\">PillRenderer</a> for <a class=\"struct\" href=\"pill_renderer/renderer/struct.Renderer.html\" title=\"struct pill_renderer::renderer::Renderer\">Renderer</a>","synthetic":false,"types":["pill_renderer::renderer::Renderer"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

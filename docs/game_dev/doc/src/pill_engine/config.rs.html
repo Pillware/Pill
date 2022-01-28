@@ -1,0 +1,206 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `crates\pill_engine\src\config.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>config.rs - source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script id="default-settings"></script><script src="../../storage.js"></script><script src="../../crates.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+<link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
+<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu" role="button">&#9776;</div><a href='../../pill_engine/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu"><img src="../../brush.svg" width="18" height="18" alt="Pick another theme!"></button><div id="theme-choices" role="menu"></div></div><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" class="help-button">?</button>
+                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" height="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<span id="2">  2</span>
+<span id="3">  3</span>
+<span id="4">  4</span>
+<span id="5">  5</span>
+<span id="6">  6</span>
+<span id="7">  7</span>
+<span id="8">  8</span>
+<span id="9">  9</span>
+<span id="10"> 10</span>
+<span id="11"> 11</span>
+<span id="12"> 12</span>
+<span id="13"> 13</span>
+<span id="14"> 14</span>
+<span id="15"> 15</span>
+<span id="16"> 16</span>
+<span id="17"> 17</span>
+<span id="18"> 18</span>
+<span id="19"> 19</span>
+<span id="20"> 20</span>
+<span id="21"> 21</span>
+<span id="22"> 22</span>
+<span id="23"> 23</span>
+<span id="24"> 24</span>
+<span id="25"> 25</span>
+<span id="26"> 26</span>
+<span id="27"> 27</span>
+<span id="28"> 28</span>
+<span id="29"> 29</span>
+<span id="30"> 30</span>
+<span id="31"> 31</span>
+<span id="32"> 32</span>
+<span id="33"> 33</span>
+<span id="34"> 34</span>
+<span id="35"> 35</span>
+<span id="36"> 36</span>
+<span id="37"> 37</span>
+<span id="38"> 38</span>
+<span id="39"> 39</span>
+<span id="40"> 40</span>
+<span id="41"> 41</span>
+<span id="42"> 42</span>
+<span id="43"> 43</span>
+<span id="44"> 44</span>
+<span id="45"> 45</span>
+<span id="46"> 46</span>
+<span id="47"> 47</span>
+<span id="48"> 48</span>
+<span id="49"> 49</span>
+<span id="50"> 50</span>
+<span id="51"> 51</span>
+<span id="52"> 52</span>
+<span id="53"> 53</span>
+<span id="54"> 54</span>
+<span id="55"> 55</span>
+<span id="56"> 56</span>
+<span id="57"> 57</span>
+<span id="58"> 58</span>
+<span id="59"> 59</span>
+<span id="60"> 60</span>
+<span id="61"> 61</span>
+<span id="62"> 62</span>
+<span id="63"> 63</span>
+<span id="64"> 64</span>
+<span id="65"> 65</span>
+<span id="66"> 66</span>
+<span id="67"> 67</span>
+<span id="68"> 68</span>
+<span id="69"> 69</span>
+<span id="70"> 70</span>
+<span id="71"> 71</span>
+<span id="72"> 72</span>
+<span id="73"> 73</span>
+<span id="74"> 74</span>
+<span id="75"> 75</span>
+<span id="76"> 76</span>
+<span id="77"> 77</span>
+<span id="78"> 78</span>
+<span id="79"> 79</span>
+<span id="80"> 80</span>
+<span id="81"> 81</span>
+<span id="82"> 82</span>
+<span id="83"> 83</span>
+<span id="84"> 84</span>
+<span id="85"> 85</span>
+<span id="86"> 86</span>
+<span id="87"> 87</span>
+<span id="88"> 88</span>
+<span id="89"> 89</span>
+<span id="90"> 90</span>
+<span id="91"> 91</span>
+<span id="92"> 92</span>
+<span id="93"> 93</span>
+<span id="94"> 94</span>
+<span id="95"> 95</span>
+<span id="96"> 96</span>
+<span id="97"> 97</span>
+<span id="98"> 98</span>
+<span id="99"> 99</span>
+<span id="100">100</span>
+</pre><div class="example-wrap"><pre class="rust ">
+<span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">resources</span>::{ <span class="ident">TextureHandle</span>, <span class="ident">MaterialHandle</span>, <span class="ident">TextureType</span> }, 
+    <span class="ident">graphics</span>::{ <span class="ident">RendererTextureHandle</span>, <span class="ident">RendererMaterialHandle</span> },
+    <span class="ident">ecs</span>::{ <span class="ident">InputComponent</span>, <span class="ident">AudioManagerComponent</span>, <span class="ident">DeferredUpdateComponent</span>, <span class="ident">TimeComponent</span> }
+};
+
+<span class="kw">use</span> <span class="ident">pill_core::PillSlotMapKeyData</span>;
+
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">num::NonZeroU32</span>, <span class="ident">any::TypeId</span>};
+<span class="kw">use</span> <span class="ident">lazy_static::lazy_static</span>;
+
+<span class="comment">// --- General ---</span>
+
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PANIC_ON_GAME_ERRORS</span>: <span class="ident">bool</span> <span class="op">=</span> <span class="bool-val">true</span>;
+
+<span class="comment">// --- ECS ---</span>
+
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_ENTITIES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1000</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_CONCURRENT_2D_SOUNDS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_CONCURRENT_3D_SOUNDS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_CAMERAS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+
+<span class="comment">// --- Resources ---</span>
+
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RESOURCE_VERSION_LIMIT</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">255</span>;
+
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_PIPELINES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_TEXTURES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_MATERIALS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_MESHES</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MAX_SOUNDS</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">10</span>;
+
+<span class="comment">// Convention: All resource names starting with &quot;PillDefault&quot; are restricted, cannot be added and removed from game</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_RESOURCE_PREFIX</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;PillDefault&quot;</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_COLOR_TEXTURE_NAME</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;PillDefaultColor&quot;</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_NORMAL_TEXTURE_NAME</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;PillDefaultNormal&quot;</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_MATERIAL_NAME</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;PillDefaultMaterial&quot;</span>;
+
+<span class="comment">// Master material</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MASTER_SHADER_COLOR_TEXTURE_SLOT</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;Color&quot;</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MASTER_SHADER_NORMAL_TEXTURE_SLOT</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;Normal&quot;</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MASTER_SHADER_TINT_PARAMETER_SLOT</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;Tint&quot;</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MASTER_SHADER_SPECULARITY_PARAMETER_SLOT</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;Specularity&quot;</span>;
+
+<span class="comment">// Render queue key</span>
+<span class="kw">pub</span> <span class="kw">type</span> <span class="ident">RenderQueueKeyType</span> <span class="op">=</span> <span class="ident">u64</span>; <span class="comment">// Defines size of renderer queue key (Should be u8, u16, u32, or u64)</span>
+
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RENDER_QUEUE_KEY_ITEMS_LENGTH</span>: [<span class="ident">RenderQueueKeyType</span>; <span class="number">5</span>] <span class="op">=</span> [<span class="number">5</span>, <span class="number">8</span>, <span class="number">8</span>, <span class="number">8</span>, <span class="number">8</span>]; <span class="comment">// Defines size of next render queue key parts (bits from left to right)</span>
+
+<span class="comment">// Indices of render queue key parts (maps RENDER_QUEUE_KEY_ITEMS_LENGTH)</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RENDER_QUEUE_KEY_ORDER_IDX</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RENDER_QUEUE_KEY_MATERIAL_INDEX_IDX</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">1</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RENDER_QUEUE_KEY_MATERIAL_VERSION_IDX</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">2</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RENDER_QUEUE_KEY_MESH_INDEX_IDX</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">3</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RENDER_QUEUE_KEY_MESH_VERSION_IDX</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">4</span>;
+
+<span class="comment">// Default resource handle - Color texture</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_COLOR_TEXTURE_HANDLE</span>: <span class="ident">TextureHandle</span> <span class="op">=</span> <span class="ident">TextureHandle</span> { 
+    <span class="number">0</span>: <span class="ident">PillSlotMapKeyData</span> { <span class="ident">index</span>: <span class="number">1</span>, <span class="ident">version</span>: <span class="kw">unsafe</span> { <span class="ident">std::num::NonZeroU32::new_unchecked</span>(<span class="number">1</span>) } } 
+};
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE</span>: <span class="ident">RendererTextureHandle</span> <span class="op">=</span> <span class="ident">RendererTextureHandle</span> { 
+    <span class="number">0</span>: <span class="ident">PillSlotMapKeyData</span> { <span class="ident">index</span>: <span class="number">1</span>, <span class="ident">version</span>: <span class="kw">unsafe</span> { <span class="ident">std::num::NonZeroU32::new_unchecked</span>(<span class="number">1</span>) } } 
+};
+
+<span class="comment">// Default resource handle - Normal texture</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_NORMAL_TEXTURE_HANDLE</span>: <span class="ident">TextureHandle</span> <span class="op">=</span> <span class="ident">TextureHandle</span> { 
+    <span class="number">0</span>: <span class="ident">PillSlotMapKeyData</span> { <span class="ident">index</span>: <span class="number">2</span>, <span class="ident">version</span>: <span class="kw">unsafe</span> { <span class="ident">std::num::NonZeroU32::new_unchecked</span>(<span class="number">1</span>) } } 
+};
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE</span>: <span class="ident">RendererTextureHandle</span> <span class="op">=</span> <span class="ident">RendererTextureHandle</span> { 
+    <span class="number">0</span>: <span class="ident">PillSlotMapKeyData</span> { <span class="ident">index</span>: <span class="number">2</span>, <span class="ident">version</span>: <span class="kw">unsafe</span> { <span class="ident">std::num::NonZeroU32::new_unchecked</span>(<span class="number">1</span>) } } 
+};
+
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_default_texture_handles</span>(<span class="ident">texture_type</span>: <span class="ident">TextureType</span>) <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">TextureHandle</span>, <span class="ident">RendererTextureHandle</span>) {
+    <span class="kw">match</span> <span class="ident">texture_type</span> {
+        <span class="ident">TextureType::Color</span> <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">DEFAULT_COLOR_TEXTURE_HANDLE</span>, <span class="ident">DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE</span>),
+        <span class="ident">TextureType::Normal</span> <span class="op">=</span><span class="op">&gt;</span> (<span class="ident">DEFAULT_NORMAL_TEXTURE_HANDLE</span>, <span class="ident">DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE</span>),
+    }
+}
+
+
+<span class="comment">// Default resource handle - Material</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_MATERIAL_HANDLE</span>: <span class="ident">MaterialHandle</span> <span class="op">=</span> <span class="ident">MaterialHandle</span> { 
+    <span class="number">0</span>: <span class="ident">PillSlotMapKeyData</span> { <span class="ident">index</span>: <span class="number">1</span>, <span class="ident">version</span>: <span class="kw">unsafe</span> { <span class="ident">std::num::NonZeroU32::new_unchecked</span>(<span class="number">1</span>) } } 
+};
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">DEFAULT_RENDERER_MATERIAL_HANDLE</span>: <span class="ident">RendererMaterialHandle</span> <span class="op">=</span> <span class="ident">RendererMaterialHandle</span> { 
+    <span class="number">0</span>: <span class="ident">PillSlotMapKeyData</span> { <span class="ident">index</span>: <span class="number">1</span>, <span class="ident">version</span>: <span class="kw">unsafe</span> { <span class="ident">std::num::NonZeroU32::new_unchecked</span>(<span class="number">1</span>) } } 
+};
+
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_default_material_handles</span>() <span class="op">-</span><span class="op">&gt;</span> (<span class="ident">MaterialHandle</span>, <span class="ident">RendererMaterialHandle</span>) {
+    (<span class="ident">DEFAULT_MATERIAL_HANDLE</span>, <span class="ident">DEFAULT_RENDERER_MATERIAL_HANDLE</span>)
+}
+
+<span class="macro">lazy_static!</span> {
+    <span class="kw">pub</span> <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">ENGINE_GLOBAL_COMPONENTS</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">TypeId</span><span class="op">&gt;</span> <span class="op">=</span> <span class="macro">vec!</span>(
+        <span class="ident">TypeId::of</span>::<span class="op">&lt;</span><span class="ident">InputComponent</span><span class="op">&gt;</span>(),
+        <span class="ident">TypeId::of</span>::<span class="op">&lt;</span><span class="ident">TimeComponent</span><span class="op">&gt;</span>(),
+        <span class="ident">TypeId::of</span>::<span class="op">&lt;</span><span class="ident">AudioManagerComponent</span><span class="op">&gt;</span>(),
+        <span class="ident">TypeId::of</span>::<span class="op">&lt;</span><span class="ident">DeferredUpdateComponent</span><span class="op">&gt;</span>(),
+    );
+}</pre></div>
+</section><section id="search" class="content hidden"></section><div id="rustdoc-vars" data-root-path="../../" data-current-crate="pill_engine" data-search-index-js="../../search-index.js" data-search-js="../../search.js"></div>
+    <script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script></body></html>

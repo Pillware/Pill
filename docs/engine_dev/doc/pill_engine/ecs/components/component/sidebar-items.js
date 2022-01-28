@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["ConcreteComponentDestroyer",""]],"trait":[["Component",""],["ComponentDestroyer",""],["GlobalComponent",""]]});

@@ -34,9 +34,7 @@ pub trait PillGame {
     fn start(&self, engine: &mut Engine) -> Result<()>;
 }
 
-/// Main Pill Engine struct
-/// 
-/// Stores all crutial parts
+/// Heart of Pill Engine
 pub struct Engine { 
     pub(crate) config: config::Config,
     pub(crate) game: Option<Game>,
@@ -99,6 +97,7 @@ impl Engine {
 // ---- INTERNAL API -----------------------------------------------------------------
 
 /// Pill Engine internal API
+#[cfg(feature = "internal")]
 impl Engine {
     pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, config: config::Config) -> Self {
         let max_entity_count = config.get_int("MAX_ENTITY_COUNT").unwrap_or(MAX_ENTITIES as i64) as usize;
@@ -118,6 +117,7 @@ impl Engine {
         }
     }
 
+   
     /// Initializes Pill Engine
     /// 
     /// Creates default global components, adds default systems, creates default resources, initializes game
@@ -278,9 +278,7 @@ impl Engine {
     
     // --- Entity API ---
 
-    /// Method used for entity creation
-    /// 
-    /// Returns EntityBuilder, which gives the ability to chain the methods for components addition
+    /// Returns EntityBuilder, allowing for handy entity creation
     pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
         let entity_handle = self.create_entity(scene_handle).unwrap();
         EntityBuilder {
@@ -290,16 +288,14 @@ impl Engine {
         }
     }
 
-    /// Method used for entity creation
-    /// 
-    /// Return EntityHandle in case of success
+    // Creates new entity to scene specified with scene handle
     pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
         debug!("Creating {} in {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
 
         self.scene_manager.create_entity(scene_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
     }
 
-    /// Method used for entity removal
+     // Removes entity specified with entity handle from scene specified with scene handle
     pub fn remove_entity(&mut self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<()> {
         debug!("Removing {} from {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
 

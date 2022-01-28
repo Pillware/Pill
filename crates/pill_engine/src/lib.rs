@@ -103,7 +103,6 @@ pub mod internal {
             AudioListenerComponent,
             AudioManagerComponent,
             get_renderer_resource_handle_from_camera_component,
-            //DeferredUpdateRequest,
         },
         resources::{
             Texture, 

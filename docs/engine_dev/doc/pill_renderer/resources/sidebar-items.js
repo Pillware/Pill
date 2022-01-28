@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["renderer_camera",""],["renderer_material",""],["renderer_mesh",""],["renderer_pipeline",""],["renderer_texture",""]],"struct":[["RendererCamera",""],["RendererMaterial",""],["RendererMesh",""],["RendererPipeline",""],["RendererTexture",""]],"trait":[["Vertex",""]]});

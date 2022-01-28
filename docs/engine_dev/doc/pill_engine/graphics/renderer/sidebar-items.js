@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["RendererError",""]],"struct":[["RendererCameraHandle",""],["RendererMaterialHandle",""],["RendererMeshHandle",""],["RendererPipelineHandle",""],["RendererTextureHandle",""]],"trait":[["PillRenderer",""]],"type":[["Renderer",""]]});
