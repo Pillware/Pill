@@ -8,6 +8,8 @@ pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::L;
 pub const TOGGLE_FLOATING_OBJECTS_SYSTEM: KeyboardKey = KeyboardKey::I;
 pub const FLOATING_OBJECTS_CHANGE_MESH_BUTTON: KeyboardKey = KeyboardKey::N;
 pub const FLOATING_OBJECTS_CHANGE_MATERIAL_BUTTON: KeyboardKey = KeyboardKey::M;
+pub const INCREASE_CAMERA_FOV_BUTTON: KeyboardKey = KeyboardKey::T;
+pub const DECREASE_CAMERA_FOV_BUTTON: KeyboardKey = KeyboardKey::G;
 
 pub struct FloatingObjectComponent {
     pub angle: f32,
@@ -75,9 +77,9 @@ impl PillGame for Game {
         engine.add_system("DeleteFloatingObjects", floating_objects_remove_system)?;
         engine.add_system("ObjectsMovement", floating_objects_movement_system)?;
         engine.add_system("CameraMovement", camera_movement_system)?;
+        engine.add_system("CameraFov", camera_fov_changing_system)?;
         engine.add_system("MeshChanging", object_appearance_changing_system)?;
-        engine.add_system("Control", control_system)?;
-        
+        engine.add_system("DemoControl", demo_control_system)?;
 
         // --- Create resources ---
 
@@ -184,7 +186,6 @@ impl PillGame for Game {
         let audio_listener_component = AudioListenerComponent::builder().enabled(true).build();
         engine.add_component_to_entity(active_scene, camera, audio_listener_component)?;
 
-
         
         // Setup demo state component
         let demo_state = DemoStateComponent {
@@ -206,7 +207,7 @@ impl PillGame for Game {
 
 // --- Systems ---
 
-fn control_system(engine: &mut Engine) -> Result<()> {
+fn demo_control_system(engine: &mut Engine) -> Result<()> {
     let input_component = engine.get_global_component::<InputComponent>()?;
     let system_toggle_key = input_component.get_key_pressed(TOGGLE_FLOATING_OBJECTS_SYSTEM);
 
@@ -344,6 +345,30 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Set rotation
         transform_transform.borrow_mut().as_mut().unwrap().rotation = Vector3f::new(0.0, angle - 180.0, 0.0);
+    }
+
+    Ok(())
+}
+
+fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
+    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
+    let input_component = engine.get_global_component::<InputComponent>()?;
+
+    // Get input
+    let t_key = input_component.get_key(INCREASE_CAMERA_FOV_BUTTON);
+    let g_key = input_component.get_key(DECREASE_CAMERA_FOV_BUTTON);
+
+    for camera_component in (&*engine).iterate_one_component::<CameraComponent>()?
+    {   
+        let mut change_value: f32 = 0.0;
+        if t_key { change_value += 1.0; }
+        if g_key { change_value -= 1.0; }
+
+        let new_fov = camera_component.borrow_mut().as_mut().unwrap().fov + change_value * 100.0 * delta_time;
+        if new_fov > 10.0 && new_fov < 120.0 {
+            println!("{}", new_fov);
+            camera_component.borrow_mut().as_mut().unwrap().fov = new_fov;
+        }
     }
 
     Ok(())

@@ -9,6 +9,8 @@ Simple demo showcasing the capabilities of Pill Engine
 ## Controls
 - A - Orbit camera left
 - D - Orbit camera right
+- T - Increase camera field of view
+- G - Decrease camera field of view
 - O - Spawn objects
 - L - Remove objects
 - I - Toggle system responsible for objects' movement
