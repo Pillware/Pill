@@ -1,3 +1,4 @@
+use cgmath::{EuclideanSpace, SquareMatrix, Zero};
 use pill_engine::internal::{
     RendererCameraHandle,
     TransformComponent,
@@ -5,7 +6,6 @@ use pill_engine::internal::{
 };
 
 use anyhow::{ Result, Context, Error };
-use cgmath::{ Deg, Matrix4, Angle, EuclideanSpace, Vector3, Point3, InnerSpace, SquareMatrix, Zero };
 use wgpu::util::DeviceExt;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
@@ -52,23 +52,25 @@ impl CameraUniform {
         self.view_projection_matrix = (CameraUniform::calculate_projection_matrix(camera_component) * CameraUniform::calculate_view_matrix(transform_component)).into();
     }
 
-    fn calculate_view_matrix(transform_component: &TransformComponent) -> Matrix4::<f32> {
-        let (sin_pitch, cos_pitch) = Deg(transform_component.rotation.x).sin_cos();
-        let (sin_yaw, cos_yaw) = Deg(transform_component.rotation.y).sin_cos();
-    
-        let direction = Vector3::new(cos_pitch * cos_yaw, sin_pitch, cos_pitch * sin_yaw).normalize();
-        let position = Point3::from_vec(transform_component.position);
-    
-        Matrix4::look_to_rh(
+    fn calculate_view_matrix(transform_component: &TransformComponent) -> cgmath::Matrix4::<f32> {
+        let position = cgmath::Point3::from_vec(transform_component.position);
+
+        let roll_matrix  = cgmath::Matrix3::from_angle_z(cgmath::Deg(transform_component.rotation.z));
+        let yaw_matrix  = cgmath::Matrix3::from_angle_y(cgmath::Deg(transform_component.rotation.y));
+        let pitch_matrix  = cgmath::Matrix3::from_angle_x(cgmath::Deg(transform_component.rotation.x));
+        let rotation_matrix = yaw_matrix * pitch_matrix * roll_matrix;
+        let direction  = rotation_matrix * cgmath::Vector3::<f32>::unit_z();
+
+        cgmath::Matrix4::look_to_rh(
             position,
             direction,
             cgmath::Vector3::unit_y()
         )
     }
-    
-    fn calculate_projection_matrix(camera_component: &CameraComponent) -> Matrix4::<f32> {
+
+    fn calculate_projection_matrix(camera_component: &CameraComponent) -> cgmath::Matrix4::<f32> {
         OPENGL_TO_WGPU_MATRIX * cgmath::perspective(
-            Deg(camera_component.fov), 
+            cgmath::Deg(camera_component.fov), 
             camera_component.aspect.get_value(), 
             camera_component.range.start,
             camera_component.range.end
