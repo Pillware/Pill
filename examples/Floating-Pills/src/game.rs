@@ -166,7 +166,7 @@ impl PillGame for Game {
 
         let transform_component = TransformComponent::builder()
             .position(Vector3f::new(-30.0,3.0,0.0))
-            .rotation(Vector3f::new(-20.0,0.0,0.0))
+            .rotation(Vector3f::new(0.0,0.0,-20.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
 
@@ -344,7 +344,7 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         transform_transform.borrow_mut().as_mut().unwrap().position = Vector3f::new(x_position, delta_y, z_position + delta_z);
 
         // Set rotation
-        transform_transform.borrow_mut().as_mut().unwrap().rotation = Vector3f::new(0.0, angle - 180.0, 0.0);
+        transform_transform.borrow_mut().as_mut().unwrap().rotation = Vector3f::new(0.0, -angle - 90.0, 0.0);
     }
 
     Ok(())
@@ -366,7 +366,6 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
 
         let new_fov = camera_component.borrow_mut().as_mut().unwrap().fov + change_value * 100.0 * delta_time;
         if new_fov > 10.0 && new_fov < 120.0 {
-            println!("{}", new_fov);
             camera_component.borrow_mut().as_mut().unwrap().fov = new_fov;
         }
     }
