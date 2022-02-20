@@ -37,9 +37,10 @@ https://www.rust-lang.org/tools/install
 Check [demo](examples/Floating-Pills "demo")!
 
 ## Documentation
-- For game developers - [docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/game_dev/doc/pill_engine/game/index.html "Docs")  
-- For engine developers - [docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/engine_dev/doc/pill_engine/index.html "Docs")  
 [Repository](https://github.com/MattSzymonski/Pill-Engine-Docs "Repository")
+
+- For game developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/game_dev/doc/pill_engine/game/index.html "Docs")  
+- For engine developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/engine_dev/doc/pill_engine/index.html "Docs")  
 
 <p align="center">
   <img src="media/pill_pile.png" img width=100%>
