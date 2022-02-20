@@ -100,7 +100,7 @@ impl Engine {
 #[cfg(feature = "internal")]
 impl Engine {
     pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, config: config::Config) -> Self {
-        let max_entity_count = config.get_int("MAX_ENTITY_COUNT").unwrap_or(MAX_ENTITIES as i64) as usize;
+        let max_entity_count = config.get_int("MAX_ENTITIES").unwrap_or(MAX_ENTITIES as i64) as usize;
 
         Self { 
             config,
@@ -132,8 +132,8 @@ impl Engine {
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
 
-        let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUND_COUNT").unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
-        let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUND_COUNT").unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
+        let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUNDS").unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
+        let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUNDS").unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
         self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
 
         // Add built-in systems
@@ -338,10 +338,10 @@ impl Engine {
         
         // Add component
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))?;
-        let component = self.scene_manager.get_entity_component::<T>(entity_handle, scene_handle).unwrap();
+        let component = self.scene_manager.get_entity_component::<T>(entity_handle, scene_handle)?;
 
         // Pass handles to entity and scene to this component so it can store it if needed
-        component.borrow_mut().as_mut().unwrap().pass_handles(scene_handle, entity_handle);
+        component.pass_handles(scene_handle, entity_handle);
 
         Ok(())
     }
@@ -358,17 +358,6 @@ impl Engine {
         component.destroy(self, scene_handle, entity_handle)?;
 
         Ok(())
-    }
-
-    // Returns entity component specified with scene and entity handle
-    pub fn get_entity_component<T>(&self, entity_handle: EntityHandle, scene_handle: SceneHandle) -> Result<&RefCell<Option<T>>>
-        where T: Component<Storage = ComponentStorage<T>>
-    {   
-        debug!("Getting {} {} from {} {} in {} {}", get_type_name::<T>().sobj_style(), "Component".gobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-
-        let component = self.scene_manager.get_entity_component::<T>(entity_handle, scene_handle)?;
-
-        Ok(component)
     }
 
     // --- Global Component API ---
@@ -431,144 +420,83 @@ impl Engine {
     // --- Iterator API ---
     
     /// Returns iterator for specified component
-    pub fn iterate_one_component<A>(&self) -> Result<impl Iterator<Item = &RefCell<Option<A>>>> 
-        where A: Component<Storage = ComponentStorage<A>>
-    {
-        // Get scene handle
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-
-        // Get iterator
-        let iterator = self.scene_manager.fetch_one_component_storage::<A>(scene_handle)?;
-
-        Ok(iterator)
-    }
-
-    /// Returns iterator for specified component
     /// 
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_one_component_with_entities<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>)>> 
+    pub fn iterate_one_component<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A)>> 
         where A: Component<Storage = ComponentStorage<A>>
     {
-        // Get scene handle
+        // Get scene handle and iterator
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
+        self.scene_manager.get_one_component_iterator::<A>(scene_handle)
+    }
 
-        // Get iterator
-        let iterator = self.scene_manager.fetch_one_component_storage_with_entity_handles::<A>(scene_handle)?;
-
-        Ok(iterator)
+    /// Returns iterator for specified component mutable
+    /// 
+    /// Additionally returns entity handle to matching entities
+    pub fn iterate_one_component_mut<A>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A)>> 
+        where A: Component<Storage = ComponentStorage<A>>
+    {
+        // Get scene handle and iterator
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+        self.scene_manager.get_one_component_iterator_mut::<A>(scene_handle)
     }
     
     /// Returns iterator for specified component pair
     /// 
     /// Iterator fetches specified components only for those entities which have them all
-    pub fn iterate_two_components<A, B>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>)>> 
+    /// Additionally returns entity handle to matching entities
+    pub fn iterate_two_components<A, B>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A, &B)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>
     {
-        // Get scene handle
+        // Get scene handle and iterator
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
-
-        // Get iterator
-        let iterator = self.scene_manager.fetch_two_component_storages::<A, B>(scene_handle)?;
-
-        Ok(iterator) 
+        self.scene_manager.get_two_component_iterator::<A, B>(scene_handle)
     }
 
-    /// Returns iterator for specified component pair
+    /// Returns iterator for specified component pair mutable
     /// 
     /// Iterator fetches specified components only for those entities which have them all
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_two_components_with_entities<A, B>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>)>> 
+    pub fn iterate_two_components_mut<A, B>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>
     {
-        // Get scene handle
+        // Get scene handle and iterator
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
-
-        // Get iterator
-        let iterator = self.scene_manager.fetch_two_component_storages_with_entity_handles::<A, B>(scene_handle)?;
-
-        Ok(iterator) 
+        self.scene_manager.get_two_component_iterator_mut::<A, B>(scene_handle)
     }
 
-    /// Returns iterator for specified component triple
+    /// Returns iterator for specified component triple 
     /// 
     /// Iterator fetches specified components only for those entities which have them all
-    pub fn iterate_three_components<A, B, C>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
+    /// Additionally returns entity handle to matching entities
+    pub fn iterate_three_components<A, B, C>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A, &B, &C)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>,
         C: Component<Storage = ComponentStorage<C>>
     {
-
-        // Get scene handle
+        // Get scene handle and iterator
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
-
-        // Get iterator
-        let iterator = self.scene_manager.fetch_three_component_storages::<A, B, C>(scene_handle)?;
-
-        Ok(iterator)
+        self.scene_manager.get_three_component_iterator::<A, B, C>(scene_handle)
     }
-
-    /// Returns iterator for specified component triple
+  
+    /// Returns iterator for specified component triple mutable
     /// 
     /// Iterator fetches specified components only for those entities which have them all
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_three_components_with_entities<A, B, C>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>)>> 
+    pub fn iterate_three_components_mut<A, B, C>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B, &mut C)>> 
         where 
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>,
         C: Component<Storage = ComponentStorage<C>>
     {
-
-        // Get scene handle
+        // Get scene handle and iterator
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
-
-        // Get iterator
-        let iterator = self.scene_manager.fetch_three_component_storages_with_entity_handles::<A, B, C>(scene_handle)?;
-
-        Ok(iterator)
-    }
-
-    /// Returns iterator for specified component quadruple
-    /// 
-    /// Iterator fetches specified components only for those entities which have them all
-    pub fn iterate_four_components<A, B, C, D>(&self) -> Result<impl Iterator<Item = (&RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
-        where 
-        A: Component<Storage = ComponentStorage<A>>,
-        B: Component<Storage = ComponentStorage<B>>,
-        C: Component<Storage = ComponentStorage<C>>,
-        D: Component<Storage = ComponentStorage<D>>
-    {
-        // Get scene handle
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-
-        // Get iterator
-        let iterator = self.scene_manager.fetch_four_component_storages::<A, B, C, D>(scene_handle)?;
-
-        Ok(iterator) 
-    }
-
-    /// Returns iterator for specified component quadruple
-    /// 
-    /// Iterator fetches specified components only for those entities which have them all
-    /// Additionally returns entity handle to matching entities
-    pub fn iterate_four_components_with_entities<A, B, C, D>(&self) -> Result<impl Iterator<Item = (EntityHandle, &RefCell<Option<A>>, &RefCell<Option<B>>, &RefCell<Option<C>>, &RefCell<Option<D>>)>> 
-        where 
-        A: Component<Storage = ComponentStorage<A>>,
-        B: Component<Storage = ComponentStorage<B>>,
-        C: Component<Storage = ComponentStorage<C>>,
-        D: Component<Storage = ComponentStorage<D>>
-    {
-        // Get scene handle
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-
-        // Get iterator
-        let iterator = self.scene_manager.fetch_four_component_storages_with_entity_handles::<A, B, C, D>(scene_handle)?;
-
-        Ok(iterator) 
+        self.scene_manager.get_three_component_iterator_mut::<A, B, C>(scene_handle)
     }
 
     // --- Scene API ---

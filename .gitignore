@@ -4,5 +4,6 @@ build/
 .vscode/
 *.lock
 
-docs/*/debug
-docs/*/release
+crates/pill_standalone/Cargo.toml
+examples/Floating-Pills/Cargo.toml
+examples/Empty/Cargo.toml

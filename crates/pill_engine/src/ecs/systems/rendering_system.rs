@@ -14,14 +14,13 @@ use log::{ debug };
 
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
+    let active_scene = engine.scene_manager.get_active_scene_mut()?;
 
     // - Find active camera and update its aspect ratio if needed
 
     // Find first enabled camera and use it as active
     let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
-    for (entity_handle, camera_component) in (&*engine).iterate_one_component_with_entities::<CameraComponent>().unwrap() {
-        let mut camera_component_mut_slot = camera_component.borrow_mut();
-        let camera_component = camera_component_mut_slot.as_mut().unwrap();
+    for (entity_handle, camera_component) in active_scene.get_one_component_iterator_mut::<CameraComponent>()? {
         if camera_component.enabled {
             // Update active camera aspect ratio if it is set to automatic
              if let CameraAspectRatio::Automatic(_) = camera_component.aspect {
@@ -41,9 +40,9 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     render_queue.clear();
 
     // Iterate mesh rendering components
-    for (entity_handle, transform_component, mesh_rendering_component) in (engine).scene_manager.fetch_two_component_storages_with_entity_handles::<TransformComponent ,MeshRenderingComponent>(active_scene_handle).unwrap() {
+    for (entity_handle, transform_component, mesh_rendering_component) in engine.scene_manager.get_two_component_iterator::<TransformComponent, MeshRenderingComponent>(active_scene_handle).unwrap() {
         // Add valid mesh rendering components to render queue
-        if let Some(render_queue_key) = mesh_rendering_component.borrow().as_ref().unwrap().render_queue_key {
+        if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
             let render_queue_item = RenderQueueItem {
                 key: render_queue_key,
                 entity_index: entity_handle.data().index as u32, 

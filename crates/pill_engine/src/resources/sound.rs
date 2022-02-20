@@ -67,14 +67,12 @@ impl Resource for Sound {
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Find audio source components that use this sound and update them
-        for scene in engine.scene_manager.scenes.iter() {
-            for audio_source_component_slot in (&*engine).iterate_one_component::<AudioSourceComponent>()? {
-                if let Some(audio_source_component) = audio_source_component_slot.borrow_mut().as_mut() {
-                    if let Some(sound_handle) = audio_source_component.sound_handle {
-                        // If audio source component has handle to this sound
-                        if sound_handle.data() == self_handle.data() {
-                            audio_source_component.remove_sound();
-                        }
+        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            for (entity_handle, audio_source_component) in scene.get_one_component_iterator_mut::<AudioSourceComponent>()? {
+                if let Some(sound_handle) = audio_source_component.sound_handle {
+                    // If audio source component has handle to this sound
+                    if sound_handle.data() == self_handle.data() {
+                        audio_source_component.remove_sound();
                     }
                 }
             }

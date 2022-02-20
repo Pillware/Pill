@@ -1,8 +1,8 @@
 use pill_engine::game::*;
 use rand::{thread_rng, Rng};
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 10;
-pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100;
+pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 100;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::O;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::L;
 pub const TOGGLE_FLOATING_OBJECTS_SYSTEM: KeyboardKey = KeyboardKey::I;
@@ -150,10 +150,8 @@ impl PillGame for Game {
         // Create ambient music player entity
         let ambient_music_player_entity = engine.create_entity(active_scene)?;
 
-        let audio_source_component = AudioSourceComponent::builder().sound_type(SoundType::Sound2D).sound(ambient_music_handle).volume(0.05).build();
+        let audio_source_component = AudioSourceComponent::builder().sound_type(SoundType::Sound2D).sound(ambient_music_handle).volume(0.05).play_on_awake(true).build();
         engine.add_component_to_entity(active_scene, ambient_music_player_entity, audio_source_component)?;
-        let audio_source_component = engine.get_entity_component::<AudioSourceComponent>(ambient_music_player_entity, active_scene)?;
-        audio_source_component.borrow_mut().as_mut().unwrap().play();
 
         // Create origin point entity
         let origin_entity = engine.create_entity(active_scene)?;
@@ -224,35 +222,35 @@ fn demo_control_system(engine: &mut Engine) -> Result<()> {
 fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
 
-    for (floating_object_transform, floating_object_component) in (&*engine).iterate_two_components::<TransformComponent, FloatingObjectComponent>()? {
+    for (_, floating_object_transform, floating_object_component) in engine.iterate_two_components_mut::<TransformComponent, FloatingObjectComponent>()? {
 
         // Local rotation
-        let rotation_speed = floating_object_component.borrow().as_ref().unwrap().rotation_speed.clone();
-        floating_object_transform.borrow_mut().as_mut().unwrap().rotation += Vector3f::new(1.0,1.0,1.0) * rotation_speed * delta_time;
+        let rotation_speed = floating_object_component.rotation_speed.clone();
+        floating_object_transform.rotation += Vector3f::new(1.0,1.0,1.0) * rotation_speed * delta_time;
 
         // Local scale
-        let scale_speed = floating_object_component.borrow().as_ref().unwrap().scale_speed.clone();
-        floating_object_component.borrow_mut().as_mut().unwrap().scale_factor += scale_speed * delta_time;
-        let scale_factor = floating_object_component.borrow().as_ref().unwrap().scale_factor.clone();
-        floating_object_transform.borrow_mut().as_mut().unwrap().scale = Vector3f::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5);
+        let scale_speed = floating_object_component.scale_speed.clone();
+        floating_object_component.scale_factor += scale_speed * delta_time;
+        let scale_factor = floating_object_component.scale_factor.clone();
+        floating_object_transform.scale = Vector3f::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5);
 
         // Radius
-        let radius_speed = floating_object_component.borrow().as_ref().unwrap().radius_speed.clone();
-        floating_object_component.borrow_mut().as_mut().unwrap().radius_factor += radius_speed * delta_time;
+        let radius_speed = floating_object_component.radius_speed.clone();
+        floating_object_component.radius_factor += radius_speed * delta_time;
 
         // Movement
-        let orbital_movement_speed = floating_object_component.borrow().as_ref().unwrap().orbital_movement_speed.clone();
-        floating_object_component.borrow_mut().as_mut().unwrap().angle += orbital_movement_speed * delta_time;
+        let orbital_movement_speed = floating_object_component.orbital_movement_speed.clone();
+        floating_object_component.angle += orbital_movement_speed * delta_time;
 
-        let angle = floating_object_component.borrow().as_ref().unwrap().angle.clone();
-        let radius = floating_object_component.borrow().as_ref().unwrap().radius_factor.clone().sin() * 6.0 + 10.0;
-        floating_object_transform.borrow_mut().as_mut().unwrap().position.x = angle.to_radians().cos() * radius;
-        floating_object_transform.borrow_mut().as_mut().unwrap().position.z = angle.to_radians().sin() * radius;
+        let angle = floating_object_component.angle.clone();
+        let radius = floating_object_component.radius_factor.clone().sin() * 6.0 + 10.0;
+        floating_object_transform.position.x = angle.to_radians().cos() * radius;
+        floating_object_transform.position.z = angle.to_radians().sin() * radius;
        
-        let y_axis_movement_speed = floating_object_component.borrow().as_ref().unwrap().y_axis_movement_speed.clone();
-        floating_object_component.borrow_mut().as_mut().unwrap().y_axis_factor += y_axis_movement_speed * delta_time;
-        let y_axis_factor = floating_object_component.borrow().as_ref().unwrap().y_axis_factor.clone();
-        floating_object_transform.borrow_mut().as_mut().unwrap().position.y = y_axis_factor.sin() * 0.8 * radius;
+        let y_axis_movement_speed = floating_object_component.y_axis_movement_speed.clone();
+        floating_object_component.y_axis_factor += y_axis_movement_speed * delta_time;
+        let y_axis_factor = floating_object_component.y_axis_factor.clone();
+        floating_object_transform.position.y = y_axis_factor.sin() * 0.8 * radius;
     }  
 
     Ok(())
@@ -270,8 +268,8 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
         let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
         demo_state.current_mesh = (demo_state.current_mesh + 1) % 3;
         let mesh_handle = demo_state.mesh_handles.get(demo_state.current_mesh).unwrap().clone();
-        for mesh_rendering_component in (&*engine).iterate_one_component::<MeshRenderingComponent>()? {
-            mesh_rendering_component.borrow_mut().as_mut().unwrap().set_mesh(&mesh_handle);
+        for (_, mesh_rendering_component) in engine.iterate_one_component_mut::<MeshRenderingComponent>()? {
+            mesh_rendering_component.set_mesh(&mesh_handle);
         }
     }
 
@@ -285,9 +283,9 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
             false => demo_state.plain_color_material_handles.clone(),
         };
         
-        for mesh_rendering_component in (&*engine).iterate_one_component::<MeshRenderingComponent>()? {
+        for (_, mesh_rendering_component) in engine.iterate_one_component_mut::<MeshRenderingComponent>()? {
             let material_handle = current_material_set[rng.gen_range(0..=2)];
-            mesh_rendering_component.borrow_mut().as_mut().unwrap().set_material(&material_handle);
+            mesh_rendering_component.set_material(&material_handle);
         }
     }
 
@@ -305,20 +303,20 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let mouse_scroll_delta = input_component.get_mouse_scroll_delta();
     let mouse_delta = input_component.get_mouse_delta();
 
-    for (transform_transform, camera_movement_component) in (&*engine).iterate_two_components::<TransformComponent, CameraMovementComponent>()?
+    for (_, transform_transform, camera_movement_component) in engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
     {   
         // Zoom
-        let zoom_speed = camera_movement_component.borrow_mut().as_mut().unwrap().zoom_speed;
-        camera_movement_component.borrow_mut().as_mut().unwrap().radius -= mouse_scroll_delta.y * zoom_speed;
+        let zoom_speed = camera_movement_component.zoom_speed;
+        camera_movement_component.radius -= mouse_scroll_delta.y * zoom_speed;
 
         // Orbit
         let mut change_value: f32 = 0.0;
         if d_key { change_value -= 1.0; }
         if a_key { change_value += 1.0; }
-        let orbit_speed = camera_movement_component.borrow_mut().as_mut().unwrap().orbit_speed;
-        camera_movement_component.borrow_mut().as_mut().unwrap().angle += change_value * orbit_speed * delta_time;
-        let angle = camera_movement_component.borrow_mut().as_mut().unwrap().angle;
-        let radius = camera_movement_component.borrow_mut().as_mut().unwrap().radius;
+        let orbit_speed = camera_movement_component.orbit_speed;
+        camera_movement_component.angle += change_value * orbit_speed * delta_time;
+        let angle = camera_movement_component.angle;
+        let radius = camera_movement_component.radius;
 
         let x_position = angle.to_radians().cos() * radius;
         let z_position = angle.to_radians().sin() * radius;
@@ -333,18 +331,18 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         if mouse_delta.y < 0.0 { y_change_value += 0.2; }
 
         if right_mouse_button {
-            camera_movement_component.borrow_mut().as_mut().unwrap().delta_z += z_change_value;
-            camera_movement_component.borrow_mut().as_mut().unwrap().delta_y += y_change_value;
+            camera_movement_component.delta_z += z_change_value;
+            camera_movement_component.delta_y += y_change_value;
         }
 
-        let delta_y = camera_movement_component.borrow_mut().as_mut().unwrap().delta_y;
-        let delta_z = camera_movement_component.borrow_mut().as_mut().unwrap().delta_z;
+        let delta_y = camera_movement_component.delta_y;
+        let delta_z = camera_movement_component.delta_z;
 
         // Set position
-        transform_transform.borrow_mut().as_mut().unwrap().position = Vector3f::new(x_position, delta_y, z_position + delta_z);
+        transform_transform.position = Vector3f::new(x_position, delta_y, z_position + delta_z);
 
         // Set rotation
-        transform_transform.borrow_mut().as_mut().unwrap().rotation = Vector3f::new(0.0, -angle - 90.0, 0.0);
+        transform_transform.rotation = Vector3f::new(0.0, -angle - 90.0, 0.0);
     }
 
     Ok(())
@@ -358,15 +356,15 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
     let t_key = input_component.get_key(INCREASE_CAMERA_FOV_BUTTON);
     let g_key = input_component.get_key(DECREASE_CAMERA_FOV_BUTTON);
 
-    for camera_component in (&*engine).iterate_one_component::<CameraComponent>()?
+    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()?
     {   
         let mut change_value: f32 = 0.0;
         if t_key { change_value += 1.0; }
         if g_key { change_value -= 1.0; }
 
-        let new_fov = camera_component.borrow_mut().as_mut().unwrap().fov + change_value * 100.0 * delta_time;
+        let new_fov = camera_component.fov + change_value * 100.0 * delta_time;
         if new_fov > 10.0 && new_fov < 120.0 {
-            camera_component.borrow_mut().as_mut().unwrap().fov = new_fov;
+            camera_component.fov = new_fov;
         }
     }
 
@@ -398,7 +396,7 @@ fn floating_objects_remove_system(engine: &mut Engine) -> Result<()> {
     if input_component.get_key_pressed(REMOVE_FLOATING_OBJECTS_BUTTON) {
         let mut entities_for_deletion = Vec::<EntityHandle>::new();
         
-        for (entity_handle, _) in (&*engine).iterate_one_component_with_entities::<FloatingObjectComponent>()? {
+        for (entity_handle, _) in engine.iterate_one_component::<FloatingObjectComponent>()? {
             if count == 0 {
                 break;
             }

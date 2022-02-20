@@ -29,8 +29,6 @@ impl AudioListenerComponentBuilder {
 }
 
 // --- Audio Listener Component ---
-
-/// The AudioListenerComponent type, a component responsible for enabling certaing listener to fetch position from
 pub struct AudioListenerComponent {
     pub enabled: bool
 }

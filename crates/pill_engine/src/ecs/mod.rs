@@ -3,7 +3,6 @@
 mod entity;
 mod scene;
 mod scene_manager;
-mod entity_fetcher;
 mod components;
 mod systems;
 
@@ -93,10 +92,6 @@ pub use systems::audio_system::{
 };
 
 // - Other
-
-pub use entity_fetcher::{
-    EntityFetcher,
-};
 
 pub use entity::{
     Entity,

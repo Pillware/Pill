@@ -58,8 +58,8 @@ use cgmath::{ Rotation3, Zero };
 use slab::Slab;
 use log::{debug, info};
 
-pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 1000;
-pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 1000;
+pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 10000;
+pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
 
 // Default resource handle - Master pipeline
 pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
@@ -261,7 +261,7 @@ impl State {
             format: surface.get_preferred_format(&adapter).unwrap(), // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
-            present_mode: wgpu::PresentMode::Fifo, // Defines how to sync the surface with the display
+            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
         };
 
         // Configure surface
@@ -339,10 +339,10 @@ impl State {
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Get active camera and update it
-        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap().borrow();
+        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
         let renderer_camera = self.renderer_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(RendererError::RendererResourceNotFound)?;
-        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap().borrow();
+        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
         renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
         let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
@@ -449,7 +449,7 @@ impl MeshDrawer {
         // Prepare instance data and load it to buffer
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
-            let transform_slot =  transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap().borrow();
+            let transform_slot =  transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap();
             let transform_component = transform_slot.as_ref().unwrap();
             self.instances.push(Instance::new(transform_component));
         }

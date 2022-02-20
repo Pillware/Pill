@@ -76,15 +76,13 @@ impl Resource for Mesh {
         }
 
         // Find mesh rendering components that use this mesh and update them
-        for scene in engine.scene_manager.scenes.iter() {
-            for mesh_rendering_component_slot in engine.scene_manager.fetch_one_component_storage::<MeshRenderingComponent>(scene.0)? {
-                if let Some(mesh_rendering_component) = mesh_rendering_component_slot.borrow_mut().as_mut() {
-                    if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
-                        // If mesh rendering component has handle to this mesh 
-                        if mesh_handle.data() == self_handle.data() {
-                            mesh_rendering_component.set_mesh_handle(Option::<MeshHandle>::None);
-                            mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
-                        }
+        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            for (entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
+                if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
+                    // If mesh rendering component has handle to this mesh 
+                    if mesh_handle.data() == self_handle.data() {
+                        mesh_rendering_component.set_mesh_handle(Option::<MeshHandle>::None);
+                        mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
                     }
                 }
             }
@@ -145,8 +143,8 @@ impl MeshData {
                     mesh.positions[i * 3 + 2],
                 ],
                 texture_coordinates: [
-                    *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0),
                     *mesh.texcoords.get(i * 2).unwrap_or(&0.0),
+                    *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0),
                 ],
                 normal: [
                     mesh.normals[i * 3],

@@ -53,6 +53,11 @@ impl AudioSourceComponentBuilder {
         self
     }
 
+    pub fn play_on_awake(mut self, play: bool) -> Self {
+        self.component.play_on_awake = play;
+        self
+    }
+
     pub fn build(self) -> AudioSourceComponent {
         self.component
     }
@@ -66,6 +71,8 @@ pub struct AudioSourceComponent {
     pub sound_type: SoundType,
     #[readonly]
     pub volume: f32,
+    #[readonly]
+    pub play_on_awake: bool,
     #[readonly]
     pub sound_handle: Option<SoundHandle>,
     #[readonly]
@@ -86,6 +93,7 @@ impl AudioSourceComponent {
         Self {
             sound_type: SoundType::Sound3D,
             volume: 1.0,
+            play_on_awake: false,
             sound_handle: None,
             sink_handle: None,
             is_playing: false,
@@ -191,6 +199,11 @@ impl Component for AudioSourceComponent {
     fn pass_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {
         self.scene_handle = Some(self_scene_handle);
         self.entity_handle = Some(self_entity_handle);
+
+        // Play on awake
+        if self.play_on_awake {
+            self.play();
+        }
     }
 
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 

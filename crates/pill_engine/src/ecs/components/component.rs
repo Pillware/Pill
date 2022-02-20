@@ -72,7 +72,7 @@ impl<T> ComponentDestroyer for ConcreteComponentDestroyer<T>
 
             // Take component out of slot
             let component_storage = target_scene.components.get_mut::<T>().unwrap();
-            let mut component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized").borrow_mut();
+            let component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized");
             component = Some(component_slot.take().unwrap());
         }
 

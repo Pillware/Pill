@@ -367,14 +367,12 @@ impl Resource for Material {
             DEFERRED_REQUEST_VARIANT_RENDERING_ORDER => 
             {
                 // Find mesh rendering components that use this material and update them
-                for scene in engine.scene_manager.scenes.iter() {
-                    for mesh_rendering_component_slot in (&*engine).iterate_one_component::<MeshRenderingComponent>()? {
-                        if let Some(mesh_rendering_component) = mesh_rendering_component_slot.borrow_mut().as_mut() {
-                            if let Some(material_handle) = mesh_rendering_component.material_handle {
-                                // If mesh rendering component has handle to this material 
-                                if material_handle.data() == self.handle.unwrap().data() {
-                                    mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
-                                }
+                for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+                    for (entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
+                        if let Some(material_handle) = mesh_rendering_component.material_handle {
+                            // If mesh rendering component has handle to this material 
+                            if material_handle.data() == self.handle.unwrap().data() {
+                                mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
                             }
                         }
                     }
@@ -427,18 +425,21 @@ impl Resource for Material {
         }
 
         // Find mesh rendering components that use this material and update them
-        for scene in engine.scene_manager.scenes.iter() {
-            for mesh_rendering_component_slot in (&*engine).iterate_one_component::<MeshRenderingComponent>()? {
-                if let Some(mesh_rendering_component) = mesh_rendering_component_slot.borrow_mut().as_mut() {
-                    if let Some(material_handle) = mesh_rendering_component.material_handle {
-                        // If mesh rendering component has handle to this material 
-                        if material_handle.data() == self_handle.data() {
-                            mesh_rendering_component.set_material_handle(Option::<MaterialHandle>::None);
-                            mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
-                        }
-                    }
-                }
-            }
+
+        
+
+        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            let x = &engine.resource_manager;
+
+            // for (entity_handle, mesh_rendering_component) in engine.iterate_one_component::<MeshRenderingComponent>()? {
+            //     if let Some(material_handle) = mesh_rendering_component.material_handle {
+            //         // If mesh rendering component has handle to this material 
+            //         if material_handle.data() == self_handle.data() {
+            //             mesh_rendering_component.set_material_handle(Option::<MaterialHandle>::None);
+            //             mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+            //         }
+            //     }
+            // }
         }
 
         Ok(())

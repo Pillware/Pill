@@ -107,7 +107,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T>
             let component_storage = scene.get_component_storage_mut::<T>().expect("Critical: Component not registered");
 
             // Get component slot
-            let mut component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap().borrow_mut();
+            let component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap();
         
             // Take component from slot
             component = Some(component_slot.take().expect("Critical: Component is None"));
@@ -124,7 +124,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T>
             let component_storage = scene.get_component_storage_mut::<T>().expect("Critical: Component not registered");
 
             // Get component slot
-            let mut component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap().borrow_mut();
+            let component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap();
         
             // Put component back to slot
             component_slot.insert(component.take().unwrap());

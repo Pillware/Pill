@@ -21,7 +21,6 @@ pub enum SoundType {
     Sound3D
 }
 
-/// The AudioManagerComponent type, global component responsible for 
 pub struct AudioManagerComponent {
     pub(crate) audio_stream: OutputStream,
     pub(crate) audio_stream_handle: OutputStreamHandle,
