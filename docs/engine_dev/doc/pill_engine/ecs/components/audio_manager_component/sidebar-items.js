@@ -1,1 +1,0 @@
-initSidebarItems({"constant":[["DEFAULT_LEFT_EAR_POSITION",""],["DEFAULT_RIGHT_EAR_POSITION",""],["DEFAULT_SOUND_SOURCE_POSITION",""]],"enum":[["SoundType",""]],"struct":[["AudioManagerComponent","The AudioManagerComponent type, global component responsible for "]]});

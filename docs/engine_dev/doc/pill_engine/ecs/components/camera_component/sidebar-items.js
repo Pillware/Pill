@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["CameraAspectRatio",""]],"fn":[["get_renderer_resource_handle_from_camera_component",""]],"struct":[["CameraComponent",""],["CameraComponentBuilder",""]]});

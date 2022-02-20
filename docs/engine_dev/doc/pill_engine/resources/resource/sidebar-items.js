@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["ResourceLoadType",""]],"trait":[["Resource",""]]});

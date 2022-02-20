@@ -1,1 +1,0 @@
-window.ALL_CRATES = ["pill_core","pill_engine","pill_game","pill_renderer","pill_standalone"];

@@ -1,1 +1,0 @@
-initSidebarItems({"type":[["Color",""],["Matrix3f",""],["Vector2f",""],["Vector2i",""],["Vector3f",""],["Vector3i",""]]});

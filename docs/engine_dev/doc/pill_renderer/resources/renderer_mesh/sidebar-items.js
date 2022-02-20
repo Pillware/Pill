@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["RendererMesh",""]],"trait":[["Vertex",""]]});

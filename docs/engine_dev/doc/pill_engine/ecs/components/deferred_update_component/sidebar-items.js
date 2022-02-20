@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["DeferredUpdateComponent",""],["DeferredUpdateComponentRequest",""],["DeferredUpdateGlobalComponentRequest",""],["DeferredUpdateManager",""],["DeferredUpdateManagerPointer",""],["DeferredUpdateResourceRequest",""]],"trait":[["DeferredUpdateRequest",""]]});

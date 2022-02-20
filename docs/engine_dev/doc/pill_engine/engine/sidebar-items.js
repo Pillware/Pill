@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["Engine","Heart of Pill Engine"]],"trait":[["PillGame","Engine <-> Game interface"]],"type":[["Game",""],["KeyboardKey",""],["MouseButton",""]]});

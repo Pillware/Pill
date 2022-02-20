@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["SlotContent",""],["SlotContentMut",""]],"struct":[["Iter",""],["IterMut",""],["PillSlotMap",""],["PillSlotMapKeyData",""],["Slot",""]],"trait":[["PillSlotMapKey",""]],"union":[["SlotUnion",""]]});

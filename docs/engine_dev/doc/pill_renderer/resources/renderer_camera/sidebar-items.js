@@ -1,1 +1,0 @@
-initSidebarItems({"constant":[["OPENGL_TO_WGPU_MATRIX",""],["SAFE_FRAC_PI_2",""]],"struct":[["CameraUniform",""],["RendererCamera",""]]});

@@ -1,4 +1,0 @@
-(function() {var implementors = {};
-implementors["pill_engine"] = [];
-implementors["pill_game"] = [{"text":"impl <a class=\"trait\" href=\"pill_engine/ecs/components/component/trait.GlobalComponent.html\" title=\"trait pill_engine::ecs::components::component::GlobalComponent\">GlobalComponent</a> for <a class=\"struct\" href=\"pill_game/game/struct.DemoStateComponent.html\" title=\"struct pill_game::game::DemoStateComponent\">DemoStateComponent</a>","synthetic":false,"types":["pill_game::game::DemoStateComponent"]}];
-if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

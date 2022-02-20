@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["AudioListenerComponent","The AudioListenerComponent type, a component responsible for enabling certaing listener to fetch position from"],["AudioListenerComponentBuilder",""]]});

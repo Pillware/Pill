@@ -1,1 +1,0 @@
-initSidebarItems({"constant":[["DEFERRED_REQUEST_VARIANT_PAUSE_SOUND",""],["DEFERRED_REQUEST_VARIANT_PLAY_SOUND",""],["DEFERRED_REQUEST_VARIANT_SET_SOUND",""],["DEFERRED_REQUEST_VARIANT_SET_VOLUME",""],["DEFERRED_REQUEST_VARIANT_STOP_SOUND",""]],"struct":[["AudioSourceComponent",""],["AudioSourceComponentBuilder",""]]});

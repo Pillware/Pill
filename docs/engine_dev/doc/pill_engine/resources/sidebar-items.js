@@ -1,1 +1,0 @@
-initSidebarItems({"mod":[["material",""],["mesh",""],["resource",""],["resource_manager",""],["resource_storage",""],["sound",""],["texture",""]]});

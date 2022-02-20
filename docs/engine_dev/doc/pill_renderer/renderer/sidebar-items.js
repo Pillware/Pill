@@ -1,1 +1,0 @@
-initSidebarItems({"constant":[["INITIAL_INSTANCE_VECTOR_CAPACITY",""],["MASTER_PIPELINE_HANDLE",""],["MAX_INSTANCE_PER_DRAWCALL_COUNT",""]],"struct":[["MeshDrawer",""],["Renderer",""],["State",""]]});

@@ -1,3 +1,0 @@
-(function() {var implementors = {};
-implementors["pill_game"] = [{"text":"impl <a class=\"trait\" href=\"pill_engine/engine/trait.PillGame.html\" title=\"trait pill_engine::engine::PillGame\">PillGame</a> for <a class=\"struct\" href=\"pill_game/game/struct.Game.html\" title=\"struct pill_game::game::Game\">Game</a>","synthetic":false,"types":["pill_game::game::Game"]}];
-if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

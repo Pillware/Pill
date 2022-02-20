@@ -1,1 +1,0 @@
-initSidebarItems({"constant":[["MAX_CAMERAS",""],["MAX_MATERIALS",""],["MAX_MESHES",""],["MAX_PIPELINES",""],["MAX_TEXTURES",""]],"struct":[["RendererResourceStorage",""]]});
