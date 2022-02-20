@@ -37,11 +37,9 @@ https://www.rust-lang.org/tools/install
 Check [demo](examples/Floating-Pills "demo")!
 
 ## Documentation
-- For game developer - [docs](https://htmlpreview.github.io/?https://github.com/MattSzymonski/Pill-Engine/blob/main/docs/game_dev/doc/pill_engine/game/index.html "docs")
-<!--- Command: cargo doc --no-deps --features game --manifest-path "crates/pill_engine/Cargo.toml" --target-dir "docs/game_dev" --release --->
-- For engine developer - [docs](https://htmlpreview.github.io/?https://github.com/MattSzymonski/Pill-Engine/blob/main/docs/engine_dev/doc/pill_engine/all.html "docs")
-<!--- Note: Before generating docs set pill_game dependency in pill_standalone to "../../examples/Empty" --->
-<!--- Command: cargo doc --no-deps --document-private-items --features internal,game --target-dir "docs/engine_dev" --release --->
+- For game developers - [docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/game_dev/doc/pill_engine/game/index.html "Docs")  
+- For engine developers - [docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/engine_dev/doc/pill_engine/index.html "Docs")  
+[Repository](https://github.com/MattSzymonski/Pill-Engine-Docs "Repository")
 
 <p align="center">
   <img src="media/pill_pile.png" img width=100%>
