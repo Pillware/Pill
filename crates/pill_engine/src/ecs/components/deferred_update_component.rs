@@ -63,7 +63,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateResourceRequest<T>
         let resource_slot = engine.resource_manager.get_resource_slot_mut::<T>(&self.resource_handle).expect("Critical: Resource not registered");
         
         // Put resource back to slot
-        resource_slot.insert(resource);
+        let _ = resource_slot.insert(resource);
 
         Ok(())
     }
@@ -127,7 +127,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T>
             let component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap();
         
             // Put component back to slot
-            component_slot.insert(component.take().unwrap());
+            let _ = component_slot.insert(component.take().unwrap());
         }
 
         Ok(())
@@ -182,7 +182,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateGlobalComponentRequest<T>
             let component_slot = &mut component_storage.data;
         
             // Put component back to slot
-            component_slot.insert(component.take().unwrap());
+            let _ = component_slot.insert(component.take().unwrap());
         }
 
         Ok(())

@@ -197,7 +197,7 @@ impl Material {
         let texture_slot_index = self.textures.mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping"); 
 
         // Set new handle but not renderer resource handle (it will be set by deferred update system)
-        texture_slot.texture_handle.insert(texture_handle.clone());
+        let _ = texture_slot.texture_handle.insert(texture_handle.clone());
 
         // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
         if self.renderer_resource_handle.is_some() {          
@@ -403,7 +403,7 @@ impl Resource for Material {
                     }
 
                     // Set renderer resource handle
-                    texture_slot.renderer_texture_handle.insert(texture.renderer_resource_handle.unwrap().clone());
+                    let _ = texture_slot.renderer_texture_handle.insert(texture.renderer_resource_handle.unwrap().clone());
                 }
 
                 // Update renderer counterpart

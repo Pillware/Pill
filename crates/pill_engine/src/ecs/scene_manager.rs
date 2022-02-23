@@ -120,7 +120,7 @@ impl SceneManager {
 
         // Add component to storage
         let component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized"); // TODO: Should not be called if entity limit is reached but it is
-        component_slot.insert(component);
+        let _ = component_slot.insert(component);
         
         // Get the component bitmask
         let component_bitmask = target_scene.get_component_bitmask::<T>()?;
