@@ -2,7 +2,7 @@ use pill_engine::internal::TextureType;
 
 use anyhow::*;
 use image::GenericImageView;
-use std::{ num::NonZeroU32, path::{Path, PathBuf} };
+use std::{ num::NonZeroU32 };
 
 // --- Texture ---
 

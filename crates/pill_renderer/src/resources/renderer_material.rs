@@ -1,24 +1,18 @@
 use crate::RendererResourceStorage;
-use crate::resources::RendererTexture;
 
 use pill_engine::internal::{
-    MaterialParameter,
     MaterialParameterMap,
     RendererError,
     MaterialTextureMap,
     RendererMaterialHandle,
     RendererPipelineHandle, 
-    TextureHandle,
-    MaterialTexture, 
     MASTER_SHADER_COLOR_TEXTURE_SLOT,    
     MASTER_SHADER_NORMAL_TEXTURE_SLOT,
     MASTER_SHADER_TINT_PARAMETER_SLOT, get_default_texture_handles, get_renderer_texture_handle_from_material_texture, MASTER_SHADER_SPECULARITY_PARAMETER_SLOT,
 };
 
-use futures::TryFutureExt;
 use wgpu::util::DeviceExt;
-use std::path::{ Path, PathBuf };
-use anyhow::{Result, Context, Error};
+use anyhow::{ Result, Error};
 
 // --- Material Uniform ---
 

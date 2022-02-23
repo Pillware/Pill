@@ -2,8 +2,6 @@ use crate::resources::Vertex;
 
 use pill_engine::game::TransformComponent;
 
-use cgmath::SquareMatrix;
-
 // --- Instance ---
 
 #[repr(C)]

@@ -27,36 +27,26 @@ use pill_engine::internal::{
     RendererMaterialHandle,
     RendererMeshHandle,
     RendererPipelineHandle,
-    ResourceManager, 
     RendererTextureHandle, 
-    RENDER_QUEUE_KEY_ITEMS_LENGTH, 
-    RENDER_QUEUE_KEY_ORDER_IDX, 
     RENDER_QUEUE_KEY_ORDER,
     get_renderer_resource_handle_from_camera_component,
 };
 
 use pill_core::{ 
-    PillSlotMap, 
     PillSlotMapKey, 
     PillSlotMapKeyData, 
     PillStyle 
 };
 
 use std::{
-    collections::{ LinkedList, HashMap },
-    convert::TryInto,
-    env,
     iter,
-    num::{ NonZeroU32, NonZeroU8 },
-    path::{ Path, PathBuf },
+    num::{ NonZeroU32 },
     ops::Range,
     mem::size_of,
 };
 
-use anyhow::{ Result, Context, Error };
-use cgmath::{ Rotation3, Zero };
-use slab::Slab;
-use log::{debug, info};
+use anyhow::{ Result };
+use log::{ info };
 
 pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 10000;
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
