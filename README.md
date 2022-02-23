@@ -1,5 +1,5 @@
 <p align="left">
-  <img src="media/pill_logo_horizontal.png" img width=65%>
+  <img src="media/logo/pill_logo_horizontal.png" img width=65%>
 </p>
 
 Data-driven game engine written in Rust
@@ -42,6 +42,13 @@ Check [demo](examples/Floating-Pills "demo")!
 - For game developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/game_dev/doc/pill_engine/game/index.html "Docs")  
 - For engine developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/engine_dev/doc/pill_engine/index.html "Docs")  
 
+## Screenshots
 <p align="center">
-  <img src="media/pill_pile.png" img width=100%>
+  <img src="media/showcase/pill_showcase_1.gif" img width=100%>
+</p>
+
+
+
+<p align="center">
+  <img src="media/logo/pill_pile.png" img width=100%>
 </p>

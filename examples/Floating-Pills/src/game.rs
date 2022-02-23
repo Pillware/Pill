@@ -1,8 +1,8 @@
 use pill_engine::game::*;
 use rand::{thread_rng, Rng};
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100;
-pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 100;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 10;
+pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::O;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::L;
 pub const TOGGLE_FLOATING_OBJECTS_SYSTEM: KeyboardKey = KeyboardKey::I;
@@ -150,7 +150,7 @@ impl PillGame for Game {
         // Create ambient music player entity
         let ambient_music_player_entity = engine.create_entity(active_scene)?;
 
-        let audio_source_component = AudioSourceComponent::builder().sound_type(SoundType::Sound2D).sound(ambient_music_handle).volume(0.05).play_on_awake(true).build();
+        let audio_source_component = AudioSourceComponent::builder().sound_type(SoundType::Sound2D).sound(ambient_music_handle).volume(0.05).play_on_awake(false).build();
         engine.add_component_to_entity(active_scene, ambient_music_player_entity, audio_source_component)?;
 
         // Create origin point entity
