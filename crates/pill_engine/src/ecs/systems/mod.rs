@@ -6,6 +6,7 @@ pub(crate) mod deferred_update_system;
 pub(crate) mod input_system;
 pub(crate) mod time_system;
 pub(crate) mod audio_system;
+pub(crate) mod egui_system;
 
 // --- Use ---
 

@@ -15,7 +15,7 @@ use log::{ debug };
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
     let active_scene = engine.scene_manager.get_active_scene_mut()?;
-
+    
     // - Find active camera and update its aspect ratio if needed
 
     // Find first enabled camera and use it as active
@@ -73,7 +73,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         active_camera_entity_handle, 
         render_queue, 
         camera_component_storage,
-        transform_component_storage
+        transform_component_storage,
+        &mut engine.egui_state,
     ) {
         Ok(_) => Ok(()),
         // Recreate lost surface

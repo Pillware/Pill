@@ -17,7 +17,7 @@ use crate::{
     },
     graphics::{
         RenderQueueItem,
-    },
+    }, internal::EguiState,
 };
 
 use pill_core::PillSlotMapKey;
@@ -91,7 +91,8 @@ pub trait PillRenderer {
         active_camera_entity_handle: EntityHandle,
         render_queue: &Vec::<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>
+        transform_component_storage: &ComponentStorage<TransformComponent>,
+        egui_state: &mut EguiState,
     ) -> Result<(), RendererError>;
 }
 

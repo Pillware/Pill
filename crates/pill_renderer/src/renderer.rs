@@ -8,7 +8,7 @@ use crate::{
         Vertex
     }, 
     instance::Instance, 
-    renderer_resource_storage::RendererResourceStorage, egui_integration::{EguiState, EguiDrawer}
+    renderer_resource_storage::RendererResourceStorage, 
 };
 
 use pill_engine::internal::{
@@ -29,7 +29,8 @@ use pill_engine::internal::{
     RendererPipelineHandle,
     RendererTextureHandle, 
     RENDER_QUEUE_KEY_ORDER,
-    get_renderer_resource_handle_from_camera_component,
+    get_renderer_resource_handle_from_camera_component, 
+    EguiState,
 };
 
 use pill_core::{ 
@@ -37,6 +38,7 @@ use pill_core::{
     PillSlotMapKeyData, 
     PillStyle 
 };
+use wgpu::TextureFormat;
 
 use std::{
     iter,
@@ -187,13 +189,16 @@ impl PillRenderer for Renderer {
         active_camera_entity_handle: EntityHandle,
         render_queue: &Vec<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>
+        transform_component_storage: &ComponentStorage<TransformComponent>,
+        egui_state: &mut EguiState,
     ) -> Result<(), RendererError> {
         self.state.render(
             active_camera_entity_handle,
             render_queue,
             camera_component_storage,
-            transform_component_storage)
+            transform_component_storage,
+            egui_state,
+        )
     }
 }
 
@@ -214,8 +219,7 @@ pub struct State {
     // Other
     config: config::Config,
     // egui
-    egui_state: Option<EguiState>,
-    egui_drawer: Option<EguiDrawer>,
+    egui_drawer: EguiDrawer,
 }
 
 
@@ -275,12 +279,11 @@ impl State {
         let color_format = surface_configuration.format;
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
-        // Create drawing state
+        // Create drawer
         let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
 
         // Create egui
-        let egui_state = Some(EguiState::new(&device, &surface_configuration, window_scale_factor));
-        let egui_drawer = Some(EguiDrawer::new());
+        let egui_drawer = EguiDrawer::new(&device, surface_configuration.format);
 
         // Create state
         Self {
@@ -300,7 +303,6 @@ impl State {
             // Other
             config,
             // egui
-            egui_state,
             egui_drawer,
         }
     }
@@ -324,7 +326,8 @@ impl State {
         active_camera_entity_handle: EntityHandle,
         render_queue: &Vec<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>
+        transform_component_storage: &ComponentStorage<TransformComponent>,
+        egui_state: &mut EguiState,
     ) -> Result<(), RendererError> { 
     
         // Get frame or return mapped error if failed
@@ -391,18 +394,13 @@ impl State {
             );
 
             // Render egui
-            if let Some(egui_state) = &mut self.egui_state {
-                egui_state.update(self.window_scale_factor);
-                self.egui_drawer.as_ref().unwrap().record_draw_commands(
-                    &self.device,
-                    &self.queue,
-                    &mut encoder,
-                    &frame_view,
-                    &self.surface_configuration,
-                    self.window_scale_factor,
-                    egui_state,
-                );
-            }
+            self.egui_drawer.record_draw_commands(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &frame_view,
+                egui_state,
+            );
         }
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
@@ -568,5 +566,41 @@ impl MeshDrawer {
 
     fn get_accumulated_instance_count(&self) -> u32 {
         self.instance_range.end - self.instance_range.start 
+    }
+}
+
+
+pub struct EguiDrawer {
+    render_pass: egui_wgpu_backend::RenderPass,
+}
+
+impl EguiDrawer {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let render_pass = egui_wgpu_backend::RenderPass::new(device, format, 1);
+        EguiDrawer { 
+            render_pass,
+        }
+    }
+
+    pub fn record_draw_commands(
+        &mut self, 
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder, 
+        frame_view: &wgpu::TextureView,
+        egui_state: &mut EguiState
+    ){
+        let screen_descriptor = egui_wgpu_backend::ScreenDescriptor {
+            physical_width: egui_state.window_size.width,
+            physical_height: egui_state.window_size.height,
+            scale_factor: egui_state.window_scale_factor as f32,
+        };
+ 
+        self.render_pass.update_texture(device, queue, &egui_state.platform.context().font_image());
+        self.render_pass.update_user_textures(device, queue);
+        self.render_pass.update_buffers(device, queue, &egui_state.paint_jobs, &screen_descriptor);
+
+        // Record all render passes.
+        self.render_pass.execute(encoder, &frame_view, &egui_state.paint_jobs, &screen_descriptor, None).unwrap();
     }
 }

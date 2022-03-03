@@ -2,7 +2,8 @@ use crate::{
     resources::*,
     ecs::*,
     graphics::*,
-    config::*,
+    config::*, 
+    egui::EguiState,
 };
 
 use pill_core::{ 
@@ -45,7 +46,9 @@ pub struct Engine {
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
+    pub(crate) window_scale_factor: f64,
     pub(crate) frame_delta_time: f32,
+    pub(crate) egui_state: EguiState,
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -98,9 +101,10 @@ impl Engine {
 /// Pill Engine internal API
 #[cfg(feature = "internal")]
 impl Engine {
-    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, config: config::Config) -> Self {
+    pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, config: config::Config, window: &winit::window::Window) -> Self {
         let max_entity_count = config.get_int("MAX_ENTITIES").unwrap_or(MAX_ENTITIES as i64) as usize;
-
+        let egui_state = EguiState::new(window.inner_size(), window.scale_factor());
+        
         Self { 
             config,
             game: Some(game),
@@ -111,8 +115,10 @@ impl Engine {
             global_components: PillTypeMap::new(),
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
-            window_size: winit::dpi::PhysicalSize::<u32>::default(),
+            window_size: window.inner_size(),
+            window_scale_factor: window.scale_factor(),
             frame_delta_time: 0.0,
+            egui_state,
         }
     }
 
@@ -135,12 +141,18 @@ impl Engine {
         let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUNDS").unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
         self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
 
-        // Add built-in systems
-        self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame)?;
-        self.system_manager.add_system("TimeSystem", time_system, UpdatePhase::PostGame)?;
-        self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame)?;
-        self.system_manager.add_system("AudioSystem", audio_system, UpdatePhase::PostGame)?;
+        // Add built-in systems (reverted order)
         self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system("eguiSystem", egui_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system("AudioSystem", audio_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system("TimeSystem", time_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame)?;
+       
+        
+       
+      
+        
 
         // Create default resources
         self.create_default_resources().context("Failed to create default resources")?;
@@ -168,16 +180,18 @@ impl Engine {
     /// Runs all systems in order: PreGame -> Game -> PostGame 
     pub fn update(&mut self, delta_time: std::time::Duration) {
         let stop_on_game_errors = self.config.get_bool("PANIC_ON_GAME_ERRORS").unwrap_or(PANIC_ON_GAME_ERRORS);
+
+        // Update egui time
+        self.egui_state.update_time();
         
         // Run systems
         let update_phase_count = self.system_manager.update_phases.len();
-        for i in (0..update_phase_count).rev() {
+        for i in 0..update_phase_count {
             let systems_count = self.system_manager.update_phases[i].len();
-            for j in (0..systems_count).rev() {
+            for j in (0..systems_count).rev() { // [TODO] Check for iteration errors when system is removed
                 let system = &self.system_manager.update_phases[i][j];
                 if !system.enabled { continue; }
                 let system_name = system.name.to_string();
-
                 if system.update_phase.clone() == UpdatePhase::Game && stop_on_game_errors {
                     let mut result = (system.system_function)(self);
                     result = result.context(EngineError::SystemUpdateFailed(system_name, get_enum_variant_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)));
@@ -191,7 +205,7 @@ impl Engine {
                 }
             }
         }
- 
+
         // Update FPS counter
         let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps =  1000.0 / new_frame_time;
@@ -207,9 +221,13 @@ impl Engine {
         debug!("{} resized to {}x{}", "Window".mobj_style(), new_window_size.width, new_window_size.height);
         self.window_size = new_window_size;
         self.renderer.resize(new_window_size);
+        self.egui_state.resize(new_window_size);
     }
 
     pub fn pass_window_event(&mut self, event: &winit::event::Event<()>, event_window_id: &winit::window::WindowId) {
+        // Pass the winit events to egui
+        self.egui_state.pass_event(&event); 
+        
         match event {
             // Handle device events
             winit::event::Event::DeviceEvent {

@@ -91,6 +91,10 @@ pub use systems::audio_system::{
     audio_system,
 };
 
+pub use systems::egui_system::{
+    egui_system,
+};
+
 // - Other
 
 pub use entity::{

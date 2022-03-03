@@ -5,6 +5,7 @@ mod resources;
 mod graphics;
 mod ecs;
 mod config;
+mod egui;
 
 // --- Use ---
 
@@ -125,6 +126,9 @@ pub mod internal {
             MaterialParameter,
             MaterialParameterMap,
             get_renderer_texture_handle_from_material_texture,
+        },
+        egui::{
+            EguiState,
         },
     };
 }

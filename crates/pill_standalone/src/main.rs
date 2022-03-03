@@ -111,7 +111,7 @@ fn main() {
     // Initialize engine
     let game: Box<dyn PillGame> = Box::new(pill_game::Game { });
     let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(&window, config.clone()));
-    let mut engine = Engine::new(game, renderer, config.clone());
+    let mut engine = Engine::new(game, renderer, config.clone(), &window);
     engine.initialize(window_size).context("Failed to initialize engine").unwrap();
 
     // Run loop

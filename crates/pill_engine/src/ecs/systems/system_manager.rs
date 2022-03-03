@@ -75,13 +75,8 @@ impl SystemManager {
         // Find collection of systems for given update phase
         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
 
-        // Check if system with that name exists
-        if !system_collection.contains_key(name) {
-            return Err(Error::new(EngineError::SystemNotFound(name.to_string(), format!("{}", update_phase))))
-        }
-
         // Remove system
-        system_collection.remove(name);
+        system_collection.remove(name).ok_or(Error::new(EngineError::SystemNotFound(name.to_string(), format!("{}", update_phase))))?;
 
         Ok(())
     }
