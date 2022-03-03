@@ -9,9 +9,9 @@ pill_engine = {path = "../pill_engine", features = ["internal"]}
 pill_renderer = {path = "../pill_renderer"}
 
 # Game project dependency. This needs to be pointing to the correct game directory
-pill_game = {path = "../../examples/Empty"}
+pill_game = {path = "D:/Programming/Rust/pill_project/Pill-Engine/examples/Floating-Pills"}
 
-winit = "0.25"
+winit = "0.26"
 env_logger = "0.9.0"
 pretty_env_logger = "0.4.0"
 log = "0.4"

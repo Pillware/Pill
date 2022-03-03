@@ -8,7 +8,7 @@ use crate::{
         Vertex
     }, 
     instance::Instance, 
-    renderer_resource_storage::RendererResourceStorage
+    renderer_resource_storage::RendererResourceStorage, egui_integration::{EguiState, EguiDrawer}
 };
 
 use pill_engine::internal::{
@@ -206,12 +206,16 @@ pub struct State {
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
     window_size: winit::dpi::PhysicalSize<u32>, 
+    window_scale_factor: f64,
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
     mesh_drawer: MeshDrawer,
     // Other
     config: config::Config,
+    // egui
+    egui_state: Option<EguiState>,
+    egui_drawer: Option<EguiDrawer>,
 }
 
 
@@ -219,6 +223,7 @@ impl State {
     // Creating some of the wgpu types requires async code
     async fn new(window: &winit::window::Window, config: config::Config) -> Self {
         let window_size = window.inner_size();
+        let window_scale_factor = window.scale_factor();
 
         let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(window) }; 
@@ -238,7 +243,7 @@ impl State {
         // Create device descriptor
         let device_descriptor = wgpu::DeviceDescriptor {
             label: None,
-            features: wgpu::Features::empty(), // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
+            features: wgpu::Features::default(), // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
             limits: wgpu::Limits::default(), // Allows to specify the limit of certain types of resources that will be used (e.g. max samplers, uniform buffers, etc)
         };
 
@@ -251,7 +256,7 @@ impl State {
             format: surface.get_preferred_format(&adapter).unwrap(), // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
-            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
+            present_mode: wgpu::PresentMode::Fifo, // Defines how to sync the surface with the display
         };
 
         // Configure surface
@@ -273,6 +278,10 @@ impl State {
         // Create drawing state
         let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
 
+        // Create egui
+        let egui_state = Some(EguiState::new(&device, &surface_configuration, window_scale_factor));
+        let egui_drawer = Some(EguiDrawer::new());
+
         // Create state
         Self {
             // Resources
@@ -283,12 +292,16 @@ impl State {
             queue,
             surface_configuration,
             window_size,
+            window_scale_factor,
             color_format,
             depth_format,
             depth_texture,
             mesh_drawer,
             // Other
             config,
+            // egui
+            egui_state,
+            egui_drawer,
         }
     }
 
@@ -326,7 +339,7 @@ impl State {
             },
         };
 
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let frame_view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Get active camera and update it
         let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
@@ -347,7 +360,7 @@ impl State {
             
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view, // Specifies what texture to save the colors to
+                view: &frame_view, // Specifies what texture to save the colors to
                 resolve_target: None, // Specifies what texture will receive the resolved output
                 ops: wgpu::Operations { // Specifies what to do with the colors on the screen
                     load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
@@ -365,6 +378,7 @@ impl State {
                 stencil_ops: None,
             };
 
+            // Render meshes
             self.mesh_drawer.record_draw_commands(
                 &self.queue, 
                 &mut encoder, 
@@ -374,7 +388,21 @@ impl State {
                 &renderer_camera,
                 &render_queue, 
                 &transform_component_storage
-            )
+            );
+
+            // Render egui
+            if let Some(egui_state) = &mut self.egui_state {
+                egui_state.update(self.window_scale_factor);
+                self.egui_drawer.as_ref().unwrap().record_draw_commands(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    &frame_view,
+                    &self.surface_configuration,
+                    self.window_scale_factor,
+                    egui_state,
+                );
+            }
         }
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue

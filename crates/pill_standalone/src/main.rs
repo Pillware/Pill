@@ -117,24 +117,14 @@ fn main() {
     // Run loop
     window_event_loop.run(move |event, _, control_flow| { // Run function takes closure
         *control_flow = winit::event_loop::ControlFlow::Poll; 
+
+        // Pass all events to engine
+        engine.pass_window_event(&event, &window.id());
+
+        // Process some of the events
         match event {
             Event::MainEventsCleared => {
                 window.request_redraw();
-            }
-
-            // Handle device events
-            Event::DeviceEvent {
-                ref event,
-                ..
-            } => {
-                match event {
-                    DeviceEvent::MouseMotion { 
-                        delta, 
-                    } => {
-                        engine.pass_mouse_delta_input(delta);
-                    },
-                    _ => {}
-                }
             }
 
             // Handle window events
@@ -143,32 +133,7 @@ fn main() {
                 window_id,
             } 
             if window_id == window.id() => {
-                match event {        
-                    WindowEvent::KeyboardInput { // Pass keyboard input to engine
-                        input,
-                        .. // Skip other
-                    } => { 
-                        engine.pass_keyboard_key_input(&input);
-                    },
-                    WindowEvent::MouseInput {   // Pass mouse key input to engine
-                        button,
-                        state,
-                        .. // Skip other
-                    } => { 
-                        engine.pass_mouse_key_input(&button, &state);
-                    },
-                    WindowEvent::MouseWheel { // Pass mouse scroll input to engine
-                        delta,
-                        .. // Skip other
-                    } => { 
-                        engine.pass_mouse_wheel_input(&delta);
-                    },
-                    WindowEvent::CursorMoved { // Pass mouse motion input to engine
-                        position,
-                        .. // Skip other
-                    }=> { 
-                        engine.pass_mouse_position_input(&position);
-                    },
+                match event {
                     WindowEvent::CloseRequested => { // Close window
                         engine.shutdown();
                         *control_flow = winit::event_loop::ControlFlow::Exit

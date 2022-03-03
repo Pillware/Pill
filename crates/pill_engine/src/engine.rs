@@ -19,7 +19,6 @@ use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::R
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
-use winit::{ dpi::PhysicalPosition,};
 
 // -------------------------------------------------------------------------------
 
@@ -210,6 +209,63 @@ impl Engine {
         self.renderer.resize(new_window_size);
     }
 
+    pub fn pass_window_event(&mut self, event: &winit::event::Event<()>, event_window_id: &winit::window::WindowId) {
+        match event {
+            // Handle device events
+            winit::event::Event::DeviceEvent {
+                ref event,
+                ..
+            } => {
+                match event {
+                    winit::event::DeviceEvent::MouseMotion { 
+                        delta, 
+                    } => {
+                        self.pass_mouse_delta_input(delta);
+                    },
+                    _ => {}
+                }
+            }
+
+            // Handle window events
+            winit::event::Event::WindowEvent {
+                ref event,
+                window_id,
+            }
+
+            if window_id == event_window_id => {
+                match event {
+                    winit::event::WindowEvent::KeyboardInput { // Pass keyboard input to engine
+                        input,
+                        .. // Skip other
+                    } => {
+                        self.pass_keyboard_key_input(&input);
+                    },
+                    winit::event::WindowEvent::MouseInput {   // Pass mouse key input to engine
+                        button,
+                        state,
+                        .. // Skip other
+                    } => {
+                        self.pass_mouse_key_input(&button, &state);
+                    },
+                    winit::event::WindowEvent::MouseWheel { // Pass mouse scroll input to engine
+                        delta,
+                        .. // Skip other
+                    } => {
+                        self.pass_mouse_wheel_input(&delta);
+                    },
+                    winit::event::WindowEvent::CursorMoved { // Pass mouse motion input to engine
+                        position,
+                        .. // Skip other
+                    }=> {
+                        self.pass_mouse_position_input(&position);
+                    },
+                    _ => {}
+                }
+            },
+            _ => {}
+        }
+    }
+
     pub fn pass_keyboard_key_input(&mut self, keyboard_input: &winit::event::KeyboardInput) {
         if let Some(key) = keyboard_input.virtual_keycode {
             let state: winit::event::ElementState = keyboard_input.state;
@@ -237,7 +293,7 @@ impl Engine {
         debug!("Got new mouse motion input");
     }
  
-    pub fn pass_mouse_position_input(&mut self, position: &PhysicalPosition<f64>) {
+    pub fn pass_mouse_position_input(&mut self, position: &winit::dpi::PhysicalPosition<f64>) {
         let input_event = InputEvent::MousePosition { position: Vector2f::new(position.x as f32, position.y as f32) };
         self.input_queue.push_back(input_event);
         debug!("Got new mouse position input");

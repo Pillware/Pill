@@ -27,7 +27,7 @@ rodio = { version = "0.14", default-features = false, features = ["wav", "mp3"] 
 # Other
 readonly = "0.2"
 cgmath = "0.18"
-winit = "0.25"
+winit = "0.26"
 cfg-if = "1.0.0"
 boolinator = "2.4.0"
 bytemuck = { version = "1.4", features = [ "derive" ] }

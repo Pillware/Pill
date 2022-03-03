@@ -36,10 +36,7 @@ impl RendererPipeline {
                 wgpu::BindGroupLayoutEntry { // Entry for the sampler at binding 1
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT, // Visible only to fragment shader
-                    ty: wgpu::BindingType::Sampler {
-                        comparison: false,
-                        filtering: true,
-                    },
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry { // Normal map
@@ -55,10 +52,7 @@ impl RendererPipeline {
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler { 
-                        comparison: false,
-                        filtering: true, 
-                    },
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 }, 
             ],
@@ -138,8 +132,8 @@ impl RendererPipeline {
                 front_face: wgpu::FrontFace::Ccw, // Specifies how to determine whether a given triangle is facing forward or not (FrontFace::Ccw means that a triangle is facing forward if the vertices are arranged in a counter clockwise direction)
                 cull_mode: Some(wgpu::Face::Back), // Triangles that are not considered facing forward are culled (not included in the render) as specified by CullMode::Back            
                 polygon_mode: wgpu::PolygonMode::Fill, // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE     
-                clamp_depth: false, // Requires Features::DEPTH_CLAMPING
-                conservative: false, // Requires Features::CONSERVATIVE_RASTERIZATION
+                conservative: false, 
+                unclipped_depth: false, 
             },
             depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
                 format,
@@ -153,6 +147,7 @@ impl RendererPipeline {
                 mask: !0, // Specifies which samples should be active
                 alpha_to_coverage_enabled: false,
             },
+            multiview: None,
         };
 
         let render_pipeline = device.create_render_pipeline(&render_pipeline_descriptor);

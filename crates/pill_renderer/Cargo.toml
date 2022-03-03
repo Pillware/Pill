@@ -23,10 +23,17 @@ env_logger = "0.9.0"
 log = "0.4"
 
 # Other
-winit = "0.25"
+winit = "0.26"
 cgmath = "0.18"
-wgpu = { version = "0.11", features = [ "spirv" ] }
+wgpu = { version = "0.12", features = [ "spirv" ] }
 futures = "0.3"
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }
 config = "0.11"
+
+# egui
+egui = "0.16.0"
+epi = "0.16"
+egui_winit_platform = "0.13"
+egui_wgpu_backend = "0.16.0"
+egui_demo_lib = "0.16.0"
