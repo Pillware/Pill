@@ -282,6 +282,7 @@ impl SceneManager {
 
     #[inline]
     fn unsafe_mut_cast<T>(reference: &T) -> &mut T {
+        #![allow(invalid_reference_casting)]
         unsafe {
             let const_ptr = reference as *const T;
             let mut_ptr = const_ptr as *mut T;
