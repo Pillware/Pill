@@ -19,12 +19,12 @@ use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::R
 use anyhow::{Context, Result, Error};
 use boolinator::Boolinator;
 use log::{debug, info, error};
-use winit::{ dpi::PhysicalPosition,};
+use winit::{ dpi::PhysicalPosition, event::KeyEvent,};
 
 // -------------------------------------------------------------------------------
 
 pub type Game = Box<dyn PillGame>;
-pub type KeyboardKey = winit::event::VirtualKeyCode;
+pub type KeyboardKey = winit::keyboard::KeyCode;
 pub type MouseButton = winit::event::MouseButton;
 
 /// Engine <-> Game interface
@@ -210,12 +210,17 @@ impl Engine {
         self.renderer.resize(new_window_size);
     }
 
-    pub fn pass_keyboard_key_input(&mut self, keyboard_input: &winit::event::KeyboardInput) {
-        if let Some(key) = keyboard_input.virtual_keycode {
-            let state: winit::event::ElementState = keyboard_input.state;
-            let input_event = InputEvent::KeyboardKey { key: key, state: state };
-            self.input_queue.push_back(input_event);
-            debug!("Got new keyboard key input: {:?} {:?}", key, state);
+    pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyEvent) {
+        let state: winit::event::ElementState = keyboard_input.state;
+        match keyboard_input.physical_key {
+            winit::keyboard::PhysicalKey::Code(key_code) => {
+                let input_event = InputEvent::KeyboardKey { key: key_code, state: state };
+                self.input_queue.push_back(input_event);
+                debug!("Got new keyboard key input: {:?} {:?}", key_code, state);
+            }
+            winit::keyboard::PhysicalKey::Unidentified(_) => {
+                debug!("Unidentified key input: {:?}", keyboard_input.physical_key);
+            }
         }
     }
 

@@ -3,7 +3,9 @@
 // Input vertex data
 layout(location=0) in vec3 vertex_position;
 layout(location=1) in vec2 vertex_texture_coordinates;
-layout(location=2) in mat3 TBN_matrix;
+layout(location=2) in vec3 TBN_tangent;
+layout(location=3) in vec3 TBN_bitangent;
+layout(location=4) in vec3 TBN_normal;
 
 // Input material data
 layout(set = 0, binding = 0) uniform texture2D diffuse_texture;
@@ -34,6 +36,9 @@ void main() {
     // Texture
     vec4 object_color = texture(sampler2D(diffuse_texture, diffuse_sampler), vertex_texture_coordinates);
     vec4 object_normal = texture(sampler2D(normal_texture, normal_sampler), vertex_texture_coordinates);
+
+    // Reconstruct TBN matrix from individual components
+    mat3 TBN_matrix = mat3(TBN_tangent, TBN_bitangent, TBN_normal);
 
     // Ambient lighting
     vec3 ambient_light_factor = light_color * ambient_light_strength;

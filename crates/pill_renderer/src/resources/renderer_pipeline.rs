@@ -36,10 +36,7 @@ impl RendererPipeline {
                 wgpu::BindGroupLayoutEntry { // Entry for the sampler at binding 1
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT, // Visible only to fragment shader
-                    ty: wgpu::BindingType::Sampler {
-                        comparison: false,
-                        filtering: true,
-                    },
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry { // Normal map
@@ -55,10 +52,7 @@ impl RendererPipeline {
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler { 
-                        comparison: false,
-                        filtering: true, 
-                    },
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 }, 
             ],
@@ -110,14 +104,14 @@ impl RendererPipeline {
         let layout = device.create_pipeline_layout(&pipeline_layout_descriptor);
 
         // Create color target states that specifies what what color outputs wgpu should set up
-        let color_target_states = &[wgpu::ColorTargetState { 
+        let color_target_states = &[Some(wgpu::ColorTargetState { 
             format: color_format,
             blend: Some(wgpu::BlendState {
                 alpha: wgpu::BlendComponent::REPLACE,
                 color: wgpu::BlendComponent::REPLACE,
             }),
             write_mask: wgpu::ColorWrites::ALL,
-        }];
+        })];
 
         let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
             label: Some("render_pipeline"),
@@ -126,11 +120,13 @@ impl RendererPipeline {
                 module: &vertex_shader,
                 entry_point: "main",
                 buffers: vertex_layouts, // Specifies structure of vertices that will be passed to the vertex shader
+                compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &fragment_shader,
                 entry_point: "main",
                 targets: color_target_states,
+                compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState { // Specifies how to interpret vertices when converting them into triangles
                 topology: wgpu::PrimitiveTopology::TriangleList, // Each three vertices will correspond to one triangle
@@ -138,8 +134,8 @@ impl RendererPipeline {
                 front_face: wgpu::FrontFace::Ccw, // Specifies how to determine whether a given triangle is facing forward or not (FrontFace::Ccw means that a triangle is facing forward if the vertices are arranged in a counter clockwise direction)
                 cull_mode: Some(wgpu::Face::Back), // Triangles that are not considered facing forward are culled (not included in the render) as specified by CullMode::Back            
                 polygon_mode: wgpu::PolygonMode::Fill, // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE     
-                clamp_depth: false, // Requires Features::DEPTH_CLAMPING
                 conservative: false, // Requires Features::CONSERVATIVE_RASTERIZATION
+                unclipped_depth: true, // Requires Features::DEPTH_CLAMPING
             },
             depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
                 format,
@@ -153,6 +149,8 @@ impl RendererPipeline {
                 mask: !0, // Specifies which samples should be active
                 alpha_to_coverage_enabled: false,
             },
+            multiview: None,
+            cache: None,
         };
 
         let render_pipeline = device.create_render_pipeline(&render_pipeline_descriptor);

@@ -23,7 +23,7 @@ use crate::{
 use pill_core::PillSlotMapKey;
 use pill_core::PillStyle;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 use thiserror::Error;
 use anyhow::{Result, Context, Error};
 
@@ -69,7 +69,7 @@ pub enum RendererError {
 // --- Renderer trait definition ---
 
 pub trait PillRenderer { 
-    fn new(window: &winit::window::Window, config: config::Config) -> Self where Self: Sized;
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self where Self: Sized;
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
     fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8],) -> Result<()>;

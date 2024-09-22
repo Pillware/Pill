@@ -22,7 +22,9 @@ layout(set=2, binding=0) uniform camera {
 // Output data
 layout(location=0) out vec3 out_vertex_position;
 layout(location=1) out vec2 out_vertex_texture_coordinates;
-layout(location=2) out mat3 out_TBN_matrix;
+layout(location=2) out vec3 out_TBN_tangent;
+layout(location=3) out vec3 out_TBN_bitangent;
+layout(location=4) out vec3 out_TBN_normal;
 
 void main() {
     mat4 model_matrix = mat4(
@@ -38,7 +40,9 @@ void main() {
     vec3 bitangent = normalize(normal_matrix * vertex_bitangent);
     vec3 normal = normalize(normal_matrix * vertex_normal);
     mat3 TBN_matrix = transpose(mat3(tangent, bitangent, normal));
-    out_TBN_matrix = TBN_matrix;
+    out_TBN_tangent = TBN_matrix[0];  // First row (Tangent)
+    out_TBN_bitangent = TBN_matrix[1]; // Second row (Bitangent)
+    out_TBN_normal = TBN_matrix[2];   // Third row (Normal)
 
     // Calculate vertex position in model space
     vec4 model_space = model_matrix * vec4(vertex_position, 1.0);

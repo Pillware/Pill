@@ -3,13 +3,13 @@ use rand::{thread_rng, Rng};
 
 pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 10;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
-pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::O;
-pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::L;
-pub const TOGGLE_FLOATING_OBJECTS_SYSTEM: KeyboardKey = KeyboardKey::I;
-pub const FLOATING_OBJECTS_CHANGE_MESH_BUTTON: KeyboardKey = KeyboardKey::N;
-pub const FLOATING_OBJECTS_CHANGE_MATERIAL_BUTTON: KeyboardKey = KeyboardKey::M;
-pub const INCREASE_CAMERA_FOV_BUTTON: KeyboardKey = KeyboardKey::T;
-pub const DECREASE_CAMERA_FOV_BUTTON: KeyboardKey = KeyboardKey::G;
+pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyO;
+pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyL;
+pub const TOGGLE_FLOATING_OBJECTS_SYSTEM: KeyboardKey = KeyboardKey::KeyI;
+pub const FLOATING_OBJECTS_CHANGE_MESH_BUTTON: KeyboardKey = KeyboardKey::KeyN;
+pub const FLOATING_OBJECTS_CHANGE_MATERIAL_BUTTON: KeyboardKey = KeyboardKey::KeyM;
+pub const INCREASE_CAMERA_FOV_BUTTON: KeyboardKey = KeyboardKey::KeyT;
+pub const DECREASE_CAMERA_FOV_BUTTON: KeyboardKey = KeyboardKey::KeyG;
 
 pub struct FloatingObjectComponent {
     pub angle: f32,
@@ -297,8 +297,8 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let input_component = engine.get_global_component::<InputComponent>()?;
 
     // Get input
-    let a_key = input_component.get_key(KeyboardKey::A);
-    let d_key = input_component.get_key(KeyboardKey::D);
+    let a_key = input_component.get_key(KeyboardKey::KeyA);
+    let d_key = input_component.get_key(KeyboardKey::KeyD);
     let right_mouse_button = input_component.get_mouse_button(MouseButton::Right);
     let mouse_scroll_delta = input_component.get_mouse_scroll_delta();
     let mouse_delta = input_component.get_mouse_delta();

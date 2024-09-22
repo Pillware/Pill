@@ -10,11 +10,7 @@ use winit::{
     platform::windows::{ WindowBuilderExtWindows, IconExtWindows },
 };
 use std::{
-    io::{ Write, BufReader, BufRead }, 
-    fs::File, 
-    env, 
-    collections::HashMap, 
-    path::PathBuf
+    collections::HashMap, env, fs::File, io::{ BufRead, BufReader, Write }, path::PathBuf, sync::Arc
 };
 use log::{ debug, info, warn };
 
@@ -83,18 +79,17 @@ fn main() {
     };
 
     // Init window
-    let window_event_loop = winit::event_loop::EventLoop::new();
-    
+    let window_event_loop = winit::event_loop::EventLoop::new().unwrap();
     // Initialize other window parameters
     let window_size = winit::dpi::PhysicalSize::<u32>::new(window_width, window_height);
     let window_min_size = winit::dpi::PhysicalSize::<u32>::new(100, 100);
-    let window = winit::window::WindowBuilder::new()
+    let window = Arc::new(winit::window::WindowBuilder::new()
         .with_title(window_title)
         .with_inner_size(window_size)
         .with_min_inner_size(window_min_size)
         .with_window_icon(window_icon.clone())
         .build(&window_event_loop)
-        .context("Failed to initialize window").unwrap();
+        .context("Failed to initialize window").unwrap());
     
     // Possibly set window to fullscreen
     let window_fullscreen_mode = match window_fullscreen {
@@ -110,15 +105,19 @@ fn main() {
 
     // Initialize engine
     let game: Box<dyn PillGame> = Box::new(pill_game::Game { });
-    let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(&window, config.clone()));
+    let windowx = Arc::clone(&window);
+    let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(windowx, config.clone()));
     let mut engine = Engine::new(game, renderer, config.clone());
     engine.initialize(window_size).context("Failed to initialize engine").unwrap();
 
     // Run loop
-    window_event_loop.run(move |event, _, control_flow| { // Run function takes closure
-        *control_flow = winit::event_loop::ControlFlow::Poll; 
+    window_event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    window_event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+  
+   
+    let _ = window_event_loop.run(move |event, event_loop_window_target| { // Run function takes closure
         match event {
-            Event::MainEventsCleared => {
+            Event::AboutToWait => {
                 window.request_redraw();
             }
 
@@ -143,12 +142,19 @@ fn main() {
                 window_id,
             } 
             if window_id == window.id() => {
-                match event {        
+                match event {    
+                    WindowEvent::RedrawRequested => {
+                        let now = std::time::Instant::now();
+                        let delta_time = now - last_render_time;
+                        last_render_time = now;
+                        engine.update(delta_time);
+                    }
+
                     WindowEvent::KeyboardInput { // Pass keyboard input to engine
-                        input,
+                        event,
                         .. // Skip other
                     } => { 
-                        engine.pass_keyboard_key_input(&input);
+                        engine.pass_keyboard_key_input(&event);
                     },
                     WindowEvent::MouseInput {   // Pass mouse key input to engine
                         button,
@@ -171,21 +177,13 @@ fn main() {
                     },
                     WindowEvent::CloseRequested => { // Close window
                         engine.shutdown();
-                        *control_flow = winit::event_loop::ControlFlow::Exit
+                        event_loop_window_target.exit();
                     },
                     WindowEvent::Resized(physical_size) => { // Resize window
                         engine.resize(*physical_size);
                     },
                     _ => {}
                 }
-            }
-
-            // Handle redraw requests
-            Event::RedrawRequested(_) => {
-                let now = std::time::Instant::now();
-                let delta_time = now - last_render_time;
-                last_render_time = now;
-                engine.update(delta_time);
             }
             _ => {}
         }

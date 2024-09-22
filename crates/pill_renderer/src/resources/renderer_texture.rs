@@ -51,6 +51,7 @@ impl RendererTexture {
             dimension: wgpu::TextureDimension::D2,
             format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
         });
 
         // Write data to texture
@@ -64,8 +65,8 @@ impl RendererTexture {
             &rgba,
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: NonZeroU32::new(4 * dimensions.0),
-                rows_per_image: NonZeroU32::new(dimensions.1),
+                bytes_per_row: Some(4 * dimensions.0),
+                rows_per_image: Some(dimensions.1),
             },
             size,
         );
@@ -81,6 +82,8 @@ impl RendererTexture {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
+            lod_min_clamp: 0.0,  // Fix: Must be 0.0 or greater
+            lod_max_clamp: 100.0, // You can set this based on your texture's mipmap levels
             ..Default::default()
         });
 
@@ -116,6 +119,7 @@ impl RendererTexture {
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING, // Rendering to this texture so RENDER_ATTACHMENT flag is needed
+            view_formats: &[],
         });
 
         // Create texture view
@@ -130,7 +134,7 @@ impl RendererTexture {
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             compare: Some(wgpu::CompareFunction::LessEqual),
-            lod_min_clamp: -100.0,
+            lod_min_clamp: 0.0,
             lod_max_clamp: 100.0,
             ..Default::default()
         });

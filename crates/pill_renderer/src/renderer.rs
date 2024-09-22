@@ -39,10 +39,7 @@ use pill_core::{
 };
 
 use std::{
-    iter,
-    num::{ NonZeroU32 },
-    ops::Range,
-    mem::size_of,
+    iter, mem::size_of, num::NonZeroU32, ops::Range, sync::Arc
 };
 
 use anyhow::{ Result };
@@ -61,9 +58,9 @@ pub struct Renderer {
 }
 
 impl PillRenderer for Renderer {
-    fn new(window: &winit::window::Window, config: config::Config) -> Self { 
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self { 
         info!("Initializing {}", "Renderer".mobj_style());
-        let state: State = pollster::block_on(State::new(&window, config));
+        let state: State = pollster::block_on(State::new(window, config));
 
         Self {
             state,
@@ -82,13 +79,13 @@ impl PillRenderer for Renderer {
             label: Some("master_vertex_shader"),
             source: wgpu::util::make_spirv(vertex_shader_bytes),
         };
-        let vertex_shader = self.state.device.create_shader_module(&vertex_shader);
+        let vertex_shader = self.state.device.create_shader_module(vertex_shader);
 
         let fragment_shader = wgpu::ShaderModuleDescriptor {
             label: Some("master_fragment_shader"),
             source: wgpu::util::make_spirv(fragment_shader_bytes),
         };
-        let fragment_shader = self.state.device.create_shader_module(&fragment_shader);
+        let fragment_shader = self.state.device.create_shader_module(fragment_shader);
 
         // Create master pipeline
         let master_pipeline = RendererPipeline::new(
@@ -201,7 +198,7 @@ pub struct State {
     // Resources
     renderer_resource_storage: RendererResourceStorage,
     // Renderer variables
-    surface: wgpu::Surface,
+    surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
@@ -217,11 +214,20 @@ pub struct State {
 
 impl State {
     // Creating some of the wgpu types requires async code
-    async fn new(window: &winit::window::Window, config: config::Config) -> Self {
+    async fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self {
         let window_size = window.inner_size();
 
-        let instance = wgpu::Instance::new(wgpu::Backends::all());
-        let surface = unsafe { instance.create_surface(window) }; 
+        let backends = wgpu::util::backend_bits_from_env().unwrap_or_default();
+        let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
+        let gles_minor_version = wgpu::util::gles_minor_version_from_env().unwrap_or_default();
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends,
+            flags: wgpu::InstanceFlags::from_build_config().with_env(),
+            dx12_shader_compiler,
+            gles_minor_version,
+        });
+        let surface = instance.create_surface(window).unwrap();
         
         // Specify adapter options (Options passed here are not guaranteed to work for all devices)
         let request_adapter_options = wgpu::RequestAdapterOptions { 
@@ -235,23 +241,30 @@ impl State {
         let adapter_info = adapter.get_info();
         info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
         
+        let features = wgpu::Features::DEPTH_CLIP_CONTROL;
+
         // Create device descriptor
         let device_descriptor = wgpu::DeviceDescriptor {
             label: None,
-            features: wgpu::Features::empty(), // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
-            limits: wgpu::Limits::default(), // Allows to specify the limit of certain types of resources that will be used (e.g. max samplers, uniform buffers, etc)
+            required_features: features, // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
+            required_limits: wgpu::Limits::default(), // Allows to specify the limit of certain types of resources that will be used (e.g. max samplers, uniform buffers, etc)
+            memory_hints: wgpu::MemoryHints::MemoryUsage, 
         };
 
         // Create device and queue
         let (device, queue) = adapter.request_device(&device_descriptor,None).await.unwrap();
 
         // Specify surface configuration
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
         let surface_configuration = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Defines how the swap_chain's underlying textures will be used
-            format: surface.get_preferred_format(&adapter).unwrap(), // Defines how the swap_chain's textures will be stored on the gpu
+            format: format, // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
+            desired_maximum_frame_latency: 2,
             present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![format],
         };
 
         // Configure surface
@@ -351,7 +364,7 @@ impl State {
                 resolve_target: None, // Specifies what texture will receive the resolved output
                 ops: wgpu::Operations { // Specifies what to do with the colors on the screen
                     load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
-                store: true,
+                    store: wgpu::StoreOp::Store,
                 },
             };
 
@@ -360,7 +373,7 @@ impl State {
                 view: &self.depth_texture.texture_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
             };
@@ -449,8 +462,10 @@ impl MeshDrawer {
         // Start encoding render pass
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
             label: Some("render_pass"),
-            color_attachments: &[color_attachment],
+            color_attachments: &[Some(color_attachment)],
             depth_stencil_attachment: Some(depth_stencil_attachment),
+            timestamp_writes: None,
+            occlusion_query_set: None,
         });
 
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
