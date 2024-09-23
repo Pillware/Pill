@@ -1,3 +1,7 @@
+// https://github.com/ejb004/egui-wgpu-demo/blob/master/src/lib.rs
+// https://github.com/kaphula/winit-egui-wgpu-template/blob/master/src/main.rs
+// https://github.com/emilk/egui/discussions/3067
+
 use crate::{
     resources::{
         RendererCamera,
@@ -44,6 +48,8 @@ use std::{
 
 use anyhow::{ Result };
 use log::{ info };
+
+use crate::egui::EguiRenderer;
 
 pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 10000;
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
@@ -192,6 +198,12 @@ impl PillRenderer for Renderer {
             camera_component_storage,
             transform_component_storage)
     }
+    
+    fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
+        self.state.egui_renderer.handle_input(event);
+        Ok(())
+    }
+
 }
 
 pub struct State {
@@ -209,6 +221,7 @@ pub struct State {
     mesh_drawer: MeshDrawer,
     // Other
     config: config::Config,
+    egui_renderer: crate::egui::EguiRenderer,
 }
 
 
@@ -216,6 +229,8 @@ impl State {
     // Creating some of the wgpu types requires async code
     async fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self {
         let window_size = window.inner_size();
+
+        let window_ref = window.clone();
 
         let backends = wgpu::util::backend_bits_from_env().unwrap_or_default();
         let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
@@ -248,7 +263,7 @@ impl State {
             label: None,
             required_features: features, // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
             required_limits: wgpu::Limits::default(), // Allows to specify the limit of certain types of resources that will be used (e.g. max samplers, uniform buffers, etc)
-            memory_hints: wgpu::MemoryHints::MemoryUsage, 
+            //memory_hints: wgpu::MemoryHints::MemoryUsage, 
         };
 
         // Create device and queue
@@ -286,6 +301,14 @@ impl State {
         // Create drawing state
         let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
 
+        let egui_renderer = EguiRenderer::new(
+            &device,
+            surface_configuration.format, 
+            None, 
+            1,            
+            window_ref,
+        );
+        
         // Create state
         Self {
             // Resources
@@ -302,6 +325,7 @@ impl State {
             mesh_drawer,
             // Other
             config,
+            egui_renderer
         }
     }
 
@@ -389,6 +413,20 @@ impl State {
                 &transform_component_storage
             )
         }
+
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
+            pixels_per_point: self.egui_renderer.window_scale_factor,
+        };
+
+        self.egui_renderer.draw(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &view,
+            screen_descriptor,
+            |ui| crate::egui::test_window(ui),
+        );
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();

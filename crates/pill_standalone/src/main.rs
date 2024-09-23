@@ -105,8 +105,7 @@ fn main() {
 
     // Initialize engine
     let game: Box<dyn PillGame> = Box::new(pill_game::Game { });
-    let windowx = Arc::clone(&window);
-    let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(windowx, config.clone()));
+    let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(&window), config.clone()));
     let mut engine = Engine::new(game, renderer, config.clone());
     engine.initialize(window_size).context("Failed to initialize engine").unwrap();
 
@@ -142,7 +141,8 @@ fn main() {
                 window_id,
             } 
             if window_id == window.id() => {
-                match event {    
+                engine.pass_input_to_egui(event);
+                match event { 
                     WindowEvent::RedrawRequested => {
                         let now = std::time::Instant::now();
                         let delta_time = now - last_render_time;

@@ -248,6 +248,10 @@ impl Engine {
         debug!("Got new mouse position input");
     }
 
+    pub fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) {
+       self.renderer.pass_input_to_egui(event);
+    }
+
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
         &self.input_queue
     }

@@ -87,6 +87,8 @@ pub trait PillRenderer {
     fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()>;
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()>;
 
+    fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;
+
     fn render(&mut self, 
         active_camera_entity_handle: EntityHandle,
         render_queue: &Vec::<RenderQueueItem>, 

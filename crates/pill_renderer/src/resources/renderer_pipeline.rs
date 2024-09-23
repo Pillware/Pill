@@ -150,7 +150,7 @@ impl RendererPipeline {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-            cache: None,
+            //cache: None,
         };
 
         let render_pipeline = device.create_render_pipeline(&render_pipeline_descriptor);
