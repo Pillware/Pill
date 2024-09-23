@@ -146,6 +146,19 @@ impl Engine {
         // Create default resources
         self.create_default_resources().context("Failed to create default resources")?;
 
+        // Create egui UI
+        self.renderer.register_egui_ui(Box::new(|ui: &egui::Context| {
+            egui::Window::new("PillEngine")
+                .default_open(true)
+                .resizable(true)
+                .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
+                .show(ui, |mut ui| {
+                    if ui.add(egui::Button::new("Click me")).clicked() {
+                        println!("PRESSED")
+                    }
+                });
+        }));
+
         // Initialize game
         let game = self.game.take().ok_or(EngineError::Other("Cannot get game".to_string()))?;
         let stop_on_game_errors = self.config.get_bool("PANIC_ON_GAME_ERRORS").unwrap_or(PANIC_ON_GAME_ERRORS);

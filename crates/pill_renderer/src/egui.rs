@@ -109,18 +109,3 @@ impl EguiRenderer {
     }
 }
 
-pub fn test_window(ui: &Context) {
-    egui::Window::new("PillEngine")
-        // .vscroll(true)
-        .default_open(true)
-        // .max_width(1000.0)
-        // .max_height(800.0)
-        // .default_width(800.0)
-        .resizable(true)
-        .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
-        .show(&ui, |mut ui| {
-            if ui.add(egui::Button::new("Click me")).clicked() {
-                println!("PRESSED")
-            }
-        });
-}

@@ -203,7 +203,11 @@ impl PillRenderer for Renderer {
         self.state.egui_renderer.handle_input(event);
         Ok(())
     }
-
+    
+    fn register_egui_ui(&mut self, ui: Box<dyn Fn(&egui::Context)>) {
+        self.state.renderer_resource_storage.egui_ui = Some(ui);
+    }
+    
 }
 
 pub struct State {
@@ -414,19 +418,20 @@ impl State {
             )
         }
 
-        let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
-            pixels_per_point: self.egui_renderer.window_scale_factor,
-        };
-
-        self.egui_renderer.draw(
-            &self.device,
-            &self.queue,
-            &mut encoder,
-            &view,
-            screen_descriptor,
-            |ui| crate::egui::test_window(ui),
-        );
+        // Render egui UI
+        if let Some(egui_ui) = self.renderer_resource_storage.egui_ui.as_ref()  {
+            self.egui_renderer.draw(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &view,
+                egui_wgpu::ScreenDescriptor {
+                    size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
+                    pixels_per_point: self.egui_renderer.window_scale_factor,
+                },
+                egui_ui, 
+            );
+        }
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();
