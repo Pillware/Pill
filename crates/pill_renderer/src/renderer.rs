@@ -190,24 +190,22 @@ impl PillRenderer for Renderer {
         active_camera_entity_handle: EntityHandle,
         render_queue: &Vec<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>
+        transform_component_storage: &ComponentStorage<TransformComponent>,
+        egui_ui: Box<dyn Fn(&egui::Context)>
     ) -> Result<(), RendererError> {
         self.state.render(
             active_camera_entity_handle,
             render_queue,
             camera_component_storage,
-            transform_component_storage)
+            transform_component_storage,
+            egui_ui)
     }
     
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
         self.state.egui_renderer.handle_input(event);
         Ok(())
     }
-    
-    fn register_egui_ui(&mut self, ui: Box<dyn Fn(&egui::Context)>) {
-        self.state.renderer_resource_storage.egui_ui = Some(ui);
-    }
-    
+
 }
 
 pub struct State {
@@ -346,13 +344,14 @@ impl State {
             ).unwrap();
         }
     }
-
+  
     fn render(
         &mut self, 
         active_camera_entity_handle: EntityHandle,
         render_queue: &Vec<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>
+        transform_component_storage: &ComponentStorage<TransformComponent>,
+        egui_ui: Box<dyn Fn(&egui::Context)>
     ) -> Result<(), RendererError> { 
     
         // Get frame or return mapped error if failed
@@ -416,22 +415,20 @@ impl State {
                 &render_queue, 
                 &transform_component_storage
             )
-        }
+        }  
 
         // Render egui UI
-        if let Some(egui_ui) = self.renderer_resource_storage.egui_ui.as_ref()  {
-            self.egui_renderer.draw(
-                &self.device,
-                &self.queue,
-                &mut encoder,
-                &view,
-                egui_wgpu::ScreenDescriptor {
-                    size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
-                    pixels_per_point: self.egui_renderer.window_scale_factor,
-                },
-                egui_ui, 
-            );
-        }
+        self.egui_renderer.draw(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &view,
+            egui_wgpu::ScreenDescriptor {
+                size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
+                pixels_per_point: self.egui_renderer.window_scale_factor,
+            },
+            egui_ui, 
+        );
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();

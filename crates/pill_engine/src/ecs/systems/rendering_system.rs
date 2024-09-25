@@ -68,12 +68,31 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
         .context(format!("{}: Cannot get {}", "RenderingSystem".sobj_style(), "TransformComponents".sobj_style())).unwrap();
 
+    // Create egui UI
+    let frame_delta_time = engine.frame_delta_time;
+    let entity_count = active_scene.entities.len();
+    let x = Box::new(move |ui: &egui::Context| {
+        egui::Window::new("PillEngine")
+            .default_open(true)
+            .resizable(true)
+            .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
+            .show(ui, |ui| {
+                if ui.add(egui::Button::new("Click me")).clicked() {
+                    println!("PRESSED");
+                }
+                ui.add(egui::Label::new(format!("FPS {}", 1000.0 / frame_delta_time) ));
+                ui.add(egui::Label::new(format!("Entities {}", entity_count)));
+                //ui.add(egui::Label::new(format!("Entities {}", engine.scene_manager.get_active_scene().unwrap().entities.len()) ));
+            });
+    });
+
     // Render
     match engine.renderer.render(
         active_camera_entity_handle, 
         render_queue, 
         camera_component_storage,
-        transform_component_storage
+        transform_component_storage,
+        x
     ) {
         Ok(_) => Ok(()),
         // Recreate lost surface

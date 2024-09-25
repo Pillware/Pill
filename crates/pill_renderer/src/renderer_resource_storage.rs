@@ -28,7 +28,6 @@ pub struct RendererResourceStorage {
     pub(crate) textures: PillSlotMap<RendererTextureHandle, RendererTexture>,
     pub(crate) meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>,
     pub(crate) cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>,
-    pub(crate) egui_ui: Option<Box<dyn Fn(&egui::Context)>>,
 }
 
 impl RendererResourceStorage {
@@ -45,7 +44,6 @@ impl RendererResourceStorage {
             materials: PillSlotMap::<RendererMaterialHandle, RendererMaterial>::with_capacity_and_key(max_material_count),
             meshes: PillSlotMap::<RendererMeshHandle, RendererMesh>::with_capacity_and_key(max_mesh_count),
             cameras: PillSlotMap::<RendererCameraHandle, RendererCamera>::with_capacity_and_key(max_camera_count),
-            egui_ui: None,
         }
     }
 }

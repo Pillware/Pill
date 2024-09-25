@@ -95,7 +95,24 @@ impl Engine {
 }
 
 // ---- INTERNAL API -----------------------------------------------------------------
+struct EguiUI<'a> {
+    frame_delta_time: &'a f32, // Use a reference to frame_delta_time
+}
 
+impl<'a> EguiUI<'a> {
+    fn render(&self, ui: &egui::Context) {
+        egui::Window::new("PillEngine")
+            .default_open(true)
+            .resizable(true)
+            .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
+            .show(ui, |ui| {
+                if ui.add(egui::Button::new("Click me")).clicked() {
+                    println!("PRESSED");
+                    println!("{}", self.frame_delta_time);
+                }
+            });
+    }
+}
 /// Pill Engine internal API
 #[cfg(feature = "internal")]
 impl Engine {
@@ -113,7 +130,7 @@ impl Engine {
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
-            frame_delta_time: 0.0,
+            frame_delta_time: 0.0.into(),
         }
     }
 
@@ -145,19 +162,22 @@ impl Engine {
 
         // Create default resources
         self.create_default_resources().context("Failed to create default resources")?;
+       
 
         // Create egui UI
-        self.renderer.register_egui_ui(Box::new(|ui: &egui::Context| {
-            egui::Window::new("PillEngine")
-                .default_open(true)
-                .resizable(true)
-                .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
-                .show(ui, |mut ui| {
-                    if ui.add(egui::Button::new("Click me")).clicked() {
-                        println!("PRESSED")
-                    }
-                });
-        }));
+        // let x = self.frame_delta_time;
+        // self.renderer.register_egui_ui(Box::new(move |ui: &egui::Context| {
+        //     egui::Window::new("PillEngine")
+        //         .default_open(true)
+        //         .resizable(true)
+        //         .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
+        //         .show(ui, |ui| {
+        //             if ui.add(egui::Button::new("Click me")).clicked() {
+        //                 println!("PRESSED");
+        //                 println!("{}", x);
+        //             }
+        //         });
+        // }));
 
         // Initialize game
         let game = self.game.take().ok_or(EngineError::Other("Cannot get game".to_string()))?;
@@ -209,7 +229,7 @@ impl Engine {
         // Update FPS counter
         let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps =  1000.0 / new_frame_time;
-        self.frame_delta_time = new_frame_time;
+        self.frame_delta_time = new_frame_time.into();
         debug!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
     }
 
