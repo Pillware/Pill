@@ -1,7 +1,7 @@
 use crate::{
-    resources::{ TextureHandle, MaterialHandle, TextureType }, 
-    graphics::{ RendererTextureHandle, RendererMaterialHandle },
-    ecs::{ InputComponent, AudioManagerComponent, DeferredUpdateComponent, TimeComponent }
+    ecs::{ AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, TimeComponent }, 
+    graphics::{ RendererMaterialHandle, RendererTextureHandle }, 
+    resources::{ MaterialHandle, TextureHandle, TextureType }
 };
 
 use pill_core::PillSlotMapKeyData;
@@ -96,5 +96,6 @@ lazy_static! {
         TypeId::of::<TimeComponent>(),
         TypeId::of::<AudioManagerComponent>(),
         TypeId::of::<DeferredUpdateComponent>(),
+        TypeId::of::<EguiManagerComponent>()
     );
 }

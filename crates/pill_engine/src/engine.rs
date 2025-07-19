@@ -148,10 +148,12 @@ impl Engine {
         self.add_global_component(InputComponent::new())?;
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
+        self.add_global_component(EguiManagerComponent::new())?;
 
         let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUNDS").unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
         let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUNDS").unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
         self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
+
 
         // Add built-in systems
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame)?;
@@ -162,22 +164,6 @@ impl Engine {
 
         // Create default resources
         self.create_default_resources().context("Failed to create default resources")?;
-       
-
-        // Create egui UI
-        // let x = self.frame_delta_time;
-        // self.renderer.register_egui_ui(Box::new(move |ui: &egui::Context| {
-        //     egui::Window::new("PillEngine")
-        //         .default_open(true)
-        //         .resizable(true)
-        //         .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
-        //         .show(ui, |ui| {
-        //             if ui.add(egui::Button::new("Click me")).clicked() {
-        //                 println!("PRESSED");
-        //                 println!("{}", x);
-        //             }
-        //         });
-        // }));
 
         // Initialize game
         let game = self.game.take().ok_or(EngineError::Other("Cannot get game".to_string()))?;

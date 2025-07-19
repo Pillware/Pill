@@ -29,6 +29,7 @@ pub mod game {
             AudioListenerComponent,
             TimeComponent,
             AudioManagerComponent,
+            EguiManagerComponent,
             Component,
             ComponentStorage,
             GlobalComponent,
@@ -102,6 +103,7 @@ pub mod internal {
             AudioSourceComponent,
             AudioListenerComponent,
             AudioManagerComponent,
+            EguiManagerComponent,
             get_renderer_resource_handle_from_camera_component,
         },
         resources::{

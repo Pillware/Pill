@@ -11,6 +11,7 @@ pub(crate) mod time_component;
 pub(crate) mod audio_listener_component;
 pub(crate) mod audio_source_component;
 pub(crate) mod audio_manager_component;
+pub(crate) mod egui_manager_component;
 
 // --- Use ---
 

@@ -38,6 +38,10 @@ pub use components::audio_source_component::{
     AudioSourceComponent
 };
 
+pub use components::egui_manager_component::{
+    EguiManagerComponent,
+};
+
 pub use components::deferred_update_component::{
     DeferredUpdateComponent,
     DeferredUpdateManager,
