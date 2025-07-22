@@ -6,13 +6,31 @@ use pill_renderer;
 
 use anyhow::{ Error, Result, Context };
 use winit::{
-    event::{ Event, WindowEvent, DeviceEvent }, 
-    platform::windows::{ WindowBuilderExtWindows, IconExtWindows },
+        event::{Event, WindowEvent, DeviceEvent},
+            event_loop::{ControlFlow, EventLoop},
+                window::{Icon, WindowBuilder},
 };
+
+#[cfg(target_os = "windows")]
+use winit::platform::windows::IconExtWindows;
+
 use std::{
-    collections::HashMap, env, fs::File, io::{ BufRead, BufReader, Write }, path::PathBuf, sync::Arc
+    collections::HashMap, env, fs::File, io::{ BufRead, BufReader, Write }, path::{Path, PathBuf}, sync::Arc
 };
 use log::{ debug, info, warn };
+
+pub fn load_window_icon(path: &Path) -> Option<Icon> {
+    // Fast path on Windows: let the OS decode common formats for us.
+    #[cfg(target_os = "windows")]
+    if let Ok(icon) = Icon::from_path(path, None) {
+        return Some(icon);
+    }
+
+    // Cross‑platform path: decode with the `image` crate.
+    let img = image::open(path).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    Icon::from_rgba(img.into_raw(), w, h).ok()
+}
 
 fn main() {
     // Get config file from game resource folder
@@ -23,7 +41,7 @@ fn main() {
     // Load config
     let mut config = config::Config::default();
     config.merge(config::File::with_name(config_path.to_str().unwrap())).unwrap();
-     
+
     // Configure logging
     let log_level = config.get_str("LOG_LEVEL").unwrap_or("Info".to_string());
     let log_level = match log_level.as_str() {
@@ -52,31 +70,17 @@ fn main() {
         .init();
 
     info!("Initializing {}", "Standalone".mobj_style());
-    
+
     // Read window config
-    let window_title = config.get_str("WINDOW_TITLE").context(EngineError::InvalidGameConfig()).unwrap(); 
+    let window_title = config.get_str("WINDOW_TITLE").context(EngineError::InvalidGameConfig()).unwrap();
     let window_width = config.get_int("WINDOW_WIDTH").unwrap_or(1280) as u32;
     let window_height = config.get_int("WINDOW_HEIGHT").unwrap_or(720) as u32;
     let window_fullscreen = config.get_bool("WINDOW_FULLSCREEN").unwrap_or(false);
 
     let default_icon_bytes = include_bytes!("../res/icon.raw");
     let icon_path = resource_folder_path.join("icon.ico"); // Icon has to in res folder of the game and has to be named icon.ico
-    let window_icon = match icon_path.exists() {
-        true => match winit::window::Icon::from_path(icon_path, None) {
-            Ok(icon) => Some(icon),
-            Err(_) => { 
-                warn!("Failed to load window icon"); 
-                None 
-            }
-        },
-        false => match winit::window::Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128) { 
-            Ok(icon) => Some(icon),
-            Err(_) => { 
-                warn!("Failed to load window icon"); 
-                None 
-            }
-        }
-    };
+    let window_icon = load_window_icon(&icon_path)
+        .or_else(|| Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128).ok());
 
     // Init window
     let window_event_loop = winit::event_loop::EventLoop::new().unwrap();
@@ -90,7 +94,7 @@ fn main() {
         .with_window_icon(window_icon.clone())
         .build(&window_event_loop)
         .context("Failed to initialize window").unwrap());
-    
+
     // Possibly set window to fullscreen
     let window_fullscreen_mode = match window_fullscreen {
         true => {
@@ -112,8 +116,8 @@ fn main() {
     // Run loop
     window_event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     window_event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
-  
-   
+
+
     let _ = window_event_loop.run(move |event, event_loop_window_target| { // Run function takes closure
         match event {
             Event::AboutToWait => {
@@ -126,8 +130,8 @@ fn main() {
                 ..
             } => {
                 match event {
-                    DeviceEvent::MouseMotion { 
-                        delta, 
+                    DeviceEvent::MouseMotion {
+                        delta,
                     } => {
                         engine.pass_mouse_delta_input(delta);
                     },
@@ -139,10 +143,10 @@ fn main() {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } 
+            }
             if window_id == window.id() => {
                 engine.pass_input_to_egui(event);
-                match event { 
+                match event {
                     WindowEvent::RedrawRequested => {
                         let now = std::time::Instant::now();
                         let delta_time = now - last_render_time;
@@ -153,26 +157,26 @@ fn main() {
                     WindowEvent::KeyboardInput { // Pass keyboard input to engine
                         event,
                         .. // Skip other
-                    } => { 
+                    } => {
                         engine.pass_keyboard_key_input(&event);
                     },
                     WindowEvent::MouseInput {   // Pass mouse key input to engine
                         button,
                         state,
                         .. // Skip other
-                    } => { 
+                    } => {
                         engine.pass_mouse_key_input(&button, &state);
                     },
                     WindowEvent::MouseWheel { // Pass mouse scroll input to engine
                         delta,
                         .. // Skip other
-                    } => { 
+                    } => {
                         engine.pass_mouse_wheel_input(&delta);
                     },
                     WindowEvent::CursorMoved { // Pass mouse motion input to engine
                         position,
                         .. // Skip other
-                    }=> { 
+                    }=> {
                         engine.pass_mouse_position_input(&position);
                     },
                     WindowEvent::CloseRequested => { // Close window

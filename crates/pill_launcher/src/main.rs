@@ -13,7 +13,7 @@ use anyhow::*;
 use clap::{ Arg, App };
 use path_absolutize::Absolutize;
 
-// - Cargo commands 
+// - Cargo commands
 
 enum Location {
     MainEngine, // Main engine project directory (containing creates, examples, etc)
@@ -33,47 +33,115 @@ fn get_path(location: Location) -> PathBuf {
         Location::Engine => main_engine_directory.join("crates").join("pill_engine"),
         Location::Standalone => main_engine_directory.join("crates").join("pill_standalone"),
         Location::Launcher => main_engine_directory.join("crates").join("pill_launcher"),
-    } 
+    }
 }
 
+#[cfg(target_os = "windows")]
 fn cargo_build_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
     let mut arguments = vec!["/C", "cargo", "build", "--manifest-path", path.to_str().unwrap()];
     if compile_mode == "release" {
-        arguments.push("--release")
+        arguments.push("--release");
     }
-    
+
     Command::new("cmd").args(arguments).status().context("Failed to execute command")?;
-    
+
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
+fn cargo_build_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build")
+        .arg("--manifest-path")
+        .arg(path.to_str().unwrap());
+    if compile_mode == "release" {
+        cmd.arg("--release");
+    }
+
+    cmd.status().context("Failed to execute command")?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn cargo_run_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
     let mut arguments = vec!["/C", "cargo", "run", "--manifest-path", path.to_str().unwrap()];
     if compile_mode == "release" {
-        arguments.push("--release")
+        arguments.push("--release");
     }
-    
+
     Command::new("cmd").args(arguments).status().context("Failed to execute command")?;
-    
+
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
+fn cargo_run_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
+    let mut cmd = Command::new("cargo");
+    cmd.arg("run")
+        .arg("--manifest-path")
+        .arg(path.to_str().unwrap());
+
+    if compile_mode == "release" {
+        cmd.arg("--release");
+    }
+
+    cmd.status().context("Failed to execute command")?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn cargo_game_dev_docs_command(path: &PathBuf, output_path: &PathBuf) -> Result<()> {
     let arguments = vec!["/C", "cargo", "doc", "--no-deps", "--features", "game", "--manifest-path", path.to_str().unwrap(), "--target-dir", output_path.to_str().unwrap(), "--release"];
-    
+
     Command::new("cmd").args(arguments).status().context("Failed to execute command")?;
-    
+
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
+fn cargo_game_dev_docs_command(path: &PathBuf, output_path: &PathBuf) -> Result<()> {
+    let mut cmd = Command::new("cargo");
+    cmd.arg("doc")
+        .arg("--no-deps")
+        .arg("--features")
+        .arg("game")
+        .arg("--manifest-path")
+        .arg(path.to_str().unwrap())
+        .arg("--target-dir")
+        .arg(output_path.to_str().unwrap())
+        .arg("--release");
+    cmd.status().context("Failed to execute command")?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
 fn cargo_engine_dev_docs_command(path: &PathBuf, output_path: &PathBuf) -> Result<()> {
     let arguments = vec!["/C", "cargo", "doc", "--no-deps", "--document-private-items", "--features", "internal game", "--manifest-path", path.to_str().unwrap(), "--target-dir", output_path.to_str().unwrap(), "--release"];
 
     Command::new("cmd").args(arguments).status().context("Failed to execute command")?;
-    
+
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
+fn cargo_engine_dev_docs_command(path: &PathBuf, output_path: &PathBuf) -> Result<()> {
+    let mut cmd = Command::new("cargo");
+    cmd.arg("doc")
+        .arg("--no-deps")
+        .arg("--document-private-items")
+        .arg("--features")
+        .arg("internal game")
+        .arg("--manifest-path")
+        .arg(path.to_str().unwrap())
+        .arg("--target-dir")
+        .arg(output_path.to_str().unwrap())
+        .arg("--release");
+
+    Ok(())
+}
 
 fn modify_file<A: FnMut(String) -> String>(input_path: &PathBuf, output_path: &PathBuf, mut action: A) -> Result<()> {
     // Open files from path
@@ -97,7 +165,7 @@ fn modify_file<A: FnMut(String) -> String>(input_path: &PathBuf, output_path: &P
 
 fn create_game_project(game_path: &String, game_name: &String) -> Result<()> {
     const TEMPLATE_NAME: &str = "Pill-Default";
-    
+
     // Prepare paths
     let display_game_path = PathBuf::from(game_path).join(game_name).absolutize().unwrap().to_path_buf();
     let game_parent_path = PathBuf::from(game_path.replace("/", "\\"));
@@ -110,13 +178,13 @@ fn create_game_project(game_path: &String, game_name: &String) -> Result<()> {
 
     // Copy template
     println!("Copying project template...");
-    
+
     let mut copy_options = CopyOptions::new();
     copy_options.overwrite = true;
     fs_extra::dir::copy(&template_path.join(TEMPLATE_NAME), &game_parent_path, &copy_options).context("Cannot copy template directory")?;
-    
+
     // Rename project directory
-    fs::rename(TEMPLATE_NAME, game_name)?; 
+    fs::rename(TEMPLATE_NAME, game_name)?;
 
     // Setup config file
     println!("Setting up config file...");
@@ -127,7 +195,7 @@ fn create_game_project(game_path: &String, game_name: &String) -> Result<()> {
     };
     modify_file(&game_path.join("res").join("config.ini"), &game_path.join("res").join("config.ini"), action)?;
 
-    // Setup cargo.toml file 
+    // Setup cargo.toml file
     println!("Setting up manifest file...");
     let action = |line: String| -> String {
         if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
@@ -152,7 +220,7 @@ fn run_game_project(game_path: &String, compile_mode: &String) -> Result<()> {
         game_path = game_path.absolutize().unwrap().to_path_buf();
         env::set_current_dir(&game_path).unwrap(); // Change current directory path cargo will think that it is in game folder and will be access to res directory
     }
-    
+
     // Check if it is valid game project directory
     if !game_path.join("Cargo.toml").exists() {
         return Err(Error::msg("Invalid game project directory"))
@@ -197,7 +265,7 @@ fn build_game_project(game_path: &String, output_path: &String, compile_mode: &S
     let mut output_path = PathBuf::from(output_path);
     if output_path.to_str().unwrap() == "." { // Use current directory absolute path if no argument is specified
         fs::create_dir_all(game_path.join("build").as_path())?; // Create build directory if it is not there
-        output_path = env::current_dir().unwrap().join("build"); 
+        output_path = env::current_dir().unwrap().join("build");
     }
     else {
         output_path = output_path.absolutize().unwrap().to_path_buf();
@@ -236,7 +304,7 @@ fn build_game_project(game_path: &String, output_path: &String, compile_mode: &S
     // Prepare build directory
     if output_path.exists() {
         fs::remove_dir_all(output_path.clone()).context(format!("Cannot clear build directory: {}", output_path.clone().to_str().unwrap()))?;
-    } 
+    }
     else {
         fs::create_dir(output_path.clone()).unwrap();
     }
@@ -246,7 +314,7 @@ fn build_game_project(game_path: &String, output_path: &String, compile_mode: &S
 
     // Copy built executable to build directory and rename it according to variable in config file
     fs::copy(&engine_build_path, &output_path.join(game_title + ".exe"))?;
-    
+
     // Copy game res directory to build directory
     let mut copy_options = CopyOptions::new();
     copy_options.overwrite = true;
@@ -279,7 +347,7 @@ fn generate_docs(output_path: &String) -> Result<()> {
         line
     };
     modify_file(&get_path(Location::Standalone).join("Cargo.toml"), &get_path(Location::Standalone).join("Cargo.toml"), action)?;
-    
+
     let mut docs_path = PathBuf::from(".");
     let mut output_game_dev_path = PathBuf::from(".");
     let mut output_engine_dev_path = PathBuf::from(".");
@@ -305,7 +373,7 @@ fn generate_docs(output_path: &String) -> Result<()> {
         if docs_path.exists() {
             fs::remove_dir_all(&docs_path).context(format!("Cannot clear output directory: {}", docs_path.clone().to_str().unwrap()))?;
         }
-      
+
         output_game_dev_path = docs_path.join("game_dev");
         output_engine_dev_path = docs_path.join("engine_dev");
     }
@@ -319,7 +387,7 @@ fn generate_docs(output_path: &String) -> Result<()> {
     cargo_game_dev_docs_command(&get_path(Location::Engine).join("Cargo.toml"), &output_game_dev_path)?;
 
     // Run cargo command to generate engine_dev docs
-    cargo_engine_dev_docs_command(&get_path(Location::MainEngine).join("Cargo.toml"), &output_engine_dev_path)?;  
+    cargo_engine_dev_docs_command(&get_path(Location::MainEngine).join("Cargo.toml"), &output_engine_dev_path)?;
 
     // Success
     println!("Docs generated succesully!");
@@ -335,10 +403,10 @@ fn main() {
         .short("a")
         .long("action")
         .takes_value(true)
-        .possible_values(&["create", "run", "build", "docs"]) 
+        .possible_values(&["create", "run", "build", "docs"])
         .required(true)
         .help("Specify action to perform: creating/running/building the game project or generating docs");
-        
+
     let name_option = Arg::with_name("name")
         .short("n")
         .long("name")
@@ -353,7 +421,7 @@ fn main() {
         .default_value(".")
         .required(false)
         .help("Specify the path for game project creating/running/building");
-        
+
     let output_path_option = Arg::with_name("output-path")
         .short("o")
         .long("output-path")
@@ -367,7 +435,7 @@ fn main() {
         .long("compile-mode")
         .takes_value(true)
         .help("Specify compile mode")
-        .possible_values(&["debug", "release"]) 
+        .possible_values(&["debug", "release"])
         .default_value("debug")
         .required(false);
 
@@ -388,7 +456,7 @@ fn main() {
         "create" => {
             let game_name = String::from(game_name.unwrap());
             let game_path = String::from(game_path.unwrap());
-            
+
             create_game_project(&game_path, &game_name).context("Failed to create new game project").unwrap();
         },
         "run" => {

@@ -10,36 +10,36 @@ use crate::{
         RendererPipeline,
         RendererTexture,
         Vertex
-    }, 
-    instance::Instance, 
+    },
+    instance::Instance,
     renderer_resource_storage::RendererResourceStorage
 };
 
 use pill_engine::internal::{
-    PillRenderer, 
-    EntityHandle, 
-    RenderQueueItem, 
-    RendererError, 
+    PillRenderer,
+    EntityHandle,
+    RenderQueueItem,
+    RendererError,
     TextureType,
-    MeshData, 
+    MeshData,
     MaterialTextureMap,
     TransformComponent,
-    ComponentStorage, 
+    ComponentStorage,
     CameraComponent,
     MaterialParameterMap,
     RendererCameraHandle,
     RendererMaterialHandle,
     RendererMeshHandle,
     RendererPipelineHandle,
-    RendererTextureHandle, 
+    RendererTextureHandle,
     RENDER_QUEUE_KEY_ORDER,
     get_renderer_resource_handle_from_camera_component,
 };
 
-use pill_core::{ 
-    PillSlotMapKey, 
-    PillSlotMapKeyData, 
-    PillStyle 
+use pill_core::{
+    PillSlotMapKey,
+    PillSlotMapKeyData,
+    PillStyle
 };
 
 use std::{
@@ -55,8 +55,8 @@ pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 10000;
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
 
 // Default resource handle - Master pipeline
-pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
 pub struct Renderer {
@@ -64,14 +64,14 @@ pub struct Renderer {
 }
 
 impl PillRenderer for Renderer {
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self { 
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self {
         info!("Initializing {}", "Renderer".mobj_style());
         let state: State = pollster::block_on(State::new(window, config));
 
         Self {
             state,
         }
-    }   
+    }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         info!("Resizing {} resources", "Renderer".mobj_style());
@@ -79,7 +79,7 @@ impl PillRenderer for Renderer {
     }
 
     fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8]) -> Result<()> {
-        
+
         // Create shaders
         let vertex_shader = wgpu::ShaderModuleDescriptor {
             label: Some("master_vertex_shader"),
@@ -181,14 +181,14 @@ impl PillRenderer for Renderer {
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
         self.state.renderer_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
-        
+
         Ok(())
     }
 
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
+        render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn Fn(&egui::Context)>
@@ -200,7 +200,7 @@ impl PillRenderer for Renderer {
             transform_component_storage,
             egui_ui)
     }
-    
+
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
         self.state.egui_renderer.handle_input(event);
         Ok(())
@@ -216,7 +216,7 @@ pub struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
-    window_size: winit::dpi::PhysicalSize<u32>, 
+    window_size: winit::dpi::PhysicalSize<u32>,
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
@@ -245,9 +245,9 @@ impl State {
             gles_minor_version,
         });
         let surface = instance.create_surface(window).unwrap();
-        
+
         // Specify adapter options (Options passed here are not guaranteed to work for all devices)
-        let request_adapter_options = wgpu::RequestAdapterOptions { 
+        let request_adapter_options = wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
@@ -257,7 +257,7 @@ impl State {
         let adapter = instance.request_adapter(&request_adapter_options).await.unwrap();
         let adapter_info = adapter.get_info();
         info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
-        
+
         let features = wgpu::Features::DEPTH_CLIP_CONTROL;
 
         // Create device descriptor
@@ -265,7 +265,7 @@ impl State {
             label: None,
             required_features: features, // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
             required_limits: wgpu::Limits::default(), // Allows to specify the limit of certain types of resources that will be used (e.g. max samplers, uniform buffers, etc)
-            //memory_hints: wgpu::MemoryHints::MemoryUsage, 
+            //memory_hints: wgpu::MemoryHints::MemoryUsage,
         };
 
         // Create device and queue
@@ -273,13 +273,16 @@ impl State {
 
         // Specify surface configuration
         let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+        // fallback modes for display
+        let present_mode = wgpu::PresentMode::AutoNoVsync;
         let surface_configuration = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Defines how the swap_chain's underlying textures will be used
             format: format, // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
             desired_maximum_frame_latency: 2,
-            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
+            present_mode: present_mode, // Defines how to sync the surface with the display
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![format],
         };
@@ -292,8 +295,8 @@ impl State {
 
         // Create depth and color texture
         let depth_texture = RendererTexture::new_depth_texture(
-            &device, 
-            &surface_configuration, 
+            &device,
+            &surface_configuration,
             "depth_texture"
         ).unwrap();
 
@@ -305,12 +308,12 @@ impl State {
 
         let egui_renderer = EguiRenderer::new(
             &device,
-            surface_configuration.format, 
-            None, 
-            1,            
+            surface_configuration.format,
+            None,
+            1,
             window_ref,
         );
-        
+
         // Create state
         Self {
             // Resources
@@ -344,16 +347,16 @@ impl State {
             ).unwrap();
         }
     }
-  
+
     fn render(
-        &mut self, 
+        &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
+        render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn Fn(&egui::Context)>
-    ) -> Result<(), RendererError> { 
-    
+    ) -> Result<(), RendererError> {
+
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
 
@@ -377,14 +380,14 @@ impl State {
         renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
         let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
         let clear_color = active_camera_component.clear_color;
-        
+
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render_encoder"),
         });
 
         { // Additional scope to release mutable borrow of encoder done by begin_render_pass
-            
+
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
                 view: &view, // Specifies what texture to save the colors to
@@ -406,16 +409,16 @@ impl State {
             };
 
             self.mesh_drawer.record_draw_commands(
-                &self.queue, 
-                &mut encoder, 
-                &self.renderer_resource_storage, 
-                color_attachment, 
-                depth_stencil_attachment, 
+                &self.queue,
+                &mut encoder,
+                &self.renderer_resource_storage,
+                color_attachment,
+                depth_stencil_attachment,
                 &renderer_camera,
-                &render_queue, 
+                &render_queue,
                 &transform_component_storage
             )
-        }  
+        }
 
         // Render egui UI
         self.egui_renderer.draw(
@@ -427,7 +430,7 @@ impl State {
                 size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
                 pixels_per_point: self.egui_renderer.window_scale_factor,
             },
-            egui_ui, 
+            egui_ui,
         );
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
@@ -470,23 +473,23 @@ impl MeshDrawer {
             current_mesh_index_count: 0,
 
             max_instance_count,
-            instances: Vec::<Instance>::with_capacity(INITIAL_INSTANCE_VECTOR_CAPACITY), 
+            instances: Vec::<Instance>::with_capacity(INITIAL_INSTANCE_VECTOR_CAPACITY),
             instance_buffer,
             instance_range: 0..0, // Start inclusive, end exclusive (e.g. 0..3 means indices 0, 1, 2.  e.g. 5..7 means indices 5, 6)
         }
     }
 
     pub fn record_draw_commands(
-        &mut self, 
+        &mut self,
         // Resources
-        queue: &wgpu::Queue, 
-        encoder: &mut wgpu::CommandEncoder, 
-        renderer_resource_storage: &RendererResourceStorage, 
-        color_attachment: wgpu::RenderPassColorAttachment, 
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        renderer_resource_storage: &RendererResourceStorage,
+        color_attachment: wgpu::RenderPassColorAttachment,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         // Rendring data
         camera: &RendererCamera,
-        render_queue: &Vec::<RenderQueueItem>, 
+        render_queue: &Vec::<RenderQueueItem>,
         transform_component_storage: &ComponentStorage<TransformComponent>
     ) {
         // Prepare instance data and load it to buffer
@@ -512,7 +515,7 @@ impl MeshDrawer {
 
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
-            
+
             let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key).unwrap();
 
             // Recreate resource handles
@@ -522,7 +525,7 @@ impl MeshDrawer {
             // Check rendering order
             if self.current_rendering_order > render_queue_key_fields.order {
                 if self.get_accumulated_instance_count() > 0 {
-                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());         
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());
                     self.instance_range = self.instance_range.end..self.instance_range.end;
                 }
                 // Set new order
@@ -533,13 +536,13 @@ impl MeshDrawer {
             if self.current_material_handle != Some(renderer_material_handle) {
                 // Render accumulated instances
                 if self.get_accumulated_instance_count() > 0 {
-                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());            
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());
                     self.instance_range = self.instance_range.end..self.instance_range.end;
                 }
                 // Set new material
                 self.current_material_handle = Some(renderer_material_handle);
                 let material = renderer_resource_storage.materials.get(self.current_material_handle.unwrap()).unwrap();
-               
+
                 // Set pipeline if new material is using different one
                 if self.current_pipeline_handle != Some(material.pipeline_handle) {
                     self.current_pipeline_handle = Some(material.pipeline_handle);
@@ -556,22 +559,22 @@ impl MeshDrawer {
             if self.current_mesh_handle != Some(renderer_mesh_handle) {
                 // Render accumulated instances
                 if self.get_accumulated_instance_count() > 0 {
-                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());      
-                    self.instance_range = self.instance_range.end..self.instance_range.end; 
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());
+                    self.instance_range = self.instance_range.end..self.instance_range.end;
                 }
                 // Set new mesh
-                self.current_mesh_handle = Some(renderer_mesh_handle);               
+                self.current_mesh_handle = Some(renderer_mesh_handle);
                 let mesh = renderer_resource_storage.meshes.get(self.current_mesh_handle.unwrap()).unwrap();
                 self.current_mesh_index_count = mesh.index_count;
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
-                render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
+                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             }
 
             // Check max instance per draw call count
             if self.get_accumulated_instance_count() >= self.max_instance_count {
-                render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());      
-                self.instance_range = self.instance_range.end..self.instance_range.end; 
-            } 
+                render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());
+                self.instance_range = self.instance_range.end..self.instance_range.end;
+            }
             else {
                 // Add new instance
                 self.instance_range = self.instance_range.start..self.instance_range.end + 1;
@@ -580,8 +583,8 @@ impl MeshDrawer {
 
         // End of render queue so draw remaining saved objects
         if self.get_accumulated_instance_count() > 0 {
-            render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());    
-            self.instance_range = self.instance_range.end..self.instance_range.end; 
+            render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());
+            self.instance_range = self.instance_range.end..self.instance_range.end;
         }
 
         // Reset state of mesh drawer
@@ -590,10 +593,10 @@ impl MeshDrawer {
         self.current_material_handle = None;
         self.current_mesh_handle = None;
         self.current_mesh_index_count = 0;
-        self.instance_range = 0..0; 
+        self.instance_range = 0..0;
     }
 
     fn get_accumulated_instance_count(&self) -> u32 {
-        self.instance_range.end - self.instance_range.start 
+        self.instance_range.end - self.instance_range.start
     }
 }
