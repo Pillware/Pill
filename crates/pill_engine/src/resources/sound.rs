@@ -1,6 +1,8 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
     engine::Engine,
-    graphics::{ RendererTextureHandle }, 
+    graphics::{ RendererTextureHandle },
     resources::{ ResourceStorage, Resource, ResourceLoadType, Material },
     ecs::{ DeferredUpdateManagerPointer, AudioSourceComponent, SoundType, AudioManagerComponent },
     config::*,
@@ -8,8 +10,8 @@ use crate::{
 
 use pill_core::{ PillSlotMapKey, PillTypeMapKey, PillStyle, get_type_name, EngineError };
 
-use std::{ 
-    collections::HashSet, 
+use std::{
+    collections::HashSet,
     io::{ BufRead, Read, Cursor},
     path::{ Path, PathBuf },
     fs::File,
@@ -18,7 +20,7 @@ use anyhow::{ Result, Context, Error };
 use rodio::{ Source, source::Buffered, Decoder };
 
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct SoundHandle;
 }
 
@@ -35,10 +37,10 @@ impl Sound {
     pub fn new(name: &str, path: PathBuf) -> Self {
         Self {
             name: name.to_string(),
-            path, 
+            path,
             sound_data: None
         }
-    }  
+    }
 }
 
 impl PillTypeMapKey for Sound {
@@ -49,8 +51,8 @@ impl Resource for Sound {
     type Handle = SoundHandle;
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());    
-        
+        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+
         // Check if path to asset is correct
         pill_core::validate_asset_path(&self.path, &["mp3", "wav"]).context(error_message.clone())?;
 

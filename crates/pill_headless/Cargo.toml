@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pill_engine = { path = "../pill_engine", features = ["server"] }
+pill_engine = { path = "../pill_engine", default-features = false, features = ["server", "internal"] }
 pill_net    = { path = "../pill_net" } # maybe needed?
 anyhow      = "1"
 log         = "0.4"

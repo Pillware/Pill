@@ -1,3 +1,5 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
     engine::{ KeyboardKey, MouseButton },
     ecs::{ GlobalComponent, GlobalComponentStorage },
@@ -5,7 +7,7 @@ use crate::{
 
 use pill_core::{ PillTypeMapKey, Vector2f };
 
-use std::{ 
+use std::{
     any::Any,
     cell::RefCell,
     collections::HashMap,
@@ -44,7 +46,7 @@ pub struct InputComponent {
 
 impl InputComponent {
     pub(crate) fn new() -> Self {
-        Self { 
+        Self {
             pressed_keyboard_keys: [false; 163],
             released_keyboard_keys: [false; 163],
             keyboard_keys: [false; 163],
@@ -52,7 +54,7 @@ impl InputComponent {
             pressed_mouse_buttons: [false; 3],
             released_mouse_buttons: [false; 3],
             mouse_buttons: [false; 3],
-    
+
             current_mouse_delta: Vector2f::new(0.0, 0.0),
             current_mouse_position: Vector2f::new(0.0, 0.0),
 
@@ -128,7 +130,7 @@ impl InputComponent {
             MouseButton::Right => 2,
             _ => return
         };
-        
+
         match state {
             ElementState::Pressed => {
                 if self.mouse_buttons[index] {
@@ -145,7 +147,7 @@ impl InputComponent {
             }
         }
     }
-    
+
     pub fn get_mouse_button_pressed(&self, button: MouseButton) -> bool {
         match button {
             MouseButton::Left => self.pressed_mouse_buttons[0],
@@ -191,7 +193,7 @@ impl InputComponent {
     }
 
     // - Mouse motion
-      
+
     pub fn get_mouse_delta(&self) -> Vector2f {
         self.current_mouse_delta
     }
@@ -210,7 +212,7 @@ impl InputComponent {
 }
 
 impl PillTypeMapKey for InputComponent {
-    type Storage = GlobalComponentStorage<InputComponent>; 
+    type Storage = GlobalComponentStorage<InputComponent>;
 }
 
-impl GlobalComponent for InputComponent { } 
+impl GlobalComponent for InputComponent { }

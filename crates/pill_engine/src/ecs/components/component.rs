@@ -1,6 +1,6 @@
-use crate::{ 
+use crate::{
     engine::Engine,
-    ecs::{ SceneHandle, EntityHandle, ComponentStorage, GlobalComponentStorage }, game::Resource,
+    ecs::{ SceneHandle, EntityHandle, ComponentStorage, GlobalComponentStorage }
 };
 
 use pill_core::{ PillTypeMap, PillTypeMapKey, PillSlotMapKey };
@@ -15,7 +15,7 @@ use dyn_clone::DynClone;
 // TypeMapKey trait gives handle to the ResourceStorage
 // PillSlotMapKey trait gives handle to the actual object in ResourceStorage
 
-pub trait Component : PillTypeMapKey + Send {  
+pub trait Component : PillTypeMapKey + Send {
     // Optional to implement
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> { Ok(()) } // Called when component is added to the engine, before adding it to storage
     fn pass_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {} // Called right after component is added to the engine
@@ -25,7 +25,7 @@ pub trait Component : PillTypeMapKey + Send {
 
 // --- Global Component ---
 
-pub trait GlobalComponent : PillTypeMapKey + Send {  
+pub trait GlobalComponent : PillTypeMapKey + Send {
     // Optional to implement
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> { Ok(()) } // Called when component is added to the engine, before adding it to storage
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { Ok(()) } // Called by DeferredUpdateSystem when request related to the component is being processed
@@ -60,7 +60,7 @@ impl <T> Clone for ConcreteComponentDestroyer<T> {
     }
 }
 
-impl<T> ComponentDestroyer for ConcreteComponentDestroyer<T> 
+impl<T> ComponentDestroyer for ConcreteComponentDestroyer<T>
     where T: Component<Storage = ComponentStorage::<T>>
 {
     fn destroy(&mut self, engine: &mut Engine, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> {

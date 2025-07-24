@@ -1,6 +1,8 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
     engine::Engine,
-    graphics::{ RendererMeshHandle }, 
+    graphics::{ RendererMeshHandle },
     resources::{ ResourceStorage, Resource },
     ecs::{ DeferredUpdateManagerPointer, MeshRenderingComponent },
     config::*,
@@ -15,7 +17,7 @@ use tobj::LoadOptions;
 use anyhow::{Result, Context, Error};
 
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct MeshHandle;
 }
 
@@ -30,8 +32,8 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn new(name: &str, path: PathBuf) -> Self {  
-        Self { 
+    pub fn new(name: &str, path: PathBuf) -> Self {
+        Self {
             name: name.to_string(),
             path,
             renderer_resource_handle: None,
@@ -41,7 +43,7 @@ impl Mesh {
 }
 
 impl PillTypeMapKey for Mesh {
-    type Storage = ResourceStorage<Mesh>; 
+    type Storage = ResourceStorage<Mesh>;
 }
 
 impl Resource for Mesh {
@@ -51,16 +53,16 @@ impl Resource for Mesh {
         self.name.clone()
     }
 
-    fn initialize(&mut self, engine: &mut Engine) -> Result<()> { 
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
-        
+
         // Check if path to asset is correct
         pill_core::validate_asset_path(&self.path, &["obj"]).context(error_message.clone())?;
 
         // Create mesh data
         let mesh_data = MeshData::new(&self.path).context(error_message.clone())?;
         self.mesh_data = Some(mesh_data);
-  
+
         // Create new renderer mesh resource
         let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
@@ -79,7 +81,7 @@ impl Resource for Mesh {
         for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
             for (entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
                 if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
-                    // If mesh rendering component has handle to this mesh 
+                    // If mesh rendering component has handle to this mesh
                     if mesh_handle.data() == self_handle.data() {
                         mesh_rendering_component.set_mesh_handle(Option::<MeshHandle>::None);
                         mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
@@ -110,7 +112,7 @@ pub struct MeshData {
 }
 
 impl MeshData {
-    pub fn new(path: &PathBuf) -> Result<Self> {  
+    pub fn new(path: &PathBuf) -> Result<Self> {
         // Load model from path using tinyobjloader crate
         let load_options = LoadOptions {
             triangulate: true,
@@ -182,7 +184,7 @@ impl MeshData {
             let delta_uv1 = uv1 - uv0;
             let delta_uv2 = uv2 - uv0;
 
-            // Calculate tangent and bitangent       
+            // Calculate tangent and bitangent
             let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
             let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
             let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
@@ -215,7 +217,7 @@ impl MeshData {
         };
 
         Ok(mesh_data)
-    }    
+    }
 }
 
 

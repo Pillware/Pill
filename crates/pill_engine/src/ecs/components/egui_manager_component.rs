@@ -1,3 +1,5 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
     ecs::components::{ Component, GlobalComponentStorage, GlobalComponent }, engine::Engine
 };
@@ -11,8 +13,8 @@ pub struct EguiManagerComponent {
 
 impl EguiManagerComponent {
     pub fn new() -> Self {
-        Self { 
-          
+        Self {
+
         }
     }
 
@@ -38,16 +40,16 @@ impl EguiManagerComponent {
     }
 
     pub(crate) fn update(&mut self, delta_time: f32) -> Result<()> {
-       
-        
+
+
         Ok(())
     }
 }
 
 impl PillTypeMapKey for EguiManagerComponent {
-    type Storage = GlobalComponentStorage<EguiManagerComponent>; 
+    type Storage = GlobalComponentStorage<EguiManagerComponent>;
 }
 
 impl GlobalComponent for EguiManagerComponent {
-   
+
 }

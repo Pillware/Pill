@@ -1,6 +1,8 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
-    engine::Engine, 
-    graphics::{ RenderQueueKey, compose_render_queue_key, RendererCameraHandle }, 
+    engine::Engine,
+    graphics::{ RenderQueueKey, compose_render_queue_key, RendererCameraHandle },
     resources::{ Material, MaterialHandle, Mesh, MeshHandle },
     ecs::{ Component, ComponentStorage, EntityHandle, SceneHandle, DeferredUpdateManagerPointer, DeferredUpdateComponentRequest },
 };
@@ -38,7 +40,7 @@ impl CameraComponentBuilder {
             component: CameraComponent::new(),
         }
     }
-    
+
     pub fn aspect(mut self, aspect: CameraAspectRatio) -> Self {
         self.component.aspect = aspect;
         self
@@ -86,7 +88,7 @@ impl CameraComponent {
     }
 
     pub fn new() -> Self {
-        Self { 
+        Self {
             aspect: CameraAspectRatio::Automatic(1.0),
             fov: 60.0,
             range: 0.1..100.0,
@@ -103,7 +105,7 @@ pub fn get_renderer_resource_handle_from_camera_component(camera_component: &Cam
 }
 
 impl PillTypeMapKey for CameraComponent {
-    type Storage = ComponentStorage<CameraComponent>; 
+    type Storage = ComponentStorage<CameraComponent>;
 }
 
 impl Component for CameraComponent {

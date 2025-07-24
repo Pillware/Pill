@@ -1,9 +1,11 @@
 use crate::{
     resources::*,
     ecs::*,
-    graphics::*,
     config::*,
 };
+
+#[cfg(feature = "rendering")]
+use crate::graphics::*;
 
 #[cfg(feature = "net")]
 use crate::net;
@@ -128,7 +130,6 @@ impl<'a> EguiUI<'a> {
     }
 }
 /// Pill Engine internal API
-#[cfg(feature = "internal")]
 impl Engine {
     #[cfg(feature = "rendering")]
     pub fn new(game: Box<dyn PillGame>, renderer: Box<dyn PillRenderer>, config: config::Config) -> Self {
@@ -150,7 +151,7 @@ impl Engine {
     }
 
     #[cfg(not(feature = "rendering"))]
-    pub fn new_headless(game: Box<dyn PillGame>, config: config::Config) -> Self {
+    pub fn new(game: Box<dyn PillGame>, config: config::Config) -> Self {
         let max_entity_count = config.get_int("MAX_ENTITIES").unwrap_or(MAX_ENTITIES as i64) as usize;
 
         Self {
@@ -168,13 +169,13 @@ impl Engine {
     /// Initializes Pill Engine
     ///
     /// Creates default global components, adds default systems, creates default resources, initializes game
-    pub fn initialize(&mut self, window_size: winit::dpi::PhysicalSize<u32>) -> Result<()> {
+    pub fn initialize(&mut self, window_size: Option<winit::dpi::PhysicalSize<u32>>) -> Result<()> {
         info!("Initializing {}", "Engine".mobj_style());
 
         #[cfg(feature = "rendering")]
         {
             // Set window size
-            self.window_size = window_size;
+            self.window_size = window_size.expect("Window size must be set when rendering is enabled");
         }
 
         // Register global components
@@ -343,7 +344,6 @@ impl Engine {
 
 /// Pill Engine game API
 impl Engine {
-
     // --- System API ---
 
     /// Adds game-defined system to the game update phase

@@ -1,6 +1,11 @@
 use crate::{
-    ecs::{ AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, TimeComponent }, 
-    graphics::{ RendererMaterialHandle, RendererTextureHandle }, 
+    ecs::{ DeferredUpdateComponent, TimeComponent }
+};
+
+#[cfg(feature = "rendering")]
+use crate::{
+    ecs::{ AudioManagerComponent, EguiManagerComponent, InputComponent },
+    graphics::{ RendererMaterialHandle, RendererTextureHandle },
     resources::{ MaterialHandle, TextureHandle, TextureType }
 };
 
@@ -55,21 +60,26 @@ pub const RENDER_QUEUE_KEY_MESH_INDEX_IDX: u8 = 3;
 pub const RENDER_QUEUE_KEY_MESH_VERSION_IDX: u8 = 4;
 
 // Default resource handle - Color texture
-pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
 // Default resource handle - Normal texture
-pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle { 
-    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle {
+    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle { 
-    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
+    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
+#[cfg(feature = "rendering")]
 pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle, RendererTextureHandle) {
     match texture_type {
         TextureType::Color => (DEFAULT_COLOR_TEXTURE_HANDLE, DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE),
@@ -79,17 +89,21 @@ pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle,
 
 
 // Default resource handle - Material
-pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
+#[cfg(feature = "rendering")]
 pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle) {
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
 
+#[cfg(feature = "rendering")]
 lazy_static! {
     pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
         TypeId::of::<InputComponent>(),
@@ -97,5 +111,13 @@ lazy_static! {
         TypeId::of::<AudioManagerComponent>(),
         TypeId::of::<DeferredUpdateComponent>(),
         TypeId::of::<EguiManagerComponent>()
+    );
+}
+
+#[cfg(not(feature = "rendering"))]
+lazy_static! {
+    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
+        TypeId::of::<TimeComponent>(),
+        TypeId::of::<DeferredUpdateComponent>(),
     );
 }

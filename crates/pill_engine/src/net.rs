@@ -1,7 +1,7 @@
 #![cfg(feature = "net")]
 
 use anyhow::Result;
-use crate::Engine;
+use crate::engine::Engine;
 
 pub fn net_recv_system(_engine: &mut Engine) -> Result<()> {
     // This function is a placeholder for the network receive system.

@@ -1,6 +1,8 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
     engine::Engine,
-    ecs::{ EntityHandle, TransformComponent, AudioListenerComponent, AudioSourceComponent, scene, AudioManagerComponent, SoundType }, 
+    ecs::{ EntityHandle, TransformComponent, AudioListenerComponent, AudioSourceComponent, scene, AudioManagerComponent, SoundType },
 };
 
 use pill_core::Vector3f;
@@ -10,7 +12,7 @@ use cgmath::{Vector3, Matrix3};
 use std::f32::consts::PI;
 
 fn get_rotation_matrix(angles: Vector3<f32>) -> Result<Matrix3<f32>> {
-    
+
     // Get the angles from the vector and convert them to radians
     let alfa = angles[0].to_radians();
     let beta = angles[1].to_radians();
@@ -29,9 +31,9 @@ fn get_rotation_matrix(angles: Vector3<f32>) -> Result<Matrix3<f32>> {
                                                         0.0, gamma.cos(), gamma.sin(),
                                                         0.0, -gamma.sin(), gamma.cos());
 
-    // Get the final rotation matrix 
+    // Get the final rotation matrix
     let rotation_matrix = alfa_rotation_matrix * beta_rotation_matrix * gamma_totation_matrix;
-    
+
     // Return rotation matrix
     Ok(rotation_matrix)
 }
@@ -46,11 +48,11 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
     for (entity_handle, audio_listener_component, transform_component) in engine.iterate_two_components::<AudioListenerComponent, TransformComponent>()? {
 
         if audio_listener_component.enabled {
-            
+
             // Get the retotation matrix
             let left_rotation_matrix = get_rotation_matrix(transform_component.rotation)?;
             let right_rotation_matrix = get_rotation_matrix(-transform_component.rotation)?;
-            
+
             // Get two points for left and right ear relative to the origin multiplied to rotation matrix
             left_ear_position = left_rotation_matrix * left_ear_position;
             right_ear_position = right_rotation_matrix * right_ear_position;
@@ -63,7 +65,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
         }
     }
 
-    // Update the sinks with new positions for left and right ear 
+    // Update the sinks with new positions for left and right ear
     let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
     for sink in audio_manager.spatial_sink_pool.iter_mut() {
         sink.set_left_ear_position(left_ear_position.into());
@@ -78,7 +80,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
             sink.set_right_ear_position(right_ear_position.into());
         }
     }
-   
+
     // Update emitter position in all sinks based on transform components of entities to which audio source components are added
     let active_scene = engine.scene_manager.get_active_scene()?;
     for (entity_handle, audio_source_component, transform_component) in active_scene.get_two_component_iterator::<AudioSourceComponent, TransformComponent>()? {
@@ -86,7 +88,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
         if let Some(index) = audio_source_component.sink_handle {
             audio_manager.get_spatial_sink(index).set_emitter_position(transform_component.position.clone().into());
         }
-    } 
+    }
 
     // --- Return free sinks to AudioManager
 
@@ -111,7 +113,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
 
             // Return sink to pool if stopped playing
             if !playing {
-                
+
                 let sink_handle = audio_source_component.return_sink().unwrap();
                 audio_manager.return_sink(sink_handle, &sound_type);
             }

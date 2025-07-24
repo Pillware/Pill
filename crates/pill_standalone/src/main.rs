@@ -111,7 +111,7 @@ fn main() {
     let game: Box<dyn PillGame> = Box::new(pill_game::Game { });
     let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(&window), config.clone()));
     let mut engine = Engine::new(game, renderer, config.clone());
-    engine.initialize(window_size).context("Failed to initialize engine").unwrap();
+    engine.initialize(Some(window_size)).context("Failed to initialize engine").unwrap();
 
     // Run loop
     window_event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);

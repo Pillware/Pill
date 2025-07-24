@@ -1,6 +1,8 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
-    ecs::{ scene, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent }, 
-    engine::Engine, graphics::{ compose_render_queue_key, RenderQueueItem, RenderQueueKey, RendererError }, 
+    ecs::{ scene, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent },
+    engine::Engine, graphics::{ compose_render_queue_key, RenderQueueItem, RenderQueueKey, RendererError },
     resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 
@@ -14,7 +16,7 @@ use log::{ debug };
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
     let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
-    
+
     {
         let active_scene = engine.scene_manager.get_active_scene_mut()?;
 
@@ -72,8 +74,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     // Render
     match engine.renderer.render(
-        active_camera_entity_handle, 
-        &engine.render_queue, 
+        active_camera_entity_handle,
+        &engine.render_queue,
         camera_component_storage,
         transform_component_storage,
         egui_ui

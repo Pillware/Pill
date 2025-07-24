@@ -1,10 +1,12 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
-    ecs::{ GlobalComponent, ComponentStorage, GlobalComponentStorage }, 
+    ecs::{ GlobalComponent, ComponentStorage, GlobalComponentStorage },
 };
 
 use pill_core::{PillTypeMapKey, Vector3f};
 
-use std::{ 
+use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, VecDeque}, ops::IndexMut,
@@ -25,7 +27,7 @@ pub struct AudioManagerComponent {
     pub(crate) audio_stream: OutputStream,
     pub(crate) audio_stream_handle: OutputStreamHandle,
     pub(crate) ambient_sink_pool: Vec<Sink>,
-    pub(crate) spatial_sink_pool: Vec<SpatialSink>, 
+    pub(crate) spatial_sink_pool: Vec<SpatialSink>,
     pub(crate) free_ambient_sink_handles: VecDeque<usize>,
     pub(crate) busy_ambient_sink_handles: VecDeque<usize>,
     pub(crate) free_spatial_sink_handles: VecDeque<usize>,
@@ -49,9 +51,9 @@ impl AudioManagerComponent {
 
         for _ in 0..spatial_sink_pool_capacity {
             let new_sink = SpatialSink::try_new(
-                &audio_stream_handle, 
-                DEFAULT_SOUND_SOURCE_POSITION.into(), 
-                DEFAULT_LEFT_EAR_POSITION.into(), 
+                &audio_stream_handle,
+                DEFAULT_SOUND_SOURCE_POSITION.into(),
+                DEFAULT_LEFT_EAR_POSITION.into(),
                 DEFAULT_RIGHT_EAR_POSITION.into(),
             ).unwrap();
             spatial_sink_pool.push(new_sink);
@@ -81,7 +83,7 @@ impl AudioManagerComponent {
             free_spatial_sink_handles,
             busy_spatial_sink_handles,
         }
-    } 
+    }
 
     // Get sink for ambient sound by handle
     pub(crate) fn get_ambient_sink(&self, sink_handle: usize) -> &Sink {
@@ -128,7 +130,7 @@ impl AudioManagerComponent {
 }
 
 impl PillTypeMapKey for AudioManagerComponent {
-    type Storage = GlobalComponentStorage<AudioManagerComponent>; 
+    type Storage = GlobalComponentStorage<AudioManagerComponent>;
 }
 
 unsafe impl Send for AudioManagerComponent { }

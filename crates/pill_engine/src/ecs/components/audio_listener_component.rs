@@ -1,3 +1,5 @@
+#![cfg(feature = "rendering")]
+
 use crate::ecs::{ Component, ComponentStorage, GlobalComponentStorage };
 
 use pill_core::PillTypeMapKey;
@@ -17,7 +19,7 @@ impl AudioListenerComponentBuilder {
             component: AudioListenerComponent::new(),
         }
     }
-    
+
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.component.enabled = enabled;
         self
@@ -46,7 +48,7 @@ impl AudioListenerComponent {
 }
 
 impl PillTypeMapKey for AudioListenerComponent {
-    type Storage = ComponentStorage<AudioListenerComponent>; 
+    type Storage = ComponentStorage<AudioListenerComponent>;
 }
 
 impl Component for AudioListenerComponent { }

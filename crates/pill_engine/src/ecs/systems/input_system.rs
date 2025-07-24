@@ -1,4 +1,6 @@
-use crate::{ 
+#![cfg(feature = "rendering")]
+
+use crate::{
     engine::Engine,
     ecs::{ InputComponent, InputEvent },
 };
@@ -17,11 +19,11 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
     while engine.input_queue.is_empty() == false {
         let front_event = engine.input_queue.pop_front().unwrap();
         let input_component = engine.get_global_component_mut::<InputComponent>()?;
-    
+
         match front_event {
             // Keyboard keys
             InputEvent::KeyboardKey { key, state } => {
-                input_component.set_key(key, state); 
+                input_component.set_key(key, state);
             },
 
             // Mouse buttons
@@ -53,6 +55,6 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
             },
         }
     }
-    
+
     Ok(())
 }
