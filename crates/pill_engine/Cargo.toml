@@ -3,8 +3,25 @@ name = "pill_engine"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+standalone = ["rendering", "audio", "ui"]
+client = ["rendering", "audio", "ui", "net"]
+server = ["net"]
+
+net = ["pill_net"]
+rendering = []
+audio = [] #TODO: do we want to gate audio and UI?
+ui = []
+
+# TODO: duplicate?
+game = []
+internal = []
+
+default = ["standalone"]
+
 [dependencies]
 pill_core = {path = "../pill_core"}
+pill_net = { path = "../pill_net", optional = true }
 
 # Data containers
 indexmap = "1.7.0"
@@ -40,7 +57,3 @@ egui = "0.28.1"
 anyhow = "1.0"
 fs_extra = "1.2"
 glob = "0.3"
-
-[features]
-game = []
-internal = []

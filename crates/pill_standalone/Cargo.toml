@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 pill_core = {path = "../pill_core"}
-pill_engine = {path = "../pill_engine", features = ["internal"]}
+pill_engine = {path = "../pill_engine", features = ["standalone", "internal"]}
 pill_renderer = {path = "../pill_renderer"}
 
 # Game project dependency. This needs to be pointing to the correct game directory

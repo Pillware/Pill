@@ -1,0 +1,12 @@
+[package]
+name = "pill_net"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+bincode = "1"
+serde = { version = "1", features = ["derive"] }
+renet = "0.0.13"          # or the version you pick
+log = "0.4"
+

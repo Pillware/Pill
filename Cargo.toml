@@ -1,10 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/pill_core", 
-    "crates/pill_engine", 
-    "crates/pill_renderer", 
-    "crates/pill_standalone"
+    "crates/pill_core",
+    "crates/pill_engine",
+    "crates/pill_renderer",
+    "crates/pill_standalone",
+    "crates/pill_headless",
+    "crates/pill_net"
     ]
 
 exclude = [
