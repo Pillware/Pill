@@ -1,5 +1,5 @@
 # Italian Brainrot
-Simple demo displaying a rotating Chimpanzini Bananini which is a combination of chimanzee and banana  
+Simple demo displaying a rotating Chimpanzini Bananini which is a combination of chimpanzee and banana  
 
 ## Getting Started
 1. [Install Pill Engine](https://github.com/MattSzymonski/Pill-Engine#getting-started "Install Pill Engine")!

@@ -6,6 +6,49 @@ mod graphics;
 mod ecs;
 mod config;
 
+// --- Macros ---
+
+pub use pill_core::PillTypeMapKey;
+pub use ecs::{Component, GlobalComponent, ComponentStorage, GlobalComponentStorage};
+
+#[macro_export]
+macro_rules! define_component {
+    (
+        $name:ident {
+            $( $field_name:ident : $field_ty:ty ),* $(,)?
+        }
+    ) => {
+        pub struct $name {
+            $( pub $field_name: $field_ty, )*
+        }
+
+        impl $crate::PillTypeMapKey for $name {
+            type Storage = $crate::ComponentStorage<$name>;
+        }
+
+        impl $crate::Component for $name {}
+    };
+}
+
+#[macro_export]
+macro_rules! define_global_component {
+    (
+        $name:ident {
+            $( $field_name:ident : $field_ty:ty ),* $(,)?
+        }
+    ) => {
+        pub struct $name {
+            $( pub $field_name: $field_ty ),*
+        }
+
+        impl $crate::PillTypeMapKey for $name {
+            type Storage = $crate::GlobalComponentStorage<$name>;
+        }
+
+        impl $crate::GlobalComponent for $name {}
+    };
+}
+
 // --- Use ---
 
 #[cfg(feature = "game")]

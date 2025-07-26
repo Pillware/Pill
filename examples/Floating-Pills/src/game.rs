@@ -1,4 +1,4 @@
-use pill_engine::game::*;
+use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 
 pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 10;
@@ -11,46 +11,36 @@ pub const FLOATING_OBJECTS_CHANGE_MATERIAL_BUTTON: KeyboardKey = KeyboardKey::Ke
 pub const INCREASE_CAMERA_FOV_BUTTON: KeyboardKey = KeyboardKey::KeyT;
 pub const DECREASE_CAMERA_FOV_BUTTON: KeyboardKey = KeyboardKey::KeyG;
 
-pub struct FloatingObjectComponent {
-    pub angle: f32,
-    pub radius_factor: f32,
-    pub scale_factor: f32,
-    pub y_axis_factor: f32,
+define_component!(FloatingObjectComponent {
+    angle: f32,
+    radius_factor: f32,
+    scale_factor: f32,
+    y_axis_factor: f32,
 
-    pub orbital_movement_speed: f32,
-    pub y_axis_movement_speed: f32,
-    pub rotation_speed: f32,
-    pub scale_speed: f32,
-    pub radius_speed: f32,
-}
+    orbital_movement_speed: f32,
+    y_axis_movement_speed: f32,
+    rotation_speed: f32,
+    scale_speed: f32,
+    radius_speed: f32,
+});
 
-impl Component for FloatingObjectComponent { }
+define_global_component!(DemoStateComponent {
+    floating_objects_movemement_enabled: bool,
+    current_mesh: usize,
+    mesh_handles: Vec::<MeshHandle>,
+    current_material_set: usize,
+    textured_material_handles: Vec::<MaterialHandle>,
+    plain_color_material_handles: Vec::<MaterialHandle>,
+});
 
-impl PillTypeMapKey for FloatingObjectComponent {
-    type Storage = ComponentStorage<Self>;
-}
-
-struct DemoStateComponent {
-    pub floating_objects_movemement_enabled: bool,
-    pub current_mesh: usize,
-    pub mesh_handles: Vec::<MeshHandle>,
-    pub current_material_set: usize,
-    pub textured_material_handles: Vec::<MaterialHandle>,
-    pub plain_color_material_handles: Vec::<MaterialHandle>,
-}
-impl PillTypeMapKey for DemoStateComponent { type Storage = GlobalComponentStorage<DemoStateComponent>; }
-impl GlobalComponent for DemoStateComponent { }
-
-struct CameraMovementComponent {
-    pub orbit_speed: f32,
-    pub zoom_speed: f32,
-    pub angle: f32,
-    pub radius: f32,
-    pub delta_y: f32,
-    pub delta_z: f32,
-}
-impl PillTypeMapKey for CameraMovementComponent { type Storage = ComponentStorage<CameraMovementComponent>; }
-impl Component for CameraMovementComponent { }
+define_component!(CameraMovementComponent {
+    orbit_speed: f32,
+    zoom_speed: f32,
+    angle: f32,
+    radius: f32,
+    delta_y: f32,
+    delta_z: f32,
+});
 
 pub struct Game { } 
 

@@ -1,9 +1,6 @@
-use pill_engine::game::*;
+use pill_engine::{define_component, game::*};
 
-struct TagAlphaComponent {
-}
-impl PillTypeMapKey for TagAlphaComponent { type Storage = ComponentStorage<TagAlphaComponent>; }
-impl Component for TagAlphaComponent { }
+define_component!(TagAlphaComponent { });
 
 pub struct Game { } 
 
@@ -58,7 +55,6 @@ impl PillGame for Game {
 		engine.build_entity(active_scene)
 			.with_component(TransformComponent::builder()
 				.position(Vector3f::new(0.0, 0.0, -3.0))
-				.rotation(Vector3f::new(0.0, 0.0, 0.0))
 				.build())
 			.with_component(CameraComponent::builder()
 				.enabled(true)
@@ -69,7 +65,7 @@ impl PillGame for Game {
 
 		// Create chimpanzini bananini entity
 		engine.build_entity(active_scene)
-			.with_component(TransformComponent::builder().build())
+			.with_component(TransformComponent::new())
 			.with_component(MeshRenderingComponent::builder()
 				.material(&chimpanzini_bananini_material_handle)
 				.mesh(&chimpanzini_bananini_mesh_handle)
