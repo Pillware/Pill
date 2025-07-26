@@ -42,9 +42,9 @@ Check [demo](examples/Floating-Pills "demo")!
 - For game developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/game_dev/doc/pill_engine/game/index.html "Docs")  
 - For engine developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/engine_dev/doc/pill_engine/index.html "Docs")  
 
-## Screenshots
+## Showcase
 <p align="center">
-  <img src="media/showcase/pill_showcase_1.gif" img width=100%>
+  <img src="examples/Floating-Pills/media/floating_pills_1.gif" img width=100%>
 </p>
 
 

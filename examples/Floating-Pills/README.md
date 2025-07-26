@@ -16,3 +16,8 @@ Simple demo showcasing the capabilities of Pill Engine
 - I - Toggle system responsible for objects' movement
 - N - Change meshes of the objects
 - M - Change materials of the objects
+
+## Showcase
+<p align="center">
+  <img src="media/floating_pills_1.gif" img width=100%>
+</p>

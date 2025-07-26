@@ -9,5 +9,11 @@ Simple demo displaying a rotating Chimpanzini Bananini which is a combination of
 ## Controls
 There are none
 
+## Showcase
+<p align="center">
+  <img src="media/italian_brainrot_1.gif" img width=100%>
+</p>
+
+
 ## Attributions
 Chimpanzini Bananini 3D model by: https://sketchfab.com/Aizenx.
