@@ -141,6 +141,49 @@ impl MaterialTextureMap {
     }
 }
 
+// --- Builder ---
+
+pub struct MaterialBuilder {
+    material: Material,
+}
+
+impl MaterialBuilder {
+    pub fn new(name: &str) -> Self {
+        Self {
+            material: Material::new(name),
+        }
+    }
+
+    pub fn texture(mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<Self> {
+        self.material.set_texture(slot_name, texture_handle)?;
+        Ok(self)
+    }
+
+    pub fn scalar(mut self, slot_name: &str, value: f32) -> Result<Self> {
+        self.material.set_scalar(slot_name, value)?;
+        Ok(self)
+    }
+
+    pub fn bool(mut self, slot_name: &str, value: bool) -> Result<Self> {
+        self.material.set_bool(slot_name, value)?;
+        Ok(self)
+    }
+
+    pub fn color(mut self, slot_name: &str, value: Color) -> Result<Self> {
+        self.material.set_color(slot_name, value)?;
+        Ok(self)
+    }
+
+    pub fn rendering_order(mut self, order: u8) -> Result<Self> {
+        self.material.set_rendering_order(order)?;
+        Ok(self)
+    }
+
+    pub fn build(self) -> Material {
+        self.material
+    }
+}
+
 // --- Material ---
 
 pill_core::define_new_pill_slotmap_key! { 
@@ -164,6 +207,10 @@ pub struct Material {
 }
 
 impl Material {
+    pub fn builder(name: &str) -> MaterialBuilder {
+        MaterialBuilder::new(name)
+    }
+
     pub fn new(name: &str) -> Self {     
         let mut textures = MaterialTextureMap::new();
         textures.data.insert(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string(), MaterialTexture::new(TextureType::Color));
