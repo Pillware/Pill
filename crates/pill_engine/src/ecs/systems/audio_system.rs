@@ -70,15 +70,6 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
         sink.set_right_ear_position(right_ear_position.into());
     }
 
-    // Update spatial sinks ear positions
-    {
-        let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
-        for sink in audio_manager.spatial_sink_pool.iter_mut() {
-            sink.set_left_ear_position(left_ear_position.into());
-            sink.set_right_ear_position(right_ear_position.into());
-        }
-    }
-   
     // Update emitter position in all sinks based on transform components of entities to which audio source components are added
     let active_scene = engine.scene_manager.get_active_scene()?;
     for (entity_handle, audio_source_component, transform_component) in active_scene.get_two_component_iterator::<AudioSourceComponent, TransformComponent>()? {

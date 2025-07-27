@@ -46,7 +46,7 @@ pub struct Engine {
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
-    pub(crate) frame_delta_time: f32,
+    pub(crate) frame_delta_time: f32, // In milliseconds
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -188,33 +188,47 @@ impl Engine {
     /// Runs all systems in order: PreGame -> Game -> PostGame 
     pub fn update(&mut self, delta_time: std::time::Duration) {
         let stop_on_game_errors = self.config.get_bool("PANIC_ON_GAME_ERRORS").unwrap_or(PANIC_ON_GAME_ERRORS);
-        
-        // Run systems
-        let update_phase_count = self.system_manager.update_phases.len();
-        for i in (0..update_phase_count).rev() {
-            let systems_count = self.system_manager.update_phases[i].len();
-            for j in (0..systems_count).rev() {
-                let system = &self.system_manager.update_phases[i][j];
-                if !system.enabled { continue; }
-                let system_name = system.name.to_string();
 
-                if system.update_phase.clone() == UpdatePhase::Game && stop_on_game_errors {
-                    let mut result = (system.system_function)(self);
-                    result = result.context(EngineError::SystemUpdateFailed(system_name, get_enum_variant_type_name(self.system_manager.update_phases.get_index(i).unwrap().0)));
-                    if let Some(message) = get_game_error_message(result) {
+        // Run systems
+        for update_phase_index in 0..self.system_manager.update_phases.len() {
+            for system_index in 0..self.system_manager.update_phases[update_phase_index].len() {
+
+                // Scope the mutable borrow to system so it ends before calling system_function
+                let (system_name, update_phase, system_function);
+                {
+                    let system = &mut self.system_manager.update_phases[update_phase_index][system_index];
+                    system.delta_time = 0.0;
+                    if !system.enabled { continue; }
+                    system_name = system.name.to_string();
+                    update_phase = system.update_phase.clone();
+                    system_function = system.system_function;
+                }
+
+                let system_update_start_time = std::time::Instant::now();
+
+                // Run system update and handle errors based on configuration
+                let result = (system_function)(self)
+                    .context(EngineError::SystemUpdateFailed(
+                        system_name.clone(),
+                        format!("{:?}", update_phase),
+                    ));
+
+                if update_phase == UpdatePhase::Game && stop_on_game_errors {
+                    result.unwrap(); // Panic on error if configured
+                } else if let Err(err) = result {
+                    if let Some(message) = get_game_error_message(Err(err)) {
                         error!("{}", message);
                     }
                 }
-                else {
-                    let result = (system.system_function)(self);
-                    result.context(EngineError::SystemUpdateFailed(system_name, get_enum_variant_type_name(self.system_manager.update_phases.get_index(i).unwrap().0))).unwrap();
-                }
+
+                // Update system delta time
+                self.system_manager.update_phases[update_phase_index][system_index].delta_time = system_update_start_time.elapsed().as_secs_f32() * 1000.0;
             }
         }
- 
+        
         // Update FPS counter
-        let new_frame_time = delta_time.as_secs_f32() * 1000.0;
-        let fps =  1000.0 / new_frame_time;
+        let new_frame_time = delta_time.as_secs_f32() * 1000.0; 
+        let fps = 1000.0 / new_frame_time;
         self.frame_delta_time = new_frame_time.into();
         debug!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
     }

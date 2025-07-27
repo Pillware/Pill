@@ -15,6 +15,7 @@ pub struct System {
     pub(crate) update_phase: UpdatePhase,
     pub(crate) system_function: SystemFunction,
     pub(crate) enabled: bool,
+    pub(crate) delta_time: f32, // Time taken to execute the system in miliseconds in the previous frame
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -63,6 +64,7 @@ impl SystemManager {
             update_phase, 
             system_function,
             enabled: true,
+            delta_time: 0.0,
         };
 
         // Add system
