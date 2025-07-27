@@ -197,7 +197,6 @@ impl Engine {
                 let (system_name, update_phase, system_function);
                 {
                     let system = &mut self.system_manager.update_phases[update_phase_index][system_index];
-                    system.delta_time = 0.0;
                     if !system.enabled { continue; }
                     system_name = system.name.to_string();
                     update_phase = system.update_phase.clone();

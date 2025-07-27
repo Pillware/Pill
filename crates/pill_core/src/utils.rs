@@ -4,6 +4,7 @@ use anyhow::{ Context, Result, Error };
 use boolinator::Boolinator;
 use std::{ any::type_name, path::PathBuf };
 use colored::*;
+use log::debug;
 
 // --- Type to string utils ---
 
@@ -103,6 +104,27 @@ pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static s
     }; 
 }
 
+// --- Time tracking ---
+
+pub struct Timer {
+    start: std::time::Instant,
+    context_name: String,
+}
+
+impl Timer {
+    pub fn new(context_name: &str) -> Self {
+        Self {
+            start: std::time::Instant::now(),
+            context_name: context_name.to_string(),
+        }
+    }
+
+    pub fn lap(&mut self, label: &str) {
+        debug!("{} - Stage: {} took {:.3} ms", self.context_name, label, self.start.elapsed().as_secs_f32() * 1000.0);
+        self.start = std::time::Instant::now();
+    }
+}
+
 // --- Other ---
 
 #[inline]
@@ -122,4 +144,3 @@ pub fn get_game_error_message(result: Result<()>) -> Option<String> {
         None
     }
 }
-    

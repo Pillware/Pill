@@ -6,6 +6,7 @@ use egui_wgpu::ScreenDescriptor;
 use egui_wgpu::Renderer;
 
 use egui_winit::State;
+use pill_core::Timer;
 use wgpu::{CommandEncoder, Device, Queue, TextureFormat, TextureView};
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -69,6 +70,8 @@ impl EguiRenderer {
         screen_descriptor: ScreenDescriptor,
         run_ui: impl FnOnce(&Context),
     ) {
+        let mut timer = Timer::new("Egui Draw");
+
         let window = &self.window;
         let raw_input = self.state.take_egui_input(&window);
         let full_output = self.context.run(raw_input, |ui| {
@@ -85,6 +88,9 @@ impl EguiRenderer {
             self.renderer
                 .update_texture(&device, &queue, *id, &image_delta);
         }
+
+        timer.lap("1");
+
         self.renderer
             .update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -101,11 +107,20 @@ impl EguiRenderer {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
+
+        timer.lap("2");
+
+
         self.renderer.render(&mut rpass, &tris, &screen_descriptor);
+
+        timer.lap("3");
+
         drop(rpass);
         for x in &full_output.textures_delta.free {
             self.renderer.free_texture(x)
         }
+
+        timer.lap("4");
     }
 }
 

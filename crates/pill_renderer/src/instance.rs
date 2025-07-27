@@ -1,5 +1,4 @@
 use crate::resources::Vertex;
-
 use pill_engine::game::TransformComponent;
 
 // --- Instance ---

@@ -39,7 +39,8 @@ use pill_engine::internal::{
 use pill_core::{ 
     PillSlotMapKey, 
     PillSlotMapKeyData, 
-    PillStyle 
+    PillStyle, 
+    Timer
 };
 
 use std::{
@@ -354,6 +355,8 @@ impl State {
         egui_ui: Box<dyn Fn(&egui::Context)>
     ) -> Result<(), RendererError> { 
     
+        let mut timer = Timer::new("Render");
+
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
 
@@ -368,6 +371,8 @@ impl State {
 
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        timer.lap("1");
+
         // Get active camera and update it
         let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
@@ -377,6 +382,8 @@ impl State {
         renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
         let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
         let clear_color = active_camera_component.clear_color;
+
+        timer.lap("2");
         
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -417,6 +424,8 @@ impl State {
             )
         }  
 
+        timer.lap("3");
+
         // Render egui UI
         self.egui_renderer.draw(
             &self.device,
@@ -430,8 +439,12 @@ impl State {
             egui_ui, 
         );
 
+        timer.lap("4");
+
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();
+
+        timer.lap("5");
 
         Ok(())
     }
@@ -489,15 +502,25 @@ impl MeshDrawer {
         render_queue: &Vec::<RenderQueueItem>, 
         transform_component_storage: &ComponentStorage<TransformComponent>
     ) {
+        let mut timer = Timer::new("Record Draw Commands");
+
         // Prepare instance data and load it to buffer
+        self.instances.clear();
+        self.instances.reserve(render_queue.len()); // Pre-allocate exact capacity
+
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
             let transform_slot =  transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap();
             let transform_component = transform_slot.as_ref().unwrap();
             self.instances.push(Instance::new(transform_component));
         }
+
+        timer.lap("1");
+
         queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
         self.instances.clear();
+
+        timer.lap("2");
 
         // Start encoding render pass
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
@@ -508,7 +531,11 @@ impl MeshDrawer {
             occlusion_query_set: None,
         });
 
+        timer.lap("3");
+
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
+
+        timer.lap("4");
 
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
@@ -578,6 +605,8 @@ impl MeshDrawer {
             }
         }
 
+        timer.lap("5");
+
         // End of render queue so draw remaining saved objects
         if self.get_accumulated_instance_count() > 0 {
             render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());    
@@ -591,6 +620,9 @@ impl MeshDrawer {
         self.current_mesh_handle = None;
         self.current_mesh_index_count = 0;
         self.instance_range = 0..0; 
+
+        timer.lap("6");
+
     }
 
     fn get_accumulated_instance_count(&self) -> u32 {

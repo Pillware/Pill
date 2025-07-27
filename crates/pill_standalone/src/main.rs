@@ -46,6 +46,7 @@ fn main() {
                 record.args()
             )
         })
+        .filter_module("pill_core", log_level)
         .filter_module("pill_standalone", log_level)
         .filter_module("pill_engine", log_level)
         .filter_module("pill_renderer", log_level)

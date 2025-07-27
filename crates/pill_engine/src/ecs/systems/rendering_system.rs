@@ -69,7 +69,6 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
         .context(format!("{}: Cannot get {}", "RenderingSystem".sobj_style(), "TransformComponents".sobj_style())).unwrap();
 
-
     // Render
     match engine.renderer.render(
         active_camera_entity_handle, 

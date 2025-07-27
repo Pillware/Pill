@@ -5,5 +5,4 @@ build/
 *.lock
 
 crates/pill_standalone/Cargo.toml
-examples/Floating-Pills/Cargo.toml
-examples/Empty/Cargo.toml
+examples/*/Cargo.toml
