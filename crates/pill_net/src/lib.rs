@@ -1,8 +1,8 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use renet::{ ConnectionConfig, DefaultChannel, RenetClient, RenetServer, ServerEvent};
 use serde::{Deserialize, Serialize};
 use renet_netcode::{ClientAuthentication, NetcodeClientTransport, NetcodeServerTransport, ServerAuthentication, ServerConfig};
-use std::{net::{UdpSocket, SocketAddr}, time::{Duration, SystemTime}};
+use std::{net::{UdpSocket, SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr}, time::{Duration, SystemTime}};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Msg {
@@ -83,7 +83,14 @@ pub fn server_update(net: &mut NetServer, dt: Duration) -> Result<Vec<(u64, Msg)
 
 pub fn connect_client(bind: &str, client_id: u64) -> Result<NetClient> {
     let server_addr: SocketAddr = bind.parse()?;
-    let socket = UdpSocket::bind(server_addr)?;
+
+	let local_bind = match server_addr {
+        SocketAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0), // 0.0.0.0:0
+        SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0), // [::]:0
+    };
+
+    let socket = UdpSocket::bind(local_bind).with_context(|| format!("Client failed to bind local UDP socket at {}", local_bind))?;
+    socket.set_nonblocking(true)?;
 
     let client = RenetClient::new(
         ConnectionConfig::default(),

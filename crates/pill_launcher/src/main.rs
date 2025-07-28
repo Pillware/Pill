@@ -36,6 +36,17 @@ fn get_path(location: Location) -> PathBuf {
     }
 }
 
+fn pill_engine_dep_line_with_preserved_features(existing: &str, engine_path: &str) -> String {
+    let engine_path = engine_path.replace('\\', "/");
+    if let Some(pos) = existing.find("features") {
+        // if line contains "features", preserve items
+        let features_part = &existing[pos..].trim_end();
+        format!("pill_engine = {{ path = \"{}\", {} }}", engine_path, features_part)
+    } else {
+        format!("pill_engine = {{ path = \"{}\", features = [\"game\"] }}", engine_path)
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn cargo_build_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
     let mut arguments = vec!["/C", "cargo", "build", "--manifest-path", path.to_str().unwrap()];
@@ -230,8 +241,11 @@ fn run_game_project(game_path: &String, compile_mode: &String) -> Result<()> {
     }
 
     // Update engine project dependency in game's cargo.toml
+    let engine_path_string = get_path(Location::Engine).to_string_lossy().into_owned();
     let action = |line: String| -> String {
-        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
+        if line.trim_start().starts_with("pill_engine") {
+            return pill_engine_dep_line_with_preserved_features(&line, &engine_path_string);
+        }
         line
     };
     modify_file(&game_path.join("Cargo.toml"), &game_path.join("Cargo.toml"), action)?;
@@ -280,8 +294,11 @@ fn build_game_project(game_path: &String, output_path: &String, compile_mode: &S
     }
 
     // Update engine project dependency in game's cargo.toml
+    let engine_path_string = get_path(Location::Engine).to_string_lossy().into_owned();
     let action = |line: String| -> String {
-        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
+        if line.trim_start().starts_with("pill_engine") {
+            return pill_engine_dep_line_with_preserved_features(&line, &engine_path_string);
+        }
         line
     };
     modify_file(&game_path.join("Cargo.toml"), &game_path.join("Cargo.toml"), action)?;
