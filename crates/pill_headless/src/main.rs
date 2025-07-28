@@ -5,18 +5,29 @@ use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
 
+#[cfg(feature = "net")]
+use pill_engine::NetState;
+
 struct HeadlessGame; // TODO: placeholder for the actual game struct
                      //
 impl PillGame for HeadlessGame {
-    fn start(&self, _engine: &mut Engine) -> Result<()> {
+    fn start(&self, engine: &mut Engine) -> Result<()> {
         // Placeholder for the game start logic
         println!("Starting HeadlessGame...");
+        #[cfg(feature = "net")]
+        {
+            engine.add_global_component(NetState::new_server("0.0.0.0:5000", 8)?)?;
+            log::info!("Server listening on 0.0.0.0:5000");
+        }
+
         Ok(())
     }
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+	env_logger::Builder::from_default_env()
+    .filter_level(log::LevelFilter::Info)
+    .init();
 
     let mut cfg = config::Config::default();
 
@@ -38,6 +49,7 @@ fn main() -> Result<()> {
 
             // drive networking, simulation
             engine.update(tick);
+            //println!("Game updated at {:?}", last);
         } else {
             // sleep to avoid busy waiting
             std::thread::sleep(tick - now.duration_since(last));

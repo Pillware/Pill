@@ -7,9 +7,6 @@ use crate::{
 #[cfg(feature = "rendering")]
 use crate::graphics::*;
 
-#[cfg(feature = "net")]
-use crate::net;
-
 use pill_core::{
     EngineError,
     PillSlotMapKey,
@@ -208,11 +205,10 @@ impl Engine {
             self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame)?;
         }
 
-        // TODO: add net systems
         #[cfg(feature = "net")]
         {
-            self.system_manager.add_system("NetRecvSystem", crate::net::net_recv_system, UpdatePhase::PreGame)?; // TODO: do I need special states?
-            self.system_manager.add_system("NetSendSystem", crate::net::net_send_system, UpdatePhase::PostGame)?;
+            self.system_manager.add_system("NetRecvSystem", net_recv_system, UpdatePhase::PreGame)?; // TODO: do I need special states?
+            self.system_manager.add_system("NetSendSystem", net_send_system, UpdatePhase::PostGame)?;
         }
 
         // Create default resources

@@ -4,16 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+# low-level capability flags
+rendering = []
+net = ["dep:pill_net"]
+ui = []
+audio = [] #TODO: do we want to gate audio and UI?
+
 standalone = ["rendering", "audio", "ui"]
-client = ["rendering", "audio", "ui", "net"]
+client = ["standalone", "net"]
+headless = []
 server = ["net"]
 
-net = ["pill_net"]
-rendering = []
-audio = [] #TODO: do we want to gate audio and UI?
-ui = []
-
-# TODO: duplicate?
+# dev/export flags
 game = []
 internal = []
 

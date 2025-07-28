@@ -14,7 +14,7 @@ pub use engine::{Engine, PillGame};
 pub use engine::{KeyboardKey, MouseButton};
 
 #[cfg(feature = "net")]
-pub mod net;
+pub use crate::ecs::{NetState, NetStats, NetSide};
 
 #[cfg(feature = "game")]
 pub mod game {

@@ -19,6 +19,8 @@ pub(crate) mod audio_source_component;
 pub(crate) mod audio_manager_component;
 #[cfg(feature = "rendering")]
 pub(crate) mod egui_manager_component;
+#[cfg(feature = "net")]
+pub(crate) mod net_components;
 
 // --- Use ---
 

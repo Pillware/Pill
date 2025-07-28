@@ -75,6 +75,12 @@ pub use components::time_component::{
     TimeComponent,
 };
 
+#[cfg(feature = "net")]
+pub use components::net_components::{
+    NetState,
+    NetStats,
+    NetSide,
+};
 // - Systems
 
 pub use systems::{
@@ -103,6 +109,12 @@ pub use systems::time_system::{
 #[cfg(feature = "rendering")]
 pub use systems::audio_system::{
     audio_system,
+};
+
+#[cfg(feature = "net")]
+pub use systems::net_system::{
+    net_recv_system,
+    net_send_system
 };
 
 // - Other

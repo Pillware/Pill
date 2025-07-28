@@ -52,7 +52,7 @@ struct CameraMovementComponent {
 impl PillTypeMapKey for CameraMovementComponent { type Storage = ComponentStorage<CameraMovementComponent>; }
 impl Component for CameraMovementComponent { }
 
-pub struct Game { } 
+pub struct Game { }
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
@@ -71,7 +71,7 @@ impl PillGame for Game {
         engine.register_component::<AudioSourceComponent>(active_scene)?;
         engine.register_component::<CameraMovementComponent>(active_scene)?;
         engine.register_component::<FloatingObjectComponent>(active_scene)?;
-        
+
         // Add systems
         engine.add_system("SpawnFloatingObjects", floating_objects_spawn_system)?;
         engine.add_system("DeleteFloatingObjects", floating_objects_remove_system)?;
@@ -98,16 +98,16 @@ impl PillGame for Game {
         // Add textures
         let fabric_color_texture = Texture::new("FabricColor", TextureType::Color, ResourceLoadType::Path("./res/textures/FabricColor.jpg".into()));
         let fabric_color_texture_handle = engine.add_resource::<Texture>(fabric_color_texture)?;
-       
+
         let fabric_normal_texture = Texture::new("FabricNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/FabricNormal.jpg".into()));
         let fabric_normal_texture_handle = engine.add_resource::<Texture>(fabric_normal_texture)?;
-        
+
         let stones_color_texture = Texture::new("StonesColor", TextureType::Color, ResourceLoadType::Path("./res/textures/StonesColor.jpg".into()));
         let stones_color_texture_handle = engine.add_resource::<Texture>(stones_color_texture)?;
-        
+
         let stones_normal_texture = Texture::new("StonesNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/StonesNormal.jpg".into()));
         let stones_normal_texture_handle = engine.add_resource::<Texture>(stones_normal_texture)?;
-        
+
         let organic_color_texture = Texture::new("OrganicColor", TextureType::Color, ResourceLoadType::Path("./res/textures/OrganicColor.jpg".into()));
         let organic_color_texture_handle = engine.add_resource::<Texture>(organic_color_texture)?;
 
@@ -119,31 +119,31 @@ impl PillGame for Game {
         fabric_material.set_texture("Color", fabric_color_texture_handle)?;
         fabric_material.set_texture("Normal", fabric_normal_texture_handle)?;
         fabric_material.set_color("Tint", Color::new( 1.0, 0.1, 0.1))?;
-        let fabric_material_handle = engine.add_resource::<Material>(fabric_material)?; 
+        let fabric_material_handle = engine.add_resource::<Material>(fabric_material)?;
 
         let mut stones_material = Material::new("Stones");
         stones_material.set_texture("Color", stones_color_texture_handle)?;
         stones_material.set_texture("Normal", stones_normal_texture_handle)?;
-        let stones_material_handle = engine.add_resource::<Material>(stones_material)?; 
+        let stones_material_handle = engine.add_resource::<Material>(stones_material)?;
 
         let mut organic_material = Material::new("Organic");
         organic_material.set_texture("Color", organic_color_texture_handle)?;
         organic_material.set_texture("Normal", organic_normal_texture_handle)?;
         organic_material.set_color("Tint", Color::new( 0.26, 0.87, 0.9))?;
         organic_material.set_scalar("Specularity", 3.0)?;
-        let organic_material_handle = engine.add_resource::<Material>(organic_material)?; 
+        let organic_material_handle = engine.add_resource::<Material>(organic_material)?;
 
 
         let mut yellow_material = Material::new("Yellow");
         yellow_material.set_color("Tint", Color::new( 1.0, 0.88, 0.0))?;
-        let yellow_material_handle = engine.add_resource::<Material>(yellow_material)?; 
+        let yellow_material_handle = engine.add_resource::<Material>(yellow_material)?;
 
         let mut blue_material = Material::new("Blue");
         blue_material.set_color("Tint", Color::new( 0.26, 0.87, 0.9))?;
-        let blue_material_handle = engine.add_resource::<Material>(blue_material)?; 
+        let blue_material_handle = engine.add_resource::<Material>(blue_material)?;
 
         let white_material = Material::new("White");
-        let white_material_handle = engine.add_resource::<Material>(white_material)?; 
+        let white_material_handle = engine.add_resource::<Material>(white_material)?;
 
         // --- Create entities ---
 
@@ -157,7 +157,7 @@ impl PillGame for Game {
         let origin_entity = engine.create_entity(active_scene)?;
 
         let origin_transform = TransformComponent::builder().build();
-        engine.add_component_to_entity(active_scene, origin_entity, origin_transform)?;      
+        engine.add_component_to_entity(active_scene, origin_entity, origin_transform)?;
 
         // Create camera entity
         let camera = engine.create_entity(active_scene)?;
@@ -184,7 +184,7 @@ impl PillGame for Game {
         let audio_listener_component = AudioListenerComponent::builder().enabled(true).build();
         engine.add_component_to_entity(active_scene, camera, audio_listener_component)?;
 
-        
+
         // Setup demo state component
         let demo_state = DemoStateComponent {
             floating_objects_movemement_enabled: true,
@@ -195,6 +195,14 @@ impl PillGame for Game {
             plain_color_material_handles: vec!(yellow_material_handle, blue_material_handle, white_material_handle),
         };
         engine.add_global_component(demo_state)?;
+
+        // TODO: demo code - move to dedicated example
+        #[cfg(feature = "net")]
+        {
+            use pill_engine::ecs::components::net_components::{NetState, NetStats};
+            engine.add_global_component(NetStats::new())?;
+            engine.add_global_component(NetState::new_client("127.0.0.1:5000", 0))?;
+        }
 
         // Spawn certain number of floating objects
         spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
@@ -246,24 +254,24 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
         let radius = floating_object_component.radius_factor.clone().sin() * 6.0 + 10.0;
         floating_object_transform.position.x = angle.to_radians().cos() * radius;
         floating_object_transform.position.z = angle.to_radians().sin() * radius;
-       
+
         let y_axis_movement_speed = floating_object_component.y_axis_movement_speed.clone();
         floating_object_component.y_axis_factor += y_axis_movement_speed * delta_time;
         let y_axis_factor = floating_object_component.y_axis_factor.clone();
         floating_object_transform.position.y = y_axis_factor.sin() * 0.8 * radius;
-    }  
+    }
 
     Ok(())
 }
 
 fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
     let mut rng = thread_rng();
-    
+
     let input_component = engine.get_global_component::<InputComponent>()?;
     let mesh_key = input_component.get_key_pressed(FLOATING_OBJECTS_CHANGE_MESH_BUTTON);
     let material_key = input_component.get_key_pressed(FLOATING_OBJECTS_CHANGE_MATERIAL_BUTTON);
 
-    // Set same mesh 
+    // Set same mesh
     if mesh_key {
         let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
         demo_state.current_mesh = (demo_state.current_mesh + 1) % 3;
@@ -277,12 +285,12 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
     if material_key {
         let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
         demo_state.current_material_set = (demo_state.current_material_set + 1) % 2;
-        
+
         let current_material_set = match demo_state.current_material_set == 0 {
             true => demo_state.textured_material_handles.clone(),
             false => demo_state.plain_color_material_handles.clone(),
         };
-        
+
         for (_, mesh_rendering_component) in engine.iterate_one_component_mut::<MeshRenderingComponent>()? {
             let material_handle = current_material_set[rng.gen_range(0..=2)];
             mesh_rendering_component.set_material(&material_handle);
@@ -304,7 +312,7 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let mouse_delta = input_component.get_mouse_delta();
 
     for (_, transform_transform, camera_movement_component) in engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
-    {   
+    {
         // Zoom
         let zoom_speed = camera_movement_component.zoom_speed;
         camera_movement_component.radius -= mouse_scroll_delta.y * zoom_speed;
@@ -357,7 +365,7 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
     let g_key = input_component.get_key(DECREASE_CAMERA_FOV_BUTTON);
 
     for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()?
-    {   
+    {
         let mut change_value: f32 = 0.0;
         if t_key { change_value += 1.0; }
         if g_key { change_value -= 1.0; }
@@ -395,7 +403,7 @@ fn floating_objects_remove_system(engine: &mut Engine) -> Result<()> {
     // Remove objects
     if input_component.get_key_pressed(REMOVE_FLOATING_OBJECTS_BUTTON) {
         let mut entities_for_deletion = Vec::<EntityHandle>::new();
-        
+
         for (entity_handle, _) in engine.iterate_one_component::<FloatingObjectComponent>()? {
             if count == 0 {
                 break;
@@ -423,7 +431,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
     // Get resources
     let demo_state = (&*engine).get_global_component::<DemoStateComponent>()?;
     let mesh_handle = demo_state.mesh_handles[demo_state.current_mesh];
-    
+
     let material_handle = match demo_state.current_material_set == 0 {
         true => demo_state.textured_material_handles[rng.gen_range(0..=2)],
         false => demo_state.plain_color_material_handles[rng.gen_range(0..=2)],
@@ -446,7 +454,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
             radius_speed: rng.gen_range(0.1..1.2),
         };
 
-        // Create transform component 
+        // Create transform component
         let transform_component = TransformComponent::builder().build();
 
         // Create mesh component
@@ -458,9 +466,9 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
         // Add components
         engine.add_component_to_entity(active_scene, new_entity, float_object_component)?;
         engine.add_component_to_entity(active_scene, new_entity, transform_component)?;
-        engine.add_component_to_entity(active_scene, new_entity, mesh_rendering_component)?;       
-    } 
-    
+        engine.add_component_to_entity(active_scene, new_entity, mesh_rendering_component)?;
+    }
+
     // Update initial positions once (in case movement system is disabled)
     floating_objects_movement_system(engine)?;
 

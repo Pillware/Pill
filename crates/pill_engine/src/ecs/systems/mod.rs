@@ -9,6 +9,8 @@ pub(crate) mod input_system;
 pub(crate) mod time_system;
 #[cfg(feature = "rendering")]
 pub(crate) mod audio_system;
+#[cfg(feature = "net")]
+pub(crate) mod net_system;
 
 // --- Use ---
 
