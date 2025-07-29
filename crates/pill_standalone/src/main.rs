@@ -89,6 +89,7 @@ fn main() {
         .with_inner_size(window_size)
         .with_min_inner_size(window_min_size)
         .with_window_icon(window_icon.clone())
+        .with_visible(false) // Temporarily hide window (this is a hack to make taskbar icon loaded correctly)
         .build(&window_event_loop)
         .context("Failed to initialize window").unwrap());
     
@@ -101,6 +102,7 @@ fn main() {
         false => None
     };
     window.set_fullscreen(window_fullscreen_mode);
+    
 
     let mut last_render_time = std::time::Instant::now();
 
@@ -114,6 +116,7 @@ fn main() {
     window_event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     window_event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
   
+    window.set_visible(true); // Show window (now the taskbar icon will be set correctly)
    
     let _ = window_event_loop.run(move |event, event_loop_window_target| { // Run function takes closure
         match event {
