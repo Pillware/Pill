@@ -140,7 +140,12 @@ impl PillGame for Game {
         // Create ambient music player entity
         let ambient_music_player_entity = engine.create_entity(active_scene)?;
 
-        let audio_source_component = AudioSourceComponent::builder().sound_type(SoundType::Sound2D).sound(ambient_music_handle).volume(0.05).play_on_awake(false).build();
+        let audio_source_component = AudioSourceComponent::builder()
+            .sound_type(SoundType::Sound2D)
+            .sound(ambient_music_handle)
+            .volume(0.05)
+            .play_on_awake(true)
+            .build();
         engine.add_component_to_entity(active_scene, ambient_music_player_entity, audio_source_component)?;
 
         // Create origin point entity

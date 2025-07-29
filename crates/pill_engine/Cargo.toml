@@ -22,7 +22,8 @@ image = "0.23"
 tobj = "3.0"
 
 # Audio
-rodio = { version = "0.14", default-features = false, features = ["wav", "mp3"] }
+rodio = { version = "0.20", features = ["wav", "mp3"] }
+
 
 # Other
 readonly = "0.2"
