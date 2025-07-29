@@ -211,7 +211,7 @@ impl Engine {
                 // For rendering system we can't clean its timer here, 
                 // because it has to render its own timer data in the UI 
                 // (and since the frame in which it renders is not yet finished when it renders UI, it has to use previous frame timer data)
-                if (system_name != RENDERING_SYSTEM.name) {
+                if system_name != RENDERING_SYSTEM.name {
                     
                     let mut timer = Timer::new();
                     timer.record_new_context(&format!("{} update", system_name)).unwrap();
@@ -304,7 +304,7 @@ impl Engine {
     }
 
     pub fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) {
-       self.renderer.pass_input_to_egui(event);
+       self.renderer.pass_input_to_egui(event).unwrap();
     }
 
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {

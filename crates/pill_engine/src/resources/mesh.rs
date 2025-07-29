@@ -204,9 +204,9 @@ impl MeshData {
         // Average the tangents and bitangents
         for (i, n) in triangles_included.into_iter().enumerate() {
             let denom = 1.0 / n as f32;
-            let mut v = &mut vertices[i];
-            v.tangent = (Vector3f::from(v.tangent) * denom).normalize().into();
-            v.bitangent = (Vector3f::from(v.bitangent) * denom).normalize().into();
+            let vertex = &mut vertices[i];
+            vertex.tangent = (Vector3f::from(vertex.tangent) * denom).normalize().into();
+            vertex.bitangent = (Vector3f::from(vertex.bitangent) * denom).normalize().into();
         }
 
         let mesh_data = MeshData {

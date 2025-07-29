@@ -76,7 +76,7 @@ impl EguiRenderer {
 
         let window = &self.window;
         let raw_input = self.state.take_egui_input(&window);
-        let full_output = self.context.run(raw_input, |ui| {
+        let full_output = self.context.run(raw_input, |_| {
             run_ui(&self.context);
         });
 

@@ -29,8 +29,6 @@
 #![allow(unused_unsafe)]
 
 //! Contains the slot map implementation.
-#[cfg(all(nightly, any(doc, feature = "unstable")))]
-use alloc::collections::TryReserveError;
 use core::fmt;
 use core::marker::PhantomData;
 #[allow(unused_imports)] // MaybeUninit is only used on nightly at the moment.
@@ -193,14 +191,6 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         // One slot is reserved for the sentinel.
         let needed = (self.len() + additional).saturating_sub(self.slots.len() - 1);
         self.slots.reserve(needed);
-    }
-
-    #[cfg(all(nightly, any(doc, feature = "unstable")))]
-    #[cfg_attr(all(nightly, doc), doc(cfg(feature = "unstable")))]
-    pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
-        // One slot is reserved for the sentinel.
-        let needed = (self.len() + additional).saturating_sub(self.slots.len() - 1);
-        self.slots.try_reserve(needed)
     }
 
     pub fn contains_key(&self, key: K) -> bool {
@@ -374,54 +364,6 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .get_unchecked_mut(key.data().index as usize)
             .u
             .value
-    }
-
-    #[cfg(has_min_const_generics)]
-    pub fn get_disjoint_mut<const N: usize>(&mut self, keys: [K; N]) -> Option<[&mut V; N]> {
-        let mut ptrs: [MaybeUninit<*mut V>; N] = unsafe { MaybeUninit::uninit().assume_init() };
-
-        let mut i = 0;
-        while i < N {
-            let kd = keys[i].data();
-            if !self.contains_key(kd.into()) {
-                break;
-            }
-
-            unsafe {
-                let slot = self.slots.get_unchecked_mut(kd.index as usize);
-                slot.version ^= 1;
-                ptrs[i] = MaybeUninit::new(&mut *slot.u.value);
-            }
-            i += 1;
-        }
-
-        // Undo temporary unoccupied markings.
-        for k in &keys[..i] {
-            let index = k.data().index as usize;
-            unsafe {
-                self.slots.get_unchecked_mut(index).version ^= 1;
-            }
-        }
-
-        if i == N {
-            // All were valid and disjoint.
-            Some(unsafe { core::mem::transmute_copy::<_, [&mut V; N]>(&ptrs) })
-        } else {
-            None
-        }
-    }
-
-    #[cfg(has_min_const_generics)]
-    pub unsafe fn get_disjoint_unchecked_mut<const N: usize>(
-        &mut self,
-        keys: [K; N],
-    ) -> [&mut V; N] {
-        // Safe, see get_disjoint_mut.
-        let mut ptrs: [MaybeUninit<*mut V>; N] = MaybeUninit::uninit().assume_init();
-        for i in 0..N {
-            ptrs[i] = MaybeUninit::new(self.get_unchecked_mut(keys[i]));
-        }
-        core::mem::transmute_copy::<_, [&mut V; N]>(&ptrs)
     }
 
     pub fn iter(&self) -> Iter<K, V> {
