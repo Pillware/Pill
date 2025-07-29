@@ -1,8 +1,8 @@
 use crate::RendererResourceStorage;
 
+use pill_core::RendererError;
 use pill_engine::internal::{
     MaterialParameterMap,
-    RendererError,
     MaterialTextureMap,
     RendererMaterialHandle,
     RendererPipelineHandle, 

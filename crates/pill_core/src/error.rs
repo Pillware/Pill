@@ -5,6 +5,23 @@ use thiserror::Error;
 use colored::*;
 
 
+// --- Renderer error ---
+
+#[derive(Error, Debug, Clone)]
+pub enum RendererError { 
+    #[error("Undefined {} error \n\nSource: ", "Renderer".gobj_style())]
+    Other,
+    #[error("{} {} not found \n\nSource: ", "Renderer".gobj_style(), "Resource".sobj_style())]
+    RendererResourceNotFound,
+    #[error("{} {} lost \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
+    SurfaceLost,
+    #[error("{} {} out of memory \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
+    SurfaceOutOfMemory,
+    #[error("Undefined {} {} error \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
+    SurfaceOther,
+}
+
+
 #[derive(Error, Debug, Clone)]
 pub enum EngineError<'a> {
 
@@ -90,10 +107,17 @@ pub enum EngineError<'a> {
     #[error("{} slot {} does not exist", "MaterialTexture".sobj_style(), .0.name_style())]
     MaterialTextureSlotNotFound(String),
 
+    // Timer
+    #[error("Timer context {} is invalid", .0.name_style())]
+    InvalidTimerContext(String),
+    #[error("System timer was used in the system {} but it wasn't returned using update_system_timer function", .0.name_style())]
+    NonReturnedSystemTimer(String),
+    #[error("There is no active timer context to end")]
+    NoTimerContextToEnd(),
+    
     // Other
     #[error("{} error: {}", "Engine".mobj_style(), .0)]
-    Other(String)
-
+    Other(String),
 }
 
 pub fn err_prefix() -> ColoredString {

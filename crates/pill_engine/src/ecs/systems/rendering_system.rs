@@ -1,10 +1,12 @@
 use crate::{
-    ecs::{ scene, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent }, 
-    engine::Engine, graphics::{ compose_render_queue_key, RenderQueueItem, RenderQueueKey, RendererError }, 
+    config::RENDERING_SYSTEM, 
+    ecs::{ scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent, UpdatePhase }, 
+    engine::Engine, 
+    graphics::{ compose_render_queue_key, RenderQueueItem, RenderQueueKey }, 
     resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 
-use pill_core::{ EngineError, PillStyle, PillSlotMapKey };
+use pill_core::{ EngineError, PillSlotMapKey, PillStyle, RendererError, Timer };
 
 use std::{ ops::Range };
 use anyhow::{ Result, Context, Error };
@@ -12,6 +14,10 @@ use boolinator::Boolinator;
 use log::{ debug };
 
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
+    let mut timer = Timer::new();
+    timer.record_new_context("RenderingSystem update")?;
+    timer.record("Get active camera")?;
+
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
     let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
     
@@ -34,16 +40,24 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
     }
 
+
     let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera))?.clone();
 
     // - Prepare rendering data
+    timer.record("Prepare render queue")?;
 
     // Clear the render queue
     engine.render_queue.clear();
     // Iterate mesh rendering components
     for (entity_handle, transform_component, mesh_rendering_component) in
-        engine.scene_manager.get_two_component_iterator::<TransformComponent, MeshRenderingComponent>(active_scene_handle)?
+        engine.scene_manager.get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(active_scene_handle)?
     {
+        // Update transform matrices if required
+        if transform_component.matrix_update_required {
+            update_transform_matrices(transform_component);
+            transform_component.matrix_update_required = false;
+        }
+
         // Add valid mesh rendering components to render queue
         if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
             let render_queue_item = RenderQueueItem {
@@ -57,8 +71,12 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
     }
 
+    timer.record("Sort render queue")?;
+
     // Sort render queue
     engine.render_queue.sort();
+
+    timer.record("Get component storages")?;
 
     let egui_ui = EguiManagerComponent::get_ui(engine);// egui_manager_component.get_ui(engine);
 
@@ -69,20 +87,35 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
         .context(format!("{}: Cannot get {}", "RenderingSystem".sobj_style(), "TransformComponents".sobj_style())).unwrap();
 
+    timer.record_new_context("Render")?;
+
     // Render
     match engine.renderer.render(
         active_camera_entity_handle, 
         &engine.render_queue, 
         camera_component_storage,
         transform_component_storage,
-        egui_ui
+        egui_ui,
+        &mut timer
     ) {
-        Ok(_) => Ok(()),
-        // Recreate lost surface
-        Err(RendererError::SurfaceLost) => Ok(engine.renderer.resize(engine.window_size)),
-        // System is out of memory
-        Err(RendererError::SurfaceOutOfMemory) => { panic!("Critical: Renderer error, system out of memory")}
-        // All other errors (Outdated, Timeout)
-        Err(renderer_error) => Err(Error::new(renderer_error)),
+        Ok(_) => {
+            timer.end_context()?; // End "Render" context
+            engine.system_manager.update_system_timer(RENDERING_SYSTEM.name, RENDERING_SYSTEM.update_phase, timer)?;
+            Ok(())
+        } 
+        Err(e) => {
+            match e.downcast_ref::<RendererError>() {
+                Some(RendererError::SurfaceLost) => {
+                    // Recreate lost surface
+                    timer.end_context()?; // End "Render" context
+                    engine.system_manager.update_system_timer(RENDERING_SYSTEM.name, RENDERING_SYSTEM.update_phase, timer)?;
+                    Ok(engine.renderer.resize(engine.window_size))
+                },
+                Some(RendererError::SurfaceOutOfMemory) => {
+                    panic!("Critical: Renderer error, system out of memory");
+                },
+                _ => Err(e),
+            }
+        }
     }
 }

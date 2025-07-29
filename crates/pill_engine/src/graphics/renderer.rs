@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-use pill_core::PillSlotMapKey;
+use pill_core::{PillSlotMapKey, Timer};
 use pill_core::PillStyle;
 
 use std::{path::PathBuf, sync::Arc};
@@ -48,22 +48,6 @@ pill_core::define_new_pill_slotmap_key! {
 
 pill_core::define_new_pill_slotmap_key! { 
     pub struct RendererTextureHandle;
-}
-
-// --- Renderer error ---
-
-#[derive(Error, Debug)]
-pub enum RendererError { 
-    #[error("Undefined {} error \n\nSource: ", "Renderer".gobj_style())]
-    Other,
-    #[error("{} {} not found \n\nSource: ", "Renderer".gobj_style(), "Resource".sobj_style())]
-    RendererResourceNotFound,
-    #[error("{} {} lost \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
-    SurfaceLost,
-    #[error("{} {} out of memory \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
-    SurfaceOutOfMemory,
-    #[error("Undefined {} {} error \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
-    SurfaceOther,
 }
 
 // --- Renderer trait definition ---
@@ -94,8 +78,9 @@ pub trait PillRenderer {
         render_queue: &Vec::<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>
-    ) -> Result<(), RendererError>;
+        egui_ui: Box<dyn Fn(&egui::Context)>,
+        timer: &mut Timer
+    ) -> Result<()>;
 
 }
 

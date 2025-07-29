@@ -1,7 +1,7 @@
 use crate::{
-    ecs::{ AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, TimeComponent }, 
+    ecs::{ audio_system, deferred_update_system, input_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase }, 
     graphics::{ RendererMaterialHandle, RendererTextureHandle }, 
-    resources::{ MaterialHandle, TextureHandle, TextureType }
+    resources::{ MaterialHandle, TextureHandle, TextureType },
 };
 
 use pill_core::PillSlotMapKeyData;
@@ -19,6 +19,42 @@ pub const MAX_ENTITIES: usize = 1000;
 pub const MAX_CONCURRENT_2D_SOUNDS: usize = 10;
 pub const MAX_CONCURRENT_3D_SOUNDS: usize = 10;
 pub const MAX_CAMERAS: usize = 10;
+
+pub struct SystemConfig {
+    pub name: &'static str,
+    pub system_function: SystemFunction,
+    pub update_phase: UpdatePhase,
+}
+
+pub const INPUT_SYSTEM: SystemConfig = SystemConfig {
+    name: "InputSystem",
+    system_function: input_system,
+    update_phase: UpdatePhase::PreGame,
+};
+
+pub const TIME_SYSTEM: SystemConfig = SystemConfig {
+    name: "TimeSystem",
+    system_function: time_system,
+    update_phase: UpdatePhase::PostGame,
+};
+
+pub const AUDIO_SYSTEM: SystemConfig = SystemConfig {
+    name: "AudioSystem",
+    system_function: audio_system,
+    update_phase: UpdatePhase::PostGame,
+};
+
+pub const DEFERRED_UPDATE_SYSTEM: SystemConfig = SystemConfig {
+    name: "DeferredUpdateSystem",
+    system_function: deferred_update_system,
+    update_phase: UpdatePhase::PostGame,
+};
+
+pub const RENDERING_SYSTEM: SystemConfig = SystemConfig {
+    name: "RenderingSystem",
+    system_function: rendering_system,
+    update_phase: UpdatePhase::PostGame,
+};
 
 // --- Resources ---
 

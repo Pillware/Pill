@@ -58,6 +58,9 @@ pub use components::input_component::{
 
 pub use components::transform_component::{
     TransformComponent,
+    update_transform_matrices,
+    get_model_matrix,
+    get_normal_matrix,
 };
 
 pub use components::mesh_rendering_component::{
@@ -73,6 +76,7 @@ pub use components::time_component::{
 pub use systems::{
     SystemManager,
     UpdatePhase,
+    SystemFunction
 };
 
 pub use systems::rendering_system::{

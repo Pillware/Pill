@@ -2,7 +2,7 @@ use crate::{EngineError, define_new_pill_slotmap_key};
 
 use anyhow::{ Context, Result, Error };
 use boolinator::Boolinator;
-use std::{ any::type_name, path::PathBuf };
+use std::{ any::type_name, collections::HashMap, hash::Hash, path::PathBuf };
 use colored::*;
 use log::debug;
 
@@ -102,27 +102,6 @@ pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static s
     ( $(#[$outer:meta])* $vis:vis struct $name:ident; $($rest:tt)* ) => {
         pill_core::define_new_pill_slotmap_key! { }
     }; 
-}
-
-// --- Time tracking ---
-
-pub struct Timer {
-    start: std::time::Instant,
-    context_name: String,
-}
-
-impl Timer {
-    pub fn new(context_name: &str) -> Self {
-        Self {
-            start: std::time::Instant::now(),
-            context_name: context_name.to_string(),
-        }
-    }
-
-    pub fn lap(&mut self, label: &str) {
-        debug!("{} - Stage: {} took {:.3} ms", self.context_name, label, self.start.elapsed().as_secs_f32() * 1000.0);
-        self.start = std::time::Instant::now();
-    }
 }
 
 // --- Other ---

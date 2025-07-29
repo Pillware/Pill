@@ -7,7 +7,6 @@ mod render_queue;
 
 pub use renderer::{
     Renderer,
-    RendererError,
     PillRenderer,
     RendererCameraHandle,
     RendererMaterialHandle,

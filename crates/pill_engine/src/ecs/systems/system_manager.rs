@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 
-use pill_core::EngineError;
+use pill_core::{EngineError, Timer};
 
 use core::fmt;
 use std::{collections::HashMap, fmt::Display};
@@ -15,7 +15,7 @@ pub struct System {
     pub(crate) update_phase: UpdatePhase,
     pub(crate) system_function: SystemFunction,
     pub(crate) enabled: bool,
-    pub(crate) delta_time: f32, // Time taken to execute the system in miliseconds in the previous frame
+    pub(crate) timer: Option<Timer>,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -49,6 +49,14 @@ impl SystemManager {
         }
     }
 
+    pub fn get_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<&mut System> {
+        // Find collection of systems for given update phase
+        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
+
+        // Get system by name
+        system_collection.get_mut(name).ok_or(Error::new(EngineError::SystemNotFound(name.to_string(), format!("{}", update_phase))))
+    }
+
     pub fn add_system(&mut self, name: &str, system_function: SystemFunction, update_phase: UpdatePhase) -> Result<()> {
         // Find collection of systems for given update phase
         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
@@ -64,7 +72,7 @@ impl SystemManager {
             update_phase, 
             system_function,
             enabled: true,
-            delta_time: 0.0,
+            timer: Some(Timer::new()),
         };
 
         // Add system
@@ -97,6 +105,28 @@ impl SystemManager {
 
         // Set system state
         system.enabled = enabled;
+
+        Ok(())
+    }
+
+    // This function can be called in the system function to get the timer for the system
+    // It will pass the ownership of the timer to the requsting scope.
+    // This has to be returned back using update_system_timer function, otherwise engine will panic.
+    // NOTE: Before system function is called, engine already starts "System update" context in the timer
+    pub fn get_system_timer(&mut self, name: &str, update_phase: UpdatePhase) -> Result<Option<Timer>> {
+        // Get system by name
+        let system: &mut System = self.get_system(name, update_phase)?;
+
+        // Return timer
+        Ok(system.timer.take())
+    }
+
+    pub fn update_system_timer(&mut self, name: &str, update_phase: UpdatePhase, timer: Timer) -> Result<()> {
+        // Get system by name
+        let system = self.get_system(name, update_phase)?;
+
+        // Update timer
+        system.timer = Some(timer);
 
         Ok(())
     }

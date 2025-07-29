@@ -10,6 +10,7 @@ use pill_core::Timer;
 use wgpu::{CommandEncoder, Device, Queue, TextureFormat, TextureView};
 use winit::event::WindowEvent;
 use winit::window::Window;
+use anyhow::{Error, Result};
 
 pub struct EguiRenderer {
     pub context: Context,
@@ -69,8 +70,9 @@ impl EguiRenderer {
         window_surface_view: &TextureView,
         screen_descriptor: ScreenDescriptor,
         run_ui: impl FnOnce(&Context),
-    ) {
-        let mut timer = Timer::new("Egui Draw");
+        timer: &mut Timer,
+    ) -> Result<()> {
+        timer.record("Prepare window and input")?;
 
         let window = &self.window;
         let raw_input = self.state.take_egui_input(&window);
@@ -78,22 +80,18 @@ impl EguiRenderer {
             run_ui(&self.context);
         });
 
-        self.state
-            .handle_platform_output(&window, full_output.platform_output);
+        self.state.handle_platform_output(&window, full_output.platform_output);
 
-        let tris = self
-            .context
-            .tessellate(full_output.shapes, full_output.pixels_per_point);
+        let tris = self.context.tessellate(full_output.shapes, full_output.pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
-            self.renderer
-                .update_texture(&device, &queue, *id, &image_delta);
+            self.renderer.update_texture(&device, &queue, *id, &image_delta);
         }
 
-        timer.lap("1");
+        timer.record("Update buffers and record render pass")?;
 
-        self.renderer
-            .update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        self.renderer.update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &window_surface_view,
                 resolve_target: None,
@@ -108,19 +106,16 @@ impl EguiRenderer {
             occlusion_query_set: None,
         });
 
-        timer.lap("2");
+        timer.record("Render")?;
 
+        self.renderer.render(&mut render_pass, &tris, &screen_descriptor);
 
-        self.renderer.render(&mut rpass, &tris, &screen_descriptor);
-
-        timer.lap("3");
-
-        drop(rpass);
+        drop(render_pass);
         for x in &full_output.textures_delta.free {
             self.renderer.free_texture(x)
         }
 
-        timer.lap("4");
+        Ok(())
     }
 }
 

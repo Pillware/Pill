@@ -216,13 +216,13 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Local rotation
         let rotation_speed = floating_object_component.rotation_speed.clone();
-        floating_object_transform.rotation += Vector3f::new(1.0,1.0,1.0) * rotation_speed * delta_time;
+        floating_object_transform.rotate_around_axis(rotation_speed * delta_time, Vector3f::new(1.0,1.0,1.0));
 
         // Local scale
         let scale_speed = floating_object_component.scale_speed.clone();
         floating_object_component.scale_factor += scale_speed * delta_time;
         let scale_factor = floating_object_component.scale_factor.clone();
-        floating_object_transform.scale = Vector3f::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5);
+        floating_object_transform.set_scale(Vector3f::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5));
 
         // Radius
         let radius_speed = floating_object_component.radius_speed.clone();
@@ -234,13 +234,24 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
 
         let angle = floating_object_component.angle.clone();
         let radius = floating_object_component.radius_factor.clone().sin() * 6.0 + 10.0;
-        floating_object_transform.position.x = angle.to_radians().cos() * radius;
-        floating_object_transform.position.z = angle.to_radians().sin() * radius;
+
+        floating_object_transform.set_position(
+            Vector3f::new(
+                angle.to_radians().cos() * radius,
+                floating_object_transform.position.y,
+                angle.to_radians().sin() * radius
+        ));
        
         let y_axis_movement_speed = floating_object_component.y_axis_movement_speed.clone();
         floating_object_component.y_axis_factor += y_axis_movement_speed * delta_time;
         let y_axis_factor = floating_object_component.y_axis_factor.clone();
-        floating_object_transform.position.y = y_axis_factor.sin() * 0.8 * radius;
+
+        floating_object_transform.set_position(
+            Vector3f::new(
+            angle.to_radians().cos() * radius,
+            y_axis_factor.sin() * 0.8 * radius,
+            angle.to_radians().sin() * radius
+        ));
     }  
 
     Ok(())
@@ -329,10 +340,10 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         let delta_z = camera_movement_component.delta_z;
 
         // Set position
-        transform_transform.position = Vector3f::new(x_position, delta_y, z_position + delta_z);
+        transform_transform.set_position(Vector3f::new(x_position, delta_y, z_position + delta_z));
 
         // Set rotation
-        transform_transform.rotation = Vector3f::new(0.0, -angle - 90.0, 0.0);
+        transform_transform.set_rotation(Vector3f::new(0.0, -angle - 90.0, 0.0));
     }
 
     Ok(())
@@ -364,7 +375,7 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
 fn floating_objects_spawn_system(engine: &mut Engine) -> Result<()> {
     // Get input component
     let input_component = (&*engine).get_global_component::<InputComponent>()?;
-
+    
     // Create new objects
     if input_component.get_key_pressed(SPAWN_FLOATING_OBJECTS_BUTTON) {
         spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;

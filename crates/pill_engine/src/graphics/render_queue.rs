@@ -123,7 +123,7 @@ pub struct RenderQueueKeyFields {
 }
 
 // Decomposes pill engine render queue key into separate fields
-pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> Result<RenderQueueKeyFields> { 
+pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> RenderQueueKeyFields { 
 
     // [TODO] What if render queue key is not valid
     let order: u8 = ((render_queue_key & RENDER_QUEUE_KEY_ORDER.mask as RenderQueueKey) >> RENDER_QUEUE_KEY_ORDER.mask_shift as RenderQueueKey) as u8;
@@ -132,15 +132,13 @@ pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> Result<Re
     let mesh_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MESH_INDEX.mask) >> RENDER_QUEUE_KEY_MESH_INDEX.mask_shift) as u8;
     let mesh_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MESH_VERSION.mask) >> RENDER_QUEUE_KEY_MESH_VERSION.mask_shift) as u8;
 
-    let render_queue_key_fields = RenderQueueKeyFields {
+    RenderQueueKeyFields {
         order,
         material_index,
         material_version,
         mesh_index,
         mesh_version,
-    };
-
-    Ok(render_queue_key_fields)
+    }
 }
 
 // --- Render queue fields config ---

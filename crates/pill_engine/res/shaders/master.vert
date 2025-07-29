@@ -7,11 +7,14 @@ layout(location=2) in vec3 vertex_normal;
 layout(location=3) in vec3 vertex_tangent;
 layout(location=4) in vec3 vertex_bitangent;
 
-// Input model data
+// Input model data (instance data)
 layout(location=5) in vec4 model_matrix_0;
 layout(location=6) in vec4 model_matrix_1;
 layout(location=7) in vec4 model_matrix_2;
 layout(location=8) in vec4 model_matrix_3;
+layout(location=9) in vec3 normal_matrix_0;
+layout(location=10) in vec3 normal_matrix_1;
+layout(location=11) in vec3 normal_matrix_2;
 
 // Input camera data
 layout(set=2, binding=0) uniform camera {
@@ -34,8 +37,13 @@ void main() {
         model_matrix_3
     );
 
+    mat3 normal_matrix = mat3(
+        normal_matrix_0,
+        normal_matrix_1,
+        normal_matrix_2
+    );
+
     // Create tangent matrix
-    mat3 normal_matrix = mat3(transpose(inverse(model_matrix)));
     vec3 tangent = normalize(normal_matrix * vertex_tangent);
     vec3 bitangent = normalize(normal_matrix * vertex_bitangent);
     vec3 normal = normalize(normal_matrix * vertex_normal);

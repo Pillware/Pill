@@ -103,6 +103,7 @@ pub mod game {
         Color, 
         Vector2i, 
         Vector3i,
+        Vector3fExt,
         define_new_pill_slotmap_key,
     };
   
@@ -120,7 +121,6 @@ pub mod internal {
         config::*,
         graphics::{
             PillRenderer,
-            RendererError,
             RenderQueueKey,
             RenderQueueItem,
             RenderQueueKeyFields,
@@ -148,6 +148,9 @@ pub mod internal {
             AudioManagerComponent,
             EguiManagerComponent,
             get_renderer_resource_handle_from_camera_component,
+            update_transform_matrices,
+            get_model_matrix,
+            get_normal_matrix,
         },
         resources::{
             Texture, 

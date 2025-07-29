@@ -8,12 +8,25 @@ mod pill_slotmap;
 mod pill_twinmap;
 mod pill_typemap;
 mod bitmask_utils;
+mod timer;
 
 // --- Use ---
 
-pub use math::*;
+pub use math::{
+    Vector3i,
+    Vector2i,
+    Vector3f, 
+    Vector2f, 
+    Color,
+    Matrix3f,
+    Direction, 
+    Vector3fExt,
+};
 
-pub use error::EngineError;
+pub use error::{
+    EngineError,
+    RendererError
+};
 
 pub use pill_slotmap::{ 
     PillSlotMap, 
@@ -44,5 +57,9 @@ pub use utils::{
     get_enum_variant_type_name, 
     validate_asset_path,
     get_game_error_message,
+};
+
+pub use timer::{
     Timer,
+    TimerRecord
 };

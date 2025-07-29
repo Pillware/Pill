@@ -13,8 +13,6 @@ pub use renderer::*;
 
 pub use instance::{ 
     Instance, 
-    MatrixAngleExt, 
-    MatrixModelExt,
 };
 
 pub use renderer_resource_storage::{ 

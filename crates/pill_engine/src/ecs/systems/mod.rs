@@ -12,4 +12,5 @@ pub(crate) mod audio_system;
 pub use system_manager::{
     SystemManager,
     UpdatePhase,
+    SystemFunction,
 };

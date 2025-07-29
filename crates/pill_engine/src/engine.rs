@@ -12,7 +12,10 @@ use pill_core::{
     PillTypeMap,
     get_type_name, 
     get_value_type_name, 
-    get_enum_variant_type_name, get_game_error_message, Vector2f, 
+    get_enum_variant_type_name, 
+    get_game_error_message, 
+    Vector2f, 
+    Timer
 };
 
 use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell, ops::RangeBounds };
@@ -68,8 +71,8 @@ impl Engine {
         // - Create default resources
 
         // Load master shader data to executable
-        let master_vertex_shader_bytes = include_bytes!("../res/shaders/built/master.vert.spv");
-        let master_fragment_shader_bytes = include_bytes!("../res/shaders/built/master.frag.spv");
+        let master_vertex_shader_bytes = include_bytes!("../res/shaders/master.vert");
+        let master_fragment_shader_bytes = include_bytes!("../res/shaders/master.frag");
         self.renderer.set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes)?;
 
         // Load default resource data to executable
@@ -154,13 +157,12 @@ impl Engine {
         let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUNDS").unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
         self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
 
-
         // Add built-in systems
-        self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame)?;
-        self.system_manager.add_system("TimeSystem", time_system, UpdatePhase::PostGame)?;
-        self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame)?;
-        self.system_manager.add_system("AudioSystem", audio_system, UpdatePhase::PostGame)?;
-        self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame)?;
+        self.system_manager.add_system(INPUT_SYSTEM.name, INPUT_SYSTEM.system_function, INPUT_SYSTEM.update_phase)?;
+        self.system_manager.add_system(TIME_SYSTEM.name, TIME_SYSTEM.system_function, TIME_SYSTEM.update_phase)?;
+        self.system_manager.add_system(AUDIO_SYSTEM.name, AUDIO_SYSTEM.system_function, AUDIO_SYSTEM.update_phase)?;
+        self.system_manager.add_system(DEFERRED_UPDATE_SYSTEM.name, DEFERRED_UPDATE_SYSTEM.system_function, DEFERRED_UPDATE_SYSTEM.update_phase)?;
+        self.system_manager.add_system(RENDERING_SYSTEM.name, RENDERING_SYSTEM.system_function, RENDERING_SYSTEM.update_phase)?;
 
         // Create default resources
         self.create_default_resources().context("Failed to create default resources")?;
@@ -194,6 +196,8 @@ impl Engine {
             for system_index in 0..self.system_manager.update_phases[update_phase_index].len() {
 
                 // Scope the mutable borrow to system so it ends before calling system_function
+
+
                 let (system_name, update_phase, system_function);
                 {
                     let system = &mut self.system_manager.update_phases[update_phase_index][system_index];
@@ -203,25 +207,44 @@ impl Engine {
                     system_function = system.system_function;
                 }
 
-                let system_update_start_time = std::time::Instant::now();
+                // Create new time and asign it to system so it can be accessed inside the system function
+                // For rendering system we can't clean its timer here, 
+                // because it has to render its own timer data in the UI 
+                // (and since the frame in which it renders is not yet finished when it renders UI, it has to use previous frame timer data)
+                if (system_name != RENDERING_SYSTEM.name) {
+                    
+                    let mut timer = Timer::new();
+                    timer.record_new_context(&format!("{} update", system_name)).unwrap();
+                    self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
+                }
 
-                // Run system update and handle errors based on configuration
-                let result = (system_function)(self)
-                    .context(EngineError::SystemUpdateFailed(
-                        system_name.clone(),
-                        format!("{:?}", update_phase),
-                    ));
+                {
+                    // Run system update and handle errors based on configuration
+                    let result = (system_function)(self)
+                        .context(EngineError::SystemUpdateFailed(system_name.clone(), format!("{:?}", update_phase.clone())));
 
-                if update_phase == UpdatePhase::Game && stop_on_game_errors {
-                    result.unwrap(); // Panic on error if configured
-                } else if let Err(err) = result {
-                    if let Some(message) = get_game_error_message(Err(err)) {
-                        error!("{}", message);
+                    if update_phase == UpdatePhase::Game && stop_on_game_errors {
+                        result.unwrap(); // Panic on error if configured
+                    } else if let Err(err) = result {
+                        if let Some(message) = get_game_error_message(Err(err)) {
+                            error!("{}", message);
+                        }
                     }
                 }
 
-                // Update system delta time
-                self.system_manager.update_phases[update_phase_index][system_index].delta_time = system_update_start_time.elapsed().as_secs_f32() * 1000.0;
+                // Update system timer with the final timer state
+                let mut timer = match self.system_manager.get_system_timer(system_name.as_str(), update_phase.clone()) {
+                    Ok(Some(timer)) => timer,
+                    Ok(None) => {
+                        panic!("{}", Error::new(EngineError::NonReturnedSystemTimer(system_name.clone())));
+                    }
+                    Err(e) => {
+                        panic!("{}", Error::new(EngineError::Other(e.to_string())));
+                    }
+                };
+
+                timer.end_context().context(format!("Failed to end timer context for {}", system_name.clone())).unwrap(); // End system update context
+                self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
             }
         }
         
@@ -315,6 +338,13 @@ impl Engine {
         debug!("Toggling {} {} from {} {} to {} state", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style(), if enabled { "Enabled" } else { "Disabled" });
 
         self.system_manager.toggle_system(name, UpdatePhase::Game, enabled).context(format!("Toggling {} failed", "System".gobj_style()))
+    }
+
+    /// Returns system timer. It has to be returned back using update_system_timer function, otherwise engine will panic.
+    pub fn get_system_timer(&mut self, name: &str) -> Timer {
+        debug!("Getting {} {} timer from {} {}", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style());
+
+        self.system_manager.get_system_timer(name, UpdatePhase::Game).unwrap().unwrap()
     }
     
     // --- Entity API ---

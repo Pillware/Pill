@@ -19,7 +19,6 @@ use pill_engine::internal::{
     PillRenderer, 
     EntityHandle, 
     RenderQueueItem, 
-    RendererError, 
     TextureType,
     MeshData, 
     MaterialTextureMap,
@@ -37,17 +36,17 @@ use pill_engine::internal::{
 };
 
 use pill_core::{ 
-    PillSlotMapKey, 
-    PillSlotMapKeyData, 
-    PillStyle, 
-    Timer
+    PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer 
 };
 
 use std::{
     iter, mem::size_of, num::NonZeroU32, ops::Range, sync::Arc
 };
 
-use anyhow::{ Result };
+use naga::front::glsl;
+use naga::back::wgsl;
+
+use anyhow::{Error, Result};
 use log::{ info };
 
 use crate::egui::EguiRenderer;
@@ -62,6 +61,25 @@ pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandl
 
 pub struct Renderer {
     pub state: State,
+}
+
+fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String> {
+    let mut frontend = glsl::Frontend::default();
+    let options = glsl::Options::from(stage);
+    let module = frontend.parse(&options, source).unwrap();
+    
+    let mut validator = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::empty(),
+    );
+    
+    let info = validator.validate(&module)?;
+    
+    let mut output = String::new();
+    let mut writer = wgsl::Writer::new(&mut output, wgsl::WriterFlags::empty());
+    writer.write(&module, &info)?;
+    
+    Ok(output)
 }
 
 impl PillRenderer for Renderer {
@@ -79,20 +97,35 @@ impl PillRenderer for Renderer {
         self.state.resize(new_window_size)
     }
 
+
     fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8]) -> Result<()> {
         
         // Create shaders
-        let vertex_shader = wgpu::ShaderModuleDescriptor {
-            label: Some("master_vertex_shader"),
-            source: wgpu::util::make_spirv(vertex_shader_bytes),
-        };
-        let vertex_shader = self.state.device.create_shader_module(vertex_shader);
+        // Convert bytes to string
+        let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes)
+            .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in vertex shader: {}", e))?;
+        let fragment_shader_source = std::str::from_utf8(fragment_shader_bytes)
+            .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in fragment shader: {}", e))?;
 
-        let fragment_shader = wgpu::ShaderModuleDescriptor {
-            label: Some("master_fragment_shader"),
-            source: wgpu::util::make_spirv(fragment_shader_bytes),
-        };
-        let fragment_shader = self.state.device.create_shader_module(fragment_shader);
+
+// Convert GLSL to WGSL
+let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
+let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
+
+// Create shader modules with WGSL
+let vertex_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    label: Some("master_vertex_shader"),
+    source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+});
+
+let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    label: Some("master_fragment_shader"),
+    source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+});
+
+
+
+
 
         // Create master pipeline
         let master_pipeline = RendererPipeline::new(
@@ -192,14 +225,17 @@ impl PillRenderer for Renderer {
         render_queue: &Vec<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>
-    ) -> Result<(), RendererError> {
+        egui_ui: Box<dyn Fn(&egui::Context)>,
+        timer: &mut Timer
+    ) -> Result<()> {
         self.state.render(
             active_camera_entity_handle,
             render_queue,
             camera_component_storage,
             transform_component_storage,
-            egui_ui)
+            egui_ui,
+            timer
+        )
     }
     
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
@@ -352,39 +388,37 @@ impl State {
         render_queue: &Vec<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>
-    ) -> Result<(), RendererError> { 
+        egui_ui: Box<dyn Fn(&egui::Context)>,
+        timer: &mut Timer
+    ) -> Result<()> { 
+        timer.record("Get frame")?;
     
-        let mut timer = Timer::new("Render");
-
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
 
         let frame = match frame {
-            Ok(frame) => frame,
-            Err(error) => match error {
-                wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost),
-                wgpu::SurfaceError::OutOfMemory => return Err(RendererError::SurfaceOutOfMemory),
-                _ => return Err(RendererError::SurfaceOther),
+            std::result::Result::Ok(frame) => frame,
+            std::result::Result::Err(error) => match error {
+                wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
+                wgpu::SurfaceError::OutOfMemory => return Err(RendererError::SurfaceOutOfMemory.into()),
+                _ => return Err(RendererError::SurfaceOther.into()),
             },
         };
 
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        timer.lap("1");
+        timer.record("Get clear color and create render pass attachments")?;
 
         // Get active camera and update it
         let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = self.renderer_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(RendererError::RendererResourceNotFound)?;
+        let renderer_camera = self.renderer_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
         let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
         renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
         let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
         let clear_color = active_camera_component.clear_color;
 
-        timer.lap("2");
-        
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render_encoder"),
@@ -412,6 +446,8 @@ impl State {
                 stencil_ops: None,
             };
 
+            timer.record_new_context("Mesh Drawer")?;
+
             self.mesh_drawer.record_draw_commands(
                 &self.queue, 
                 &mut encoder, 
@@ -420,11 +456,14 @@ impl State {
                 depth_stencil_attachment, 
                 &renderer_camera,
                 &render_queue, 
-                &transform_component_storage
-            )
+                &transform_component_storage,
+                timer
+            )?;
+
+            timer.end_context()?;
         }  
 
-        timer.lap("3");
+        timer.record_new_context("Egui Draw")?;
 
         // Render egui UI
         self.egui_renderer.draw(
@@ -437,14 +476,15 @@ impl State {
                 pixels_per_point: self.egui_renderer.window_scale_factor,
             },
             egui_ui, 
-        );
+            timer
+        )?;
 
-        timer.lap("4");
+        timer.end_context()?; // End Egui Draw context
+
+        timer.record("Submit commands and present frame")?;
 
         self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();
-
-        timer.lap("5");
 
         Ok(())
     }
@@ -500,9 +540,10 @@ impl MeshDrawer {
         // Rendring data
         camera: &RendererCamera,
         render_queue: &Vec::<RenderQueueItem>, 
-        transform_component_storage: &ComponentStorage<TransformComponent>
-    ) {
-        let mut timer = Timer::new("Record Draw Commands");
+        transform_component_storage: &ComponentStorage<TransformComponent>,
+        timer: &mut Timer
+    ) -> Result<()> { 
+        timer.record("Prepare instance data")?;
 
         // Prepare instance data and load it to buffer
         self.instances.clear();
@@ -510,17 +551,21 @@ impl MeshDrawer {
 
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
-            let transform_slot =  transform_component_storage.data.get(render_queue_item.entity_index as usize).unwrap();
-            let transform_component = transform_slot.as_ref().unwrap();
+            let transform_slot =  transform_component_storage.data
+                .get(render_queue_item.entity_index as usize)
+                .ok_or_else(|| Error::new(RendererError::Other))?;
+            let transform_component = transform_slot
+                .as_ref()
+                .ok_or_else(|| Error::new(RendererError::Other))?;
             self.instances.push(Instance::new(transform_component));
         }
 
-        timer.lap("1");
+        timer.record("Write instance buffer")?;
 
         queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
         self.instances.clear();
 
-        timer.lap("2");
+        timer.record("Prepare render pass")?;
 
         // Start encoding render pass
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
@@ -531,16 +576,16 @@ impl MeshDrawer {
             occlusion_query_set: None,
         });
 
-        timer.lap("3");
+        timer.record("Set vertex buffer")?;
 
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
 
-        timer.lap("4");
+        timer.record("Draw")?;
 
         let render_queue_iter = render_queue.iter();
         for render_queue_item in render_queue_iter {
             
-            let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key).unwrap();
+            let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
 
             // Recreate resource handles
             let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
@@ -605,7 +650,7 @@ impl MeshDrawer {
             }
         }
 
-        timer.lap("5");
+        timer.record("Draw instances left at the end of render queue")?;
 
         // End of render queue so draw remaining saved objects
         if self.get_accumulated_instance_count() > 0 {
@@ -621,8 +666,7 @@ impl MeshDrawer {
         self.current_mesh_index_count = 0;
         self.instance_range = 0..0; 
 
-        timer.lap("6");
-
+        Ok(())
     }
 
     fn get_accumulated_instance_count(&self) -> u32 {

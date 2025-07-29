@@ -83,8 +83,8 @@ impl PillGame for Game {
 fn rotation_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
 
-	for (_, transform_transform, _) in engine.iterate_two_components_mut::<TransformComponent, TagAlphaComponent>()? {
-		transform_transform.rotation.y += 90.0 * delta_time;
+	for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, TagAlphaComponent>()? {
+        transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::UP);
 	}
 
 	Ok(())
