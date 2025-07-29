@@ -4,9 +4,10 @@ members = [
     "crates/pill_core", 
     "crates/pill_engine", 
     "crates/pill_renderer", 
-    "crates/pill_standalone"
-    ]
+    "crates/pill_standalone",
+    "examples/Floating-Pills"
+]
 
 exclude = [
-    "crates/pill_launcher",
-    ]
+     "crates/pill_launcher",
+]

@@ -1,7 +1,7 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 10;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 1000;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyO;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyL;
@@ -74,16 +74,21 @@ impl PillGame for Game {
         // --- Create resources ---
 
         // Add meshes
-        let pill_mesh = Mesh::new("Pill", "./res/models/Pill.obj".into());
-        let pill_mesh_handle = engine.add_resource(pill_mesh)?;
-        let cube_mesh = Mesh::new("Cube", "./res/models/Cube.obj".into());
-        let cube_mesh_handle = engine.add_resource(cube_mesh)?;
-        let torus_mesh = Mesh::new("Torus", "./res/models/Torus.obj".into());
-        let torus_mesh_handle = engine.add_resource(torus_mesh)?;
+  
 
         // Add sounds
+        println!("Adding sound resource: Ambient");
+
+        use std::any::TypeId;
+println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
+
+eprintln!("Adding sound...");
+
         let ambient_music = Sound::new("Ambient", "./res/audio/TestMusic.mp3".into());
         let ambient_music_handle = engine.add_resource(ambient_music)?;
+println!("aaaaaaaaaaddddded");
+
+
 
         // Add textures
         let fabric_color_texture = Texture::new("FabricColor", TextureType::Color, ResourceLoadType::Path("./res/textures/FabricColor.jpg".into()));
@@ -103,6 +108,13 @@ impl PillGame for Game {
 
         let organic_normal_texture = Texture::new("OrganicNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/OrganicNormal.jpg".into()));
         let organic_normal_texture_handle = engine.add_resource::<Texture>(organic_normal_texture)?;
+
+      let pill_mesh = Mesh::new("Pill", "./res/models/Pill.obj".into());
+        let pill_mesh_handle = engine.add_resource(pill_mesh)?;
+        let cube_mesh = Mesh::new("Cube", "./res/models/Cube.obj".into());
+        let cube_mesh_handle = engine.add_resource(cube_mesh)?;
+        let torus_mesh = Mesh::new("Torus", "./res/models/Torus.obj".into());
+        let torus_mesh_handle = engine.add_resource(torus_mesh)?;
 
         // Add materials
         let mut fabric_material = Material::new("Fabric");
@@ -144,7 +156,7 @@ impl PillGame for Game {
             .sound_type(SoundType::Sound2D)
             .sound(ambient_music_handle)
             .volume(0.05)
-            .play_on_awake(true)
+            .play_on_awake(false)
             .build();
         engine.add_component_to_entity(active_scene, ambient_music_player_entity, audio_source_component)?;
 

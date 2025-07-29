@@ -58,16 +58,6 @@ pub struct Engine {
 impl Engine {
     fn create_default_resources(&mut self) -> Result<()> {
 
-        let max_texture_count = self.config.get_int("MAX_TEXTURES").unwrap_or(MAX_TEXTURES as i64) as usize;
-        let max_mesh_count = self.config.get_int("MAX_MESHES").unwrap_or(MAX_MESHES as i64) as usize;
-        let max_material_count = self.config.get_int("MAX_MATERIALS").unwrap_or(MAX_MATERIALS as i64) as usize;
-        let max_sound_count = self.config.get_int("MAX_SOUNDS").unwrap_or(MAX_SOUNDS as i64) as usize;
-
-        self.register_resource_type::<Texture>(max_texture_count)?;
-        self.register_resource_type::<Mesh>(max_mesh_count)?;
-        self.register_resource_type::<Material>(max_material_count)?;
-        self.register_resource_type::<Sound>(max_sound_count)?;
-
         // - Create default resources
 
         // Load master shader data to executable
@@ -163,6 +153,25 @@ impl Engine {
         self.system_manager.add_system(AUDIO_SYSTEM.name, AUDIO_SYSTEM.system_function, AUDIO_SYSTEM.update_phase)?;
         self.system_manager.add_system(DEFERRED_UPDATE_SYSTEM.name, DEFERRED_UPDATE_SYSTEM.system_function, DEFERRED_UPDATE_SYSTEM.update_phase)?;
         self.system_manager.add_system(RENDERING_SYSTEM.name, RENDERING_SYSTEM.system_function, RENDERING_SYSTEM.update_phase)?;
+
+        // Register resource types
+        let max_texture_count = self.config.get_int("MAX_TEXTURES").unwrap_or(MAX_TEXTURES as i64) as usize;
+        let max_mesh_count = self.config.get_int("MAX_MESHES").unwrap_or(MAX_MESHES as i64) as usize;
+        let max_material_count = self.config.get_int("MAX_MATERIALS").unwrap_or(MAX_MATERIALS as i64) as usize;
+        let max_sound_count = self.config.get_int("MAX_SOUNDS").unwrap_or(MAX_SOUNDS as i64) as usize;
+
+        self.register_resource_type::<Texture>(max_texture_count)?;
+        self.register_resource_type::<Mesh>(max_mesh_count)?;
+        println!("Registered {} {}", "Mesh".gobj_style(), get_type_name::<Mesh>().sobj_style());
+        self.register_resource_type::<Material>(max_material_count)?;
+        self.register_resource_type::<Sound>(max_sound_count)?;
+        println!("Registered {} {}", "Sound".gobj_style(), get_type_name::<Sound>().sobj_style());
+
+        use std::any::TypeId;
+println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
+
+
+        let resource_storage = self.resource_manager.get_resource_storage_mut::<Sound>()?;
 
         // Create default resources
         self.create_default_resources().context("Failed to create default resources")?;
@@ -627,6 +636,7 @@ impl Engine {
     pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
+        println!("Adding {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style());
         debug!("Adding {} {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style());
 
         // Check if resource has proper name

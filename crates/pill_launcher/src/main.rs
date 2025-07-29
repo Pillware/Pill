@@ -47,14 +47,49 @@ fn cargo_build_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
     Ok(())
 }
 
-fn cargo_run_command(path: &PathBuf, compile_mode: &String) -> Result<()> {
-    let mut arguments = vec!["/C", "cargo", "run", "--manifest-path", path.to_str().unwrap()];
-    if compile_mode == "release" {
-        arguments.push("--release")
-    }
-    
-    Command::new("cmd").args(arguments).status().context("Failed to execute command")?;
-    
+fn cargo_run_command(pill_game_crate_path: &PathBuf, pill_standalone_path: &PathBuf, compile_mode: &str) -> Result<()> {
+    let pill_game_manifest_path = pill_game_crate_path.join("Cargo.toml").to_string_lossy().into_owned();
+    let pill_standalone_manifest_path = pill_standalone_path.join("Cargo.toml").to_string_lossy().into_owned();
+
+    // 1. Get game title
+    let config_path = pill_game_crate_path.join("res").join("config.ini");
+    let mut config = config::Config::default();
+    config.merge(config::File::with_name(config_path.to_str().unwrap())).unwrap();
+    let game_title = config.get_str("TITLE").context("Failed to get game config.ini").unwrap(); 
+
+    // 2. Build game crate (dynamic library)
+    // 2. Build game crate in workspace context
+let mut build_args = vec!["build", "-p", "pill_game"];
+if compile_mode == "release" {
+    build_args.push("--release");
+}
+Command::new("cargo").args(&build_args).status()?;
+
+    // 3. Run pill_standalone crate
+    println!("Pill Game Manifest Pxxxataaaaaaah: {}", pill_standalone_manifest_path);
+
+let mut run_args = vec!["run", "-p", "pill_standalone"];
+if compile_mode == "release" {
+    run_args.push("--release");
+}
+Command::new("cargo").args(&run_args).status()?;
+
+    // 4. Create build directories
+    let game_build_path = pill_game_crate_path.join("build").join(game_title.clone());
+    fs::create_dir_all(&game_build_path).unwrap();
+    fs::create_dir_all(game_build_path.join("data")).unwrap();
+
+    // 5. Move built dynamic library to build directory
+    let default_pill_game_library_output_path = get_path(Location::MainEngine).join("target").join(compile_mode).join("pill_game.dll");
+fs::copy(default_pill_game_library_output_path, get_path(Location::Standalone).join("pill_game.dll")).unwrap();
+
+   // fs::copy(default_pill_game_library_output_path, game_build_path.join("data").join("pill_game.dll")).unwrap();
+
+
+    // 6. Move built executable to build directory
+    let default_pill_standalone_library_output_path = get_path(Location::MainEngine).join("target").join(compile_mode).join("pill_standalone.exe");
+    fs::copy(default_pill_standalone_library_output_path, game_build_path.join(format!("{}.exe", game_title.clone()))).unwrap();
+
     Ok(())
 }
 
@@ -162,21 +197,21 @@ fn run_game_project(game_path: &String, compile_mode: &String) -> Result<()> {
     }
 
     // Update engine project dependency in game's cargo.toml
-    let action = |line: String| -> String {
-        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
-        line
-    };
-    modify_file(&game_path.join("Cargo.toml"), &game_path.join("Cargo.toml"), action)?;
+    // let action = |line: String| -> String {
+    //     if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
+    //     line
+    // };
+    // modify_file(&game_path.join("Cargo.toml"), &game_path.join("Cargo.toml"), action)?;
 
     // Update game project dependency in standalone's cargo.toml
-    let action = |line: String| -> String {
-        if line.contains("pill_game") { return format!("pill_game = {{path = \"{}\"}}", game_path.to_str().unwrap().replace("\\", "/")) }
-        line
-    };
-    modify_file(&get_path(Location::Standalone).join("Cargo.toml"), &get_path(Location::Standalone).join("Cargo.toml"), action)?;
+    // let action = |line: String| -> String {
+    //     if line.contains("pill_game") { return format!("pill_game = {{path = \"{}\"}}", game_path.to_str().unwrap().replace("\\", "/")) }
+    //     line
+    // };
+    // modify_file(&get_path(Location::Standalone).join("Cargo.toml"), &get_path(Location::Standalone).join("Cargo.toml"), action)?;
 
     // Run cargo command
-    cargo_run_command(&get_path(Location::Standalone).join("Cargo.toml"), &compile_mode)?;
+    cargo_run_command(&game_path, &get_path(Location::Standalone), &compile_mode)?;
 
     Ok(())
 }

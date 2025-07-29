@@ -3,7 +3,6 @@
 use pill_core::{ PillStyle, EngineError };
 use pill_engine::internal::*;
 use pill_renderer;
-
 use anyhow::{ Error, Result, Context };
 use winit::{
     event::{ Event, WindowEvent, DeviceEvent }, 
@@ -13,6 +12,8 @@ use std::{
     collections::HashMap, env, fs::File, io::{ BufRead, BufReader, Write }, path::PathBuf, sync::Arc
 };
 use log::{ debug, info, warn };
+use libloading::{Library, Symbol};
+use std::ffi::c_void;
 
 fn main() {
     // Get config file from game resource folder
@@ -102,12 +103,17 @@ fn main() {
         false => None
     };
     window.set_fullscreen(window_fullscreen_mode);
-    
-
     let mut last_render_time = std::time::Instant::now();
 
+    // Load game dynamic library
+    type CreateGameFn = unsafe extern "C" fn() -> *mut c_void;
+    let game_dynamic_library = unsafe { Library::new("./pill_game.dll").expect("Failed to load plugin") };
+    let game = unsafe {
+        let create_game: Symbol<CreateGameFn> = game_dynamic_library.get(b"create_game").unwrap();
+        *Box::from_raw(create_game() as *mut Box<dyn PillGame>)
+    };
+
     // Initialize engine
-    let game: Box<dyn PillGame> = Box::new(pill_game::Game { });
     let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(&window), config.clone()));
     let mut engine = Engine::new(game, renderer, config.clone());
     engine.initialize(window_size).context("Failed to initialize engine").unwrap();
