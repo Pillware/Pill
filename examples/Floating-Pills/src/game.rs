@@ -47,6 +47,12 @@ pub struct Game { }
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
 
+// INSTUCTION: Y
+
+        use std::any::TypeId;
+            println!("GGGG MeshX xxxxxxxTypxxxeId: {:?}", TypeId::of::<pill_core::MeshX>());
+
+
         // --- Basic setup ---
 
         // Create scene
@@ -79,7 +85,6 @@ impl PillGame for Game {
         // Add sounds
         println!("Adding sound resource: Ambient");
 
-        use std::any::TypeId;
 println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
 
 eprintln!("Adding sound...");

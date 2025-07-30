@@ -79,7 +79,15 @@ impl PillStyle for &str {
         self.color(colored::Color::Red).bold()
     }
 }
+pub struct MeshX {
+    pub name: String,
+    pub path: PathBuf,
+}
 
+pub trait MeshXImpl {
+    fn get_name(&self) -> String;
+    fn get_path(&self) -> PathBuf;
+}
 // --- Path utils ---
 
 // Check if path to asset is correct (exists and has supported format)

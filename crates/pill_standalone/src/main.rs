@@ -1,7 +1,7 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
 
 use pill_core::{ PillStyle, EngineError };
-use pill_engine::internal::*;
+use pill_engine::{game::Sound, internal::*};
 use pill_renderer;
 use anyhow::{ Error, Result, Context };
 use winit::{
@@ -16,6 +16,12 @@ use libloading::{Library, Symbol};
 use std::ffi::c_void;
 
 fn main() {
+    use std::any::TypeId;
+        println!("SSSS MesxhX TypeId: {:?}", TypeId::of::<pill_core::MeshX>());
+     println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
+
+
+    // Initialize logging
     // Get config file from game resource folder
     let current_path = env::current_dir().unwrap();
     let resource_folder_path = current_path.join("res");
@@ -154,6 +160,16 @@ fn main() {
                 engine.pass_input_to_egui(event);
                 match event { 
                     WindowEvent::RedrawRequested => {
+
+                        // Redraw window
+
+
+
+
+
+
+
+
                         let now = std::time::Instant::now();
                         let delta_time = now - last_render_time;
                         last_render_time = now;

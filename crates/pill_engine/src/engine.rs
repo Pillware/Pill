@@ -136,7 +136,8 @@ impl Engine {
 
         // Set window size
         self.window_size = window_size;
-
+use std::any::TypeId;     println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
+            println!("eeeeeeeeeeeeee MeshX TypeId: {:?}", TypeId::of::<pill_core::MeshX>());
         // Register global components
         self.add_global_component(InputComponent::new())?;
         self.add_global_component(TimeComponent::new())?;
@@ -167,7 +168,6 @@ impl Engine {
         self.register_resource_type::<Sound>(max_sound_count)?;
         println!("Registered {} {}", "Sound".gobj_style(), get_type_name::<Sound>().sobj_style());
 
-        use std::any::TypeId;
 println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
 
 

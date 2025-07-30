@@ -59,20 +59,20 @@ fn cargo_run_command(pill_game_crate_path: &PathBuf, pill_standalone_path: &Path
 
     // 2. Build game crate (dynamic library)
     // 2. Build game crate in workspace context
-let mut build_args = vec!["build", "-p", "pill_game"];
+let mut build_args = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
 if compile_mode == "release" {
     build_args.push("--release");
 }
 Command::new("cargo").args(&build_args).status()?;
 
-    // 3. Run pill_standalone crate
-    println!("Pill Game Manifest Pxxxataaaaaaah: {}", pill_standalone_manifest_path);
+//     // 3. Run pill_standalone crate
+//     println!("Pill Game Manifest Pxxxataaaaaaah: {}", pill_standalone_manifest_path);
 
-let mut run_args = vec!["run", "-p", "pill_standalone"];
-if compile_mode == "release" {
-    run_args.push("--release");
-}
-Command::new("cargo").args(&run_args).status()?;
+// let mut run_args = vec!["run", "-p", "pill_standalone"];
+// if compile_mode == "release" {
+//     run_args.push("--release");
+// }
+// Command::new("cargo").args(&run_args).status()?;
 
     // 4. Create build directories
     let game_build_path = pill_game_crate_path.join("build").join(game_title.clone());
