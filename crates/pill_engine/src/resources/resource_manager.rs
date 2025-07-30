@@ -60,16 +60,12 @@ impl ResourceManager {
     pub(crate) fn get_resource_storage<T>(&self) -> Result<&ResourceStorage<T>> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-         println!("Rexxxsource storage exists: {}", self.resources.contains_key::<T>());
         self.resources.get::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
     }
 
     pub(crate) fn get_resource_storage_mut<T>(&mut self) -> Result<&mut ResourceStorage<T>> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        println!("Getting resource storage for {}", get_type_name::<T>());
-
-        println!("Resource storage exists: {}", self.resources.contains_key::<T>());
 
         self.resources.get_mut::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
     }
@@ -87,7 +83,6 @@ impl ResourceManager {
     pub fn add_resource<T>(&mut self, resource: T) -> Result<(T::Handle, &mut T)> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        println!("xxxxxAdding {} {}", pill_core::PillStyle::gobj_style("Resource"), get_type_name::<T>());
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
         let resource_name = resource.get_name().to_owned();

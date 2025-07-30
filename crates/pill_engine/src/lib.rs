@@ -105,6 +105,7 @@ pub mod game {
         Vector3i,
         Vector3fExt,
         define_new_pill_slotmap_key,
+        create_game,
     };
   
     extern crate anyhow;

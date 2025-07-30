@@ -131,3 +131,14 @@ pub fn get_game_error_message(result: Result<()>) -> Option<String> {
         None
     }
 }
+
+#[macro_export]
+macro_rules! create_game {
+    ($game_contructor:expr, $game_trait:path) => {
+        #[no_mangle]
+        pub extern "C" fn get_game() -> *mut std::ffi::c_void {
+            let game: Box<dyn $game_trait> = Box::new($game_contructor);
+            Box::into_raw(Box::new(game)) as *mut std::ffi::c_void
+        }
+    };
+}

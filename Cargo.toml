@@ -5,9 +5,10 @@ members = [
     "crates/pill_engine", 
     "crates/pill_renderer", 
     "crates/pill_standalone",
-    "examples/Floating-Pills"
+    "crates/pill_game", # This is a symlink to the actual game project, set automatically by Pill Launcher
+    "crates/pill_launcher",
 ]
 
 exclude = [
-     "crates/pill_launcher",
+     
 ]

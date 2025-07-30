@@ -81,7 +81,8 @@ Command::new("cargo").args(&build_args).status()?;
 
     // 5. Move built dynamic library to build directory
     let default_pill_game_library_output_path = get_path(Location::MainEngine).join("target").join(compile_mode).join("pill_game.dll");
-fs::copy(default_pill_game_library_output_path, get_path(Location::Standalone).join("pill_game.dll")).unwrap();
+    let default_pill_game_library_output_path_final = get_path(Location::MainEngine).join("target").join(compile_mode).join("game").join("pill_game_new.dll");
+fs::copy(default_pill_game_library_output_path, default_pill_game_library_output_path_final).unwrap();
 
    // fs::copy(default_pill_game_library_output_path, game_build_path.join("data").join("pill_game.dll")).unwrap();
 
@@ -196,19 +197,8 @@ fn run_game_project(game_path: &String, compile_mode: &String) -> Result<()> {
         return Err(Error::msg("Invalid game project directory"))
     }
 
-    // Update engine project dependency in game's cargo.toml
-    // let action = |line: String| -> String {
-    //     if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
-    //     line
-    // };
-    // modify_file(&game_path.join("Cargo.toml"), &game_path.join("Cargo.toml"), action)?;
 
-    // Update game project dependency in standalone's cargo.toml
-    // let action = |line: String| -> String {
-    //     if line.contains("pill_game") { return format!("pill_game = {{path = \"{}\"}}", game_path.to_str().unwrap().replace("\\", "/")) }
-    //     line
-    // };
-    // modify_file(&get_path(Location::Standalone).join("Cargo.toml"), &get_path(Location::Standalone).join("Cargo.toml"), action)?;
+
 
     // Run cargo command
     cargo_run_command(&game_path, &get_path(Location::Standalone), &compile_mode)?;
@@ -217,21 +207,21 @@ fn run_game_project(game_path: &String, compile_mode: &String) -> Result<()> {
 }
 
 // Runs "cargo build" command on pill_standalone, clears build directory in game project folder and copy exe and res folder to it
-fn build_game_project(game_path: &String, output_path: &String, compile_mode: &String) -> Result<()> {
+fn build_game_project(game_project_path: &String, output_path: &String, compile_mode: &String) -> Result<()> {
     // Prepare game path
-    let mut game_path = PathBuf::from(game_path);
-    if game_path.to_str().unwrap() == "." { // Use current directory absolute path if no argument is specified
-        game_path = env::current_dir().unwrap();
+    let mut game_project_path = PathBuf::from(game_project_path);
+    if game_project_path.to_str().unwrap() == "." { // Use current directory absolute path if no argument is specified
+        game_project_path = env::current_dir().unwrap();
     }
     else {
-        game_path = game_path.absolutize().unwrap().to_path_buf();
-        env::set_current_dir(&game_path).unwrap(); // Change current directory path cargo will think that it is in game folder and will be access to res directory
+        game_project_path = game_project_path.absolutize().unwrap().to_path_buf();
+        env::set_current_dir(&game_project_path).unwrap(); // Change current directory path cargo will think that it is in game folder and will be access to res directory
     }
 
     // Prepare build path
     let mut output_path = PathBuf::from(output_path);
     if output_path.to_str().unwrap() == "." { // Use current directory absolute path if no argument is specified
-        fs::create_dir_all(game_path.join("build").as_path())?; // Create build directory if it is not there
+        fs::create_dir_all(game_project_path.join("build").as_path())?; // Create build directory if it is not there
         output_path = env::current_dir().unwrap().join("build"); 
     }
     else {
@@ -239,53 +229,92 @@ fn build_game_project(game_path: &String, output_path: &String, compile_mode: &S
     }
 
     // Check if it is valid game project directory
-    if !game_path.join("Cargo.toml").exists() {
+    if !game_project_path.join("Cargo.toml").exists() {
         return Err(Error::msg("Invalid game project directory"))
     }
-    if !game_path.join("res").join("config.ini").exists() {
+    if !game_project_path.join("res").join("config.ini").exists() {
         return Err(Error::msg("Invalid game project directory"))
     }
 
-    // Update engine project dependency in game's cargo.toml
-    let action = |line: String| -> String {
-        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::Engine).to_str().unwrap().replace("\\", "/")) }
-        line
-    };
-    modify_file(&game_path.join("Cargo.toml"), &game_path.join("Cargo.toml"), action)?;
+    // Get game title
+    let config_path = game_project_path.join("res").join("config.ini");
+    let mut config = config::Config::default();
+    config.merge(config::File::with_name(config_path.to_str().unwrap())).context("Failed to find config.ini file in game project \"res\" folder")?;
+    let game_title = config.get_str("TITLE").context("Failed to get game config.ini")?; 
 
-    // Update game project dependency in standalone's cargo.toml
-    let action = |line: String| -> String {
-        if line.contains("pill_game") { return format!("pill_game = {{path = \"{}\"}}", game_path.to_str().unwrap().replace("\\", "/")) }
-        line
-    };
-    modify_file(&get_path(Location::Standalone).join("Cargo.toml"), &get_path(Location::Standalone).join("Cargo.toml"), action)?;
+    // Prepare temporary workspace Cargo.toml file 
+    // (it is needed so the compilation of both game and standalone crates is done in same context. 
+    // Otherwise, typeids of types like "Mesh" will not match what will make all generic (templated) functions work improperly)
+    let temp_workspace_file_content = format!(
+        r#"[workspace]
+        resolver = "2"
+        members = [
+            "{}",
+            "{}",
+            "{}",
+            "{}",
+            "{}"
+        ]
+        "#,
+        get_path(Location::MainEngine).join("crates").join("pill_core").to_str().unwrap().replace("\\", "\\\\"),
+        get_path(Location::MainEngine).join("crates").join("pill_engine").to_str().unwrap().replace("\\", "\\\\"),
+        get_path(Location::MainEngine).join("crates").join("pill_renderer").to_str().unwrap().replace("\\", "\\\\"),
+        get_path(Location::MainEngine).join("crates").join("pill_standalone").to_str().unwrap().replace("\\", "\\\\"),
+        game_project_path.to_str().unwrap().replace("\\", "\\\\")
+    );
 
-    let engine_build_path = &get_path(Location::MainEngine).join("target").join(compile_mode).join("pill_standalone.exe");
-    let game_project_resources_path = game_path.join("res");
+    // Save workspace Cargo.toml to a temp file
+    let temp_workspace_folder = tempfile::tempdir().context("Failed to create tempdir for workspace Cargo.toml")?;
+    std::fs::write(temp_workspace_folder.path().join("Cargo.toml"), temp_workspace_file_content).unwrap();
 
-    // Get game name from config file
-    let mut config_file = Config::default();
-    config_file.merge(config::File::with_name(game_project_resources_path.join("config.ini").to_str().unwrap())).unwrap();
-    let game_title = config_file.get_str("TITLE").expect("Cannot find value for TITLE in game config file");
+    // Build standalone executable along with game dynamic library
+    let mut build_args = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
+    if compile_mode == "release" {
+        build_args.push("--release");
+    }
+    let status = Command::new("cargo").args(&build_args).current_dir(temp_workspace_folder.path()).status()?;
 
-    // Prepare build directory
-    if output_path.exists() {
-        fs::remove_dir_all(output_path.clone()).context(format!("Cannot clear build directory: {}", output_path.clone().to_str().unwrap()))?;
-    } 
-    else {
-        fs::create_dir(output_path.clone()).unwrap();
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
     }
 
-    // Run cargo command
-    cargo_build_command(&get_path(Location::Standalone).join("Cargo.toml"), &compile_mode)?;
 
-    // Copy built executable to build directory and rename it according to variable in config file
-    fs::copy(&engine_build_path, &output_path.join(game_title + ".exe"))?;
+
+    // // Build game dynamic library
     
-    // Copy game res directory to build directory
-    let mut copy_options = CopyOptions::new();
-    copy_options.overwrite = true;
-    fs_extra::dir::copy(&game_project_resources_path, &output_path, &copy_options).context("Cannot copy game res directory")?;
+
+
+
+
+
+
+
+    // let engine_build_path = &get_path(Location::MainEngine).join("target").join(compile_mode).join("pill_standalone.exe");
+    // let game_project_resources_path = game_path.join("res");
+
+    // // Get game name from config file
+    // let mut config_file = Config::default();
+    // config_file.merge(config::File::with_name(game_project_resources_path.join("config.ini").to_str().unwrap())).unwrap();
+    // let game_title = config_file.get_str("TITLE").expect("Cannot find value for TITLE in game config file");
+
+    // // Prepare build directory
+    // if output_path.exists() {
+    //     fs::remove_dir_all(output_path.clone()).context(format!("Cannot clear build directory: {}", output_path.clone().to_str().unwrap()))?;
+    // } 
+    // else {
+    //     fs::create_dir(output_path.clone()).unwrap();
+    // }
+
+    // // Run cargo command
+    // cargo_build_command(&get_path(Location::Standalone).join("Cargo.toml"), &compile_mode)?;
+
+    // // Copy built executable to build directory and rename it according to variable in config file
+    // fs::copy(&engine_build_path, &output_path.join(game_title + ".exe"))?;
+    
+    // // Copy game res directory to build directory
+    // let mut copy_options = CopyOptions::new();
+    // copy_options.overwrite = true;
+    // fs_extra::dir::copy(&game_project_resources_path, &output_path, &copy_options).context("Cannot copy game res directory")?;
 
     // Success
     println!("Game built succesully!");

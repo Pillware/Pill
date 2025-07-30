@@ -136,8 +136,7 @@ impl Engine {
 
         // Set window size
         self.window_size = window_size;
-use std::any::TypeId;     println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
-            println!("eeeeeeeeeeeeee MeshX TypeId: {:?}", TypeId::of::<pill_core::MeshX>());
+
         // Register global components
         self.add_global_component(InputComponent::new())?;
         self.add_global_component(TimeComponent::new())?;
@@ -163,15 +162,8 @@ use std::any::TypeId;     println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
 
         self.register_resource_type::<Texture>(max_texture_count)?;
         self.register_resource_type::<Mesh>(max_mesh_count)?;
-        println!("Registered {} {}", "Mesh".gobj_style(), get_type_name::<Mesh>().sobj_style());
         self.register_resource_type::<Material>(max_material_count)?;
         self.register_resource_type::<Sound>(max_sound_count)?;
-        println!("Registered {} {}", "Sound".gobj_style(), get_type_name::<Sound>().sobj_style());
-
-println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
-
-
-        let resource_storage = self.resource_manager.get_resource_storage_mut::<Sound>()?;
 
         // Create default resources
         self.create_default_resources().context("Failed to create default resources")?;
@@ -221,7 +213,6 @@ println!("Sound TypeId: {:?}", TypeId::of::<Sound>());
                 // because it has to render its own timer data in the UI 
                 // (and since the frame in which it renders is not yet finished when it renders UI, it has to use previous frame timer data)
                 if system_name != RENDERING_SYSTEM.name {
-                    
                     let mut timer = Timer::new();
                     timer.record_new_context(&format!("{} update", system_name)).unwrap();
                     self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
@@ -636,7 +627,6 @@ impl Engine {
     pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        println!("Adding {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style());
         debug!("Adding {} {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style());
 
         // Check if resource has proper name
