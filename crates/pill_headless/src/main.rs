@@ -4,6 +4,7 @@ use pill_engine::{Engine, PillGame};
 use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
+use std::io::Write;
 
 #[cfg(feature = "net")]
 use pill_engine::NetState;
@@ -25,9 +26,21 @@ impl PillGame for HeadlessGame {
 }
 
 fn main() -> Result<()> {
-	env_logger::Builder::from_default_env()
-    .filter_level(log::LevelFilter::Info)
-    .init();
+    let log_level = log::LevelFilter::Info; // TODO: always use Info filter
+
+    #[cfg(debug_assertions)]
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format(|buf, record| {
+            writeln!(buf, "[{}] {} {}:{}: {}",
+                record.level(),
+                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                record.args()
+            )
+        })
+        .filter_level(log::LevelFilter::Info)
+        .init();
 
     let mut cfg = config::Config::default();
 

@@ -38,13 +38,31 @@ fn get_path(location: Location) -> PathBuf {
 
 fn pill_engine_dep_line_with_preserved_features(existing: &str, engine_path: &str) -> String {
     let engine_path = engine_path.replace('\\', "/");
-    if let Some(pos) = existing.find("features") {
-        // if line contains "features", preserve items
-        let features_part = &existing[pos..].trim_end();
-        format!("pill_engine = {{ path = \"{}\", {} }}", engine_path, features_part)
-    } else {
-        format!("pill_engine = {{ path = \"{}\", features = [\"game\"] }}", engine_path)
+
+    // Strip anything after the first '}' (old trailing comments / braces)
+    let mut base = existing;
+    if let Some(pos) = existing.find('}') {
+        base = &existing[..=pos];        // keep inclusive '}', drop the rest
     }
+
+    // Try to find features list in the *base*
+    let features_str = if let Some(idx) = base.find("features") {
+        if let Some(open) = base[idx..].find('[') {
+            let open_i = idx + open;
+            if let Some(close) = base[open_i..].find(']') {
+                let close_i = open_i + close;
+                // slice incl. brackets
+                &base[open_i..=close_i]
+            } else { r#"["game"]"# }
+        } else { r#"["game"]"# }
+    } else {
+        r#"["game"]"#
+    };
+
+    format!(
+        r#"pill_engine = {{ path = "{}", default-features = false, features = {} }}"#,
+        engine_path, features_str
+    )
 }
 
 #[cfg(target_os = "windows")]

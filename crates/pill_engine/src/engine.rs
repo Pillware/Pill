@@ -209,6 +209,8 @@ impl Engine {
         {
             self.system_manager.add_system("NetRecvSystem", net_recv_system, UpdatePhase::PreGame)?; // TODO: do I need special states?
             self.system_manager.add_system("NetSendSystem", net_send_system, UpdatePhase::PostGame)?;
+            self.system_manager.add_system("NetFlushSystem", net_flush_system, UpdatePhase::PostGame)?;// TODO: not necessarily split
+            println!("Registering NetRecvSystem and NetSendSystem");
         }
 
         // Create default resources

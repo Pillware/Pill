@@ -114,7 +114,8 @@ pub use systems::audio_system::{
 #[cfg(feature = "net")]
 pub use systems::net_system::{
     net_recv_system,
-    net_send_system
+    net_send_system,
+    net_flush_system,
 };
 
 // - Other

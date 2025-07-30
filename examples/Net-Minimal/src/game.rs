@@ -1,6 +1,6 @@
 use pill_engine::game::*;
 
-use log::info;
+use rand::Rng;
 
 #[cfg(feature = "net")]
 use pill_engine::{NetState, NetStats};
@@ -75,10 +75,12 @@ impl PillGame for Game {
         engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
         engine.add_component_to_entity(active_scene, pill, PillComponent {})?;
 
+
         #[cfg(feature = "net")]
         {
             engine.add_global_component(NetStats::new())?;
-            engine.add_global_component(NetState::new_client("127.0.0.1:5000", 1)?)?;
+            let client_id = rand::thread_rng().gen_range(1..=10_000_000);
+            engine.add_global_component(NetState::new_client("127.0.0.1:5000", client_id)?)?;
 
             log::info!("Client will connect to 127.0.0.1:5000");
 

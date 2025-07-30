@@ -11,6 +11,7 @@ config     = "0.11"
 
 pill_engine = { path = "../pill_engine", default-features = false }
 pill_net    = { path = "../pill_net", optional = true }
+chrono = "0.4.41"
 
 [features]
 default = []

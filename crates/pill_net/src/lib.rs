@@ -115,9 +115,9 @@ pub fn client_update(net: &mut NetClient, dt: Duration) -> Result<Vec<Msg>> {
     net.client.update(dt);
     net.transport.update(dt, &mut net.client)?;
 
-    if net.client.is_connected() {
-        log::info!("Connected!");
-    }
+    //if net.client.is_connected() {
+    //    log::info!("Connected!");
+    //}
 
     let mut inbox = Vec::new();
     while let Some(bytes) = net.client.receive_message(RELIABLE_CHANNEL_ID) {
@@ -142,5 +142,15 @@ pub fn srv_broadcast(net: &mut NetServer, msg: &Msg) -> Result<()> {
 pub fn cli_send(net: &mut NetClient, msg: &Msg) -> Result<()> {
     let bytes = bincode::serialize(&msg)?;
     net.client.send_message(RELIABLE_CHANNEL_ID, bytes);
+    Ok(())
+}
+
+pub fn srv_flush(net: &mut NetServer) -> Result<()> {
+    net.transport.send_packets(&mut net.server);
+    Ok(())
+}
+
+pub fn cli_flush(net: &mut NetClient) -> Result<()> {
+    net.transport.send_packets(&mut net.client)?;
     Ok(())
 }
