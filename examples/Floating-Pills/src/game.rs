@@ -74,36 +74,36 @@ impl PillGame for Game {
         // --- Create resources ---
 
         // Add meshes
-        let pill_mesh = Mesh::new("Pill", "./res/models/Pill.obj".into());
+        let pill_mesh = Mesh::new("Pill", "models/Pill.obj".into());
         let pill_mesh_handle = engine.add_resource(pill_mesh)?;
 
-        let cube_mesh = Mesh::new("Cube", "./res/models/Cube.obj".into());
+        let cube_mesh = Mesh::new("Cube", "models/Cube.obj".into());
         let cube_mesh_handle = engine.add_resource(cube_mesh)?;
-        
-        let torus_mesh = Mesh::new("Torus", "./res/models/Torus.obj".into());
+
+        let torus_mesh = Mesh::new("Torus", "models/Torus.obj".into());
         let torus_mesh_handle = engine.add_resource(torus_mesh)?;
   
         // Add sounds
-        let ambient_music = Sound::new("Ambient", "./res/audio/TestMusic.mp3".into());
+        let ambient_music = Sound::new("Ambient", "audio/TestMusic.mp3".into());
         let ambient_music_handle = engine.add_resource(ambient_music)?;
 
         // Add textures
-        let fabric_color_texture = Texture::new("FabricColor", TextureType::Color, ResourceLoadType::Path("./res/textures/FabricColor.jpg".into()));
+        let fabric_color_texture = Texture::new("FabricColor", TextureType::Color, ResourceLoadType::Path("textures/FabricColor.jpg".into()));
         let fabric_color_texture_handle = engine.add_resource::<Texture>(fabric_color_texture)?;
        
-        let fabric_normal_texture = Texture::new("FabricNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/FabricNormal.jpg".into()));
+        let fabric_normal_texture = Texture::new("FabricNormal", TextureType::Normal, ResourceLoadType::Path("textures/FabricNormal.jpg".into()));
         let fabric_normal_texture_handle = engine.add_resource::<Texture>(fabric_normal_texture)?;
         
-        let stones_color_texture = Texture::new("StonesColor", TextureType::Color, ResourceLoadType::Path("./res/textures/StonesColor.jpg".into()));
+        let stones_color_texture = Texture::new("StonesColor", TextureType::Color, ResourceLoadType::Path("textures/StonesColor.jpg".into()));
         let stones_color_texture_handle = engine.add_resource::<Texture>(stones_color_texture)?;
         
-        let stones_normal_texture = Texture::new("StonesNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/StonesNormal.jpg".into()));
+        let stones_normal_texture = Texture::new("StonesNormal", TextureType::Normal, ResourceLoadType::Path("textures/StonesNormal.jpg".into()));
         let stones_normal_texture_handle = engine.add_resource::<Texture>(stones_normal_texture)?;
         
-        let organic_color_texture = Texture::new("OrganicColor", TextureType::Color, ResourceLoadType::Path("./res/textures/OrganicColor.jpg".into()));
+        let organic_color_texture = Texture::new("OrganicColor", TextureType::Color, ResourceLoadType::Path("textures/OrganicColor.jpg".into()));
         let organic_color_texture_handle = engine.add_resource::<Texture>(organic_color_texture)?;
 
-        let organic_normal_texture = Texture::new("OrganicNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/OrganicNormal.jpg".into()));
+        let organic_normal_texture = Texture::new("OrganicNormal", TextureType::Normal, ResourceLoadType::Path("textures/OrganicNormal.jpg".into()));
         let organic_normal_texture_handle = engine.add_resource::<Texture>(organic_normal_texture)?;
 
         // Add materials
@@ -136,6 +136,8 @@ impl PillGame for Game {
 
         let white_material = Material::new("White");
         let white_material_handle = engine.add_resource::<Material>(white_material)?; 
+
+
 
         // --- Create entities ---
 

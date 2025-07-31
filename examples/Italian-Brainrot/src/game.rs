@@ -1,5 +1,4 @@
 use pill_engine::{define_component, game::*};
-
 define_component!(TagAlphaComponent { });
 
 pub struct Game { } 
@@ -83,9 +82,9 @@ impl PillGame for Game {
 fn rotation_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
 
-	for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, TagAlphaComponent>()? {
-        transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::UP);
-	}
+	// for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, TagAlphaComponent>()? {
+    //    // transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::UP);
+	// }
 
 	Ok(())
 }
