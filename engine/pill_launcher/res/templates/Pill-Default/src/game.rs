@@ -30,13 +30,13 @@ impl PillGame for Game {
         engine.add_system("PillRotation", pill_rotation_system)?;
 
         // Add meshes
-        let pill_mesh = Mesh::new("Pill", "./res/models/Pill.obj".into());
+        let pill_mesh = Mesh::new("Pill", "models/Pill.obj".into());
         let pill_mesh_handle = engine.add_resource(pill_mesh)?;
 
         // Add textures
-        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("./res/textures/PillColor.png".into()));
+        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("textures/PillColor.png".into()));
         let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
-        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/PillNormal.png".into()));
+        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("textures/PillNormal.png".into()));
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
@@ -81,7 +81,7 @@ fn pill_rotation_system(engine: &mut Engine) -> Result<()> {
     // Rotate pill if spacebar is not pressed
     if !input_component.get_key_pressed(KeyboardKey::Space) {
         for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
-            transform_component.rotation += Vector3f::new(0.0,1.0,0.0) * 100.0 * delta_time;
+            transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
         }
     }
 

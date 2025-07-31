@@ -182,7 +182,7 @@ impl Engine {
         let stop_on_game_errors = self.config.get_bool("PANIC_ON_GAME_ERRORS").unwrap_or(PANIC_ON_GAME_ERRORS);
         let result = game.start(self);
         match stop_on_game_errors {
-            true => result.context(format!("{} error", "Game".mobj_style()))?,
+            true => result.context(format!("Error in {} \"start\" function", "Game".mobj_style())).context(format!("{} error", "Game".mobj_style()))?,
             false => { 
                 if let Some(message) = get_game_error_message(result) {
                     error!("{}", message);

@@ -1,7 +1,7 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 1000;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyO;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyL;
@@ -155,7 +155,7 @@ impl PillGame for Game {
         // Create origin point entity
         let origin_entity = engine.create_entity(active_scene)?;
 
-        let origin_transform = TransformComponent::builder().build();
+        let origin_transform = TransformComponent::new();
         engine.add_component_to_entity(active_scene, origin_entity, origin_transform)?;      
 
         // Create camera entity
@@ -457,7 +457,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
         };
 
         // Create transform component 
-        let transform_component = TransformComponent::builder().build();
+        let transform_component = TransformComponent::new();
 
         // Create mesh component
         let mesh_rendering_component = MeshRenderingComponent::builder()

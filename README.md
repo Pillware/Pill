@@ -26,9 +26,9 @@ Data-driven game engine written in Rust
 https://www.rust-lang.org/tools/install
 2. Download and unpack this repository
 3. Build Pill Launcher  
-`cargo build --release --manifest-path <ENGINE-PATH>\Pill-Engine\crates\pill_launcher\Cargo.toml`
+`cargo build --release --manifest-path <ENGINE-PATH>\Pill-Engine\engine\pill_launcher\Cargo.toml`
 4. Add Pill Launcher to PATH (optional)  
-`set PATH=%PATH%;<ENGINE-PATH>\Pill-Engine\crates\pill_launcher\target\release`
+`set PATH=%PATH%;<ENGINE-PATH>\Pill-Engine\engine\pill_launcher\target\release`
 5. Create new game project  
 `PillLauncher.exe -a create -n Hello-Pill`
 6. Run it!  

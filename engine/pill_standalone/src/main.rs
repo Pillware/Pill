@@ -62,6 +62,7 @@ struct FileWatchers {
 
 struct ProjectPaths {
     build_data_folder_path: PathBuf,
+    game_project_folder_path: PathBuf,
     game_resources_folder_path: PathBuf,
     game_source_folder_path: PathBuf,
     config_path: PathBuf,
@@ -129,10 +130,10 @@ fn load_game_dynamic_library(library_path: &PathBuf) -> (Library, Box<dyn PillGa
     (game_dynamic_library, game)
 }
 
-fn build_standalone_and_game_crates() -> Result<()> {
+fn build_standalone_and_game_crates(project_paths: &ProjectPaths) -> Result<()> {
     // Build standalone and game crates
     let output = std::process::Command::new("PillLauncher.exe")
-        .args(&["-a", "run", "-p", "D:\\Programming\\Pill-Engine\\examples\\Floating-Pills"])
+        .args(&["-a", "build", "-p", project_paths.game_project_folder_path.to_str().unwrap(), "-c", "hot-reload"])
         .output()
         .context("Failed to run PillLauncher")?;
 
@@ -163,13 +164,13 @@ fn check_and_reload_game(
     // Check for game project source files changes
     if let Some(paths) = file_watchers.game_project_source_files_watcher.get_changes() {
         info!("Game project source file change detected: {:?}", paths);
-        build_standalone_and_game_crates()?;
+        build_standalone_and_game_crates(project_paths)?;
     }
 
     // Check for game project resource files changes
     if let Some(paths) = file_watchers.game_project_resources_files_watcher.get_changes() {
         info!("Game project resource file change detected: {:?}", paths);
-        build_standalone_and_game_crates()?;
+        build_standalone_and_game_crates(project_paths)?;
     }
 
     // Check for game dynamic library changes
@@ -206,7 +207,7 @@ fn check_and_reload_game(
 
 fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     let game_dynamic_library_files_watcher = FileWatcher::new(project_paths.build_data_folder_path.clone());
-    let game_project_source_files_watcher = FileWatcher::new(project_paths.game_source_folder_path.join("src"));
+    let game_project_source_files_watcher = FileWatcher::new(project_paths.game_source_folder_path.clone());
     let game_project_resources_files_watcher = FileWatcher::new(project_paths.game_resources_folder_path.clone());
 
     FileWatchers {
@@ -361,7 +362,8 @@ fn main() {
 
     let development_mode = true;
    
-    let current_folder_path = std::env::current_exe().unwrap().parent().unwrap().to_path_buf();
+    let current_folder_path = std::env::current_exe().unwrap().parent().unwrap().to_path_buf(); // Path where the executable is located
+    let game_project_folder_path = current_folder_path.parent().unwrap().parent().unwrap().to_path_buf();
     let build_data_folder_path = current_folder_path.join("data");
     let game_resources_folder_path = if development_mode {
         current_folder_path.parent().unwrap().parent().unwrap().join("res") // <GAME_PROJECT_ROOT>/res
@@ -371,11 +373,11 @@ fn main() {
     let game_source_folder_path = current_folder_path.parent().unwrap().parent().unwrap().join("src"); // <GAME_PROJECT_ROOT>/src
     let config_path = game_resources_folder_path.join("config.ini");
     let game_dynamic_library_path = build_data_folder_path.join("pill_game.dll");
-    println!("Game dynamic library path: {}", game_dynamic_library_path.display());
     let game_dynamic_library_hot_reloaded_path = build_data_folder_path.join("pill_game_hot_reloaded.dll");
 
     let project_paths = ProjectPaths {
         build_data_folder_path,
+        game_project_folder_path,
         game_source_folder_path,
         game_resources_folder_path,
         config_path,

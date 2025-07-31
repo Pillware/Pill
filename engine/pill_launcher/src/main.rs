@@ -23,6 +23,7 @@ enum Location {
 enum CompileMode {
     Debug,
     Release,
+    HotReload
 }
 
 // Returns absolute paths
@@ -58,14 +59,9 @@ fn modify_file<A: FnMut(String) -> String>(input_path: &PathBuf, output_path: &P
     Ok(())
 }
 
-
-
-
 // --- Utilities ---
 
 fn get_game_build_path(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf) -> Result<PathBuf> {
-    println!("Getting game project build path... {}", game_project_directory_path.display());
-    println!("{}", output_directory_path.as_os_str() == ".");
     let game_project_build_path = if output_directory_path.as_os_str() == "." {
         game_project_directory_path
             .join("build")
@@ -107,30 +103,29 @@ fn check_if_game_project_validity(game_project_directory_path: &PathBuf) -> Resu
     Ok(())
 }
 
-
 // --- Actions ---
 
-fn create_game_project(game_parent_directory_path: &PathBuf, game_name: &String) -> Result<()> {
+fn create_game_project(game_project_parent_directory_path: &PathBuf, game_name: &String) -> Result<()> {
     const TEMPLATE_NAME: &str = "Pill-Default";
     
-    let game_directory_path = game_parent_directory_path.join(game_name);
-    if game_directory_path.exists() {
-        return Err(Error::msg(format!("Game project directory {} already exists", game_directory_path.display())));
+    let game_project_directory_path = game_project_parent_directory_path.join(game_name);
+    if game_project_directory_path.exists() {
+        return Err(Error::msg(format!("Game project directory {} already exists", game_project_directory_path.display())));
     }
 
-    let game_resource_directory_path = game_directory_path.join("res");
+    let game_resource_directory_path = game_project_directory_path.join("res");
 
-    println!("Creating new game project {} in directory {}", game_name, game_directory_path.display());
+    println!("Creating new game project {} in directory {}", game_name, game_project_directory_path.display());
 
     // Get templates (assuming that they are stored in res folder of pill_launcher crate)
-    let template_project_directory_path = get_path(Location::PillLauncherCrate).join("res").join("templates");
+    let template_game_project_directory_path = get_path(Location::PillLauncherCrate).join("res").join("templates");
 
     // Copy template
     println!("Copying project template...");
     
     fs_extra::dir::copy(
-        &template_project_directory_path.join(TEMPLATE_NAME),
-        &game_parent_directory_path,
+        &template_game_project_directory_path.join(TEMPLATE_NAME),
+        &game_project_parent_directory_path,
         &CopyOptions::new().overwrite(true)
     )
     .context("Cannot copy template directory")?;
@@ -150,10 +145,16 @@ fn create_game_project(game_parent_directory_path: &PathBuf, game_name: &String)
     // Setup cargo.toml file 
     println!("Setting up manifest file...");
     let action = |line: String| -> String {
-        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::PillEngineCrate).to_str().unwrap().replace("\\", "/")) }
+        if line.contains("pill_engine") { return format!("pill_engine = {{ path = \"{}\", features = [\"game\"] }}", get_path(Location::PillEngineCrate).to_str().unwrap().replace("\\", "/")) }
         line
     };
-    modify_file(&game_directory_path.join("Cargo.toml"), &game_directory_path.join("Cargo.toml"), action)?;
+    modify_file(&game_project_directory_path.join("Cargo.toml"), &game_project_directory_path.join("Cargo.toml"), action)?;
+
+    let action = |line: String| -> String {
+        if line.contains("workspace") { return format!("workspace = \"{}\"", get_path(Location::EngineCrates).to_str().unwrap().replace("\\", "/")) }
+        line
+    };
+    modify_file(&game_project_directory_path.join("Cargo.toml"), &game_project_directory_path.join("Cargo.toml"), action)?;
 
     // Success
     println!("Game project creation completed!");
@@ -162,12 +163,11 @@ fn create_game_project(game_parent_directory_path: &PathBuf, game_name: &String)
 }
 
 fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode) -> Result<()> {
-
     // Build game project
     build_game_project(game_project_directory_path, output_directory_path, compile_mode)?;
 
     // Run game project
-    println!("Running game project...");
+    println!("Running game project from {}...", output_directory_path.display());
     let game_title = get_game_title(&game_project_directory_path).context("Failed to get game title")?;
     let standalone_executable_path = output_directory_path.join(format!("{}.exe", game_title));
 
@@ -180,12 +180,11 @@ fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path
     if !status.success() {
         return Err(Error::msg(format!("Run executable command failed with code: {}", status.code().unwrap_or(1))));
     }
-
     Ok(())
 }
 
 fn build_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode) -> Result<()> {
-    println!("Building game project...");
+    println!("Building game project from {}...", game_project_directory_path.display());
 
     // Check if it is valid game project directory
     check_if_game_project_validity(&game_project_directory_path).context("Game project is invalid")?;
@@ -196,9 +195,9 @@ fn build_game_project(game_project_directory_path: &PathBuf, output_directory_pa
     // Compilation has to be done together on pill_standalone and pill_game together in the same context. 
     // For that compilation through Cargo workspace is required.
     // Otherwise, typeids of types like "Mesh" will not match what will make all generic (templated) functions work improperly
-    let engine_workspace_path = get_path(Location::EngineProjectRoot).join("engine");
+    let engine_workspace_directory_path = get_path(Location::EngineCrates);
 
-    let workspace_manifest_path = engine_workspace_path.join("Cargo.toml");
+    let workspace_manifest_path = engine_workspace_directory_path.join("Cargo.toml");
     if !workspace_manifest_path.exists() {
         return Err(Error::msg("Cannot find engine workspace manifest file"));
     }
@@ -213,6 +212,13 @@ fn build_game_project(game_project_directory_path: &PathBuf, output_directory_pa
 
     modify_file(&workspace_manifest_path, &workspace_manifest_path, action)?;
 
+    // Update workspace path in game project manifest
+     let action = |line: String| -> String {
+        if line.contains("workspace") { return format!("workspace = \"{}\"", get_path(Location::EngineCrates).to_str().unwrap().replace("\\", "/")) }
+        line
+    };
+    modify_file(&game_project_directory_path.join("Cargo.toml"), &game_project_directory_path.join("Cargo.toml"), action)?;
+
     // Build standalone executable along with game dynamic library
     let mut arguments = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
     if compile_mode == &CompileMode::Release {
@@ -220,26 +226,34 @@ fn build_game_project(game_project_directory_path: &PathBuf, output_directory_pa
     }
     let status = Command::new("cargo")
         .args(arguments)
-        .current_dir(engine_workspace_path)
+        .current_dir(engine_workspace_directory_path)
         .status().context("Failed to run cargo build command")?;
 
     if !status.success() {
         return Err(Error::msg(format!("Build command failed with code: {}", status.code().unwrap_or(1))));
     }
 
-    // Prepare build folder
-    println!("Game project build path: {}", output_directory_path.display());
-
     // Create build directory if does not exist
     fs::create_dir_all(output_directory_path.join("data").as_path()).context("Failed to create build output directories")?; 
 
     // Copy built standalone executable to build directory
     let standalone_output_path = get_path(Location::EngineCrates).join("target").join("debug").join("pill_standalone.exe");
-    fs::copy(&standalone_output_path, &output_directory_path.join(game_title + ".exe"))?;
+    if !standalone_output_path.exists() {
+        return Err(Error::msg("Standalone executable was not built successfully"));
+    }
+
+    if let Err(e) = fs::copy(&standalone_output_path, &output_directory_path.join(game_title + ".exe")) { };
 
     // Copy built dynamic library to build directory
     let game_library_output_path = get_path(Location::EngineCrates).join("target").join("debug").join("pill_game.dll");
-    fs::copy(&game_library_output_path, &output_directory_path.join("data").join("pill_game.dll"))?;
+    if !game_library_output_path.exists() {
+        return Err(Error::msg("Game dynamic library was not built successfully"));
+    }
+
+    let game_dynamic_library_name = if compile_mode == &CompileMode::HotReload { "pill_game_hot_reloaded.dll"} else { "pill_game.dll" };
+    let output_game_library_path = output_directory_path.join("data").join(game_dynamic_library_name);
+    fs::copy(&game_library_output_path, &output_game_library_path)
+        .context(format!("Can't copy game dynamic library from {} to {}", game_library_output_path.display(), output_game_library_path.display()))?;
 
     // Success
     println!("Game built successfully!");
@@ -358,7 +372,7 @@ fn main() {
         .long("compile-mode")
         .takes_value(true)
         .help("Specify compile mode")
-        .possible_values(&["debug", "release"]) 
+        .possible_values(&["debug", "release", "hot-reload"]) 
         .default_value("debug")
         .required(false);
 
@@ -377,6 +391,7 @@ fn main() {
 
     let compile_mode: CompileMode = match compile_mode_argument.unwrap() {
         "release" => CompileMode::Release,
+        "hot-reload" => CompileMode::HotReload,
         _ => CompileMode::Debug,
     };
 
@@ -396,7 +411,6 @@ fn main() {
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
             output_directory_path = get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
-            
             run_game_project(&game_project_directory_path, &output_directory_path, &compile_mode).context("Failed to run game project").unwrap();
         },
         "build" => {
@@ -406,7 +420,6 @@ fn main() {
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
             output_directory_path = get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
-            
             build_game_project(&game_project_directory_path, &output_directory_path, &compile_mode).context("Failed to build game project").unwrap();
         },
         "docs" => {
