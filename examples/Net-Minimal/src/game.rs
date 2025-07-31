@@ -82,7 +82,6 @@ impl PillGame for Game {
         engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
         engine.add_component_to_entity(active_scene, pill, PillComponent {})?;
 
-
         #[cfg(feature = "net")]
         {
             engine.add_global_component(NetStats::new())?;
@@ -93,6 +92,9 @@ impl PillGame for Game {
 
             engine.add_system("NetHUD", net_hud_system)?;
         }
+
+		let state = engine.get_global_component_mut::<NetState>()?;
+        state.entity_by_client.insert(state.my_id, pill);
 
         Ok(())
     }
@@ -125,9 +127,10 @@ fn net_hud_system(engine: &mut Engine) -> Result<()> {
 fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
 	let (my_id, my_ent) = {
 		let state = engine.get_global_component::<NetState>()?;
+        println!("Trying to send own transform, my_id={}", state.my_id);
 		match state.entity_by_client.get(&state.my_id) {
 			Some(&e) => (state.my_id, e),
-			None      => return Ok(()),               // not spawned yet
+			None      => { println!("Early exit no such id, size {}", state.entity_by_client.len()); return Ok(()) },               // not spawned yet
         }
     };
 
@@ -135,6 +138,7 @@ fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
     let tr_pkt = engine.iterate_one_component::<TransformComponent>()?
         .find(|(eh, _)| *eh == my_ent).map(|(_, t)| TrPacket::from(t));
 
+    println!("Continuing with sending");
 	if let Some(pkt) = tr_pkt {
         let state = engine.get_global_component_mut::<NetState>()?;
         if let NetSide::Client(net) = &mut state.side {
