@@ -190,12 +190,6 @@ impl Engine {
             self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
         }
 
-        // Add global spawnQueue only when in networking mode
-        #[cfg(feature = "net")]
-        {
-            self.add_global_component(SpawnQueueComponent::default())?;
-        }
-
         // Add built-in systems
         #[cfg(feature = "rendering")]
         {

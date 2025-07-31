@@ -10,6 +10,7 @@ use crate::ecs::components::{
 
 use pill_net::TrPacket;
 use cgmath::Vector3;
+use rand::{rng, Rng};
 
 #[cfg(feature = "rendering")]
 use crate::{
@@ -19,15 +20,27 @@ use crate::{
 
 #[cfg(feature = "net")]
 pub fn spawn_network_entities_system(engine: &mut Engine) -> Result<()> {
+    //  run **only** on the server
+    if !matches!(engine.get_global_component::<NetState>()?.side, NetSide::Server(_)) {
+        return Ok(())
+    }
+
     let scene = engine.get_active_scene_handle()?;
 
     let mut spawn_requests = {
         let q = engine.get_global_component_mut::<SpawnQueueComponent>()?;
         std::mem::take(&mut q.requests)
     };
-    if spawn_requests.is_empty() { return Ok(()); }
+    if spawn_requests.is_empty() {
+        log::debug!("spawn system tick – queue empty");
+        return Ok(()); }
+
+    log::info!("{} items in spawn queue", spawn_requests.len());
 
     let state = engine.get_global_component_mut::<NetState>();
+
+    // randomness for capsules tint and transforms
+    let mut rng = rng();
 
     #[cfg(feature = "rendering")]
     let (mesh, mat) = {
@@ -40,7 +53,7 @@ pub fn spawn_network_entities_system(engine: &mut Engine) -> Result<()> {
             Ok(h) => h,
             Err(_) => {
                 let mut m = Material::new("PillMat");
-                m.set_color("Tint", Vector3::new(1., 1., 1.));
+                m.set_color("Tint", Vector3::new(rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0)));
                 engine.add_resource(m)?
             }
         };
@@ -57,9 +70,13 @@ pub fn spawn_network_entities_system(engine: &mut Engine) -> Result<()> {
             continue;
         }
 
+        log::info!("Spawning entity for cid={cid} pkt={:?}", pkt);
         let ent = engine.create_entity(scene)?;
+        let mut tr = TransformComponent::from(&pkt);
+        tr.position.x += rng.random_range(-2.0..=2.0);
+        tr.position.z += rng.random_range(-2.0..=2.0);
 
-        engine.add_component_to_entity(scene, ent, TransformComponent::from(&pkt))?;
+        engine.add_component_to_entity(scene, ent, tr)?;
 
         #[cfg(feature = "rendering")]
         {
@@ -69,8 +86,8 @@ pub fn spawn_network_entities_system(engine: &mut Engine) -> Result<()> {
         {
             let state = engine.get_global_component_mut::<NetState>()?;
             state.entity_by_client.insert(cid, ent);
+            log::info!("Spawn complete  cid={cid}  ent={:?}", ent);
         }
-        log::info!("Spawned entity for client {cid}");
     }
     Ok(())
 }

@@ -7,7 +7,7 @@ use env_logger;
 use std::io::Write;
 
 #[cfg(feature = "net")]
-use pill_engine::{NetState};
+use pill_engine::{NetState, SpawnQueueComponent};
 
 struct HeadlessGame; // TODO: placeholder for the actual game struct
                      //
@@ -23,6 +23,7 @@ impl PillGame for HeadlessGame {
         #[cfg(feature = "net")]
         {
             engine.add_global_component(NetState::new_server("0.0.0.0:5000", 8)?)?;
+            engine.add_global_component(SpawnQueueComponent::default())?;
 
             log::info!("Server listening on 0.0.0.0:5000");
         }

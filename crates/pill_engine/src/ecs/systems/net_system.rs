@@ -29,17 +29,20 @@ pub fn net_recv_system(engine: &mut Engine) -> Result<()> {
                 for (cid, msg) in inbox {
                     match msg {
                         Msg::Join {client_id, tr } => {
+                            log::info!("Srv ▸ JOIN received  cid={client_id}  raw={tr:?}");
                             let pkt = tr.unwrap_or_else( ||{
                                 log::warn!("Srv: Join without transform, using default");
                                 TrPacket::default()
                             });
                             // push onto queue; Game logics spawns it later
                             joins_to_enqueue.push((client_id, pkt));
+                            log::info!("Srv ▹ queued  cid={client_id}  joins_to_enqueue.len()={}", joins_to_enqueue.len());
                             // acknowledge the spawn to all clients (// TODO: is this not too complex?)
                             srv_broadcast(net, &Msg::Tr{
                                 client_id,
                                 tr: pkt,
                             })?;
+                            log::info!("Srv: TR broadcast, client_id: {}", client_id);
                         },
                         Msg::Tr {client_id, tr} => {
                             // forward authoritative transform to all clients
@@ -47,7 +50,7 @@ pub fn net_recv_system(engine: &mut Engine) -> Result<()> {
                                 client_id,
                                 tr,
                             })?;
-                            log::warn!("Srv: Got Tr from {client_id}, forwarding to all clients");
+                            log::warn!("Srv: Got TR from {client_id}, forwarding to all clients");
                         },
                         Msg::Ping(t) => { srv_send_one(net, cid, &Msg::Pong(t))?; }
                         _ => {}
@@ -62,12 +65,13 @@ pub fn net_recv_system(engine: &mut Engine) -> Result<()> {
                         tr: None, // TODO: send initial transform
                     })?;
                     state.join_sent = true;
+                    log::info!("Cli: JOIN sent, client_id: {}", state.my_id);
                 }
                 let inbox = client_update(net, DT)?;
                 for msg in inbox {
                     match msg {
                         Msg::Tr { client_id, tr } => {
-                            log::info!("Cli: Got Tr from {client_id}, transform: {tr:?}");
+                            log::info!("Cli ◂ TR arrived  cid={client_id}  pkt={tr:?}");
                             handle_remote_transform(engine, client_id, tr)?;
                         }
                         Msg::Pong(_)| Msg::Ping(_) => {}
@@ -104,12 +108,19 @@ pub fn net_flush_system(engine: &mut Engine) -> Result<()> {
     let state = engine.get_global_component_mut::<NetState>()?;
     match &mut state.side {
         NetSide::Server(net) => srv_flush(net)?,
-        NetSide::Client(net) => cli_flush(net)?,
+        NetSide::Client(net) => {
+            if let Err(e) = cli_flush(net) {
+                // Ignore "disconnected or connecting" until we are actually connected
+                if e.to_string().contains("disconnected or connecting") {
+                    return Ok(());
+                }
+                return Err(e.into());
+            }
+        }
     }
     Ok(())
 }
 
-// TODO: implement -> here we will update what updates came from the network regarding transform
 // updates in all clients
 fn handle_remote_transform(
     engine: &mut Engine,
@@ -121,6 +132,7 @@ fn handle_remote_transform(
     {
         let state = engine.get_global_component_mut::<NetState>()?;
         if let Some(&ent) = state.entity_by_client.get(&client_id) {
+            log::info!("Cli ◂ UPDATE local ent={:?} with pkt={:?}", ent, tr);
             // If we have an entity for this client, update its transform
             for (eh, trc) in engine.iterate_one_component_mut::<TransformComponent>()? {
                 if eh == ent { *trc = TransformComponent::from(&tr); }
@@ -131,6 +143,7 @@ fn handle_remote_transform(
 
     // push into SpawnQueueComponent - will be spawned by the system
     if let Ok(q) = engine.get_global_component_mut::<SpawnQueueComponent>() {
+        log::info!("Cli ◂ QUEUE spawn for cid={client_id}");
         q.requests.push((client_id, tr));
     }
     Ok(())

@@ -9,6 +9,7 @@ log    = "0.4"
 
 # Build the engine as a client (rendering+audio+ui+net+internal)
 pill_engine = { path = "/home/jduchniewicz/Projects/Sticky-Piston-Studios/Pill-Engine/crates/pill_engine", default-features = false, features = ["rendering", "audio", "ui", "internal", "net", "game"] }
+pill_net = { version = "0.1.0", path = "../../crates/pill_net" }
 rand = "0.9.2"
 
 [features]

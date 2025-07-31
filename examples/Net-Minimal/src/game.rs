@@ -4,7 +4,10 @@ use pill_engine::TransformComponent;
 use rand::Rng;
 
 #[cfg(feature = "net")]
-use pill_engine::{NetState, NetStats};
+use pill_engine::{NetState, NetStats, NetSide};
+
+#[cfg(feature = "net")]
+use pill_net::{cli_send, Msg, TrPacket};
 
 // Define custom component
 pub struct PillComponent { }
@@ -34,6 +37,8 @@ impl PillGame for Game {
 
         // Add systems
         engine.add_system("PillRotation", pill_rotation_system)?;
+
+        engine.add_system("SendOwnTransform", send_own_tr_system)?;
 
         // Add meshes
         let pill_mesh = Mesh::new("Pill", "./res/models/Pill.obj".into());
@@ -66,6 +71,7 @@ impl PillGame for Game {
         // Create pill entity
         let pill = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
+            .position(Vector3f::new( rand::thread_rng().gen_range(-2.0..=2.0), 0.0, 0.0))
             .rotation(Vector3f::new(-210.0,0.0,0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component)?;
@@ -112,6 +118,32 @@ fn net_hud_system(engine: &mut Engine) -> Result<()> {
         Err(_) => return Ok(()),
     };
 
-    log::info!("Net counter = {0}", stats.last_counter);
+    //log::info!("Net counter = {0}", stats.last_counter);
+    Ok(())
+}
+
+fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
+	let (my_id, my_ent) = {
+		let state = engine.get_global_component::<NetState>()?;
+		match state.entity_by_client.get(&state.my_id) {
+			Some(&e) => (state.my_id, e),
+			None      => return Ok(()),               // not spawned yet
+        }
+    };
+
+    // find our transform
+    let tr_pkt = engine.iterate_one_component::<TransformComponent>()?
+        .find(|(eh, _)| *eh == my_ent).map(|(_, t)| TrPacket::from(t));
+
+	if let Some(pkt) = tr_pkt {
+        let state = engine.get_global_component_mut::<NetState>()?;
+        if let NetSide::Client(net) = &mut state.side {
+            cli_send(net, &Msg::Tr {
+                client_id: my_id,
+                tr:        pkt,
+            })?;
+            log::info!("Cli ▸ TR sent  cid={my_id} pkt={:?}", pkt);
+        }
+    }
     Ok(())
 }
