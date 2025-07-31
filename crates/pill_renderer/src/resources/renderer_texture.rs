@@ -6,10 +6,6 @@ use std::{ num::NonZeroU32 };
 
 // --- Texture ---
 
-pill_core::define_new_pill_slotmap_key! { 
-    pub struct RendererTextureHandle;
-}
-
 pub struct RendererTexture {
     pub texture: wgpu::Texture,
     pub texture_view: wgpu::TextureView,

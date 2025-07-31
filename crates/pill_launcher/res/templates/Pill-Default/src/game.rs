@@ -34,9 +34,9 @@ impl PillGame for Game {
         let pill_mesh_handle = engine.add_resource(pill_mesh)?;
 
         // Add textures
-        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("./res/textures/PillColor.png".into()));
+        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoader::Path("./res/textures/PillColor.png".into()));
         let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
-        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/PillNormal.png".into()));
+        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoader::Path("./res/textures/PillNormal.png".into()));
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials

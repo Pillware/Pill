@@ -6,8 +6,8 @@ use crate::{
     resources::{
         RendererCamera,
         RendererMaterial,
+        RendererShader,
         RendererMesh,
-        RendererPipeline,
         RendererTexture,
         Vertex
     }, 
@@ -16,23 +16,7 @@ use crate::{
 };
 
 use pill_engine::internal::{
-    PillRenderer, 
-    EntityHandle, 
-    RenderQueueItem, 
-    TextureType,
-    MeshData, 
-    MaterialTextureMap,
-    TransformComponent,
-    ComponentStorage, 
-    CameraComponent,
-    MaterialParameterMap,
-    RendererCameraHandle,
-    RendererMaterialHandle,
-    RendererMeshHandle,
-    RendererPipelineHandle,
-    RendererTextureHandle, 
-    RENDER_QUEUE_KEY_ORDER,
-    get_renderer_resource_handle_from_camera_component,
+    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameterMap, MaterialTextureMap, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererError, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
 };
 
 use pill_core::{ 
@@ -40,7 +24,7 @@ use pill_core::{
 };
 
 use std::{
-    iter, mem::size_of, num::NonZeroU32, ops::Range, sync::Arc
+    collections::HashMap, iter, mem::size_of, num::NonZeroU32, ops::Range, sync::Arc
 };
 
 use naga::front::glsl;
@@ -54,10 +38,26 @@ use crate::egui::EguiRenderer;
 pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 10000;
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
 
+// Order of bind group layouts in all shaders
+pub const PARAMETERS_BIND_GROUP_LAYOUT_INDEX: u32 = 0; // (set = 0, binding = X)
+pub const TEXTURES_BIND_GROUP_LAYOUT_INDEX: u32 = 1;   // (set = 1, binding = X)
+
+// Parameter bindings indices
+pub const ENGINE_PARAMETERS_BINDING_INDEX: u32 = 0;    // (set = 0, binding = 0)
+pub const CAMERA_PARAMETERS_BINDING_INDEX: u32 = 1;    // (set = 0, binding = 1)
+pub const MATERIAL_PARAMETERS_BINDING_INDEX: u32 = 2;  // (set = 0, binding = 2)
+
 // Default resource handle - Master pipeline
 pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
     0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
 };
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct EngineUniform {
+    pub(crate) time: f32,
+    pub(crate) delta_time: f32,
+}
 
 pub struct Renderer {
     pub state: State,
@@ -92,54 +92,54 @@ impl PillRenderer for Renderer {
         }
     }   
 
-    fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
-        info!("Resizing {} resources", "Renderer".mobj_style());
-        self.state.resize(new_window_size)
-    }
-
-
-    fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8]) -> Result<()> {
-        
-        // Create shaders
-        // Convert bytes to string
-        let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes)
-            .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in vertex shader: {}", e))?;
-        let fragment_shader_source = std::str::from_utf8(fragment_shader_bytes)
-            .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in fragment shader: {}", e))?;
-
-
-// Convert GLSL to WGSL
-let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
-let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
-
-// Create shader modules with WGSL
-let vertex_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-    label: Some("master_vertex_shader"),
-    source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
-});
-
-let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-    label: Some("master_fragment_shader"),
-    source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
-});
-
-
-
-
-
-        // Create master pipeline
-        let master_pipeline = RendererPipeline::new(
+    fn create_shader(
+        &mut self, 
+        name: &str, 
+        vertex_shader_bytes: &[u8], 
+        fragment_shader_bytes: &[u8], 
+        texture_slots: &HashMap<String, ShaderTextureSlot>,
+        parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        enable_engine_binding: bool,
+        enable_camera_binding: bool,
+    ) -> Result<RendererShaderHandle> {
+        let shader = RendererShader::new(
+            name,
             &self.state.device,
-            vertex_shader,
-            fragment_shader,
             self.state.color_format,
             Some(self.state.depth_format),
             &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
+            vertex_shader_bytes,
+            fragment_shader_bytes,
+            parameter_slots,
+            texture_slots,
+            enable_engine_binding,
+            enable_camera_binding
+        )?;
+        let handle = self.state.renderer_resource_storage.shaders.insert(shader);
+
+        Ok(handle)
+    }
+
+    fn create_material(
+        &mut self, 
+        name: &str, 
+        renderer_shader_handle: RendererShaderHandle, 
+        textures: &MaterialTextureMap, 
+        parameters: &MaterialParameterMap
+    ) -> Result<RendererMaterialHandle> {
+        let material = RendererMaterial::new(
+            &self.state.device,
+            &self.state.queue,
+            &self.state.renderer_resource_storage,
+            name,
+            renderer_shader_handle,
+            textures,
+            parameters,
         ).unwrap();
 
-        self.state.renderer_resource_storage.pipelines.insert(master_pipeline);
+        let handle = self.state.renderer_resource_storage.materials.insert(material);
 
-        Ok(())
+        Ok(handle)
     }
 
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
@@ -156,43 +156,44 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
         Ok(handle)
     }
 
-    fn create_material(&mut self, name: &str, textures: &MaterialTextureMap, parameters: &MaterialParameterMap) -> Result<RendererMaterialHandle> {
-        let pipeline_handle = MASTER_PIPELINE_HANDLE;
-        let pipeline = self.state.renderer_resource_storage.pipelines.get(pipeline_handle).unwrap();
-
-        let material = RendererMaterial::new(
-            &self.state.device,
-            &self.state.queue,
-            &self.state.renderer_resource_storage,
-            name,
-            pipeline_handle,
-            &pipeline.material_texture_bind_group_layout,
-            textures,
-            &pipeline.material_parameter_bind_group_layout,
-            parameters,
-        ).unwrap();
-
-        let handle = self.state.renderer_resource_storage.materials.insert(material);
-
-        Ok(handle)
-    }
-
     fn create_camera(&mut self) -> Result<RendererCameraHandle> {
-        let pipeline_handle = MASTER_PIPELINE_HANDLE;
-        let pipeline = self.state.renderer_resource_storage.pipelines.get(pipeline_handle).unwrap();
-        let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
-        let camera = RendererCamera::new(&self.state.device, camera_bind_group_layout)?;
+        let camera = RendererCamera::new(&self.state.device)?;
         let handle = self.state.renderer_resource_storage.cameras.insert(camera);
 
         Ok(handle)
     }
 
     fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &MaterialTextureMap) -> Result<()> {
-        RendererMaterial::update_textures(&self.state.device, renderer_material_handle, &mut self.state.renderer_resource_storage, textures)
+        RendererMaterial::update_textures(
+            &self.state.device, 
+            renderer_material_handle, 
+            &mut self.state.renderer_resource_storage, 
+            textures
+        )
     }
 
     fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &MaterialParameterMap) -> Result<()> {
-        RendererMaterial::update_parameters(&self.state.device, &self.state.queue, renderer_material_handle, &mut self.state.renderer_resource_storage, parameters)
+        RendererMaterial::update_parameters(
+            &self.state.device, 
+            &self.state.queue, 
+            renderer_material_handle, 
+            &mut self.state.renderer_resource_storage, 
+            parameters
+        )
+    }
+
+    fn destroy_shader(&mut self, renderer_shader_handle: RendererShaderHandle) -> Result<()> {
+        self.state.renderer_resource_storage.shaders.remove(renderer_shader_handle).unwrap();
+
+        // TODO: Check if there are no materials using this shader (engine should replace them with default shader), if there are prevent shader destruction
+
+        Ok(())
+    }
+
+    fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
+        self.state.renderer_resource_storage.materials.remove(renderer_material_handle).unwrap();
+
+        Ok(())
     }
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
@@ -207,15 +208,19 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
         Ok(())
     }
 
-    fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
-        self.state.renderer_resource_storage.materials.remove(renderer_material_handle).unwrap();
-
-        Ok(())
-    }
-
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
         self.state.renderer_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
         
+        Ok(())
+    }
+
+    fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
+        info!("Resizing {} resources", "Renderer".mobj_style());
+        self.state.resize(new_window_size)
+    }
+
+    fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
+        self.state.egui_renderer.handle_input(event);
         Ok(())
     }
 
@@ -237,11 +242,6 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
             timer
         )
     }
-    
-    fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
-        self.state.egui_renderer.handle_input(event);
-        Ok(())
-    }
 
 }
 
@@ -262,7 +262,6 @@ pub struct State {
     config: config::Config,
     egui_renderer: crate::egui::EguiRenderer,
 }
-
 
 impl State {
     // Creating some of the wgpu types requires async code
@@ -489,10 +488,9 @@ impl State {
         Ok(())
     }
 }
-
 pub struct MeshDrawer {
     current_rendering_order: u8,
-    current_pipeline_handle: Option<RendererPipelineHandle>,
+    current_shader_handle: Option<RendererShaderHandle>,
     current_material_handle: Option<RendererMaterialHandle>,
     current_mesh_handle: Option<RendererMeshHandle>,
     current_mesh_index_count: u32,
@@ -517,7 +515,7 @@ impl MeshDrawer {
 
         MeshDrawer {
             current_rendering_order: 0,
-            current_pipeline_handle: None,
+            current_shader_handle: None,
             current_material_handle: None,
             current_mesh_handle: None,
             current_mesh_index_count: 0,
@@ -588,7 +586,10 @@ impl MeshDrawer {
             let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
 
             // Recreate resource handles
+            let renderer_shader_handle = RendererShaderHandle::new(render_queue_key_fields.shader_index.into(), NonZeroU32::new(render_queue_key_fields.shader_version.into()).unwrap());
+            
             let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
+
             let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
             // Check rendering order
@@ -601,6 +602,21 @@ impl MeshDrawer {
                 self.current_rendering_order = render_queue_key_fields.order;
             }
 
+            // Check shader
+            if self.current_shader_handle != Some(renderer_shader_handle) {
+                // Render accumulated instances
+                if self.get_accumulated_instance_count() > 0 {
+                    render_pass.draw_indexed(0..self.current_mesh_index_count, 0, self.instance_range.clone());
+                    self.instance_range = self.instance_range.end..self.instance_range.end;
+                }
+                // Set new shader (render pipeline)
+                self.current_shader_handle = Some(renderer_shader_handle);
+                let shader: &RendererShader = renderer_resource_storage.shaders.get(self.current_shader_handle.unwrap()).unwrap();
+                render_pass.set_pipeline(&shader.render_pipeline);
+
+               
+            }
+
             // Check material
             if self.current_material_handle != Some(renderer_material_handle) {
                 // Render accumulated instances
@@ -611,17 +627,17 @@ impl MeshDrawer {
                 // Set new material
                 self.current_material_handle = Some(renderer_material_handle);
                 let material = renderer_resource_storage.materials.get(self.current_material_handle.unwrap()).unwrap();
-               
-                // Set pipeline if new material is using different one
-                if self.current_pipeline_handle != Some(material.pipeline_handle) {
-                    self.current_pipeline_handle = Some(material.pipeline_handle);
-                    let pipeline = renderer_resource_storage.pipelines.get( self.current_pipeline_handle.unwrap()).unwrap();
-                    render_pass.set_pipeline(&pipeline.render_pipeline);
+
+                if let Some(ref parameters_bind_group) = material.parameters_bind_group {
+                    render_pass.set_bind_group(PARAMETERS_BIND_GROUP_LAYOUT_INDEX, parameters_bind_group, &[]);
                 }
 
-                render_pass.set_bind_group(0, &material.texture_bind_group, &[]);
-                render_pass.set_bind_group(1, &material.parameter_bind_group, &[]);
-                render_pass.set_bind_group(2, &camera.bind_group, &[]);
+                if let Some(ref texture_bind_group) = material.texture_bind_group {
+                    render_pass.set_bind_group(TEXTURES_BIND_GROUP_LAYOUT_INDEX, texture_bind_group, &[]);
+                }
+
+
+                //render_pass.set_bind_group(2, &camera.bind_group, &[]);
             }
 
             // Check mesh
@@ -660,7 +676,7 @@ impl MeshDrawer {
 
         // Reset state of mesh drawer
         self.current_rendering_order = RENDER_QUEUE_KEY_ORDER.max as u8;
-        self.current_pipeline_handle = None;
+        self.current_shader_handle = None;
         self.current_material_handle = None;
         self.current_mesh_handle = None;
         self.current_mesh_index_count = 0;

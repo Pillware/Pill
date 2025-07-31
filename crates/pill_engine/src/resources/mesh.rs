@@ -26,7 +26,7 @@ pub struct Mesh {
     #[readonly]
     pub path: PathBuf,
     pub(crate) renderer_resource_handle: Option<RendererMeshHandle>,
-    mesh_data: Option<MeshData>,
+    data: Option<MeshData>,
 }
 
 impl Mesh {
@@ -35,7 +35,7 @@ impl Mesh {
             name: name.to_string(),
             path,
             renderer_resource_handle: None,
-            mesh_data: None,
+            data: None,
         }
     }
 }
@@ -59,10 +59,10 @@ impl Resource for Mesh {
 
         // Create mesh data
         let mesh_data = MeshData::new(&self.path).context(error_message.clone())?;
-        self.mesh_data = Some(mesh_data);
+        self.data = Some(mesh_data);
   
         // Create new renderer mesh resource
-        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
+        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.data.as_ref().unwrap()).context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())

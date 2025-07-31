@@ -1,7 +1,7 @@
 use crate::{
     engine::Engine,
     graphics::{ RendererTextureHandle }, 
-    resources::{ ResourceStorage, Resource, ResourceLoadType, Material },
+    resources::{ ResourceStorage, Resource, ResourceLoader, Material },
     ecs::{ DeferredUpdateManagerPointer, AudioSourceComponent, SoundType, AudioManagerComponent },
     config::*,
 };

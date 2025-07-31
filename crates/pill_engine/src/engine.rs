@@ -6,16 +6,7 @@ use crate::{
 };
 
 use pill_core::{ 
-    EngineError, 
-    PillSlotMapKey, 
-    PillStyle, 
-    PillTypeMap,
-    get_type_name, 
-    get_value_type_name, 
-    get_enum_variant_type_name, 
-    get_game_error_message, 
-    Vector2f, 
-    Timer
+    get_enum_variant_type_name, get_game_error_message, get_type_name, get_value_type_name, Color, EngineError, PillSlotMapKey, PillStyle, PillTypeMap, Vector2f 
 };
 
 use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell, ops::RangeBounds };
@@ -58,41 +49,79 @@ pub struct Engine {
 impl Engine {
     fn create_default_resources(&mut self) -> Result<()> {
 
+        let max_shader_count = self.config.get_int("MAX_SHADERS").unwrap_or(MAX_SHADERS as i64) as usize;
+        let max_material_count = self.config.get_int("MAX_MATERIALS").unwrap_or(MAX_MATERIALS as i64) as usize;
         let max_texture_count = self.config.get_int("MAX_TEXTURES").unwrap_or(MAX_TEXTURES as i64) as usize;
         let max_mesh_count = self.config.get_int("MAX_MESHES").unwrap_or(MAX_MESHES as i64) as usize;
-        let max_material_count = self.config.get_int("MAX_MATERIALS").unwrap_or(MAX_MATERIALS as i64) as usize;
         let max_sound_count = self.config.get_int("MAX_SOUNDS").unwrap_or(MAX_SOUNDS as i64) as usize;
 
+        self.register_resource_type::<Shader>(max_shader_count)?;
+        self.register_resource_type::<Material>(max_material_count)?;
         self.register_resource_type::<Texture>(max_texture_count)?;
         self.register_resource_type::<Mesh>(max_mesh_count)?;
-        self.register_resource_type::<Material>(max_material_count)?;
         self.register_resource_type::<Sound>(max_sound_count)?;
 
         // - Create default resources
 
-        // Load master shader data to executable
-        let master_vertex_shader_bytes = include_bytes!("../res/shaders/master.vert");
-        let master_fragment_shader_bytes = include_bytes!("../res/shaders/master.frag");
-        self.renderer.set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes)?;
+        // Load default lit shader data to executable
+        let default_lit_shader_handle = self.add_default_resource(
+            Shader::new(
+                DEFAULT_LIT_SHADER_NAME, 
+                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/built/default_lit.vert.spv"))),
+                ResourceLoader::Bytes( Box::new(*include_bytes!("../res/shaders/built/default_lit.frag.spv"))),
+                vec![
+                    (
+                        DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), 
+                        ShaderParameterSlot::new(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME, ShaderParameterType::Color)
+                    ),
+                    (
+                        DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string(), 
+                        ShaderParameterSlot::new(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME, ShaderParameterType::Scalar)
+                    ),
+                ].into_iter().collect(),
+                vec![
+                    (
+                        DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), 
+                        ShaderTextureSlot::new(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME, TextureType::Color, DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS)
+                    ),
+                    (
+                        DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string(), 
+                        ShaderTextureSlot::new(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME, TextureType::Normal, DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS)
+                    ),
+                ].into_iter().collect(),
+                true,
+                true
+            )
+        )?;
 
-        // Load default resource data to executable
-        let default_color_texture_bytes = Box::new(*include_bytes!("../res/textures/default_color.png"));
-        let default_normal_texture_bytes = Box::new(*include_bytes!("../res/textures/default_normal.png"));
+        // Create texture data to executable
+        let default_color_texture_handle = self.add_default_resource(
+            Texture::new(
+                DEFAULT_COLOR_TEXTURE_NAME, 
+                TextureType::Color, 
+                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/textures/default_color.png")))
+            )
+        )?;
 
-        // Create default textures
-        let mut default_color_texture = Texture::new(DEFAULT_COLOR_TEXTURE_NAME, TextureType::Color, ResourceLoadType::Bytes(default_color_texture_bytes));
-        default_color_texture.initialize(self)?;
-        self.resource_manager.add_resource(default_color_texture)?;
+        let default_normal_texture_handle = self.add_default_resource(
+            Texture::new(
+                DEFAULT_NORMAL_TEXTURE_NAME, 
+                TextureType::Normal, 
+                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/textures/default_normal.png")))
+            )
+        )?;
 
-        let mut default_normal_texture = Texture::new(DEFAULT_NORMAL_TEXTURE_NAME, TextureType::Normal, ResourceLoadType::Bytes(default_normal_texture_bytes));
-        default_normal_texture.initialize(self)?;
-        self.resource_manager.add_resource(default_normal_texture)?;
-        
-        // Create default material
-        let mut default_material = Material::new(DEFAULT_MATERIAL_NAME);
-        default_material.initialize(self)?;
-        self.resource_manager.add_resource(default_material)?;
-        
+        // Create default lit material
+        let default_lit_material_handle = self.add_default_resource(
+            Material::builder(DEFAULT_LIT_MATERIAL_NAME)
+                .shader(default_lit_shader_handle)?
+                .color(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME, Color::new(1.0, 1.0, 1.0))?
+                .scalar(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME, 0.5)?
+                .texture(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME, default_color_texture_handle)?
+                .texture(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME, default_normal_texture_handle)?
+                .build()
+        )?;
+
         Ok(())
     }
 }
@@ -624,24 +653,36 @@ impl Engine {
     }
 
     // Adds resource to the engine
-    pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
-        where T: Resource<Storage = ResourceStorage::<T>>
+    pub fn add_resource<T>(&mut self, resource: T) -> Result<T::Handle> 
+        where T: Resource<Storage = ResourceStorage<T>>,
+    {
+        self.add_resource_internal(resource, true)
+    }
+
+    // Allows to add resource without checking its name to be a valid one (not starting with DEFAULT_RESOURCE_PREFIX)
+    fn add_default_resource<T>(&mut self, resource: T) -> Result<T::Handle> 
+        where T: Resource<Storage = ResourceStorage<T>>,
+    {
+        self.add_resource_internal(resource, false)
+    }
+
+    fn add_resource_internal<T>(&mut self, mut resource: T, enforce_name_check: bool) -> Result<T::Handle>
+        where T: Resource<Storage = ResourceStorage<T>>,
     {
         debug!("Adding {} {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style());
 
         // Check if resource has proper name
         let resource_name = resource.get_name();
-        if resource_name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            return Err(Error::new(EngineError::WrongResourceName(resource_name.clone())))
+        if enforce_name_check && resource_name.starts_with(DEFAULT_RESOURCE_PREFIX) {
+            return Err(Error::new(EngineError::WrongResourceName(resource_name.clone())));
         }
 
         // Initialize resource
-        resource.initialize(self).context(format!("Adding {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style()))?;
-        
+        resource.initialize(self)
+            .context(format!("Adding {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style()))?;
+
         // Add resource and get it back
-        let add_result = self.resource_manager.add_resource(resource)?;
-        let resource_handle = add_result.0; 
-        let resource = add_result.1;
+        let (resource_handle, resource) = self.resource_manager.add_resource(resource)?;
 
         // Pass handle to this resource so it can store it if needed
         resource.pass_handle(resource_handle);

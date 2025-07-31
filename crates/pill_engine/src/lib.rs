@@ -89,7 +89,7 @@ pub mod game {
             MaterialHandle,
             Mesh,
             MeshHandle,
-            ResourceLoadType,
+            ResourceLoader,
             Sound
         },
 
@@ -131,6 +131,7 @@ pub mod internal {
             RendererMeshHandle,
             RendererPipelineHandle,
             RendererTextureHandle,
+            RendererShaderHandle,
             RENDER_QUEUE_KEY_ORDER
         },
         ecs::{
@@ -165,8 +166,13 @@ pub mod internal {
             MeshData,
             MeshVertex,    
 
-            ResourceLoadType,
+            ResourceLoader,
             ResourceManager,
+
+            Shader,
+            ShaderTextureSlot,
+            ShaderParameterSlot,
+            ShaderParameterType,
 
             MaterialTexture,
             MaterialTextureMap,

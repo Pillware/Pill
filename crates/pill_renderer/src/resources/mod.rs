@@ -2,7 +2,7 @@ mod renderer_texture;
 mod renderer_mesh;
 mod renderer_camera;
 mod renderer_material;
-mod renderer_pipeline;
+mod renderer_shader;
 
 // --- Use ---
 
@@ -17,5 +17,4 @@ pub use renderer_camera::RendererCamera;
 
 pub use renderer_material::RendererMaterial;
 
-pub use renderer_pipeline::RendererPipeline;
-
+pub use renderer_shader::RendererShader;

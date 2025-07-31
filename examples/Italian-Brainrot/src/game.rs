@@ -36,7 +36,7 @@ impl PillGame for Game {
 			Texture::new(
 				"ChimpanziniBananini", 
 				TextureType::Color, 
-				ResourceLoadType::Path("./res/textures/ChimpanziniBananini.jpg".into())
+				ResourceLoader::Path("./res/textures/ChimpanziniBananini.jpg".into())
 			)
 		)?;
        

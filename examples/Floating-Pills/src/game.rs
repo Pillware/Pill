@@ -86,22 +86,22 @@ impl PillGame for Game {
         let ambient_music_handle = engine.add_resource(ambient_music)?;
 
         // Add textures
-        let fabric_color_texture = Texture::new("FabricColor", TextureType::Color, ResourceLoadType::Path("./res/textures/FabricColor.jpg".into()));
+        let fabric_color_texture = Texture::new("FabricColor", TextureType::Color, ResourceLoader::Path("./res/textures/FabricColor.jpg".into()));
         let fabric_color_texture_handle = engine.add_resource::<Texture>(fabric_color_texture)?;
        
-        let fabric_normal_texture = Texture::new("FabricNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/FabricNormal.jpg".into()));
+        let fabric_normal_texture = Texture::new("FabricNormal", TextureType::Normal, ResourceLoader::Path("./res/textures/FabricNormal.jpg".into()));
         let fabric_normal_texture_handle = engine.add_resource::<Texture>(fabric_normal_texture)?;
         
-        let stones_color_texture = Texture::new("StonesColor", TextureType::Color, ResourceLoadType::Path("./res/textures/StonesColor.jpg".into()));
+        let stones_color_texture = Texture::new("StonesColor", TextureType::Color, ResourceLoader::Path("./res/textures/StonesColor.jpg".into()));
         let stones_color_texture_handle = engine.add_resource::<Texture>(stones_color_texture)?;
         
-        let stones_normal_texture = Texture::new("StonesNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/StonesNormal.jpg".into()));
+        let stones_normal_texture = Texture::new("StonesNormal", TextureType::Normal, ResourceLoader::Path("./res/textures/StonesNormal.jpg".into()));
         let stones_normal_texture_handle = engine.add_resource::<Texture>(stones_normal_texture)?;
         
-        let organic_color_texture = Texture::new("OrganicColor", TextureType::Color, ResourceLoadType::Path("./res/textures/OrganicColor.jpg".into()));
+        let organic_color_texture = Texture::new("OrganicColor", TextureType::Color, ResourceLoader::Path("./res/textures/OrganicColor.jpg".into()));
         let organic_color_texture_handle = engine.add_resource::<Texture>(organic_color_texture)?;
 
-        let organic_normal_texture = Texture::new("OrganicNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/OrganicNormal.jpg".into()));
+        let organic_normal_texture = Texture::new("OrganicNormal", TextureType::Normal, ResourceLoader::Path("./res/textures/OrganicNormal.jpg".into()));
         let organic_normal_texture_handle = engine.add_resource::<Texture>(organic_normal_texture)?;
 
         // Add materials

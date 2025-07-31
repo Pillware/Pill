@@ -13,6 +13,7 @@ pub use renderer::{
     RendererMeshHandle,
     RendererTextureHandle,
     RendererPipelineHandle,
+    RendererShaderHandle,
 };
 
 pub use render_queue::{

@@ -7,6 +7,7 @@ mod resource_storage;
 mod material;
 mod resource;
 mod sound;
+mod shader;
 
 // --- Use ---
 
@@ -14,7 +15,7 @@ pub use resource_manager::ResourceManager;
 
 pub use resource::{
     Resource,
-    ResourceLoadType,
+    ResourceLoader,
 };
 
 pub use resource_storage::ResourceStorage;
@@ -45,4 +46,12 @@ pub use material::{
     MaterialParameterMap, 
     MaterialHandle,
     get_renderer_texture_handle_from_material_texture,
+};
+
+pub use shader::{ 
+    Shader, 
+    ShaderHandle, 
+    ShaderTextureSlot,
+    ShaderParameterSlot,
+    ShaderParameterType,
 };
