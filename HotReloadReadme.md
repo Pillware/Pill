@@ -4,6 +4,34 @@ Compilation has to be done together on pill_standalone and pill_game together in
 For that compilation through Cargo workspace is required.
 Otherwise, typeids of types like "Mesh" will not match what will make all generic (templated) functions work improperly
 
+Game project has to be named in its Cargo.toml "pill_game", and have type of cdylib
+```
+[package]
+name = "pill_game"
+
+...
+
+[lib]
+crate-type = ["cdylib"]
+```
+
+Game's `lib.rs` has to contain only:
+```
+mod game;
+use pill_engine::game::create_game;
+
+create_game!(crate::game::Game {}, pill_engine::game::PillGame);
+```
+
+
+
+
+Referencing resource files in game has to be done like that:
+` let pill_mesh = Mesh::new("Pill", "models/Pill.obj".into());`
+
+Engine assumes that they are in `<GAME_PROJECT_ROOT>/res`. Eg.  
+`<GAME_PROJECT_ROOT>/res/models/Pill.obj`
+
 ### Build pill launcher:
 `cargo build --manifest-path engine/pill_launcher/Cargo.toml --release`
 
