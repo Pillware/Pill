@@ -1,23 +1,29 @@
 
 use anyhow::Result;
-use pill_engine::{Engine, PillGame};
+use pill_engine::{Engine, PillGame, TransformComponent};
 use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
 use std::io::Write;
 
 #[cfg(feature = "net")]
-use pill_engine::NetState;
+use pill_engine::{NetState};
 
 struct HeadlessGame; // TODO: placeholder for the actual game struct
                      //
 impl PillGame for HeadlessGame {
     fn start(&self, engine: &mut Engine) -> Result<()> {
-        // Placeholder for the game start logic
         println!("Starting HeadlessGame...");
+
+        let scene = engine.create_scene("ServerWorld")?;
+        engine.set_active_scene(scene)?;
+
+        engine.register_component::<TransformComponent>(scene)?;
+
         #[cfg(feature = "net")]
         {
             engine.add_global_component(NetState::new_server("0.0.0.0:5000", 8)?)?;
+
             log::info!("Server listening on 0.0.0.0:5000");
         }
 
@@ -49,8 +55,8 @@ fn main() -> Result<()> {
 
     // TODO: do I need to set the runtime run mode?
     engine.initialize(None)?;
-
     let tick = Duration::from_millis(1000 / 60); // 60 FPS
+
     let mut last = Instant::now();
 
     info!("Starting headless game loop...");

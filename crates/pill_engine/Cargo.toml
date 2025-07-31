@@ -54,6 +54,7 @@ lazy_static = "1.4.0"
 config = "0.11"
 dyn-clone = "1.0.4"
 egui = "0.28.1"
+serde = "1.0.219"
 
 [build-dependencies]
 anyhow = "1.0"

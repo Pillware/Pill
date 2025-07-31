@@ -1,4 +1,5 @@
 use pill_engine::game::*;
+use pill_engine::TransformComponent;
 
 use rand::Rng;
 

@@ -14,7 +14,10 @@ pub use engine::{Engine, PillGame};
 pub use engine::{KeyboardKey, MouseButton};
 
 #[cfg(feature = "net")]
-pub use crate::ecs::{NetState, NetStats, NetSide};
+pub use crate::ecs::{NetState, NetStats, NetSide, SpawnQueueComponent};
+
+// TODO: unconditional export because we use it for networking?
+pub use crate::ecs::{TransformComponent};
 
 #[cfg(feature = "game")]
 pub mod game {
@@ -25,7 +28,6 @@ pub mod game {
 
     pub use crate::ecs::{
         SceneHandle,
-        TransformComponent,
         EntityHandle,
         TimeComponent,
         Component, ComponentStorage,
@@ -93,7 +95,6 @@ pub mod internal {
             Scene,
             ComponentStorage,
             MeshRenderingComponent,
-            TransformComponent,
             CameraComponent,
             EntityHandle,
             InputComponent,

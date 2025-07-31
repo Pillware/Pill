@@ -4,12 +4,21 @@ use serde::{Deserialize, Serialize};
 use renet_netcode::{ClientAuthentication, NetcodeClientTransport, NetcodeServerTransport, ServerAuthentication, ServerConfig};
 use std::{net::{UdpSocket, SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr}, time::{Duration, SystemTime}};
 
-#[derive(Debug, Serialize, Deserialize)]
+// TODO: later put more types in a separate crate
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+pub struct TrPacket {
+    pub pos: [f32; 3],
+    pub rot: [f32; 3],
+    pub scale: [f32; 3],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Msg {
     Ping(u64),
     Pong(u64),
-    Counter(u64),
-    // Add more later (Transform, Spawn, Input etc.)
+    Join { client_id: u64, tr: Option<TrPacket> },
+    Tr { client_id: u64, tr: TrPacket }, // TODO: rethink if we need the dupliacte client_id
+    // Add more later (Input etc.)
 }
 
 pub const RELIABLE_CHANNEL_ID: u8 = DefaultChannel::ReliableOrdered as u8;

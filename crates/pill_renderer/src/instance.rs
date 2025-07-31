@@ -1,6 +1,6 @@
 use crate::resources::Vertex;
 
-use pill_engine::game::TransformComponent;
+use pill_engine::TransformComponent;
 
 // --- Instance ---
 
@@ -85,23 +85,23 @@ impl<S: cgmath::BaseFloat> MatrixAngleExt<S> for cgmath::Matrix4<S> {
         #[cfg_attr(rustfmt, rustfmt_skip)]
         cgmath::Matrix4::<S>::from(
             cgmath::Matrix3::from_angle_z(cgmath::Deg(v.z)) *
-            cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) * 
+            cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) *
             cgmath::Matrix3::from_angle_x(cgmath::Deg(v.x)))
-    } 
+    }
 }
 
 impl<S: cgmath::BaseFloat> MatrixModelExt<S> for cgmath::Matrix4<S> {
     fn model(position: cgmath::Vector3<S>, rotation: cgmath::Vector3<S>, scale: cgmath::Vector3<S>) -> Self {
-        cgmath::Matrix4::from_translation(position) * 
-        cgmath::Matrix4::from_euler_angles(rotation) * 
+        cgmath::Matrix4::from_translation(position) *
+        cgmath::Matrix4::from_euler_angles(rotation) *
         cgmath::Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
-    }   
+    }
 }
 
 impl<S: cgmath::BaseFloat> MatrixAngleExt<S> for cgmath::Matrix3<S> {
     fn from_euler_angles(v: cgmath::Vector3<S>) -> Self {
         cgmath::Matrix3::from_angle_z(cgmath::Deg(v.z)) *
-        cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) * 
+        cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) *
         cgmath::Matrix3::from_angle_x(cgmath::Deg(v.x))
     }
 }

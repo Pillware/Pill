@@ -15,6 +15,8 @@ use crate::{
     renderer_resource_storage::RendererResourceStorage
 };
 
+use pill_engine::TransformComponent;
+
 use pill_engine::internal::{
     PillRenderer,
     EntityHandle,
@@ -23,7 +25,6 @@ use pill_engine::internal::{
     TextureType,
     MeshData,
     MaterialTextureMap,
-    TransformComponent,
     ComponentStorage,
     CameraComponent,
     MaterialParameterMap,

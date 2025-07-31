@@ -3,11 +3,13 @@
 use anyhow::Result;
 use std::time::Duration;
 
+use crate::ecs::TransformComponent;
 use crate::engine::Engine;
 use crate::ecs::components::net_components::{NetState, NetSide, NetStats};
+use crate::ecs::components::spawn_queue_component::SpawnQueueComponent;
 
 use pill_net::{
-    Msg,
+    Msg, TrPacket,
     server_update, srv_send_one, srv_broadcast, srv_flush,
     client_update, cli_send, cli_flush,
 };
@@ -15,47 +17,71 @@ use pill_net::{
 const DT: Duration = Duration::from_millis(16); // TODO: we should specify it in some other way
 
 pub fn net_recv_system(engine: &mut Engine) -> Result<()> {
-    let state = engine.get_global_component_mut::<NetState>()?;
+    // temporary vector for join colleciton
+    let mut joins_to_enqueue: Vec<(u64, TrPacket)> = Vec::new();
 
-    match &mut state.side {
-        NetSide::Server(net) => {
-            let inbox = server_update(net, DT)?;
-            for (client_id, msg) in inbox {
-                match msg {
-                    Msg::Ping(t) => {
-                        println!("Srv: getting ping, tick: {}", state.tick);
-                        log::info!("Srv: Ping from {client_id}, t: {t:?}");
-                        // reply with Pong just to one client
-                        srv_send_one(net, client_id, &Msg::Pong(t))?;
-                        // echo current counter back to all
-                        srv_broadcast(net, &Msg::Counter(state.tick))?;
+    {
+        let state = engine.get_global_component_mut::<NetState>()?;
+
+        match &mut state.side {
+            NetSide::Server(net) => {
+                let inbox = server_update(net, DT)?;
+                for (cid, msg) in inbox {
+                    match msg {
+                        Msg::Join {client_id, tr } => {
+                            let pkt = tr.unwrap_or_else( ||{
+                                log::warn!("Srv: Join without transform, using default");
+                                TrPacket::default()
+                            });
+                            // push onto queue; Game logics spawns it later
+                            joins_to_enqueue.push((client_id, pkt));
+                            // acknowledge the spawn to all clients (// TODO: is this not too complex?)
+                            srv_broadcast(net, &Msg::Tr{
+                                client_id,
+                                tr: pkt,
+                            })?;
+                        },
+                        Msg::Tr {client_id, tr} => {
+                            // forward authoritative transform to all clients
+                            srv_broadcast(net, &Msg::Tr {
+                                client_id,
+                                tr,
+                            })?;
+                            log::warn!("Srv: Got Tr from {client_id}, forwarding to all clients");
+                        },
+                        Msg::Ping(t) => { srv_send_one(net, cid, &Msg::Pong(t))?; }
+                        _ => {}
                     }
-                    Msg::Pong(t) => {
-                        println!("Srv: getting pong, tick: {}", state.tick);
-                        log::debug!("Srv: unexpected Pong from {client_id}, t: {t:?}");
+                }
+            }
+            NetSide::Client(net) => {
+                // Send join exactly once
+                if !state.join_sent {
+                    cli_send(net, &Msg::Join {
+                        client_id: state.my_id,
+                        tr: None, // TODO: send initial transform
+                    })?;
+                    state.join_sent = true;
+                }
+                let inbox = client_update(net, DT)?;
+                for msg in inbox {
+                    match msg {
+                        Msg::Tr { client_id, tr } => {
+                            log::info!("Cli: Got Tr from {client_id}, transform: {tr:?}");
+                            handle_remote_transform(engine, client_id, tr)?;
+                        }
+                        Msg::Pong(_)| Msg::Ping(_) => {}
+                        Msg::Join {..} => {}
                     }
-                    Msg::Counter(_) => {}
                 }
             }
         }
-        NetSide::Client(net) => {
-            let inbox = client_update(net, DT)?;
-            for msg in inbox {
-                match msg {
-                    Msg::Counter(v) => {
-                        println!("Cli: getting counter = {v}");
-                        log::info!("Cli: Counter = {v}");
-                        if let Ok(stats) = engine.get_global_component_mut::<NetStats>() {
-                            stats.last_counter = v;
-                        }
-                    }
-                    Msg::Pong(t) => {
-                        println!("Cli: pong");
-                        log::info!("Cli: Pong, t: {t:?}");
-                    }
-                    Msg::Ping(_) => {}
-                }
-            }
+    }
+
+    if !joins_to_enqueue.is_empty() {
+        // Enqueue all joins to the spawn queue
+        if let Ok(q) = engine.get_global_component_mut::<SpawnQueueComponent>() {
+            q.requests.extend(joins_to_enqueue);
         }
     }
     Ok(())
@@ -63,19 +89,12 @@ pub fn net_recv_system(engine: &mut Engine) -> Result<()> {
 
 pub fn net_send_system(engine: &mut Engine) -> Result<()> {
     let state = engine.get_global_component_mut::<NetState>()?;
+    state.tick = state.tick.wrapping_add(1);
 
-    match &mut state.side {
-        NetSide::Server(net) => {
-            println!("Srv: broadcasting counter, tick: {}", state.tick);
-            state.tick = state.tick.wrapping_add(1);
-            srv_broadcast(net, &Msg::Counter(state.tick))?;
-        }
-        NetSide::Client(net) => {
-            state.tick = state.tick.wrapping_add(1);
-            if state.tick % 60 == 0 {
-                println!("Cli: sending Ping, tick: {}", state.tick);
-                cli_send(net, &Msg::Ping(state.tick as u64))?;
-            }
+    if let NetSide::Client(net) = &mut state.side {
+        if state.tick % 60 == 0 {
+            println!("Cli: sending Ping, tick: {}", state.tick);
+            cli_send(net, &Msg::Ping(state.tick as u64))?;
         }
     }
     Ok(())
@@ -86,6 +105,33 @@ pub fn net_flush_system(engine: &mut Engine) -> Result<()> {
     match &mut state.side {
         NetSide::Server(net) => srv_flush(net)?,
         NetSide::Client(net) => cli_flush(net)?,
+    }
+    Ok(())
+}
+
+// TODO: implement -> here we will update what updates came from the network regarding transform
+// updates in all clients
+fn handle_remote_transform(
+    engine: &mut Engine,
+    client_id: u64,
+    tr: TrPacket,
+) -> Result<()> {
+    let scene = engine.scene_manager.get_active_scene_mut()?;
+
+    {
+        let state = engine.get_global_component_mut::<NetState>()?;
+        if let Some(&ent) = state.entity_by_client.get(&client_id) {
+            // If we have an entity for this client, update its transform
+            for (eh, trc) in engine.iterate_one_component_mut::<TransformComponent>()? {
+                if eh == ent { *trc = TransformComponent::from(&tr); }
+            }
+            return Ok(());
+        }
+    }
+
+    // push into SpawnQueueComponent - will be spawned by the system
+    if let Ok(q) = engine.get_global_component_mut::<SpawnQueueComponent>() {
+        q.requests.push((client_id, tr));
     }
     Ok(())
 }

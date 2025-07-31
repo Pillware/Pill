@@ -190,6 +190,12 @@ impl Engine {
             self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
         }
 
+        // Add global spawnQueue only when in networking mode
+        #[cfg(feature = "net")]
+        {
+            self.add_global_component(SpawnQueueComponent::default())?;
+        }
+
         // Add built-in systems
         #[cfg(feature = "rendering")]
         {
@@ -208,6 +214,7 @@ impl Engine {
         #[cfg(feature = "net")]
         {
             self.system_manager.add_system("NetRecvSystem", net_recv_system, UpdatePhase::PreGame)?; // TODO: do I need special states?
+            self.system_manager.add_system("SpawnNetworkEntitiesSystem", spawn_network_entities_system, UpdatePhase::PreGame)?;
             self.system_manager.add_system("NetSendSystem", net_send_system, UpdatePhase::PostGame)?;
             self.system_manager.add_system("NetFlushSystem", net_flush_system, UpdatePhase::PostGame)?;// TODO: not necessarily split
             println!("Registering NetRecvSystem and NetSendSystem");

@@ -11,6 +11,8 @@ pub(crate) mod time_system;
 pub(crate) mod audio_system;
 #[cfg(feature = "net")]
 pub(crate) mod net_system;
+#[cfg(feature = "net")]
+pub(crate) mod spawn_network_entities_system;
 
 // --- Use ---
 

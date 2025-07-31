@@ -1,6 +1,6 @@
 use cgmath::{EuclideanSpace, SquareMatrix, Zero};
+use pill_engine::TransformComponent;
 use pill_engine::internal::{
-    TransformComponent,
     CameraComponent
 };
 
@@ -35,10 +35,10 @@ impl CameraUniform {
 
     pub fn update_data(&mut self, camera_component: &CameraComponent, transform_component: &TransformComponent) {
         // Update position
-        self.position = cgmath::Vector4::<f32> { 
-            x: transform_component.position.x, 
-            y: transform_component.position.y, 
-            z: transform_component.position.z, 
+        self.position = cgmath::Vector4::<f32> {
+            x: transform_component.position.x,
+            y: transform_component.position.y,
+            z: transform_component.position.z,
             w: 0.0
         }.into();
 
@@ -64,8 +64,8 @@ impl CameraUniform {
 
     fn calculate_projection_matrix(camera_component: &CameraComponent) -> cgmath::Matrix4::<f32> {
         OPENGL_TO_WGPU_MATRIX * cgmath::perspective(
-            cgmath::Deg(camera_component.fov), 
-            camera_component.aspect.get_value(), 
+            cgmath::Deg(camera_component.fov),
+            camera_component.aspect.get_value(),
             camera_component.range.start,
             camera_component.range.end
         )
