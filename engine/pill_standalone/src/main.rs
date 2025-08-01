@@ -6,17 +6,55 @@ use pill_engine::internal::*;
 use pill_renderer;
 use anyhow::{ Context, Ok, Result };
 use winit::{
-    event::{ Event, WindowEvent, DeviceEvent }, 
-    platform::windows::{ IconExtWindows },
+    event::{ Event, WindowEvent, DeviceEvent },
+    window::Icon,
 };
+#[cfg(target_os = "windows")]
+use winit::platform::windows::IconExtWindows;
+
 use std::{
-    fs::{remove_file, rename}, io::{ Write }, path::PathBuf, sync::Arc, time::{Duration, Instant}
+    fs::{remove_file, rename}, io::{ Write }, path::{Path, PathBuf}, sync::Arc, time::{Duration, Instant}
 };
 use log::{ info, warn };
 use libloading::{Library, Symbol};
 use std::ffi::c_void;
 
 const RELOAD_COOLDOWN: Duration = Duration::from_millis(1000);
+
+// ---------- platform helpers ----------------------------------------------
+#[cfg(target_os = "windows")]
+const EXEC_SUFFIX: &str = ".exe";
+#[cfg(not(target_os = "windows"))]
+const EXEC_SUFFIX: &str = "";
+
+#[cfg(target_os = "windows")]
+const DYLIB_PREFIX: &str = "";
+#[cfg(not(target_os = "windows"))]
+const DYLIB_PREFIX: &str = "lib";
+
+#[cfg(target_os = "windows")]
+const DYLIB_SUFFIX: &str = ".dll";
+#[cfg(target_os = "linux")]
+const DYLIB_SUFFIX: &str = ".so";
+#[cfg(target_os = "macos")]
+const DYLIB_SUFFIX: &str = ".dylib";
+
+fn dylib(name: &str) -> String {
+    format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
+}
+
+pub fn load_window_icon(path: &Path) -> Option<Icon> {
+    // Fast path on Windows: let the OS decode common formats for us.
+    #[cfg(target_os = "windows")]
+    if let Ok(icon) = Icon::from_path(path, None) {
+        return Some(icon);
+    }
+
+    // Cross‑platform path: decode with the `image` crate.
+    let img = image::open(path).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    Icon::from_rgba(img.into_raw(), w, h).ok()
+}
 
 fn set_log_level(config: &Config) {
     // Configure logging
@@ -71,29 +109,15 @@ struct ProjectPaths {
 }
 
 fn create_window(config: &Config, game_resources_folder_path: PathBuf) -> WindowData {
-    let window_title = config.get_str("WINDOW_TITLE").context(EngineError::InvalidGameConfig()).unwrap(); 
+    let window_title = config.get_str("WINDOW_TITLE").context(EngineError::InvalidGameConfig()).unwrap();
     let window_width = config.get_int("WINDOW_WIDTH").unwrap_or(1280) as u32;
     let window_height = config.get_int("WINDOW_HEIGHT").unwrap_or(720) as u32;
     let window_fullscreen = config.get_bool("WINDOW_FULLSCREEN").unwrap_or(false);
 
     let default_icon_bytes = include_bytes!("../res/icon.raw");
     let icon_path = game_resources_folder_path.join("icon.ico"); // Icon has to in res folder of the game and has to be named icon.ico
-    let window_icon = match icon_path.exists() {
-        true => match winit::window::Icon::from_path(icon_path, None) {
-            Result::Ok(icon) => Some(icon),
-            Result::Err(_) => { 
-                warn!("Failed to load window icon"); 
-                None 
-            }
-        },
-        false => match winit::window::Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128) { 
-            Result::Ok(icon) => Some(icon),
-            Result::Err(_) => { 
-                warn!("Failed to load window icon"); 
-                None 
-            }
-        }
-    };
+    let window_icon = load_window_icon(&icon_path)
+        .or_else(|| Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128).ok());
 
     // Init window
     let window_event_loop = winit::event_loop::EventLoop::new().unwrap();
@@ -108,7 +132,7 @@ fn create_window(config: &Config, game_resources_folder_path: PathBuf) -> Window
         .with_visible(false) // Temporarily hide window (this is a hack to make taskbar icon loaded correctly)
         .build(&window_event_loop)
         .context("Failed to initialize window").unwrap());
-    
+
     // Possibly set window to fullscreen
     let window_fullscreen_mode = match window_fullscreen {
         true => {
@@ -131,22 +155,47 @@ fn load_game_dynamic_library(library_path: &PathBuf) -> (Library, Box<dyn PillGa
 }
 
 fn build_standalone_and_game_crates(project_paths: &ProjectPaths) -> Result<()> {
-    // Build standalone and game crates
-    let output = std::process::Command::new("PillLauncher.exe")
-        .args(&["-a", "build", "-p", project_paths.game_project_folder_path.to_str().unwrap(), "-c", "hot-reload"])
+    // ── 1 ▪ locate the launcher manifest directly ──────────────────────────
+    //
+    //   <Pill-Engine>/examples/Floating-Pills
+    //     └─ ../../engine/pill_launcher/Cargo.toml
+    //
+    let launcher_manifest = project_paths
+        .game_project_folder_path
+        .parent().unwrap()          // …/examples
+        .parent().unwrap()          // …/<Pill-Engine>
+        .join("engine")
+        .join("pill_launcher")
+        .join("Cargo.toml");
+
+    // ── 2 ▪ run the launcher via that manifest ─────────────────────────────
+    //
+    let output = std::process::Command::new("cargo")
+        .args(&[
+            "run", "--quiet",
+            "--manifest-path", launcher_manifest.to_str().unwrap(),
+            "--",
+            "-a", "build",
+            "-p", project_paths.game_project_folder_path.to_str().unwrap(),
+            "-c", "hot-reload",
+        ])
+        // run inside the engine workspace so relative paths in Cargo.toml work
+        .current_dir(launcher_manifest.parent().unwrap().parent().unwrap()) // …/<Pill-Engine>/engine
         .output()
-        .context("Failed to run PillLauncher")?;
+        .context("failed to invoke PillLauncher via `cargo run`")?;
 
     if !output.status.success() {
-        warn!("Rebuild failed: {}", String::from_utf8_lossy(&output.stderr));
+        warn!(
+            "rebuild failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
-
     Ok(())
 }
 
 fn check_and_reload_game(
-    engine: &mut Option<Engine>, 
-    game_dynamic_library: &mut Option<Library>, 
+    engine: &mut Option<Engine>,
+    game_dynamic_library: &mut Option<Library>,
     project_paths: &ProjectPaths,
     last_reload_time: &mut Instant,
     window_size: &winit::dpi::PhysicalSize<u32>,
@@ -197,7 +246,7 @@ fn check_and_reload_game(
         *game_dynamic_library = Some(game_library);
 
         // Run again to clear changes (otherwise it will trigger reload again since file was renamed)
-        file_watchers.game_dynamic_library_files_watcher.get_changes(); 
+        file_watchers.game_dynamic_library_files_watcher.get_changes();
 
         *last_reload_time = now;
     }
@@ -218,14 +267,14 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
 }
 
 fn main_loop(
-    engine: &mut Option<Engine>, 
-    game_dynamic_library: &mut Option<Library>, 
+    engine: &mut Option<Engine>,
+    game_dynamic_library: &mut Option<Library>,
     project_paths: ProjectPaths,
-    window_data: WindowData, 
-    config: Config, 
+    window_data: WindowData,
+    config: Config,
     development_mode: bool,
 ) -> Result<()> {
-    
+
     // Create a file watcher to monitor game project file changes as well as game output file changes
     let mut file_watchers: Option<FileWatchers> = if development_mode {
         Some(create_file_watchers(&project_paths))
@@ -249,8 +298,8 @@ fn main_loop(
                 ..
             } => {
                 match event {
-                    DeviceEvent::MouseMotion { 
-                        delta, 
+                    DeviceEvent::MouseMotion {
+                        delta,
                     } => {
                         if let Some(ref mut engine) = engine {
                             engine.pass_mouse_delta_input(delta);
@@ -269,28 +318,28 @@ fn main_loop(
                 if let Some(ref mut engine) = engine {
                     engine.pass_input_to_egui(event);
                 }
-                
+
                 match event {
                     WindowEvent::RedrawRequested => {
                         let now = std::time::Instant::now();
                         let delta_time = now - last_render_time;
                         last_render_time = now;
-                        
+
                         if let Some(ref mut e) = engine {
                             e.update(delta_time);
                         }
 
                         if development_mode {
                             check_and_reload_game(
-                                engine, 
-                                game_dynamic_library, 
+                                engine,
+                                game_dynamic_library,
                                 &project_paths,
-                                &mut last_reload_time, 
+                                &mut last_reload_time,
                                 &window_data.size,
                                 &window_data.window,
                                 &config,
                                 file_watchers.as_mut().unwrap(),
-                            ).unwrap();    
+                            ).unwrap();
                         }
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
@@ -361,7 +410,7 @@ fn main() {
     // └── Cargo.lock
 
     let development_mode = true;
-   
+
     let current_folder_path = std::env::current_exe().unwrap().parent().unwrap().to_path_buf(); // Path where the executable is located
     let game_project_folder_path = current_folder_path.parent().unwrap().parent().unwrap().to_path_buf();
     let build_data_folder_path = current_folder_path.join("data");
@@ -372,8 +421,8 @@ fn main() {
     };
     let game_source_folder_path = current_folder_path.parent().unwrap().parent().unwrap().join("src"); // <GAME_PROJECT_ROOT>/src
     let config_path = game_resources_folder_path.join("config.ini");
-    let game_dynamic_library_path = build_data_folder_path.join("pill_game.dll");
-    let game_dynamic_library_hot_reloaded_path = build_data_folder_path.join("pill_game_hot_reloaded.dll");
+    let game_dynamic_library_path = build_data_folder_path.join(dylib("pill_game"));
+    let game_dynamic_library_hot_reloaded_path = build_data_folder_path.join(dylib("pill_game_hot_reloaded"));
 
     let project_paths = ProjectPaths {
         build_data_folder_path,
@@ -393,7 +442,7 @@ fn main() {
     set_log_level(&config);
 
     info!("Initializing {}", "Standalone".mobj_style());
-    
+
     // Create windows
     let window_data = create_window(&config, project_paths.game_resources_folder_path.clone());
 
@@ -410,17 +459,17 @@ fn main() {
     // Run loop
     window_data.event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
     window_data.event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
-    
+
     // Show window (now the taskbar icon will be set correctly)
-    window_data.window.set_visible(true); 
+    window_data.window.set_visible(true);
 
     // Main program loop
     main_loop(
-        &mut engine, 
-        &mut game_dynamic_library, 
+        &mut engine,
+        &mut game_dynamic_library,
         project_paths,
-        window_data, 
-        config, 
+        window_data,
+        config,
         development_mode,
     ).context("Main loop failed").unwrap();
 }
