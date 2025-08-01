@@ -13,8 +13,12 @@ use pill_net::{cli_send, Msg, TrPacket};
 
 // Move speed in world units per second
 const PILL_MOVE_SPEED: f32 = 3.0;
-const UPDATE_FREQ_HZ: f32 = 10.0;
+const UPDATE_FREQ_HZ: f32 = 24.0;
 const UPDATE_FREQ_SEC: f32 = 1.0 / UPDATE_FREQ_HZ;
+
+const REMOTE_SERVER_ADDR: &str = "145.223.100.1";
+//const REMOTE_SERVER_ADDR: &str = "127.0.0.1";
+const REMOTE_SERVER_PORT: u16 = 5000;
 
 // TODO: temporarily add the time accumulator component
 pub struct TimeAccumulationComponent {
@@ -104,9 +108,10 @@ impl PillGame for Game {
         {
             engine.add_global_component(NetStats::new())?;
             let client_id = rand::thread_rng().gen_range(1..=10_000_000);
-            engine.add_global_component(NetState::new_client("127.0.0.1:5000", client_id)?)?;
+            let server_addr = format!("{REMOTE_SERVER_ADDR}:{REMOTE_SERVER_PORT}");
+            engine.add_global_component(NetState::new_client(&server_addr, client_id)?)?;
 
-            log::info!("Client will connect to 127.0.0.1:5000");
+            log::info!("Client will connect to {server_addr} with ID {client_id}");
 
             engine.add_system("NetHUD", net_hud_system)?;
         }
