@@ -131,9 +131,13 @@ fn handle_remote_transform(
 
     {
         let state = engine.get_global_component_mut::<NetState>()?;
+        // early exit for our own client
+        if state.my_id == client_id {
+            return Ok(());
+        }
         // If this is our own client, ensure we registered it
         if let Some(&ent) = state.entity_by_client.get(&client_id) {
-            log::info!("Cli ◂ UPDATE local ent={:?} with pkt={:?}", ent, tr);
+            //log::info!("Cli ◂ UPDATE local ent={:?} with pkt={:?}", ent, tr);
             // If we have an entity for this client, update its transform
             for (eh, trc) in engine.iterate_one_component_mut::<TransformComponent>()? {
                 if eh == ent { *trc = TransformComponent::from(&tr); }

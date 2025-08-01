@@ -184,7 +184,7 @@ fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
                 client_id: my_id,
                 tr:        pkt,
             })?;
-            log::info!("Cli ▸ TR sent  cid={my_id} pkt={:?}", pkt);
+            //log::info!("Cli ▸ TR sent  cid={my_id} pkt={:?}", pkt);
         }
     }
     Ok(())
