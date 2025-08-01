@@ -129,9 +129,9 @@ impl PillGame for Game {
         }
         let state = engine.get_global_component_mut::<NetState>()?;
         if let NetSide::Client(net) = &mut state.side {
-            cli_send(net, &Msg::Tr {
+            cli_send(net, &Msg::Join {
                 client_id: state.my_id,
-                tr: packets[0],
+                tr: Some(packets[0]),
             })?;
             log::info!("Cli ▸ JOIN sent  cid={} pkt={:?}", state.my_id, packets[0]);
         }

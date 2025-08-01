@@ -6,6 +6,8 @@ use pill_core::{ PillTypeMap, PillTypeMapKey, Vector3f };
 
 use pill_net::TrPacket;
 
+use serde::{ Serialize, Deserialize };
+
 use cgmath::Zero;
 
 
@@ -44,6 +46,7 @@ impl TransformComponentBuilder {
 
 // --- Transform Component ---
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransformComponent {
     pub position: Vector3f,
     pub rotation: Vector3f,

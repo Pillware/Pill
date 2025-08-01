@@ -22,7 +22,7 @@ pub(crate) mod egui_manager_component;
 #[cfg(feature = "net")]
 pub(crate) mod net_components;
 #[cfg(feature = "net")]
-pub(crate) mod owner_component;
+pub(crate) mod network_state_component;
 #[cfg(feature = "net")]
 pub(crate) mod spawn_queue_component;
 

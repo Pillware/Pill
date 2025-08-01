@@ -86,6 +86,11 @@ pub use components::net_components::{
 pub use components::spawn_queue_component::{
     SpawnQueueComponent,
 };
+
+#[cfg(feature = "net")]
+pub use components::network_state_component::{
+    NetworkStateComponent,
+};
 // - Systems
 
 pub use systems::{
@@ -121,6 +126,11 @@ pub use systems::net_system::{
     net_recv_system,
     net_send_system,
     net_flush_system,
+};
+
+#[cfg(feature = "net")]
+pub use systems::network_component_update_system::{
+    network_component_update_system,
 };
 
 #[cfg(feature = "net")]
