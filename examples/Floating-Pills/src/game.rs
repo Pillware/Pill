@@ -196,14 +196,6 @@ impl PillGame for Game {
         };
         engine.add_global_component(demo_state)?;
 
-        // TODO: demo code - move to dedicated example
-        #[cfg(feature = "net")]
-        {
-            use pill_engine::ecs::components::net_components::{NetState, NetStats};
-            engine.add_global_component(NetStats::new())?;
-            engine.add_global_component(NetState::new_client("127.0.0.1:5000", 0))?;
-        }
-
         // Spawn certain number of floating objects
         spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
 

@@ -59,14 +59,14 @@ pub fn net_recv_system(engine: &mut Engine) -> Result<()> {
             }
             NetSide::Client(net) => {
                 // Send join exactly once
-                if !state.join_sent {
-                    cli_send(net, &Msg::Join {
-                        client_id: state.my_id,
-                        tr: None, // TODO: send initial transform
-                    })?;
-                    state.join_sent = true;
-                    log::info!("Cli: JOIN sent, client_id: {}", state.my_id);
-                }
+                //if !state.join_sent {
+                //    cli_send(net, &Msg::Join {
+                //        client_id: state.my_id,
+                //        tr: None, // TODO: send initial transform
+                //    })?;
+                //    state.join_sent = true;
+                //    log::info!("Cli: JOIN sent, client_id: {}", state.my_id);
+                //}
                 let inbox = client_update(net, DT)?;
                 for msg in inbox {
                     match msg {

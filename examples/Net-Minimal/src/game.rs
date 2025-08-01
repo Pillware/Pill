@@ -9,6 +9,16 @@ use pill_engine::{NetState, NetStats, NetSide};
 #[cfg(feature = "net")]
 use pill_net::{cli_send, Msg, TrPacket};
 
+// TODO: temporarily add the time accumulator component
+pub struct TimeAccumulationComponent {
+    pub accumulator: f32,
+}
+
+impl GlobalComponent for TimeAccumulationComponent { }
+impl PillTypeMapKey for TimeAccumulationComponent {
+    type Storage = GlobalComponentStorage<Self>;
+}
+
 // Define custom component
 pub struct PillComponent { }
 
@@ -36,7 +46,8 @@ impl PillGame for Game {
         engine.register_component::<PillComponent>(active_scene)?;
 
         // Add systems
-        engine.add_system("PillRotation", pill_rotation_system)?;
+        //engine.add_system("PillRotation", pill_rotation_system)?;
+        engine.add_system("PillMovement", pill_movement_system)?;
 
         engine.add_system("SendOwnTransform", send_own_tr_system)?;
 
@@ -93,8 +104,25 @@ impl PillGame for Game {
             engine.add_system("NetHUD", net_hud_system)?;
         }
 
-		let state = engine.get_global_component_mut::<NetState>()?;
-        state.entity_by_client.insert(state.my_id, pill);
+        engine.add_global_component(TimeAccumulationComponent { accumulator: 0.0 })?;
+
+        {
+            let state = engine.get_global_component_mut::<NetState>()?;
+            state.entity_by_client.insert(state.my_id, pill);
+        }
+
+        let mut packets = Vec::new();
+        for (_, transform, _) in engine.iterate_two_components::<TransformComponent, PillComponent>()? {
+            packets.push(TrPacket::from(transform));
+        }
+        let state = engine.get_global_component_mut::<NetState>()?;
+        if let NetSide::Client(net) = &mut state.side {
+            cli_send(net, &Msg::Tr {
+                client_id: state.my_id,
+                tr: packets[0],
+            })?;
+            log::info!("Cli ▸ JOIN sent  cid={} pkt={:?}", state.my_id, packets[0]);
+        }
 
         Ok(())
     }
@@ -127,18 +155,28 @@ fn net_hud_system(engine: &mut Engine) -> Result<()> {
 fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
 	let (my_id, my_ent) = {
 		let state = engine.get_global_component::<NetState>()?;
-        println!("Trying to send own transform, my_id={}", state.my_id);
+        //println!("Trying to send own transform, my_id={}", state.my_id);
 		match state.entity_by_client.get(&state.my_id) {
 			Some(&e) => (state.my_id, e),
 			None      => { println!("Early exit no such id, size {}", state.entity_by_client.len()); return Ok(()) },               // not spawned yet
         }
     };
 
+    let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
+    {
+        let mut timer = engine.get_global_component_mut::<TimeAccumulationComponent>()?;
+        timer.accumulator += dt;
+        if timer.accumulator < 0.333 { // TODO: tweak it
+            return Ok(()); // not enough time passed
+        }
+        timer.accumulator = 0.0; // reset
+    }
+
     // find our transform
     let tr_pkt = engine.iterate_one_component::<TransformComponent>()?
         .find(|(eh, _)| *eh == my_ent).map(|(_, t)| TrPacket::from(t));
 
-    println!("Continuing with sending");
+    //println!("Continuing with sending");
 	if let Some(pkt) = tr_pkt {
         let state = engine.get_global_component_mut::<NetState>()?;
         if let NetSide::Client(net) = &mut state.side {
@@ -151,3 +189,36 @@ fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
     }
     Ok(())
 }
+
+// Move speed in world units per second
+const PILL_MOVE_SPEED: f32 = 3.0;
+
+fn pill_movement_system(engine: &mut Engine) -> Result<()> {
+    let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
+    let input = engine.get_global_component_mut::<InputComponent>()?;
+
+    // Build a direction vector from arrow-key input
+    let mut dir = Vector3f::new(0.0, 0.0, 0.0);
+    if input.get_key(KeyboardKey::ArrowUp)    { dir.z -= 1.0; }
+    if input.get_key(KeyboardKey::ArrowDown)  { dir.z += 1.0; }
+    if input.get_key(KeyboardKey::ArrowLeft)  { dir.x -= 1.0; }
+    if input.get_key(KeyboardKey::ArrowRight) { dir.x += 1.0; }
+    if input.get_key(KeyboardKey::ControlLeft)  { dir.y += 1.0; }
+    if input.get_key(KeyboardKey::ShiftLeft) { dir.y -= 1.0; }
+
+    // Move every pill entity
+    if dir.x != 0.0 || dir.y != 0.0 {
+        // Normalize only the XY part so diagonal speed == straight speed
+        let len = (dir.x * dir.x + dir.y * dir.y).sqrt(); // 1.0 straight, √2 diagonal
+        let inv = 1.0 / len;
+        dir.x *= inv;
+        dir.y *= inv;
+
+        for (_, transform, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
+            transform.position += dir * PILL_MOVE_SPEED * dt;
+        }
+    }
+
+    Ok(())
+}
+
