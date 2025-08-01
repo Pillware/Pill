@@ -179,6 +179,11 @@ impl Engine {
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
 
+        #[cfg(feature = "net")]
+        {
+            self.add_global_component(SpawnQueueComponent::default())?;
+        }
+
         // Input/UI/Audio components only when server
         #[cfg(feature = "rendering")]
         {

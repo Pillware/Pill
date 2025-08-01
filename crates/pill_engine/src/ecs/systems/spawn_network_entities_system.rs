@@ -20,10 +20,10 @@ use crate::{
 
 #[cfg(feature = "net")]
 pub fn spawn_network_entities_system(engine: &mut Engine) -> Result<()> {
-    //  run **only** on the server
-    if !matches!(engine.get_global_component::<NetState>()?.side, NetSide::Server(_)) {
-        return Ok(())
-    }
+    ////  run **only** on the server
+    //if !matches!(engine.get_global_component::<NetState>()?.side, NetSide::Server(_)) {
+    //    return Ok(())
+    //}
 
     let scene = engine.get_active_scene_handle()?;
 

@@ -9,6 +9,13 @@ use pill_engine::{NetState, NetStats, NetSide};
 #[cfg(feature = "net")]
 use pill_net::{cli_send, Msg, TrPacket};
 
+// ----- CONSTANTS -----
+
+// Move speed in world units per second
+const PILL_MOVE_SPEED: f32 = 3.0;
+const UPDATE_FREQ_HZ: f32 = 10.0;
+const UPDATE_FREQ_SEC: f32 = 1.0 / UPDATE_FREQ_HZ;
+
 // TODO: temporarily add the time accumulator component
 pub struct TimeAccumulationComponent {
     pub accumulator: f32,
@@ -166,7 +173,7 @@ fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
     {
         let mut timer = engine.get_global_component_mut::<TimeAccumulationComponent>()?;
         timer.accumulator += dt;
-        if timer.accumulator < 0.333 { // TODO: tweak it
+        if timer.accumulator < UPDATE_FREQ_SEC { // TODO: tweak it
             return Ok(()); // not enough time passed
         }
         timer.accumulator = 0.0; // reset
@@ -189,9 +196,6 @@ fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
     }
     Ok(())
 }
-
-// Move speed in world units per second
-const PILL_MOVE_SPEED: f32 = 3.0;
 
 fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
