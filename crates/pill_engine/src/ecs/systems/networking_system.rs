@@ -94,7 +94,7 @@ fn prepare_network_update(engine: &mut Engine) -> Result<NetworkUpdatePayload> {
     }
 
     let id = engine.get_global_component::<NetState>()?.my_id;
-    //log::info!("Prepared {} entity updates (client_id={id})", entity_updates.len());
+    log::info!("Prepared {} entity updates (client_id={id})", entity_updates.len());
 
     // Create the network update payload
     let pkt = NetworkUpdatePayload {
@@ -108,7 +108,7 @@ fn prepare_network_update(engine: &mut Engine) -> Result<NetworkUpdatePayload> {
 fn send_network_update(engine: &mut Engine, pkt: &NetworkUpdatePayload) -> Result<()> {
     // ----- STEP 2: Send the updates -----
     if pkt.updates.is_empty() {
-        //log::info!("Nothing to send this frame");
+        log::info!("Nothing to send this frame");
         return Ok(());
     }
 

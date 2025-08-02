@@ -25,12 +25,14 @@ pub enum EngineError<'a> {
     // Entity
     #[error("{} for that {} not found", "Entity".gobj_style(), "EntityHandle".sobj_style())]
     InvalidEntityHandle,
+    #[error("Cannot create {}. Entity with handle {} already exists. \n\nSource: ", "Entity".gobj_style(), "EntityHandle".sobj_style())]
+    EntityWithHandleAlreadyExists,
     #[error("Cannot create {}. Maximum number of entities in {} reached. \n\nSource: ", "Entity".gobj_style(), "Scene".gobj_style())]
     EntityLimitReached,
 
     // Camera
     #[error("There is no active {} set in active {}",  "Camera".gobj_style(), "Scene".gobj_style())]
-    NoActiveCamera,   
+    NoActiveCamera,
 
     // Component
     #[error("{} {} is already registered for {} {}", "Component".gobj_style(), .0.sobj_style(), "Scene".gobj_style(), .1.name_style())]
@@ -55,7 +57,7 @@ pub enum EngineError<'a> {
     SystemNotFound(String, String),
     #[error("{} {} not found", "UpdatePhase".sobj_style(), .0.name_style())]
     SystemUpdatePhaseNotFound(String),
-    
+
     // Resource
     #[error("Path to {} is invalid: {}", "Asset".gobj_style(), .0.name_style())]
     InvalidAssetPath(String),

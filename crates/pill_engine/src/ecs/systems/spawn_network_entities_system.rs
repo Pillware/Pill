@@ -58,15 +58,16 @@ pub fn spawn_network_entities_system(engine: &mut Engine) -> Result<()> {
     for (cid, eh, mut transform) in spawn_requests.drain(..) {
 
         log::info!("Spawning entity for cid={cid} pkt={:?}", transform);
-        let ent = engine.create_entity(scene)?; // TODO: do we need to preserve the
-                                                              // entity handles?
+        let ent = engine.create_entity_with_handle(scene, eh)?;
+        //let ent = engine.create_entity(scene)?; // TODO: do we need to preserve the
+
         transform.position.x += rng.random_range(-2.0..=2.0); // TODO: is this necessary?
         transform.position.z += rng.random_range(-2.0..=2.0);
         transform.net_dirty = false; // reset net dirty flag
 
         // add the network state component
         engine.add_component_to_entity(scene, ent, NetworkStateComponent {
-            state: NetEntityState::Alive,
+            state: NetEntityState::Spawn,
             transform: None,
         })?;
 

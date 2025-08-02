@@ -448,6 +448,65 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     }
 }
 
+impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
+     pub fn insert_at_key(&mut self, key: K, value: V) -> Result<(), ()> {
+        let kd = key.data();
+
+        // ── basic sanity checks ──────────────────────────────────────────────
+        if kd.index == 0 || kd.version.get() % 2 == 0 {
+            panic!(
+                "Cannot insert at invalid key: key={:?}, version={}",
+                kd,
+                kd.version.get()
+            );
+        }
+
+        // ── 1. make sure the slot exists ─────────────────────────────────────
+        while self.slots.len() <= kd.index as usize {
+            self.slots.push(Slot {
+                u: SlotUnion { next_free: self.free_head },
+                version: 0,                  // vacant
+            });
+            self.free_head = self.slots.len() as u32 - 1;
+        }
+
+        let idx = kd.index as usize;
+        if self.slots[idx].occupied() {
+            panic!("Cannot insert at occupied slot: key={:?}", kd);
+        }
+
+        // ── 2. unlink the slot from the freelist ─────────────────────────────
+        if self.free_head == kd.index {
+            // the slot is the freelist head
+            self.free_head = unsafe { self.slots[idx].u.next_free };
+        } else {
+            // walk the freelist once to find the predecessor
+            let mut cur = self.free_head;
+            while cur != 0 {
+                let next = unsafe { self.slots.get_unchecked(cur as usize).u.next_free };
+                if next == kd.index {
+                    // relink cur → next_next
+                    unsafe {
+                        self.slots.get_unchecked_mut(cur as usize).u.next_free =
+                            self.slots[idx].u.next_free;
+                    }
+                    break;
+                }
+                cur = next;
+            }
+        }
+
+        // ── 3. occupy the slot ───────────────────────────────────────────────
+        unsafe {
+            self.slots[idx].u.value = ManuallyDrop::new(value);
+        }
+        self.slots[idx].version = kd.version.get();
+        self.num_elems += 1;
+
+        Ok(())
+    }
+}
+
 impl<K: PillSlotMapKey, V> Index<K> for PillSlotMap<K, V> {
     type Output = V;
 
