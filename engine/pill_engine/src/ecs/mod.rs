@@ -23,6 +23,7 @@ pub use components::camera_component::{
     CameraComponent,
     CameraAspectRatio,
     get_renderer_resource_handle_from_camera_component,
+    PostprocessParams
 };
 
 pub use components::audio_manager_component::{

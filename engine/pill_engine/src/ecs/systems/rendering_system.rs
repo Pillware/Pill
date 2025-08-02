@@ -46,61 +46,32 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     // - Prepare rendering data
     timer.record("Prepare render queue")?;
 
-    // Clear the render queue
-    engine.render_queue.clear();
-    // Iterate mesh rendering components
-    for (entity_handle, transform_component, mesh_rendering_component) in
-        engine.scene_manager.get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(active_scene_handle)?
-    {
-        // Update transform matrices if required
-        if transform_component.matrix_update_required {
-            update_transform_matrices(transform_component);
-            transform_component.matrix_update_required = false;
-        }
 
-        // Add valid mesh rendering components to render queue
-        if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
-            let render_queue_item = RenderQueueItem {
-                key: render_queue_key,
-                entity_index: entity_handle.data().index as u32,
-            };
-            engine.render_queue.push(render_queue_item);
-        } else {
-            debug!("Invalid render queue key");
-            continue;
-        }
-    }
-
-    timer.record("Sort render queue")?;
-
-    // Sort render queue
-    engine.render_queue.sort();
 
     timer.record("Get component storages")?;
 
     let egui_ui = EguiManagerComponent::get_ui(engine);// egui_manager_component.get_ui(engine);
 
-    let active_scene = engine.scene_manager.get_active_scene_mut()?;
-    // Get storages
-    let camera_component_storage = active_scene.get_component_storage::<CameraComponent>()
-        .context(format!("{}: Cannot get active {}", "RenderingSystem".sobj_style(), "Camera".gobj_style()))?;
-    let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
-        .context(format!("{}: Cannot get {}", "RenderingSystem".sobj_style(), "TransformComponents".sobj_style())).unwrap();
+   
 
     timer.record_new_context("Render")?;
 
+    let egui_ui_with_engine = Box::new(|engine: &mut Engine, ctx: &egui::Context| {
+        let ui_fn = EguiManagerComponent::get_ui(engine);
+        ui_fn(engine, ctx);
+    });
+
     // Render
-    match engine.renderer.render(
-        active_camera_entity_handle, 
-        &engine.render_queue, 
-        camera_component_storage,
-        transform_component_storage,
-        egui_ui,
+    let mut renderer = engine.renderer.take().expect("Critical: Renderer is None");
+    match renderer.render(
+        engine,
+        egui_ui_with_engine,
         &mut timer
     ) {
         Ok(_) => {
             timer.end_context()?; // End "Render" context
             engine.system_manager.update_system_timer(RENDERING_SYSTEM.name, RENDERING_SYSTEM.update_phase, timer)?;
+            engine.renderer = Some(renderer); // Put renderer back to engine
             Ok(())
         } 
         Err(e) => {
@@ -109,7 +80,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     // Recreate lost surface
                     timer.end_context()?; // End "Render" context
                     engine.system_manager.update_system_timer(RENDERING_SYSTEM.name, RENDERING_SYSTEM.update_phase, timer)?;
-                    Ok(engine.renderer.resize(engine.window_size))
+                    Ok(renderer.resize(engine.window_size))
                 },
                 Some(RendererError::SurfaceOutOfMemory) => {
                     panic!("Critical: Renderer error, system out of memory");
@@ -118,4 +89,5 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             }
         }
     }
+    
 }

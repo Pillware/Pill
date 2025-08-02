@@ -43,14 +43,14 @@ pub trait PillGame {
 pub struct Engine { 
     pub(crate) config: config::Config,
     pub(crate) game: Option<Game>,
-    pub(crate) renderer: Renderer,
-    pub(crate) scene_manager: SceneManager,
+    pub(crate) renderer: Option<Renderer>,
+    pub scene_manager: SceneManager,
     pub(crate) system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
     pub(crate) global_components: PillTypeMap,
     pub(crate) input_queue: VecDeque<InputEvent>,
-    pub(crate) render_queue: Vec<RenderQueueItem>,
-    pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
+    pub render_queue: Vec<RenderQueueItem>,
+    pub window_size: winit::dpi::PhysicalSize<u32>,
     pub(crate) game_resources_directory_path: PathBuf,
     pub(crate) frame_delta_time: f32, // In milliseconds
 }
@@ -66,7 +66,7 @@ impl Engine {
         // Load master shader data to executable
         let master_vertex_shader_bytes = include_bytes!("../res/shaders/master.vert.glsl");
         let master_fragment_shader_bytes = include_bytes!("../res/shaders/master.frag.glsl");
-        self.renderer.set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes)?;
+        self.renderer.as_mut().unwrap().set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes)?;
 
         // Load default resource data to executable
         let default_color_texture_bytes = Box::new(*include_bytes!("../res/textures/default_color.png"));
@@ -123,7 +123,7 @@ impl Engine {
         Self { 
             config,
             game: Some(game),
-            renderer,
+            renderer: Some(renderer),
             scene_manager: SceneManager::new(max_entity_count),
             system_manager: SystemManager::new(),
             resource_manager: ResourceManager::new(),
@@ -271,7 +271,7 @@ impl Engine {
     pub fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         debug!("{} resized to {}x{}", "Window".mobj_style(), new_window_size.width, new_window_size.height);
         self.window_size = new_window_size;
-        self.renderer.resize(new_window_size);
+        self.renderer.as_mut().unwrap().resize(new_window_size);
     }
 
     pub fn pass_keyboard_key_input(&mut self, keyboard_input: &KeyEvent) {
@@ -313,7 +313,7 @@ impl Engine {
     }
 
     pub fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) {
-       self.renderer.pass_input_to_egui(event).unwrap();
+       self.renderer.as_mut().unwrap().pass_input_to_egui(event).unwrap();
     }
 
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {

@@ -52,7 +52,7 @@ pub struct MeshRenderingComponent {
     pub mesh_handle: Option<MeshHandle>,
     #[readonly]
     pub material_handle: Option<MaterialHandle>,
-    pub(crate) render_queue_key: Option<RenderQueueKey>, 
+    pub render_queue_key: Option<RenderQueueKey>, 
 
     entity_handle: Option<EntityHandle>,
     scene_handle: Option<SceneHandle>,

@@ -136,6 +136,7 @@ pub mod internal {
         ecs::{
             Scene,
             ComponentStorage,
+            PostprocessParams,
             MeshRenderingComponent,
             TransformComponent,
             CameraComponent,

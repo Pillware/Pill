@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use crate::{
-    ecs::{components::{ Component, GlobalComponent, GlobalComponentStorage }, systems, UpdatePhase}, engine::Engine
+    ecs::{components::{ Component, GlobalComponent, GlobalComponentStorage }, systems, CameraAspectRatio, CameraComponent, EntityHandle, UpdatePhase}, engine::Engine
 };
 
 use egui::Ui;
 use indexmap::IndexMap;
-use pill_core::{PillTypeMapKey, Timer, TimerRecord};
+use pill_core::{EngineError, PillSlotMapKey, PillTypeMapKey, Timer, TimerRecord};
 
 use anyhow::{Result, Error, Context};
 
@@ -21,7 +21,7 @@ impl EguiManagerComponent {
         }
     }
 
-    pub fn get_ui(engine: &mut Engine) -> Box<dyn Fn(&egui::Context)> {
+    pub fn get_ui(engine: &mut Engine) -> Box<dyn Fn(&mut Engine, &egui::Context)> {
 
         let entity_count =  engine.scene_manager.get_active_scene().unwrap().entities.len();
         let system_count = engine.system_manager.update_phases.iter().map(|(_, systems)| systems.len()).sum::<usize>();
@@ -37,7 +37,48 @@ impl EguiManagerComponent {
         let total_systems_delta_time = system_timers.iter().map(|(_, timers)| timers.iter().map(|(_, timer)| timer.get_total_duration()).sum::<f32>()).sum::<f32>();
         let frame_delta_time = engine.frame_delta_time;
 
-        let ui = Box::new(move |ui: &egui::Context| {
+
+        let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
+        {
+            let active_scene = engine.scene_manager.get_active_scene_mut().unwrap();
+
+            // - Find active camera and update its aspect ratio if needed
+
+            // Find first enabled camera and use it as active
+            for (entity_handle, camera_component) in active_scene.get_one_component_iterator_mut::<CameraComponent>().unwrap()   {
+                if camera_component.enabled {
+                    active_camera_entity_handle_result = Some(entity_handle);
+                    break;
+                }
+            }
+        }
+        let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera)).unwrap().clone();
+        engine.scene_manager.get_active_scene().unwrap().get_component_storage::<crate::ecs::CameraComponent>().unwrap();
+        let camera_component_storage = engine.scene_manager.get_active_scene_mut().unwrap().get_component_storage_mut::<crate::ecs::CameraComponent>().unwrap();
+        let active_camera_component = camera_component_storage.data.get_mut(active_camera_entity_handle.data().index as usize).unwrap().as_mut().unwrap();
+
+
+        let ui = Box::new(move |engine: &mut Engine, ui: &egui::Context| {
+
+              let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
+        {
+            let active_scene = engine.scene_manager.get_active_scene_mut().unwrap();
+
+            // - Find active camera and update its aspect ratio if needed
+
+            // Find first enabled camera and use it as active
+            for (entity_handle, camera_component) in active_scene.get_one_component_iterator_mut::<CameraComponent>().unwrap()   {
+                if camera_component.enabled {
+                    active_camera_entity_handle_result = Some(entity_handle);
+                    break;
+                }
+            }
+        }
+        let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera)).unwrap().clone();
+        engine.scene_manager.get_active_scene().unwrap().get_component_storage::<crate::ecs::CameraComponent>().unwrap();
+        let camera_component_storage = engine.scene_manager.get_active_scene_mut().unwrap().get_component_storage_mut::<crate::ecs::CameraComponent>().unwrap();
+        let active_camera_component = camera_component_storage.data.get_mut(active_camera_entity_handle.data().index as usize).unwrap().as_mut().unwrap();
+
             egui::Window::new("Pill Engine")
                 .default_open(true)
                 .resizable(true)
@@ -49,6 +90,12 @@ impl EguiManagerComponent {
                     ui.add(egui::Label::new(format!("FPS {}", 1000.0 / frame_delta_time) ));
                     ui.add(egui::Label::new(format!("Frame Delta Time: {:.5} ms", frame_delta_time)));
                     ui.add(egui::Label::new(format!("Entities: {}", entity_count)));
+                    ui.separator();
+                    ui.add(egui::Label::new("Post-processing"));
+                    ui.add(egui::Slider::new(&mut active_camera_component.postprocess_params.vignette_strength, 0.0..=1.0)
+                        .text("Vignette Strength"));
+
+
                     ui.separator();
                     ui.add(egui::Label::new(format!("Systems: {}, Total delta time: {:.3} ms", system_count, total_systems_delta_time)));
                     let mut phase_state = HashMap::new();

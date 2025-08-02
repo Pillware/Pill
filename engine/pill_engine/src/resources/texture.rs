@@ -75,7 +75,7 @@ impl Resource for Texture {
         };
 
         // Create renderer texture resource
-        let renderer_resource_handle = engine.renderer.create_texture(&self.name, &image_data, self.texture_type).context(error_message.clone())?;
+        let renderer_resource_handle = engine.renderer.as_mut().unwrap().create_texture(&self.name, &image_data, self.texture_type).context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -84,7 +84,7 @@ impl Resource for Texture {
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_texture(v).unwrap();
+            engine.renderer.as_mut().unwrap().destroy_texture(v).unwrap();
         }
 
         // Take resource storage from engine
@@ -109,7 +109,7 @@ impl Resource for Texture {
             }
 
             if material_updated {
-                engine.renderer.update_material_textures(material.renderer_resource_handle.unwrap(), &material.textures).unwrap();
+                engine.renderer.as_mut().unwrap().update_material_textures(material.renderer_resource_handle.unwrap(), &material.textures).unwrap();
             }
         }
 

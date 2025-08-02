@@ -399,7 +399,7 @@ impl Resource for Material {
         }
 
         // Create new renderer material resource
-        let renderer_resource_handle = engine.renderer.create_material(&self.name, &self.textures, &self.parameters).context(error_message)?;
+        let renderer_resource_handle = engine.renderer.as_mut().unwrap().create_material(&self.name, &self.textures, &self.parameters).context(error_message)?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -428,7 +428,7 @@ impl Resource for Material {
             DEFERRED_REQUEST_VARIANT_PARAMETER => 
             {
                 // Update renderer counterpart
-                engine.renderer.update_material_parameters(self.renderer_resource_handle.unwrap(), &self.parameters)?;
+                engine.renderer.as_mut().unwrap().update_material_parameters(self.renderer_resource_handle.unwrap(), &self.parameters)?;
             },
             DEFERRED_REQUEST_VARIANT_TEXTURE_START..=DEFERRED_REQUEST_VARIANT_TEXTURE_END => 
             {
@@ -454,7 +454,7 @@ impl Resource for Material {
                 }
 
                 // Update renderer counterpart
-                engine.renderer.update_material_textures(self.renderer_resource_handle.unwrap(), &self.textures)?;
+                engine.renderer.as_mut().unwrap().update_material_textures(self.renderer_resource_handle.unwrap(), &self.textures)?;
             },
             _ => 
             {
@@ -468,7 +468,7 @@ impl Resource for Material {
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_material(v).unwrap();
+            engine.renderer.as_mut().unwrap().destroy_material(v).unwrap();
         }
 
         // Find mesh rendering components that use this material and update them

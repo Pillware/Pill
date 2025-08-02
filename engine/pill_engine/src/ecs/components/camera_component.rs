@@ -71,6 +71,24 @@ impl CameraComponentBuilder {
 
 // --- Camera Component ---
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PostprocessParams {
+    pub vignette_strength: f32,
+    pub vignette_extent: f32,
+    pub screen_resolution: [f32; 2],
+}
+
+impl Default for PostprocessParams {
+    fn default() -> Self {
+        Self {
+            vignette_strength: 0.8,
+            vignette_extent: 0.5,
+            screen_resolution: [1920.0, 1080.0],
+        }
+    }
+}
+
 pub struct CameraComponent {
     pub aspect: CameraAspectRatio,
     pub fov: f32,
@@ -78,6 +96,7 @@ pub struct CameraComponent {
     pub clear_color: Color,
     pub enabled: bool,
     pub(crate) renderer_resource_handle: Option<RendererCameraHandle>,
+    pub postprocess_params: PostprocessParams,
 }
 
 impl CameraComponent {
@@ -93,6 +112,7 @@ impl CameraComponent {
             clear_color: Color::new(0.15, 0.15, 0.15),
             renderer_resource_handle: None,
             enabled: false,
+            postprocess_params: PostprocessParams::default(),
         }
     }
 }
@@ -111,7 +131,7 @@ impl Component for CameraComponent {
         let error_message = format!("Initializing {} {} failed", "Component".gobj_style(), get_type_name::<Self>().sobj_style());
 
         // Create new renderer camera resource
-        let renderer_resource_handle = engine.renderer.create_camera().context(error_message)?;
+        let renderer_resource_handle = engine.renderer.as_mut().unwrap().create_camera().context(error_message)?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -120,7 +140,7 @@ impl Component for CameraComponent {
     fn destroy(&mut self, engine: &mut Engine, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_camera(v).unwrap();
+            engine.renderer.as_mut().unwrap().destroy_camera(v).unwrap();
         }
 
         Ok(())

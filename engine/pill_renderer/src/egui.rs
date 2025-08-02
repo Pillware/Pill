@@ -7,6 +7,7 @@ use egui_wgpu::Renderer;
 
 use egui_winit::State;
 use pill_core::Timer;
+use pill_engine::game::Engine;
 use wgpu::{CommandEncoder, Device, Queue, TextureFormat, TextureView};
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -64,12 +65,13 @@ impl EguiRenderer {
 
     pub fn draw(
         &mut self,
+        engine: &mut Engine,
         device: &Device,
         queue: &Queue,
         encoder: &mut CommandEncoder,
         window_surface_view: &TextureView,
         screen_descriptor: ScreenDescriptor,
-        run_ui: impl FnOnce(&Context),
+        run_ui: impl FnOnce(&mut Engine, &Context),
         timer: &mut Timer,
     ) -> Result<()> {
         timer.record("Prepare window and input")?;
@@ -77,7 +79,7 @@ impl EguiRenderer {
         let window = &self.window;
         let raw_input = self.state.take_egui_input(&window);
         let full_output = self.context.run(raw_input, |_| {
-            run_ui(&self.context);
+            run_ui(engine, &self.context);
         });
 
         self.state.handle_platform_output(&window, full_output.platform_output);

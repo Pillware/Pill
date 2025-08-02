@@ -1,23 +1,9 @@
 use crate::{ 
-    engine::Engine, 
     ecs::{
-        EntityHandle,
-        ComponentStorage, 
-        TransformComponent, 
-        CameraComponent,   
-    }, 
-    resources::{
-        MaterialHandle, 
-        MeshData, 
-        MeshHandle, 
-        TextureHandle, 
-        TextureType, 
-        MaterialTextureMap, 
-        MaterialParameterMap
-    },
-    graphics::{
-        RenderQueueItem,
-    },
+        CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
+    }, engine::{self, Engine}, graphics::RenderQueueItem, resources::{
+        MaterialHandle, MaterialParameterMap, MaterialTextureMap, MeshData, MeshHandle, TextureHandle, TextureType
+    }
 };
 
 use pill_core::{PillSlotMapKey, Timer};
@@ -74,12 +60,9 @@ pub trait PillRenderer {
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;
 
     fn render(&mut self, 
-        active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec::<RenderQueueItem>, 
-        camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
-        timer: &mut Timer
+        engine: &mut Engine,
+        egui_ui: Box<dyn Fn(&mut Engine, &egui::Context)>,
+        timer: &mut Timer,
     ) -> Result<()>;
 
 }

@@ -63,7 +63,7 @@ impl Resource for Mesh {
         self.mesh_data = Some(mesh_data);
   
         // Create new renderer mesh resource
-        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
+        let renderer_resource_handle = engine.renderer.as_mut().unwrap().create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -73,7 +73,7 @@ impl Resource for Mesh {
 
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_mesh(v).unwrap();
+            engine.renderer.as_mut().unwrap().destroy_mesh(v).unwrap();
         }
 
         // Find mesh rendering components that use this mesh and update them

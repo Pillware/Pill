@@ -3,37 +3,19 @@
 // https://github.com/emilk/egui/discussions/3067
 
 use crate::{
-    resources::{
+    instance::Instance, postprocess, renderer_resource_storage::RendererResourceStorage, resources::{
         RendererCamera,
         RendererMaterial,
         RendererMesh,
         RendererPipeline,
         RendererTexture,
         Vertex
-    },
-    instance::Instance,
-    renderer_resource_storage::RendererResourceStorage
+    }
 };
 
-use pill_engine::internal::{
-    PillRenderer,
-    EntityHandle,
-    RenderQueueItem,
-    TextureType,
-    MeshData,
-    MaterialTextureMap,
-    TransformComponent,
-    ComponentStorage,
-    CameraComponent,
-    MaterialParameterMap,
-    RendererCameraHandle,
-    RendererMaterialHandle,
-    RendererMeshHandle,
-    RendererPipelineHandle,
-    RendererTextureHandle,
-    RENDER_QUEUE_KEY_ORDER,
-    get_renderer_resource_handle_from_camera_component,
-};
+use pill_engine::{game::{CameraAspectRatio, Engine, MeshRenderingComponent}, internal::{
+    get_renderer_resource_handle_from_camera_component, update_transform_matrices, CameraComponent, ComponentStorage, EntityHandle, MaterialParameterMap, MaterialTextureMap, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererTextureHandle, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
+}};
 
 use pill_core::{
     PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer
@@ -108,24 +90,20 @@ impl PillRenderer for Renderer {
         let fragment_shader_source = std::str::from_utf8(fragment_shader_bytes)
             .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in fragment shader: {}", e))?;
 
+        // Convert GLSL to WGSL
+        let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
+        let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
 
-// Convert GLSL to WGSL
-let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
-let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
+        // Create shader modules with WGSL
+        let vertex_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("master_vertex_shader"),
+            source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+        });
 
-// Create shader modules with WGSL
-let vertex_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-    label: Some("master_vertex_shader"),
-    source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
-});
-
-let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-    label: Some("master_fragment_shader"),
-    source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
-});
-
-
-
+        let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("master_fragment_shader"),
+            source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+        });
 
 
         // Create master pipeline
@@ -222,20 +200,16 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
 
     fn render(
         &mut self,
-        active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>,
-        camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
+        engine: &mut Engine,
+       
+        egui_ui: Box<dyn Fn(&mut Engine, &egui::Context)>,
         timer: &mut Timer
     ) -> Result<()> {
         self.state.render(
-            active_camera_entity_handle,
-            render_queue,
-            camera_component_storage,
-            transform_component_storage,
+            engine,
+           
             egui_ui,
-            timer
+            timer,
         )
     }
 
@@ -452,24 +426,58 @@ impl State {
             ).unwrap();
 
             // Update postprocess parameters with new screen resolution
-            let params = crate::postprocess::PostprocessParams {
+            let params = pill_engine::internal::PostprocessParams {
                 screen_resolution: [new_window_size.width as f32, new_window_size.height as f32],
-                ..Default::default()
+                vignette_strength: 0.7,
+                vignette_extent: 0.5,
             };
+
             self.postprocess_pass.update_params(&self.queue, &params);
         }
     }
 
     fn render(
         &mut self,
-        active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>,
-        camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
-        timer: &mut Timer
+        engine: &mut Engine,
+        egui_ui: Box<dyn Fn(&mut Engine, &egui::Context)>,
+        timer: &mut Timer,
     ) -> Result<()> {
         timer.record("Get frame")?;
+
+    let active_scene_handle =  engine.scene_manager.get_active_scene_handle()?.clone();
+
+let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
+       let active_scene = engine.scene_manager.get_active_scene_mut()?;
+    
+    {
+
+        // - Find active camera and update its aspect ratio if needed
+
+        // Find first enabled camera and use it as active
+        for (entity_handle, camera_component) in active_scene.get_one_component_iterator_mut::<CameraComponent>()? {
+            if camera_component.enabled {
+                // Update active camera aspect ratio if it is set to automatic
+                if let CameraAspectRatio::Automatic(_) = camera_component.aspect {
+                    let aspect_ratio = engine.window_size.width as f32 / engine.window_size.height as f32;
+                    camera_component.aspect = CameraAspectRatio::Automatic(aspect_ratio);
+                }
+                active_camera_entity_handle_result = Some(entity_handle);
+                break;
+            }
+        }
+    }
+
+    // Get storages
+    let camera_component_storage = active_scene.get_component_storage::<CameraComponent>()
+        .unwrap();
+    let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
+        .unwrap();
+
+    
+
+
+    let active_camera_entity_handle = active_camera_entity_handle_result.unwrap().clone();
+
 
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
@@ -496,6 +504,14 @@ impl State {
         renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
         let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
         let clear_color = active_camera_component.clear_color;
+
+        let postprocess_params_with_resolution = pill_engine::internal::PostprocessParams {
+            screen_resolution: [self.window_size.width as f32, self.window_size.height as f32],
+            vignette_strength: active_camera_component.postprocess_params.vignette_strength,
+            vignette_extent: active_camera_component.postprocess_params.vignette_extent,
+        };
+        self.postprocess_pass.update_params(&self.queue, &postprocess_params_with_resolution);
+
 
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -530,6 +546,35 @@ impl State {
 
             timer.record_new_context("Mesh Drawer")?;
 
+                // Clear the render queue
+    engine.render_queue.clear();
+    // Iterate mesh rendering components
+    for (entity_handle, transform_component, mesh_rendering_component) in
+        engine.scene_manager.get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(active_scene_handle)?
+    {
+        // Update transform matrices if required
+        if transform_component.matrix_update_required {
+            update_transform_matrices(transform_component);
+            transform_component.matrix_update_required = false;
+        }
+
+        // Add valid mesh rendering components to render queue
+        if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
+            let render_queue_item = RenderQueueItem {
+                key: render_queue_key,
+                entity_index: entity_handle.data().index as u32,
+            };
+            engine.render_queue.push(render_queue_item);
+        } else {
+            continue;
+        }
+    }
+
+    timer.record("Sort render queue")?;
+
+    // Sort render queue
+    engine.render_queue.sort();
+
             self.mesh_drawer.record_draw_commands(
                 &self.queue,
                 &mut encoder,
@@ -537,8 +582,7 @@ impl State {
                 color_attachment,
                 depth_stencil_attachment,
                 &renderer_camera,
-                &render_queue,
-                &transform_component_storage,
+                engine,
                 timer
             )?;
 
@@ -553,6 +597,7 @@ impl State {
 
         // Render egui UI
         self.egui_renderer.draw(
+            engine,
             &self.device,
             &self.queue,
             &mut encoder,
@@ -625,17 +670,19 @@ impl MeshDrawer {
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         // Rendring data
         camera: &RendererCamera,
-        render_queue: &Vec::<RenderQueueItem>,
-        transform_component_storage: &ComponentStorage<TransformComponent>,
+        engine: &mut Engine,
         timer: &mut Timer
     ) -> Result<()> {
         timer.record("Prepare instance data")?;
 
+       let active_scene = engine.scene_manager.get_active_scene_mut()?;
         // Prepare instance data and load it to buffer
         self.instances.clear();
-        self.instances.reserve(render_queue.len()); // Pre-allocate exact capacity
+        self.instances.reserve(engine.render_queue.len()); // Pre-allocate exact capacity
+    let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
+        .unwrap();
 
-        let render_queue_iter = render_queue.iter();
+        let render_queue_iter = engine.render_queue.iter();
         for render_queue_item in render_queue_iter {
             let transform_slot =  transform_component_storage.data
                 .get(render_queue_item.entity_index as usize)
@@ -668,7 +715,7 @@ impl MeshDrawer {
 
         timer.record("Draw")?;
 
-        let render_queue_iter = render_queue.iter();
+        let render_queue_iter = engine.render_queue.iter();
         for render_queue_item in render_queue_iter {
 
             let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);

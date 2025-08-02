@@ -1,26 +1,9 @@
 use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
+use pill_engine::internal::PostprocessParams;
 use wgpu::util::DeviceExt;
 
 use crate::resources::renderer_texture::RendererTexture;
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Pod, Zeroable)]
-pub struct PostprocessParams {
-    pub vignette_strength: f32,
-    pub vignette_extent: f32,
-    pub screen_resolution: [f32; 2],
-}
-
-impl Default for PostprocessParams {
-    fn default() -> Self {
-        Self {
-            vignette_strength: 0.7,
-            vignette_extent: 0.3,
-            screen_resolution: [1920.0, 1080.0],
-        }
-    }
-}
 
 pub struct PostprocessPass {
     pub render_pipeline: wgpu::RenderPipeline,
@@ -29,7 +12,7 @@ pub struct PostprocessPass {
     pub params_buffer: wgpu::Buffer,
     pub params_bind_group: wgpu::BindGroup,
     pub scene_texture: Option<RendererTexture>,
-    pub scene_texture_bind_group: Option<wgpu::BindGroup>,
+    pub scene_texture_bind_group: Option<wgpu::BindGroup>
 }
 
 impl PostprocessPass {
@@ -84,7 +67,8 @@ impl PostprocessPass {
         // Create parameters buffer
         let initial_params = PostprocessParams {
             screen_resolution: [screen_width as f32, screen_height as f32],
-            ..Default::default()
+            vignette_strength: 0.8,
+            vignette_extent: 1.0,
         };
 
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -228,7 +212,7 @@ impl PostprocessPass {
         Ok(())
     }
 
-    pub fn update_params(&self, queue: &wgpu::Queue, params: &PostprocessParams) {
+    pub fn update_params(&self, queue: &wgpu::Queue, params: &pill_engine::internal::PostprocessParams) {
         queue.write_buffer(&self.params_buffer, 0, bytemuck::cast_slice(&[*params]));
     }
 
