@@ -256,8 +256,8 @@ fn check_and_reload_game(
 
 fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     let game_dynamic_library_files_watcher = FileWatcher::new(project_paths.build_data_folder_path.clone());
-    let game_project_source_files_watcher = FileWatcher::new(project_paths.game_source_folder_path.clone());
-    let game_project_resources_files_watcher = FileWatcher::new(project_paths.game_resources_folder_path.clone());
+    let game_project_source_files_watcher = FileWatcher::new(project_paths.game_source_folder_path.clone()).set_recursive(true);
+    let game_project_resources_files_watcher = FileWatcher::new(project_paths.game_resources_folder_path.clone()).set_recursive(true);
 
     FileWatchers {
         game_dynamic_library_files_watcher,

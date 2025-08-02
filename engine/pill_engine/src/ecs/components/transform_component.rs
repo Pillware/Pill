@@ -17,7 +17,7 @@ use anyhow::{ Result, Context, Error };
 //     |_______ +X (right)
 //    /
 //   /
-//  +Z (forward)
+//  +Z (backward)
 //
 
 // --- Builder ---
@@ -86,7 +86,7 @@ impl TransformComponent {
             scale: Vector3f::new(1.0, 1.0, 1.0),
             model_matrix: cgmath::Matrix4::identity().into(), 
             normal_matrix: cgmath::Matrix3::identity().into(),
-            matrix_update_required: false,
+            matrix_update_required: true,
         }
     }
 
@@ -97,36 +97,78 @@ impl TransformComponent {
         self.matrix_update_required = true;
     }
 
-    pub fn translate(&mut self, delta: Vector3f, direction: Direction) {
+    pub fn translate(&mut self, delta: f32, direction: Direction) {
         match direction {
-            Direction::Forward => self.position += self.get_forward_direction() * delta.z,
-            Direction::Right => self.position += self.get_right_direction() * delta.x,
-            Direction::Up => self.position += self.get_up_direction() * delta.y,
-            Direction::WorldForward => self.position.z += delta.z,
-            Direction::WorldRight => self.position.x += delta.x,
-            Direction::WorldUp => self.position.y += delta.y
+            Direction::Forward => self.position += self.get_forward_direction() * delta,
+            Direction::Backward => self.position += self.get_backward_direction() * delta,
+            Direction::Right => self.position += self.get_right_direction() * delta,
+            Direction::Left => self.position += self.get_left_direction() * delta,
+            Direction::Up => self.position += self.get_up_direction() * delta,
+            Direction::Down => self.position += self.get_down_direction() * delta,
+            Direction::WorldForward => self.position.z -= delta,
+            Direction::WorldBackward => self.position.z += delta,
+            Direction::WorldRight => self.position.x += delta,
+            Direction::WorldLeft => self.position.x -= delta,
+            Direction::WorldUp => self.position.y += delta,
+            Direction::WorldDown => self.position.y -= delta
         }
+        self.matrix_update_required = true;
+    }
+
+    pub fn translate_world(&mut self, delta: Vector3f) {
+        self.position += delta;
+        self.matrix_update_required = true;
+    }
+
+    pub fn translate_local(&mut self, delta: Vector3f) {
+        self.position += self.get_forward_direction() * delta.z + 
+                        self.get_right_direction() * delta.x + 
+                        self.get_up_direction() * delta.y;
         self.matrix_update_required = true;
     }
 
     // --- Directions ---
 
     pub fn get_forward_direction(&self) -> Vector3f {
-        let pitch = self.rotation.x.to_radians();
-        let yaw: f32 = self.rotation.y.to_radians();
-        Vector3f::new(yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos())
+        Vector3f::new(0.0, 0.0, -1.0)
+        // let pitch = self.rotation.x.to_radians();
+        // let yaw: f32 = self.rotation.y.to_radians();
+        // Vector3f::new(yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos())
+    }
+
+    pub fn get_backward_direction(&self) -> Vector3f {
+        Vector3f::new(0.0, 0.0, 1.0)
+        // let pitch = self.rotation.x.to_radians();
+        // let yaw = self.rotation.y.to_radians();
+        // Vector3f::new(-yaw.sin() * pitch.cos(), pitch.sin(), -yaw.cos() * pitch.cos())
     }
 
     pub fn get_right_direction(&self) -> Vector3f {
-        let pitch = self.rotation.x.to_radians();
-        let yaw = self.rotation.y.to_radians();
-        Vector3f::new(yaw.cos(), 0.0, -yaw.sin())
+        Vector3f::new(1.0, 0.0, 0.0)
+        // let pitch = self.rotation.x.to_radians();
+        // let yaw = self.rotation.y.to_radians();
+        // Vector3f::new(yaw.cos(), 0.0, -yaw.sin())
+    }
+
+    pub fn get_left_direction(&self) -> Vector3f {
+        Vector3f::new(-1.0, 0.0, 0.0)
+        // let pitch = self.rotation.x.to_radians();
+        // let yaw = self.rotation.y.to_radians();
+        // Vector3f::new(-yaw.cos(), 0.0, yaw.sin())
     }
 
     pub fn get_up_direction(&self) -> Vector3f {
-        let pitch = self.rotation.x.to_radians();
-        let yaw = self.rotation.y.to_radians();
-        Vector3f::new(0.0, pitch.cos(), 0.0)
+        // let pitch = self.rotation.x.to_radians();
+        // let yaw = self.rotation.y.to_radians();
+        //Vector3f::new(0.0, pitch.cos(), 0.0)
+        Vector3f::new(0.0, 1.0, 0.0)
+    }
+
+    pub fn get_down_direction(&self) -> Vector3f {
+        // let pitch = self.rotation.x.to_radians();
+        // let yaw = self.rotation.y.to_radians();
+        // Vector3f::new(0.0, -pitch.cos(), 0.0)
+        Vector3f::new(0.0, -1.0, 0.0)
     }
 
     // --- Rotation ---

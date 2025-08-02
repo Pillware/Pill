@@ -27,6 +27,10 @@ pub struct Mesh {
     pub path: PathBuf,
     pub(crate) renderer_resource_handle: Option<RendererMeshHandle>,
     mesh_data: Option<MeshData>,
+
+    // When exporting from Blender, V coordinate is flipped, so we need to flip it back
+    // Should be set to false when importing a mesh exported as obj from Blender
+    flip_uv_y: bool, 
 }
 
 impl Mesh {
@@ -36,7 +40,13 @@ impl Mesh {
             path,
             renderer_resource_handle: None,
             mesh_data: None,
+            flip_uv_y: false
         }
+    }
+
+    pub fn with_uv_flip(mut self, flip: bool) -> Self {
+        self.flip_uv_y = flip;
+        self
     }
 }
 
@@ -59,7 +69,8 @@ impl Resource for Mesh {
         pill_core::validate_asset_path(&resource_file_path, &["obj"]).context(error_message.clone())?;
 
         // Create mesh data
-        let mesh_data = MeshData::new(&resource_file_path).context(error_message.clone())?;
+        let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y).context(error_message.clone())
+            .context(format!("Failed to create mesh data from {} file", resource_file_path.file_name().unwrap().to_string_lossy()))?;
         self.mesh_data = Some(mesh_data);
   
         // Create new renderer mesh resource
@@ -111,7 +122,7 @@ pub struct MeshData {
 }
 
 impl MeshData {
-    pub fn new(path: &PathBuf) -> Result<Self> {  
+    pub fn new(path: &PathBuf, flip_uv_y: bool) -> Result<Self> {  
         // Load model from path using tinyobjloader crate
         let load_options = LoadOptions {
             triangulate: true,
@@ -137,15 +148,18 @@ impl MeshData {
         // Read vertices
         let mut vertices = Vec::new();
         for i in 0..mesh.positions.len() / 3 {
+            let uv_y = *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0);
+            let final_uv_y = if flip_uv_y { uv_y } else { 1.0 - uv_y };
+            
             vertices.push(MeshVertex {
                 position: [
                     mesh.positions[i * 3],
                     mesh.positions[i * 3 + 1],
                     mesh.positions[i * 3 + 2],
                 ],
-                texture_coordinates: [
+                texture_coordinates: [ // Blender uses V coordinate flipped
                     *mesh.texcoords.get(i * 2).unwrap_or(&0.0),
-                    *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0),
+                    final_uv_y
                 ],
                 normal: [
                     mesh.normals[i * 3],

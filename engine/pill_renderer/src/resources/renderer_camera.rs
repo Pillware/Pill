@@ -53,7 +53,7 @@ impl CameraUniform {
         let yaw_matrix  = cgmath::Matrix3::from_angle_y(cgmath::Deg(transform_component.rotation.y));
         let pitch_matrix  = cgmath::Matrix3::from_angle_x(cgmath::Deg(transform_component.rotation.x));
         let rotation_matrix = yaw_matrix * pitch_matrix * roll_matrix;
-        let direction  = rotation_matrix * cgmath::Vector3::<f32>::unit_z();
+        let direction  = rotation_matrix * -cgmath::Vector3::<f32>::unit_z();
 
         cgmath::Matrix4::look_to_rh(
             position,

@@ -15,5 +15,8 @@ void main() {
     );
     
     gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
-    tex_coords = positions[gl_VertexIndex] * 0.5 + 0.5;
+    
+    // Fix the texture coordinate calculation to prevent horizontal flipping
+    vec2 pos = positions[gl_VertexIndex];
+    tex_coords = vec2(pos.x * 0.5 + 0.5, pos.y * -0.5 + 0.5);
 }

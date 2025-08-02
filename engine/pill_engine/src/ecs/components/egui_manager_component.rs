@@ -92,9 +92,15 @@ impl EguiManagerComponent {
                     ui.add(egui::Label::new(format!("Entities: {}", entity_count)));
                     ui.separator();
                     ui.add(egui::Label::new("Post-processing"));
+                    ui.add(egui::Slider::new(&mut active_camera_component.postprocess_params.vignette_extent, 0.0..=1.0));
                     ui.add(egui::Slider::new(&mut active_camera_component.postprocess_params.vignette_strength, 0.0..=1.0)
                         .text("Vignette Strength"));
-
+                    ui.add(egui::Slider::new(&mut active_camera_component.postprocess_params.tilt_shift_focus_area, 0.0..=1.0)
+                        .text("Tilt Shift Focus Area"));
+                    ui.add(egui::Slider::new(&mut active_camera_component.postprocess_params.tilt_shift_focus_pos, 0.0..=1.0)
+                        .text("Tilt Shift Focus Position"));
+                    ui.add(egui::Slider::new(&mut active_camera_component.postprocess_params.tilt_shift_blur_amount, 0.0..=1.0)
+                        .text("Tilt Shift Blur Amount"));
 
                     ui.separator();
                     ui.add(egui::Label::new(format!("Systems: {}, Total delta time: {:.3} ms", system_count, total_systems_delta_time)));

@@ -77,6 +77,10 @@ pub struct PostprocessParams {
     pub vignette_strength: f32,
     pub vignette_extent: f32,
     pub screen_resolution: [f32; 2],
+    pub tilt_shift_focus_area: f32,
+    pub tilt_shift_focus_pos: f32,  
+    pub tilt_shift_blur_amount: f32,
+       pub _padding: f32,               // 4 bytes
 }
 
 impl Default for PostprocessParams {
@@ -85,6 +89,10 @@ impl Default for PostprocessParams {
             vignette_strength: 0.8,
             vignette_extent: 0.5,
             screen_resolution: [1920.0, 1080.0],
+            tilt_shift_focus_area: 0.3,
+            tilt_shift_focus_pos: 0.5,
+            tilt_shift_blur_amount: 0.2,
+            _padding: 0.0, // Padding to ensure 32-byte alignment
         }
     }
 }

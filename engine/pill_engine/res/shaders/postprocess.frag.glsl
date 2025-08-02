@@ -12,6 +12,10 @@ layout(set = 1, binding = 0) uniform PostprocessParams {
     float vignette_strength;
     float vignette_extent;
     vec2 screen_resolution;
+    float tilt_shift_focus_area;    // Height of the focus area (0.0 to 1.0)
+    float tilt_shift_focus_pos;     // Vertical position of focus (0.0 to 1.0)
+    float tilt_shift_blur_amount;   // Blur intensity
+     float _padding; 
 };
 
 // Output color
@@ -44,10 +48,53 @@ float sniper_crosshair(vec2 tex_coords, vec2 center) {
     return max(horizontal_line, vertical_line);
 }
 
+
+// Tilt-shift effect function
+vec3 tilt_shift_blur(vec2 tex_coords) {
+    // Calculate distance from focus area
+    float focus_top = tilt_shift_focus_pos - tilt_shift_focus_area * 0.5;
+    float focus_bottom = tilt_shift_focus_pos + tilt_shift_focus_area * 0.5;
+    
+    float distance_from_focus = 0.0;
+    if (tex_coords.y < focus_top) {
+        distance_from_focus = focus_top - tex_coords.y;
+    } else if (tex_coords.y > focus_bottom) {
+        distance_from_focus = tex_coords.y - focus_bottom;
+    }
+    
+    // Calculate blur strength based on distance from focus
+    float blur_strength = smoothstep(0.0, 0.3, distance_from_focus) * tilt_shift_blur_amount;
+    
+    // Sample texture with blur
+    vec3 blurred_color = vec3(0.0);
+    float total_weight = 0.0;
+    
+    // Simple box blur with variable kernel size
+    int blur_samples = int(blur_strength * 10.0) + 1;
+    float blur_radius = blur_strength * 0.01;
+    
+    for (int x = -blur_samples; x <= blur_samples; x++) {
+        for (int y = -blur_samples; y <= blur_samples; y++) {
+            vec2 offset = vec2(float(x), float(y)) * blur_radius;
+            vec2 sample_coords = tex_coords + offset;
+            
+            // Clamp to texture boundaries
+            sample_coords = clamp(sample_coords, vec2(0.0), vec2(1.0));
+            
+            float weight = 1.0;
+            blurred_color += texture(sampler2D(scene_texture, scene_sampler), sample_coords).rgb * weight;
+            total_weight += weight;
+        }
+    }
+    
+    return blurred_color / total_weight;
+}
+
 void main() {
     // Sample the scene texture
-    vec3 scene_color = texture(sampler2D(scene_texture, scene_sampler), tex_coords).rgb;
-    
+   // vec3 scene_color = texture(sampler2D(scene_texture, scene_sampler), tex_coords).rgb;
+     vec3 scene_color = tilt_shift_blur(tex_coords);
+
     // Calculate vignette effect
     vec2 center = vec2(0.5, 0.5);
     vec2 uv = tex_coords - center;

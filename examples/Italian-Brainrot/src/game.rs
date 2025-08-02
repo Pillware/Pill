@@ -27,7 +27,7 @@ impl PillGame for Game {
 
 		// Add meshes
         let chimpanzini_bananini_mesh_handle = engine.add_resource(
-			Mesh::new("ChimpanziniBananini", "models/ChimpanziniBananini.obj".into())
+			Mesh::new("ChimpanziniBananini", "models/ChimpanziniBananini.obj".into()).with_uv_flip(true)
 		)?;
 
 		// Add textures

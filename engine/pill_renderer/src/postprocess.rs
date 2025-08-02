@@ -69,6 +69,10 @@ impl PostprocessPass {
             screen_resolution: [screen_width as f32, screen_height as f32],
             vignette_strength: 0.8,
             vignette_extent: 1.0,
+            tilt_shift_focus_area: 0.5,
+            tilt_shift_focus_pos: 0.5,
+            tilt_shift_blur_amount: 0.5,
+            _padding: 0.0, // Padding to ensure 32-byte alignment
         };
 
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
