@@ -6,7 +6,7 @@ use crate::{
 use pill_core::{ 
     get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f 
 };
-use cgmath::{SquareMatrix, Zero};
+use cgmath::{Deg, Matrix3, SquareMatrix, Zero};
 use anyhow::{ Result, Context, Error };
 
 // Coordinate system:
@@ -130,45 +130,34 @@ impl TransformComponent {
     // --- Directions ---
 
     pub fn get_forward_direction(&self) -> Vector3f {
-        Vector3f::new(0.0, 0.0, -1.0)
-        // let pitch = self.rotation.x.to_radians();
-        // let yaw: f32 = self.rotation.y.to_radians();
-        // Vector3f::new(yaw.sin() * pitch.cos(), -pitch.sin(), yaw.cos() * pitch.cos())
+        self.get_rotation_matrix() * Vector3f::new(0.0, 0.0, -1.0)
     }
 
     pub fn get_backward_direction(&self) -> Vector3f {
-        Vector3f::new(0.0, 0.0, 1.0)
-        // let pitch = self.rotation.x.to_radians();
-        // let yaw = self.rotation.y.to_radians();
-        // Vector3f::new(-yaw.sin() * pitch.cos(), pitch.sin(), -yaw.cos() * pitch.cos())
+        self.get_rotation_matrix() * Vector3f::new(0.0, 0.0, 1.0)
     }
 
     pub fn get_right_direction(&self) -> Vector3f {
-        Vector3f::new(1.0, 0.0, 0.0)
-        // let pitch = self.rotation.x.to_radians();
-        // let yaw = self.rotation.y.to_radians();
-        // Vector3f::new(yaw.cos(), 0.0, -yaw.sin())
+        self.get_rotation_matrix() * Vector3f::new(1.0, 0.0, 0.0)
     }
 
     pub fn get_left_direction(&self) -> Vector3f {
-        Vector3f::new(-1.0, 0.0, 0.0)
-        // let pitch = self.rotation.x.to_radians();
-        // let yaw = self.rotation.y.to_radians();
-        // Vector3f::new(-yaw.cos(), 0.0, yaw.sin())
+        self.get_rotation_matrix() * Vector3f::new(-1.0, 0.0, 0.0)
     }
 
     pub fn get_up_direction(&self) -> Vector3f {
-        // let pitch = self.rotation.x.to_radians();
-        // let yaw = self.rotation.y.to_radians();
-        //Vector3f::new(0.0, pitch.cos(), 0.0)
-        Vector3f::new(0.0, 1.0, 0.0)
+        self.get_rotation_matrix() * Vector3f::new(0.0, 1.0, 0.0)
     }
 
     pub fn get_down_direction(&self) -> Vector3f {
-        // let pitch = self.rotation.x.to_radians();
-        // let yaw = self.rotation.y.to_radians();
-        // Vector3f::new(0.0, -pitch.cos(), 0.0)
-        Vector3f::new(0.0, -1.0, 0.0)
+        self.get_rotation_matrix() * Vector3f::new(0.0, -1.0, 0.0)
+    }
+
+    fn get_rotation_matrix(&self) -> Matrix3<f32> {
+        let roll = Matrix3::from_angle_z(Deg(self.rotation.z));
+        let yaw = Matrix3::from_angle_y(Deg(self.rotation.y));
+        let pitch = Matrix3::from_angle_x(Deg(self.rotation.x));
+        yaw * pitch * roll
     }
 
     // --- Rotation ---

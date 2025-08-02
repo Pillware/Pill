@@ -5,6 +5,21 @@ use crate::free_camera::free_camera_system;
 
 define_component!(PlayerTagComponent { });
 
+pub struct TargetTransformComponent(pub TransformComponent);
+
+impl PillTypeMapKey for TargetTransformComponent {
+    type Storage = ComponentStorage<Self>;
+}
+
+impl TargetTransformComponent {
+	pub fn new() -> Self {
+		Self(TransformComponent::new())
+	}
+}
+
+impl Component for TargetTransformComponent {}
+
+
 pub struct Game { } 
 
 impl PillGame for Game {
@@ -24,10 +39,11 @@ impl PillGame for Game {
 		engine.register_component::<AudioSourceComponent>(active_scene)?;
 		engine.register_component::<PlayerTagComponent>(active_scene)?;
 
-		
+		engine.register_component::<TargetTransformComponent>(active_scene)?;
 		// Add systems
 		//engine.add_system("PlayerMovementSystem", player_movement_system)?;
 		engine.add_system("FreeCameraSystem", free_camera_system)?;
+
 
 		// Add meshes
         let truck_mesh_handle = engine.add_resource(
@@ -96,8 +112,9 @@ impl PillGame for Game {
 			.with_component(CameraComponent::builder()
 				.enabled(true)
 				.fov(60.0)
-				.clear_color(Color::new(0.3, 0.3, 0.3))
+				.clear_color(Color::new(0.9, 0.9, 0.3))
 				.build())
+				.with_component(TargetTransformComponent::new())
 			.build();
 
 		// Create ground entity
