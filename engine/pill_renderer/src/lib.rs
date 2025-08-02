@@ -5,6 +5,7 @@ pub mod resources;
 pub mod renderer_resource_storage;
 pub mod instance;
 pub mod egui;
+pub mod postprocess;
 
 
 // --- Use ---

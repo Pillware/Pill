@@ -50,6 +50,7 @@ use anyhow::{Error, Result};
 use log::{ info };
 
 use crate::egui::EguiRenderer;
+use crate::postprocess::PostprocessPass;
 
 pub const MAX_INSTANCE_PER_DRAWCALL_COUNT: usize = 10000;
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
@@ -258,6 +259,8 @@ pub struct State {
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
     mesh_drawer: MeshDrawer,
+    // Postprocessing
+    postprocess_pass: crate::postprocess::PostprocessPass,
     // Other
     config: config::Config,
     egui_renderer: crate::egui::EguiRenderer,
@@ -271,7 +274,8 @@ impl State {
 
         let window_ref = window.clone();
 
-        let backends = wgpu::util::backend_bits_from_env().unwrap_or_default();
+
+        let backends = wgpu::Backends::GL;
         let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
         let gles_minor_version = wgpu::util::gles_minor_version_from_env().unwrap_or_default();
 
@@ -351,6 +355,14 @@ impl State {
             window_ref,
         );
 
+        // Create postprocess pass
+        let postprocess_pass = Self::create_postprocess_pass(
+            &device,
+            surface_configuration.format,
+            window_size.width,
+            window_size.height,
+        ).unwrap();
+
         // Create state
         Self {
             // Resources
@@ -365,10 +377,58 @@ impl State {
             depth_format,
             depth_texture,
             mesh_drawer,
+            // Postprocessing
+            postprocess_pass,
             // Other
             config,
             egui_renderer
         }
+    }
+
+    fn create_postprocess_pass(
+        device: &wgpu::Device,
+        output_format: wgpu::TextureFormat,
+        screen_width: u32,
+        screen_height: u32,
+    ) -> Result<PostprocessPass> {
+        // Load and compile postprocess shaders
+        let vertex_shader_source = include_str!("../../pill_engine/res/shaders/postprocess.vert.glsl");
+        let fragment_shader_source = include_str!("../../pill_engine/res/shaders/postprocess.frag.glsl");
+
+        // Convert GLSL to WGSL
+        let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex)?;
+        let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment)?;
+
+        // Create shader modules
+        let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("postprocess_vertex_shader"),
+            source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+        });
+
+        let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("postprocess_fragment_shader"),
+            source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+        });
+
+        // Create postprocess pass
+        let mut postprocess_pass = PostprocessPass::new(
+            device,
+            vertex_shader,
+            fragment_shader,
+            output_format,
+            screen_width,
+            screen_height,
+        )?;
+
+        // Create the scene texture
+        postprocess_pass.create_scene_texture(
+            device,
+            screen_width,
+            screen_height,
+            output_format,
+        )?;
+
+        Ok(postprocess_pass)
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
@@ -382,6 +442,21 @@ impl State {
                 &self.surface_configuration,
                 "depth_texture",
             ).unwrap();
+
+            // Recreate postprocess scene texture with new size
+            self.postprocess_pass.create_scene_texture(
+                &self.device,
+                new_window_size.width,
+                new_window_size.height,
+                self.surface_configuration.format,
+            ).unwrap();
+
+            // Update postprocess parameters with new screen resolution
+            let params = crate::postprocess::PostprocessParams {
+                screen_resolution: [new_window_size.width as f32, new_window_size.height as f32],
+                ..Default::default()
+            };
+            self.postprocess_pass.update_params(&self.queue, &params);
         }
     }
 
@@ -429,12 +504,16 @@ impl State {
 
         { // Additional scope to release mutable borrow of encoder done by begin_render_pass
 
-            // Create color attachment
-            let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view, // Specifies what texture to save the colors to
-                resolve_target: None, // Specifies what texture will receive the resolved output
-                ops: wgpu::Operations { // Specifies what to do with the colors on the screen
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
+            // Render scene to the postprocess texture
+            let scene_texture_view = self.postprocess_pass.get_scene_texture_view()
+                .ok_or_else(|| anyhow::anyhow!("Postprocess scene texture not initialized"))?;
+
+            // Create color attachment for scene render target
+            let color_attachment: wgpu::RenderPassColorAttachment<'_> = wgpu::RenderPassColorAttachment {
+                view: scene_texture_view, // Render to scene texture instead of swapchain
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, }),
                     store: wgpu::StoreOp::Store,
                 },
             };
@@ -465,6 +544,10 @@ impl State {
 
             timer.end_context()?;
         }
+
+        // Apply postprocessing pass
+        timer.record("Apply postprocessing")?;
+        self.postprocess_pass.render(&mut encoder, &view)?;
 
         timer.record_new_context("Egui Draw")?;
 

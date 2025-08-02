@@ -45,10 +45,10 @@ fn dylib(name: &str) -> String {
 
 pub fn load_window_icon(path: &Path) -> Option<Icon> {
     // Fast path on Windows: let the OS decode common formats for us.
-    #[cfg(target_os = "windows")]
-    if let Ok(icon) = Icon::from_path(path, None) {
-        return Some(icon);
-    }
+    // #[cfg(target_os = "windows")]
+    // if let Ok(icon) = Icon::from_path(path, None) {
+    //     return Some(icon);
+    // }
 
     // Cross‑platform path: decode with the `image` crate.
     let img = image::open(path).ok()?.into_rgba8();

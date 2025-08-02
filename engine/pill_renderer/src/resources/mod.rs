@@ -1,4 +1,4 @@
-mod renderer_texture;
+pub(crate) mod renderer_texture;
 mod renderer_mesh;
 mod renderer_camera;
 mod renderer_material;

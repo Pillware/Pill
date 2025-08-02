@@ -64,8 +64,8 @@ impl Engine {
         // - Create default resources
 
         // Load master shader data to executable
-        let master_vertex_shader_bytes = include_bytes!("../res/shaders/master.vert");
-        let master_fragment_shader_bytes = include_bytes!("../res/shaders/master.frag");
+        let master_vertex_shader_bytes = include_bytes!("../res/shaders/master.vert.glsl");
+        let master_fragment_shader_bytes = include_bytes!("../res/shaders/master.frag.glsl");
         self.renderer.set_master_pipeline(master_vertex_shader_bytes, master_fragment_shader_bytes)?;
 
         // Load default resource data to executable
