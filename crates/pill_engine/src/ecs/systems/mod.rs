@@ -1,7 +1,7 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_variables))]
 
 mod system_manager;
-#[cfg(feature = "rendering")]
+/*#[cfg(feature = "rendering")]*/
 pub(crate) mod rendering_system;
 pub(crate) mod deferred_update_system;
 #[cfg(feature = "rendering")]
@@ -10,9 +10,7 @@ pub(crate) mod time_system;
 #[cfg(feature = "rendering")]
 pub(crate) mod audio_system;
 #[cfg(feature = "net")]
-pub(crate) mod net_system;
-#[cfg(feature = "net")]
-pub(crate) mod network_component_update_system;
+pub(crate) mod networking_system;
 #[cfg(feature = "net")]
 pub(crate) mod spawn_network_entities_system;
 

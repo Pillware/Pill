@@ -41,6 +41,8 @@ use core::fmt::Debug;
 use std::iter::Enumerate;
 use std::num::{ NonZeroU32};
 
+use serde::{Serialize, Deserialize};
+
 // Storage inside a slot or metadata for the freelist when vacant.
 union SlotUnion<T> {
     value: ManuallyDrop<T>,
@@ -158,7 +160,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         if version_limit % 2 == 0 {
             return Err(())
         }
-        
+
         let mut slots = Vec::with_capacity(capacity + 1);
         slots.push(Slot {
             u: SlotUnion { next_free: 0 },
@@ -172,7 +174,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             version_limit,
             _k: PhantomData,
         };
-        
+
         Ok(slotmap)
     }
 
@@ -523,7 +525,7 @@ impl<'a, K: PillSlotMapKey, V> Iterator for IterMut<'a, K, V> {
 
 // --- PillSlotMapKeyData
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PillSlotMapKeyData {
     pub index: u32,
     pub version: NonZeroU32,
@@ -586,7 +588,7 @@ impl Default for PillSlotMapKeyData {
     }
 }
 
-pub unsafe trait PillSlotMapKey: 
+pub unsafe trait PillSlotMapKey:
     From<PillSlotMapKeyData> + Copy + Clone + Default + Eq + PartialEq + Ord + PartialOrd + core::hash::Hash + core::fmt::Debug {
     fn null() -> Self {
         PillSlotMapKeyData::null().into()

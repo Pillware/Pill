@@ -83,13 +83,14 @@ pub use components::net_components::{
 };
 
 #[cfg(feature = "net")]
-pub use components::spawn_queue_component::{
-    SpawnQueueComponent,
+pub use components::spawn_despawn_queue_component::{
+    SpawnDespawnQueueComponent,
 };
 
 #[cfg(feature = "net")]
 pub use components::network_state_component::{
     NetworkStateComponent,
+    NetEntityState,
 };
 // - Systems
 
@@ -122,15 +123,8 @@ pub use systems::audio_system::{
 };
 
 #[cfg(feature = "net")]
-pub use systems::net_system::{
-    net_recv_system,
-    net_send_system,
-    net_flush_system,
-};
-
-#[cfg(feature = "net")]
-pub use systems::network_component_update_system::{
-    network_component_update_system,
+pub use systems::networking_system::{
+    networking_system,
 };
 
 #[cfg(feature = "net")]

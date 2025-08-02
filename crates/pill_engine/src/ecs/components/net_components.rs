@@ -1,10 +1,14 @@
 #![cfg(feature = "net")]
 use anyhow::Result;
-use std::collections::HashMap;
+use egui::util::id_type_map::TypeId;
+use std::{collections::HashMap};
 use pill_core::PillTypeMapKey;
-use crate::{ecs::{EntityHandle, GlobalComponent, GlobalComponentStorage}, engine::Engine};
+use crate::{ecs::{EntityHandle, Component, GlobalComponent, GlobalComponentStorage}, engine::Engine};
 
 use pill_net::{start_server, connect_client, NetClient, NetServer};
+
+const UPDATE_FREQ_HZ: f32 = 3.0; // Update frequency in Hz
+const UPDATE_FREQ_SEC: f32 = 1.0 / UPDATE_FREQ_HZ; // Update frequency in seconds
 
 pub enum NetSide {
     Server(NetServer),
@@ -14,10 +18,10 @@ pub enum NetSide {
 // Global state of networking in this instance
 pub struct NetState {
     pub side: NetSide,
-    pub my_id: u64, // Cliend ID
-    pub join_sent: bool, // true if Join message was sent
-    pub entity_by_client: HashMap<u64, EntityHandle>,
+    pub my_id: u64, // Client ID
     pub tick: u64,
+    pub accumulator: f32, // running counter to reduce the tick rate
+    pub timeout: f32,
 }
 
 impl PillTypeMapKey for NetState {
@@ -30,9 +34,9 @@ impl NetState {
         Ok(Self {
             side: NetSide::Server(start_server(addr, max_clients)?),
             my_id: 0, // Server does not have a client ID
-            join_sent: true, // server never needs to join
-            entity_by_client: HashMap::new(),
             tick: 0,
+            accumulator: 0.0,
+            timeout: UPDATE_FREQ_SEC
         })
     }
 
@@ -40,9 +44,9 @@ impl NetState {
         Ok(Self {
             side: NetSide::Client(connect_client(addr, my_id)?),
             my_id,
-            join_sent: false, // Client needs to send Join message
-            entity_by_client: HashMap::new(),
             tick: 0,
+            accumulator: 0.0,
+            timeout: UPDATE_FREQ_SEC
         })
     }
 }

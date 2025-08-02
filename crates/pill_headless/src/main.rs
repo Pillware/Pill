@@ -1,6 +1,6 @@
 
 use anyhow::Result;
-use pill_engine::{Engine, PillGame, TransformComponent};
+use pill_engine::{Engine, PillGame, TransformComponent, NetworkStateComponent};
 use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
@@ -19,6 +19,7 @@ impl PillGame for HeadlessGame {
         engine.set_active_scene(scene)?;
 
         engine.register_component::<TransformComponent>(scene)?;
+        engine.register_component::<NetworkStateComponent>(scene)?;
 
         #[cfg(feature = "net")]
         {

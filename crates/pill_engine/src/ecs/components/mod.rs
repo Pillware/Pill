@@ -24,7 +24,7 @@ pub(crate) mod net_components;
 #[cfg(feature = "net")]
 pub(crate) mod network_state_component;
 #[cfg(feature = "net")]
-pub(crate) mod spawn_queue_component;
+pub(crate) mod spawn_despawn_queue_component;
 
 // --- Use ---
 

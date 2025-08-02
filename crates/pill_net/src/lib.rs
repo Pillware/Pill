@@ -1,24 +1,33 @@
 use anyhow::{Context, Result};
 use renet::{ ConnectionConfig, DefaultChannel, RenetClient, RenetServer, ServerEvent};
-use serde::{Deserialize, Serialize};
 use renet_netcode::{ClientAuthentication, NetcodeClientTransport, NetcodeServerTransport, ServerAuthentication, ServerConfig};
 use std::{net::{UdpSocket, SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr}, time::{Duration, SystemTime}};
 
-// TODO: later put more types in a separate crate
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
-pub struct TrPacket {
-    pub pos: [f32; 3],
-    pub rot: [f32; 3],
-    pub scale: [f32; 3],
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WireTag {
+    Ping = 0,
+    Pong = 1,
+    Update = 3,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Msg {
-    Ping(u64),
-    Pong(u64),
-    Join { client_id: u64, tr: Option<TrPacket> },
-    Tr { client_id: u64, tr: TrPacket }, // TODO: rethink if we need the dupliacte client_id
-    // Add more later (Input etc.)
+impl TryFrom<u8> for WireTag {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(WireTag::Ping),
+            1 => Ok(WireTag::Pong),
+            3 => Ok(WireTag::Update),
+            _ => Err(anyhow::anyhow!("Invalid WireTag byte: {}", value)),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct WireMsg {
+    pub tag: WireTag,
+    pub data: Vec<u8>,
 }
 
 pub const RELIABLE_CHANNEL_ID: u8 = DefaultChannel::ReliableOrdered as u8;
@@ -63,33 +72,6 @@ pub fn start_server(bind: &str, max_clients: usize) -> Result<NetServer> {
     })
 }
 
-pub fn server_update(net: &mut NetServer, dt: Duration) -> Result<Vec<(u64, Msg)>> {
-    net.server.update(dt);
-    net.transport.update(dt, &mut net.server)?;
-
-    // handle connect/disconnect
-    while let Some(e) = net.server.get_event() {
-        match e {
-            ServerEvent::ClientConnected { client_id }=> {
-                log::info!("Client {client_id} connected");
-            },
-            ServerEvent::ClientDisconnected{ client_id, reason} => {
-                log::info!("Client {client_id} disconnected: {reason:?}");
-            }
-        }
-    }
-
-    let mut inbox = Vec::new();
-    for cid in net.server.clients_id() {
-        while let Some(bytes) = net.server.receive_message(cid, RELIABLE_CHANNEL_ID) {
-            let msg = bincode::deserialize(&bytes)?;
-            inbox.push((cid, msg));
-        }
-    }
-
-    Ok(inbox)
-}
-
 pub fn connect_client(bind: &str, client_id: u64) -> Result<NetClient> {
     let server_addr: SocketAddr = bind.parse()?;
 
@@ -120,7 +102,33 @@ pub fn connect_client(bind: &str, client_id: u64) -> Result<NetClient> {
     })
 }
 
-pub fn client_update(net: &mut NetClient, dt: Duration) -> Result<Vec<Msg>> {
+pub fn server_update(net: &mut NetServer, dt: Duration) -> Result<Vec<(u64, WireMsg)>> {
+    net.server.update(dt);
+    net.transport.update(dt, &mut net.server)?;
+
+    // handle connect/disconnect
+    while let Some(e) = net.server.get_event() {
+        match e {
+            ServerEvent::ClientConnected { client_id }=> {
+                log::info!("Client {client_id} connected");
+            },
+            ServerEvent::ClientDisconnected{ client_id, reason} => {
+                log::info!("Client {client_id} disconnected: {reason:?}");
+            }
+        }
+    }
+
+    let mut inbox = Vec::new();
+    for cid in net.server.clients_id() {
+        while let Some(bytes) = net.server.receive_message(cid, RELIABLE_CHANNEL_ID) {
+            inbox.push((cid, decode_wire(&bytes)?));
+        }
+    }
+
+    Ok(inbox)
+}
+
+pub fn client_update(net: &mut NetClient, dt: Duration) -> Result<Vec<WireMsg>> {
     net.client.update(dt);
     net.transport.update(dt, &mut net.client)?;
 
@@ -130,26 +138,34 @@ pub fn client_update(net: &mut NetClient, dt: Duration) -> Result<Vec<Msg>> {
 
     let mut inbox = Vec::new();
     while let Some(bytes) = net.client.receive_message(RELIABLE_CHANNEL_ID) {
-        let msg = bincode::deserialize(&bytes)?;
-        inbox.push(msg);
+        if bytes.is_empty() {
+            continue; // Skip empty messages
+        }
+        inbox.push(decode_wire(&bytes)?);
     }
     Ok(inbox)
 }
 
-pub fn srv_send_one(net: &mut NetServer, client_id: u64, msg: &Msg) -> Result<()> {
-    let bytes = bincode::serialize(&msg)?;
+pub fn srv_send_one(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Result<()> {
+    let mut bytes = Vec::with_capacity(1 + msg.data.len());
+    bytes.push(msg.tag as u8);
+    bytes.extend_from_slice(&msg.data);
     net.server.send_message(client_id, RELIABLE_CHANNEL_ID, bytes);
     Ok(())
 }
 
-pub fn srv_broadcast(net: &mut NetServer, msg: &Msg) -> Result<()> {
-    let bytes = bincode::serialize(&msg)?;
+pub fn srv_broadcast(net: &mut NetServer, msg: &WireMsg) -> Result<()> {
+    let mut bytes = Vec::with_capacity(1 + msg.data.len());
+    bytes.push(msg.tag as u8);
+    bytes.extend_from_slice(&msg.data);
     net.server.broadcast_message(RELIABLE_CHANNEL_ID, bytes);
     Ok(())
 }
 
-pub fn cli_send(net: &mut NetClient, msg: &Msg) -> Result<()> {
-    let bytes = bincode::serialize(&msg)?;
+pub fn cli_send(net: &mut NetClient, msg: &WireMsg) -> Result<()> {
+    let mut bytes = Vec::with_capacity(1 + msg.data.len());
+    bytes.push(msg.tag as u8);
+    bytes.extend_from_slice(&msg.data);
     net.client.send_message(RELIABLE_CHANNEL_ID, bytes);
     Ok(())
 }
@@ -162,4 +178,13 @@ pub fn srv_flush(net: &mut NetServer) -> Result<()> {
 pub fn cli_flush(net: &mut NetClient) -> Result<()> {
     net.transport.send_packets(&mut net.client)?;
     Ok(())
+}
+
+fn decode_wire(buf: &[u8]) -> Result<WireMsg> {
+    let (tag_byte, data) = buf.split_first().unwrap();
+    let tag = WireTag::try_from(*tag_byte)?;
+    Ok(WireMsg {
+        tag,
+        data: data.to_vec(),
+    })
 }

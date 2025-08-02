@@ -14,7 +14,7 @@ pub use engine::{Engine, PillGame};
 pub use engine::{KeyboardKey, MouseButton};
 
 #[cfg(feature = "net")]
-pub use crate::ecs::{NetState, NetStats, NetSide, SpawnQueueComponent};
+pub use crate::ecs::{NetState, NetStats, NetSide, NetworkStateComponent, NetEntityState, SpawnDespawnQueueComponent};
 
 // TODO: unconditional export because we use it for networking?
 pub use crate::ecs::{TransformComponent};

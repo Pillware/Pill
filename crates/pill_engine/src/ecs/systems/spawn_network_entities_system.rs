@@ -5,10 +5,10 @@ use crate::engine::Engine;
 use crate::TransformComponent;
 use crate::ecs::components::{
     net_components::{NetState, NetSide},
-    spawn_queue_component::SpawnQueueComponent,
+    spawn_despawn_queue_component::SpawnDespawnQueueComponent,
+    network_state_component::{NetworkStateComponent, NetEntityState},
 };
 
-use pill_net::TrPacket;
 use cgmath::Vector3;
 use rand::{rng, Rng};
 
@@ -23,8 +23,8 @@ pub fn spawn_network_entities_system(engine: &mut Engine) -> Result<()> {
     let scene = engine.get_active_scene_handle()?;
 
     let mut spawn_requests = {
-        let q = engine.get_global_component_mut::<SpawnQueueComponent>()?;
-        std::mem::take(&mut q.requests)
+        let q = engine.get_global_component_mut::<SpawnDespawnQueueComponent>()?;
+        std::mem::take(&mut q.spawn)
     };
     if spawn_requests.is_empty() {
         log::debug!("spawn system tick – queue empty");
@@ -55,34 +55,29 @@ pub fn spawn_network_entities_system(engine: &mut Engine) -> Result<()> {
         (mesh, mat)
     };
 
-    for (cid, pkt) in spawn_requests.drain(..) {
-        // if already known - just update transform
-        let already_present = {
-            let state = engine.get_global_component::<NetState>()?;
-            state.entity_by_client.contains_key(&cid)
-        };
-        if already_present {
-            continue;
-        }
+    for (cid, eh, mut transform) in spawn_requests.drain(..) {
 
-        log::info!("Spawning entity for cid={cid} pkt={:?}", pkt);
-        let ent = engine.create_entity(scene)?;
-        let mut tr = TransformComponent::from(&pkt);
-        tr.position.x += rng.random_range(-2.0..=2.0);
-        tr.position.z += rng.random_range(-2.0..=2.0);
+        log::info!("Spawning entity for cid={cid} pkt={:?}", transform);
+        let ent = engine.create_entity(scene)?; // TODO: do we need to preserve the
+                                                              // entity handles?
+        transform.position.x += rng.random_range(-2.0..=2.0); // TODO: is this necessary?
+        transform.position.z += rng.random_range(-2.0..=2.0);
+        transform.net_dirty = false; // reset net dirty flag
 
-        engine.add_component_to_entity(scene, ent, tr)?;
+        // add the network state component
+        engine.add_component_to_entity(scene, ent, NetworkStateComponent {
+            state: NetEntityState::Alive,
+            transform: None,
+        })?;
+
+        engine.add_component_to_entity(scene, ent,transform)?;
 
         #[cfg(feature = "rendering")]
         {
             engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
         }
 
-        {
-            let state = engine.get_global_component_mut::<NetState>()?;
-            state.entity_by_client.insert(cid, ent);
-            log::info!("Spawn complete  cid={cid}  ent={:?}", ent);
-        }
+        log::info!("Spawn complete  cid={cid}  ent={:?}", ent);
     }
     Ok(())
 }
