@@ -1,6 +1,6 @@
 use pill_engine::game::*;
 use pill_engine::{define_component};
-
+use crate::player_movement::player_movement_system;
 use crate::free_camera::free_camera_system;
 
 define_component!(PlayerTagComponent { });
@@ -12,8 +12,8 @@ impl PillTypeMapKey for TargetTransformComponent {
 }
 
 impl TargetTransformComponent {
-	pub fn new() -> Self {
-		Self(TransformComponent::new())
+	pub fn new(transform_component: TransformComponent) -> Self {
+		Self(transform_component)
 	}
 }
 
@@ -41,8 +41,8 @@ impl PillGame for Game {
 
 		engine.register_component::<TargetTransformComponent>(active_scene)?;
 		// Add systems
-		//engine.add_system("PlayerMovementSystem", player_movement_system)?;
-		engine.add_system("FreeCameraSystem", free_camera_system)?;
+		engine.add_system("PlayerMovementSystem", player_movement_system)?;
+		//engine.add_system("FreeCameraSystem", free_camera_system)?;
 
 
 		// Add meshes
@@ -105,16 +105,17 @@ impl PillGame for Game {
 		// --- Create entities ---
 
 		// Create camera entity
+		let initial_camera_transform = TransformComponent::builder()
+			.position(Vector3f::new(0.0, 6.0, 10.0))
+			.build();
 		engine.build_entity(active_scene)
-			.with_component(TransformComponent::builder()
-				.position(Vector3f::new(0.0, 3.0, -3.0))
-				.build())
+			.with_component(initial_camera_transform.clone())
 			.with_component(CameraComponent::builder()
 				.enabled(true)
 				.fov(60.0)
-				.clear_color(Color::new(0.9, 0.9, 0.3))
+				.clear_color(Color::new(0.3, 0.3, 0.3))
 				.build())
-				.with_component(TargetTransformComponent::new())
+				.with_component(TargetTransformComponent::new(initial_camera_transform))
 			.build();
 
 		// Create ground entity
@@ -130,12 +131,16 @@ impl PillGame for Game {
 			.build();
 
 		// Create player truck entity
+		let initial_player_transform = TransformComponent::builder()
+			.position(Vector3f::new(0.0, 0.0, 0.0))
+			.build();
 		engine.build_entity(active_scene)
-			.with_component(TransformComponent::new())
+			.with_component(initial_player_transform.clone())
 			.with_component(MeshRenderingComponent::builder()
 				.material(&truck_material_handle)
 				.mesh(&truck_mesh_handle)
 				.build())
+				.with_component(TargetTransformComponent::new(initial_player_transform.clone()))
 			.with_component(PlayerTagComponent {})
 			.build();
 
@@ -162,40 +167,4 @@ impl PillGame for Game {
 
 		Ok(())
 	}
-}
-
-fn player_movement_system(engine: &mut Engine) -> Result<()> {
-    let input_component = engine.get_global_component::<InputComponent>()?;
-    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-
-	let w_key = input_component.get_key(KeyboardKey::KeyW);
-	let s_key = input_component.get_key(KeyboardKey::KeyS);
-	let a_key = input_component.get_key(KeyboardKey::KeyA);
-	let d_key = input_component.get_key(KeyboardKey::KeyD);
-
-    // Tweakable constants
-    let move_speed = 5.0; // units per second
-    let rotation_speed = 90.0; // degrees per second
-
-    for (_, transform, _) in engine.iterate_two_components_mut::<TransformComponent, PlayerTagComponent>()? {
-        // Handle rotation
-        if a_key {
-            transform.rotate_around_axis(rotation_speed * delta_time, Vector3f::unit_y() * -1.0);
-        }
-
-        if d_key {
-            transform.rotate_around_axis(rotation_speed * delta_time, Vector3f::unit_y());
-        }
-
-        // Handle movement
-        if w_key {
-            transform.translate(move_speed * delta_time, Direction::Forward);
-        }
-
-        if s_key {
-            transform.translate(move_speed * delta_time, Direction::Backward);
-        }
-    }
-
-    Ok(())
 }
