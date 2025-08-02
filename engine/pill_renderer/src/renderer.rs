@@ -433,7 +433,8 @@ impl State {
                 tilt_shift_focus_area: 0.5,
                 tilt_shift_focus_pos: 0.5,
                 tilt_shift_blur_amount: 0.5,
-                _padding: 0.0, // Padding to ensure 32-byte alignment
+                abberration_strength: 0.0,
+              //  _padding: 0.0, // Padding to ensure 32-byte alignment
             };
 
             self.postprocess_pass.update_params(&self.queue, &params);
@@ -516,7 +517,8 @@ let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
             tilt_shift_focus_area: active_camera_component.postprocess_params.tilt_shift_focus_area,
             tilt_shift_focus_pos: active_camera_component.postprocess_params.tilt_shift_focus_pos,
             tilt_shift_blur_amount: active_camera_component.postprocess_params.tilt_shift_blur_amount,
-            _padding: 0.0, // Padding to ensure 32-byte alignment
+            abberration_strength: active_camera_component.postprocess_params.abberration_strength,
+          //  _padding: 0.0, // Padding to ensure 32-byte alignment
         };
         self.postprocess_pass.update_params(&self.queue, &postprocess_params_with_resolution);
 

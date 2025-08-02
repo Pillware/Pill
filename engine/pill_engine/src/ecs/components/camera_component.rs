@@ -80,7 +80,8 @@ pub struct PostprocessParams {
     pub tilt_shift_focus_area: f32,
     pub tilt_shift_focus_pos: f32,  
     pub tilt_shift_blur_amount: f32,
-       pub _padding: f32,               // 4 bytes
+    pub abberration_strength: f32, // Strength of the aberration effect
+ //      pub _padding: f32,               // 4 bytes
 }
 
 impl Default for PostprocessParams {
@@ -92,7 +93,8 @@ impl Default for PostprocessParams {
             tilt_shift_focus_area: 0.3,
             tilt_shift_focus_pos: 0.5,
             tilt_shift_blur_amount: 0.2,
-            _padding: 0.0, // Padding to ensure 32-byte alignment
+            abberration_strength: 0.0,
+          //  _padding: 0.0, // Padding to ensure 32-byte alignment
         }
     }
 }
@@ -105,6 +107,7 @@ pub struct CameraComponent {
     pub enabled: bool,
     pub(crate) renderer_resource_handle: Option<RendererCameraHandle>,
     pub postprocess_params: PostprocessParams,
+    pub target_aberrration: f32, // Target aberration value for post-processing effects
 }
 
 impl CameraComponent {
@@ -121,6 +124,7 @@ impl CameraComponent {
             renderer_resource_handle: None,
             enabled: false,
             postprocess_params: PostprocessParams::default(),
+            target_aberrration: 0.0, // Default value for target aberration
         }
     }
 }

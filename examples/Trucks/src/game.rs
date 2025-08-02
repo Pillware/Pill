@@ -122,7 +122,7 @@ impl PillGame for Game {
 		engine.build_entity(active_scene)
 			.with_component(TransformComponent::builder()
 				.position(Vector3f::new(0.0, 0.0, 0.0))
-				.scale(Vector3f::new(10.0, 1.0, 10.0))
+				.scale(Vector3f::new(70.0, 1.0, 70.0))
 				.build())
 			.with_component(MeshRenderingComponent::builder()
 				.material(&ground_material_handle)

@@ -56,7 +56,7 @@ impl TransformComponentBuilder {
 // --- Transform Component ---
 
 // NOTE: Setting position/rotation/scale directly is not possible since we need to update matrices after each change
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[readonly::make]
 pub struct TransformComponent {
     #[readonly]
