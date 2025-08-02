@@ -2,11 +2,20 @@
 name = "pill_game"
 version = "0.1.0"
 edition = "2021"
-workspace = "C:/Programming/Pill-Engine/engine"
+workspace = "/home/jduchniewicz/Projects/Sticky-Piston-Studios/Pill-Engine/engine"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-pill_engine = { path = "../../engine/pill_engine", features = ["game"] }
+pill_engine = { path = "../../engine/pill_engine", default-features = false, features = ["rendering", "audio", "ui", "internal", "net", "game"] }
+
+# Build the engine as a client (rendering+audio+ui+net+internal)
+pill_net = { version = "0.1.0", path = "../../engine/pill_net" }
+
+[features]
+default = ["net"]
+
+# Local feature that mirrors the engine's `net` in case you guard any code with #[cfg(feature="net")]
+net = ["pill_engine/net"]
 

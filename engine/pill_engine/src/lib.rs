@@ -11,9 +11,6 @@ mod graphics;
 // ───────────────────────────────────────── Public top-level ────────────────────
 pub use engine::{Engine, PillGame};
 
-#[cfg(feature = "rendering")]
-pub use engine::{KeyboardKey, MouseButton};
-
 #[cfg(feature = "net")]
 pub use crate::ecs::{
     NetState, NetStats, NetSide,
@@ -134,7 +131,7 @@ pub mod internal {
 
         // graphics -------------------------------------------------------------
         graphics::{
-            PillRenderer, RendererError,
+            PillRenderer,
             RenderQueueKey, RenderQueueItem, RenderQueueKeyFields,
             decompose_render_queue_key, RENDER_QUEUE_KEY_ORDER,
             RendererCameraHandle, RendererMaterialHandle,

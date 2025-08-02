@@ -28,7 +28,7 @@ use log::{debug, info, error};
 #[cfg(feature = "rendering")]
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
-    event::{KeyEvent, ElementState, MouseButton, MouseScrollDelta},
+    event::{KeyEvent, ElementState, MouseScrollDelta},
     keyboard::{KeyCode, PhysicalKey},
 };
 
@@ -39,7 +39,7 @@ pub type Game = Box<dyn PillGame>;
 #[cfg(feature = "rendering")]
 pub type KeyboardKey = KeyCode;
 #[cfg(feature = "rendering")]
-pub type MouseButtonAlias = MouseButton; // avoids clashing with winit::MouseButton
+pub use winit::event::MouseButton;
 
 /// Engine <-> Game interface (user implements this in `start`)
 pub trait PillGame {
@@ -56,20 +56,20 @@ pub struct Engine {
     #[cfg(feature = "rendering")]
     pub(crate) renderer: Option<Renderer>,
     #[cfg(feature = "rendering")]
-    pub(crate) window_size: PhysicalSize<u32>,
+    pub window_size: PhysicalSize<u32>,
     #[cfg(feature = "rendering")]
     pub(crate) input_queue: VecDeque<InputEvent>,
     #[cfg(feature = "rendering")]
-    pub(crate) render_queue: Vec<RenderQueueItem>,
+    pub render_queue: Vec<RenderQueueItem>,
     #[cfg(feature = "rendering")]
     pub(crate) game_resources_directory_path: std::path::PathBuf,
 
     // always present -----------------------------------------------------------
-    pub(crate) scene_manager:   SceneManager,
-    pub(crate) system_manager:  SystemManager,
-    pub(crate) resource_manager: ResourceManager,
-    pub(crate) global_components: PillTypeMap,
-    pub(crate) frame_delta_time: f32, // ms
+    pub scene_manager:   SceneManager,
+    pub system_manager:  SystemManager,
+    pub resource_manager: ResourceManager,
+    pub global_components: PillTypeMap,
+    pub frame_delta_time: f32, // ms
 }
 
 // -----------------------------------------------------------------------------
@@ -140,8 +140,8 @@ impl Engine {
         self.register_resource_type::<Sound>(max_sound_count)?;
 
         // master shader & defaults -------------------------------------------
-        let master_vert = include_bytes!("../res/shaders/built/master.vert.spv");
-        let master_frag = include_bytes!("../res/shaders/built/master.frag.spv");
+        let master_vert = include_bytes!("../res/shaders/master.vert.glsl");
+        let master_frag = include_bytes!("../res/shaders/master.frag.glsl");
         self.renderer
             .as_mut()
             .unwrap()
@@ -340,7 +340,7 @@ impl Engine {
             self.input_queue.push_back(InputEvent::KeyboardKey { key: code, state: ev.state });
         }
     }
-    pub fn pass_mouse_key_input(&mut self, btn: &MouseButtonAlias, st: &ElementState) {
+    pub fn pass_mouse_key_input(&mut self, btn: &MouseButton, st: &ElementState) {
         self.input_queue.push_back(InputEvent::MouseButton { key: *btn, state: *st });
     }
     pub fn pass_mouse_wheel_input(&mut self, d: &MouseScrollDelta) {
