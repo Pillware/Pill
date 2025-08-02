@@ -62,13 +62,13 @@ impl PillGame for Game {
         //engine.add_system("SendOwnTransform", send_own_tr_system)?;
 
         // Add meshes
-        let pill_mesh = Mesh::new("Pill", "./res/models/Pill.obj".into());
+        let pill_mesh = Mesh::new("Pill", "models/Pill.obj".into());
         let pill_mesh_handle = engine.add_resource(pill_mesh)?;
 
         // Add textures
-        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("./res/textures/PillColor.png".into()));
+        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("textures/PillColor.png".into()));
         let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
-        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("./res/textures/PillNormal.png".into()));
+        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("textures/PillNormal.png".into()));
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
@@ -82,7 +82,7 @@ impl PillGame for Game {
         // Create camera entity
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .position(Vector3f::new(0.0,0.0,-8.0))
+            .position(Vector3f::new(0.0,0.0, 8.0))
             .rotation(Vector3f::new(0.0,0.0,-20.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
@@ -142,6 +142,7 @@ impl PillGame for Game {
     }
 }
 
+/*
 fn pill_rotation_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
     let input_component = engine.get_global_component_mut::<InputComponent>()?;
@@ -155,6 +156,7 @@ fn pill_rotation_system(engine: &mut Engine) -> Result<()> {
 
     Ok(())
 }
+*/
 
 fn net_hud_system(engine: &mut Engine) -> Result<()> {
     let stats = match engine.get_global_component::<NetStats>() {
@@ -225,11 +227,10 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
         dir.x *= inv;
         dir.y *= inv;
 
-        for (_, transform, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
-            transform.position += dir * PILL_MOVE_SPEED * dt;
-            println!("Direction: {:?}", dir);
-            transform.set_dirty();
-        }
+        //for (_, transform, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
+        //    transform.position += dir * PILL_MOVE_SPEED * dt;
+        //    println!("Direction: {:?}", dir);
+        //}
     }
 
     Ok(())
