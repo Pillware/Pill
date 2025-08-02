@@ -114,7 +114,7 @@ impl PillGame for Game {
 
             engine.add_system("NetHUD", net_hud_system)?;
             // Add the network component marker
-            engine.add_component_to_entity(active_scene, pill, NetworkStateComponent { state: NetEntityState::Spawn, transform: Some(transform_component) })?;
+            engine.add_component_to_entity(active_scene, pill, NetworkStateComponent { owner_id: client_id, state: NetEntityState::Spawn, transform: Some(transform_component) })?;
             println!("Pill entity created");
         }
 
@@ -227,7 +227,8 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
 
         for (_, transform, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
             transform.position += dir * PILL_MOVE_SPEED * dt;
-            transform.net_dirty = true;
+            println!("Direction: {:?}", dir);
+            transform.set_dirty();
         }
     }
 

@@ -16,6 +16,7 @@ pub enum NetEntityState {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NetworkStateComponent{
+    pub owner_id: u64, // client id
     pub state: NetEntityState,
     pub transform: Option<TransformComponent>,
     // TODO: add more components (Health etc.)

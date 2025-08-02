@@ -79,6 +79,16 @@ impl SceneManager {
         Ok(entity_handle)
     }
 
+    pub fn get_entity_by_handle(&self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<&Entity> {
+        // Get scene
+        let target_scene = self.get_scene(scene_handle)?;
+
+        // Get entity by handle
+        let entity = target_scene.entities.get(entity_handle).ok_or(Error::new(EngineError::InvalidEntityHandle))?;
+
+        Ok(entity)
+    }
+
     pub fn remove_entity(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<Vec::<Box<dyn ComponentDestroyer>>> {
         // Initialize collection for component destroyers to return to engine
         let mut component_destroyers = Vec::<Box<dyn ComponentDestroyer>>::new();

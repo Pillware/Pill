@@ -65,6 +65,11 @@ impl TransformComponent {
             net_dirty: false,
         }
     }
+
+    pub fn set_dirty(&mut self) {
+        println!("TransformComponent set dirty");
+        self.net_dirty = true;
+    }
 }
 
 impl Default for TransformComponent {

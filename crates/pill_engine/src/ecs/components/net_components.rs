@@ -22,6 +22,7 @@ pub struct NetState {
     pub tick: u64,
     pub accumulator: f32, // running counter to reduce the tick rate
     pub timeout: f32,
+    pub seq: u64, // Sequence number for packets
 }
 
 impl PillTypeMapKey for NetState {
@@ -36,7 +37,8 @@ impl NetState {
             my_id: 0, // Server does not have a client ID
             tick: 0,
             accumulator: 0.0,
-            timeout: UPDATE_FREQ_SEC
+            timeout: UPDATE_FREQ_SEC,
+            seq: 0,
         })
     }
 
@@ -46,7 +48,8 @@ impl NetState {
             my_id,
             tick: 0,
             accumulator: 0.0,
-            timeout: UPDATE_FREQ_SEC
+            timeout: UPDATE_FREQ_SEC,
+            seq: 0,
         })
     }
 }

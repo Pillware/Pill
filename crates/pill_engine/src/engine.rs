@@ -408,6 +408,12 @@ impl Engine {
         self.scene_manager.create_entity_with_handle(scene_handle, entity_handle).context(format!("Creating {} failed", "Entity".gobj_style()))
     }
 
+    pub fn get_entity_by_handle(&self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<&Entity> {
+        debug!("Getting {} with handle {} in {} {}", "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
+        self.scene_manager.get_entity_by_handle(scene_handle, entity_handle).context(format!("Getting {} failed", "Entity".gobj_style()))
+    }
+
     // --- Component API ---
 
     /// Registers new component type in scene specified with scene handle

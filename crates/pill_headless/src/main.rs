@@ -33,8 +33,6 @@ impl PillGame for HeadlessGame {
 }
 
 fn main() -> Result<()> {
-    let log_level = log::LevelFilter::Info; // TODO: always use Info filter
-
     #[cfg(debug_assertions)]
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format(|buf, record| {
