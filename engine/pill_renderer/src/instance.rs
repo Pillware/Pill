@@ -1,6 +1,6 @@
 use crate::resources::Vertex;
 
-use pill_engine::{game::TransformComponent, internal::{ get_model_matrix, get_normal_matrix, update_transform_matrices }};
+use pill_engine::{TransformComponent, internal::{ get_model_matrix, get_normal_matrix, update_transform_matrices }};
 
 // --- Instance ---
 

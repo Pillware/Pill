@@ -1,8 +1,10 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
-    config::RENDERING_SYSTEM, 
-    ecs::{ scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent, UpdatePhase }, 
-    engine::Engine, 
-    graphics::{ compose_render_queue_key, RenderQueueItem, RenderQueueKey }, 
+    config::RENDERING_SYSTEM,
+    ecs::{ scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent, UpdatePhase },
+    engine::Engine,
+    graphics::{ compose_render_queue_key, RenderQueueItem, RenderQueueKey },
     resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 
@@ -20,7 +22,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
     let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
-    
+
     {
         let active_scene = engine.scene_manager.get_active_scene_mut()?;
 
@@ -52,7 +54,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     let egui_ui = EguiManagerComponent::get_ui(engine);// egui_manager_component.get_ui(engine);
 
-   
+
 
     timer.record_new_context("Render")?;
 
@@ -73,7 +75,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             engine.system_manager.update_system_timer(RENDERING_SYSTEM.name, RENDERING_SYSTEM.update_phase, timer)?;
             engine.renderer = Some(renderer); // Put renderer back to engine
             Ok(())
-        } 
+        }
         Err(e) => {
             match e.downcast_ref::<RendererError>() {
                 Some(RendererError::SurfaceLost) => {
@@ -89,5 +91,5 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             }
         }
     }
-    
+
 }

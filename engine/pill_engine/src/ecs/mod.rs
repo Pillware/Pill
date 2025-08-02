@@ -19,6 +19,7 @@ pub use components:: {
     GlobalComponentStorage,
 };
 
+#[cfg(feature = "rendering")]
 pub use components::camera_component::{
     CameraComponent,
     CameraAspectRatio,
@@ -26,19 +27,23 @@ pub use components::camera_component::{
     PostprocessParams
 };
 
+#[cfg(feature = "rendering")]
 pub use components::audio_manager_component::{
     AudioManagerComponent,
     SoundType,
 };
 
+#[cfg(feature = "rendering")]
 pub use components::audio_listener_component::{
     AudioListenerComponent,
 };
 
+#[cfg(feature = "rendering")]
 pub use components::audio_source_component::{
     AudioSourceComponent
 };
 
+#[cfg(feature = "rendering")]
 pub use components::egui_manager_component::{
     EguiManagerComponent,
 };
@@ -52,6 +57,7 @@ pub use components::deferred_update_component::{
     DeferredUpdateResourceRequest
 };
 
+#[cfg(feature = "rendering")]
 pub use components::input_component::{
     InputComponent,
     GamepadAxis,
@@ -66,12 +72,32 @@ pub use components::transform_component::{
     get_normal_matrix,
 };
 
+#[cfg(feature = "rendering")]
 pub use components::mesh_rendering_component::{
     MeshRenderingComponent,
 };
 
 pub use components::time_component::{
     TimeComponent,
+};
+
+
+#[cfg(feature = "net")]
+pub use components::net_components::{
+    NetState,
+    NetStats,
+    NetSide,
+};
+
+#[cfg(feature = "net")]
+pub use components::spawn_despawn_queue_component::{
+    SpawnDespawnQueueComponent,
+};
+
+#[cfg(feature = "net")]
+pub use components::network_state_component::{
+    NetworkStateComponent,
+    NetEntityState,
 };
 
 // - Systems
@@ -82,6 +108,7 @@ pub use systems::{
     SystemFunction
 };
 
+#[cfg(feature = "rendering")]
 pub use systems::rendering_system::{
     rendering_system,
 };
@@ -90,6 +117,7 @@ pub use systems::deferred_update_system::{
     deferred_update_system,
 };
 
+#[cfg(feature = "rendering")]
 pub use systems::input_system::{
     input_system,
 };
@@ -98,8 +126,20 @@ pub use systems::time_system::{
     time_system,
 };
 
+#[cfg(feature = "rendering")]
 pub use systems::audio_system::{
     audio_system,
+};
+
+
+#[cfg(feature = "net")]
+pub use systems::networking_system::{
+    networking_system,
+};
+
+#[cfg(feature = "net")]
+pub use systems::spawn_network_entities_system::{
+    spawn_network_entities_system,
 };
 
 // - Other

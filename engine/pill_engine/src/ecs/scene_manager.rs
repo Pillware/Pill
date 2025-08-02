@@ -8,12 +8,12 @@ use std::{ any::{ type_name, Any, TypeId }, collections::HashMap,  cell::RefCell
 use anyhow::{ Result, Context, Error };
 use boolinator::Boolinator;
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct SceneHandle;
 }
 
 pub struct SceneManager {
-    pub(crate) scenes: pill_core::PillSlotMap<SceneHandle, Scene>, 
+    pub(crate) scenes: pill_core::PillSlotMap<SceneHandle, Scene>,
     pub(crate) mapping: pill_core::PillTwinMap<String, SceneHandle>, // Mapping from scene name to scene handle and vice versa
     pub(crate) max_entity_count: usize,
     active_scene_handle: Option<SceneHandle>,
@@ -21,7 +21,7 @@ pub struct SceneManager {
 
 impl SceneManager {
     pub fn new(max_entity_count: usize) -> Self {
-	    Self { 
+	    Self {
             scenes: pill_core::PillSlotMap::<SceneHandle, Scene>::with_key(),
             mapping: pill_core::PillTwinMap::<String, SceneHandle>::new(),
             max_entity_count,
@@ -53,10 +53,46 @@ impl SceneManager {
         Ok(new_entity_handle)
     }
 
+    pub fn create_entity_with_handle(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<EntityHandle> {
+        // Get maximum count of entities
+        let max_entity_count = self.max_entity_count;
+
+        // Get scene
+        let target_scene = self.get_scene_mut(scene_handle)?;
+
+        // Check if there is space for entity
+        if target_scene.entities.len() >= max_entity_count {
+            return Err(Error::new(EngineError::EntityLimitReached))
+        }
+
+        // Create new entity with empty bitmask
+        let new_entity = Entity::new(scene_handle.clone());
+
+        // Insert new entity into storage, with key as given handle
+        if target_scene.entities.contains_key(entity_handle) {
+            return Err(Error::new(EngineError::EntityWithHandleAlreadyExists));
+        }
+        target_scene.entities.insert_at_key(entity_handle, new_entity).map_err(|_| {
+            Error::new(EngineError::EntityWithHandleAlreadyExists)
+        })?;  // TODO: this is nasty, should be refactored
+
+        Ok(entity_handle)
+    }
+
+    pub fn get_entity_by_handle(&self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<&Entity> {
+        // Get scene
+        let target_scene = self.get_scene(scene_handle)?;
+
+        // Get entity by handle
+        let entity = target_scene.entities.get(entity_handle).ok_or(Error::new(EngineError::InvalidEntityHandle))?;
+
+        Ok(entity)
+    }
+
     pub fn remove_entity(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<Vec::<Box<dyn ComponentDestroyer>>> {
         // Initialize collection for component destroyers to return to engine
         let mut component_destroyers = Vec::<Box<dyn ComponentDestroyer>>::new();
-        
+
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 
@@ -71,7 +107,7 @@ impl SceneManager {
             let component_destroyer = target_scene.get_component_destoyer(&typeid).unwrap();
             component_destroyers.push(component_destroyer);
         }
-       
+
         // Remove entity from storage
         target_scene.entities.remove(entity_handle);
 
@@ -80,7 +116,7 @@ impl SceneManager {
 
     // --- Component ---
 
-    pub fn register_component<T>(&mut self, scene: SceneHandle) -> Result<()> 
+    pub fn register_component<T>(&mut self, scene: SceneHandle) -> Result<()>
         where T: Component<Storage = ComponentStorage::<T>>
     {
         // Prepare the capacity for component storage
@@ -108,10 +144,10 @@ impl SceneManager {
 
         Ok(())
     }
-    
-    pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()> 
+
+    pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, component: T) -> Result<()>
         where T: Component<Storage = ComponentStorage::<T>>
-    {     
+    {
         // Get scene
         let target_scene = self.get_scene_mut(scene_handle)?;
 
@@ -121,17 +157,17 @@ impl SceneManager {
         // Add component to storage
         let component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized"); // TODO: Should not be called if entity limit is reached but it is
         let _ = component_slot.insert(component);
-        
+
         // Get the component bitmask
         let component_bitmask = target_scene.get_component_bitmask::<T>()?;
-        
+
         // Update entity bitmask
         target_scene.entities.get_mut(entity_handle).unwrap().bitmask |= component_bitmask;
 
         Ok(())
     }
 
-    pub fn remove_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<T> 
+    pub fn remove_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<T>
         where T: Component<Storage = ComponentStorage::<T>>
     {
         // Get scene
@@ -172,7 +208,7 @@ impl SceneManager {
     //         true => Ok(storage.data.get(entity_handle.0.index as usize).unwrap().unwrap()),
     //         false => Err(Error::msg("Not found")),
     //     }
-    // }  
+    // }
 
     // --- Scene ---
 
@@ -187,7 +223,7 @@ impl SceneManager {
 
         // Insert new scene
         let scene_handle = self.scenes.insert(new_scene);
-       
+
         // Insert new mapping
         self.mapping.insert(&name.to_string(), &scene_handle);
 
@@ -223,7 +259,7 @@ impl SceneManager {
     }
 
     // --- Active scene ---
-    
+
     pub fn set_active_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
         // Check if scene for that handle exists
         self.scenes.get_mut(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
@@ -276,7 +312,7 @@ impl SceneManager {
             true => Ok(storage.data.get_mut((entity_handle.0.index) as usize).unwrap().as_mut().unwrap()),
             false => Err(Error::msg("Component not found in Entity")),
         }
-    }  
+    }
 
     // - Iterators
 
@@ -290,8 +326,8 @@ impl SceneManager {
         }
     }
 
-    pub fn get_one_component_iterator<A>(&self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &A)>> 
-        where 
+    pub fn get_one_component_iterator<A>(&self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &A)>>
+        where
         A: Component<Storage = ComponentStorage::<A>>
     {
         // Get scene and iterator
@@ -299,8 +335,8 @@ impl SceneManager {
         target_scene.get_one_component_iterator::<A>()
     }
 
-    pub fn get_one_component_iterator_mut<A>(&mut self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &mut A)>> 
-        where 
+    pub fn get_one_component_iterator_mut<A>(&mut self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &mut A)>>
+        where
         A: Component<Storage = ComponentStorage::<A>>
     {
         // Get scene and iterator
@@ -308,8 +344,8 @@ impl SceneManager {
         target_scene.get_one_component_iterator_mut::<A>()
     }
 
-    pub fn get_two_component_iterator<A, B>(&self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &A, &B)>> 
-        where 
+    pub fn get_two_component_iterator<A, B>(&self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &A, &B)>>
+        where
         A: Component<Storage = ComponentStorage::<A>>,
         B: Component<Storage = ComponentStorage::<B>>
     {
@@ -318,8 +354,8 @@ impl SceneManager {
         target_scene.get_two_component_iterator::<A, B>()
     }
 
-    pub fn get_two_component_iterator_mut<A, B>(&mut self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B)>> 
-        where 
+    pub fn get_two_component_iterator_mut<A, B>(&mut self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B)>>
+        where
         A: Component<Storage = ComponentStorage::<A>>,
         B: Component<Storage = ComponentStorage::<B>>
     {
@@ -328,8 +364,8 @@ impl SceneManager {
         target_scene.get_two_component_iterator_mut::<A, B>()
     }
 
-    pub fn get_three_component_iterator<A, B, C>(&self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &A, &B, &C)>> 
-        where 
+    pub fn get_three_component_iterator<A, B, C>(&self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &A, &B, &C)>>
+        where
         A: Component<Storage = ComponentStorage::<A>>,
         B: Component<Storage = ComponentStorage::<B>>,
         C: Component<Storage = ComponentStorage::<C>>
@@ -339,8 +375,8 @@ impl SceneManager {
         target_scene.get_three_component_iterator::<A, B, C>()
     }
 
-    pub fn get_three_component_iterator_mut<A, B, C>(&mut self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B, &mut C)>> 
-        where 
+    pub fn get_three_component_iterator_mut<A, B, C>(&mut self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B, &mut C)>>
+        where
         A: Component<Storage = ComponentStorage::<A>>,
         B: Component<Storage = ComponentStorage::<B>>,
         C: Component<Storage = ComponentStorage::<C>>

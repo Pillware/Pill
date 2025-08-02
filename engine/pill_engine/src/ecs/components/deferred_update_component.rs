@@ -2,15 +2,20 @@
 
 use crate::{
     engine::Engine,
-    resources::{ MeshHandle, Material, Resource, ResourceStorage }, 
+    resources::{ Resource, ResourceStorage },
     ecs::{ Component, EntityHandle, ComponentStorage, SceneHandle, GlobalComponentStorage, GlobalComponent }
+};
+
+#[cfg(feature = "rendering")]
+use crate::{
+    resources::{ MeshHandle, Material }
 };
 
 use pill_core::{ PillSlotMapKey, PillStyle, get_type_name, PillTypeMapKey };
 
 use std::{
-    sync::{Arc, Mutex}, 
-    collections::VecDeque, 
+    sync::{Arc, Mutex},
+    collections::VecDeque,
     marker::PhantomData
 };
 use anyhow::{Result, Context, Error};
@@ -24,14 +29,14 @@ pub trait DeferredUpdateRequest: Send {
 
 // --- Resource Request ---
 
-pub struct DeferredUpdateResourceRequest<T> 
+pub struct DeferredUpdateResourceRequest<T>
     where T: Resource<Storage = ResourceStorage::<T>>
 {
     resource_handle: T::Handle,
     request_variant: usize,
 }
 
-impl<T> DeferredUpdateResourceRequest<T> 
+impl<T> DeferredUpdateResourceRequest<T>
     where T: Resource<Storage = ResourceStorage::<T>>
 {
     pub fn new(resource_handle: T::Handle, request_variant: usize) -> Self {
@@ -39,10 +44,10 @@ impl<T> DeferredUpdateResourceRequest<T>
             resource_handle,
             request_variant,
         }
-    } 
+    }
 }
 
-impl<T> DeferredUpdateRequest for DeferredUpdateResourceRequest<T> 
+impl<T> DeferredUpdateRequest for DeferredUpdateResourceRequest<T>
     where T: Resource<Storage = ResourceStorage::<T>>
 {
     fn process(&mut self, engine: &mut Engine) -> Result<()> {
@@ -51,17 +56,17 @@ impl<T> DeferredUpdateRequest for DeferredUpdateResourceRequest<T>
             Ok(v) => v,
             Err(_) => return Ok(()),
         };
-        
+
         // Take resource from slot
         let mut resource = resource_slot.take().expect("Critical: Resource is None");
-       
+
         // Process
         resource.deferred_update(engine, self.request_variant)
             .context(format!("Deferred update of {} {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style()))?;
-        
+
         // Get resource slot
         let resource_slot = engine.resource_manager.get_resource_slot_mut::<T>(&self.resource_handle).expect("Critical: Resource not registered");
-        
+
         // Put resource back to slot
         let _ = resource_slot.insert(resource);
 
@@ -71,7 +76,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateResourceRequest<T>
 
 // --- Component Request ---
 
-pub struct DeferredUpdateComponentRequest<T> 
+pub struct DeferredUpdateComponentRequest<T>
     where T: Component<Storage = ComponentStorage<T>>
 {
     entity_handle: EntityHandle,
@@ -80,7 +85,7 @@ pub struct DeferredUpdateComponentRequest<T>
     phantom: PhantomData<T>, // 👻
 }
 
-impl<T> DeferredUpdateComponentRequest<T> 
+impl<T> DeferredUpdateComponentRequest<T>
     where T: Component<Storage = ComponentStorage<T>>
 {
     pub fn new(entity_handle: EntityHandle, scene_handle: SceneHandle, request_variant: usize) -> Self {
@@ -90,17 +95,17 @@ impl<T> DeferredUpdateComponentRequest<T>
             request_variant,
             phantom: PhantomData,
         }
-    } 
+    }
 }
 
-impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T> 
+impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T>
     where T: Component<Storage = ComponentStorage<T>>
 {
     fn process(&mut self, engine: &mut Engine) -> Result<()> {
         let mut component = Option::<T>::None;
-        
+
         {
-            // Get scene 
+            // Get scene
             let scene = engine.scene_manager.get_scene_mut(self.scene_handle).unwrap();
 
             // Get component storage
@@ -108,16 +113,16 @@ impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T>
 
             // Get component slot
             let component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap();
-        
+
             // Take component from slot
             component = Some(component_slot.take().expect("Critical: Component is None"));
         }
-        
+
         // Process
         component.as_mut().unwrap().deferred_update(engine, self.request_variant).context(format!("Deferred update of {} {} failed", "Component".gobj_style(), get_type_name::<T>().sobj_style()))?;
 
         {
-            // Get scene 
+            // Get scene
             let scene = engine.scene_manager.get_scene_mut(self.scene_handle).unwrap();
 
             // Get component storage
@@ -125,7 +130,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T>
 
             // Get component slot
             let component_slot = component_storage.data.get_mut(self.entity_handle.data().index as usize).unwrap();
-        
+
             // Put component back to slot
             let _ = component_slot.insert(component.take().unwrap());
         }
@@ -136,14 +141,14 @@ impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T>
 
 // --- Global Component Request ---
 
-pub struct DeferredUpdateGlobalComponentRequest<T> 
+pub struct DeferredUpdateGlobalComponentRequest<T>
     where T: GlobalComponent<Storage = GlobalComponentStorage<T>>
 {
     request_variant: usize,
     phantom: PhantomData<T>, // 👻
 }
 
-impl<T> DeferredUpdateGlobalComponentRequest<T> 
+impl<T> DeferredUpdateGlobalComponentRequest<T>
     where T: GlobalComponent<Storage = GlobalComponentStorage<T>>
 {
     pub fn new(request_variant: usize) -> Self {
@@ -151,26 +156,26 @@ impl<T> DeferredUpdateGlobalComponentRequest<T>
             request_variant,
             phantom: PhantomData,
         }
-    } 
+    }
 }
 
-impl<T> DeferredUpdateRequest for DeferredUpdateGlobalComponentRequest<T> 
+impl<T> DeferredUpdateRequest for DeferredUpdateGlobalComponentRequest<T>
     where T: GlobalComponent<Storage = GlobalComponentStorage<T>>
 {
     fn process(&mut self, engine: &mut Engine) -> Result<()> {
         let mut component = Option::<T>::None;
-        
+
         {
             // Get component storage
             let component_storage = engine.global_components.get_mut::<T>().expect("Critical: Component not registered");
 
             // Get component slot
             let component_slot = &mut component_storage.data;
-        
+
             // Take component from slot
             component = Some(component_slot.take().expect("Critical: Component is None"));
         }
-        
+
         // Process
         component.as_mut().unwrap().deferred_update(engine, self.request_variant).context(format!("Deferred update of {} {} failed", "GlobalComponent".gobj_style(), get_type_name::<T>().sobj_style()))?;
 
@@ -180,7 +185,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateGlobalComponentRequest<T>
 
             // Get component slot
             let component_slot = &mut component_storage.data;
-        
+
             // Put component back to slot
             let _ = component_slot.insert(component.take().unwrap());
         }
@@ -209,14 +214,14 @@ impl DeferredUpdateManager {
 pub struct DeferredUpdateManagerPointer(pub(crate) Arc<Mutex<DeferredUpdateManager>>);
 
 impl DeferredUpdateManagerPointer {
-    pub fn new() -> Self {  
-        Self { 
+    pub fn new() -> Self {
+        Self {
             0: Arc::new(Mutex::new(DeferredUpdateManager::new())),
         }
     }
 
     pub(crate) fn clone(&mut self) -> Self {
-        Self { 
+        Self {
             0: self.0.clone(),
         }
     }
@@ -235,8 +240,8 @@ pub struct DeferredUpdateComponent {
 }
 
 impl DeferredUpdateComponent {
-    pub fn new() -> Self {  
-        Self { 
+    pub fn new() -> Self {
+        Self {
             manager: DeferredUpdateManagerPointer::new(),
         }
     }
@@ -249,9 +254,9 @@ impl DeferredUpdateComponent {
 
 
 impl PillTypeMapKey for DeferredUpdateComponent {
-    type Storage = GlobalComponentStorage<DeferredUpdateComponent>; 
+    type Storage = GlobalComponentStorage<DeferredUpdateComponent>;
 }
 
 impl GlobalComponent for DeferredUpdateComponent {
-   
+
 }

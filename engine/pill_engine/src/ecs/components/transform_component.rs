@@ -1,13 +1,14 @@
 use crate::{
-    ecs::{ 
+    ecs::{
         Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle
     }, engine::Engine
 };
-use pill_core::{ 
-    get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f 
+use pill_core::{
+    get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f
 };
 use cgmath::{Deg, Matrix3, SquareMatrix, Zero};
 use anyhow::{ Result, Context, Error };
+use serde::{ Serialize, Deserialize };
 
 // Coordinate system:
 //
@@ -32,7 +33,7 @@ impl TransformComponentBuilder {
             component: TransformComponent::new(),
         }
     }
-    
+
     pub fn position(mut self, position: Vector3f) -> Self {
         self.component.position = position;
         self
@@ -56,7 +57,7 @@ impl TransformComponentBuilder {
 // --- Transform Component ---
 
 // NOTE: Setting position/rotation/scale directly is not possible since we need to update matrices after each change
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[readonly::make]
 pub struct TransformComponent {
     #[readonly]
@@ -72,7 +73,8 @@ pub struct TransformComponent {
     // There may me multiple updates of the position/rotation/scale in the single frame.
     // Not to calculate matrices multiple times, we will update them only once per frame
     // The update happens in the rendering system
-    pub matrix_update_required: bool, 
+    pub matrix_update_required: bool,
+    pub net_dirty: bool,
 }
 
 impl TransformComponent {
@@ -80,14 +82,15 @@ impl TransformComponent {
         TransformComponentBuilder::default()
     }
 
-    pub fn new() -> Self {  
-        Self { 
+    pub fn new() -> Self {
+        Self {
             position: Vector3f::zero(),
             rotation: Vector3f::zero(),
             scale: Vector3f::new(1.0, 1.0, 1.0),
-            model_matrix: cgmath::Matrix4::identity().into(), 
+            model_matrix: cgmath::Matrix4::identity().into(),
             normal_matrix: cgmath::Matrix3::identity().into(),
             matrix_update_required: true,
+            net_dirty: false,
         }
     }
 
@@ -122,8 +125,8 @@ impl TransformComponent {
     }
 
     pub fn translate_local(&mut self, delta: Vector3f) {
-        self.position += self.get_forward_direction() * delta.z + 
-                        self.get_right_direction() * delta.x + 
+        self.position += self.get_forward_direction() * delta.z +
+                        self.get_right_direction() * delta.x +
                         self.get_up_direction() * delta.y;
         self.matrix_update_required = true;
     }
@@ -197,11 +200,18 @@ pub fn get_normal_matrix(transform_component: &TransformComponent) -> [[f32; 3];
 }
 
 impl PillTypeMapKey for TransformComponent {
-    type Storage = ComponentStorage<TransformComponent>; 
+    type Storage = ComponentStorage<TransformComponent>;
 }
 
 impl Component for TransformComponent {
-   
+
+}
+
+
+impl Default for TransformComponent {
+        fn default() -> Self {
+                    Self::new()
+                            }
 }
 
 pub trait MatrixAngleExt<S: cgmath::BaseFloat> {
@@ -217,23 +227,23 @@ impl<S: cgmath::BaseFloat> MatrixAngleExt<S> for cgmath::Matrix4<S> {
         #[cfg_attr(rustfmt, rustfmt_skip)]
         cgmath::Matrix4::<S>::from(
             cgmath::Matrix3::from_angle_z(cgmath::Deg(v.z)) *
-            cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) * 
+            cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) *
             cgmath::Matrix3::from_angle_x(cgmath::Deg(v.x)))
-    } 
+    }
 }
 
 impl<S: cgmath::BaseFloat> MatrixModelExt<S> for cgmath::Matrix4<S> {
     fn model(position: cgmath::Vector3<S>, rotation: cgmath::Vector3<S>, scale: cgmath::Vector3<S>) -> Self {
-        cgmath::Matrix4::from_translation(position) * 
-        cgmath::Matrix4::from_euler_angles(rotation) * 
+        cgmath::Matrix4::from_translation(position) *
+        cgmath::Matrix4::from_euler_angles(rotation) *
         cgmath::Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
-    }   
+    }
 }
 
 impl<S: cgmath::BaseFloat> MatrixAngleExt<S> for cgmath::Matrix3<S> {
     fn from_euler_angles(v: cgmath::Vector3<S>) -> Self {
         cgmath::Matrix3::from_angle_z(cgmath::Deg(v.z)) *
-        cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) * 
+        cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) *
         cgmath::Matrix3::from_angle_x(cgmath::Deg(v.x))
     }
 }

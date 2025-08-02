@@ -1,3 +1,5 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
     engine::Engine,
     ecs::{InputComponent, InputEvent, GamepadAxis, GamepadButton},

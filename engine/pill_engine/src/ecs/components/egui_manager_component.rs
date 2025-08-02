@@ -1,3 +1,5 @@
+#![cfg(feature = "rendering")]
+
 use std::collections::HashMap;
 
 use crate::{
@@ -16,7 +18,7 @@ pub struct EguiManagerComponent {
 
 impl EguiManagerComponent {
     pub fn new() -> Self {
-        Self { 
+        Self {
           collapsing_state: HashMap::new(),
         }
     }
@@ -25,7 +27,7 @@ impl EguiManagerComponent {
 
         let entity_count =  engine.scene_manager.get_active_scene().unwrap().entities.len();
         let system_count = engine.system_manager.update_phases.iter().map(|(_, systems)| systems.len()).sum::<usize>();
-        
+
         let system_timers: Vec<(UpdatePhase, Vec<(String, Timer)>)> = engine.system_manager.update_phases
             .iter()
             .map(|(update_phase, systems)| {
@@ -157,16 +159,16 @@ impl EguiManagerComponent {
     }
 
     pub(crate) fn update(&mut self, delta_time: f32) -> Result<()> {
-       
-        
+
+
         Ok(())
     }
 }
 
 impl PillTypeMapKey for EguiManagerComponent {
-    type Storage = GlobalComponentStorage<EguiManagerComponent>; 
+    type Storage = GlobalComponentStorage<EguiManagerComponent>;
 }
 
 impl GlobalComponent for EguiManagerComponent {
-   
+
 }

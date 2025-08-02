@@ -13,8 +13,10 @@ use crate::{
     }
 };
 
+use pill_engine::TransformComponent;
+
 use pill_engine::{game::{CameraAspectRatio, Engine, MeshRenderingComponent}, internal::{
-    get_renderer_resource_handle_from_camera_component, update_transform_matrices, CameraComponent, ComponentStorage, EntityHandle, MaterialParameterMap, MaterialTextureMap, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererTextureHandle, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
+    get_renderer_resource_handle_from_camera_component, update_transform_matrices, CameraComponent, ComponentStorage, EntityHandle, MaterialParameterMap, MaterialTextureMap, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererTextureHandle, TextureType, RENDER_QUEUE_KEY_ORDER
 }};
 
 use pill_core::{
@@ -201,13 +203,13 @@ impl PillRenderer for Renderer {
     fn render(
         &mut self,
         engine: &mut Engine,
-       
+
         egui_ui: Box<dyn Fn(&mut Engine, &egui::Context)>,
         timer: &mut Timer
     ) -> Result<()> {
         self.state.render(
             engine,
-           
+
             egui_ui,
             timer,
         )
@@ -453,7 +455,7 @@ impl State {
 
 let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
        let active_scene = engine.scene_manager.get_active_scene_mut()?;
-    
+
     {
 
         // - Find active camera and update its aspect ratio if needed
@@ -478,7 +480,7 @@ let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
     let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
         .unwrap();
 
-    
+
 
 
     let active_camera_entity_handle = active_camera_entity_handle_result.unwrap().clone();

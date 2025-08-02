@@ -1,0 +1,35 @@
+
+[package]
+name = "pill_headless"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow     = "1"
+log        = "0.4"
+env_logger = "0.11"
+config     = "0.11"
+
+pill_engine = { path = "../pill_engine", default-features = false }
+pill_net    = { path = "../pill_net", optional = true }
+chrono = "0.4.41"
+
+[features]
+default = []
+
+# Local alias so #[cfg(feature="net")] inside pill_headless works
+net = ["pill_engine/net", "pill_net"]
+
+# Run headless, no networking at all
+headless = [
+  "pill_engine/headless",
+  "pill_engine/internal",
+]
+
+# Run headless + start an authoritative server
+headless-server = [
+  "pill_engine/server",
+  "pill_engine/internal",
+  "net",
+]
+

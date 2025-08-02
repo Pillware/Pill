@@ -1,3 +1,5 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
     engine::{KeyboardKey, MouseButton},
     ecs::{GlobalComponent, GlobalComponentStorage},

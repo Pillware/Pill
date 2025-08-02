@@ -1,4 +1,5 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
+#![cfg(feature = "rendering")]
 
 mod renderer;
 mod render_queue;

@@ -1,13 +1,15 @@
+#![cfg(feature = "rendering")]
+
 use crate::{
     engine::Engine,
-    resources::{ Sound, SoundHandle }, 
-    ecs::{ 
-        AudioManagerComponent, 
-        EntityHandle, 
-        Component, 
-        ComponentStorage, 
-        SceneHandle, 
-        DeferredUpdateManagerPointer, 
+    resources::{ Sound, SoundHandle },
+    ecs::{
+        AudioManagerComponent,
+        EntityHandle,
+        Component,
+        ComponentStorage,
+        SceneHandle,
+        DeferredUpdateManagerPointer,
         DeferredUpdateComponentRequest,
         DeferredUpdateComponent,
         SoundType
@@ -178,10 +180,10 @@ impl AudioSourceComponent {
 }
 
 impl PillTypeMapKey for AudioSourceComponent {
-    type Storage = ComponentStorage<AudioSourceComponent>; 
+    type Storage = ComponentStorage<AudioSourceComponent>;
 }
 
-impl Component for AudioSourceComponent { 
+impl Component for AudioSourceComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
         let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
@@ -206,26 +208,26 @@ impl Component for AudioSourceComponent {
         }
     }
 
-    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
+    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> {
         match request {
-            DEFERRED_REQUEST_VARIANT_SET_SOUND => 
+            DEFERRED_REQUEST_VARIANT_SET_SOUND =>
             {
-                // Check if sound handle is valid  
+                // Check if sound handle is valid
                 engine.get_resource::<Sound>(&self.sound_handle.unwrap())
                     .context(format!("Setting {} {} failed", "Component".gobj_style(), "Sound".sobj_style()))?;
 
                 // Stop playing
                 self.stop_playing(engine)?;
             },
-            DEFERRED_REQUEST_VARIANT_SET_VOLUME => 
+            DEFERRED_REQUEST_VARIANT_SET_VOLUME =>
             {
                 let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
                 match self.sound_type {
                     SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_handle.unwrap()).set_volume(self.volume),
                     SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_handle.unwrap()).set_volume(self.volume),
-                } 
+                }
             },
-            DEFERRED_REQUEST_VARIANT_PLAY_SOUND => 
+            DEFERRED_REQUEST_VARIANT_PLAY_SOUND =>
             {
                 // Get data from sound resource
                 let sound_handle = self.sound_handle.unwrap();
@@ -236,7 +238,7 @@ impl Component for AudioSourceComponent {
                 let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
                 if let Some(sink_handle) = audio_manager.get_free_sink_handle(&self.sound_type) {
                     self.sink_handle = Some(sink_handle);
-                 
+
                     match self.sound_type {
                         SoundType::Sound2D => {
                             let sink = audio_manager.get_ambient_sink(sink_handle);
@@ -252,30 +254,30 @@ impl Component for AudioSourceComponent {
                         }
                     }
                     self.is_playing = true;
-                } 
+                }
                 else {
                     warn!("Cannot play sound, max concurrent {} sound count reached", get_enum_variant_type_name(&self.sound_type));
                 }
             },
-            DEFERRED_REQUEST_VARIANT_PAUSE_SOUND  => 
+            DEFERRED_REQUEST_VARIANT_PAUSE_SOUND  =>
             {
                 let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
                 match self.sound_type {
                     SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_handle.unwrap()).pause(),
                     SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_handle.unwrap()).pause(),
-                } 
+                }
             },
-            DEFERRED_REQUEST_VARIANT_STOP_SOUND  => 
+            DEFERRED_REQUEST_VARIANT_STOP_SOUND  =>
             {
                 self.stop_playing(engine)?;
             },
-            _ => 
+            _ =>
             {
                 panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().sobj_style());
             }
         }
 
-        Ok(()) 
+        Ok(())
     }
 
     fn destroy(&mut self, engine: &mut Engine, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) -> Result<()> {

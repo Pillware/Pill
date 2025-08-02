@@ -1,12 +1,15 @@
 use crate::{
     engine::Engine,
-    ecs::{ SceneManager, SceneHandle, Component, ComponentStorage }, 
+    ecs::{ SceneManager, SceneHandle, Component, ComponentStorage },
 };
 
 use anyhow::{Result, Error};
 
+use serde::{Serialize, Deserialize};
 
-pill_core::define_new_pill_slotmap_key! { 
+
+pill_core::define_new_pill_slotmap_key! {
+    #[derive(Serialize, Deserialize)]
     pub struct EntityHandle;
 }
 
@@ -27,7 +30,7 @@ impl<'a> EntityBuilder<'a> {
     pub fn build(self) -> EntityHandle {
         self.entity_handle
     }
-}  
+}
 
 // --- Entity ---
 

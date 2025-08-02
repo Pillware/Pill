@@ -1,7 +1,12 @@
 use crate::{
-    ecs::{ audio_system, deferred_update_system, input_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase }, 
-    graphics::{ RendererMaterialHandle, RendererTextureHandle }, 
-    resources::{ MaterialHandle, TextureHandle, TextureType },
+    ecs::{ DeferredUpdateComponent, SystemFunction, UpdatePhase, TimeComponent, deferred_update_system, time_system },
+};
+
+#[cfg(feature = "rendering")]
+use crate::{
+    ecs::{ AudioManagerComponent, EguiManagerComponent, InputComponent, input_system, audio_system, rendering_system },
+    graphics::{ RendererMaterialHandle, RendererTextureHandle },
+    resources::{ MaterialHandle, TextureHandle, TextureType }
 };
 
 use pill_core::PillSlotMapKeyData;
@@ -26,6 +31,7 @@ pub struct SystemConfig {
     pub update_phase: UpdatePhase,
 }
 
+#[cfg(feature = "rendering")]
 pub const INPUT_SYSTEM: SystemConfig = SystemConfig {
     name: "InputSystem",
     system_function: input_system,
@@ -38,6 +44,7 @@ pub const TIME_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PostGame,
 };
 
+#[cfg(feature = "rendering")]
 pub const AUDIO_SYSTEM: SystemConfig = SystemConfig {
     name: "AudioSystem",
     system_function: audio_system,
@@ -50,6 +57,7 @@ pub const DEFERRED_UPDATE_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PostGame,
 };
 
+#[cfg(feature = "rendering")]
 pub const RENDERING_SYSTEM: SystemConfig = SystemConfig {
     name: "RenderingSystem",
     system_function: rendering_system,
@@ -91,21 +99,26 @@ pub const RENDER_QUEUE_KEY_MESH_INDEX_IDX: u8 = 3;
 pub const RENDER_QUEUE_KEY_MESH_VERSION_IDX: u8 = 4;
 
 // Default resource handle - Color texture
-pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
 // Default resource handle - Normal texture
-pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle { 
-    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle {
+    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle { 
-    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
+    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
+#[cfg(feature = "rendering")]
 pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle, RendererTextureHandle) {
     match texture_type {
         TextureType::Color => (DEFAULT_COLOR_TEXTURE_HANDLE, DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE),
@@ -115,17 +128,21 @@ pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle,
 
 
 // Default resource handle - Material
-pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+#[cfg(feature = "rendering")]
+pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
+#[cfg(feature = "rendering")]
 pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle) {
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
 
+#[cfg(feature = "rendering")]
 lazy_static! {
     pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
         TypeId::of::<InputComponent>(),
@@ -133,5 +150,13 @@ lazy_static! {
         TypeId::of::<AudioManagerComponent>(),
         TypeId::of::<DeferredUpdateComponent>(),
         TypeId::of::<EguiManagerComponent>()
+    );
+}
+
+#[cfg(not(feature = "rendering"))]
+lazy_static! {
+    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
+        TypeId::of::<TimeComponent>(),
+        TypeId::of::<DeferredUpdateComponent>(),
     );
 }
