@@ -65,6 +65,7 @@ pub mod game {
             MeshRenderingComponent,
             TransformComponent,
             InputComponent,
+            GamepadAxis,
             CameraComponent,
             CameraAspectRatio,
             EntityHandle,
@@ -82,7 +83,7 @@ pub mod game {
         resources::{
             Resource,
             ResourceStorage,
-            Texture, 
+            Texture,
             TextureHandle,
             TextureType,
             Material,
@@ -94,20 +95,20 @@ pub mod game {
         },
 
     };
-    
+
     extern crate pill_core;
-    pub use pill_core::{ 
-        PillTypeMapKey, 
-        Vector2f, 
-        Vector3f, 
-        Color, 
+    pub use pill_core::{
+        PillTypeMapKey,
+        Vector2f,
+        Vector3f,
+        Color,
         Direction,
-        Vector2i, 
+        Vector2i,
         Vector3i,
         define_new_pill_slotmap_key,
         create_game,
     };
-  
+
     extern crate anyhow;
     pub use anyhow::{ Context, Result, Error };
 }
@@ -143,6 +144,7 @@ pub mod internal {
             CameraComponent,
             EntityHandle,
             InputComponent,
+            GamepadAxis,
             TimeComponent,
             CameraAspectRatio,
             AudioSourceComponent,
@@ -155,7 +157,7 @@ pub mod internal {
             get_normal_matrix,
         },
         resources::{
-            Texture, 
+            Texture,
             TextureHandle,
             TextureType,
 
@@ -165,7 +167,7 @@ pub mod internal {
             Mesh,
             MeshHandle,
             MeshData,
-            MeshVertex,    
+            MeshVertex,
 
             ResourceLoadType,
             ResourceManager,

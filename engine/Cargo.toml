@@ -5,7 +5,7 @@ members = [
     "pill_engine", 
     "pill_renderer", 
     "pill_standalone",
-    "C:/Programming/Pill-Engine/examples/Trucks", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
+    "/home/jduchniewicz/Projects/Sticky-Piston-Studios/Pill-Engine/examples/Trucks", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
 ]
 
 exclude = [
