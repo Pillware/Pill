@@ -11,15 +11,31 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
     let a_key = input_component.get_key(KeyboardKey::KeyA);
     let d_key = input_component.get_key(KeyboardKey::KeyD);
     let shift_key = input_component.get_key(KeyboardKey::ShiftLeft);
-
     let any_key = w_key || s_key || a_key || d_key;
+
+
+    const DEAD_ZONE: f32 = 0.10;
+
+    let pad_forward = input_component.get_gamepad_axis(GamepadAxis::LeftStickY); // up = -fwd
+    let pad_turn    =  input_component.get_gamepad_axis(GamepadAxis::LeftStickX); // left = −
+    let pad_sprint  =  input_component.get_gamepad_axis(GamepadAxis::RightTrigger); // 0‥1
+
+    // treat as pressed if stick/trigger exceeds DZ
+    let pad_fwd   = pad_forward  >  DEAD_ZONE;
+    let pad_back  = pad_forward  < -DEAD_ZONE;
+    let pad_left  = pad_turn     < -DEAD_ZONE;
+    let pad_right = pad_turn     >  DEAD_ZONE;
+    let pad_boost = pad_sprint   >  0.5;
+    let any_pad = pad_fwd || pad_back || pad_left || pad_right;
+
+
 
     let move_speed = 25.0;
     let rotate_speed = 90.0; // degrees per second
-    let smoothing = if any_key { 2.0 } else { 2.3 };
-    let move_speed_boost = if shift_key { 2.0 } else { 1.0 };
+    let smoothing = if any_key || any_pad { 2.0 } else { 2.3 };
+    let move_speed_boost = if shift_key || pad_boost { 2.0 } else { 1.0 };
     //Slow down on turns
-    let move_speed_slow_down = if a_key || d_key { 0.8 } else { 1.0 };
+    let move_speed_slow_down = if a_key || d_key || pad_left || pad_right { 0.8 } else { 1.0 };
 
     
     
@@ -32,17 +48,17 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
         engine.iterate_three_components_mut::<TransformComponent, TargetTransformComponent, PlayerTagComponent>()? {
 
         // --- Input updates target transform ---
-        if w_key {
+        if w_key || pad_fwd {
             target_transform_component.0.translate(final_speed, Direction::Forward);
         }
-        if s_key {
+        if s_key || pad_back {
             target_transform_component.0.translate(final_speed, Direction::Backward);
         }
 
-        if a_key && (w_key || s_key) {
+        if (pad_left && (pad_fwd || pad_back)) || ((a_key && (w_key || s_key))) {
             target_transform_component.0.rotate_around_axis(rotate_speed * delta_time, Vector3f::new(0.0, 1.0, 0.0));
         }
-        if d_key && (w_key || s_key){
+        if (pad_right && (pad_fwd || pad_back)) || ((d_key && (w_key || s_key))) {
             target_transform_component.0.rotate_around_axis(-rotate_speed * delta_time, Vector3f::new(0.0, 1.0, 0.0));
         }
        
@@ -60,9 +76,8 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
             
             
         let mut in_move: f32 = 0.0;
-        in_move += if w_key || s_key { 1.0 } else { 0.0 };
-        in_move += if w_key || s_key { 0.2 } else { 0.0 };
-        in_move += if (a_key || d_key  ) && (w_key || s_key) { -0.5 } else { 0.0 };
+        in_move += if w_key || s_key || pad_fwd || pad_back { 1.0 } else { 0.0 };
+        in_move += if ((a_key || d_key) && (w_key || s_key)) || ((pad_left || pad_right) && (pad_fwd || pad_back)) { -0.5 } else { 0.0 };
         in_move = in_move.clamp(0.0, 1.0);
 
         let aa = in_move * 0.4 * final_speed;
@@ -79,8 +94,6 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
             60.0 + aa * 20.0, // Adjust the factor as needed
             3.0 * delta_time
         );
-
-
 
         if let Some(player_transform) = player_transform {
             let target_position = (player_transform.position + player_transform.get_backward_direction() * 10.0) + Vector3f::new(0.0, 6.0, 0.0);
