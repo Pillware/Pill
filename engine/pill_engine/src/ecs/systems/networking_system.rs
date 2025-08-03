@@ -1,6 +1,7 @@
 #![cfg(feature = "net")]
 
 use anyhow::Result;
+use log::debug;
 use pill_net::{NetClient, client_update, server_update, cli_send, srv_broadcast, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
 
 use crate::ecs::components::transform_component;
@@ -100,7 +101,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                         for msg in &msgs {
                             if msg.tag == WireTag::Update {
                                 let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                                println!(
+                                debug!(
                                     "[Client] ◂ received pkt nr: {} from srv at time {}",
                                     pkt.sequence, pkt.timestamp
                                 );
@@ -475,7 +476,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                                     if entity_update.net_state.net_entity_id == net_state.net_entity_id {
                                         net_state.transform = Some(tr.clone());
                                         net_state.transform.as_mut().unwrap().net_dirty = false;
-                                        println!("▸ Updating entity with nid={:?} for cid={} net_state={:?} with transform {:?}",
+                                        debug!("▸ Updating entity with nid={:?} for cid={} net_state={:?} with transform {:?}",
                                                  net_state.net_entity_id, update.client_id, net_state, tr);
 
                                         // authoritative change on the server

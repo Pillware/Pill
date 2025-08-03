@@ -120,7 +120,40 @@ impl PillGame for Game {
 			Mesh::new("AxisGizmo", "models/AxisGizmo.obj".into())
 		)?;
 
+		let arena_mesh_handle = engine.add_resource(
+			Mesh::new("Arena", "models/Arena.obj".into())
+		)?;
+
+		let stones_mesh_handle = engine.add_resource(
+			Mesh::new("Stones", "models/Stones.obj".into())
+		)?;
+
 		// Add textures
+		let stones_color_texture_handle = engine.add_resource::<Texture>(
+			Texture::new(
+				"StonesColor",
+				TextureType::Color,
+				ResourceLoadType::Path("textures/StonesColor.png".into())
+			)
+		)?;
+
+		let stones_normal_texture_handle = engine.add_resource::<Texture>(
+			Texture::new(
+				"StonesNormal",
+				TextureType::Normal,
+				ResourceLoadType::Path("textures/StonesNormal.png".into())
+			)
+		)?;
+
+		let stones_material_handle = engine.add_resource::<Material>(
+			Material::builder("Stones")
+				.texture("Color", stones_color_texture_handle)?
+				.texture("Normal", stones_normal_texture_handle)?
+				.scalar("Specularity", 0.3)?
+				.build()
+		)?;
+
+
 		let dirt_texture_handle = engine.add_resource::<Texture>(
 			Texture::new(
 				"TruckColor",
@@ -205,15 +238,15 @@ impl PillGame for Game {
 		engine.build_entity(active_scene)
 			.with_component(TransformComponent::builder()
 				.position(Vector3f::new(0.0, 0.0, 0.0))
-				.scale(Vector3f::new(70.0, 1.0, 70.0))
+				.scale(Vector3f::new(1.0, 1.0, 1.0))
 				.build())
 			.with_component(MeshRenderingComponent::builder()
 				.material(&ground_material_handle)
-				.mesh(&ground_mesh_handle)
+				.mesh(&arena_mesh_handle)
 				.build())
 			.with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Fixed)
 				.build())
-			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(175.0, 0.5, 175.0))
+			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(200.0, 0.5, 200.0))
 				.build())
 			.build();
 
@@ -264,6 +297,18 @@ impl PillGame for Game {
 			.with_component(MeshRenderingComponent::builder()
 				.material(&axis_gizmo_material_handle)
 				.mesh(&axis_gizmo_mesh_handle)
+				.build())
+			.build();
+
+		// Create stones entity
+		engine.build_entity(active_scene)
+			.with_component(TransformComponent::builder()
+				.position(Vector3f::new(0.0, 0.0, 0.0))
+				.scale(Vector3f::new(1.0, 1.0, 1.0))
+				.build())
+			.with_component(MeshRenderingComponent::builder()
+				.material(&stones_material_handle)
+				.mesh(&stones_mesh_handle)
 				.build())
 			.build();
 

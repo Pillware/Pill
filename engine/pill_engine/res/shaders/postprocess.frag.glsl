@@ -116,6 +116,20 @@ vec3 chromatic_aberration(vec2 tex_coords) {
     return vec3(r, g, b);
 }
 
+vec3 apply_horizontal_dark_lines(vec3 color, vec2 frag_coord, float threshold, float spacing) {
+    float lum = dot(color, vec3(0.299, 0.587, 0.114)); // Grayscale brightness
+
+    // Make lines thinner by using a narrow band for the line
+    float line_width = 0.15; // Lower = thinner lines (in [0,1] of spacing)
+    float f = fract(frag_coord.y / spacing);
+    float line = smoothstep(0.0, line_width, f) * (1.0 - smoothstep(1.0 - line_width, 1.0, f));
+
+    float mask = step(threshold, lum) * line;
+
+    // Blend with white, and reduce the effect (e.g., 0.3 strength)
+    return mix(color, vec3(1.0), mask * 0.9);
+}
+
 void main() {
     vec2 frag_coord = tex_coords * screen_resolution;
 
@@ -140,6 +154,8 @@ void main() {
     final_color.r = floor(final_color.r * levels + d_r) / levels;
     final_color.g = floor(final_color.g * levels + d_g) / levels;
     final_color.b = floor(final_color.b * levels + d_b) / levels;
+
+    final_color = apply_horizontal_dark_lines(final_color, frag_coord, 0.4, 10.0);
 
     out_color = vec4(final_color, 1.0);
 }

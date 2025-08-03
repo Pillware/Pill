@@ -82,13 +82,10 @@ impl EguiManagerComponent {
         let active_camera_component = camera_component_storage.data.get_mut(active_camera_entity_handle.data().index as usize).unwrap().as_mut().unwrap();
 
             egui::Window::new("Pill Engine")
-                .default_open(true)
+                .default_open(false)
                 .resizable(true)
                 .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
                 .show(ui, |ui| {
-                    if ui.add(egui::Button::new("Click me")).clicked() {
-                        println!("PRESSED");
-                    }
                     ui.add(egui::Label::new(format!("FPS {}", 1000.0 / frame_delta_time) ));
                     ui.add(egui::Label::new(format!("Frame Delta Time: {:.5} ms", frame_delta_time)));
                     ui.add(egui::Label::new(format!("Entities: {}", entity_count)));

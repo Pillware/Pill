@@ -90,7 +90,7 @@ impl Default for PostprocessParams {
     fn default() -> Self {
         Self {
             vignette_strength: 0.6,
-            vignette_extent: 1.0,
+            vignette_extent: 0.7,
             screen_resolution: [1920.0, 1080.0],
             tilt_shift_focus_area: 0.4,
             tilt_shift_focus_pos: 0.35,
@@ -121,7 +121,7 @@ impl CameraComponent {
         Self {
             aspect: CameraAspectRatio::Automatic(1.0),
             fov: 60.0,
-            range: 0.1..100.0,
+            range: 0.1..200.0,
             clear_color: Color::new(0.15, 0.15, 0.15),
             renderer_resource_handle: None,
             enabled: false,
