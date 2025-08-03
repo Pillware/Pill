@@ -1,6 +1,6 @@
 
 use anyhow::Result;
-use pill_engine::{Engine, PillGame, TransformComponent, NetworkStateComponent};
+use pill_engine::{Engine, PillGame, TransformComponent, NetworkStateComponent, networking_system_server};
 use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
@@ -24,6 +24,10 @@ impl PillGame for HeadlessGame {
         #[cfg(feature = "net")]
         {
             engine.add_global_component(NetState::new_server("0.0.0.0:5000", 8)?)?;
+            engine.add_system(
+                "NetworkingSystemServer",
+                networking_system_server,
+            )?;
 
             log::info!("Server listening on 0.0.0.0:5000");
         }

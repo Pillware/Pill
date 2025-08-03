@@ -4,7 +4,9 @@ use pill_engine::TransformComponent;
 use rand::Rng;
 
 #[cfg(feature = "net")]
-use pill_engine::{NetState, NetStats, NetworkStateComponent, NetEntityState};
+use pill_engine::{NetState, NetSide, NetStats, NetworkStateComponent, NetEntityState, networking_system_client};
+
+use pill_net::{WireMsg, WireTag, cli_send};
 
 // ----- CONSTANTS -----
 
@@ -55,7 +57,9 @@ impl PillGame for Game {
 
         engine.register_component::<NetworkStateComponent>(active_scene)?;
 
+
         // Add systems
+        engine.add_system("NetworkingSystemClient", networking_system_client)?;
         //engine.add_system("PillRotation", pill_rotation_system)?;
         engine.add_system("PillMovement", pill_movement_system)?;
 
@@ -114,7 +118,8 @@ impl PillGame for Game {
 
             engine.add_system("NetHUD", net_hud_system)?;
             // Add the network component marker
-            engine.add_component_to_entity(active_scene, pill, NetworkStateComponent { owner_id: client_id, state: NetEntityState::Spawn, transform: Some(transform_component) })?;
+            let net_entity_id = rand::thread_rng().gen_range(1..=1000);
+            engine.add_component_to_entity(active_scene, pill, NetworkStateComponent { net_entity_id, owner_id: client_id, state: NetEntityState::Spawn, transform: Some(transform_component) })?;
             println!("Pill entity created");
         }
 
@@ -226,11 +231,29 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
         let inv = 1.0 / len;
         dir.x *= inv;
         dir.y *= inv;
+		{
+			for (_, transform, _) in
+				engine.iterate_two_components_mut::<TransformComponent, PillComponent>()?
+			{
+				transform.translate_world(dt * PILL_MOVE_SPEED * dir);
+			}                                   // iterator dropped ─► 1st borrow ends
+		}
 
-        //for (_, transform, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
-        //    transform.position += dir * PILL_MOVE_SPEED * dt;
-        //    println!("Direction: {:?}", dir);
-        //}
+		{
+			if let Ok(state) = engine.get_global_component_mut::<NetState>() {
+				if let NetSide::Client(net) = &mut state.side {
+                    println!("Client sent ping");
+					cli_send(
+						net,
+						&WireMsg {
+							tag:  WireTag::Ping,
+							data: vec![0, 1, 2, 3],
+						},
+					)?;
+				}
+			}
+		}
+
     }
 
     Ok(())
