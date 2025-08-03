@@ -1,7 +1,7 @@
 #![cfg(feature = "net")]
 
 use anyhow::Result;
-use pill_net::{NetClient, client_update, server_update, cli_send, srv_broadcast, cli_flush, srv_flush, WireMsg, WireTag};
+use pill_net::{NetClient, client_update, server_update, cli_send, srv_broadcast, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
 
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
@@ -55,7 +55,7 @@ fn try_send_and_flush(net: &mut NetClient,
     match cli_send(net, msg) {
         Ok(_) => {}
         Err(e) if is_not_ready(&e) => {
-            log::info!("[Client] ▸ not connected yet – send skipped");
+            println!("[Client] ▸ not connected yet – send skipped");
             return Ok(());                    // bail out early this frame
         }
         Err(e) => return Err(e),              // real error → bubble up
@@ -65,7 +65,7 @@ fn try_send_and_flush(net: &mut NetClient,
     match cli_flush(net) {
         Ok(_) => {}
         Err(e) if is_not_ready(&e) => {
-            log::info!("[Client] ▸ not connected yet – flush skipped");
+            println!("[Client] ▸ not connected yet – flush skipped");
         }
         Err(e) => return Err(e),
     }
@@ -73,51 +73,130 @@ fn try_send_and_flush(net: &mut NetClient,
 }
 
 fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
-    let state = engine.get_global_component_mut::<NetState>()?;
-    let dt = Duration::from_secs_f32(state.timeout); // TODO: this is how much time
-    println!("Advancing networking system with dt={}", dt.as_secs_f32());
-    let mut updates: Vec<NetworkUpdatePayload> = Vec::new();
+    // ────────────────────────────────────────────────────────────────
+    // 0.  Immutable borrow just to read the timeout
+    // ────────────────────────────────────────────────────────────────
+    let timeout = {
+        let state = engine.get_global_component::<NetState>()?;
+        state.timeout
+    };
+    let dt = Duration::from_secs_f32(timeout);
+    //println!("Advancing networking system with dt={}", dt.as_secs_f32());
 
-    match &mut state.side {
-        NetSide::Client(net) => {
-            match client_update(net, dt) {
-                Ok(msgs) => {
-                    for msg in &msgs {
-                        if msg.tag == WireTag::Update {
-                            let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                            log::info!("[Client] ◂ received pkt nr: {} from srv at time {}", pkt.sequence, pkt.timestamp);
-                            updates.push(pkt);
+    let mut updates:    Vec<NetworkUpdatePayload> = Vec::new();
+    let mut join_cids:  Vec<u64>                  = Vec::new();   // remember JOINs
+
+    // ────────────────────────────────────────────────────────────────
+    // 1.  Handle wire traffic – first and only long-lived &mut borrow
+    // ────────────────────────────────────────────────────────────────
+    {
+        let mut state = engine.get_global_component_mut::<NetState>()?;
+
+        match &mut state.side {
+            // ── CLIENT ────────────────────────────────────────────
+            NetSide::Client(net) => {
+                match client_update(net, dt) {
+                    Ok(msgs) => {
+                        for msg in &msgs {
+                            if msg.tag == WireTag::Update {
+                                let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
+                                println!(
+                                    "[Client] ◂ received pkt nr: {} from srv at time {}",
+                                    pkt.sequence, pkt.timestamp
+                                );
+                                updates.push(pkt);
+                            }
                         }
+                        //println!("Client ◂ received {} updates from srv", msgs.len());
                     }
-                    //log::info!("Client ◂ received {} updates from srv", msgs.len());
-                },
-                Err(e) if is_not_ready(&e) => {
-                    log::info!("[Client] ▸ not connected yet – update skipped");
-                    return Ok(updates);
-                },
-                Err(e) => return Err(e),
+                    Err(e) if is_not_ready(&e) => {
+                        println!("[Client] ▸ not connected yet – update skipped");
+                        return Ok(updates); // keep early-out behaviour
+                    }
+                    Err(e) => return Err(e),
+                }
             }
-        }
-        NetSide::Server(net) => {
-            println!("[Server] receiving updates from clients...");
-            for (cid, msg) in server_update(net, dt)? {
-                println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
-                if msg.tag == WireTag::Update {
-                    let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                    log::info!("[Server] ◂ received pkt nr: {} from cid={cid} at time {}", pkt.sequence, pkt.timestamp);
-                    //log::info!("Server ◂ received {} updates from cid={cid}", pkt.updates.len());
-                    updates.push(pkt);
+
+            // ── SERVER ────────────────────────────────────────────
+            NetSide::Server(net) => {
+                println!("[Server] receiving updates from clients...");
+                for (cid, msg) in server_update(net, dt)? {
+                    println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
+
+                    if msg.tag == WireTag::Update {
+                        let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
+                        println!(
+                            "[Server] ◂ received pkt nr: {} from cid={cid} at time {}",
+                            pkt.sequence, pkt.timestamp
+                        );
+                        //println!("Server ◂ received {} updates from cid={cid}", pkt.updates.len());
+                        updates.push(pkt);
+                    } else if msg.tag == WireTag::Join {
+                        // handle client joining
+                        println!("[Server] Client {cid} JOIN with cid={cid}");
+                        join_cids.push(cid);      // snapshot will be sent later
+                    }
                 }
             }
         }
-    };
+    } // ← first &mut borrow ends here
+
+    // ────────────────────────────────────────────────────────────────
+    // 2.  For every JOIN, build & send a world snapshot
+    //     (short, independent borrows – no double-borrow)
+    // ────────────────────────────────────────────────────────────────
+    for cid in join_cids {
+        // gather all entities currently on the server
+        let mut entity_updates: Vec<EntityUpdate> = Vec::new();
+        for (_, transform, net_state) in
+            engine.iterate_two_components_mut::<TransformComponent,
+                                                NetworkStateComponent>()?
+        {
+            entity_updates.push(EntityUpdate {
+                action:    NetEntityAction::Spawn,
+                net_state: net_state.clone(),
+                transform: Some(transform.clone()),
+            });
+        }
+        println!("[Server] Sending {} entities to client {cid}", entity_updates.len());
+
+        // wrap them in the usual payload
+        let snapshot = NetworkUpdatePayload {
+            client_id: 0,   // 0 = "server"
+            updates:   entity_updates,
+            timestamp: engine.get_global_component::<TimeComponent>()?.time,
+            sequence:  rand::thread_rng().gen(),
+        };
+
+        // short-lived borrow only to send/flush
+        {
+            let mut state = engine.get_global_component_mut::<NetState>()?;
+            if let NetSide::Server(net) = &mut state.side {
+                srv_send_one(
+                    net,
+                    cid,   // **only** the newcomer
+                    &WireMsg {
+                        tag:  WireTag::Update,
+                        data: bincode::serialize(&snapshot)?,
+                    },
+                )?;
+                srv_flush(net)?;
+            }
+        }
+
+        println!(
+            "[Server] → sent {} existing entities to cid={cid}",
+            snapshot.updates.len()
+        );
+    }
+
     Ok(updates)
 }
 
 fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
     let my_id = engine.get_global_component_mut::<NetState>()?.my_id;
     let scene = engine.get_active_scene_handle()?;
-    log::info!("Spawning entity with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+    println!("Spawning entity with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
 
     // randomness for capsules tint and transforms
     let mut rng = rng();
@@ -149,8 +228,16 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
     // TODO: what about dirty flag!
     //transform.net_dirty = false; // reset net dirty flag
 
-    // add the network state component
-    engine.add_component_to_entity(scene, ent, net_state_component.clone())?;
+    // add the network state component and mark it as spawned
+    //engine.add_component_to_entity(scene, ent, NetworkStateComponent {
+    //    owner_id: my_id,
+    //    state: NetEntityState::Alive,
+    //    net_entity_id: net_state_component.net_entity_id,
+    //    transform: Some(transform.clone()),
+    //})?;
+	let mut ns = net_state_component.clone();
+	ns.state = NetEntityState::Alive;
+    engine.add_component_to_entity(scene, ent, ns)?;
 
     engine.add_component_to_entity(scene, ent,*transform)?;
 
@@ -159,7 +246,7 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
         engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
     }
 
-    log::info!("Spawn finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+    println!("Spawn finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
     Ok(())
 }
 
@@ -188,14 +275,14 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                     match entity_update.action {
                         NetEntityAction::Spawn => {
                             println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
-                            log::info!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
+                            println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
                             let tr = entity_update.transform
                                                   .clone()
                                                   .unwrap_or_else(TransformComponent::default);
                             spawn_entity(engine, &entity_update.net_state, &tr)?;
                         },
                         NetEntityAction::Despawn => {
-                            log::info!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id);
+                            println!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id);
                         },
                         NetEntityAction::Update => {
                             // Handle updating the entity's transform
@@ -227,10 +314,10 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                     srv_flush(net)?;
                 };
             }
-            //log::info!("Received and broadcasted {} network updates", updates.len());
+            //println!("Received and broadcasted {} network updates", updates.len());
         },
         Err(e) => {
-            log::error!("Failed to receive or broadcast network updates: {}", e);
+            println!("Failed to receive or broadcast network updates: {}", e);
             return Err(e);
         }
     }
@@ -256,8 +343,12 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
         for (_, transform, net_state)
             in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
             if net_state.state == NetEntityState::Spawn {
-                // send the entity's state to the server
-                log::info!("▸ Spawning new entity for nid={:?} from cid={my_id}", net_state.net_entity_id);
+                // send the entity's state to the server only if this client is the owner of the
+                // entity
+                if net_state.owner_id != my_id {
+                    continue; // skip entities not owned by this client
+                }
+               println!("▸ Spawning new entity for nid={:?} from cid={my_id}", net_state.net_entity_id);
                 let update = EntityUpdate {
                     action: NetEntityAction::Spawn,
                     net_state: net_state.clone(),
@@ -274,7 +365,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
             sequence: rng().gen(), // generate a random sequence number
         };
         if let NetSide::Client(net) = &mut engine.get_global_component_mut::<NetState>()?.side {
-            log::info!("▸ Sending {} updates to server", payload.updates.len());
+            println!("▸ Sending {} updates to server", payload.updates.len());
             try_send_and_flush(net, &WireMsg {
                 tag: WireTag::Update,
                 data: bincode::serialize(&payload)?,
@@ -293,14 +384,14 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                 for entity_update in &update.updates {
                     match entity_update.action {
                         NetEntityAction::Spawn => {
-                            log::info!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
+                            println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
                             let tr = entity_update.transform
                                                   .clone()
                                                   .unwrap_or_else(TransformComponent::default);
                             spawn_entity(engine, &entity_update.net_state, &tr)?;
                         },
                         NetEntityAction::Despawn => {
-                            log::info!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id);
+                            println!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id);
                         },
                         NetEntityAction::Update => {
                             // Handle updating the entity's transform
@@ -332,10 +423,10 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                     srv_flush(net)?;
                 };
             }
-            //log::info!("Received and broadcasted {} network updates", updates.len());
+            //println!("Received and broadcasted {} network updates", updates.len());
         },
         Err(e) => {
-            log::error!("Failed to receive or broadcast network updates: {}", e);
+            println!("Failed to receive or broadcast network updates: {}", e);
             return Err(e);
         }
     }

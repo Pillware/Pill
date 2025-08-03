@@ -9,6 +9,7 @@ pub enum WireTag {
     Ping = 0,
     Pong = 1,
     Update = 3,
+    Join = 4
 }
 
 impl TryFrom<u8> for WireTag {
@@ -19,6 +20,7 @@ impl TryFrom<u8> for WireTag {
             0 => Ok(WireTag::Ping),
             1 => Ok(WireTag::Pong),
             3 => Ok(WireTag::Update),
+            4 => Ok(WireTag::Join),
             _ => Err(anyhow::anyhow!("Invalid WireTag byte: {}", value)),
         }
     }
