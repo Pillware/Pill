@@ -61,7 +61,7 @@ pub const PHYSICS_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PostGame,
 };
 
-//#[cfg(feature = "rendering")]
+#[cfg(feature = "rendering")]
 pub const RENDERING_SYSTEM: SystemConfig = SystemConfig {
     name: "RenderingSystem",
     system_function: rendering_system,
