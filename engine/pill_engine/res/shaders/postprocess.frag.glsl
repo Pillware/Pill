@@ -189,11 +189,11 @@ void main() {
     vignette = mix(1.0 - vignette_strength, 1.0, vignette);
     
     // Apply vignette to scene color
-    vec3 final_color = scene_color * vignette;
+    vec3 final_color = clamp(scene_color * vignette * 1.1, 0.0, 1.0);
     
     // Add sniper scope crosshair
-    float crosshair = sniper_crosshair(tex_coords, center);
-    final_color = mix(final_color, vec3(1.0, 1.0, 1.0), crosshair * 0.8);
+    //float crosshair = sniper_crosshair(tex_coords, center);
+    //final_color = mix(final_color, vec3(1.0, 1.0, 1.0), crosshair * 0.8);
     
     out_color = vec4(final_color, 1.0);
 }

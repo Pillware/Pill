@@ -1,6 +1,4 @@
-use crate::{
-    ecs::{ DeferredUpdateComponent, SystemFunction, UpdatePhase, TimeComponent, deferred_update_system, time_system },
-};
+use crate::ecs::{ deferred_update_system, physics_system, time_system, DeferredUpdateComponent, SystemFunction, TimeComponent, UpdatePhase };
 
 #[cfg(feature = "rendering")]
 use crate::{
@@ -57,7 +55,13 @@ pub const DEFERRED_UPDATE_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PostGame,
 };
 
-#[cfg(feature = "rendering")]
+pub const PHYSICS_SYSTEM: SystemConfig = SystemConfig {
+    name: "PhysicsSystem",
+    system_function: physics_system,
+    update_phase: UpdatePhase::PostGame,
+};
+
+//#[cfg(feature = "rendering")]
 pub const RENDERING_SYSTEM: SystemConfig = SystemConfig {
     name: "RenderingSystem",
     system_function: rendering_system,

@@ -1,14 +1,10 @@
 use crate::{
-    engine::Engine,
-    ecs::{
-        TransformComponent, 
-        PhysicsWorldComponent, 
-        RigidBodyComponent, 
-        ColliderComponent,
-        SceneHandle
-    }
+    config::PHYSICS_SYSTEM, ecs::{
+        ColliderComponent, PhysicsWorldComponent, RigidBodyComponent, SceneHandle, TransformComponent
+    }, engine::Engine
 };
 
+use pill_core::Timer;
 use rapier3d::prelude::*;
 use cgmath::{Vector3, Matrix4, SquareMatrix};
 use anyhow::{Result, Context, Error};
@@ -47,31 +43,45 @@ use anyhow::{Result, Context, Error};
 /// engine.add_component_to_entity(scene, entity, ColliderComponent::ball(1.0))?;
 /// ```
 pub fn physics_system(engine: &mut Engine) -> Result<()> {
+
+    let mut timer = engine.system_manager.get_system_timer(PHYSICS_SYSTEM.name, PHYSICS_SYSTEM.update_phase.clone()).unwrap().unwrap();
+
     // Get the active scene handle
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
-    
+
+    timer.record_new_context("Sync transforms to physics")?;
+
     // Sync transforms to physics bodies before stepping
-    sync_transforms_to_physics(engine, active_scene_handle)?;
+    sync_transforms_to_physics(engine, active_scene_handle,&mut timer)?;
     
-    // Create new rigid bodies and colliders for entities that don't have them yet
-    //create_physics_bodies(engine, active_scene_handle)?;
-    
+    timer.end_context()?;
+
     // Step the physics world
+    timer.record("Step the physics world")?;
+
+    // Sync physics bodies back to transforms
     {
         let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
         physics_world.step();
     }
-    
-    // Sync physics bodies back to transforms
-    sync_physics_to_transforms(engine, active_scene_handle)?;
-    
+
+   
+    timer.record_new_context("Sync physics to transforms")?;
+   
+    sync_physics_to_transforms(engine, active_scene_handle,&mut timer)?;
+
+    engine.system_manager.update_system_timer(PHYSICS_SYSTEM.name, PHYSICS_SYSTEM.update_phase, timer)?;
+
     Ok(())
 }
 
 fn sync_transforms_to_physics(
     engine: &mut Engine, 
-    scene_handle: SceneHandle
+    scene_handle: SceneHandle,
+    timer: &mut Timer
 ) -> Result<()> {
+
+        timer.record("Step the physics world")?;
     // Get entity handles with both transform and rigid body components
     let entities_with_physics: Vec<_> = {
         let scene = engine.scene_manager.get_scene(scene_handle)?;
@@ -123,115 +133,16 @@ fn sync_transforms_to_physics(
     Ok(())
 }
 
-// fn create_physics_bodies(
-//     engine: &mut Engine, 
-//     scene_handle: SceneHandle
-// ) -> Result<()> {
-//     // Get entities that need rigid bodies created
-//     let entities_needing_rigidbodies: Vec<_> = {
-//         let scene = engine.scene_manager.get_scene(scene_handle)?;
-//         let mut entities = Vec::new();
-        
-//         for (entity_handle, rigid_body_comp) in scene.get_one_component_iterator::<RigidBodyComponent>()? {
-//             if !rigid_body_comp.is_created() {
-//                 entities.push(entity_handle);
-//             }
-//         }
-//         entities
-//     };
-    
-//     // Create rigid bodies
-//     for entity_handle in entities_needing_rigidbodies {
-//         let rigid_body_builder = {
-//             let rigid_body_comp = engine.scene_manager.get_entity_component::<RigidBodyComponent>(entity_handle, scene_handle)?;
-//             rigid_body_comp.rigid_body_builder.clone()
-//         };
-        
-//         // Get the transform for initial position
-//         let initial_transform = if let Ok(transform) = engine.scene_manager.get_entity_component::<TransformComponent>(entity_handle, scene_handle) {
-//             let position = nalgebra::Vector3::new(
-//                 transform.position.x,
-//                 transform.position.y,
-//                 transform.position.z,
-//             );
-            
-//             let rotation = nalgebra::UnitQuaternion::from_euler_angles(
-//                 transform.rotation.x.to_radians(),
-//                 transform.rotation.y.to_radians(),
-//                 transform.rotation.z.to_radians(),
-//             );
-            
-//             Isometry::from_parts(position.into(), rotation)
-//         } else {
-//             Isometry::identity()
-//         };
-        
-//         // Create the rigid body with initial transform
-//         let rigid_body = rigid_body_builder.position(initial_transform).build();
-        
-//         // Insert the rigid body and store the handle
-//         let rb_handle = {
-//             let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
-//             physics_world.rigid_body_set.insert(rigid_body)
-//         };
-        
-//         // Store the handle in the component
-//         let rigid_body_comp = engine.scene_manager.get_entity_component::<RigidBodyComponent>(entity_handle, scene_handle)?;
-//         rigid_body_comp.rigid_body_handle = Some(rb_handle);
-//     }
-    
-//     // Get entities that need colliders created
-//     let entities_needing_colliders: Vec<_> = {
-//         let scene = engine.scene_manager.get_scene(scene_handle)?;
-//         let mut entities = Vec::new();
-        
-//         for (entity_handle, collider_comp) in scene.get_one_component_iterator::<ColliderComponent>()? {
-//             if !collider_comp.is_created() {
-//                 entities.push(entity_handle);
-//             }
-//         }
-//         entities
-//     };
-    
-//     // Create colliders
-//     for entity_handle in entities_needing_colliders {
-//         let collider_builder = {
-//             let collider_comp = engine.scene_manager.get_entity_component::<ColliderComponent>(entity_handle, scene_handle)?;
-//             collider_comp.collider_builder.clone()
-//         };
-        
-//         // Create the collider
-//         let collider = collider_builder.build();
-        
-//         // Try to attach to a rigid body if one exists for this entity
-//         let parent_handle = if let Ok(rigid_body_comp) = engine.scene_manager.get_entity_component::<RigidBodyComponent>(entity_handle, scene_handle) {
-//             rigid_body_comp.get_handle()
-//         } else {
-//             None
-//         };
-        
-//         // Insert the collider and store the handle
-//         let collider_handle = {
-//             let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
-//             physics_world.collider_set.insert_with_parent(
-//                 collider,
-//                 parent_handle,
-//                 &mut physics_world.rigid_body_set,
-//             )
-//         };
-        
-//         // Store the handle in the component
-//         let collider_comp = engine.scene_manager.get_entity_component::<ColliderComponent>(entity_handle, scene_handle)?;
-//         collider_comp.collider_handle = Some(collider_handle);
-//     }
-    
-//     Ok(())
-// }
 
 fn sync_physics_to_transforms(
     engine: &mut Engine, 
-    scene_handle: SceneHandle
+    scene_handle: SceneHandle,
+    timer: &mut Timer
 ) -> Result<()> {
+
+    timer.record("Find entities with physics")?;
+
+
     // Get entity handles with both transform and rigid body components
     let entities_with_physics: Vec<_> = {
         let scene = engine.scene_manager.get_scene(scene_handle)?;
@@ -244,7 +155,9 @@ fn sync_physics_to_transforms(
         }
         entities
     };
-    
+
+    timer.record("Process each entity")?;
+
     // Process each entity
     for entity_handle in entities_with_physics {
         let rb_handle = {

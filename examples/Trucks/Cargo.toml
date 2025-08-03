@@ -12,6 +12,7 @@ pill_engine = { path = "../../engine/pill_engine", default-features = false, fea
 
 # Build the engine as a client (rendering+audio+ui+net+internal)
 pill_net = { version = "0.1.0", path = "../../engine/pill_net" }
+rand = "0.9.2"
 
 [features]
 default = ["net"]

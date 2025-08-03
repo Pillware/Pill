@@ -4,6 +4,7 @@ use crate::player_movement::player_movement_system;
 use crate::free_camera::free_camera_system;
 use crate::player_physics_movement;
 use crate::player_physics_movement::player_physics_movement_system;
+use rand::Rng; 
 
 define_component!(PlayerTagComponent { });
 
@@ -68,6 +69,10 @@ impl PillGame for Game {
 			Mesh::new("Cube", "models/Cube.obj".into())
 		)?;
 
+		let crate_mesh_handle = engine.add_resource(
+			Mesh::new("Crate", "models/Crate.obj".into())
+		)?;
+
 		let axis_gizmo_mesh_handle = engine.add_resource(
 			Mesh::new("AxisGizmo", "models/AxisGizmo.obj".into())
 		)?;
@@ -78,6 +83,22 @@ impl PillGame for Game {
 				"TruckColor", 
 				TextureType::Color, 
 				ResourceLoadType::Path("textures/Dirt.png".into())
+			)
+		)?;
+
+		let crate_color_texture_handle = engine.add_resource::<Texture>(
+			Texture::new(
+				"CrateColor", 
+				TextureType::Color, 
+				ResourceLoadType::Path("textures/CrateColor.png".into())
+			)
+		)?;
+
+		let crate_normal_texture_handle = engine.add_resource::<Texture>(
+			Texture::new(
+				"CrateNormal", 
+				TextureType::Normal, 
+				ResourceLoadType::Path("textures/CrateNormal.png".into())
 			)
 		)?;
 
@@ -109,6 +130,15 @@ impl PillGame for Game {
 			Material::builder("AxisGizmo")
 				.texture("Color", axis_gizmo_colors_texture_handle)?
 				.scalar("Specularity", 0.0)?
+				.build()
+		)?;
+
+		let crate_material_handle = engine.add_resource::<Material>(
+			Material::builder("Crate")
+				.texture("Color", crate_color_texture_handle)?
+				.texture("Normal", crate_normal_texture_handle)?
+				.color("Tint", Color::new(1.0, 1.0, 1.0))?
+				.scalar("Specularity", 0.3)?
 				.build()
 		)?;
 
@@ -194,6 +224,33 @@ impl PillGame for Game {
 				.build())
 			.build();
 
+			 let mut rng = rand::thread_rng();
+		// Create crates
+		for i in 0..10 {
+			for j in 0..10 {
+				let random_offset = Vector3f::new(rng.gen_range(-2.0..2.0), rng.gen_range(-2.0..2.0), rng.gen_range(-2.0..2.0));
+				spawn_crates(engine, active_scene, &crate_material_handle, &crate_mesh_handle, random_offset);
+			}
+		}
+
 		Ok(())
 	}
+}
+
+fn spawn_crates(engine: &mut Engine, active_scene: SceneHandle, crate_material_handle: &MaterialHandle, crate_mesh_handle: &MeshHandle, offset: Vector3f) {
+	engine.build_entity(active_scene)
+	.with_component(TransformComponent::builder()
+		.position(Vector3f::new(0.0, 10.0, 0.0) + offset)
+		.scale(Vector3f::new(1.0, 1.0, 1.0))
+		.build())
+	.with_component(MeshRenderingComponent::builder()
+		.material(&crate_material_handle)
+		.mesh(&crate_mesh_handle)
+		.build())
+	.with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Dynamic)
+		.build())
+	.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(0.5, 0.5, 0.5))
+		.build())
+	.build();
+
 }
