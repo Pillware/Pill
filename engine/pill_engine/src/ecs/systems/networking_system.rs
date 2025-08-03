@@ -323,6 +323,9 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+const LERP_HALFLIFE: f32 = 0.10;
+const LERP_RATE: f32 = 0.001;
+
 pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     {
         let my_id = engine.get_global_component::<NetState>()?.my_id;
@@ -334,7 +337,9 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                 if net_state.owner_id != my_id {
                     //println!("interpolating: source {:?} dest {:?} delta_time={}", transform.position, tr.position, delta_time);
                     // Interpolate the transform based on the current time and the last known state
-                    transform.set_position(lerp_vec3(transform.position, tr.position, 0.001 * delta_time));
+					//let t         = blend(delta_time, LERP_HALFLIFE);
+                    let t = exp_blend(delta_time);
+                    transform.set_position(lerp_vec3(transform.position, tr.position, t));
                 }
             }
         }
@@ -449,6 +454,16 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn blend(dt: f32, half_life: f32) -> f32 {
+    // half_life = time in seconds to reduce the error to 50 %
+    1.0 - (-(std::f32::consts::LN_2) * dt / half_life).exp()
+}
+
+#[inline(always)]
+fn exp_blend(dt: f32) -> f32 {
+        1.0 - (-LERP_RATE * dt).exp()           // ≈ LERP_RATE * dt for small dt
 }
 
 fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
