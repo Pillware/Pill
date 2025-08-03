@@ -385,4 +385,28 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene_handle)?;
         target_scene.get_three_component_iterator_mut::<A, B, C>()
     }
+
+    pub fn get_four_component_iterator<A, B, C, D>(&self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &A, &B, &C, &D)>>
+        where
+        A: Component<Storage = ComponentStorage::<A>>,
+        B: Component<Storage = ComponentStorage::<B>>,
+        C: Component<Storage = ComponentStorage::<C>>,
+        D: Component<Storage = ComponentStorage::<D>>,
+    {
+        // Get scene and iterator
+        let target_scene = self.get_scene(scene_handle)?;
+        target_scene.get_four_component_iterator::<A, B, C, D>()
+    }
+
+    pub fn get_four_component_iterator_mut<A, B, C, D>(&mut self, scene_handle: SceneHandle) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B, &mut C, &mut D)>>
+        where
+        A: Component<Storage = ComponentStorage::<A>>,
+        B: Component<Storage = ComponentStorage::<B>>,
+        C: Component<Storage = ComponentStorage::<C>>,
+        D: Component<Storage = ComponentStorage::<D>>,
+    {
+        // Get scene and iterator
+        let target_scene = self.get_scene_mut(scene_handle)?;
+        target_scene.get_four_component_iterator_mut::<A, B, C, D>()
+    }
 }

@@ -1,6 +1,6 @@
 use pill_engine::game::*;
 use pill_engine::{define_component};
-use crate::player_movement::player_movement_system;
+use crate::player_movement::{player_movement_system, CarControllerComponent};
 use crate::free_camera::free_camera_system;
 use crate::player_physics_movement;
 use crate::player_physics_movement::player_physics_movement_system;
@@ -80,6 +80,7 @@ impl PillGame for Game {
 		engine.register_component::<RigidBodyComponent>(active_scene)?;
 		engine.register_component::<ColliderComponent>(active_scene)?;
         engine.register_component::<NetworkStateComponent>(active_scene)?;
+        engine.register_component::<CarControllerComponent>(active_scene)?;
 
         // Add systems
 		#[cfg(feature = "net")]
@@ -229,6 +230,7 @@ impl PillGame for Game {
 				.mesh(&truck_mesh_handle)
 				.build())
 			.with_component(PlayerTagComponent {})
+            .with_component(CarControllerComponent { speed: 0.0, direction: 0.0})
 			.with_component(TargetTransformComponent::new(initial_player_transform.clone()));
 
 		if USE_PHYSICS {
