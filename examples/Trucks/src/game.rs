@@ -263,7 +263,7 @@ impl PillGame for Game {
 				.mesh(&truck_mesh_handle)
 				.build())
 			.with_component(PlayerTagComponent {})
-            .with_component(CarControllerComponent { speed: 0.0, direction: 0.0, last_steer: 0.0 })
+            .with_component(CarControllerComponent { speed: 0.0, direction: 0.0, last_steer: 0.0, drift_yaw_vel: 0.0 })
 			.with_component(TargetTransformComponent::new(initial_player_transform.clone()));
 
 		if USE_PHYSICS {
