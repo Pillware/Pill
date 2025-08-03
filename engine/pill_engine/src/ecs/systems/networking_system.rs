@@ -119,7 +119,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
 
             // ── SERVER ────────────────────────────────────────────
             NetSide::Server(net) => {
-                println!("[Server] receiving updates from clients...");
+               // println!("[Server] receiving updates from clients...");
                 for (cid, msg) in server_update(net, dt)? {
                     println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
 
@@ -158,7 +158,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                 transform: Some(transform.clone()),
             });
         }
-        println!("[Server] Sending {} entities to client {cid}", entity_updates.len());
+        //println!("[Server] Sending {} entities to client {cid}", entity_updates.len());
 
         // wrap them in the usual payload
         let snapshot = NetworkUpdatePayload {
@@ -263,7 +263,7 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
 		state.accumulator = 0.0;
 	}
     // Step 1: Receive network updates from clients and broadcast them to all clients
-    println!("networking_system_server: receiving updates from clients...");
+    //println!("networking_system_server: receiving updates from clients...");
     match receive_updates(engine) {
         Ok(updates) => {
             println!("Got {} updates from clients", updates.len());
@@ -274,7 +274,6 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                 for entity_update in &update.updates {
                     match entity_update.action {
                         NetEntityAction::Spawn => {
-                            println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
                             println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
                             let tr = entity_update.transform
                                                   .clone()
@@ -325,9 +324,25 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
 }
 
 pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
+    {
+        let my_id = engine.get_global_component::<NetState>()?.my_id;
+        let delta_time = engine.frame_delta_time;
+        // Peform interpolation for the components that have a transform and are not owned by the
+        // client
+        for (_, transform, net_state) in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
+            if let Some(tr) = &net_state.transform  {
+                if net_state.owner_id != my_id {
+                    //println!("interpolating: source {:?} dest {:?} delta_time={}", transform.position, tr.position, delta_time);
+                    // Interpolate the transform based on the current time and the last known state
+                    transform.set_position(lerp_vec3(transform.position, tr.position, 0.001 * delta_time));
+                }
+            }
+        }
+    }
+
     // Run it with a given frequency
     {
-		let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
+		let dt = engine.frame_delta_time;
 		let state = engine.get_global_component_mut::<NetState>()?;
 		state.accumulator += dt;
 		if state.accumulator < state.timeout {
@@ -365,7 +380,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
             sequence: rng().gen(), // generate a random sequence number
         };
         if let NetSide::Client(net) = &mut engine.get_global_component_mut::<NetState>()?.side {
-            println!("▸ Sending {} updates to server", payload.updates.len());
+            //println!("▸ Sending {} updates to server", payload.updates.len());
             try_send_and_flush(net, &WireMsg {
                 tag: WireTag::Update,
                 data: bincode::serialize(&payload)?,
@@ -402,9 +417,11 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                                     if entity_update.net_state.net_entity_id == net_state.net_entity_id {
                                         net_state.transform = Some(tr.clone());
                                         net_state.transform.as_mut().unwrap().net_dirty = false;
+                                        println!("▸ Updating entity with nid={:?} for cid={} net_state={:?} with transform {:?}",
+                                                 net_state.net_entity_id, update.client_id, net_state, tr);
 
                                         // authoritative change on the server
-                                        *transform = *tr;
+                                        //*transform = *tr;
                                         break;
                                     }
                                 }
@@ -430,7 +447,15 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
             return Err(e);
         }
     }
-    Ok(())
 
+    Ok(())
 }
 
+fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
+    from + (to - from) * t.clamp(0.0, 1.0)
+}
+
+ // lerp one parameter
+fn lerp_f32(from: f32, to: f32, t: f32) -> f32 {
+    from + (to - from) * t.clamp(0.0, 1.0)
+}
