@@ -289,14 +289,14 @@ impl PillGame for Game {
             .with_component(CarControllerComponent { speed: 0.0, direction: 0.0, last_steer: 0.0, drift_yaw_vel: 0.0 })
 			.with_component(TargetTransformComponent::new(initial_player_transform.clone()));
 
-		//if USE_PHYSICS {
+		if USE_PHYSICS {
 			player_entity_builder = player_entity_builder
 			.with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Dynamic)
 				.build())
 			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(5.0, 3.0, 6.0))
 			.translation(Vector3f::new(0.0, 2.0, 0.0))
 				.build());
-		//}
+		}
 
 		let player = player_entity_builder.build();
 
