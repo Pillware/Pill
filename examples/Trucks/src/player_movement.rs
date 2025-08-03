@@ -1,8 +1,9 @@
 //! player_movement.rs
 //! Arcade-plus driving
 //!   • expo-curve steering & hand-brake drift whip
-//!   • yaw-momentum when drifting  ← NEW
-//!   • dynamic FOV kick, camera lag & body-roll
+//!   • yaw-momentum when sliding
+//!   • camera lag / body-roll / FOV juice
+//!   • NEW: tyres lose grip while in a heavy drift, so steering becomes mushy
 //!   • keyboard + game-pad
 
 #![allow(non_snake_case)]
@@ -12,27 +13,27 @@ use pill_engine::define_component;
 
 use crate::game::{PlayerTagComponent, TargetTransformComponent};
 
-/* ───── Per-car state ──────────────────────────────────────────── */
+/* ───── Per-car state ─────────────────────────────────────────── */
 
 define_component!(CarControllerComponent {
     speed:          f32,
     direction:      f32,
-    last_steer:     f32,   // for FOV snap
-    drift_yaw_vel:  f32,   // deg / s momentum when sliding   ← NEW
+    last_steer:     f32,
+    drift_yaw_vel:  f32,   // deg/s
 });
 
 /* ───── Tunables ──────────────────────────────────────────────── */
 
-const MAX_SPEED:          f32 = 40.0;
-const ACCELERATION:       f32 = 65.0;
-const BRAKE_DECELERATION: f32 = 80.0;
-const FRICTION:           f32 = 30.0;
+const MAX_SPEED:            f32 = 40.0;
+const ACCELERATION:         f32 = 65.0;
+const BRAKE_DECELERATION:   f32 = 80.0;
+const FRICTION:             f32 = 30.0;
 
-// steering feel
-const MAX_STEER_DEG:      f32 = 105.0;
-const MIN_STEER_DEG:      f32 = 40.0;
-const STEER_SENSITIVITY:  f32 = 1.6;
-const STEER_EXPO:         f32 = 3.0;   // 1=linear
+// steering response
+const MAX_STEER_DEG:        f32 = 105.0;
+const MIN_STEER_DEG:        f32 = 40.0;
+const STEER_SENSITIVITY:    f32 = 1.6;
+const STEER_EXPO:           f32 = 3.0;   // 1 = linear
 
 // drifting / hand-brake
 const HANDBRAKE_STEER_MULT: f32 = 3.0;
@@ -40,26 +41,28 @@ const HANDBRAKE_SLOW:       f32 = 0.70;
 const DRIFT_SLOWDOWN:       f32 = 0.85;
 
 // yaw-momentum
-const DRIFT_YAW_ACCEL:    f32 = 450.0; // deg / s² per |steer|*speed_ratio
-const DRIFT_YAW_DAMP:     f32 = 3.0;   // larger = quicker decay
-const DRIFT_ENTRY_SPEED:  f32 = 8.0;   // min m/s to start spinning
+const DRIFT_YAW_ACCEL:      f32 = 450.0; // deg/s²
+const DRIFT_YAW_DAMP:       f32 = 3.0;   // exp decay per second
+const DRIFT_ENTRY_SPEED:    f32 = 8.0;   // m/s
+const DRIFT_YAW_MAX:        f32 = 360.0; // clamp
+const DRIFT_STEER_MIN:      f32 = 0.15;  // still tiny control
 
 // camera
-const CAMERA_FOV_BASE:    f32 = 60.0;
-const CAMERA_FOV_BOOST:   f32 = 25.0;
-const FOV_SNAP_MAX:       f32 = 5.0;
-const CAM_CHROM_ABB:      f32 = 0.6;
-const SMOOTH_POS_BASE:    f32 = 6.0;
-const SMOOTH_ROT_BASE:    f32 = 5.0;
-const ROLL_MAX_DEG:       f32 = 8.0;
+const CAMERA_FOV_BASE:      f32 = 60.0;
+const CAMERA_FOV_BOOST:     f32 = 25.0;
+const FOV_SNAP_MAX:         f32 = 5.0;
+const CAM_CHROM_ABB:        f32 = 0.6;
+const SMOOTH_POS_BASE:      f32 = 6.0;
+const SMOOTH_ROT_BASE:      f32 = 5.0;
+const ROLL_MAX_DEG:         f32 = 8.0;
 
-/* ───── System ───────────────────────────────────────────────── */
+/* ───── Movement system ─────────────────────────────────────── */
 
 pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
     let input = engine.get_global_component::<InputComponent>()?;
     let dt    = engine.get_global_component::<TimeComponent>()?.delta_time;
 
-    /* ── Input gather ────────────────────────────────────────── */
+    /* ───── Raw input  ──────────────────────────────────────── */
 
     let k_w  = input.get_key(KeyboardKey::KeyW);
     let k_s  = input.get_key(KeyboardKey::KeyS);
@@ -97,9 +100,9 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
                      * raw_steer.signum()
                      * STEER_SENSITIVITY;
 
-    let handbrake = k_hb || pad_hb;
+    let handbrake  = k_hb || pad_hb;
 
-    /* ── Player entity loop ──────────────────────────────────── */
+    /* ───── Player loop  ─────────────────────────────────────── */
 
     for (_, tr, tgt, _tag, car) in engine.iterate_four_components_mut::<
         TransformComponent,
@@ -125,54 +128,55 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
         if handbrake { speed *= f32::powf(HANDBRAKE_SLOW, dt); }
         speed = speed.clamp(-MAX_SPEED * 0.5, MAX_SPEED);
 
-        /* Steering directly from tyres */
-        let v_ratio    = (speed.abs()/MAX_SPEED).clamp(0.0, 1.0);
-        let steer_max  = MAX_STEER_DEG - (MAX_STEER_DEG - MIN_STEER_DEG)*v_ratio;
-        let steer_deg  = steer_input
-                       * steer_max
-                       * if handbrake { HANDBRAKE_STEER_MULT } else { 1.0 }
-                       * dt;
+        /* Steering from tyres (now suppressed when sliding) */
+        let v_ratio     = (speed.abs()/MAX_SPEED).clamp(0.0,1.0);
+        let steer_limit = MAX_STEER_DEG - (MAX_STEER_DEG - MIN_STEER_DEG)*v_ratio;
 
-        if steer_input.abs()>0.01 && speed.abs()>0.1 {
+        // grip-loss factor 0…1
+        let drift_int   = (car.drift_yaw_vel.abs() / DRIFT_YAW_MAX).clamp(0.0,1.0);
+        let steer_grip  = (1.0 - drift_int).max(DRIFT_STEER_MIN);
+
+        let steer_deg   = steer_input
+                        * steer_limit
+                        * if handbrake { HANDBRAKE_STEER_MULT } else { 1.0 }
+                        * steer_grip                               // ← key line
+                        * dt;
+
+        if steer_input.abs()>0.01 && speed.abs()>0.1 && steer_grip>0.01 {
             tgt.0.rotate_around_axis(-steer_deg, Vector3f::unit_y());
             speed *= f32::powf(DRIFT_SLOWDOWN, dt);
         }
 
-        /* ── NEW yaw-momentum when hand-brake sliding ────────── */
+        /* Yaw-momentum build & decay */
         if handbrake && speed.abs()>DRIFT_ENTRY_SPEED {
-            // build up angular velocity
             car.drift_yaw_vel += steer_input * DRIFT_YAW_ACCEL * v_ratio * dt;
         } else {
-            // exponential decay toward 0
-            car.drift_yaw_vel = lerp_f32(car.drift_yaw_vel, 0.0, DRIFT_YAW_DAMP * dt);
+            car.drift_yaw_vel = lerp_f32(car.drift_yaw_vel, 0.0, DRIFT_YAW_DAMP*dt);
         }
-        // clamp to +/-360°/s just in case
-        car.drift_yaw_vel = car.drift_yaw_vel.clamp(-360.0, 360.0);
+        car.drift_yaw_vel = car.drift_yaw_vel.clamp(-DRIFT_YAW_MAX, DRIFT_YAW_MAX);
 
-        // apply accumulated yaw
+        // spin!
         if car.drift_yaw_vel.abs() > 0.1 {
-            tgt.0.rotate_around_axis(-car.drift_yaw_vel * dt, Vector3f::unit_y());
+            tgt.0.rotate_around_axis(-car.drift_yaw_vel*dt, Vector3f::unit_y());
         }
-        /* ────────────────────────────────────────────────────── */
 
         /* Translation */
         let advance = speed * dt * direction.signum();
-        tgt.0.translate(
-            advance.abs(),
-            if direction>=0.0 {Direction::Forward} else {Direction::Backward},
-        );
+        tgt.0.translate(advance.abs(),
+                        if direction>=0.0 {Direction::Forward}
+                        else               {Direction::Backward});
 
-        /* Smooth movement (lag scales with speed) */
+        /* Lagged movement */
         let lag = 1.0 + v_ratio*0.8;
         tr.set_position(lerp_vec3(tr.position, tgt.0.position, SMOOTH_POS_BASE*lag*dt));
         tr.set_rotation(lerp_vec3(tr.rotation, tgt.0.rotation, SMOOTH_ROT_BASE*lag*dt));
 
-        /* Save kinematic state */
+        /* Save kinematics */
         car.speed     = speed;
         car.direction = direction;
     }
 
-    /* ── Camera ─────────────────────────────────────────────── */
+    /* ───── Camera ───────────────────────────────────────────── */
 
     let snap = engine
         .iterate_four_components::<
@@ -183,9 +187,7 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
         >()?
         .next()
         .map(|(_, t, _, _, c)| (
-            t.position,
-            t.rotation,
-            t.get_backward_direction(),
+            t.position, t.rotation, t.get_backward_direction(),
             (c.speed.abs()/MAX_SPEED).clamp(0.0,1.0),
             c.last_steer,
         ));
@@ -194,37 +196,34 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
         .iterate_two_components_mut::<TransformComponent, CameraComponent>()? {
 
         if let Some((p_pos,p_rot,back_dir,v_norm,last_steer)) = snap {
-            /* FOV & post-FX */
             let steer_snap = (raw_steer - last_steer).abs() / dt;
             let fov_kick   = (steer_snap*4.0).min(FOV_SNAP_MAX);
             cam.fov = lerp_f32(
                 cam.fov,
                 CAMERA_FOV_BASE + v_norm*CAMERA_FOV_BOOST + fov_kick,
-                4.0*dt,
-            );
+                4.0*dt);
             cam.postprocess_params.abberration_strength = lerp_f32(
                 cam.postprocess_params.abberration_strength,
                 v_norm*CAM_CHROM_ABB,
-                6.0*dt,
-            );
+                6.0*dt);
 
-            /* Body roll tilt */
-            let roll_target = -raw_steer * ROLL_MAX_DEG * (1.0 + v_norm*0.5);
+            // body-roll tilt
+            let roll_target = -raw_steer * ROLL_MAX_DEG * (1.0+v_norm*0.5);
             let mut rolled_rot = p_rot;
             rolled_rot.z += roll_target.to_radians();
 
-            /* Follow-cam */
+            // chase-cam
             let back_offset = 10.0 + v_norm*3.0;
             let height      = 6.0  + v_norm*1.5;
             let target_pos  = p_pos + back_dir*back_offset + Vector3f::new(0.0,height,0.0);
 
             let lag = 1.0 + v_norm*0.8;
             cam_tr.set_position(lerp_vec3(cam_tr.position, target_pos, SMOOTH_POS_BASE*lag*dt));
-            cam_tr.set_rotation(lerp_vec3(cam_tr.rotation, rolled_rot,  SMOOTH_ROT_BASE*lag*dt));
+            cam_tr.set_rotation(lerp_vec3(cam_tr.rotation, rolled_rot, SMOOTH_ROT_BASE*lag*dt));
         }
     }
 
-    /* ── Save raw steer for next-frame snap detection ────────── */
+    /* Save steer for next frame */
     for (_, car, _) in engine
         .iterate_two_components_mut::<CarControllerComponent, PlayerTagComponent>()? {
         car.last_steer = raw_steer;
@@ -233,7 +232,7 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-/* ───── Helpers ───────────────────────────────────────────────── */
+/* ───── Helpers ──────────────────────────────────────────────── */
 
 fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
     from + (to - from) * t.clamp(0.0,1.0)
