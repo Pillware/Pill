@@ -19,7 +19,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use bincode;
-use rand::{rng, Rng};
+use rand::{rng, Rng, SeedableRng};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,25 +260,35 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
     println!("Spawning entity with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
 
     // randomness for capsules tint and transforms
-    let mut rng = rng();
+    //let mut rng = rng();
+    let net_entity_id = net_state_component.net_entity_id;
+
+			
+			// Use net_entity_id as seed to generate a random color
+			let mut rng = rand::rngs::StdRng::seed_from_u64(net_entity_id as u64);
+			let r = rng.gen_range(0.2..1.0);
+			let g = rng.gen_range(0.2..1.0);
+			let b = rng.gen_range(0.2..1.0);
 
     #[cfg(feature = "rendering")]
     let (mesh, mat) = {
         // load once
+
+        use pill_core::Color;
         let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Truck") {
             Ok(h) => h,
             Err(_) => engine.add_resource(Mesh::new("Truck", "./res/models/Truck.obj".into()))?,
         };
-        let mat: MaterialHandle = match engine.get_resource_handle::<Material>("Truck") {
-            Ok(h) => h,
-            Err(_) => {
-                use pill_core::Color;
 
-                let mut m = Material::new("Truck");
-                let _ = m.set_color("Tint", Color::new(rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0)));
-                engine.add_resource(m)?
-            }
-        };
+        let mat = engine.add_resource::<Material>(
+        Material::builder(&net_entity_id.to_string())
+            .color("Tint", Color::new(r, g, b))?
+            .scalar("Specularity", 0.5)?
+            .build()
+		)?;
+
+ 
+       
         (mesh, mat)
     };
 

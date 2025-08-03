@@ -326,6 +326,8 @@ impl PillGame for Game {
         // ───── net setup on client builds ─────────────────────────────────-
         #[cfg(feature = "net")]
         {
+            use rand::SeedableRng;
+
             engine.add_global_component(NetStats::new())?;
 			engine.add_global_component(JoinState { sent: false })?;
             let client_id = rand::thread_rng().gen_range(1..=10_000_000);
@@ -346,6 +348,15 @@ impl PillGame for Game {
                     transform: Some(initial_player_transform.clone()),
                 },
             )?;
+
+			let truck_mat = engine.get_resource_mut::<Material>(&truck_material_handle)?;
+			
+			// Use net_entity_id as seed to generate a random color
+			let mut rng = rand::rngs::StdRng::seed_from_u64(net_entity_id as u64);
+			let r = rng.gen_range(0.2..1.0);
+			let g = rng.gen_range(0.2..1.0);
+			let b = rng.gen_range(0.2..1.0);
+			truck_mat.set_color("Tint", Color::new(r, g, b))?;
         }
 
 		Ok(())
