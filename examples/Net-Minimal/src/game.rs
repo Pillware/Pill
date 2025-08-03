@@ -4,11 +4,17 @@ use pill_engine::TransformComponent;
 use rand::Rng;
 
 #[cfg(feature = "net")]
-use pill_engine::{NetState, NetSide, NetStats, NetworkStateComponent, NetEntityState, networking_system_client};
+use pill_engine::{
+    NetState, NetSide, NetStats, NetworkStateComponent, NetEntityState,
+};
 
-use pill_net::{WireMsg, WireTag, cli_send};
+#[cfg(feature = "net")]
+use pill_engine::{EntityUpdate, NetworkUpdatePayload, NetEntityAction};
 
-// ----- CONSTANTS -----
+#[cfg(feature = "net")]
+use pill_net::{WireMsg, WireTag, cli_send, cli_flush};
+
+// ----- CONSTANTS -----------------------------------------------------------
 
 // Move speed in world units per second
 const PILL_MOVE_SPEED: f32 = 3.0;
@@ -19,27 +25,35 @@ const UPDATE_FREQ_SEC: f32 = 1.0 / UPDATE_FREQ_HZ;
 const REMOTE_SERVER_ADDR: &str = "127.0.0.1";
 const REMOTE_SERVER_PORT: u16 = 5000;
 
-// TODO: temporarily add the time accumulator component
+// ───────────────────────────────────────────────────────────────────────────
+//  Temporary global component used only on the client for throttling updates
+// ───────────────────────────────────────────────────────────────────────────
+
 pub struct TimeAccumulationComponent {
     pub accumulator: f32,
 }
 
-impl GlobalComponent for TimeAccumulationComponent { }
+impl GlobalComponent for TimeAccumulationComponent {}
 impl PillTypeMapKey for TimeAccumulationComponent {
     type Storage = GlobalComponentStorage<Self>;
 }
 
-// Define custom component
-pub struct PillComponent { }
+// ───────────────────────────────────────────────────────────────────────────
+//  Custom per-entity tag so we can quickly query all "pills"
+// ───────────────────────────────────────────────────────────────────────────
 
-impl Component for PillComponent { }
+pub struct PillComponent;
 
+impl Component for PillComponent {}
 impl PillTypeMapKey for PillComponent {
     type Storage = ComponentStorage<Self>;
 }
 
-// Game
-pub struct Game { }
+// ───────────────────────────────────────────────────────────────────────────
+//                                GAME
+// ───────────────────────────────────────────────────────────────────────────
+
+pub struct Game;
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
@@ -54,50 +68,53 @@ impl PillGame for Game {
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
         engine.register_component::<PillComponent>(active_scene)?;
-
         engine.register_component::<NetworkStateComponent>(active_scene)?;
 
-
         // Add systems
-        engine.add_system("NetworkingSystemClient", networking_system_client)?;
-        //engine.add_system("PillRotation", pill_rotation_system)?;
+        engine.add_system("NetworkingSystemClient", pill_engine::networking_system_client)?;
         engine.add_system("PillMovement", pill_movement_system)?;
-
-        //engine.add_system("SendOwnTransform", send_own_tr_system)?;
 
         // Add meshes
         let pill_mesh = Mesh::new("Pill", "models/Pill.obj".into());
         let pill_mesh_handle = engine.add_resource(pill_mesh)?;
 
         // Add textures
-        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("textures/PillColor.png".into()));
+        let pill_color_texture = Texture::new(
+            "PillColor",
+            TextureType::Color,
+            ResourceLoadType::Path("textures/PillColor.png".into()),
+        );
         let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
-        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("textures/PillNormal.png".into()));
+        let pill_normal_texture = Texture::new(
+            "PillNormal",
+            TextureType::Normal,
+            ResourceLoadType::Path("textures/PillNormal.png".into()),
+        );
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
         let mut pill_material = Material::new("Pill");
         pill_material.set_texture("Color", pill_color_texture_handle)?;
         pill_material.set_texture("Normal", pill_normal_texture_handle)?;
-        pill_material.set_color("Tint", Color::new( 1.0, 1.0, 1.0))?;
+        pill_material.set_color("Tint", Color::new(1.0, 1.0, 1.0))?;
         pill_material.set_scalar("Specularity", 0.5)?;
         let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
 
         // Create camera entity
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .position(Vector3f::new(0.0,0.0, 8.0))
-            .rotation(Vector3f::new(0.0,0.0,-20.0))
+            .position(Vector3f::new(0.0, 0.0, 8.0))
+            .rotation(Vector3f::new(0.0, 0.0, -20.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
         let camera_component = CameraComponent::builder().enabled(true).build();
         engine.add_component_to_entity(active_scene, camera, camera_component)?;
 
-        // Create pill entity
+        // Create pill entity ------------------------------------------------
         let pill = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .position(Vector3f::new( rand::thread_rng().gen_range(-2.0..=2.0), 0.0, 0.0))
-            .rotation(Vector3f::new(-210.0,0.0,0.0))
+            .position(Vector3f::new(rand::thread_rng().gen_range(-2.0..=2.0), 0.0, 0.0))
+            .rotation(Vector3f::new(-210.0, 0.0, 0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component.clone())?;
         let mesh_rendering_component = MeshRenderingComponent::builder()
@@ -105,8 +122,9 @@ impl PillGame for Game {
             .material(&pill_material_handle)
             .build();
         engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
-        engine.add_component_to_entity(active_scene, pill, PillComponent {})?;
+        engine.add_component_to_entity(active_scene, pill, PillComponent)?;
 
+        // ───── net setup on client builds ─────────────────────────────────-
         #[cfg(feature = "net")]
         {
             engine.add_global_component(NetStats::new())?;
@@ -116,147 +134,138 @@ impl PillGame for Game {
 
             log::info!("Client will connect to {server_addr} with ID {client_id}");
 
-            engine.add_system("NetHUD", net_hud_system)?;
-            // Add the network component marker
+            // Add the network component marker so the server can identify us
             let net_entity_id = rand::thread_rng().gen_range(1..=1000);
-            engine.add_component_to_entity(active_scene, pill, NetworkStateComponent { net_entity_id, owner_id: client_id, state: NetEntityState::Spawn, transform: Some(transform_component) })?;
-            println!("Pill entity created");
+            engine.add_component_to_entity(
+                active_scene,
+                pill,
+                NetworkStateComponent {
+                    net_entity_id,
+                    owner_id: client_id,
+                    state: NetEntityState::Spawn,
+                    transform: Some(transform_component),
+                },
+            )?;
         }
-
-        //engine.add_global_component(TimeAccumulationComponent { accumulator: 0.0 })?;
-
-        //{
-        //    let state = engine.get_global_component_mut::<NetState>()?;
-        //    state.entity_by_client.insert(state.my_id, pill);
-        //}
-
-        //let mut packets = Vec::new();
-        //for (_, transform, _) in engine.iterate_two_components::<TransformComponent, PillComponent>()? {
-        //    packets.push(TrPacket::from(transform));
-        //}
-        //let state = engine.get_global_component_mut::<NetState>()?;
-        //if let NetSide::Client(net) = &mut state.side {
-        //    cli_send(net, &Msg::Join {
-        //        client_id: state.my_id,
-        //        tr: Some(packets[0]),
-        //    })?;
-        //    log::info!("Cli ▸ JOIN sent  cid={} pkt={:?}", state.my_id, packets[0]);
-        //}
 
         Ok(())
     }
 }
 
-/*
-fn pill_rotation_system(engine: &mut Engine) -> Result<()> {
-    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let input_component = engine.get_global_component_mut::<InputComponent>()?;
-
-    // Rotate pill if spacebar is not pressed
-    if !input_component.get_key_pressed(KeyboardKey::Space) {
-        for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
-            transform_component.rotation += Vector3f::new(0.0,1.0,0.0) * 100.0 * delta_time;
-        }
+// ───────────────────────────────────────────────────────────────────────────
+//  HUD showing simple network stats (optional)
+// ───────────────────────────────────────────────────────────────────────────
+fn net_hud_system(engine: &mut Engine) -> Result<()> {
+    if let Ok(stats) = engine.get_global_component::<NetStats>() {
+        //log::info!("Net counter = {}", stats.last_counter);
+        let _ = stats; // keep the variable alive if you later add UI output
     }
-
     Ok(())
 }
-*/
 
-fn net_hud_system(engine: &mut Engine) -> Result<()> {
-    let stats = match engine.get_global_component::<NetStats>() {
-        Ok(s) => s,
-        Err(_) => return Ok(()),
+// ───────────────────────────────────────────────────────────────────────────
+//  Helper: actually send the batch of entity updates after the ECS loop.
+// ───────────────────────────────────────────────────────────────────────────
+#[cfg(feature = "net")]
+fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> Result<()> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    use bincode;
+
+    let my_id = engine.get_global_component::<NetState>()?.my_id;
+    let payload = NetworkUpdatePayload {
+        client_id: my_id as u64,
+        updates,
+        timestamp: engine.get_global_component::<TimeComponent>()?.time,
+        sequence: rand::thread_rng().gen(),
     };
 
-    //log::info!("Net counter = {0}", stats.last_counter);
+    if let NetSide::Client(net) = &mut engine.get_global_component_mut::<NetState>()?.side {
+        cli_send(
+            net,
+            &WireMsg {
+                tag: WireTag::Update,
+                data: bincode::serialize(&payload)?,
+            },
+        )?;
+        cli_flush(net)?;
+    }
     Ok(())
 }
 
-//fn send_own_tr_system(engine: &mut Engine) -> Result<()> {
-//	let (my_id, my_ent) = {
-//		let state = engine.get_global_component::<NetState>()?;
-//        //println!("Trying to send own transform, my_id={}", state.my_id);
-//		match state.entity_by_client.get(&state.my_id) {
-//			Some(&e) => (state.my_id, e),
-//			None      => { println!("Early exit no such id, size {}", state.entity_by_client.len()); return Ok(()) },               // not spawned yet
-//        }
-//    };
-//
-//    let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
-//    {
-//        let mut timer = engine.get_global_component_mut::<TimeAccumulationComponent>()?;
-//        timer.accumulator += dt;
-//        if timer.accumulator < UPDATE_FREQ_SEC { // TODO: tweak it
-//            return Ok(()); // not enough time passed
-//        }
-//        timer.accumulator = 0.0; // reset
-//    }
-//
-//    // find our transform
-//    let tr_pkt = engine.iterate_one_component::<TransformComponent>()?
-//        .find(|(eh, _)| *eh == my_ent).map(|(_, t)| TrPacket::from(t));
-//
-//    //println!("Continuing with sending");
-//	if let Some(pkt) = tr_pkt {
-//        let state = engine.get_global_component_mut::<NetState>()?;
-//        if let NetSide::Client(net) = &mut state.side {
-//            cli_send(net, &Msg::Tr {
-//                client_id: my_id,
-//                tr:        pkt,
-//            })?;
-//            //log::info!("Cli ▸ TR sent  cid={my_id} pkt={:?}", pkt);
-//        }
-//    }
-//    Ok(())
-//}
-
+// ───────────────────────────────────────────────────────────────────────────
+//  Player-controlled pill movement & optional network sync
+// ───────────────────────────────────────────────────────────────────────────
 fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
+    #[cfg(feature = "net")]
+    let owner_id = engine.get_global_component::<NetState>()?.my_id;
     let input = engine.get_global_component_mut::<InputComponent>()?;
 
-    // Build a direction vector from arrow-key input
+    // Build a direction vector from arrow-key input ------------------------
     let mut dir = Vector3f::new(0.0, 0.0, 0.0);
-    if input.get_key(KeyboardKey::ArrowUp)    { dir.z -= 1.0; }
-    if input.get_key(KeyboardKey::ArrowDown)  { dir.z += 1.0; }
-    if input.get_key(KeyboardKey::ArrowLeft)  { dir.x -= 1.0; }
-    if input.get_key(KeyboardKey::ArrowRight) { dir.x += 1.0; }
-    if input.get_key(KeyboardKey::ControlLeft)  { dir.y += 1.0; }
-    if input.get_key(KeyboardKey::ShiftLeft) { dir.y -= 1.0; }
-
-    // Move every pill entity
-    if dir.x != 0.0 || dir.y != 0.0 {
-        // Normalize only the XY part so diagonal speed == straight speed
-        let len = (dir.x * dir.x + dir.y * dir.y).sqrt(); // 1.0 straight, √2 diagonal
-        let inv = 1.0 / len;
-        dir.x *= inv;
-        dir.y *= inv;
-		{
-			for (_, transform, _) in
-				engine.iterate_two_components_mut::<TransformComponent, PillComponent>()?
-			{
-				transform.translate_world(dt * PILL_MOVE_SPEED * dir);
-			}                                   // iterator dropped ─► 1st borrow ends
-		}
-
-		{
-			if let Ok(state) = engine.get_global_component_mut::<NetState>() {
-				if let NetSide::Client(net) = &mut state.side {
-                    println!("Client sent ping");
-					cli_send(
-						net,
-						&WireMsg {
-							tag:  WireTag::Ping,
-							data: vec![0, 1, 2, 3],
-						},
-					)?;
-				}
-			}
-		}
-
+    if input.get_key(KeyboardKey::ArrowUp) {
+        dir.z -= 1.0;
     }
+    if input.get_key(KeyboardKey::ArrowDown) {
+        dir.z += 1.0;
+    }
+    if input.get_key(KeyboardKey::ArrowLeft) {
+        dir.x -= 1.0;
+    }
+    if input.get_key(KeyboardKey::ArrowRight) {
+        dir.x += 1.0;
+    }
+    if input.get_key(KeyboardKey::ControlLeft) {
+        dir.y += 1.0;
+    }
+    if input.get_key(KeyboardKey::ShiftLeft) {
+        dir.y -= 1.0;
+    }
+
+    if dir.x == 0.0 && dir.y == 0.0 {
+        return Ok(()); // nothing to do this frame
+    }
+
+    // Normalize XY so diagonal speed == straight speed ---------------------
+    let len = (dir.x * dir.x + dir.y * dir.y).sqrt();
+    let inv = 1.0 / len;
+    dir.x *= inv;
+    dir.y *= inv;
+
+    #[cfg(feature = "net")]
+    let mut pending_updates: Vec<EntityUpdate> = Vec::new();
+
+    // ── first pass: move entities & collect updates -----------------------
+    for (_, transform, _, net_state) in engine.iterate_three_components_mut::<
+        TransformComponent,
+        PillComponent,
+        NetworkStateComponent,
+    >()? {
+        #[cfg(feature = "net")]
+        if net_state.owner_id != owner_id {
+            continue; // only move entities we own
+        }
+
+        transform.translate_world(dt * PILL_MOVE_SPEED * dir);
+
+        #[cfg(feature = "net")]
+        {
+            net_state.transform = Some(transform.clone());
+            net_state.transform.as_mut().unwrap().net_dirty = false;
+            pending_updates.push(EntityUpdate {
+                action: NetEntityAction::Update,
+                net_state: net_state.clone(),
+                transform: Some(transform.clone()),
+            });
+        }
+    } // iterator dropped here – the &mut Engine borrow ends
+
+    #[cfg(feature = "net")]
+    flush_updates_to_server(engine, pending_updates)?;
 
     Ok(())
 }
-
 

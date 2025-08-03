@@ -131,6 +131,9 @@ pub use systems::audio_system::{
 pub use systems::networking_system::{
     networking_system_client,
     networking_system_server,
+    EntityUpdate,
+    NetworkUpdatePayload,
+    NetEntityAction
 };
 
 // - Other

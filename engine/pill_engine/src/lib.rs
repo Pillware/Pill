@@ -16,6 +16,7 @@ pub use crate::ecs::{
     NetState, NetStats, NetSide,
     NetworkStateComponent, NetEntityState,
     networking_system_server, networking_system_client,
+    NetEntityAction, EntityUpdate, NetworkUpdatePayload,
 };
 
 // Needed unconditionally by net + gameplay code
