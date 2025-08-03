@@ -46,7 +46,7 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
 
     for (_, transform_component, target_transform_component, player_tag_component) in 
         engine.iterate_three_components_mut::<TransformComponent, TargetTransformComponent, PlayerTagComponent>()? {
-println!("Player movement system: wadawd");
+
         // --- Input updates target transform ---
         if w_key || pad_fwd {
             target_transform_component.0.translate(final_speed, Direction::Forward);
