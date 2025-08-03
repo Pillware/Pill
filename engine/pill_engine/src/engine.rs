@@ -275,12 +275,14 @@ impl Engine {
                     timer.record_new_context(&format!("{} update", system_name)).unwrap();
                     self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
                 }
-#[cfg(not(feature = "rendering"))]
+
+                #[cfg(not(feature = "rendering"))]
                 {
                     let mut timer = Timer::new();
                     timer.record_new_context(&format!("{} update", system_name)).unwrap();
                     self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
                 }
+                
                 {
                     // Run system update and handle errors based on configuration
                     let result = (system_function)(self)

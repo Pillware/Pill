@@ -49,28 +49,34 @@ pub fn physics_system(engine: &mut Engine) -> Result<()> {
     // Get the active scene handle
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
 
-    timer.record_new_context("Sync transforms to physics")?;
+    timer.record("Sync transforms to physics")?;
+
+    //timer.record_new_context("Sync transforms to physics")?;
 
     // Sync transforms to physics bodies before stepping
-    sync_transforms_to_physics(engine, active_scene_handle,&mut timer)?;
+    sync_transforms_to_physics(engine, active_scene_handle)?;
     
-    timer.end_context()?;
-
-    // Step the physics world
+    //timer.end_context()?;
     timer.record("Step the physics world")?;
 
-    // Sync physics bodies back to transforms
+
+    // Step the physics world
+    //timer.record("Step the physics world")?;
+
     {
         let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
         physics_world.step();
     }
 
-   
-    timer.record_new_context("Sync physics to transforms")?;
-   
-    sync_physics_to_transforms(engine, active_scene_handle,&mut timer)?;
+    timer.record("Sync physics to transforms")?;
 
-    engine.system_manager.update_system_timer(PHYSICS_SYSTEM.name, PHYSICS_SYSTEM.update_phase, timer)?;
+    //timer.record_new_context("Sync physics to transforms")?;
+   
+    sync_physics_to_transforms(engine, active_scene_handle)?;
+
+   // timer.end_context()?;
+
+   engine.system_manager.update_system_timer(PHYSICS_SYSTEM.name, PHYSICS_SYSTEM.update_phase, timer)?;
 
     Ok(())
 }
@@ -78,10 +84,10 @@ pub fn physics_system(engine: &mut Engine) -> Result<()> {
 fn sync_transforms_to_physics(
     engine: &mut Engine, 
     scene_handle: SceneHandle,
-    timer: &mut Timer
+
 ) -> Result<()> {
 
-        timer.record("Step the physics world")?;
+
     // Get entity handles with both transform and rigid body components
     let entities_with_physics: Vec<_> = {
         let scene = engine.scene_manager.get_scene(scene_handle)?;
@@ -137,10 +143,8 @@ fn sync_transforms_to_physics(
 fn sync_physics_to_transforms(
     engine: &mut Engine, 
     scene_handle: SceneHandle,
-    timer: &mut Timer
 ) -> Result<()> {
 
-    timer.record("Find entities with physics")?;
 
 
     // Get entity handles with both transform and rigid body components
@@ -156,7 +160,6 @@ fn sync_physics_to_transforms(
         entities
     };
 
-    timer.record("Process each entity")?;
 
     // Process each entity
     for entity_handle in entities_with_physics {
