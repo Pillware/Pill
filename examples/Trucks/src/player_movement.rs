@@ -96,7 +96,7 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
         );
 
         if let Some(player_transform) = player_transform {
-            let target_position = (player_transform.position + player_transform.get_backward_direction() * 10.0) + Vector3f::new(0.0, 6.0, 0.0);
+            let target_position = (player_transform.position + player_transform.get_backward_direction() * 13.0) + Vector3f::new(0.0, 7.0, 0.0);
             camera_transform_component.set_position(lerp_vec3(camera_transform_component.position, target_position, smoothing * delta_time));
             camera_transform_component.set_rotation(lerp_vec3(camera_transform_component.rotation, player_transform.rotation, smoothing * delta_time));
         }

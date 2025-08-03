@@ -13,7 +13,8 @@ use pill_core::{ PillSlotMapKey, PillTypeMapKey, PillStyle, get_type_name };
 use std::collections::HashSet;
 use std::path::{ Path, PathBuf };
 use anyhow::{ Result, Context, Error };
-
+use bytemuck::{Pod, Zeroable}; // For derive macros to work
+use readonly::make;            // For #[readonly::make] to resolve
 pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }

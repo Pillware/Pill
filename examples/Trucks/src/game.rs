@@ -170,7 +170,7 @@ impl PillGame for Game {
 				.build())
 			.with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Fixed)
 				.build())
-			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(135.0, 0.5, 135.0))
+			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(175.0, 0.5, 175.0))
 				.build())
 			.build();
 

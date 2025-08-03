@@ -29,31 +29,40 @@ pub struct PhysicsWorldComponent {
     pub integration_parameters: IntegrationParameters,
     pub physics_pipeline: PhysicsPipeline,
     pub island_manager: IslandManager,
-    pub broad_phase: BroadPhase,
+    pub broad_phase: DefaultBroadPhase,
     pub narrow_phase: NarrowPhase,
     pub impulse_joint_set: ImpulseJointSet,
     pub multibody_joint_set: MultibodyJointSet,
     pub ccd_solver: CCDSolver,
-    pub query_pipeline: QueryPipeline,
+    //pub query_pipeline: QueryPipeline<'static>,
     pub physics_hooks: (),
     pub event_handler: (),
 }
 
 impl PhysicsWorldComponent {
     pub fn new() -> Self {
+
+        let rigid_body_set = RigidBodySet::new();
+        let collider_set = ColliderSet::new();
+        // let mut query_pipeline = QueryPipeline::new();
+        // query_pipeline.update(
+        //     &rigid_body_set,
+        //     &collider_set
+        // ); 
+       // let mut query_pipeline = QueryPipeline::new();
         Self {
-            rigid_body_set: RigidBodySet::new(),
-            collider_set: ColliderSet::new(),
+            rigid_body_set: rigid_body_set,
+            collider_set: collider_set,
             gravity: vector![0.0, -9.81, 0.0],
             integration_parameters: IntegrationParameters::default(),
             physics_pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
-            broad_phase: BroadPhase::new(),
+            broad_phase: DefaultBroadPhase::new(),
             narrow_phase: NarrowPhase::new(),
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            query_pipeline: QueryPipeline::new(),
+           // query_pipeline: query_pipeline,
             physics_hooks: (),
             event_handler: (),
         }
@@ -75,10 +84,11 @@ impl PhysicsWorldComponent {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            Some(&mut self.query_pipeline),
             &self.physics_hooks,
             &self.event_handler,
-        );
+        ); 
+        
+        //self.query_pipeline.update(&self.rigid_body_set, &self.collider_set);
     }
 }
 
