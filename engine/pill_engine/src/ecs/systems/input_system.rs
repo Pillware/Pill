@@ -67,10 +67,8 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
             // game-pad ---------------------------------------------------------
             InputEvent::GamepadButton { button, state } =>
                 input.set_gamepad_button(button, state),
-            InputEvent::GamepadAxis { axis, value } => {
-                println!("Gamepad Axis: {:?} = {}", axis, value);
-                input.set_gamepad_axis(axis, value);
-            }
+            InputEvent::GamepadAxis { axis, value } =>
+                input.set_gamepad_axis(axis, value),
         }
     }
 
