@@ -42,6 +42,10 @@ tobj = "3.0"
 rodio = { version = "0.20", features = ["wav", "mp3"] }
 
 
+# Physics
+rapier3d = "0.18"
+nalgebra = "0.32"
+
 # Other
 readonly = "0.2"
 cgmath = "0.18"

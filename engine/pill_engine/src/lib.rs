@@ -73,7 +73,13 @@ pub mod game {
         InputComponent, GamepadAxis,           // new game-pad enum
         Component, ComponentStorage,
         GlobalComponent, GlobalComponentStorage,
-        SoundType,
+        SoundType, ColliderComponent, RigidBodyComponent,
+    };
+
+    extern crate rapier3d;
+    pub use rapier3d::prelude::{
+        Real, Isometry, InteractionGroups, SharedShape, ColliderHandle,
+        RigidBodyHandle, ColliderSet, RigidBodySet, RigidBodyType
     };
 
     // Extra ECS goodies only when rendering is compiled

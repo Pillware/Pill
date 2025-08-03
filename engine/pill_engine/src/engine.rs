@@ -186,6 +186,7 @@ impl Engine {
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
         self.add_global_component(EguiManagerComponent::new())?;
+        self.add_global_component(PhysicsWorldComponent::new())?;
 
         let max_ambient = self
             .config
@@ -202,6 +203,7 @@ impl Engine {
         // --- Built-in systems ----------------------------------------------
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame)?;
         self.system_manager.add_system("TimeSystem",  time_system,  UpdatePhase::PostGame)?;
+        self.system_manager.add_system("PhysicsSystem", physics_system, UpdatePhase::PostGame)?;
         self.system_manager.add_system("AudioSystem", audio_system, UpdatePhase::PostGame)?;
         self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame)?;
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame)?;

@@ -38,8 +38,10 @@ impl PillGame for Game {
 		engine.register_component::<AudioListenerComponent>(active_scene)?;
 		engine.register_component::<AudioSourceComponent>(active_scene)?;
 		engine.register_component::<PlayerTagComponent>(active_scene)?;
-
 		engine.register_component::<TargetTransformComponent>(active_scene)?;
+		engine.register_component::<RigidBodyComponent>(active_scene)?;
+		engine.register_component::<ColliderComponent>(active_scene)?;
+
 		// Add systems
 		engine.add_system("PlayerMovementSystem", player_movement_system)?;
 		//engine.add_system("FreeCameraSystem", free_camera_system)?;
@@ -128,11 +130,15 @@ impl PillGame for Game {
 				.material(&ground_material_handle)
 				.mesh(&ground_mesh_handle)
 				.build())
+			.with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Fixed)
+				.build())
+			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(135.0, 0.5, 135.0))
+				.build())
 			.build();
 
 		// Create player truck entity
 		let initial_player_transform = TransformComponent::builder()
-			.position(Vector3f::new(0.0, 0.0, 0.0))
+			.position(Vector3f::new(0.0, 2.0, 0.0))
 			.build();
 		engine.build_entity(active_scene)
 			.with_component(initial_player_transform.clone())
@@ -141,7 +147,10 @@ impl PillGame for Game {
 				.mesh(&truck_mesh_handle)
 				.build())
 				.with_component(TargetTransformComponent::new(initial_player_transform.clone()))
-			.with_component(PlayerTagComponent {})
+			.with_component(PlayerTagComponent {}).with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Dynamic)
+				.build())
+			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(3.0, 2.0, 3.0))
+				.build())
 			.build();
 
 		// Create cube entity
@@ -152,6 +161,10 @@ impl PillGame for Game {
 			.with_component(MeshRenderingComponent::builder()
 				.material(&truck_material_handle)
 				.mesh(&cube_mesh_handle)
+				.build())
+			.with_component(RigidBodyComponent::builder()
+				.build())
+			.with_component(ColliderComponent::builder()
 				.build())
 			.build();
 

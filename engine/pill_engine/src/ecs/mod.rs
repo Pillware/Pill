@@ -100,6 +100,21 @@ pub use components::network_state_component::{
     NetEntityState,
 };
 
+// Physics components
+pub use components::physics_world_component::{
+    PhysicsWorldComponent,
+};
+
+pub use components::rigid_body_component::{
+    RigidBodyComponent,
+    RigidBodyComponentBuilder,
+};
+
+pub use components::collider_component::{
+    ColliderComponent,
+    ColliderComponentBuilder,
+};
+
 // - Systems
 
 pub use systems::{
@@ -140,6 +155,11 @@ pub use systems::networking_system::{
 #[cfg(feature = "net")]
 pub use systems::spawn_network_entities_system::{
     spawn_network_entities_system,
+};
+
+// Physics system
+pub use systems::physics_system::{
+    physics_system,
 };
 
 // - Other

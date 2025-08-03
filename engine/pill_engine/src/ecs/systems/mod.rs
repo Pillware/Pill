@@ -13,6 +13,8 @@ pub(crate) mod audio_system;
 pub(crate) mod networking_system;
 #[cfg(feature = "net")]
 pub(crate) mod spawn_network_entities_system;
+// Physics system
+pub(crate) mod physics_system;
 
 // --- Use ---
 

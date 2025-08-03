@@ -25,6 +25,10 @@ pub(crate) mod net_components;
 pub(crate) mod network_state_component;
 #[cfg(feature = "net")]
 pub(crate) mod spawn_despawn_queue_component;
+// Physics components
+pub(crate) mod physics_world_component;
+pub(crate) mod rigid_body_component;
+pub(crate) mod collider_component;
 
 // --- Use ---
 
