@@ -90,11 +90,6 @@ pub use components::net_components::{
 };
 
 #[cfg(feature = "net")]
-pub use components::spawn_despawn_queue_component::{
-    SpawnDespawnQueueComponent,
-};
-
-#[cfg(feature = "net")]
 pub use components::network_state_component::{
     NetworkStateComponent,
     NetEntityState,
@@ -149,12 +144,11 @@ pub use systems::audio_system::{
 
 #[cfg(feature = "net")]
 pub use systems::networking_system::{
-    networking_system,
-};
-
-#[cfg(feature = "net")]
-pub use systems::spawn_network_entities_system::{
-    spawn_network_entities_system,
+    networking_system_client,
+    networking_system_server,
+    EntityUpdate,
+    NetworkUpdatePayload,
+    NetEntityAction
 };
 
 // Physics system

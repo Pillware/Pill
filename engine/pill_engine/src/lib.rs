@@ -15,7 +15,8 @@ pub use engine::{Engine, PillGame};
 pub use crate::ecs::{
     NetState, NetStats, NetSide,
     NetworkStateComponent, NetEntityState,
-    SpawnDespawnQueueComponent,
+    networking_system_server, networking_system_client,
+    NetEntityAction, EntityUpdate, NetworkUpdatePayload,
 };
 
 // Needed unconditionally by net + gameplay code

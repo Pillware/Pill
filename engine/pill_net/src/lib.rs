@@ -154,11 +154,11 @@ pub fn srv_send_one(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Resul
     Ok(())
 }
 
-pub fn srv_broadcast(net: &mut NetServer, msg: &WireMsg) -> Result<()> {
+pub fn srv_broadcast(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
-    net.server.broadcast_message(RELIABLE_CHANNEL_ID, bytes);
+    net.server.broadcast_message_except(client_id, RELIABLE_CHANNEL_ID, bytes);
     Ok(())
 }
 
