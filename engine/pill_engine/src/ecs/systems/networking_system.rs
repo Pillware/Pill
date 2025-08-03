@@ -193,6 +193,8 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     Ok(updates)
 }
 
+/* For Pill TODO: instead inject the custom spawner into the system */
+/*
 fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
     let my_id = engine.get_global_component_mut::<NetState>()?.my_id;
     let scene = engine.get_active_scene_handle()?;
@@ -240,6 +242,53 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
     engine.add_component_to_entity(scene, ent, ns)?;
 
     engine.add_component_to_entity(scene, ent,*transform)?;
+
+    #[cfg(feature = "rendering")]
+    {
+        engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
+    }
+
+    println!("Spawn finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+    Ok(())
+}
+*/
+fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
+    let my_id = engine.get_global_component_mut::<NetState>()?.my_id;
+    let scene = engine.get_active_scene_handle()?;
+    println!("Spawning entity with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+
+    // randomness for capsules tint and transforms
+    let mut rng = rng();
+
+    #[cfg(feature = "rendering")]
+    let (mesh, mat) = {
+        // load once
+        let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Truck") {
+            Ok(h) => h,
+            Err(_) => engine.add_resource(Mesh::new("Truck", "./res/models/Truck.obj".into()))?,
+        };
+        let mat: MaterialHandle = match engine.get_resource_handle::<Material>("Truck") {
+            Ok(h) => h,
+            Err(_) => {
+                let mut m = Material::new("Truck");
+                m.set_color("Tint", Vector3f::new(rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0)));
+                engine.add_resource(m)?
+            }
+        };
+        (mesh, mat)
+    };
+
+
+    let ent = engine.create_entity(scene)?;
+
+	let mut ns = net_state_component.clone();
+	ns.state = NetEntityState::Alive;
+
+    engine.add_component_to_entity(scene, ent, ns)?;
+
+    engine.add_component_to_entity(scene, ent,*transform)?;
+
+    // TODO: missing playerTag and targetTransform components
 
     #[cfg(feature = "rendering")]
     {
@@ -340,6 +389,8 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
 					//let t         = blend(delta_time, LERP_HALFLIFE);
                     let t = exp_blend(delta_time);
                     transform.set_position(lerp_vec3(transform.position, tr.position, t));
+                    transform.set_rotation(lerp_vec3(transform.rotation, tr.rotation, t));
+                    // TODO: scale?
                 }
             }
         }
