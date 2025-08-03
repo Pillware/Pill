@@ -29,7 +29,7 @@ layout(set=2, binding=0) uniform camera {
 void main() {
 
     // Settings
-    float ambient_light_strength = 0.1;
+    float ambient_light_strength = 0.15;
     vec3 light_position = vec3(-10.0, 10.0, -10.0);
     vec3 light_color = vec3(1.0, 1.0, 1.0);
 

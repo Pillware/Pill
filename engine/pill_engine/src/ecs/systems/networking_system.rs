@@ -270,8 +270,10 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
         let mat: MaterialHandle = match engine.get_resource_handle::<Material>("Truck") {
             Ok(h) => h,
             Err(_) => {
+                use pill_core::Color;
+
                 let mut m = Material::new("Truck");
-                m.set_color("Tint", Vector3f::new(rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0)));
+                let _ = m.set_color("Tint", Color::new(rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0)));
                 engine.add_resource(m)?
             }
         };

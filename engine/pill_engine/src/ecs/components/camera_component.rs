@@ -89,12 +89,12 @@ pub struct PostprocessParams {
 impl Default for PostprocessParams {
     fn default() -> Self {
         Self {
-            vignette_strength: 0.8,
-            vignette_extent: 0.5,
+            vignette_strength: 0.6,
+            vignette_extent: 1.0,
             screen_resolution: [1920.0, 1080.0],
-            tilt_shift_focus_area: 0.3,
-            tilt_shift_focus_pos: 0.5,
-            tilt_shift_blur_amount: 0.2,
+            tilt_shift_focus_area: 0.4,
+            tilt_shift_focus_pos: 0.35,
+            tilt_shift_blur_amount: 0.4,
             abberration_strength: 0.0,
           //  _padding: 0.0, // Padding to ensure 32-byte alignment
         }

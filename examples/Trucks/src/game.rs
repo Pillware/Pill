@@ -21,8 +21,8 @@ const PILL_MOVE_SPEED: f32 = 3.0;
 const UPDATE_FREQ_HZ: f32 = 24.0;
 const UPDATE_FREQ_SEC: f32 = 1.0 / UPDATE_FREQ_HZ;
 
-//const REMOTE_SERVER_ADDR: &str = "145.223.100.1";
-const REMOTE_SERVER_ADDR: &str = "127.0.0.1";
+const REMOTE_SERVER_ADDR: &str = "145.223.100.1";
+//const REMOTE_SERVER_ADDR: &str = "127.0.0.1";
 const REMOTE_SERVER_PORT: u16 = 5000;
 
 
@@ -219,7 +219,7 @@ impl PillGame for Game {
 
 		// Create player truck entity
 		let initial_player_transform = TransformComponent::builder()
-			.position(Vector3f::new(0.0, 2.0, 0.0))
+			.position(Vector3f::new(0.0, 0.0, 0.0))
 			.build();
 
 		let mut player_entity_builder = engine.build_entity(active_scene)
