@@ -389,6 +389,8 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
 					//let t         = blend(delta_time, LERP_HALFLIFE);
                     let t = exp_blend(delta_time);
                     transform.set_position(lerp_vec3(transform.position, tr.position, t));
+                    transform.set_rotation(lerp_vec3(transform.rotation, tr.rotation, t));
+                    // TODO: scale?
                 }
             }
         }
