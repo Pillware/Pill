@@ -6,6 +6,7 @@ use crate::player_physics_movement;
 use crate::player_physics_movement::player_physics_movement_system;
 use rand::Rng;
 
+
 #[cfg(feature = "net")]
 use pill_engine::{
     NetState, NetSide, NetStats, NetworkStateComponent, NetEntityState, EntityUpdate, NetworkUpdatePayload, NetEntityAction,
@@ -219,7 +220,29 @@ impl PillGame for Game {
 				.build()
 		)?;
 
+		let ball_mesh_handle = engine.add_resource::<Mesh>(
+			Mesh::new("Ball", "models/Ball.obj".into())
+		)?;
+
 		// --- Create entities ---
+
+		// Build ball entity with sphere.obj mesh and colliter and rigid body
+		engine.build_entity(active_scene)
+			.with_component(TransformComponent::builder()
+				.position(Vector3f::new(0.0, 10.0, 0.0))
+				.scale(Vector3f::new(1.0, 1.0, 1.0))
+				.build())
+			.with_component(MeshRenderingComponent::builder()
+				.material(&truck_material_handle)
+				.mesh(&ball_mesh_handle)
+				.build())
+			.with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Dynamic)
+				.build())
+			.with_component(ColliderComponent::builder().shape(SharedShape::ball(3.0)).mass(100.0)
+				.build())
+			.build();
+
+
 
 		// Create camera entity
 		let initial_camera_transform = TransformComponent::builder()
@@ -230,7 +253,7 @@ impl PillGame for Game {
 			.with_component(CameraComponent::builder()
 				.enabled(true)
 				.fov(60.0)
-				.clear_color(Color::new(0.3, 0.3, 0.3))
+				.clear_color(Color::new(0.28, 0.28, 0.33))
 				.build())
 				.with_component(TargetTransformComponent::new(initial_camera_transform))
 			.build();
@@ -266,13 +289,14 @@ impl PillGame for Game {
             .with_component(CarControllerComponent { speed: 0.0, direction: 0.0})
 			.with_component(TargetTransformComponent::new(initial_player_transform.clone()));
 
-		if USE_PHYSICS {
+		//if USE_PHYSICS {
 			player_entity_builder = player_entity_builder
 			.with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Dynamic)
 				.build())
-			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(3.0, 2.0, 3.0))
+			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(5.0, 3.0, 6.0))
+			.translation(Vector3f::new(0.0, 2.0, 0.0))
 				.build());
-		}
+		//}
 
 		let player = player_entity_builder.build();
 
@@ -350,7 +374,7 @@ impl PillGame for Game {
             )?;
 
 			let truck_mat = engine.get_resource_mut::<Material>(&truck_material_handle)?;
-			
+
 			// Use net_entity_id as seed to generate a random color
 			let mut rng = rand::rngs::StdRng::seed_from_u64(net_entity_id as u64);
 			let r = rng.gen_range(0.2..1.0);

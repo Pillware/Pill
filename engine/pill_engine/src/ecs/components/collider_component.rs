@@ -4,8 +4,8 @@ use crate::{
     }, engine::Engine
 };
 
-use pill_core::{get_type_name, PillStyle, PillTypeMapKey};
-use rapier3d::prelude::*;
+use pill_core::{get_type_name, PillStyle, PillTypeMapKey, Vector3f};
+use rapier3d::{na::Vector3, prelude::*};
 use anyhow::{ Result, Error, Context };
 
 const DEFERRED_REQUEST_VARIANT_ADD: usize = 0;
@@ -147,6 +147,11 @@ impl ColliderComponentBuilder {
 
     pub fn position(mut self, position: Isometry<Real>) -> Self {
         self.component.position = position;
+        self
+    }
+
+    pub fn translation(mut self, translation: Vector3f) -> Self {
+        self.component.position = Isometry::translation(translation.x, translation.y, translation.z);
         self
     }
 
