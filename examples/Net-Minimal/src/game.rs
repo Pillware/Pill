@@ -38,6 +38,21 @@ impl PillTypeMapKey for TimeAccumulationComponent {
     type Storage = GlobalComponentStorage<Self>;
 }
 
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Track whether we already sent JOIN after connecting
+// ───────────────────────────────────────────────────────────────────────────
+#[cfg(feature = "net")]
+pub struct JoinState {
+    pub sent: bool,
+}
+#[cfg(feature = "net")]
+impl GlobalComponent for JoinState {}
+#[cfg(feature = "net")]
+impl PillTypeMapKey for JoinState {
+    type Storage = GlobalComponentStorage<Self>;
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 //  Custom per-entity tag so we can quickly query all "pills"
 // ───────────────────────────────────────────────────────────────────────────
@@ -73,6 +88,8 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("NetworkingSystemClient", pill_engine::networking_system_client)?;
         engine.add_system("PillMovement", pill_movement_system)?;
+		#[cfg(feature = "net")]
+        engine.add_system("SendJoin", send_join_system)?;
 
         // Add meshes
         let pill_mesh = Mesh::new("Pill", "models/Pill.obj".into());
@@ -128,11 +145,12 @@ impl PillGame for Game {
         #[cfg(feature = "net")]
         {
             engine.add_global_component(NetStats::new())?;
+			engine.add_global_component(JoinState { sent: false })?;
             let client_id = rand::thread_rng().gen_range(1..=10_000_000);
             let server_addr = format!("{REMOTE_SERVER_ADDR}:{REMOTE_SERVER_PORT}");
             engine.add_global_component(NetState::new_client(&server_addr, client_id)?)?;
 
-            log::info!("Client will connect to {server_addr} with ID {client_id}");
+            println!("Client will connect to {server_addr} with ID {client_id}");
 
             // Add the network component marker so the server can identify us
             let net_entity_id = rand::thread_rng().gen_range(1..=1000);
@@ -173,6 +191,8 @@ fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> R
     }
 
     use bincode;
+
+    //println!("Flushing {} updates to server", updates.len());
 
     let my_id = engine.get_global_component::<NetState>()?.my_id;
     let payload = NetworkUpdatePayload {
@@ -260,6 +280,7 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
                 net_state: net_state.clone(),
                 transform: Some(transform.clone()),
             });
+            //println!("Pushed update for entity with ID {}", net_state.net_entity_id);
         }
     } // iterator dropped here – the &mut Engine borrow ends
 
@@ -269,3 +290,45 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+//  System: once connected, send JOIN exactly once
+// ───────────────────────────────────────────────────────────────────────────
+#[cfg(feature = "net")]
+fn send_join_system(engine: &mut Engine) -> Result<()> {
+    use pill_net::{NetClient, WireMsg, WireTag};
+
+    // 1. Short immutable borrow: are we connected yet?
+    let connected = {
+        let state = engine.get_global_component::<NetState>()?;
+        matches!(&state.side, NetSide::Client(net) if net.client.is_connected())
+    };
+    if !connected {
+        return Ok(()); // handshake still in progress
+    }
+
+    // 2. Have we already sent JOIN?
+    if engine.get_global_component::<JoinState>()?.sent {
+        return Ok(());
+    }
+
+    // 3. We’re connected and haven’t sent JOIN – do it now (separate scope)
+    {
+        let mut state = engine.get_global_component_mut::<NetState>()?;
+        if let NetSide::Client(net) = &mut state.side {
+            cli_send(
+                net,
+                &WireMsg {
+                    tag:  WireTag::Join,
+                    data: Vec::new(),
+                },
+            )?;
+            cli_flush(net)?;
+        }
+    }
+
+    // 4. Mark as sent (new mutable borrow, no overlap with the one above)
+    engine.get_global_component_mut::<JoinState>()?.sent = true;
+    println!("JOIN sent after connection established");
+
+    Ok(())
+}
