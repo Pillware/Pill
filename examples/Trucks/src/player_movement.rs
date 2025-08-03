@@ -1,115 +1,188 @@
+//! player_movement.rs
+//! Smooth pseudo-physics driving
+//! • faster, more responsive steering
+//! • hand-brake drift now kicks the tail out hard at speed
+//! • fixed: game-pad Y axis isn’t inverted anymore
+
 use pill_engine::game::*;
+use pill_engine::define_component;
 
 use crate::game::{PlayerTagComponent, TargetTransformComponent};
 
+define_component!(CarControllerComponent {
+    speed:     f32,
+    direction: f32,
+});
+
+// ───── Tunables ──────────────────────────────────────────────────────
+const MAX_SPEED:            f32 = 40.0;
+const ACCELERATION:         f32 = 65.0;
+const BRAKE_DECELERATION:   f32 = 80.0;
+const FRICTION:             f32 = 30.0;
+
+// ► steering
+const MAX_STEER_DEG:        f32 = 105.0;   // more lock
+const MIN_STEER_DEG:        f32 = 40.0;    // high-speed limit
+const STEER_SENSITIVITY:    f32 = 1.6;     // snappier response
+
+// ► drifting / hand-brake
+const HANDBRAKE_STEER_MULT: f32 = 3.0;     // extra angle when held
+const HANDBRAKE_SLOW:       f32 = 0.70;    // keeps speed better (closer to 1.0)
+const DRIFT_SLOWDOWN:       f32 = 0.85;    // normal turn bleed
+
+// ► camera
+const CAMERA_FOV_BASE:      f32 = 60.0;
+const CAMERA_FOV_BOOST:     f32 = 25.0;
+const CAM_CHROM_ABB_FACTOR: f32 = 0.6;
+
+// ► smoothing
+const SMOOTHING_POS:        f32 = 6.0;
+const SMOOTHING_ROT:        f32 = 5.0;
+// ─────────────────────────────────────────────────────────────────────
+
 pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
-    let input_component = engine.get_global_component::<InputComponent>()?;
-    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
+    let input = engine.get_global_component::<InputComponent>()?;
+    let dt    = engine.get_global_component::<TimeComponent>()?.delta_time;
 
-    let w_key = input_component.get_key(KeyboardKey::KeyW);
-    let s_key = input_component.get_key(KeyboardKey::KeyS);
-    let a_key = input_component.get_key(KeyboardKey::KeyA);
-    let d_key = input_component.get_key(KeyboardKey::KeyD);
-    let shift_key = input_component.get_key(KeyboardKey::ShiftLeft);
-    let any_key = w_key || s_key || a_key || d_key;
+    // ───── Input (keyboard + game-pad) ──────────────────────────────
+    let k_w  = input.get_key(KeyboardKey::KeyW);
+    let k_s  = input.get_key(KeyboardKey::KeyS);
+    let k_a  = input.get_key(KeyboardKey::KeyA);
+    let k_d  = input.get_key(KeyboardKey::KeyD);
+    let k_hb = input.get_key(KeyboardKey::Space);            // hand-brake
 
+    const DZ: f32 = 0.1;
 
-    const DEAD_ZONE: f32 = 0.10;
+    // Game-pad axes & buttons  (stick Y now *not* negated)
+    let stick_y =  input.get_gamepad_axis(GamepadAxis::LeftStickY); // up = +1
+    let stick_x =  input.get_gamepad_axis(GamepadAxis::LeftStickX); // left = -1
+    let trig_rt =  input.get_gamepad_axis(GamepadAxis::RightTrigger);
+    let trig_lt =  input.get_gamepad_axis(GamepadAxis::LeftTrigger);
+    let pad_hb  =  input.get_gamepad_button(GamepadButton::B);   // B / Circle
 
-    let pad_forward = input_component.get_gamepad_axis(GamepadAxis::LeftStickY); // up = -fwd
-    let pad_turn    =  input_component.get_gamepad_axis(GamepadAxis::LeftStickX); // left = −
-    let pad_sprint  =  input_component.get_gamepad_axis(GamepadAxis::RightTrigger); // 0‥1
+    // Throttle & brake
+    let mut throt = 0.0;
+    let mut brake = 0.0;
 
-    // treat as pressed if stick/trigger exceeds DZ
-    let pad_fwd   = pad_forward  >  DEAD_ZONE;
-    let pad_back  = pad_forward  < -DEAD_ZONE;
-    let pad_left  = pad_turn     < -DEAD_ZONE;
-    let pad_right = pad_turn     >  DEAD_ZONE;
-    let pad_boost = pad_sprint   >  0.5;
-    let any_pad = pad_fwd || pad_back || pad_left || pad_right;
-
-
-
-    let move_speed = 25.0;
-    let rotate_speed = 90.0; // degrees per second
-    let smoothing = if any_key || any_pad { 2.0 } else { 2.3 };
-    let move_speed_boost = if shift_key || pad_boost { 2.0 } else { 1.0 };
-    //Slow down on turns
-    let move_speed_slow_down = if a_key || d_key || pad_left || pad_right { 0.8 } else { 1.0 };
-
-    
-    
-
-    let mut player_transform: Option<TransformComponent> = None;
-
-    let final_speed = move_speed_slow_down * move_speed * move_speed_boost * delta_time;
-
-    for (_, transform_component, target_transform_component, player_tag_component) in 
-        engine.iterate_three_components_mut::<TransformComponent, TargetTransformComponent, PlayerTagComponent>()? {
-
-        // --- Input updates target transform ---
-        if w_key || pad_fwd {
-            target_transform_component.0.translate(final_speed, Direction::Forward);
-        }
-        if s_key || pad_back {
-            target_transform_component.0.translate(final_speed, Direction::Backward);
-        }
-
-        if (pad_left && (pad_fwd || pad_back)) || ((a_key && (w_key || s_key))) {
-            target_transform_component.0.rotate_around_axis(rotate_speed * delta_time, Vector3f::new(0.0, 1.0, 0.0));
-        }
-        if (pad_right && (pad_fwd || pad_back)) || ((d_key && (w_key || s_key))) {
-            target_transform_component.0.rotate_around_axis(-rotate_speed * delta_time, Vector3f::new(0.0, 1.0, 0.0));
-        }
-       
-
-        // --- Smooth actual transform toward target ---
-        transform_component.set_position(lerp_vec3(transform_component.position, target_transform_component.0.position, smoothing * delta_time));
-        transform_component.set_rotation(lerp_vec3(transform_component.rotation, target_transform_component.0.rotation, smoothing * delta_time));
-    
-        player_transform = Some(transform_component.clone());
+    if trig_rt > DZ || trig_lt > DZ {
+        throt = trig_rt;
+        brake = trig_lt;
+    } else if stick_y.abs() > DZ {
+        if stick_y > 0.0 { throt = stick_y; } else { brake = -stick_y; }
     }
 
-    for (_, camera_transform_component, camera_component) in 
-        engine.iterate_two_components_mut::<TransformComponent, CameraComponent>()? {
+    if k_w { throt = 1.0; }
+    if k_s { brake = 1.0; }
 
-            
-            
-        let mut in_move: f32 = 0.0;
-        in_move += if w_key || s_key || pad_fwd || pad_back { 1.0 } else { 0.0 };
-        in_move += if ((a_key || d_key) && (w_key || s_key)) || ((pad_left || pad_right) && (pad_fwd || pad_back)) { -0.5 } else { 0.0 };
-        in_move = in_move.clamp(0.0, 1.0);
+    // Steering
+    let steer_input = if stick_x.abs() > DZ {
+        stick_x
+    } else {
+        (k_d as i32 - k_a as i32) as f32
+    } * STEER_SENSITIVITY;
 
-        let aa = in_move * 0.4 * final_speed;
+    // Hand-brake flag
+    let handbrake = k_hb || pad_hb;
+    // ───────────────────────────────────────────────────────────────
 
-        // Update camera post-process parameters based on speed
-        camera_component.postprocess_params.abberration_strength = lerp_f32(
-            camera_component.postprocess_params.abberration_strength,
-            aa , // Adjust the factor as needed
-            6.0 * delta_time
+    // ───── Player entities ─────────────────────────────────────────
+    for (_, transform, target, _tag, car) in engine.iterate_four_components_mut::<
+        TransformComponent,
+        TargetTransformComponent,
+        PlayerTagComponent,
+        CarControllerComponent,
+    >()? {
+        let mut speed     = car.speed;
+        let mut direction = car.direction;
+
+        if throt > 0.0 {
+            direction = 1.0;
+            speed += ACCELERATION * throt * dt;
+        } else if brake > 0.0 {
+            direction = -1.0;
+            speed -= BRAKE_DECELERATION * brake * dt;
+        } else {
+            let drag = FRICTION * dt;
+            speed = speed.signum() * (speed.abs() - drag).max(0.0);
+            if speed.abs() < 0.1 { direction = 0.0; }
+        }
+
+        // Hand-brake slows a bit but not too much (feel the skid)
+        if handbrake { speed *= f32::powf(HANDBRAKE_SLOW, dt); }
+
+        speed = speed.clamp(-MAX_SPEED * 0.5, MAX_SPEED);
+
+        // Steering
+        let speed_ratio   = (speed.abs() / MAX_SPEED).clamp(0.0, 1.0);
+        let steer_deg_max = MAX_STEER_DEG - (MAX_STEER_DEG - MIN_STEER_DEG) * speed_ratio;
+
+        let steer_deg = steer_input
+            * steer_deg_max
+            * if handbrake { HANDBRAKE_STEER_MULT } else { 1.0 }
+            * dt;
+
+        if steer_input.abs() > 0.01 && speed.abs() > 0.1 {
+            target.0.rotate_around_axis(-steer_deg, Vector3f::unit_y());
+            speed *= f32::powf(DRIFT_SLOWDOWN, dt);
+        }
+
+        let advance = speed * dt * direction.signum();
+        target.0.translate(
+            advance.abs(),
+            if direction >= 0.0 { Direction::Forward } else { Direction::Backward },
         );
 
-        camera_component.fov = lerp_f32(
-            camera_component.fov,
-            60.0 + aa * 20.0, // Adjust the factor as needed
-            3.0 * delta_time
-        );
+        transform.set_position(lerp_vec3(transform.position, target.0.position, SMOOTHING_POS * dt));
+        transform.set_rotation(lerp_vec3(transform.rotation, target.0.rotation, SMOOTHING_ROT * dt));
 
-        if let Some(player_transform) = player_transform {
-            let target_position = (player_transform.position + player_transform.get_backward_direction() * 13.0) + Vector3f::new(0.0, 7.0, 0.0);
-            camera_transform_component.set_position(lerp_vec3(camera_transform_component.position, target_position, smoothing * delta_time));
-            camera_transform_component.set_rotation(lerp_vec3(camera_transform_component.rotation, player_transform.rotation, smoothing * delta_time));
+        car.speed     = speed;
+        car.direction = direction;
+    }
+    // ───────────────────────────────────────────────────────────────
+
+    // ───── Camera pass ─────────────────────────────────────────────
+    let snap = engine
+        .iterate_four_components::<
+            TransformComponent,
+            TargetTransformComponent,
+            PlayerTagComponent,
+            CarControllerComponent,
+        >()?
+        .next()
+        .map(|(_, t, _, _, c)| (t.position, t.rotation, t.get_backward_direction(),
+                               (c.speed.abs() / MAX_SPEED).clamp(0.0, 1.0)));
+
+    for (_, cam_tr, cam) in engine
+        .iterate_two_components_mut::<TransformComponent, CameraComponent>()? {
+
+        if let Some((p_pos, p_rot, back_dir, v_norm)) = snap {
+            let target_fov = CAMERA_FOV_BASE + v_norm * CAMERA_FOV_BOOST;
+            cam.fov = lerp_f32(cam.fov, target_fov, 4.0 * dt);
+
+            cam.postprocess_params.abberration_strength = lerp_f32(
+                cam.postprocess_params.abberration_strength,
+                v_norm * CAM_CHROM_ABB_FACTOR,
+                6.0 * dt,
+            );
+
+            let back_offset = 10.0 + v_norm * 3.0;
+            let height      = 6.0  + v_norm * 1.5;
+            let target_pos  = p_pos + back_dir * back_offset + Vector3f::new(0.0, height, 0.0);
+
+            cam_tr.set_position(lerp_vec3(cam_tr.position, target_pos, SMOOTHING_POS * dt));
+            cam_tr.set_rotation(lerp_vec3(cam_tr.rotation, p_rot,   SMOOTHING_ROT * dt));
         }
     }
+    // ───────────────────────────────────────────────────────────────
 
     Ok(())
 }
 
+// ───── Helpers ─────────────────────────────────────────────────────
 fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
     from + (to - from) * t.clamp(0.0, 1.0)
 }
- 
- // lerp one parameter
 fn lerp_f32(from: f32, to: f32, t: f32) -> f32 {
     from + (to - from) * t.clamp(0.0, 1.0)
 }
+

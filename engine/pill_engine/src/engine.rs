@@ -282,7 +282,7 @@ impl Engine {
                     timer.record_new_context(&format!("{} update", system_name)).unwrap();
                     self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
                 }
-                
+
                 {
                     // Run system update and handle errors based on configuration
                     let result = (system_function)(self)
@@ -630,6 +630,38 @@ impl Engine {
         // Get scene handle and iterator
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
         self.scene_manager.get_three_component_iterator_mut::<A, B, C>(scene_handle)
+    }
+
+    /// Returns iterator for specified component triple
+    ///
+    /// Iterator fetches specified components only for those entities which have them all
+    /// Additionally returns entity handle to matching entities
+    pub fn iterate_four_components<A, B, C, D>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A, &B, &C, &D)>>
+        where
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>,
+        C: Component<Storage = ComponentStorage<C>>,
+        D: Component<Storage = ComponentStorage<D>>,
+    {
+        // Get scene handle and iterator
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+        self.scene_manager.get_four_component_iterator::<A, B, C, D>(scene_handle)
+    }
+
+    /// Returns iterator for specified component triple mutable
+    ///
+    /// Iterator fetches specified components only for those entities which have them all
+    /// Additionally returns entity handle to matching entities
+    pub fn iterate_four_components_mut<A, B, C, D>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B, &mut C, &mut D)>>
+        where
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>,
+        C: Component<Storage = ComponentStorage<C>>,
+        D: Component<Storage = ComponentStorage<D>>,
+    {
+        // Get scene handle and iterator
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+        self.scene_manager.get_four_component_iterator_mut::<A, B, C, D>(scene_handle)
     }
 
     // --- Scene API ---

@@ -71,7 +71,7 @@ pub mod game {
     pub use crate::ecs::{
         SceneHandle, EntityHandle, TimeComponent,
         TransformComponent,                    // used by almost every game
-        InputComponent, GamepadAxis,           // new game-pad enum
+        InputComponent, GamepadAxis, GamepadButton,           // new game-pad enum
         Component, ComponentStorage,
         GlobalComponent, GlobalComponentStorage,
         SoundType, ColliderComponent, RigidBodyComponent,
@@ -150,7 +150,7 @@ pub mod internal {
             Scene, ComponentStorage,
             TransformComponent, MeshRenderingComponent,
             CameraComponent, CameraAspectRatio,
-            InputComponent, GamepadAxis,
+            InputComponent, GamepadAxis, GamepadButton,
             EntityHandle,
             TimeComponent,
             AudioSourceComponent, AudioListenerComponent,

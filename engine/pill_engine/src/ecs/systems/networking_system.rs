@@ -253,6 +253,7 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
     Ok(())
 }
 */
+
 fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
     let my_id = engine.get_global_component_mut::<NetState>()?.my_id;
     let scene = engine.get_active_scene_handle()?;
