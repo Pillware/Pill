@@ -2,6 +2,8 @@ use pill_engine::game::*;
 use pill_engine::{define_component};
 use crate::player_movement::player_movement_system;
 use crate::free_camera::free_camera_system;
+use crate::player_physics_movement;
+use crate::player_physics_movement::player_physics_movement_system;
 
 define_component!(PlayerTagComponent { });
 
@@ -19,6 +21,7 @@ impl TargetTransformComponent {
 
 impl Component for TargetTransformComponent {}
 
+const USE_PHYSICS: bool = false;
 
 pub struct Game { } 
 
@@ -43,7 +46,12 @@ impl PillGame for Game {
 		engine.register_component::<ColliderComponent>(active_scene)?;
 
 		// Add systems
-		engine.add_system("PlayerMovementSystem", player_movement_system)?;
+		if USE_PHYSICS {
+			engine.add_system("PlayerPhysicsMovementSystem", player_physics_movement_system)?;
+		} else {
+			engine.add_system("PlayerMovementSystem", player_movement_system)?;
+		}
+		
 		//engine.add_system("FreeCameraSystem", free_camera_system)?;
 
 
@@ -140,18 +148,26 @@ impl PillGame for Game {
 		let initial_player_transform = TransformComponent::builder()
 			.position(Vector3f::new(0.0, 2.0, 0.0))
 			.build();
-		engine.build_entity(active_scene)
+
+		let mut player_entity_builder = engine.build_entity(active_scene)
 			.with_component(initial_player_transform.clone())
 			.with_component(MeshRenderingComponent::builder()
 				.material(&truck_material_handle)
 				.mesh(&truck_mesh_handle)
 				.build())
-				.with_component(TargetTransformComponent::new(initial_player_transform.clone()))
-			.with_component(PlayerTagComponent {}).with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Dynamic)
+			.with_component(PlayerTagComponent {})
+			.with_component(TargetTransformComponent::new(initial_player_transform.clone()));
+
+		if USE_PHYSICS {
+			player_entity_builder = player_entity_builder
+			.with_component(RigidBodyComponent::builder().body_type(RigidBodyType::Dynamic)
 				.build())
 			.with_component(ColliderComponent::builder().shape(SharedShape::cuboid(3.0, 2.0, 3.0))
-				.build())
-			.build();
+				.build());
+		}
+
+		player_entity_builder.build();
+
 
 		// Create cube entity
 		engine.build_entity(active_scene)
