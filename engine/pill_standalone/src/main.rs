@@ -83,7 +83,6 @@ fn set_log_level(config: &Config) {
         .filter_module("pill_standalone", log_level)
         .filter_module("pill_engine", log_level)
         .filter_module("pill_renderer", log_level)
-        .filter_module("pill_renderer", log_level)
         .filter_module("pill_net", log_level)
         .filter_module("renet", log_level)
         .filter_module("renet_netcode", log_level)
