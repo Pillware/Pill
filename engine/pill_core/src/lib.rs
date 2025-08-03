@@ -57,6 +57,8 @@ pub use utils::{
     get_enum_variant_type_name, 
     validate_asset_path,
     get_game_error_message,
+    generate_color_palette,
+    hsl_to_rgb, DISTINCT_COLOR_PALETTE
 };
 
 pub use timer::{

@@ -118,7 +118,8 @@ pub mod game {
         Direction,
         Vector2i, Vector3i,
         define_new_pill_slotmap_key,
-        create_game,
+        create_game, DISTINCT_COLOR_PALETTE,
+        hsl_to_rgb
     };
 
     // --- anyhow ---------------------------------------------------------------

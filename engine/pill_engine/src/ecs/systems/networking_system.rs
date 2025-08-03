@@ -3,12 +3,13 @@
 use anyhow::Result;
 use log::debug;
 use pill_net::{NetClient, client_update, server_update, cli_send, srv_broadcast, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
+use rand::rngs::StdRng;
 
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
 use crate::ecs::{EntityHandle, TransformComponent, TimeComponent, NetworkStateComponent, NetEntityState};
 use crate::{NetSide, NetState};
-use pill_core::Vector3f;
+use pill_core::{generate_color_palette, Vector3f, DISTINCT_COLOR_PALETTE};
 
 #[cfg(feature = "rendering")]
 use crate::{
@@ -263,12 +264,14 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
     //let mut rng = rng();
     let net_entity_id = net_state_component.net_entity_id;
 
-			
-			// Use net_entity_id as seed to generate a random color
-			let mut rng = rand::rngs::StdRng::seed_from_u64(net_entity_id as u64);
-			let r = rng.gen_range(0.2..1.0);
-			let g = rng.gen_range(0.2..1.0);
-			let b = rng.gen_range(0.2..1.0);
+			let mut rng = StdRng::seed_from_u64(net_entity_id as u64);
+let index = rng.gen_range(0..DISTINCT_COLOR_PALETTE.len());
+let (r, g, b) = DISTINCT_COLOR_PALETTE[index];
+			// // Use net_entity_id as seed to generate a random color
+			// let mut rng = rand::rngs::StdRng::seed_from_u64(net_entity_id as u64);
+			// let r = rng.gen_range(0.2..1.0);
+			// let g = rng.gen_range(0.2..1.0);
+			// let b = rng.gen_range(0.2..1.0);
 
     #[cfg(feature = "rendering")]
     let (mesh, mat) = {

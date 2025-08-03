@@ -207,6 +207,11 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
                 v_norm*CAM_CHROM_ABB,
                 6.0*dt);
 
+            cam.postprocess_params.vignette_extent = lerp_f32(
+                cam.postprocess_params.vignette_extent,
+                -v_norm*0.2,
+                6.0*dt);
+
             // body-roll tilt
             let roll_target = -raw_steer * ROLL_MAX_DEG * (1.0+v_norm*0.5);
             let mut rolled_rot = p_rot;
