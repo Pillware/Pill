@@ -25,6 +25,10 @@ use lazy_static::lazy_static;
 
 // --- Render queue 
 
+pub struct RenderQueue {
+    pub items: Vec<RenderQueueItem>,
+    pub context_change_indices: Vec<u32>, // Indices of items after which context changes (e.g. material or mesh change)
+}
 
 // --- Render queue item
 pub struct RenderQueueItem {
