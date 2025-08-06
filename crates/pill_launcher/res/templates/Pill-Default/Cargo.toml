@@ -1,7 +1,0 @@
-[package]
-name = "pill_game"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-pill_engine = {path = "NO_PATH", features = ["game"]}

@@ -1,0 +1,19 @@
+[package]
+name = "pill_core"
+version = "0.1.0"
+authors = [
+    # Extend this list when submiting PR
+    "Mateusz Szymoński <mateusz.szymonski@gmail.com>"
+    ]
+edition = "2021"
+
+[dependencies]
+cgmath = { version = "0.18", features = ["serde"] }
+anyhow = "1.0.45"
+thiserror = "1.0.30"
+colored = "2.0.0"
+boolinator = "2.4.0"
+log = "0.4"
+readonly = "0.2"
+indexmap = "1.7.0"
+serde = "1.0.219"
