@@ -80,6 +80,7 @@ impl PillGame for Game {
 		engine.register_component::<TargetTransformComponent>(active_scene)?;
 		engine.register_component::<RigidBodyComponent>(active_scene)?;
 		engine.register_component::<ColliderComponent>(active_scene)?;
+        #[cfg(feature = "net")]
         engine.register_component::<NetworkStateComponent>(active_scene)?;
         engine.register_component::<CarControllerComponent>(active_scene)?;
 
@@ -445,6 +446,7 @@ fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> R
 // ───────────────────────────────────────────────────────────────────────────
 //  Player-controlled pill movement & optional network sync
 // ───────────────────────────────────────────────────────────────────────────
+#[cfg(feature = "net")]
 fn client_update_system(engine: &mut Engine) -> Result<()> {
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
     #[cfg(feature = "net")]
