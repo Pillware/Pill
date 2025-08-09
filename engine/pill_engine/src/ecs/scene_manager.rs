@@ -39,7 +39,7 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene_handle)?;
 
         // Check if there is space for entity
-        if target_scene.entities.len() >= max_entity_count {
+        if target_scene.entities.len() + 1 >= max_entity_count {
             return Err(Error::new(EngineError::EntityLimitReached))
         }
 
@@ -119,7 +119,7 @@ impl SceneManager {
         let component_storage = target_scene.get_component_storage_mut::<T>()?;
 
         // Add component to storage
-        let component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized"); // TODO: Should not be called if entity limit is reached but it is
+        let component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).context("Critical: Vector not initialized")?; 
         let _ = component_slot.insert(component);
         
         // Get the component bitmask

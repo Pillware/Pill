@@ -8,15 +8,15 @@ use crate::{
 
 use pill_core::{ EngineError, PillSlotMapKey, PillStyle, RendererError, Timer };
 
-use std::{ ops::Range };
+use std::{ ops::Range, time::Instant };
 use anyhow::{ Result, Context, Error };
 use boolinator::Boolinator;
 use log::{ debug };
 
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let mut timer = Timer::new();
-    timer.record_new_context("RenderingSystem update")?;
-    timer.record("Get active camera")?;
+    timer.begin_context("rendering_system update");
+    timer.record("Get active camera");
 
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
     let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
@@ -44,21 +44,32 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera))?.clone();
 
     // - Prepare rendering data
-    timer.record("Prepare render queue")?;
+    timer.record("Clear render queue");
 
     // Clear the render queue
     engine.render_queue.clear();
+    engine.render_queue.reserve(200000); // Reserve space for 1000 items
+
+    timer.record("Prepare render queue");
+
+    let mut matrix_calculation_duration: f32 = 0.0;
+    let mut add_to_render_queue_duration: f32 = 0.0;
+
     // Iterate mesh rendering components
     for (entity_handle, transform_component, mesh_rendering_component) in
         engine.scene_manager.get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(active_scene_handle)?
     {
         // Update transform matrices if required
+
+        // let update_transform_matrices_start_time = Instant::now();
         if transform_component.matrix_update_required {
             update_transform_matrices(transform_component);
             transform_component.matrix_update_required = false;
         }
+        // matrix_calculation_duration += update_transform_matrices_start_time.elapsed().as_secs_f32() * 1000.0;
 
         // Add valid mesh rendering components to render queue
+        let add_to_render_queue_start_time = Instant::now();
         if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
             let render_queue_item = RenderQueueItem {
                 key: render_queue_key,
@@ -69,25 +80,29 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             debug!("Invalid render queue key");
             continue;
         }
+        add_to_render_queue_duration += add_to_render_queue_start_time.elapsed().as_secs_f32() * 1000.0;
     }
 
-    timer.record("Sort render queue")?;
+    timer.record(&format!("Matrix calculation {} ms", matrix_calculation_duration));
+    timer.record(&format!("Add to render queue {} ms", add_to_render_queue_duration));
+
+    timer.record("Sort render queue");
 
     // Sort render queue
     engine.render_queue.sort();
 
-    timer.record("Get component storages")?;
+    timer.record("Get component storages");
 
     let egui_ui = EguiManagerComponent::get_ui(engine);// egui_manager_component.get_ui(engine);
 
     let active_scene = engine.scene_manager.get_active_scene_mut()?;
     // Get storages
     let camera_component_storage = active_scene.get_component_storage::<CameraComponent>()
-        .context(format!("{}: Cannot get active {}", "RenderingSystem".sobj_style(), "Camera".gobj_style()))?;
+        .context(format!("{}: Cannot get active {}", "rendering_system".sobj_style(), "Camera".gobj_style()))?;
     let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
-        .context(format!("{}: Cannot get {}", "RenderingSystem".sobj_style(), "TransformComponents".sobj_style())).unwrap();
+        .context(format!("{}: Cannot get {}", "rendering_system".sobj_style(), "TransformComponents".sobj_style())).unwrap();
 
-    timer.record_new_context("Render")?;
+    timer.begin_context("Render");
 
     // Render
     match engine.renderer.render(

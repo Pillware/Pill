@@ -1,140 +1,113 @@
-use core::panic;
-use std::collections::HashMap;
 use std::time::Instant;
-use anyhow::{Result, Error};
+
+use anyhow::{Context, Result, Error};
 use indexmap::IndexMap;
-use crate::error::EngineError::*;
 
-#[derive(Clone)]
-#[readonly::make]
+
+
+#[derive(Debug, Clone)]
 pub struct TimerRecord {
-    #[readonly]
-    pub duration: f32, // in milliseconds
-    #[readonly]
-    pub subrecords: IndexMap<String, TimerRecord>,
-    last_subrecord_time: Instant,
+    pub label: String,
+    pub duration: f32, // ms
+    pub subrecords: Vec<TimerRecord>,
 }
 
-impl TimerRecord {
-    pub fn new() -> Self {
-        Self {
-            duration: 0.0,
-            subrecords: IndexMap::new(),
-            last_subrecord_time: Instant::now(),
-        }
-    }
-
-    pub fn record(&mut self, label: &str) -> Result<()> {
-        // Update previous record duration
-        if let Some((_, previous_record)) = self.subrecords.last_mut() {
-            previous_record.duration = self.last_subrecord_time.elapsed().as_secs_f32() * 1000.0;
-        }
-
-        // Create new record
-        self.subrecords.insert(label.to_string(), 
-        TimerRecord {
-                duration: 0.0,
-                subrecords: IndexMap::new(),
-                last_subrecord_time: Instant::now(),
-            }
-        );
-
-        self.last_subrecord_time = Instant::now();
-        Ok(())
-    }
-
-    pub fn end(&mut self) -> Result<()> {
-        // Update the duration of the last record
-        if let Some((_, last_record)) = self.subrecords.last_mut() {
-            last_record.duration = last_record.last_subrecord_time.elapsed().as_secs_f32() * 1000.0;
-            // Update the duration of the current record by summing up all subrecords
-            self.duration = self.subrecords.values().map(|r| r.duration).sum();
-        } else {
-            // If no subrecords exist, the duration is set to the elapsed time since the start
-            self.duration = self.last_subrecord_time.elapsed().as_secs_f32() * 1000.0;
-        }
-
-        Ok(())
-    }
+#[derive(Debug, Clone)]
+struct ActiveContext {
+    label: String,
+    start_time: Instant,
+    subrecords: Vec<TimerRecord>,
+    last_split_time: Instant,
 }
 
-#[derive(Clone)]
-#[readonly::make]
+#[derive(Debug, Clone)]
 pub struct Timer {
-    #[readonly]
-    pub records: IndexMap<String, TimerRecord>,
-    current_context_path: Vec<String>,
+    stack: Vec<ActiveContext>,
+    pub records: Vec<TimerRecord>,
+    current_label: Option<String>,
+    current_label_start: Option<Instant>,
 }
 
 impl Timer {
     pub fn new() -> Self {
         Self {
-            records: IndexMap::new(),
-            current_context_path: Vec::new(),
+            stack: Vec::new(),
+            records: Vec::new(),
+            current_label: None,
+            current_label_start: None,
         }
     }
 
-    pub fn get_total_duration(&self) -> f32 {
-        self.records.values().map(|record| record.duration).sum()
-    }
+    pub fn begin_context(&mut self, label: impl Into<String>) {
+        // Close current segment if needed
+        self.flush_record();
 
-    // Start new recording and switches context to it so that all subsequent records will be added to it
-    pub fn record_new_context(&mut self, label: &str) -> Result<()> {
-        let mut current_context_records = &mut self.records;
-
-        // Navigate to the current context
-        for current_context_path_part in &self.current_context_path {
-            current_context_records = &mut current_context_records.get_mut(current_context_path_part).unwrap().subrecords;
-        }
-
-        // Before switching to new context, end task in the previous context
-        if let Some(last_context) = self.current_context_path.last() {
-            if let Some(last_record) = current_context_records.get_mut(last_context) {
-                last_record.end()?;
-            }
-        }
-
-        // Create or get the record for the current context
-        current_context_records.entry(label.to_string()).or_insert_with(TimerRecord::new);
-        self.current_context_path.push(label.to_string());
-
-        Ok(())
+        let label = label.into();
+        let now = Instant::now();
+        self.stack.push(ActiveContext {
+            label,
+            start_time: now,
+            last_split_time: now,
+            subrecords: Vec::new(),
+        });
     }
 
     pub fn end_context(&mut self) -> Result<()> {
-        // Ensure we have a context to end
-        if self.current_context_path.is_empty() {
-            return Err(NoTimerContextToEnd().into());
-        }
+        self.flush_record(); // End any remaining record
 
-        self.get_active_context()?.end()?;
-        self.current_context_path.pop();
+        let finished = self.stack.pop().context("No context to end")?;
+        let duration = finished.start_time.elapsed().as_secs_f32() * 1000.0;
+        let record = TimerRecord {
+            label: finished.label,
+            duration,
+            subrecords: finished.subrecords,
+        };
+
+        if let Some(parent) = self.stack.last_mut() {
+            parent.subrecords.push(record);
+        } else {
+            self.records.push(record);
+        }
 
         Ok(())
     }
 
-    pub fn record(&mut self, label: &str) -> Result<()> {
-        self.get_active_context()?.record(label)
+    pub fn record(&mut self, label: impl Into<String>) {
+        self.flush_record(); // End any previous one
+        self.current_label = Some(label.into());
+        self.current_label_start = Some(Instant::now());
     }
 
-    fn get_active_context(&mut self) -> Result<&mut TimerRecord> {
-        if self.current_context_path.is_empty() {
-            panic!("No active timer context to get");
+    fn flush_record(&mut self) {
+        if let (Some(label), Some(start), Some(current)) =
+            (&self.current_label, self.current_label_start, self.stack.last_mut())
+        {
+            let duration = start.elapsed().as_secs_f32() * 1000.0;
+            current.subrecords.push(TimerRecord {
+                label: label.clone(),
+                duration,
+                subrecords: Vec::new(),
+            });
         }
 
-        let mut current_context_records = &mut self.records;
+        self.current_label = None;
+        self.current_label_start = None;
+    }
 
-        for current_context_path_part in self.current_context_path.iter().take(self.current_context_path.len() - 1) {
-            current_context_records = &mut current_context_records
-                .get_mut(current_context_path_part)
-                .ok_or_else(|| Error::msg(format!("Missing context '{}'", current_context_path_part)))?
-                .subrecords;
+    pub fn total_duration(&self) -> f32 {
+        self.records.iter().map(|r| r.duration).sum()
+    }
+
+    pub fn print(&self, indent: usize) {
+        for record in &self.records {
+            Self::print_record(record, indent);
         }
+    }
 
-        let context_label = self.current_context_path.last().ok_or_else(|| Error::msg("No active context"))?;
-        Ok(current_context_records.get_mut(context_label).ok_or_else(|| Error::msg("Missing current context"))?)
+    fn print_record(record: &TimerRecord, indent: usize) {
+        println!("{:indent$}- {}: {:.3}ms", "", record.label, record.duration, indent = indent);
+        for sub in &record.subrecords {
+            Self::print_record(sub, indent + 2);
+        }
     }
 }
-
-
-

@@ -389,7 +389,7 @@ impl State {
         egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer
     ) -> Result<()> { 
-        timer.record("Get frame")?;
+        timer.record("Get frame");
     
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
@@ -405,7 +405,7 @@ impl State {
 
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        timer.record("Get clear color and create render pass attachments")?;
+        timer.record("Get clear color and create render pass attachments");
 
         // Get active camera and update it
         let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
@@ -444,11 +444,11 @@ impl State {
                 stencil_ops: None,
             };
 
-            timer.record_new_context("Mesh Drawer")?;
+            timer.begin_context("Mesh Drawer");
 
             self.mesh_drawer.record_draw_commands(
                 &self.queue, 
-                &mut encoder, 
+                &self.device,
                 &self.renderer_resource_storage, 
                 color_attachment, 
                 depth_stencil_attachment, 
@@ -461,27 +461,12 @@ impl State {
             timer.end_context()?;
         }  
 
-        timer.record_new_context("Egui Draw")?;
-
-        // Render egui UI
-        self.egui_renderer.draw(
-            &self.device,
-            &self.queue,
-            &mut encoder,
-            &view,
-            egui_wgpu::ScreenDescriptor {
-                size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
-                pixels_per_point: self.egui_renderer.window_scale_factor,
-            },
-            egui_ui, 
-            timer
-        )?;
+        timer.begin_context("Egui Draw");
 
         timer.end_context()?; // End Egui Draw context
 
-        timer.record("Submit commands and present frame")?;
+        timer.record("Submit commands and present frame");
 
-        self.queue.submit(iter::once(encoder.finish())); // Finish command buffer and submit it to the GPU's render queue
         frame.present();
 
         Ok(())

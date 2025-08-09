@@ -1,7 +1,7 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100000;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyO;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyL;
@@ -49,6 +49,9 @@ impl PillGame for Game {
 
         // --- Basic setup ---
 
+        // Disable build-in audio system
+        engine.toggle_system("audio_system", UpdatePhase::PostGame, false)?;
+
         // Create scene
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;
@@ -66,9 +69,9 @@ impl PillGame for Game {
         engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
         engine.add_system("delete_floating_objects", floating_objects_remove_system)?;
         engine.add_system("objects_movement", floating_objects_movement_system)?;
-        engine.add_system("camera_movement", camera_movement_system)?;
-        engine.add_system("camera_fov", camera_fov_changing_system)?;
-        engine.add_system("mesh_changing", object_appearance_changing_system)?;
+        //engine.add_system("camera_movement", camera_movement_system)?;
+        //engine.add_system("camera_fov", camera_fov_changing_system)?;
+        //engine.add_system("mesh_changing", object_appearance_changing_system)?;
         engine.add_system("demo_control", demo_control_system)?;
 
         // --- Create resources ---
@@ -107,80 +110,83 @@ impl PillGame for Game {
         let organic_normal_texture_handle = engine.add_resource::<Texture>(organic_normal_texture)?;
 
         // Add materials
-        let mut fabric_material = Material::new("fabric");
-        fabric_material.set_texture("color", fabric_color_texture_handle)?;
-        fabric_material.set_texture("normal", fabric_normal_texture_handle)?;
-        fabric_material.set_color("tint", Color::new( 1.0, 0.1, 0.1))?;
-        let fabric_material_handle = engine.add_resource::<Material>(fabric_material)?;
+        let fabric_material_handle = engine.add_resource::<Material>(
+            Material::builder("fabric")
+            .texture("color", fabric_color_texture_handle)?
+            .texture("normal", fabric_normal_texture_handle)?
+            .color("tint", Color::new(1.0, 0.1, 0.1))?
+            .build()
+        )?;
 
-        let mut stones_material = Material::new("stones");
-        stones_material.set_texture("color", stones_color_texture_handle)?;
-        stones_material.set_texture("normal", stones_normal_texture_handle)?;
-        let stones_material_handle = engine.add_resource::<Material>(stones_material)?;
+        let stones_material_handle = engine.add_resource::<Material>(
+            Material::builder("stones")
+            .texture("color", stones_color_texture_handle)?
+            .texture("normal", stones_normal_texture_handle)?
+            .build()
+        )?;
 
-        let mut organic_material = Material::new("organic");
-        organic_material.set_texture("color", organic_color_texture_handle)?;
-        organic_material.set_texture("normal", organic_normal_texture_handle)?;
-        organic_material.set_color("tint", Color::new( 0.26, 0.87, 0.9))?;
-        organic_material.set_scalar("specularity", 3.0)?;
-        let organic_material_handle = engine.add_resource::<Material>(organic_material)?;
+        let organic_material_handle = engine.add_resource::<Material>(
+            Material::builder("organic")
+            .texture("color", organic_color_texture_handle)?
+            .texture("normal", organic_normal_texture_handle)?
+            .color("tint", Color::new(0.26, 0.87, 0.9))?
+            .scalar("specularity", 3.0)?
+            .build()
+        )?;
 
+        let yellow_material_handle = engine.add_resource::<Material>(
+            Material::builder("yellow")
+            .color("tint", Color::new(1.0, 0.88, 0.0))?
+            .build()
+        )?;
 
-        let mut yellow_material = Material::new("yellow");
-        yellow_material.set_color("tint", Color::new( 1.0, 0.88, 0.0))?;
-        let yellow_material_handle = engine.add_resource::<Material>(yellow_material)?;
+        let blue_material_handle = engine.add_resource::<Material>(
+            Material::builder("blue")
+            .color("tint", Color::new(0.26, 0.87, 0.9))?
+            .build()
+        )?;
 
-        let mut blue_material = Material::new("blue");
-        blue_material.set_color("tint", Color::new( 0.26, 0.87, 0.9))?;
-        let blue_material_handle = engine.add_resource::<Material>(blue_material)?;
-
-        let white_material = Material::new("white");
-        let white_material_handle = engine.add_resource::<Material>(white_material)?;
-
+        let white_material_handle = engine.add_resource::<Material>(
+            Material::builder("white")
+            .build()
+        )?;
 
         // --- Create entities ---
 
         // Create ambient music player entity
-        let ambient_music_player_entity = engine.create_entity(active_scene)?;
-
-        let audio_source_component = AudioSourceComponent::builder()
-            .sound_type(SoundType::Sound2D)
-            .sound(ambient_music_handle)
-            .volume(0.05)
-            .play_on_awake(false)
+        engine.build_entity(active_scene)
+            .with_component(AudioSourceComponent::builder()
+                .sound_type(SoundType::Sound2D)
+                .sound(ambient_music_handle)
+                .volume(0.05)
+                .play_on_awake(false)
+                .build())
             .build();
-        engine.add_component_to_entity(active_scene, ambient_music_player_entity, audio_source_component)?;
-
-        // Create origin point entity
-        let origin_entity = engine.create_entity(active_scene)?;
-
-        let origin_transform = TransformComponent::new();
-        engine.add_component_to_entity(active_scene, origin_entity, origin_transform)?;
 
         // Create camera entity
-        let camera = engine.create_entity(active_scene)?;
-
-        let transform_component = TransformComponent::builder()
-            .position(Vector3f::new(-30.0,3.0,0.0))
-            .rotation(Vector3f::new(0.0,0.0,-20.0))
+        engine.build_entity(active_scene)
+            .with_component(TransformComponent::builder()
+                .position(Vector3f::new(0.0, 0.0, -30.0))
+                .rotation(Vector3f::new(0.0, 0.0, 0.0))
+                .build())
+            .with_component(CameraComponent::builder()
+                .enabled(true)
+                .fov(60.0)
+                .clear_color(Color::new(0.35, 0.40, 0.50))
+                .build())
+            .with_component(CameraMovementComponent {
+                orbit_speed: 60.0,
+                zoom_speed: 5.0,
+                angle: 0.0,
+                radius: 30.0,
+                delta_y: 0.0,
+                delta_z: 0.0,
+            })
+            .with_component(AudioListenerComponent::builder()
+                .enabled(true)
+                .build())
             .build();
-        engine.add_component_to_entity(active_scene, camera, transform_component)?;
 
-        let camera_component = CameraComponent::builder().enabled(true).fov(60.0).clear_color(Color::new(0.35, 0.40, 0.80)).build();
-        engine.add_component_to_entity::<CameraComponent>(active_scene, camera, camera_component)?;
-
-        let camera_movement_component = CameraMovementComponent {
-            orbit_speed: 60.0,
-            zoom_speed: 5.0,
-            angle: 0.0,
-            radius: 30.0,
-            delta_y: 0.0,
-            delta_z: 0.0
-        };
-        engine.add_component_to_entity(active_scene, camera, camera_movement_component)?;
-
-        let audio_listener_component = AudioListenerComponent::builder().enabled(true).build();
-        engine.add_component_to_entity(active_scene, camera, audio_listener_component)?;
 
         // Setup demo state component
         let demo_state = DemoStateComponent {
@@ -210,7 +216,7 @@ fn demo_control_system(engine: &mut Engine) -> Result<()> {
     if system_toggle_key {
         demo_state.floating_objects_movement_enabled = !demo_state.floating_objects_movement_enabled;
         let enabled = demo_state.floating_objects_movement_enabled;
-        engine.toggle_system("objects_movement", enabled)?;
+        engine.toggle_system("objects_movement", UpdatePhase::Game, enabled)?;
     }
 
     Ok(())
@@ -423,50 +429,50 @@ fn floating_objects_remove_system(engine: &mut Engine) -> Result<()> {
 // --- Functions ---
 
 fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()> {
-    let mut rng = thread_rng();
 
     // Get active scene handle
     let active_scene = engine.get_active_scene_handle()?;
+    let mut rng = thread_rng();
 
     // Get resources
     let demo_state = (&*engine).get_global_component::<DemoStateComponent>()?;
-    let mesh_handle = demo_state.mesh_handles[demo_state.current_mesh];
-
-    let material_handle = match demo_state.current_material_set == 0 {
-        true => demo_state.textured_material_handles[rng.gen_range(0..=2)],
-        false => demo_state.plain_color_material_handles[rng.gen_range(0..=2)],
-    };
+    let mesh_handles = demo_state.mesh_handles.clone();
+    let textured_material_handles = demo_state.textured_material_handles.clone();
 
     for _ in 0..object_count {
-        let new_entity = engine.create_entity(active_scene).unwrap();
 
-        // Creatine FloatingObject component with randomized initial data
-        let float_object_component = FloatingObjectComponent {
-            angle: rng.gen_range(0.0..359.0),
-            radius_factor: rng.gen_range(20.0..180.0),
-            scale_factor: rng.gen_range(0.5..1.5),
-            y_axis_factor: rng.gen_range(0.0..6.0),
+         let mesh_index = rng.gen_range(0..mesh_handles.len());
+    let mat_index = rng.gen_range(0..textured_material_handles.len());
 
-            orbital_movement_speed: rng.gen_range(40.0..120.0),
-            y_axis_movement_speed: rng.gen_range(-0.6..0.6),
-            rotation_speed: rng.gen_range(-90.0..90.0),
-            scale_speed: rng.gen_range(0.06..1.2),
-            radius_speed: rng.gen_range(0.1..1.2),
-        };
 
-        // Create transform component
-        let transform_component = TransformComponent::new();
+    let mesh_handle = mesh_handles[mesh_index];
+    let material_handle = textured_material_handles[mat_index];
 
-        // Create mesh component
-        let mesh_rendering_component = MeshRenderingComponent::builder()
-            .material(&material_handle)
-            .mesh(&mesh_handle)
+    // // Randommize mesh
+    //     let mesh_handle = mesh_handles[rng.gen_range(0..=2)];
+
+    //         // Randomize material
+    //     let material_handle = textured_material_handles[rng.gen_range(0..=2)];
+
+        engine.build_entity(active_scene)
+            .with_component(FloatingObjectComponent {
+                angle: rng.gen_range(0.0..359.0),
+                radius_factor: rng.gen_range(20.0..180.0),
+                scale_factor: rng.gen_range(0.5..1.5),
+                y_axis_factor: rng.gen_range(0.0..6.0),
+
+                orbital_movement_speed: rng.gen_range(40.0..80.0),
+                y_axis_movement_speed: rng.gen_range(-0.6..0.6),
+                rotation_speed: rng.gen_range(-45.0..45.0),
+                scale_speed: rng.gen_range(0.06..1.2),
+                radius_speed: rng.gen_range(0.1..1.2),
+            })
+            .with_component(TransformComponent::new())
+            .with_component(MeshRenderingComponent::builder()
+                .material(&material_handle)
+                .mesh(&mesh_handle)
+                .build())
             .build();
-
-        // Add components
-        engine.add_component_to_entity(active_scene, new_entity, float_object_component)?;
-        engine.add_component_to_entity(active_scene, new_entity, transform_component)?;
-        engine.add_component_to_entity(active_scene, new_entity, mesh_rendering_component)?;
     }
 
     // Update initial positions once (in case movement system is disabled)

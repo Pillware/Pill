@@ -224,7 +224,7 @@ impl Engine {
                 if system_name != RENDERING_SYSTEM.name {
                     
                     let mut timer = Timer::new();
-                    timer.record_new_context(&format!("{} update", system_name)).unwrap();
+                    timer.begin_context(&format!("{} system update", system_name));
                     self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
                 }
 
@@ -262,7 +262,7 @@ impl Engine {
         let new_frame_time = delta_time.as_secs_f32() * 1000.0; 
         let fps = 1000.0 / new_frame_time;
         self.frame_delta_time = new_frame_time.into();
-        debug!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
+        println!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
     }
 
     pub fn shutdown(&mut self) {
@@ -344,10 +344,10 @@ impl Engine {
     }
 
     /// Toggles game-defined system
-    pub fn toggle_system(&mut self, name: &str, enabled: bool) -> Result<()> {
-        debug!("Toggling {} {} from {} {} to {} state", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), "Game".name_style(), if enabled { "Enabled" } else { "Disabled" });
+    pub fn toggle_system(&mut self, name: &str, update_phase: UpdatePhase, enabled: bool) -> Result<()> {
+        debug!("Toggling {} {} from {} {} to {} state", "System".gobj_style(), name.name_style(), "UpdatePhase".sobj_style(), update_phase.to_string().name_style(), if enabled { "Enabled" } else { "Disabled" });
 
-        self.system_manager.toggle_system(name, UpdatePhase::Game, enabled).context(format!("Toggling {} failed", "System".gobj_style()))
+        self.system_manager.toggle_system(name, update_phase, enabled).context(format!("Toggling {} failed", "System".gobj_style()))
     }
 
     /// Returns system timer. It has to be returned back using update_system_timer function, otherwise engine will panic.

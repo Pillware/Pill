@@ -71,6 +71,7 @@ pub mod game {
             AudioSourceComponent,
             AudioListenerComponent,
             TimeComponent,
+            UpdatePhase,
             AudioManagerComponent,
             EguiManagerComponent,
             Component,

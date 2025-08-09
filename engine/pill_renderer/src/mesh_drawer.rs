@@ -2,7 +2,8 @@ use std::{num::NonZeroU32, ops::Range};
 
 use pill_core::{RendererError, Timer};
 use pill_engine::{ internal::{ RenderQueueItem, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, TransformComponent, RENDER_QUEUE_KEY_ORDER}, ComponentStorage};
-use crate::{resources::RendererCamera, Instance, RendererResourceStorage, INITIAL_INSTANCE_VECTOR_CAPACITY};
+use crate::{resources::RendererCamera, Instance, RendererResourceStorage,INITIAL_INSTANCE_VECTOR_CAPACITY};
+
 use anyhow::{Error, Result};
 
 pub struct MeshDrawer {
@@ -34,7 +35,7 @@ impl MeshDrawer {
         &mut self, 
         // Resources
         queue: &wgpu::Queue, 
-        encoder: &mut wgpu::CommandEncoder, 
+        device: &wgpu::Device,
         renderer_resource_storage: &RendererResourceStorage, 
         color_attachment: wgpu::RenderPassColorAttachment, 
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
@@ -44,30 +45,23 @@ impl MeshDrawer {
         transform_component_storage: &ComponentStorage<TransformComponent>,
         timer: &mut Timer
     ) -> Result<()> { 
-        timer.record("Prepare render pass")?;
+        timer.record("Prepare render pass");
 
-        // Start encoding render pass
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { // Use the encoder to create a RenderPass
-            label: Some("render_pass"),
-            color_attachments: &[Some(color_attachment)],
-            depth_stencil_attachment: Some(depth_stencil_attachment),
-            timestamp_writes: None,
-            occlusion_query_set: None,
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("mesh_drawer_encoder"),
         });
 
-        let mut current_rendering_order: u8 = 0;
-        let mut current_pipeline_handle: Option<RendererPipelineHandle> = None;
-        let mut current_material_handle: Option<RendererMaterialHandle> = None;
-        let mut current_mesh_handle: Option<RendererMeshHandle> = None;
-        let mut current_mesh_index_count: u32 = 0; // Number of indices in the current mesh
+        let mut instance_batch_number = 0;
+        let mut rendering_context_change_number = 0;
         
         for (i, instance_batch) in render_queue.chunks(self.max_instance_batch_size as usize).enumerate() {
 
             let batch_size = instance_batch.len();
+            instance_batch_number += 1;
 
-            timer.record_new_context(&format!("Draw instance batch {}", i))?;
+            timer.begin_context(&format!("Prepare draw instance batch {}", i));
             
-            timer.record(&format!("Write instance buffer"))?;
+            timer.record(&format!("Write instance buffer"));
 
             // Prepare instance data and load it to buffer
             self.instances.clear();
@@ -80,13 +74,47 @@ impl MeshDrawer {
                 let transform_component = transform_slot
                     .as_ref()
                     .ok_or_else(|| Error::new(RendererError::Other))?;
+                //println!("Creating new instance with transform component: {:?} {:?}", i, transform_component.position);
                 self.instances.push(Instance::new(transform_component));
             }
 
+
+
             queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
+
+
+              let mut current_rendering_order: u8 = 0;
+        let mut current_pipeline_handle: Option<RendererPipelineHandle> = None;
+        let mut current_material_handle: Option<RendererMaterialHandle> = None;
+        let mut current_mesh_handle: Option<RendererMeshHandle> = None;
+        let mut current_mesh_index_count: u32 = 0; // Number of indices in the current mesh
+
+
+            // Start encoding render pass
+            let load_op = if i == 0 {
+    wgpu::LoadOp::Clear(wgpu::Color::BLACK)
+} else {
+    wgpu::LoadOp::Load
+};
+
+let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+    label: Some("render_pass"),
+    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+        ops: wgpu::Operations {
+            load: load_op,
+            store: wgpu::StoreOp::Store,
+        },
+        ..color_attachment.clone()
+    })],
+    depth_stencil_attachment: Some(depth_stencil_attachment.clone()),
+    timestamp_writes: None,
+    occlusion_query_set: None,
+});
+
+
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
             
-            timer.record("Draw instances")?;
+            timer.record("Record draw instances commands");
 
             // Reset instance range for each batch
             // Start inclusive, end exclusive (e.g. 0..3 means indices 0, 1, 2.  e.g. 5..7 means indices 5, 6)
@@ -106,8 +134,10 @@ impl MeshDrawer {
                         render_pass.draw_indexed(0..current_mesh_index_count, 0, accumulated_instance_range.clone());
                         accumulated_instance_range = accumulated_instance_range.end..accumulated_instance_range.end;
                     }
+
                     // Set new order
                     current_rendering_order = render_queue_key_fields.order;
+                    rendering_context_change_number += 1;
                 }
 
                 // Check material
@@ -131,6 +161,8 @@ impl MeshDrawer {
                     render_pass.set_bind_group(0, &material.texture_bind_group, &[]);
                     render_pass.set_bind_group(1, &material.parameter_bind_group, &[]);
                     render_pass.set_bind_group(2, &camera.bind_group, &[]);
+
+                    rendering_context_change_number += 1;
                 }
 
                 // Check mesh
@@ -146,6 +178,8 @@ impl MeshDrawer {
                     current_mesh_index_count = mesh.index_count;
                     render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
                     render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
+
+                    rendering_context_change_number += 1;
                 }
 
                 // Add new instance
@@ -160,7 +194,7 @@ impl MeshDrawer {
 
             timer.end_context()?; // End "Draw instance batch" context
         }
-
+queue.submit(std::iter::once(encoder.finish()));
         Ok(())
     }
 }

@@ -207,7 +207,6 @@ impl Component for TransformComponent {
 
 }
 
-
 impl Default for TransformComponent {
         fn default() -> Self {
                     Self::new()

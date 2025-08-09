@@ -234,15 +234,20 @@ fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path
     let game_title = get_game_title(&game_project_directory_path).context("Failed to get game title")?;
     let standalone_executable_path = output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
 
-    // Run exe
-    let status = Command::new(standalone_executable_path.clone())
+    // Run exe (capture potential IO error here)
+    let status = Command::new(&standalone_executable_path)
         .current_dir(output_directory_path)
         .status()
-        .context("Failed to run game project executable")?;
+        .context(format!(
+            "Failed to launch game project executable: {}",
+            standalone_executable_path.display()
+        ))?;
 
     if !status.success() {
-        return Err(Error::msg(format!("Executable command running {} failed with code: {}", standalone_executable_path.display(), status.code().unwrap_or(1))));
+        // Game ran and exited with an error — don't say "failed to run" - just return Ok
+        eprintln!("Game exited with error code: {}", status.code().map_or("unknown".into(), |c| c.to_string()));
     }
+
     Ok(())
 }
 

@@ -30,7 +30,7 @@ layout(location=3) out vec3 out_TBN_bitangent;
 layout(location=4) out vec3 out_TBN_normal;
 
 void main() {
-    mat4 model_matrix = mat4(
+     mat4 model_matrix = mat4(
         model_matrix_0,
         model_matrix_1,
         model_matrix_2,
