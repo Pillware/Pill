@@ -66,6 +66,12 @@ fn normalize_vec3(v: Vector3f) -> Vector3f {
     if len_sq > 1e-6 { v / len_sq.sqrt() } else { v }
 }
 
+// NEW: flatten a direction to XZ plane (kills vertical pull-in)
+#[inline]
+fn flatten_xz(v: Vector3f) -> Vector3f {
+    normalize_vec3(Vector3f::new(v.x, 0.0, v.z))
+}
+
 /*────────────────────  System  ───────────────────────────────*/
 pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
     let input = engine.get_global_component::<InputComponent>()?;
@@ -190,22 +196,29 @@ pub fn player_movement_system(engine: &mut Engine) -> Result<()> {
                 lerp_f32(cam.postprocess_params.abberration_strength,
                          abb_target, 6.0*dt);
 
-            /* Body roll */
+            /* Body roll (degrees) – remove radians conversion */
             let mut target_rot = p_rot;
-            target_rot.z += (-raw_steer*ROLL_MAX_DEG*(1.0+v_norm*0.5)).to_radians();
+            target_rot.z += -raw_steer * ROLL_MAX_DEG * (1.0 + v_norm * 0.5);
 
             /* Drift-aware lerping */
             let k     = 1.0 - drift_int;
             let rot_t = SMOOTH_ROT_BASE * (0.2 + 0.8*k) * dt;
             let pos_t = SMOOTH_POS_BASE * (0.4 + 0.6*k) * dt;
 
-            let follow_dir = if drift_int > DRIFT_LOCK_THRESH {
-                normalize_vec3(p_pos - cam_tr.position)
-            } else { car_back };
+            // FLATTEN follow direction to avoid vertical pull
+            let flat_back = flatten_xz(car_back);
+
+            // Lock zoom purely on handbrake (no v_norm leakage)
+            let (dist, height) = if handbrake {
+                (10.0, 6.0)
+            } else {
+                (10.0 + v_norm * 3.0,
+                 6.0  + v_norm * 1.5)
+            };
 
             let target_pos = p_pos
-                + follow_dir*(10.0+v_norm*3.0)
-                + Vector3f::new(0.0,6.0+v_norm*1.5,0.0);
+                + flat_back * dist
+                + Vector3f::new(0.0, height, 0.0);
 
             cam_tr.set_position(lerp_vec3(cam_tr.position, target_pos, pos_t));
             cam_tr.set_rotation(lerp_vec3(cam_tr.rotation,  target_rot, rot_t));
