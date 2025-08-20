@@ -7,8 +7,9 @@ use pill_renderer;
 use anyhow::{ Context, Ok, Result };
 use winit::{
     event::{ Event, WindowEvent, DeviceEvent },
-    window::Icon,
+    window::{Icon},
 };
+
 #[cfg(target_os = "windows")]
 use winit::platform::windows::IconExtWindows;
 use std::{
@@ -124,14 +125,29 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
     // Initialize other window parameters
     let window_size = winit::dpi::PhysicalSize::<u32>::new(window_width, window_height);
     let window_min_size = winit::dpi::PhysicalSize::<u32>::new(100, 100);
-    let window = Arc::new(winit::window::WindowBuilder::new()
-        .with_title(window_title)
-        .with_inner_size(window_size)
-        .with_min_inner_size(window_min_size)
-        .with_window_icon(window_icon.clone())
-        .with_visible(false) // Temporarily hide window (this is a hack to make taskbar icon loaded correctly)
-        .build(&window_event_loop)
-        .context("Failed to initialize window").unwrap());
+
+    let window_attributes = winit::window::WindowAttributes::default(); // {.with_title(window_title).with_min_inner_size(window_min_size).with_window_icon(window_icon).with_visible(false);
+
+
+    //     title: window_title,
+    //     min_inner_size: Some(winit::dpi::Size::Physical(window_size)),
+    //     window_icon: window_icon,
+    //     visible: false, // temporarily hidden
+    //     ..Default::default()
+    // };
+
+    //let window = Arc::new(winit::window::Window::new(&event_loop, &window_attributes).unwrap());
+//let window: Arc<winit::window::Window> = window_event_loop.create_window(winit::window::Window::default_attributes()).unwrap().into();
+let window: Arc<winit::window::Window> = Arc::new(window_event_loop.create_window(window_attributes).unwrap());
+
+    // let window = Arc::new(WindowBuilder::new()
+    //     //.with_title(window_title)
+    //     //.with_inner_size(window_size)
+    //     //.with_min_inner_size(window_min_size)
+    //     .with_window_icon(window_icon.clone())
+    //     .with_visible(false) // Temporarily hide window (this is a hack to make taskbar icon loaded correctly)
+    //     .build(&window_event_loop)
+    //     .context("Failed to initialize window").unwrap());
 
     // Possibly set window to fullscreen
     let window_fullscreen_mode = match window_fullscreen {

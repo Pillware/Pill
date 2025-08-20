@@ -1,13 +1,5 @@
 use std::sync::Arc;
-
-use egui::epaint::Shadow;
-use egui::{Context, Visuals};
-use egui_wgpu::ScreenDescriptor;
-use egui_wgpu::Renderer;
-
-use egui_winit::State;
 use pill_core::Timer;
-use wgpu::{CommandEncoder, Device, Queue, TextureFormat, TextureView};
 use winit::event::WindowEvent;
 use winit::window::Window;
 use anyhow::{Error, Result};
@@ -15,18 +7,18 @@ use anyhow::{Error, Result};
 const BORDER_RADIUS: f32 = 2.0;
 
 pub struct EguiDrawer {
-    pub context: Context,
-    state: State,
-    renderer: Renderer,
+    pub context: egui::Context,
+    state: egui_winit::State,
+    renderer: egui_wgpu::Renderer,
     pub window_scale_factor: f32,
     pub window: Arc<winit::window::Window>,
 }
 
 impl EguiDrawer {
     pub fn new(
-        device: &Device,
-        output_color_format: TextureFormat,
-        output_depth_format: Option<TextureFormat>,
+        device: &wgpu::Device,
+        output_color_format: wgpu::TextureFormat,
+        output_depth_format: Option<wgpu::TextureFormat>,
         msaa_samples: u32,
         window: Arc<winit::window::Window>,
     ) -> EguiDrawer {
@@ -35,7 +27,7 @@ impl EguiDrawer {
         let id = context.viewport_id();
 
         let visuals = egui::Visuals {
-            window_rounding: egui::Rounding::same(BORDER_RADIUS),
+            window_corner_radius: egui::CornerRadius::from(BORDER_RADIUS),
             window_shadow: egui::Shadow::NONE,
             ..Default::default()
         };
@@ -46,6 +38,7 @@ impl EguiDrawer {
             id, 
             &window, 
             None, 
+            None,
             None
         );
 
@@ -54,6 +47,7 @@ impl EguiDrawer {
             output_color_format,
             output_depth_format,
             msaa_samples,
+            false
         );
 
         EguiDrawer {
@@ -71,18 +65,23 @@ impl EguiDrawer {
 
     pub fn record_draw_commands(
         &mut self,
-        device: &Device,
-        queue: &Queue,
-        encoder: &mut CommandEncoder,
-        window_surface_view: &TextureView,
-        screen_descriptor: ScreenDescriptor,
-        run_ui: impl FnOnce(&Context),
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        window_surface_view: &wgpu::TextureView,
+        screen_descriptor: egui_wgpu::ScreenDescriptor,
+        // run_ui: impl FnOnce(&egui::Context),
+        mut run_ui: Box<dyn FnMut(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()> {
         timer.record("Prepare window and input");
 
         let window = &self.window;
         let raw_input = self.state.take_egui_input(&window);
+
+        // let full_output = self.context.run(raw_input, |ctx| {
+        //     (&mut run_ui)(ctx);
+        // });
         let full_output = self.context.run(raw_input, |_| {
             run_ui(&self.context);
         });
@@ -95,7 +94,7 @@ impl EguiDrawer {
 
         let tris = self.context.tessellate(full_output.shapes, full_output.pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
-            self.renderer.update_texture(&device, &queue, *id, &image_delta);
+            self.renderer.update_texture(device, queue, *id, &image_delta);
         }
 
         timer.record("Update buffers and record render pass");
@@ -110,6 +109,7 @@ impl EguiDrawer {
                     load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
+                //depth_slice: None,
             })],
             depth_stencil_attachment: None,
             label: Some("egui main render pass"),
@@ -119,7 +119,9 @@ impl EguiDrawer {
 
         timer.record("Render");
 
-        self.renderer.render(&mut render_pass, &tris, &screen_descriptor);
+        let render_pass: &mut wgpu::RenderPass<'static> = unsafe { std::mem::transmute(&mut render_pass) };
+
+        self.renderer.render(&mut *render_pass, &tris, &screen_descriptor); 
 
         drop(render_pass);
 

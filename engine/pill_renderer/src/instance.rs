@@ -36,17 +36,17 @@ impl Vertex for Instance {
      wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
                     shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu::VertexFormat::Float32x3,
                 }
 
                 // Model matrix (mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot for each vec4)

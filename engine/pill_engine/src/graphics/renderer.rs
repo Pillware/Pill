@@ -78,7 +78,7 @@ pub trait PillRenderer {
         render_queue: &Vec::<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
+        egui_ui:  Box<dyn FnMut(&egui::Context)>,
         timer: &mut Timer
     ) -> Result<()>;
 

@@ -118,13 +118,13 @@ impl RendererPipeline {
             layout: Some(&layout),
             vertex: wgpu::VertexState { 
                 module: &vertex_shader,
-                entry_point: "main",
+                entry_point: Some("main"),
                 buffers: vertex_layouts, // Specifies structure of vertices that will be passed to the vertex shader
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &fragment_shader,
-                entry_point: "main",
+                entry_point: Some("main"),
                 targets: color_target_states,
                 compilation_options: Default::default(),
             }),
@@ -150,7 +150,7 @@ impl RendererPipeline {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-            //cache: None,
+            cache: None,
         };
 
         let render_pipeline = device.create_render_pipeline(&render_pipeline_descriptor);

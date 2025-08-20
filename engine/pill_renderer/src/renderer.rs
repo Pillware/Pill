@@ -220,7 +220,7 @@ impl PillRenderer for Renderer {
         render_queue: &Vec<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
+        egui_ui: Box<dyn FnMut(&egui::Context)>,
         timer: &mut Timer
     ) -> Result<()> {
         self.state.render(
@@ -268,16 +268,22 @@ impl State {
 
         // 1. Create instance and surface
         let (instance, surface) = {
-            let backends = wgpu::util::backend_bits_from_env().unwrap_or_default();
-            let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
-            let gles_minor_version = wgpu::util::gles_minor_version_from_env().unwrap_or_default();
+            let backends = match std::env::var("WGPU_BACKENDS").as_deref() {
+            Ok("VULKAN") => wgpu::Backends::VULKAN,
+            Ok("DX12") => wgpu::Backends::DX12,
+            Ok("METAL") => wgpu::Backends::METAL,
+            Ok("GL") => wgpu::Backends::GL,
+            Ok("BROWSER_WEBGPU") => wgpu::Backends::BROWSER_WEBGPU,
+            _ => wgpu::Backends::all(),
+        };
 
-            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                backends,
-                flags: wgpu::InstanceFlags::from_build_config().with_env(),
-                dx12_shader_compiler,
-                gles_minor_version,
-            });
+        let instance_descriptor = wgpu::InstanceDescriptor {
+            backends,
+            flags: wgpu::InstanceFlags::from_build_config().with_env(),
+            backend_options: wgpu::BackendOptions::default(),
+        };
+
+let instance = wgpu::Instance::new(&instance_descriptor);
             let surface = instance.create_surface(window).expect("create surface");
             (instance, surface)
         };
@@ -308,10 +314,12 @@ impl State {
                 label: None,
                 required_features: features,
                 required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::default(),
             };
 
             adapter
-                .request_device(&device_descriptor, None)
+                .request_device(&device_descriptor)
                 .await
                 .expect("request device")
         };
@@ -416,7 +424,7 @@ impl State {
         render_queue: &Vec<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
+        egui_ui: Box<dyn FnMut(&egui::Context)>,
         timer: &mut Timer
     ) -> Result<()> { 
         timer.record("Get frame");
@@ -464,6 +472,7 @@ impl State {
                     load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
                     store: wgpu::StoreOp::Store,
                 },
+                //depth_slice: None, 
             };
 
             // Create depth attachment

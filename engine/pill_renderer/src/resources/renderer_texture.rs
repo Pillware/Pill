@@ -55,15 +55,33 @@ impl RendererTexture {
         });
 
         // Write data to texture
+        // queue.write_texture(
+        //     wgpu::ImageCopyTexture {
+        //         aspect: wgpu::TextureAspect::All,
+        //         texture: &texture,
+        //         mip_level: 0,
+        //         origin: wgpu::Origin3d::ZERO,
+        //     },
+        //     &rgba,
+        //     wgpu::ImageDataLayout {
+        //         offset: 0,
+        //         bytes_per_row: Some(4 * dimensions.0),
+        //         rows_per_image: Some(dimensions.1),
+        //     },
+        //     size,
+        // );
+
+
+                // Write data to texture
         queue.write_texture(
-            wgpu::ImageCopyTexture {
-                aspect: wgpu::TextureAspect::All,
+            wgpu::TexelCopyTextureInfo {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
             },
             &rgba,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout  {
                 offset: 0,
                 bytes_per_row: Some(4 * dimensions.0),
                 rows_per_image: Some(dimensions.1),

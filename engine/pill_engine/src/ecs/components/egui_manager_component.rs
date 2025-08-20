@@ -21,7 +21,7 @@ impl EguiManagerComponent {
         }
     }
 
-    pub fn get_ui(engine: &mut Engine) -> Box<dyn Fn(&egui::Context)> {
+    pub fn get_ui(engine: &mut Engine) -> Box<dyn FnMut(&egui::Context)> {
 
         let entity_count =  engine.scene_manager.get_active_scene().unwrap().entities.len();
         let system_count = engine.system_manager.update_phases.iter().map(|(_, systems)| systems.len()).sum::<usize>();
