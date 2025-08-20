@@ -4,8 +4,9 @@ pub mod renderer;
 pub mod resources;
 pub mod renderer_resource_storage;
 pub mod instance;
-pub mod egui;
-pub mod mesh_drawer;
+pub mod egui_drawer;
+pub mod mesh_renderer;
+//pub mod profiler;
 
 // --- Use ---
 

@@ -1,8 +1,9 @@
+use core::time;
 use std::{num::NonZeroU32, ops::Range};
 
 use pill_core::{RendererError, Timer};
 use pill_engine::{ internal::{ RenderQueueItem, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, TransformComponent, RENDER_QUEUE_KEY_ORDER}, ComponentStorage};
-use crate::{resources::RendererCamera, Instance, RendererResourceStorage,INITIAL_INSTANCE_VECTOR_CAPACITY};
+use crate::{ resources::RendererCamera, Instance, RendererResourceStorage, INITIAL_INSTANCE_VECTOR_CAPACITY};
 
 use anyhow::{Error, Result};
 
@@ -14,7 +15,6 @@ pub struct MeshDrawer {
 
 impl MeshDrawer {
     pub fn new(device: &wgpu::Device, max_instance_batch_size: u32) -> Self {
-
         // Create instance buffer
         let buffer_size = (size_of::<Instance>() * max_instance_batch_size as usize) as u64;
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -35,7 +35,7 @@ impl MeshDrawer {
         &mut self, 
         // Resources
         queue: &wgpu::Queue, 
-        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
         renderer_resource_storage: &RendererResourceStorage, 
         color_attachment: wgpu::RenderPassColorAttachment, 
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
@@ -43,21 +43,43 @@ impl MeshDrawer {
         camera: &RendererCamera,
         render_queue: &Vec::<RenderQueueItem>, 
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        timer: &mut Timer
+        timer: &mut Timer,
+       // profiler: &mut Profiler,
     ) -> Result<()> { 
         timer.record("Prepare render pass");
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("mesh_drawer_encoder"),
+        let mut _instance_batch_number = 0;
+        let mut _rendering_context_change_number = 0;
+
+        //let _timestamp_query_start = profiler.write_timestamp(encoder, "xx");
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("main pass"),
+            color_attachments: &[Some(color_attachment.clone())],
+            depth_stencil_attachment: Some(depth_stencil_attachment.clone()),
+            timestamp_writes: None,
+            occlusion_query_set: None, // profiler.get_occlusion_query_set(), // immut borrow ends after this stmt
+            //timestamp_writes: None,
+            // occlusion_query_set: profiler.get_occlusion_query_set(), // immut borrow ends after this stmt
+            // timestamp_writes: Some(wgpu::RenderPassTimestampWrites {
+            //     query_set: profiler.get_timestamp_query_set().unwrap(),
+            //     beginning_of_pass_write_index: Some(0),
+            //     end_of_pass_write_index: Some(1),
+            // }),
         });
 
-        let mut instance_batch_number = 0;
-        let mut rendering_context_change_number = 0;
-        
+       // let _pipeline_statistics_query_start = profiler.begin_pipeline_statistics_query(&mut render_pass);
+        //let _occlusion_query_start = profiler.begin_occlusion_query(&mut render_pass);
+
+        let mut current_rendering_order: u8 = 0;
+        let mut current_pipeline_handle: Option<RendererPipelineHandle> = None;
+        let mut current_material_handle: Option<RendererMaterialHandle> = None;
+        let mut current_mesh_handle: Option<RendererMeshHandle> = None;
+        let mut current_mesh_index_count: u32 = 0; // Number of indices in the current mesh
         for (i, instance_batch) in render_queue.chunks(self.max_instance_batch_size as usize).enumerate() {
 
             let batch_size = instance_batch.len();
-            instance_batch_number += 1;
+            _instance_batch_number += 1;
 
             timer.begin_context(&format!("Prepare draw instance batch {}", i));
             
@@ -78,39 +100,7 @@ impl MeshDrawer {
                 self.instances.push(Instance::new(transform_component));
             }
 
-
-
             queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
-
-
-              let mut current_rendering_order: u8 = 0;
-        let mut current_pipeline_handle: Option<RendererPipelineHandle> = None;
-        let mut current_material_handle: Option<RendererMaterialHandle> = None;
-        let mut current_mesh_handle: Option<RendererMeshHandle> = None;
-        let mut current_mesh_index_count: u32 = 0; // Number of indices in the current mesh
-
-
-            // Start encoding render pass
-            let load_op = if i == 0 {
-    wgpu::LoadOp::Clear(wgpu::Color::BLACK)
-} else {
-    wgpu::LoadOp::Load
-};
-
-let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-    label: Some("render_pass"),
-    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-        ops: wgpu::Operations {
-            load: load_op,
-            store: wgpu::StoreOp::Store,
-        },
-        ..color_attachment.clone()
-    })],
-    depth_stencil_attachment: Some(depth_stencil_attachment.clone()),
-    timestamp_writes: None,
-    occlusion_query_set: None,
-});
-
 
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
             
@@ -137,7 +127,7 @@ let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 
                     // Set new order
                     current_rendering_order = render_queue_key_fields.order;
-                    rendering_context_change_number += 1;
+                    _rendering_context_change_number += 1;
                 }
 
                 // Check material
@@ -162,7 +152,7 @@ let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     render_pass.set_bind_group(1, &material.parameter_bind_group, &[]);
                     render_pass.set_bind_group(2, &camera.bind_group, &[]);
 
-                    rendering_context_change_number += 1;
+                    _rendering_context_change_number += 1;
                 }
 
                 // Check mesh
@@ -179,7 +169,7 @@ let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
                     render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
 
-                    rendering_context_change_number += 1;
+                    _rendering_context_change_number += 1;
                 }
 
                 // Add new instance
@@ -194,7 +184,16 @@ let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 
             timer.end_context()?; // End "Draw instance batch" context
         }
-queue.submit(std::iter::once(encoder.finish()));
+        
+        // Drop render_pass before finishing encoder
+        //let _occlusion_query_end = profiler.end_occlusion_query(&mut render_pass);
+        //let _pipeline_statistics_query_end = profiler.end_pipeline_statistics_query(&mut render_pass);
+        
+        drop(render_pass);
+
+       // let _timestamp_query_end = profiler.write_timestamp(encoder, "xx12");
+
+        //queue.submit(std::iter::once(encoder.finish()));
         Ok(())
     }
 }

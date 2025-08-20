@@ -3,7 +3,7 @@
 // https://github.com/emilk/egui/discussions/3067
 
 use crate::{
-    instance::Instance, mesh_drawer::MeshDrawer, renderer_resource_storage::RendererResourceStorage, resources::{
+    instance::Instance, mesh_renderer::MeshDrawer,  renderer_resource_storage::RendererResourceStorage, resources::{
         RendererCamera,
         RendererMaterial,
         RendererMesh,
@@ -47,10 +47,10 @@ use naga::back::wgsl;
 use anyhow::{Error, Result};
 use log::{ info };
 
-use crate::egui::EguiRenderer;
+use crate::egui_drawer::EguiDrawer;
 
-pub const MAX_INSTANCE_BATCH_SIZE: usize = 10000; // Maximum number of instances that can be drawn in a single draw call
-pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
+pub const MAX_INSTANCE_BATCH_SIZE: usize = 120000; // Maximum number of instances that can be drawn in a single draw call
+pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 120000;
 
 // Default resource handle - Master pipeline
 pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
@@ -106,23 +106,20 @@ impl PillRenderer for Renderer {
             .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in fragment shader: {}", e))?;
 
 
-// Convert GLSL to WGSL
-let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
-let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
+        // Convert GLSL to WGSL
+        let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
+        let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
 
-// Create shader modules with WGSL
-let vertex_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-    label: Some("master_vertex_shader"),
-    source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
-});
+        // Create shader modules with WGSL
+        let vertex_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("master_vertex_shader"),
+            source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+        });
 
-let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-    label: Some("master_fragment_shader"),
-    source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
-});
-
-
-
+        let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("master_fragment_shader"),
+            source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+        });
 
 
         // Create master pipeline
@@ -237,7 +234,7 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
     }
     
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
-        self.state.egui_renderer.handle_input(event);
+        self.state.egui_drawer.handle_input(event);
         Ok(())
     }
 
@@ -255,97 +252,128 @@ pub struct State {
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
+    // Drawers
     mesh_drawer: MeshDrawer,
+    egui_drawer: EguiDrawer,
     // Other
     config: config::Config,
-    egui_renderer: crate::egui::EguiRenderer,
+    //profiler: Profiler,
 }
-
 
 impl State {
     // Creating some of the wgpu types requires async code
     async fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self {
         let window_size = window.inner_size();
-
         let window_ref = window.clone();
 
-        let backends = wgpu::util::backend_bits_from_env().unwrap_or_default();
-        let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
-        let gles_minor_version = wgpu::util::gles_minor_version_from_env().unwrap_or_default();
+        // 1. Create instance and surface
+        let (instance, surface) = {
+            let backends = wgpu::util::backend_bits_from_env().unwrap_or_default();
+            let dx12_shader_compiler = wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default();
+            let gles_minor_version = wgpu::util::gles_minor_version_from_env().unwrap_or_default();
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends,
-            flags: wgpu::InstanceFlags::from_build_config().with_env(),
-            dx12_shader_compiler,
-            gles_minor_version,
-        });
-        let surface = instance.create_surface(window).unwrap();
-        
-        // Specify adapter options (Options passed here are not guaranteed to work for all devices)
-        let request_adapter_options = wgpu::RequestAdapterOptions { 
-            power_preference: wgpu::PowerPreference::default(),
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends,
+                flags: wgpu::InstanceFlags::from_build_config().with_env(),
+                dx12_shader_compiler,
+                gles_minor_version,
+            });
+            let surface = instance.create_surface(window).expect("create surface");
+            (instance, surface)
         };
 
-        // Create adapter
-        let adapter = instance.request_adapter(&request_adapter_options).await.unwrap();
-        let adapter_info = adapter.get_info();
-        info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
-        
-        let features = wgpu::Features::DEPTH_CLIP_CONTROL;
-
-        // Create device descriptor
-        let device_descriptor = wgpu::DeviceDescriptor {
-            label: None,
-            required_features: features, // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
-            required_limits: wgpu::Limits::default(), // Allows to specify the limit of certain types of resources that will be used (e.g. max samplers, uniform buffers, etc)
-            //memory_hints: wgpu::MemoryHints::MemoryUsage, 
+        // 2. Adapter
+        let adapter = {
+            let request_adapter_options = wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            };
+            instance
+                .request_adapter(&request_adapter_options)
+                .await
+                .expect("request adapter")
         };
 
-        // Create device and queue
-        let (device, queue) = adapter.request_device(&device_descriptor,None).await.unwrap();
+        let info = adapter.get_info();
+        info!("Using GPU: {} ({:?})", info.name, info.backend);
 
-        // Specify surface configuration
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
-        let surface_configuration = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Defines how the swap_chain's underlying textures will be used
-            format: format, // Defines how the swap_chain's textures will be stored on the gpu
-            width: window_size.width,
-            height: window_size.height,
-            desired_maximum_frame_latency: 2,
-            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![format],
+        // 3. Device and queue
+        let (device, queue) = {
+            let features = wgpu::Features::DEPTH_CLIP_CONTROL
+                | wgpu::Features::TIMESTAMP_QUERY
+                | wgpu::Features::PIPELINE_STATISTICS_QUERY;
+
+            let device_descriptor = wgpu::DeviceDescriptor {
+                label: None,
+                required_features: features,
+                required_limits: wgpu::Limits::default(),
+            };
+
+            adapter
+                .request_device(&device_descriptor, None)
+                .await
+                .expect("request device")
         };
 
-        // Configure surface
-        surface.configure(&device, &surface_configuration);
+        // 4. Surface configuration
+        let (surface_configuration, color_format, depth_format) = {
+            let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+            let surface_configuration = wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format,
+                width: window_size.width,
+                height: window_size.height,
+                desired_maximum_frame_latency: 2,
+                present_mode: wgpu::PresentMode::Mailbox,
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                view_formats: vec![format],
+            };
+            surface.configure(&device, &surface_configuration);
+            let color_format = surface_configuration.format;
+            let depth_format = wgpu::TextureFormat::Depth32Float;
+            (surface_configuration, color_format, depth_format)
+        };
 
-        // Configure collections
-        let renderer_resource_storage = RendererResourceStorage::new(&config);
+        // 5. Renderer resources
+        let (renderer_resource_storage, depth_texture) = {
+            let renderer_resource_storage = RendererResourceStorage::new(&config);
+            let depth_texture = RendererTexture::new_depth_texture(
+                &device,
+                &surface_configuration,
+                "depth_texture",
+            )
+            .expect("create depth texture");
+            (renderer_resource_storage, depth_texture)
+        };
 
-        // Create depth and color texture
-        let depth_texture = RendererTexture::new_depth_texture(
-            &device, 
-            &surface_configuration, 
-            "depth_texture"
-        ).unwrap();
+        // 6. Drawers
+        let (mesh_drawer, egui_drawer) = {
+            let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_BATCH_SIZE as u32);
+            let egui_drawer = EguiDrawer::new(
+                &device,
+                surface_configuration.format,
+                None,
+                1,
+                window_ref,
+            );
+            (mesh_drawer, egui_drawer)
+        };
 
-        let color_format = surface_configuration.format;
-        let depth_format = wgpu::TextureFormat::Depth32Float;
+        // 7. Profiler
+        // let profiler = {
+        //     Profiler::new(
+        //         &device,
+        //         &queue,
+        //         &adapter,
+        //         16, // up to 16 timestamp marks per frame
+        //         64, // up to 64 occlusion queries per frame
+        //         64, // up to 64 pipeline statistics queries per frame
+        //         wgpu::PipelineStatisticsTypes::VERTEX_SHADER_INVOCATIONS
+        //             | wgpu::PipelineStatisticsTypes::FRAGMENT_SHADER_INVOCATIONS,
+        //     )
+        // };
 
-        // Create drawing state
-        let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_BATCH_SIZE as u32);
-
-        let egui_renderer = EguiRenderer::new(
-            &device,
-            surface_configuration.format, 
-            None, 
-            1,            
-            window_ref,
-        );
-        
         // Create state
         Self {
             // Resources
@@ -359,10 +387,12 @@ impl State {
             color_format,
             depth_format,
             depth_texture,
+            // Drawers
             mesh_drawer,
+            egui_drawer,
             // Other
             config,
-            egui_renderer
+           // profiler
         }
     }
 
@@ -390,10 +420,10 @@ impl State {
         timer: &mut Timer
     ) -> Result<()> { 
         timer.record("Get frame");
-    
+       // self.profiler.begin_frame();
+  
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
-
         let frame = match frame {
             std::result::Result::Ok(frame) => frame,
             std::result::Result::Err(error) => match error {
@@ -422,8 +452,10 @@ impl State {
             label: Some("render_encoder"),
         });
 
-        { // Additional scope to release mutable borrow of encoder done by begin_render_pass
-            
+ // let _timestamp_query_start = self.profiler.write_timestamp(&mut encoder, "Start Render Pass");
+
+        // Render meshes
+        {
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
                 view: &view, // Specifies what texture to save the colors to
@@ -448,25 +480,60 @@ impl State {
 
             self.mesh_drawer.record_draw_commands(
                 &self.queue, 
-                &self.device,
+                &mut encoder,
                 &self.renderer_resource_storage, 
                 color_attachment, 
                 depth_stencil_attachment, 
                 &renderer_camera,
                 &render_queue, 
                 &transform_component_storage,
-                timer
+                timer,
+                //&mut self.profiler
             )?;
 
             timer.end_context()?;
         }  
 
-        timer.begin_context("Egui Draw");
+        // Render egui UI
+        {
+            timer.begin_context("Egui Draw");
 
-        timer.end_context()?; // End Egui Draw context
+            // Render egui UI
+            self.egui_drawer.record_draw_commands(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &view,
+                egui_wgpu::ScreenDescriptor {
+                    size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
+                    pixels_per_point: self.egui_drawer.window_scale_factor,
+                },
+                egui_ui, 
+                timer
+            )?;
 
+            timer.end_context()?; // End Egui Draw context
+        }
+ // let _timestamp_query_end = self.profiler.write_timestamp(&mut encoder, "End Render Pass");
+
+        // Resolve queries recorded this frame
+        // self.profiler.resolve_timestamp_queries(&self.device, &mut encoder);
+        // self.profiler.resolve_occlusion_queries(&self.device, &mut encoder);
+        // self.profiler.resolve_pipeline_statistics_queries(&self.device, &mut encoder);
+        
         timer.record("Submit commands and present frame");
 
+        // Submit the command buffer to the GPU
+        self.queue.submit(std::iter::once(encoder.finish()));
+
+        timer.record("Read profiling data");
+
+      //  self.profiler.end_frame();
+
+        // Read profiling data
+        //self.profiler.summarize_all_blocking(&self.device);
+
+        // Present the frame
         frame.present();
 
         Ok(())

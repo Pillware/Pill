@@ -61,13 +61,6 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     {
         // Update transform matrices if required
 
-        // let update_transform_matrices_start_time = Instant::now();
-        if transform_component.matrix_update_required {
-            update_transform_matrices(transform_component);
-            transform_component.matrix_update_required = false;
-        }
-        // matrix_calculation_duration += update_transform_matrices_start_time.elapsed().as_secs_f32() * 1000.0;
-
         // Add valid mesh rendering components to render queue
         let add_to_render_queue_start_time = Instant::now();
         if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {

@@ -25,7 +25,7 @@ log = "0.4"
 # Other
 winit = "0.29"
 cgmath = "0.18"
-wgpu = { version = "0.20.1", features = [ "spirv" ] }
+wgpu = { version = "26.0.1", features = [ "spirv" ] }
 futures = "0.3"
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }

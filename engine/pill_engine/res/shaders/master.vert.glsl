@@ -8,13 +8,9 @@ layout(location=3) in vec3 vertex_tangent;
 layout(location=4) in vec3 vertex_bitangent;
 
 // Input model data (instance data)
-layout(location=5) in vec4 model_matrix_0;
-layout(location=6) in vec4 model_matrix_1;
-layout(location=7) in vec4 model_matrix_2;
-layout(location=8) in vec4 model_matrix_3;
-layout(location=9) in vec3 normal_matrix_0;
-layout(location=10) in vec3 normal_matrix_1;
-layout(location=11) in vec3 normal_matrix_2;
+layout(location=5) in vec3 transform_position;
+layout(location=6) in vec3 transform_rotation;
+layout(location=7) in vec3 transform_scale;
 
 // Input camera data
 layout(set=2, binding=0) uniform camera {
@@ -29,19 +25,96 @@ layout(location=2) out vec3 out_TBN_tangent;
 layout(location=3) out vec3 out_TBN_bitangent;
 layout(location=4) out vec3 out_TBN_normal;
 
-void main() {
-     mat4 model_matrix = mat4(
-        model_matrix_0,
-        model_matrix_1,
-        model_matrix_2,
-        model_matrix_3
+mat3 inverse_mat3(mat3 m) {
+    float a00 = m[0][0], a01 = m[0][1], a02 = m[0][2];
+    float a10 = m[1][0], a11 = m[1][1], a12 = m[1][2];
+    float a20 = m[2][0], a21 = m[2][1], a22 = m[2][2];
+
+    float det = a00 * (a11 * a22 - a12 * a21)
+              - a01 * (a10 * a22 - a12 * a20)
+              + a02 * (a10 * a21 - a11 * a20);
+
+    if (abs(det) < 1e-6) {
+        return mat3(1.0); // fallback to identity if non-invertible
+    }
+
+    float invDet = 1.0 / det;
+
+    mat3 inv;
+    inv[0][0] =  (a11 * a22 - a12 * a21) * invDet;
+    inv[0][1] = -(a01 * a22 - a02 * a21) * invDet;
+    inv[0][2] =  (a01 * a12 - a02 * a11) * invDet;
+
+    inv[1][0] = -(a10 * a22 - a12 * a20) * invDet;
+    inv[1][1] =  (a00 * a22 - a02 * a20) * invDet;
+    inv[1][2] = -(a00 * a12 - a02 * a10) * invDet;
+
+    inv[2][0] =  (a10 * a21 - a11 * a20) * invDet;
+    inv[2][1] = -(a00 * a21 - a01 * a20) * invDet;
+    inv[2][2] =  (a00 * a11 - a01 * a10) * invDet;
+
+    return inv;
+}
+
+mat4 compute_model_matrix(vec3 position, vec3 rotation, vec3 scale) {
+    // --- Scale matrix ---
+    mat4 scale_matrix = mat4(
+        vec4(scale.x, 0.0,     0.0,     0.0),
+        vec4(0.0,     scale.y, 0.0,     0.0),
+        vec4(0.0,     0.0,     scale.z, 0.0),
+        vec4(0.0,     0.0,     0.0,     1.0)
     );
 
-    mat3 normal_matrix = mat3(
-        normal_matrix_0,
-        normal_matrix_1,
-        normal_matrix_2
+    // --- Rotation matrices ---
+    float cx = cos(rotation.x), sx = sin(rotation.x);
+    float cy = cos(rotation.y), sy = sin(rotation.y);
+    float cz = cos(rotation.z), sz = sin(rotation.z);
+
+    mat4 rot_x = mat4(
+        vec4(1, 0,  0, 0),
+        vec4(0, cx, -sx, 0),
+        vec4(0, sx, cx, 0),
+        vec4(0, 0,  0, 1)
     );
+
+    mat4 rot_y = mat4(
+        vec4(cy, 0, sy, 0),
+        vec4(0,  1, 0,  0),
+        vec4(-sy,0, cy, 0),
+        vec4(0,  0, 0,  1)
+    );
+
+    mat4 rot_z = mat4(
+        vec4(cz, -sz, 0, 0),
+        vec4(sz, cz,  0, 0),
+        vec4(0,  0,   1, 0),
+        vec4(0,  0,   0, 1)
+    );
+
+    // Final rotation matrix: Rz * Ry * Rx (YXZ order is common too)
+    mat4 rotation_matrix = rot_z * rot_y * rot_x;
+
+    // --- Translation matrix ---
+    mat4 translation_matrix = mat4(
+        vec4(1, 0, 0, 0),
+        vec4(0, 1, 0, 0),
+        vec4(0, 0, 1, 0),
+        vec4(position, 1.0)
+    );
+
+    // Final model matrix
+    return translation_matrix * rotation_matrix * scale_matrix;
+}
+
+void main() {
+    mat4 model_matrix = compute_model_matrix(transform_position, transform_rotation, transform_scale);
+   
+    // Extract 3x3 upper-left portion of model matrix
+    mat3 model3x3 = mat3(model_matrix);
+
+    // Compute inverse transpose for normal matrix
+    mat3 normal_matrix = transpose(inverse_mat3(model3x3));
+    
 
     // Create tangent matrix
     vec3 tangent = normalize(normal_matrix * vertex_tangent);

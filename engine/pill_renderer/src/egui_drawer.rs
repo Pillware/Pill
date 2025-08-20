@@ -12,7 +12,9 @@ use winit::event::WindowEvent;
 use winit::window::Window;
 use anyhow::{Error, Result};
 
-pub struct EguiRenderer {
+const BORDER_RADIUS: f32 = 2.0;
+
+pub struct EguiDrawer {
     pub context: Context,
     state: State,
     renderer: Renderer,
@@ -20,39 +22,44 @@ pub struct EguiRenderer {
     pub window: Arc<winit::window::Window>,
 }
 
-impl EguiRenderer {
+impl EguiDrawer {
     pub fn new(
         device: &Device,
         output_color_format: TextureFormat,
         output_depth_format: Option<TextureFormat>,
         msaa_samples: u32,
         window: Arc<winit::window::Window>,
-    ) -> EguiRenderer {
+    ) -> EguiDrawer {
         let window_scale_factor = window.scale_factor() as f32;
-        let egui_context = egui::Context::default();
-        let id = egui_context.viewport_id();
-        const BORDER_RADIUS: f32 = 2.0;
-        
+        let context = egui::Context::default();
+        let id = context.viewport_id();
+
         let visuals = egui::Visuals {
             window_rounding: egui::Rounding::same(BORDER_RADIUS),
             window_shadow: egui::Shadow::NONE,
             ..Default::default()
         };
-        egui_context.set_visuals(visuals);
+        context.set_visuals(visuals);
 
-        let egui_state = egui_winit::State::new(egui_context.clone(), id, &window, None, None);
+        let state = egui_winit::State::new(
+            context.clone(), 
+            id, 
+            &window, 
+            None, 
+            None
+        );
 
-        let egui_renderer = egui_wgpu::Renderer::new(
+        let renderer = egui_wgpu::Renderer::new(
             device,
             output_color_format,
             output_depth_format,
             msaa_samples,
         );
 
-        EguiRenderer {
-            context: egui_context,
-            state: egui_state,
-            renderer: egui_renderer,
+        EguiDrawer {
+            context,
+            state,
+            renderer,
             window_scale_factor,
             window
         }
@@ -62,7 +69,7 @@ impl EguiRenderer {
         let _ = self.state.on_window_event(&self.window, event);
     }
 
-    pub fn draw(
+    pub fn record_draw_commands(
         &mut self,
         device: &Device,
         queue: &Queue,
@@ -115,8 +122,9 @@ impl EguiRenderer {
         self.renderer.render(&mut render_pass, &tris, &screen_descriptor);
 
         drop(render_pass);
-        for x in &full_output.textures_delta.free {
-            self.renderer.free_texture(x)
+
+        for texture_id in &full_output.textures_delta.free {
+            self.renderer.free_texture(texture_id)
         }
 
         Ok(())
