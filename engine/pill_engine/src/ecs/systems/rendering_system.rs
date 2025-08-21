@@ -6,12 +6,11 @@ use crate::{
     resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 
-use pill_core::{ EngineError, PillSlotMapKey, PillStyle, RendererError, Timer };
+use pill_core::{ warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer };
 
 use std::{ ops::Range, time::Instant };
 use anyhow::{ Result, Context, Error };
 use boolinator::Boolinator;
-use log::{ debug };
 
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let mut timer = Timer::new();
@@ -40,7 +39,6 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
     }
 
-
     let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera))?.clone();
 
     // - Prepare rendering data
@@ -52,7 +50,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     timer.record("Prepare render queue");
 
-    let mut matrix_calculation_duration: f32 = 0.0;
+    let mut _matrix_calculation_duration: f32 = 0.0;
     let mut add_to_render_queue_duration: f32 = 0.0;
 
     // Iterate mesh rendering components
@@ -70,13 +68,13 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             };
             engine.render_queue.push(render_queue_item);
         } else {
-            debug!("Invalid render queue key");
+            warn!(LogContext::Rendering => "Invalid render queue key");
             continue;
         }
         add_to_render_queue_duration += add_to_render_queue_start_time.elapsed().as_secs_f32() * 1000.0;
     }
 
-    timer.record(&format!("Matrix calculation {} ms", matrix_calculation_duration));
+    timer.record(&format!("Matrix calculation {} ms", _matrix_calculation_duration));
     timer.record(&format!("Add to render queue {} ms", add_to_render_queue_duration));
 
     timer.record("Sort render queue");
@@ -91,9 +89,9 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let active_scene = engine.scene_manager.get_active_scene_mut()?;
     // Get storages
     let camera_component_storage = active_scene.get_component_storage::<CameraComponent>()
-        .context(format!("{}: Cannot get active {}", "rendering_system".sobj_style(), "Camera".gobj_style()))?;
+        .context(format!("{}: Cannot get active {}", "rendering_system".specific_object_style(), "Camera".general_object_style()))?;
     let transform_component_storage = active_scene.get_component_storage::<TransformComponent>()
-        .context(format!("{}: Cannot get {}", "rendering_system".sobj_style(), "TransformComponents".sobj_style())).unwrap();
+        .context(format!("{}: Cannot get {}", "rendering_system".specific_object_style(), "TransformComponents".specific_object_style())).unwrap();
 
     timer.begin_context("Render");
 

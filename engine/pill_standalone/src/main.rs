@@ -1,7 +1,7 @@
 mod file_watcher;
 use crate::file_watcher::FileWatcher;
 use config::Config;
-use pill_core::{ PillStyle, EngineError };
+use pill_core::{ info, set_log_levels, warn, EngineError, LogContext, PillStyle };
 use pill_engine::internal::*;
 use pill_renderer;
 use anyhow::{ Context, Ok, Result };
@@ -13,13 +13,13 @@ use winit::{
 #[cfg(target_os = "windows")]
 use winit::platform::windows::IconExtWindows;
 use std::{
-    fs::{remove_file, rename}, io::{ Write }, path::{Path, PathBuf}, sync::Arc, time::{Duration, Instant}
+    fs::{remove_file, rename}, path::{Path, PathBuf}, sync::Arc, time::{Duration, Instant}
 };
-use log::{ info, warn };
 use libloading::{Library, Symbol};
 use std::ffi::c_void;
 
 const RELOAD_COOLDOWN: Duration = Duration::from_millis(1000);
+
 struct WindowData {
     window: Arc<winit::window::Window>,
     size: winit::dpi::PhysicalSize<u32>,
@@ -60,35 +60,46 @@ fn dylib(name: &str) -> String {
     format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
 }
 
-fn set_log_level(config: &Config) {
-    // Configure logging
-    let log_level = config.get_str("LOG_LEVEL").unwrap_or("Info".to_string());
-    let log_level = match log_level.as_str() {
-        "Info" => log::LevelFilter::Info,
-        "Warning" => log::LevelFilter::Warn,
-        "Debug" => log::LevelFilter::Debug,
-        "Error" => log::LevelFilter::Error,
-        "Off" => log::LevelFilter::Off,
-        _ => log::LevelFilter::Info,
+fn configure_logging(config: &Config) {
+    let (log_level, using_default_log_levels) = match config.get_str("LOG_LEVELS") {
+        std::result::Result::Ok(val) => (val, false),
+        Err(_) => { info!("xzxxx"); (pill_core::get_default_log_levels(), true) },
     };
 
-    #[cfg(debug_assertions)]
-    env_logger::Builder::new()
-        .format(|buf, record| {
-            writeln!(buf, "[{}] {} {}:{}: {}",
-                record.level(),
-                chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                record.args()
-            )
-        })
-        .filter_module("pill_core", log_level)
-        .filter_module("pill_standalone", log_level)
-        .filter_module("pill_engine", log_level)
-        .filter_module("pill_renderer", log_level)
-	    .filter_module("pill_game",       log_level)
-        .init();
+    set_log_levels(&log_level, false);
+
+    if using_default_log_levels {
+        warn!("Using default log levels: {}", log_level);
+    }
+
+    // // Configure logging
+    // let log_level = config.get_str("LOG_LEVEL").unwrap_or("Info".to_string());
+    // let log_level = match log_level.as_str() {
+    //     "Info" => log::LevelFilter::Info,
+    //     "Warning" => log::LevelFilter::Warn,
+    //     "Debug" => log::LevelFilter::Debug,
+    //     "Error" => log::LevelFilter::Error,
+    //     "Off" => log::LevelFilter::Off,
+    //     _ => log::LevelFilter::Info,
+    // };
+
+    // #[cfg(debug_assertions)]
+    // env_logger::Builder::new()
+    //     .format(|buf, record| {
+    //         writeln!(buf, "[{}] {} {}:{}: {}",
+    //             record.level(),
+    //             chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
+    //             record.file().unwrap_or("unknown"),
+    //             record.line().unwrap_or(0),
+    //             record.args()
+    //         )
+    //     })
+    //     .filter_module("pill_core", log_level)
+    //     .filter_module("pill_standalone", log_level)
+    //     .filter_module("pill_engine", log_level)
+    //     .filter_module("pill_renderer", log_level)
+	//     .filter_module("pill_game",       log_level)
+    //     .init();
 }
 
 pub fn load_window_icon(path: &Path) -> Option<Icon> {
@@ -121,33 +132,22 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
 
     // Init window
     let window_event_loop = winit::event_loop::EventLoop::new().unwrap();
-
+   
     // Initialize other window parameters
     let window_size = winit::dpi::PhysicalSize::<u32>::new(window_width, window_height);
     let window_min_size = winit::dpi::PhysicalSize::<u32>::new(100, 100);
 
-    let window_attributes = winit::window::WindowAttributes::default(); // {.with_title(window_title).with_min_inner_size(window_min_size).with_window_icon(window_icon).with_visible(false);
+    let window_attributes = winit::window::WindowAttributes::default()
+        .with_title(window_title)
+        .with_min_inner_size(window_min_size)
+        .with_window_icon(window_icon)
+        .with_visible(false);
 
-
-    //     title: window_title,
-    //     min_inner_size: Some(winit::dpi::Size::Physical(window_size)),
-    //     window_icon: window_icon,
-    //     visible: false, // temporarily hidden
-    //     ..Default::default()
-    // };
-
-    //let window = Arc::new(winit::window::Window::new(&event_loop, &window_attributes).unwrap());
-//let window: Arc<winit::window::Window> = window_event_loop.create_window(winit::window::Window::default_attributes()).unwrap().into();
-let window: Arc<winit::window::Window> = Arc::new(window_event_loop.create_window(window_attributes).unwrap());
-
-    // let window = Arc::new(WindowBuilder::new()
-    //     //.with_title(window_title)
-    //     //.with_inner_size(window_size)
-    //     //.with_min_inner_size(window_min_size)
-    //     .with_window_icon(window_icon.clone())
-    //     .with_visible(false) // Temporarily hide window (this is a hack to make taskbar icon loaded correctly)
-    //     .build(&window_event_loop)
-    //     .context("Failed to initialize window").unwrap());
+    let window: Arc<winit::window::Window> = Arc::new(
+        window_event_loop.create_window(window_attributes)
+            .context("Failed to create window")
+            .unwrap()
+        );
 
     // Possibly set window to fullscreen
     let window_fullscreen_mode = match window_fullscreen {
@@ -195,10 +195,7 @@ fn build_standalone_and_game_crates(project_paths: &ProjectPaths) -> Result<()> 
         .context("failed to invoke PillLauncher via `cargo run`")?;
 
     if !output.status.success() {
-        warn!(
-            "rebuild failed:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        warn!(LogContext::HotReload => "Rebuilding game project failed:\n{}", String::from_utf8_lossy(&output.stderr));
     }
 
     Ok(())
@@ -223,19 +220,19 @@ fn check_and_reload_game(
 
     // Check for game project source files changes
     if let Some(paths) = file_watchers.game_project_source_files_watcher.get_changes() {
-        info!("Game project source file change detected: {:?}", paths);
+        info!(LogContext::HotReload => "Game project source file change detected: {:?}", paths);
         build_standalone_and_game_crates(project_paths)?;
     }
 
     // Check for game project resource files changes
     if let Some(paths) = file_watchers.game_project_resources_files_watcher.get_changes() {
-        info!("Game project resource file change detected: {:?}", paths);
+        info!(LogContext::HotReload => "Game project resource file change detected: {:?}", paths);
         build_standalone_and_game_crates(project_paths)?;
     }
 
     // Check for game dynamic library changes
     if let Some(_) = file_watchers.game_dynamic_library_files_watcher.get_changes() {
-        info!("Reloading game project...");
+        info!(LogContext::HotReload => "Reloading game project...");
 
         // Shutdown and drop engine
         if let Some(mut engine) = engine.take() {
@@ -395,6 +392,9 @@ fn main_loop(
 }
 
 
+
+
+
 fn main() {
     // In the development build, standalone will look for the resource files in the "res" directory of the game project directory
     // In the release build, "res" directory is copied to /build/release/data/res (TODO: pack all resources use by game into a single data file)
@@ -447,12 +447,12 @@ fn main() {
 
     // Load config
     let mut config = Config::default();
-    config.merge(config::File::with_name(project_paths.config_path.to_str().unwrap())).unwrap();
+    let _ = config.merge(config::File::with_name(project_paths.config_path.to_str().unwrap()));
 
-    // Set log level
-    set_log_level(&config);
-
-    info!("Initializing {}", "Standalone".mobj_style());
+    // Configure logging context and levels
+    configure_logging(&config);
+  
+    info!("Initializing {}", "Standalone".module_object_style());
 
     // Create windows
     let window_data = create_window(&config, project_paths.game_resources_directory_path.clone());

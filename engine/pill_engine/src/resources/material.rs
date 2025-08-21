@@ -1,9 +1,5 @@
 use crate::{
-    engine::Engine,
-    graphics::{ RendererTextureHandle, RendererMaterialHandle, RENDER_QUEUE_KEY_ORDER }, 
-    resources::{ TextureHandle, TextureType, Texture, ResourceStorage, Resource },
-    ecs::{ DeferredUpdateManagerPointer, DeferredUpdateResourceRequest, MeshRenderingComponent, DeferredUpdateComponent },
-    config::*,
+    config::*, ecs::{ DeferredUpdateComponent, DeferredUpdateManagerPointer, DeferredUpdateResourceRequest, MeshRenderingComponent }, engine::Engine, graphics::{ RendererMaterialHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER }, resources::{ Resource, ResourceStorage, Shader, ShaderHandle, Texture, TextureHandle, TextureType }
 };
 
 use pill_core::{ Color, EngineError, PillSlotMapKey, PillTypeMapKey, PillStyle, enum_variant_eq, get_enum_variant_type_name, get_type_name };
@@ -154,6 +150,11 @@ impl MaterialBuilder {
         }
     }
 
+    pub fn shader(mut self, shader_handle: ShaderHandle) -> Result<Self> {
+        self.material.shader_handle = shader_handle;
+        Ok(self)
+    }
+
     pub fn texture(mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<Self> {
         self.material.set_texture(slot_name, texture_handle)?;
         Ok(self)
@@ -195,6 +196,8 @@ pub struct Material {
     #[readonly]
     pub name: String,
     #[readonly]
+    pub shader_handle: ShaderHandle,
+    #[readonly]
     textures: MaterialTextureMap,
     #[readonly]
     parameters: MaterialParameterMap,
@@ -211,21 +214,23 @@ impl Material {
         MaterialBuilder::new(name)
     }
 
+    // Creates default lit material with default shader and textures
     pub fn new(name: &str) -> Self {     
         let mut textures = MaterialTextureMap::new();
-        textures.data.insert(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string(), MaterialTexture::new(TextureType::Color));
-        textures.mapping.push(MASTER_SHADER_COLOR_TEXTURE_SLOT.to_string());
-        textures.data.insert(MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string(), MaterialTexture::new(TextureType::Normal));
-        textures.mapping.push(MASTER_SHADER_NORMAL_TEXTURE_SLOT.to_string());
+        textures.data.insert(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), MaterialTexture::new(TextureType::Color));
+        textures.mapping.push(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string());
+        textures.data.insert(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string(), MaterialTexture::new(TextureType::Normal));
+        textures.mapping.push(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string());
 
         let mut parameters = MaterialParameterMap::new();
-        parameters.data.insert(MASTER_SHADER_TINT_PARAMETER_SLOT.to_string(), MaterialParameter::Color(None));
-        textures.mapping.push(MASTER_SHADER_TINT_PARAMETER_SLOT.to_string());
-        parameters.data.insert(MASTER_SHADER_SPECULARITY_PARAMETER_SLOT.to_string(), MaterialParameter::Scalar(None));
-        textures.mapping.push(MASTER_SHADER_SPECULARITY_PARAMETER_SLOT.to_string());
+        parameters.data.insert(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), MaterialParameter::Color(None));
+        textures.mapping.push(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string());
+        parameters.data.insert(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string(), MaterialParameter::Scalar(None));
+        textures.mapping.push(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string());
         
         Self {
             name: name.to_string(),  
+            shader_handle: get_default_lit_shader_handles().0,
             textures,
             parameters,
             rendering_order: RENDER_QUEUE_KEY_ORDER.max as u8,
@@ -352,7 +357,7 @@ impl Resource for Material {
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+        let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
 
         // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
         let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
@@ -363,7 +368,7 @@ impl Resource for Material {
             if let Some(texture_handle) = texture_slot.1.texture_handle {
                 // Get texture to be set
                 let texture = engine.get_resource::<Texture>(&texture_handle)
-                    .context(error_message.clone()).context(format!("Invalid {} for {} in slot {}", "Handle".sobj_style(), "Texture".sobj_style(), texture_slot.0.name_style()))?;
+                    .context(error_message.clone()).context(format!("Invalid {} for {} in slot {}", "Handle".specific_object_style(), "Texture".specific_object_style(), texture_slot.0.name_style()))?;
 
                 // Check if slots are of same type
                 if !enum_variant_eq(&texture.texture_type,&texture_slot.1.texture_type) {
@@ -379,27 +384,11 @@ impl Resource for Material {
             }
         }
 
-        // Set default parameters if not already set
-        let parameter_values = vec![
-            (MASTER_SHADER_TINT_PARAMETER_SLOT, MaterialParameter::Color(Some(Color::new(1.0, 1.0, 1.0)))),
-            (MASTER_SHADER_SPECULARITY_PARAMETER_SLOT, MaterialParameter::Scalar(Some(0.0)))
-        ];
-        for parameter_value in parameter_values {
-            let parameter = self.parameters.data.get_mut(parameter_value.0);
-            match parameter {
-                Some(v) => {
-                    if pill_core::enum_variant_eq::<MaterialParameter>(&parameter_value.1, v) {
-                        if !v.is_some() {
-                            *v = parameter_value.1;
-                        }
-                    }
-                },
-                None => panic!("Critical: Wrong parameters setup"),
-            }
-        }
+        // Get shader renderer resource handle
+        let shader_renderer_resource_handle = engine.get_resource::<Shader>(&self.shader_handle)?.renderer_resource_handle.unwrap();
 
         // Create new renderer material resource
-        let renderer_resource_handle = engine.renderer.create_material(&self.name, &self.textures, &self.parameters).context(error_message)?;
+        let renderer_resource_handle = engine.renderer.create_material(&self.name, shader_renderer_resource_handle, &self.textures, &self.parameters).context(error_message)?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -438,7 +427,7 @@ impl Resource for Material {
                 if let Some(texture_handle) = texture_slot.texture_handle {
                     // Get texture to be set
                     let texture = engine.get_resource::<Texture>(&texture_handle)
-                        .context(format!("Cannot set {}. Invalid {} for {} in slot {}. ",  "Texture".sobj_style(), "Handle".sobj_style(), "Texture".sobj_style(), texture_slot_name.name_style()))?;
+                        .context(format!("Cannot set {}. Invalid {} for {} in slot {}. ",  "Texture".specific_object_style(), "Handle".specific_object_style(), "Texture".specific_object_style(), texture_slot_name.name_style()))?;
 
                     // Check if slots are of same type
                     if !enum_variant_eq(&texture.texture_type,&texture_slot.texture_type) {
@@ -458,7 +447,7 @@ impl Resource for Material {
             },
             _ => 
             {
-                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().sobj_style());
+                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
             }
         }
 

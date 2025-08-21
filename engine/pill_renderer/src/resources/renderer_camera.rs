@@ -8,6 +8,8 @@ use anyhow::{ Result };
 use wgpu::util::DeviceExt;
 use std::f32::consts::FRAC_PI_2;
 
+use crate::config::{CAMERA_PARAMETERS_BINDING_INDEX, PARAMETERS_BIND_GROUP_LAYOUT_INDEX};
+
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
     1.0, 0.0, 0.0, 0.0,
@@ -82,7 +84,7 @@ pub struct RendererCamera {
 }
 
 impl RendererCamera {
-    pub fn new(device: &wgpu::Device, camera_bind_group_layout: &wgpu::BindGroupLayout) -> Result<Self> {
+    pub fn new(device: &wgpu::Device) -> Result<Self> {
 
         let uniform = CameraUniform::new();
 
@@ -92,10 +94,26 @@ impl RendererCamera {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+
+        // Define camera bind group layout
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("camera_bind_group_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: PARAMETERS_BIND_GROUP_LAYOUT_INDEX as u32, // (set = 0, binding = X)
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
+                    min_binding_size: None,
+                },
+                count: None,
+            }]
+        });
+
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
-                binding: 0,
+                binding: CAMERA_PARAMETERS_BINDING_INDEX as u32, // (set = 0, binding = 1)
                 resource: buffer.as_entire_binding(),
             }],
             label: Some("camera_bind_group"),
@@ -115,3 +133,4 @@ impl RendererCamera {
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 }
+

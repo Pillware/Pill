@@ -2,6 +2,7 @@
 
 mod renderer;
 mod render_queue;
+mod egui;
 
 // --- Use ---
 
@@ -12,8 +13,10 @@ pub use renderer::{
     RendererMaterialHandle,
     RendererMeshHandle,
     RendererTextureHandle,
-    RendererPipelineHandle,
+    RendererShaderHandle,
 };
+
+pub use egui::EguiUI;
 
 pub use render_queue::{
     RenderQueueItem,

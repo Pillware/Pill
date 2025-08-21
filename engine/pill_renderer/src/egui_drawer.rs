@@ -123,7 +123,7 @@ impl EguiDrawer {
 
         self.renderer.render(&mut *render_pass, &tris, &screen_descriptor); 
 
-        drop(render_pass);
+       // let _ = drop(render_pass);
 
         for texture_id in &full_output.textures_delta.free {
             self.renderer.free_texture(texture_id)

@@ -2,8 +2,8 @@ use core::time;
 use std::{num::NonZeroU32, ops::Range};
 
 use pill_core::{RendererError, Timer};
-use pill_engine::{ internal::{ RenderQueueItem, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, TransformComponent, RENDER_QUEUE_KEY_ORDER}, ComponentStorage};
-use crate::{ resources::RendererCamera, Instance, RendererResourceStorage, INITIAL_INSTANCE_VECTOR_CAPACITY};
+use pill_engine::{ internal::{ RenderQueueItem, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, TransformComponent, RENDER_QUEUE_KEY_ORDER}, ComponentStorage};
+use crate::{ config::{INITIAL_INSTANCE_VECTOR_CAPACITY, PARAMETERS_BIND_GROUP_LAYOUT_INDEX, TEXTURES_BIND_GROUP_LAYOUT_INDEX}, resources::{RendererCamera, RendererShader}, Instance, RendererResourceStorage};
 
 use anyhow::{Error, Result};
 
@@ -72,7 +72,7 @@ impl MeshDrawer {
         //let _occlusion_query_start = profiler.begin_occlusion_query(&mut render_pass);
 
         let mut current_rendering_order: u8 = 0;
-        let mut current_pipeline_handle: Option<RendererPipelineHandle> = None;
+        let mut current_shader_handle: Option<RendererShaderHandle> = None;
         let mut current_material_handle: Option<RendererMaterialHandle> = None;
         let mut current_mesh_handle: Option<RendererMeshHandle> = None;
         let mut current_mesh_index_count: u32 = 0; // Number of indices in the current mesh
@@ -114,9 +114,9 @@ impl MeshDrawer {
                 let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
 
                 // Recreate resource handles
+                let renderer_shader_handle = RendererShaderHandle::new(render_queue_key_fields.shader_index.into(), NonZeroU32::new(render_queue_key_fields.shader_version.into()).unwrap());
                 let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
                 let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
-
 
                 // Check rendering order
                 if current_rendering_order > render_queue_key_fields.order {
@@ -128,6 +128,19 @@ impl MeshDrawer {
                     // Set new order
                     current_rendering_order = render_queue_key_fields.order;
                     _rendering_context_change_number += 1;
+                }
+
+                // Check shader
+                if current_shader_handle != Some(renderer_shader_handle) {
+                    // Render accumulated instances
+                    if accumulated_instance_count > 0 {
+                        render_pass.draw_indexed(0..current_mesh_index_count, 0, accumulated_instance_range.clone());
+                        accumulated_instance_range = accumulated_instance_range.end..accumulated_instance_range.end; 
+                    }
+                    // Set new shader (render pipeline)
+                    current_shader_handle = Some(renderer_shader_handle);
+                    let shader: &RendererShader = renderer_resource_storage.shaders.get(current_shader_handle.unwrap()).unwrap();
+                    render_pass.set_pipeline(&shader.render_pipeline);
                 }
 
                 // Check material
@@ -142,15 +155,25 @@ impl MeshDrawer {
                     let material = renderer_resource_storage.materials.get(current_material_handle.unwrap()).unwrap();
                 
                     // Set pipeline if new material is using different one
-                    if current_pipeline_handle != Some(material.pipeline_handle) {
-                        current_pipeline_handle = Some(material.pipeline_handle);
-                        let pipeline = renderer_resource_storage.pipelines.get( current_pipeline_handle.unwrap()).unwrap();
-                        render_pass.set_pipeline(&pipeline.render_pipeline);
+                    // if current_shader_handle != Some(material.shader_handle) {
+                    //     current_shader_handle = Some(material.shader_handle);
+                    //     let shader = renderer_resource_storage.shaders.get(current_shader_handle.unwrap()).unwrap();
+                    //     render_pass.set_pipeline(&shader.render_pipeline);
+                    // }
+
+                    if let Some(ref parameters_bind_group) = material.parameters_bind_group {
+                        render_pass.set_bind_group(PARAMETERS_BIND_GROUP_LAYOUT_INDEX, parameters_bind_group, &[]);
                     }
 
-                    render_pass.set_bind_group(0, &material.texture_bind_group, &[]);
-                    render_pass.set_bind_group(1, &material.parameter_bind_group, &[]);
-                    render_pass.set_bind_group(2, &camera.bind_group, &[]);
+                    if let Some(ref texture_bind_group) = material.texture_bind_group {
+                        render_pass.set_bind_group(TEXTURES_BIND_GROUP_LAYOUT_INDEX, texture_bind_group, &[]);
+                    }
+                    
+                    //render_pass.set_bind_group(2, &camera.bind_group, &[]);
+
+                    // render_pass.set_bind_group(PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &material.texture_bind_group, &[]);
+                    // render_pass.set_bind_group(1, &material.parameter_bind_group, &[]);
+                    // render_pass.set_bind_group(2, &camera.bind_group, &[]);
 
                     _rendering_context_change_number += 1;
                 }

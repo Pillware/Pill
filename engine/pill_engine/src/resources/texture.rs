@@ -1,7 +1,7 @@
 use crate::{
     engine::Engine,
     graphics::{ RendererTextureHandle },
-    resources::{ ResourceStorage, Resource, ResourceLoadType, Material },
+    resources::{ ResourceStorage, Resource, ResourceLoader, Material },
     ecs::{ DeferredUpdateManagerPointer },
     config::*,
 };
@@ -28,14 +28,14 @@ pub struct Texture {
     #[readonly]
     pub name: String,
     #[readonly]
-    pub load_type: ResourceLoadType,
+    pub load_type: ResourceLoader,
     #[readonly]
     pub texture_type: TextureType,
     pub(crate) renderer_resource_handle: Option<RendererTextureHandle>,
 }
 
 impl Texture {
-    pub fn new(name: &str, texture_type: TextureType, resource_load_type: ResourceLoadType) -> Self {
+    pub fn new(name: &str, texture_type: TextureType, resource_load_type: ResourceLoader) -> Self {
         Self {
             name: name.to_string(),
             load_type: resource_load_type,
@@ -57,11 +57,11 @@ impl Resource for Texture {
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+        let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
 
         // Create new renderer texture resource
         let image_data = match &self.load_type {
-            ResourceLoadType::Path(path) => {
+            ResourceLoader::Path(path) => {
                 // Check if path to asset is correct
                 let resource_file_path = engine.game_resources_directory_path.join(path);
                 pill_core::validate_asset_path(&resource_file_path, &["png", "jpg", "gif", "tif"])?;
@@ -69,7 +69,7 @@ impl Resource for Texture {
                 // Load data
                 image::open(&resource_file_path)?
             },
-            ResourceLoadType::Bytes(bytes) => {
+            ResourceLoader::Bytes(bytes) => {
                 // Load data
                 image::load_from_memory(bytes)?
             },

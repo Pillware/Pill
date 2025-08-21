@@ -68,7 +68,7 @@ impl EguiManagerComponent {
                                 "Update Phase: {} {:.4} ms",
                                 update_phase, phase_duration
                             ))
-                            .id_source(&phase_id)
+                            .id_salt(&phase_id)
                             .default_open(is_phase_open)
                             .show(ui, |ui| {
                                 for (system_name, timer) in system_timers {
@@ -100,7 +100,7 @@ impl EguiManagerComponent {
             let response = egui::CollapsingHeader::new(egui::RichText::new(summary)
                 .text_style(egui::TextStyle::Body)
                 .color(ui.visuals().text_color()))
-                .id_source(&id)
+                .id_salt(&id)
                 .default_open(is_open)
                 .show(ui, |ui| {
                     for sub in &record.subrecords {
