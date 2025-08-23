@@ -68,7 +68,6 @@ pub const MAX_SOUNDS: usize = 10;
 
 // Convention: All resource names starting with "pill_engine_" are restricted, cannot be added and removed from game
 pub const DEFAULT_RESOURCE_PREFIX: &str = "pill_engine";
-pub const DEFAULT_LIT_MATERIAL_NAME: &str = "pill_engine_default_lit_material";
 pub const DEFAULT_COLOR_TEXTURE_NAME: &str = "pill_engine_default_color";
 pub const DEFAULT_NORMAL_TEXTURE_NAME: &str = "pill_engine_default_normal";
 
@@ -80,7 +79,14 @@ pub const DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME: &str = "normal";
 pub const DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS: (u32, u32) = (2, 3);
 pub const DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
 pub const DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME: &str = "specularity";
-pub const DEFAULT_LIT_SHADER_PARAMETERS_UNIFORM_BINDING: u32 = 0;
+pub const DEFAULT_LIT_MATERIAL_NAME: &str = "pill_engine_default_lit_material";
+
+pub const DEFAULT_UNLIT_SHADER_NAME: &str = "pill_engine_default_unlit_shader";
+pub const DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_NAME: &str = "color";
+pub const DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS: (u32, u32) = (0, 1);
+pub const DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
+pub const DEFAULT_UNLIT_MATERIAL_NAME: &str = "pill_engine_default_unlit_material";
+
 
 // Render queue key
 pub type RenderQueueKeyType = u64; // Defines size of renderer queue key (Should be u8, u16, u32, or u64)

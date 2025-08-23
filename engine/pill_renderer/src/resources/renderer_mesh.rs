@@ -13,6 +13,7 @@ pub trait Vertex {
 // --- Mesh ---
 
 pub struct RendererMesh {
+    pub name: String,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
@@ -34,6 +35,7 @@ impl RendererMesh {
         });
 
         let renderer_mesh = Self {
+            name: name.to_string(),
             vertex_buffer,
             index_buffer,
             index_count: mesh_data.indices.len() as u32,

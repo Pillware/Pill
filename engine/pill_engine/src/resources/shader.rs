@@ -55,7 +55,7 @@ pub enum ShaderParameterType {
 
 #[derive(Debug, Clone)]
 pub struct ShaderTextureSlot {
-    pub name: String,
+    //pub name: String,
     pub texture_type: TextureType,
 
     // NOTE: Each texture in a shader requires two resources for sampling in GLSL/WGSL:
@@ -65,9 +65,9 @@ pub struct ShaderTextureSlot {
 
 impl ShaderTextureSlot {
     // NOTE: Textures have to have unique sampler bindings (since they are always passed in their own bind group)
-    pub fn new(name: &str, texture_type: TextureType, (texture_binding, sampler_binding): (u32, u32)) -> Self {
+    pub fn new(texture_type: TextureType, (texture_binding, sampler_binding): (u32, u32)) -> Self {
         Self {
-            name: name.to_string(),
+           // name: name.to_string(),
             texture_type,
             texture_binding,
             sampler_binding
@@ -77,15 +77,15 @@ impl ShaderTextureSlot {
 
 #[derive(Debug, Clone)]
 pub struct ShaderParameterSlot {
-    pub name: String,
+    //pub name: String,
     pub parameter_type: ShaderParameterType,
 }
 
 impl ShaderParameterSlot {
     // NOTE: Multiple parameters can share the same uniform binding (they will be passed together in the same bind group)
-    pub fn new(name: &str, parameter_type: ShaderParameterType) -> Self {
+    pub fn new(parameter_type: ShaderParameterType) -> Self {
         Self {
-            name: name.to_string(),
+            //name: name.to_string(),
             parameter_type,
         }
     }

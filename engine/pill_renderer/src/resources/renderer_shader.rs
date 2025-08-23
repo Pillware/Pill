@@ -9,6 +9,7 @@ pub enum ShaderBindGroupLayout {
 }
 
 pub struct RendererShader {
+    pub name: String,
     pub render_pipeline: wgpu::RenderPipeline,
 
     pub parameter_slots: HashMap<String, ShaderParameterSlot>,
@@ -51,18 +52,18 @@ impl RendererShader {
             );
 
             shader_info.push_str("\n - Parameter slots:");
-            for (key, slot) in parameter_slots {
+            for (slot_name, slot) in parameter_slots {
                 shader_info.push_str(&format!(
-                    "\n   - {}: {:?} {:?}",
-                    key, slot.name, slot.parameter_type
+                    "\n   - {}: {:?}",
+                    slot_name, slot.parameter_type
                 ));
             }
 
             shader_info.push_str("\n - Texture slots:");
-            for (key, slot) in texture_slots {
+            for (slot_name, slot) in texture_slots {
                 shader_info.push_str(&format!(
                     "\n   - {}: texture_binding={}, sampler_binding={}",
-                    key, slot.texture_binding, slot.sampler_binding
+                    slot_name, slot.texture_binding, slot.sampler_binding
                 ));
             }
 
@@ -235,6 +236,7 @@ impl RendererShader {
         let render_pipeline = device.create_render_pipeline(&render_pipeline_descriptor);
 
         let pipeline = Self { 
+            name: name.to_string(),
             render_pipeline,
             parameter_slots: parameter_slots.clone(),
             textures_bind_group_layout,

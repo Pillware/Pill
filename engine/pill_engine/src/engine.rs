@@ -113,34 +113,38 @@ impl Engine {
         let default_lit_shader_handle = self.add_default_resource(
             Shader::new(
                 DEFAULT_LIT_SHADER_NAME, 
-                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/master_vertex.glsl"))),
-                ResourceLoader::Bytes( Box::new(*include_bytes!("../res/shaders/master_fragment.glsl"))),
+                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_vertex.glsl"))),
+                ResourceLoader::Bytes( Box::new(*include_bytes!("../res/shaders/default_lit_fragment.glsl"))),
                 vec![
-                    (
-                        DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), 
-                        ShaderParameterSlot::new(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME, ShaderParameterType::Color)
-                    ),
-                    (
-                        DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string(), 
-                        ShaderParameterSlot::new(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME, ShaderParameterType::Scalar)
-                    ),
+                    (DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), ShaderParameterSlot::new(ShaderParameterType::Color)),
+                    (DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string(), ShaderParameterSlot::new(ShaderParameterType::Scalar)),
                 ].into_iter().collect(),
                 vec![
-                    (
-                        DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), 
-                        ShaderTextureSlot::new(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME, TextureType::Color, DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS)
-                    ),
-                    (
-                        DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string(), 
-                        ShaderTextureSlot::new(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME, TextureType::Normal, DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS)
-                    ),
+                    (DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), ShaderTextureSlot::new(TextureType::Color, DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS)),
+                    (DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string(), ShaderTextureSlot::new(TextureType::Normal, DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS)),
                 ].into_iter().collect(),
                 true,
                 true
             )
         )?;
 
-        debug!(LogContext::Engine => "Default lit shader {} created", DEFAULT_LIT_SHADER_NAME.name_style());
+        let default_unlit_shader_handle = self.add_default_resource(
+            Shader::new(
+                DEFAULT_UNLIT_SHADER_NAME, 
+                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_vertex.glsl"))),
+                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_unlit_fragment.glsl"))),
+                vec![
+                    (DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), ShaderParameterSlot::new(ShaderParameterType::Color)),
+                ].into_iter().collect(),
+                vec![
+                    (DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), ShaderTextureSlot::new(TextureType::Color, DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS)),
+                ].into_iter().collect(),
+                true,
+                true
+            )
+        )?;
+
+        debug!(LogContext::Engine => "Default unlit shader {} created", DEFAULT_UNLIT_SHADER_NAME.name_style());
         debug!(LogContext::Engine => "Creating default color texture {}...", DEFAULT_COLOR_TEXTURE_NAME.name_style());
 
         // Create texture data to executable
@@ -178,6 +182,18 @@ impl Engine {
         )?;
 
         debug!(LogContext::Engine => "Default lit material {} created", DEFAULT_LIT_MATERIAL_NAME.name_style());
+        debug!(LogContext::Engine => "Creating default material {}...", DEFAULT_UNLIT_MATERIAL_NAME.name_style());
+
+        // Create default unlit material
+        self.add_default_resource(
+            Material::builder(DEFAULT_UNLIT_MATERIAL_NAME)
+                .shader(default_unlit_shader_handle)?
+                .color_parameter(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME, Color::new(1.0, 1.0, 1.0))?
+                .texture(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME, default_color_texture_handle)?
+                .build()
+        )?;
+
+        debug!(LogContext::Engine => "Default unlit material {} created", DEFAULT_UNLIT_MATERIAL_NAME.name_style());
 
         Ok(())
     }

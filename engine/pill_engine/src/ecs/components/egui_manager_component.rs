@@ -38,8 +38,8 @@ impl EguiManagerComponent {
         let frame_delta_time = engine.frame_delta_time;
 
         let ui = Box::new(move |ui: &egui::Context| {
-            egui::Window::new("PillEngine")
-                .default_open(true)
+            egui::Window::new("Pill Engine")
+                .default_open(false)
                 .resizable(true)
                 .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
                 .show(ui, |ui| {

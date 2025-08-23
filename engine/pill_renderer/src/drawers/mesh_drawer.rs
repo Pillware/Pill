@@ -1,7 +1,7 @@
 use core::time;
 use std::{num::NonZeroU32, ops::Range};
 
-use pill_core::{RendererError, Timer};
+use pill_core::{debug, LogContext, PillStyle, RendererError, Timer};
 use pill_engine::{ internal::{ RenderQueueItem, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, TransformComponent, RENDER_QUEUE_KEY_ORDER}, ComponentStorage};
 use crate::{ 
     config::{
@@ -12,6 +12,139 @@ use crate::{
 };
 
 use anyhow::{Error, Result};
+
+#[derive(Debug, Clone, Default)]
+pub struct DrawingContext {
+    rendering_order: u8,
+    shader_handle: Option<RendererShaderHandle>,
+    shader_name: String,
+    material_handle: Option<RendererMaterialHandle>,
+    material_name: String,
+    mesh_handle: Option<RendererMeshHandle>,
+    mesh_name: String,
+    mesh_index_count: u32, // Number of indices in the current mesh   
+
+    accumulated_instance_range: Range<u32>,
+    accumulated_instance_count: u32,
+
+    rendering_context_change_number: u32,
+
+    instance_batch_number: u32,
+    instance_batch_size: u32,
+}
+
+impl DrawingContext {
+    pub fn log(&self) {
+        debug!(
+            LogContext::Frame =>
+            "Draw {} instance(s) {}->{}/{} command recorded [Batch: {}, Rendering order: {}, Shader: {}, Material: {}, Mesh: {}]",
+            self.accumulated_instance_count, 
+            self.accumulated_instance_range.start, 
+            self.accumulated_instance_range.end - 1, 
+            self.instance_batch_size, 
+            self.instance_batch_number, 
+            self.rendering_order, 
+            self.shader_name.name_style(), 
+            self.material_name.name_style(), 
+            self.mesh_name.name_style()
+        );
+    }
+
+    pub fn record_draw_accumulated_instances(&mut self, render_pass: &mut wgpu::RenderPass) {
+        if self.accumulated_instance_count > 0 {
+            render_pass.draw_indexed(0..self.mesh_index_count, 0, self.accumulated_instance_range.clone());
+            self.log();
+            self.accumulated_instance_range = self.accumulated_instance_range.end..self.accumulated_instance_range.end;
+            self.accumulated_instance_count = 0;
+        }
+    }
+
+    pub fn accumulate_instance(&mut self) {
+        self.accumulated_instance_range = self.accumulated_instance_range.start..self.accumulated_instance_range.end + 1;
+        self.accumulated_instance_count = self.accumulated_instance_range.end - self.accumulated_instance_range.start;
+    }
+
+    pub fn change_rendering_order(&mut self, new_order: u8) {
+        self.rendering_order = new_order;
+        
+        self.rendering_context_change_number += 1;
+        debug!(LogContext::Frame => "Rendering order changed to: {}", self.rendering_order);
+    }
+
+    pub fn change_shader(
+        &mut self, 
+        renderer_resource_storage: &RendererResourceStorage, 
+        shader_handle: RendererShaderHandle,
+        render_pass: &mut wgpu::RenderPass,
+        camera: &RendererCamera,
+    ) {
+
+        self.shader_handle = Some(shader_handle);
+        let shader: &RendererShader = renderer_resource_storage.shaders.get(shader_handle).unwrap();
+        self.shader_name = shader.name.clone();
+
+        debug!(LogContext::Frame => "Changing shader to: {}", self.shader_name.name_style());
+
+        render_pass.set_pipeline(&shader.render_pipeline);
+
+        if shader.pass_engine_parameters {
+            render_pass.set_bind_group(ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &renderer_resource_storage.engine_parameters.bind_group, &[]);
+            debug!(LogContext::Frame => "Engine parameters bound");
+        }   
+
+        if shader.pass_camera_parameters {
+            render_pass.set_bind_group(CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &camera.bind_group, &[]);
+            debug!(LogContext::Frame => "Camera parameters bound");
+        }
+
+        self.rendering_context_change_number += 1;
+        debug!(LogContext::Frame => "Renderer pipeline shader changed to: {}", self.shader_name.name_style());
+    }
+
+    pub fn change_material(
+        &mut self, 
+        renderer_resource_storage: &RendererResourceStorage, 
+        material_handle: RendererMaterialHandle,
+        render_pass: &mut wgpu::RenderPass,
+    ) {
+        self.material_handle = Some(material_handle);
+        let material = renderer_resource_storage.materials.get(material_handle).unwrap();
+        self.material_name = material.name.clone();
+    
+        debug!(LogContext::Frame => "Changing material to: {}", self.material_name.name_style());
+
+        if let Some(ref parameters_bind_group) = material.parameters_bind_group {
+            render_pass.set_bind_group(MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, parameters_bind_group, &[]);
+            debug!(LogContext::Frame => "Material parameters bound"); 
+        }
+
+        if let Some(ref texture_bind_group) = material.textures_bind_group {
+            render_pass.set_bind_group(MATERIAL_TEXTURES_BIND_GROUP_LAYOUT_INDEX, texture_bind_group, &[]);
+            debug!(LogContext::Frame => "Material textures bound");
+        }
+        
+        self.rendering_context_change_number += 1;
+        debug!(LogContext::Frame => "Renderer pipeline material changed to: {}", self.material_name.name_style());
+    }
+
+    pub fn change_mesh(
+        &mut self, 
+        renderer_resource_storage: &RendererResourceStorage, 
+        mesh_handle: RendererMeshHandle,
+        render_pass: &mut wgpu::RenderPass,
+    ) {
+        self.mesh_handle = Some(mesh_handle);               
+        let mesh = renderer_resource_storage.meshes.get(mesh_handle).unwrap();
+        self.mesh_name = mesh.name.clone();
+
+        self.mesh_index_count = mesh.index_count;
+        render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
+        render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
+
+        self.rendering_context_change_number += 1;
+        debug!(LogContext::Frame => "Renderer pipeline mesh changed to: {}", self.mesh_name.name_style());
+    }
+}
 
 pub struct MeshDrawer {
     max_instance_batch_size: u32,
@@ -53,9 +186,7 @@ impl MeshDrawer {
        // profiler: &mut Profiler,
     ) -> Result<()> { 
         timer.record("Prepare render pass");
-
-        let mut _instance_batch_number = 0;
-        let mut _rendering_context_change_number = 0;
+        debug!(LogContext::Frame => "Recording mesh draw commands");
 
         //let _timestamp_query_start = profiler.write_timestamp(encoder, "xx");
 
@@ -77,15 +208,24 @@ impl MeshDrawer {
        // let _pipeline_statistics_query_start = profiler.begin_pipeline_statistics_query(&mut render_pass);
         //let _occlusion_query_start = profiler.begin_occlusion_query(&mut render_pass);
 
-        let mut current_rendering_order: u8 = 0;
-        let mut current_shader_handle: Option<RendererShaderHandle> = None;
-        let mut current_material_handle: Option<RendererMaterialHandle> = None;
-        let mut current_mesh_handle: Option<RendererMeshHandle> = None;
-        let mut current_mesh_index_count: u32 = 0; // Number of indices in the current mesh
+       
+ // let mut current_rendering_order: u8 = 0;
+
+        // let mut current_shader_handle: Option<RendererShaderHandle> = None;
+        // let mut current_shader_name = "";
+        // let mut current_material_handle: Option<RendererMaterialHandle> = None;
+        // let mut current_material_name = "";
+        // let mut current_mesh_handle: Option<RendererMeshHandle> = None;
+        // let mut current_mesh_name = "";
+        // let mut current_mesh_index_count: u32 = 0; // Number of indices in the current mesh
+    
+        let mut current_drawing_context = DrawingContext::default();
+
         for (i, instance_batch) in render_queue.chunks(self.max_instance_batch_size as usize).enumerate() {
 
             let batch_size = instance_batch.len();
-            _instance_batch_number += 1;
+            current_drawing_context.instance_batch_number = i as u32;
+            current_drawing_context.instance_batch_size = batch_size as u32;
 
             timer.begin_context(&format!("Prepare draw instance batch {}", i));
             
@@ -113,9 +253,9 @@ impl MeshDrawer {
             timer.record("Record draw instances commands");
 
             // Reset instance range for each batch
-            // Start inclusive, end exclusive (e.g. 0..3 means indices 0, 1, 2.  e.g. 5..7 means indices 5, 6)
-            let mut accumulated_instance_range: Range<u32> = 0..0;
-            let mut accumulated_instance_count: u32 = 0; 
+            current_drawing_context.accumulated_instance_range = 0..0;
+            current_drawing_context.accumulated_instance_count = 0; 
+
             for (j, render_queue_item) in instance_batch.iter().enumerate() {
                 let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
 
@@ -124,86 +264,36 @@ impl MeshDrawer {
                 let renderer_material_handle = RendererMaterialHandle::new(render_queue_key_fields.material_index.into(), NonZeroU32::new(render_queue_key_fields.material_version.into()).unwrap());
                 let renderer_mesh_handle = RendererMeshHandle::new(render_queue_key_fields.mesh_index.into(), NonZeroU32::new(render_queue_key_fields.mesh_version.into()).unwrap());
 
-                // Check rendering order
-                if current_rendering_order > render_queue_key_fields.order {
-                    if accumulated_instance_count > 0 {
-                        render_pass.draw_indexed(0..current_mesh_index_count, 0, accumulated_instance_range.clone());
-                        accumulated_instance_range = accumulated_instance_range.end..accumulated_instance_range.end;
-                    }
-
-                    // Set new order
-                    current_rendering_order = render_queue_key_fields.order;
-                    _rendering_context_change_number += 1;
+                // Check for rendering order change
+                if current_drawing_context.rendering_order > render_queue_key_fields.order {
+                    current_drawing_context.record_draw_accumulated_instances(&mut render_pass);
+                    current_drawing_context.change_rendering_order(render_queue_key_fields.order);
                 }
 
-                // Check shader
-                if current_shader_handle != Some(renderer_shader_handle) {
-                    // Render accumulated instances
-                    if accumulated_instance_count > 0 {
-                        render_pass.draw_indexed(0..current_mesh_index_count, 0, accumulated_instance_range.clone());
-                        accumulated_instance_range = accumulated_instance_range.end..accumulated_instance_range.end; 
-                    }
-                    // Set new shader (render pipeline)
-                    current_shader_handle = Some(renderer_shader_handle);
-                    let shader: &RendererShader = renderer_resource_storage.shaders.get(current_shader_handle.unwrap()).unwrap();
-
-                    render_pass.set_pipeline(&shader.render_pipeline);
-
-                    if shader.pass_engine_parameters {
-                        render_pass.set_bind_group(ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &renderer_resource_storage.engine_parameters.bind_group, &[]);
-                    }   
-
-                    if shader.pass_camera_parameters {
-                        render_pass.set_bind_group(CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &camera.bind_group, &[]);
-                    }
+                // Check for shader change
+                if current_drawing_context.shader_handle != Some(renderer_shader_handle) {
+                    current_drawing_context.record_draw_accumulated_instances(&mut render_pass);
+                    current_drawing_context.change_shader(renderer_resource_storage, renderer_shader_handle, &mut render_pass, camera);
                 }
 
-                // Check material
-                if current_material_handle != Some(renderer_material_handle) {
-                    // Render accumulated instances
-                    if accumulated_instance_count > 0 {
-                        render_pass.draw_indexed(0..current_mesh_index_count, 0, accumulated_instance_range.clone());
-                        accumulated_instance_range = accumulated_instance_range.end..accumulated_instance_range.end;
-                    }
-                    // Set new material
-                    current_material_handle = Some(renderer_material_handle);
-                    let material = renderer_resource_storage.materials.get(current_material_handle.unwrap()).unwrap();
-                
-                    if let Some(ref parameters_bind_group) = material.parameters_bind_group {
-                        render_pass.set_bind_group(MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, parameters_bind_group, &[]);
-                    }
-
-                    if let Some(ref texture_bind_group) = material.textures_bind_group {
-                        render_pass.set_bind_group(MATERIAL_TEXTURES_BIND_GROUP_LAYOUT_INDEX, texture_bind_group, &[]);
-                    }
-                    
-                    _rendering_context_change_number += 1;
+                // Check for material change
+                if current_drawing_context.material_handle != Some(renderer_material_handle) {
+                    current_drawing_context.record_draw_accumulated_instances(&mut render_pass);
+                    current_drawing_context.change_material(renderer_resource_storage, renderer_material_handle, &mut render_pass);
                 }
 
-                // Check mesh
-                if current_mesh_handle != Some(renderer_mesh_handle) {
-                    // Render accumulated instances
-                    if accumulated_instance_count > 0 {
-                        render_pass.draw_indexed(0..current_mesh_index_count, 0, accumulated_instance_range.clone());
-                        accumulated_instance_range = accumulated_instance_range.end..accumulated_instance_range.end; 
-                    }
-                    // Set new mesh
-                    current_mesh_handle = Some(renderer_mesh_handle);               
-                    let mesh = renderer_resource_storage.meshes.get(current_mesh_handle.unwrap()).unwrap();
-                    current_mesh_index_count = mesh.index_count;
-                    render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
-                    render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
-
-                    _rendering_context_change_number += 1;
+                // Check for mesh change
+                if current_drawing_context.mesh_handle != Some(renderer_mesh_handle) {
+                    current_drawing_context.record_draw_accumulated_instances(&mut render_pass);
+                    current_drawing_context.change_mesh(renderer_resource_storage, renderer_mesh_handle, &mut render_pass);
                 }
 
                 // Add new instance
-                accumulated_instance_range = accumulated_instance_range.start..accumulated_instance_range.end + 1;
-                accumulated_instance_count = accumulated_instance_range.end - accumulated_instance_range.start;
+                current_drawing_context.accumulate_instance();
 
-                // If last in batch, render accumulated instances
-                if j == batch_size - 1 && accumulated_instance_count > 0 {
-                    render_pass.draw_indexed(0..current_mesh_index_count, 0, accumulated_instance_range.clone());
+                // If last in batch, draw accumulated instances
+                if j == batch_size - 1 {
+                    current_drawing_context.record_draw_accumulated_instances(&mut render_pass);
                 }
             }
 
