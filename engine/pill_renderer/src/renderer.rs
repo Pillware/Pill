@@ -1,9 +1,10 @@
 use crate::{
     config::MAX_INSTANCE_PER_DRAWCALL_COUNT, 
     instance::Instance, 
-    mesh_renderer::MeshDrawer, 
-    renderer_resource_storage::RendererResourceStorage, 
+    drawers::mesh_drawer::MeshDrawer, 
+    drawers::egui_drawer::EguiDrawer,
     resources::{
+        RendererResourceStorage,
         RendererCamera, 
         RendererMaterial, 
         RendererMesh, 
@@ -14,55 +15,64 @@ use crate::{
 };
 
 use pill_engine::internal::{
-    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameterMap, MaterialTextureMap, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
+    get_renderer_resource_handle_from_camera_component, 
+    CameraComponent, 
+    ComponentStorage, 
+    EntityHandle, 
+    MaterialParameterMap, 
+    MaterialTextureMap, 
+    MeshData, 
+    PillRenderer, 
+    RenderQueueItem, 
+    RendererCameraHandle, 
+    RendererMaterialHandle, 
+    RendererMeshHandle, 
+    RendererShaderHandle, 
+    RendererTextureHandle, 
+    ShaderParameterSlot, 
+    ShaderTextureSlot, 
+    TextureType, 
+    TransformComponent, 
+    RENDER_QUEUE_KEY_ORDER
 };
 
 use pill_core::{ 
-    debug, info, LogContext, PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer 
+    debug, 
+    info, 
+    LogContext, 
+    PillSlotMapKey, 
+    PillSlotMapKeyData, 
+    PillStyle, 
+    RendererError, 
+    Timer 
 };
 
 use std::{
-    collections::HashMap, iter, mem::size_of, num::NonZeroU32, ops::Range, sync::Arc
+    collections::HashMap, 
+    iter, 
+    mem::size_of, 
+    num::NonZeroU32, 
+    ops::Range, 
+    sync::Arc
 };
 
 use naga::front::glsl;
 use naga::back::wgsl;
 
-use anyhow::{Error, Result};
-
-use crate::egui_drawer::EguiDrawer;
+use anyhow::{Context, Error, Ok, Result};
 
 pub struct Renderer {
     pub state: State,
 }
 
-fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String> {
-    let mut frontend = glsl::Frontend::default();
-    let options = glsl::Options::from(stage);
-    let module = frontend.parse(&options, source).unwrap();
-    
-    let mut validator = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::empty(),
-    );
-    
-    let info = validator.validate(&module)?;
-    
-    let mut output = String::new();
-    let mut writer = wgsl::Writer::new(&mut output, wgsl::WriterFlags::empty());
-    writer.write(&module, &info)?;
-    
-    Ok(output)
-}
-
 impl PillRenderer for Renderer {
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self { 
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> { 
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
-        let state: State = pollster::block_on(State::new(window, config));
+        let state: State = pollster::block_on(State::new(window, config))?;
 
-        Self {
+        Ok(Self {
             state,
-        }
+        })
     }   
 
     // --- Create ---
@@ -74,10 +84,9 @@ impl PillRenderer for Renderer {
         fragment_shader_bytes: &[u8], 
         texture_slots: &HashMap<String, ShaderTextureSlot>,
         parameter_slots: &HashMap<String, ShaderParameterSlot>,
-        enable_engine_binding: bool,
-        enable_camera_binding: bool,
+        pass_engine_parameters: bool,
+        pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
-
         let shader = RendererShader::new(
             name,
             &self.state.device,
@@ -88,8 +97,10 @@ impl PillRenderer for Renderer {
             fragment_shader_bytes,
             parameter_slots,
             texture_slots,
-            enable_engine_binding,
-            enable_camera_binding
+            &self.state.renderer_resource_storage.engine_parameters.bind_group_layout,
+            &self.state.camera_bind_group_layout,
+            pass_engine_parameters,
+            pass_camera_parameters
         )?;
         let handle = self.state.renderer_resource_storage.shaders.insert(shader);
 
@@ -111,31 +122,26 @@ impl PillRenderer for Renderer {
             renderer_shader_handle,
             textures,
             parameters,
-        ).unwrap();
-
+        )?;
         let handle = self.state.renderer_resource_storage.materials.insert(material);
-
         Ok(handle)
     }
 
     fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle> {
         let texture = RendererTexture::new_texture(&self.state.device, &self.state.queue, Some(name), image_data, texture_type)?;
         let handle = self.state.renderer_resource_storage.textures.insert(texture);
-
         Ok(handle)
     }
 
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.state.device, name, mesh_data)?;
         let handle = self.state.renderer_resource_storage.meshes.insert(mesh);
-
         Ok(handle)
     }
 
     fn create_camera(&mut self) -> Result<RendererCameraHandle> {
-        let camera = RendererCamera::new(&self.state.device)?;
+        let camera = RendererCamera::new(&self.state.device, self.state.camera_bind_group_layout.clone())?;
         let handle = self.state.renderer_resource_storage.cameras.insert(camera);
-
         Ok(handle)
     }
 
@@ -166,31 +172,26 @@ impl PillRenderer for Renderer {
         self.state.renderer_resource_storage.shaders.remove(renderer_shader_handle).unwrap();
 
         // TODO: Check if there are no materials using this shader (engine should replace them with default shader), if there are prevent shader destruction
-
         Ok(())
     }
 
     fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
         self.state.renderer_resource_storage.materials.remove(renderer_material_handle).unwrap();
-
         Ok(())
     }
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
         self.state.renderer_resource_storage.textures.remove(renderer_texture_handle).unwrap();
-
         Ok(())
     }
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
         self.state.renderer_resource_storage.meshes.remove(renderer_mesh_handle).unwrap();
-
         Ok(())
     }
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
         self.state.renderer_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
-        
         Ok(())
     }
 
@@ -213,6 +214,7 @@ impl PillRenderer for Renderer {
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
+        delta_time: f32,
         timer: &mut Timer
     ) -> Result<()> {
         self.state.render(
@@ -221,12 +223,10 @@ impl PillRenderer for Renderer {
             camera_component_storage,
             transform_component_storage,
             egui_ui,
+            delta_time,
             timer
         )
     }
-    
-   
-
 }
 
 pub struct State {
@@ -245,24 +245,25 @@ pub struct State {
     mesh_drawer: MeshDrawer,
     egui_drawer: EguiDrawer,
     // Other
+    camera_bind_group_layout: wgpu::BindGroupLayout,
     config: config::Config,
     //profiler: Profiler,
 }
 
 impl State {
     // Creating some of the wgpu types requires async code
-    async fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self {
+    async fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> {
         let window_size = window.inner_size();
         let window_ref = window.clone();
 
         // 1. Create instance and surface
         let (instance, surface) = {
             let backends = match std::env::var("WGPU_BACKENDS").as_deref() {
-            Ok("VULKAN") => wgpu::Backends::VULKAN,
-            Ok("DX12") => wgpu::Backends::DX12,
-            Ok("METAL") => wgpu::Backends::METAL,
-            Ok("GL") => wgpu::Backends::GL,
-            Ok("BROWSER_WEBGPU") => wgpu::Backends::BROWSER_WEBGPU,
+            std::result::Result::Ok("VULKAN") => wgpu::Backends::VULKAN,
+            std::result::Result::Ok("DX12") => wgpu::Backends::DX12,
+            std::result::Result::Ok("METAL") => wgpu::Backends::METAL,
+            std::result::Result::Ok("GL") => wgpu::Backends::GL,
+            std::result::Result::Ok("BROWSER_WEBGPU") => wgpu::Backends::BROWSER_WEBGPU,
             _ => wgpu::Backends::all(),
         };
 
@@ -272,8 +273,8 @@ impl State {
             backend_options: wgpu::BackendOptions::default(),
         };
 
-let instance = wgpu::Instance::new(&instance_descriptor);
-            let surface = instance.create_surface(window).expect("create surface");
+        let instance = wgpu::Instance::new(&instance_descriptor);
+            let surface = instance.create_surface(window).context("Failed to create surface")?;
             (instance, surface)
         };
 
@@ -287,7 +288,7 @@ let instance = wgpu::Instance::new(&instance_descriptor);
             instance
                 .request_adapter(&request_adapter_options)
                 .await
-                .expect("request adapter")
+                .context("Failed to request adapter")?
         };
 
         let info = adapter.get_info();
@@ -310,7 +311,7 @@ let instance = wgpu::Instance::new(&instance_descriptor);
             adapter
                 .request_device(&device_descriptor)
                 .await
-                .expect("request device")
+                .context("Failed to request device")?
         };
 
         // 4. Surface configuration
@@ -332,19 +333,34 @@ let instance = wgpu::Instance::new(&instance_descriptor);
             (surface_configuration, color_format, depth_format)
         };
 
-        // 5. Renderer resources
-        let (renderer_resource_storage, depth_texture) = {
-            let renderer_resource_storage = RendererResourceStorage::new(&config);
-            let depth_texture = RendererTexture::new_depth_texture(
+        // 5. Depth texture
+        let depth_texture = RendererTexture::new_depth_texture(
                 &device,
                 &surface_configuration,
                 "depth_texture",
             )
-            .expect("create depth texture");
-            (renderer_resource_storage, depth_texture)
-        };
+            .context("Failed to create depth texture")?;
 
-        // 6. Drawers
+        // 6. Define camera bind group layout
+        // Each camera instance has the same bind group layout is we define it here once
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("camera_parameters_bind_group_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0, // (set = X, binding = 0)
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
+                    min_binding_size: None,
+                },
+                count: None,
+            }]
+        });
+
+        // 7. Resource storage
+        let renderer_resource_storage = RendererResourceStorage::new(&device, &config)?;
+
+        // 8. Drawers
         let (mesh_drawer, egui_drawer) = {
             let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
             let egui_drawer = EguiDrawer::new(
@@ -357,7 +373,7 @@ let instance = wgpu::Instance::new(&instance_descriptor);
             (mesh_drawer, egui_drawer)
         };
 
-        // 7. Profiler
+        // 9. Profiler
         // let profiler = {
         //     Profiler::new(
         //         &device,
@@ -372,7 +388,7 @@ let instance = wgpu::Instance::new(&instance_descriptor);
         // };
 
         // Create state
-        Self {
+        let renderer = Self {
             // Resources
             renderer_resource_storage,
             // Renderer variables
@@ -388,9 +404,12 @@ let instance = wgpu::Instance::new(&instance_descriptor);
             mesh_drawer,
             egui_drawer,
             // Other
+            camera_bind_group_layout,
             config,
            // profiler
-        }
+        };
+
+        Ok(renderer)
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
@@ -414,13 +433,14 @@ let instance = wgpu::Instance::new(&instance_descriptor);
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
+        delta_time: f32,
         timer: &mut Timer
     ) -> Result<()> { 
 
-        debug!(LogContext::Rendering => "Starting frame render");
+        debug!(LogContext::Frame => "Starting frame render");
 
         timer.record("Get frame");
-       // self.profiler.begin_frame();
+        // self.profiler.begin_frame();
   
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
@@ -435,7 +455,11 @@ let instance = wgpu::Instance::new(&instance_descriptor);
 
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        timer.record("Get clear color and create render pass attachments");
+        timer.record("Update engine parameters");
+        
+        self.renderer_resource_storage.engine_parameters.update(&self.queue, delta_time);
+
+        timer.record("Update camera parameters");
 
         // Get active camera and update it
         let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
@@ -452,11 +476,12 @@ let instance = wgpu::Instance::new(&instance_descriptor);
             label: Some("render_encoder"),
         });
 
+
  // let _timestamp_query_start = self.profiler.write_timestamp(&mut encoder, "Start Render Pass");
 
         // Render meshes
         {
-            debug!(LogContext::Rendering => "Start recording mesh draw commands");
+            timer.record("Create render pass attachments");
 
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
@@ -479,6 +504,7 @@ let instance = wgpu::Instance::new(&instance_descriptor);
                 stencil_ops: None,
             };
 
+            debug!(LogContext::Frame => "Start recording mesh draw commands");
             timer.begin_context("Mesh Drawer");
 
             self.mesh_drawer.record_draw_commands(
@@ -500,7 +526,7 @@ let instance = wgpu::Instance::new(&instance_descriptor);
         // Render egui UI
         {
             timer.begin_context("Egui Draw");
-            debug!(LogContext::Rendering => "Start recording egui draw commands");
+            debug!(LogContext::Frame => "Start recording egui draw commands");
 
             // Render egui UI
             self.egui_drawer.record_draw_commands(

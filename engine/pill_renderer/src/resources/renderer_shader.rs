@@ -3,17 +3,22 @@ use pill_engine::internal::{ShaderParameterSlot, ShaderTextureSlot};
 use std::collections::HashMap;
 use anyhow::{Error, Result};
 
-use crate::config::{
-    ENGINE_PARAMETERS_BINDING_INDEX, 
-    CAMERA_PARAMETERS_BINDING_INDEX, 
-    MATERIAL_PARAMETERS_BINDING_INDEX
-};
+pub enum ShaderBindGroupLayout {
+    Parameters,
+    Textures,
+}
 
 pub struct RendererShader {
     pub render_pipeline: wgpu::RenderPipeline,
-    pub bind_group_layouts: Vec<wgpu::BindGroupLayout>,
+
     pub parameter_slots: HashMap<String, ShaderParameterSlot>,
+    pub parameters_bind_group_layout: Option<wgpu::BindGroupLayout>,
+
     pub texture_slots: HashMap<String, ShaderTextureSlot>,
+    pub textures_bind_group_layout: Option<wgpu::BindGroupLayout>,
+
+    pub pass_engine_parameters: bool,
+    pub pass_camera_parameters: bool,
 }
 
 use naga::front::glsl;
@@ -30,17 +35,19 @@ impl RendererShader {
         fragment_shader_bytes: &[u8],
         parameter_slots: &HashMap<String, ShaderParameterSlot>,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        enable_engine_binding: bool,
-        enable_camera_binding: bool,
+        engine_bind_group_layout: &wgpu::BindGroupLayout,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
+        pass_engine_parameters: bool,
+        pass_camera_parameters: bool,
     ) -> Result<Self> {
 
         // Print shader information
         {
             let mut shader_info = format!(
-                "Creating shader {}:\n - Settings: engine bindings: {}, camera bindings: {}",
+                "Creating shader {}:\n - Settings:\n   - Pass engine parameters: {}\n   - Pass camera parameters: {}",
                 name.name_style(),
-                enable_engine_binding,
-                enable_camera_binding,
+                pass_engine_parameters,
+                pass_camera_parameters,
             );
 
             shader_info.push_str("\n - Parameter slots:");
@@ -63,8 +70,6 @@ impl RendererShader {
             debug!(LogContext::Rendering => "{}", shader_info);
         }
 
-        debug!(LogContext::Rendering => "Creating shader modules");
-
         // Convert bytes to string
         let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes)
             .map_err(|e| Error::new(RendererError::InvalidShaderData("Vertex".to_string(), name.to_string(), e.to_string())))?;
@@ -77,6 +82,9 @@ impl RendererShader {
         let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment)
             .map_err(|e| Error::new(RendererError::ShaderCompilationFailed("Fragment".to_string(), name.to_string(), e.to_string())))?;
 
+        debug!(LogContext::Rendering => "Shader modules created");
+
+
         // Create shader modules with WGSL
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("master_vertex_shader"),
@@ -87,96 +95,93 @@ impl RendererShader {
             source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
         });
 
-        debug!(LogContext::Rendering => "Creating parameters bind group layout");
+        let parameters_bind_group_layout = {
+            if !parameter_slots.is_empty() {
+                let bind_group_layout_entry = wgpu::BindGroupLayoutEntry {
+                    binding: 0, // (set = 2, binding = 0)
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                };
 
-        let mut parameters_bind_group_layout_entries = Vec::new();
+                Some(device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some(&format!("{}_parameters_bind_group_layout", name)),
+                    entries: &[bind_group_layout_entry],
+                }))
+            } else {
+                None
+            }
+        };
 
-        if enable_engine_binding {
-            parameters_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: ENGINE_PARAMETERS_BINDING_INDEX as u32, // (set = 0, binding = 0)
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
-                    min_binding_size: None,
-                },
-                count: None,
-            });
-        }
-
-        if enable_camera_binding {
-            parameters_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: CAMERA_PARAMETERS_BINDING_INDEX as u32, // (set = 0, binding = 1)
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
-                    min_binding_size: None,
-                },
-                count: None,
-            });
-        }
-
-        if !parameter_slots.is_empty() {
-            parameters_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: MATERIAL_PARAMETERS_BINDING_INDEX as u32, // (set = 0, binding = 2)
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
-                    min_binding_size: None,
-                },
-                count: None,
-            });
-        }
-
-        // Create bind group layout entries for parameter slots - Bind group slot 0
-        let parameters_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some(&format!("{}_parameters_bind_group_layout", name)),
-            entries: &parameters_bind_group_layout_entries,
-        });
-
-        debug!(LogContext::Rendering => "Creating textures bind group layout");
+        debug!(LogContext::Rendering => "Parameters bind group layout created");
 
         // Create bind group layout entries for textures - Bind group slot 1
-        let mut textures_bind_group_layout_entries = Vec::new();
+        let textures_bind_group_layout = {
+            if !texture_slots.is_empty() {
+                let mut entries = Vec::new();
 
-        for texture_slot in texture_slots.values() {
-            // Create texture binding
-            textures_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: texture_slot.texture_binding,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                },
-                count: None,
-            });
+                for texture_slot in texture_slots.values() {
+                    // Texture binding
+                    entries.push(wgpu::BindGroupLayoutEntry {
+                        binding: texture_slot.texture_binding,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    });
 
-            // Create sampler binding
-            textures_bind_group_layout_entries.push(wgpu::BindGroupLayoutEntry {
-                binding: texture_slot.sampler_binding,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            });
-        }
+                    // Sampler binding
+                    entries.push(wgpu::BindGroupLayoutEntry {
+                        binding: texture_slot.sampler_binding,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    });
+                }
 
-        let textures_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some(&format!("{}_textures_bind_group_layout", name)),
-            entries: &textures_bind_group_layout_entries,
-        });
+                Some(device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some(&format!("{}_textures_bind_group_layout", name)),
+                    entries: &entries,
+                }))
+            } else {
+                None
+            }
+        };
 
-
+        debug!(LogContext::Rendering => "Textures bind group layout created");
 
         // Create pipeline layout
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some(&format!("{}_pipeline_layout", name)),
-            bind_group_layouts: &[&parameters_bind_group_layout, &textures_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = {
+            // Collect bind group layouts only if they exist
+            let mut bind_group_layouts = Vec::new();
 
+            if pass_engine_parameters {
+                bind_group_layouts.push(engine_bind_group_layout);            
+            }
+            if pass_camera_parameters {
+                bind_group_layouts.push(camera_bind_group_layout);            
+            }
+            if let Some(ref layout) = parameters_bind_group_layout {
+                bind_group_layouts.push(layout);
+            }
+            if let Some(ref layout) = textures_bind_group_layout {
+                bind_group_layouts.push(layout);
+            }
+
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(&format!("{}_pipeline_layout", name)),
+                bind_group_layouts: &bind_group_layouts,
+                push_constant_ranges: &[],
+            })
+        };
+        
         // Create color target states that specifies what what color outputs wgpu should set up
         let color_target_states = &[Some(wgpu::ColorTargetState { 
             format: color_format,
@@ -188,7 +193,7 @@ impl RendererShader {
         })];
 
         let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
-            label: Some("render_pipeline"),
+            label: Some(&format!("{}_render_pipeline", name)),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState { 
                 module: &vertex_shader,
@@ -227,18 +232,19 @@ impl RendererShader {
             cache: None,
         };
 
-        debug!(LogContext::Rendering => "Creating render pipeline");
-
         let render_pipeline = device.create_render_pipeline(&render_pipeline_descriptor);
-
-        debug!(LogContext::Rendering => "Render pipeline created");
 
         let pipeline = Self { 
             render_pipeline,
-            bind_group_layouts: vec![parameters_bind_group_layout, textures_bind_group_layout],
             parameter_slots: parameter_slots.clone(),
+            textures_bind_group_layout,
             texture_slots: texture_slots.clone(),
+            parameters_bind_group_layout,
+            pass_engine_parameters,
+            pass_camera_parameters,
         };
+
+        debug!(LogContext::Rendering => "Render pipeline created");
 
         Ok(pipeline)
     }

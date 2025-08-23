@@ -55,8 +55,7 @@ pill_core::define_new_pill_slotmap_key! {
 // --- Renderer trait definition ---
 
 pub trait PillRenderer { 
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self where Self: Sized;
-
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> where Self: Sized;
 
     // --- Create ---
 
@@ -67,8 +66,8 @@ pub trait PillRenderer {
         fragment_shader_bytes: &[u8], 
         texture_slots: &HashMap<String, ShaderTextureSlot>,
         parameter_slots: &HashMap<String, ShaderParameterSlot>,
-        enable_engine_binding: bool,
-        enable_camera_binding: bool
+        pass_engine_parameters: bool,
+        pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle>;
     
     fn create_material(
@@ -115,6 +114,7 @@ pub trait PillRenderer {
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui:  Box<dyn FnMut(&egui::Context)>,
+        delta_time: f32,
         timer: &mut Timer
     ) -> Result<()>;
 

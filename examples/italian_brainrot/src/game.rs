@@ -25,6 +25,30 @@ impl PillGame for Game {
 
 		// --- Create resources ---
 
+		// Add shaders
+		let cartoon_shader_handle = engine.add_resource(
+            Shader::new(
+                "cartoon", 
+                ResourceLoader::Path("shaders/cartoon_vertex.glsl".into()),
+                ResourceLoader::Path("shaders/cartoon_fragment.glsl".into()),
+                vec![
+                    (
+                        "posterize_level".to_string(), 
+                        ShaderParameterSlot::new("posterize_level", ShaderParameterType::Scalar)
+                    )
+                ].into_iter().collect(),
+                vec![
+                    (
+                    "color".to_string(), 
+                        ShaderTextureSlot::new("color", TextureType::Color, (0, 1))
+                    )
+                ].into_iter().collect(),
+                true,
+                true
+            )
+        )?;
+
+
 		// Add meshes
         let chimpanzini_bananini_mesh_handle = engine.add_resource(
 			Mesh::new("chimpanzini_bananini", "models/chimpanzini_bananini.obj".into()).with_uv_flip(true)
@@ -35,18 +59,27 @@ impl PillGame for Game {
 			Texture::new(
 				"chimpanzini_bananini", 
 				TextureType::Color, 
-				ResourceLoader::Path("textures/chimpanzini_bananini.jpg".into())
+				ResourceLoader::Path("textures/chimpanzini_bananini_color.jpg".into())
 			)
 		)?;
        
+	   println!("Added resources!!!!!!!!!!!!!!!");
 		// Add materials
 		let chimpanzini_bananini_material_handle = engine.add_resource::<Material>(
 			Material::builder("chimpanzini_bananini")
+    			.shader(cartoon_shader_handle)?
 				.texture("color", chimpanzini_bananini_color_texture_handle)?
-				.color("tint", Color::new(1.0, 1.0, 1.0))?
-				.scalar("specularity", 0.5)?
+				.scalar("posterize_level",  3.0)?
 				.build()
 		)?;
+
+		// let chimpanzini_bananini_material_handle = engine.add_resource::<Material>(
+		// 	Material::builder("chimpanzini_bananini")
+		// 		.texture("color", chimpanzini_bananini_color_texture_handle)?
+		// 		.color("tint", Color::new(1.0, 1.0, 1.0))?
+		// 		.scalar("specularity", 0.5)?
+		// 		.build()
+		// )?;
 
 		// --- Create entities ---
 
@@ -81,9 +114,10 @@ impl PillGame for Game {
 
 fn rotation_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
+	println!("Delta time: {}", delta_time);
 
 	for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, TagAlphaComponent>()? {
-		transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
+		transform_component.rotate_around_axis(1.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
 	}
 
 	Ok(())

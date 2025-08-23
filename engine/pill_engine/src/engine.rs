@@ -90,6 +90,7 @@ impl Engine {
         
         // Register resources and their limits
 
+        use bincode::de;
         use pill_core::Color;
         let max_shader_count = self.config.get_int("MAX_SHADERS").unwrap_or(MAX_SHADERS as i64) as usize;
         let max_material_count = self.config.get_int("MAX_MATERIALS").unwrap_or(MAX_MATERIALS as i64) as usize;
@@ -103,13 +104,17 @@ impl Engine {
         self.register_resource_type::<Mesh>(max_mesh_count)?;
         self.register_resource_type::<Sound>(max_sound_count)?;
 
+        debug!(LogContext::Engine => "Resource types registered");
+
+        debug!(LogContext::Engine => "Creating default shader {}...", DEFAULT_LIT_SHADER_NAME.name_style());
+
         // Create default resources
         // Load default lit shader data to executable
         let default_lit_shader_handle = self.add_default_resource(
             Shader::new(
                 DEFAULT_LIT_SHADER_NAME, 
-                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/master.vert.glsl"))),
-                ResourceLoader::Bytes( Box::new(*include_bytes!("../res/shaders/master.frag.glsl"))),
+                ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/master_vertex.glsl"))),
+                ResourceLoader::Bytes( Box::new(*include_bytes!("../res/shaders/master_fragment.glsl"))),
                 vec![
                     (
                         DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), 
@@ -135,6 +140,9 @@ impl Engine {
             )
         )?;
 
+        debug!(LogContext::Engine => "Default lit shader {} created", DEFAULT_LIT_SHADER_NAME.name_style());
+        debug!(LogContext::Engine => "Creating default color texture {}...", DEFAULT_COLOR_TEXTURE_NAME.name_style());
+
         // Create texture data to executable
         let default_color_texture_handle = self.add_default_resource(
             Texture::new(
@@ -144,6 +152,9 @@ impl Engine {
             )
         )?;
 
+        debug!(LogContext::Engine => "Default color texture {} created", DEFAULT_COLOR_TEXTURE_NAME.name_style());
+        debug!(LogContext::Engine => "Creating default normal texture {}...", DEFAULT_NORMAL_TEXTURE_NAME.name_style());
+
         let default_normal_texture_handle = self.add_default_resource(
             Texture::new(
                 DEFAULT_NORMAL_TEXTURE_NAME, 
@@ -151,6 +162,9 @@ impl Engine {
                 ResourceLoader::Bytes(Box::new(*include_bytes!("../res/textures/default_normal.png")))
             )
         )?;
+
+        debug!(LogContext::Engine => "Default normal texture {} created", DEFAULT_NORMAL_TEXTURE_NAME.name_style());
+        debug!(LogContext::Engine => "Creating default material {}...", DEFAULT_LIT_MATERIAL_NAME.name_style());
 
         // Create default lit material
         self.add_default_resource(
@@ -162,6 +176,8 @@ impl Engine {
                 .texture(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME, default_normal_texture_handle)?
                 .build()
         )?;
+
+        debug!(LogContext::Engine => "Default lit material {} created", DEFAULT_LIT_MATERIAL_NAME.name_style());
 
         Ok(())
     }
@@ -290,11 +306,11 @@ impl Engine {
     }
 
     pub fn shutdown(&mut self) {
-        info!("Shutting down {}", "Engine".module_object_style());
+        info!(LogContext::Engine => "Shutting down {}", "Engine".module_object_style());
     }
 
     pub fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
-        debug!("{} resized to {}x{}", "Window".module_object_style(), new_window_size.width, new_window_size.height);
+        debug!(LogContext::Engine => "{} resized to {}x{}", "Window".module_object_style(), new_window_size.width, new_window_size.height);
         self.window_size = new_window_size;
         self.renderer.resize(new_window_size);
     }
@@ -305,10 +321,10 @@ impl Engine {
             winit::keyboard::PhysicalKey::Code(key_code) => {
                 let input_event = InputEvent::KeyboardKey { key: key_code, state: state };
                 self.input_queue.push_back(input_event);
-                debug!("Got new keyboard key input: {:?} {:?}", key_code, state);
+                debug!(LogContext::Input => "Got new keyboard key input: {:?} {:?}", key_code, state);
             }
             winit::keyboard::PhysicalKey::Unidentified(_) => {
-                debug!("Unidentified key input: {:?}", keyboard_input.physical_key);
+                debug!(LogContext::Input => "Unidentified key input: {:?}", keyboard_input.physical_key);
             }
         }
     }
@@ -420,7 +436,7 @@ impl Engine {
     pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()> 
         where T: Component<Storage = ComponentStorage::<T>>
     {
-        debug!("Registering {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Scene".specific_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        debug!(LogContext::ECS => "Registering {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Scene".specific_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
 
         self.scene_manager.register_component::<T>(scene_handle).context(format!("Registering {} failed", "Component".general_object_style()))
     }
@@ -429,7 +445,7 @@ impl Engine {
     pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, mut component: T) -> Result<()> 
         where T : Component<Storage = ComponentStorage::<T>>
     {
-        debug!("Adding {} {} to {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Entity".general_object_style(), entity_handle.data().index, "Scene".general_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        debug!(LogContext::ECS => "Adding {} {} to {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Entity".general_object_style(), entity_handle.data().index, "Scene".general_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
         
         // Check if already added
         let target_scene = self.scene_manager.get_scene(scene_handle)?;
@@ -455,7 +471,7 @@ impl Engine {
     pub fn remove_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> 
         where T : Component<Storage = ComponentStorage::<T>>
     {
-        debug!("Removing {} {} from {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Entity".general_object_style(), entity_handle.data().index, "Scene".general_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        debug!(LogContext::ECS => "Removing {} {} from {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Entity".general_object_style(), entity_handle.data().index, "Scene".general_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
         
         let mut component = self.scene_manager.remove_component_from_entity::<T>(scene_handle, entity_handle).context("Removing component from entity failed").unwrap();
 
@@ -608,7 +624,7 @@ impl Engine {
 
     // Creates scene
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
-        info!("Creating scene: {}", name);
+        info!(LogContext::ECS => "Creating scene: {}", name);
         self.scene_manager.create_scene(name).context(format!("Creating new {} failed", "Scene".general_object_style()))
     }
 
@@ -661,6 +677,10 @@ impl Engine {
     pub fn add_resource<T>(&mut self, resource: T) -> Result<T::Handle> 
         where T: Resource<Storage = ResourceStorage<T>>,
     {
+        // TODO: Doesnt work when called from game
+        info!(LogContext::Resources => "Addixxng {} {} {}", "Resource".general_object_style(), get_type_name::<T>().specific_object_style(), resource.get_name().name_style());
+
+        println!("Adding xxx: {}", resource.get_name().name_style());
         self.add_resource_internal(resource, true)
     }
 
@@ -674,7 +694,7 @@ impl Engine {
     fn add_resource_internal<T>(&mut self, mut resource: T, enforce_name_check: bool) -> Result<T::Handle>
         where T: Resource<Storage = ResourceStorage<T>>,
     {
-        debug!("Adding {} {} {}", "Resource".general_object_style(), get_type_name::<T>().specific_object_style(), resource.get_name().name_style());
+        debug!(LogContext::Resources => "Adding {} {} {}", "Resource".general_object_style(), get_type_name::<T>().specific_object_style(), resource.get_name().name_style());
 
         // Check if resource has proper name
         let resource_name = resource.get_name();
@@ -683,6 +703,7 @@ impl Engine {
         }
 
         // Initialize resource
+        debug!(LogContext::Resources => "Initializing {} {} {}", "Resource".general_object_style(), get_type_name::<T>().specific_object_style(), resource.get_name().name_style());
         resource.initialize(self)
             .context(format!("Adding {} {} failed", "Resource".general_object_style(), get_type_name::<T>().specific_object_style()))?;
 

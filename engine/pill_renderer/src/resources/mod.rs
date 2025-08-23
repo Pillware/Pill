@@ -3,6 +3,8 @@ mod renderer_material;
 mod renderer_texture;
 mod renderer_mesh;
 mod renderer_camera;
+mod engine_parameters;
+mod renderer_resource_storage;
 
 // --- Use ---
 
@@ -18,3 +20,7 @@ pub use renderer_mesh::{
 };
 
 pub use renderer_camera::RendererCamera;
+
+pub use engine_parameters::EngineParameters;
+
+pub use renderer_resource_storage::RendererResourceStorage;

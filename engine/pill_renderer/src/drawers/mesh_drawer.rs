@@ -3,7 +3,13 @@ use std::{num::NonZeroU32, ops::Range};
 
 use pill_core::{RendererError, Timer};
 use pill_engine::{ internal::{ RenderQueueItem, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, TransformComponent, RENDER_QUEUE_KEY_ORDER}, ComponentStorage};
-use crate::{ config::{INITIAL_INSTANCE_VECTOR_CAPACITY, PARAMETERS_BIND_GROUP_LAYOUT_INDEX, TEXTURES_BIND_GROUP_LAYOUT_INDEX}, resources::{RendererCamera, RendererShader}, Instance, RendererResourceStorage};
+use crate::{ 
+    config::{
+        CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, INITIAL_INSTANCE_VECTOR_CAPACITY, MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, MATERIAL_TEXTURES_BIND_GROUP_LAYOUT_INDEX
+    }, 
+    resources::{ RendererCamera, RendererResourceStorage, RendererShader }, 
+    Instance, 
+};
 
 use anyhow::{Error, Result};
 
@@ -140,7 +146,16 @@ impl MeshDrawer {
                     // Set new shader (render pipeline)
                     current_shader_handle = Some(renderer_shader_handle);
                     let shader: &RendererShader = renderer_resource_storage.shaders.get(current_shader_handle.unwrap()).unwrap();
+
                     render_pass.set_pipeline(&shader.render_pipeline);
+
+                    if shader.pass_engine_parameters {
+                        render_pass.set_bind_group(ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &renderer_resource_storage.engine_parameters.bind_group, &[]);
+                    }   
+
+                    if shader.pass_camera_parameters {
+                        render_pass.set_bind_group(CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &camera.bind_group, &[]);
+                    }
                 }
 
                 // Check material
@@ -154,27 +169,14 @@ impl MeshDrawer {
                     current_material_handle = Some(renderer_material_handle);
                     let material = renderer_resource_storage.materials.get(current_material_handle.unwrap()).unwrap();
                 
-                    // Set pipeline if new material is using different one
-                    // if current_shader_handle != Some(material.shader_handle) {
-                    //     current_shader_handle = Some(material.shader_handle);
-                    //     let shader = renderer_resource_storage.shaders.get(current_shader_handle.unwrap()).unwrap();
-                    //     render_pass.set_pipeline(&shader.render_pipeline);
-                    // }
-
                     if let Some(ref parameters_bind_group) = material.parameters_bind_group {
-                        render_pass.set_bind_group(PARAMETERS_BIND_GROUP_LAYOUT_INDEX, parameters_bind_group, &[]);
+                        render_pass.set_bind_group(MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, parameters_bind_group, &[]);
                     }
 
-                    if let Some(ref texture_bind_group) = material.texture_bind_group {
-                        render_pass.set_bind_group(TEXTURES_BIND_GROUP_LAYOUT_INDEX, texture_bind_group, &[]);
+                    if let Some(ref texture_bind_group) = material.textures_bind_group {
+                        render_pass.set_bind_group(MATERIAL_TEXTURES_BIND_GROUP_LAYOUT_INDEX, texture_bind_group, &[]);
                     }
                     
-                    //render_pass.set_bind_group(2, &camera.bind_group, &[]);
-
-                    // render_pass.set_bind_group(PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &material.texture_bind_group, &[]);
-                    // render_pass.set_bind_group(1, &material.parameter_bind_group, &[]);
-                    // render_pass.set_bind_group(2, &camera.bind_group, &[]);
-
                     _rendering_context_change_number += 1;
                 }
 

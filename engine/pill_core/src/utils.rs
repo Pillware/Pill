@@ -28,18 +28,15 @@ pub fn enum_variant_eq<T>(a: &T, b: &T) -> bool {
 // E.g. pill_core::get_enum_variant_type_name(MyEnum::Hello(88)); will return "Hello"
 pub fn get_enum_variant_type_name<T: core::fmt::Debug>(a: &T) -> String {
     let full_type_name = format!("{:?}", a);
-    let pure_type_name_end_index = full_type_name.rfind('(');
-    match pure_type_name_end_index {
-        Some(v) => full_type_name[..v].to_string(),
-        None => full_type_name.to_string(),
-    }
+    let mut name = full_type_name.split('(').next().unwrap_or(&full_type_name);
+    name = name.trim(); // in case there's space
+    name.to_string()
 }
 
 // --- Path utils ---
 
 // Check if path to asset is correct (exists and has supported format)
-pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static str]) -> Result<()> // Vec<String>
-{
+pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static str]) -> Result<()> {
     path.exists().ok_or(Error::new(EngineError::InvalidAssetPath(path.display().to_string())))?;
 
     match path.extension() {

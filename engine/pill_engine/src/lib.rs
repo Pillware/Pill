@@ -90,7 +90,11 @@ pub mod game {
             Mesh,
             MeshHandle,
             ResourceLoader,
-            Sound
+            Sound,
+            Shader,
+            ShaderParameterSlot,
+            ShaderTextureSlot,
+            ShaderParameterType,
         },
     };
     

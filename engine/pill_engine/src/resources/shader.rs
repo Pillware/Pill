@@ -24,7 +24,9 @@ use crate::{
     }
 };
 
-use pill_core::{ Color, EngineError, PillSlotMapKey, PillTypeMapKey, PillStyle, enum_variant_eq, get_enum_variant_type_name, get_type_name };
+use pill_core::{ 
+    debug, enum_variant_eq, get_enum_variant_type_name, get_type_name, Color, EngineError, LogContext, PillSlotMapKey, PillStyle, PillTypeMapKey 
+};
 
 use anyhow::{ Result, Context, Error };
 use boolinator::*;
@@ -34,13 +36,12 @@ use std::{
     ops::{Range, RangeInclusive} 
 };
 
-
 #[derive(Debug, Clone)]
 pub enum ShaderParameterType {
     Scalar,
     Bool,
     Color,
-    // Add more types as needed
+    // Extend by additional types if needed
 }
 
 #[derive(Debug, Clone)]
@@ -64,7 +65,6 @@ impl ShaderTextureSlot {
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct ShaderParameterSlot {
@@ -92,33 +92,41 @@ pill_core::define_new_pill_slotmap_key! {
 pub struct Shader {
     #[readonly]
     pub name: String,
-    vertex_shader_resource_loader: ResourceLoader,
-    fragment_shader_resource_loader: ResourceLoader,
-    parameter_slots: HashMap<String, ShaderParameterSlot>,
-    texture_slots: HashMap<String, ShaderTextureSlot>,
-    enable_engine_binding: bool,
-    enable_camera_binding: bool,
-    pub renderer_resource_handle: Option<RendererShaderHandle>,
+    #[readonly]
+    pub vertex_shader_resource_loader: ResourceLoader,
+    #[readonly]
+    pub fragment_shader_resource_loader: ResourceLoader,
+    #[readonly]
+    pub parameter_slots: HashMap<String, ShaderParameterSlot>, // TODO: We dont need ShaderParameterSlot, just the type is enough
+    #[readonly]
+    pub texture_slots: HashMap<String, ShaderTextureSlot>,
+    #[readonly]
+    pub enable_engine_binding: bool,
+    #[readonly]
+    pub enable_camera_binding: bool,
+
+    pub(crate) renderer_resource_handle: Option<RendererShaderHandle>,
     handle: Option<ShaderHandle>,
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
 
 impl Shader {
     // NOTE: Builder pattern for Shader makes no sense, because all fields are required
+    // TODO: Parse shader files and create slots automatically as well as pass_engine_parameters and pass_camera_parameters options
 
     pub fn new(
         name: &str, 
-        vertex_shader_load_type: ResourceLoader, 
-        fragment_shader_load_type: ResourceLoader,
+        vertex_shader_resource_loader: ResourceLoader, 
+        fragment_shader_resource_loader: ResourceLoader,
         parameter_slots: HashMap<String, ShaderParameterSlot>,
         texture_slots: HashMap<String, ShaderTextureSlot>,
         enable_engine_binding: bool, // If true, the engine uniform data will be accessible to the shader at (set = 0, binding = 0)
-        enable_camera_binding: bool  // If true, the engine uniform data will be accessible to the shader at (set = 0, binding = 1)
+        enable_camera_binding: bool  // If true, the engine uniform data will be accessible to the shader at (set = 1, binding = 0)
     ) -> Self {
         Self {
             name: name.to_string(),
-            vertex_shader_resource_loader: vertex_shader_load_type,
-            fragment_shader_resource_loader: fragment_shader_load_type,
+            vertex_shader_resource_loader,
+            fragment_shader_resource_loader,
             parameter_slots,
             texture_slots,
             enable_engine_binding,
@@ -157,11 +165,12 @@ impl Resource for Shader {
         let vertex_shader_bytes: &[u8] = match &self.vertex_shader_resource_loader {
             ResourceLoader::Path(path) => {
                 // Check if path to asset is correct
-                pill_core::validate_asset_path(path, &[".vert"])?;
+                let resource_file_path = engine.game_resources_directory_path.join(path);
+                pill_core::validate_asset_path(&resource_file_path, &["glsl"])?;
 
                 // Load data
-                vertex_shader_bytes_vec = std::fs::read(&path)
-                    .with_context(|| format!("Failed to read vertex shader file: {:?}", &path))?;
+                vertex_shader_bytes_vec = std::fs::read(&resource_file_path)
+                    .with_context(|| format!("Failed to read vertex shader file: {:?}", &resource_file_path))?;
 
                 vertex_shader_bytes_vec.as_slice()
             },
@@ -175,11 +184,12 @@ impl Resource for Shader {
         let fragment_shader_bytes: &[u8]  = match &self.fragment_shader_resource_loader {
             ResourceLoader::Path(path) => {
                 // Check if path to asset is correct
-                pill_core::validate_asset_path(path, &[".frag"])?;
+                let resource_file_path = engine.game_resources_directory_path.join(path);
+                pill_core::validate_asset_path(&resource_file_path, &["glsl"])?;
 
                 // Load data
-                fragment_shader_bytes_vec = std::fs::read(&path)
-                    .with_context(|| format!("Failed to read fragment shader file: {:?}", &path))?;
+                fragment_shader_bytes_vec = std::fs::read(&resource_file_path)
+                    .with_context(|| format!("Failed to read fragment shader file: {:?}", &resource_file_path))?;
 
                 fragment_shader_bytes_vec.as_slice()
             },

@@ -6,7 +6,7 @@ use crate::{
     config::*,
 };
 
-use pill_core::{ PillSlotMapKey, PillTypeMapKey, PillStyle, get_type_name };
+use pill_core::{ debug, get_type_name, LogContext, PillSlotMapKey, PillStyle, PillTypeMapKey };
 
 use std::collections::HashSet;
 use std::path::{ Path, PathBuf };
@@ -28,17 +28,21 @@ pub struct Texture {
     #[readonly]
     pub name: String,
     #[readonly]
-    pub load_type: ResourceLoader,
+    pub resource_loader: ResourceLoader,
     #[readonly]
     pub texture_type: TextureType,
     pub(crate) renderer_resource_handle: Option<RendererTextureHandle>,
 }
 
 impl Texture {
-    pub fn new(name: &str, texture_type: TextureType, resource_load_type: ResourceLoader) -> Self {
+    pub fn new(
+        name: &str, 
+        texture_type: TextureType, 
+        resource_loader: ResourceLoader
+    ) -> Self {
         Self {
             name: name.to_string(),
-            load_type: resource_load_type,
+            resource_loader: resource_loader,
             texture_type,
             renderer_resource_handle: None,
         }
@@ -56,11 +60,11 @@ impl Resource for Texture {
         self.name.clone()
     }
 
-    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {        
         let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
 
         // Create new renderer texture resource
-        let image_data = match &self.load_type {
+        let image_data = match &self.resource_loader {
             ResourceLoader::Path(path) => {
                 // Check if path to asset is correct
                 let resource_file_path = engine.game_resources_directory_path.join(path);

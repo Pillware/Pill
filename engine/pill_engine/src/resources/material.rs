@@ -2,7 +2,7 @@ use crate::{
     config::*, ecs::{ DeferredUpdateComponent, DeferredUpdateManagerPointer, DeferredUpdateResourceRequest, MeshRenderingComponent }, engine::Engine, graphics::{ RendererMaterialHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER }, resources::{ Resource, ResourceStorage, Shader, ShaderHandle, Texture, TextureHandle, TextureType }
 };
 
-use pill_core::{ Color, EngineError, PillSlotMapKey, PillTypeMapKey, PillStyle, enum_variant_eq, get_enum_variant_type_name, get_type_name };
+use pill_core::{ debug, enum_variant_eq, get_enum_variant_type_name, get_type_name, Color, EngineError, LogContext, PillSlotMapKey, PillStyle, PillTypeMapKey };
 
 use anyhow::{ Result, Context, Error };
 use boolinator::*;
@@ -39,20 +39,22 @@ impl MaterialParameter {
 }
 
 pub struct MaterialParameterMap {
+    pub material_name: String,
     pub data: HashMap<String, MaterialParameter>,
     pub(crate) mapping: Vec<String>, // Maps index to slot name
 }
 
 impl MaterialParameterMap {
-    pub fn new() -> Self {
+    pub fn new(material_name: String) -> Self {
         Self {
+            material_name,
             data: HashMap::<String, MaterialParameter>::new(),
             mapping: Vec::<String>::new(),
         }
     }
 
     pub fn get_scalar(&self, parameter_name: &str) -> Result<f32> {
-        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Scalar".to_string());
+        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Scalar".to_string(), self.material_name.to_string());
         match self.data.get(parameter_name).context(error.clone())? {
             MaterialParameter::Scalar(v) => match v {
                 Some(vv) => Ok(vv.clone()),
@@ -63,7 +65,7 @@ impl MaterialParameterMap {
     }
 
     pub fn get_bool(&self, parameter_name: &str) -> Result<bool> {
-        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Bool".to_string());
+        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Bool".to_string(), self.material_name.to_string());
         match self.data.get(parameter_name).context(error.clone())? {
             MaterialParameter::Bool(v) => match v {
                 Some(vv) => Ok(vv.clone()),
@@ -74,7 +76,7 @@ impl MaterialParameterMap {
     }
    
     pub fn get_color(&self, parameter_name: &str) -> Result<Color> {
-        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Color".to_string());
+        let error = EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Color".to_string(), self.material_name.to_string());
         match self.data.get(parameter_name).context(error.clone())? {
             MaterialParameter::Color(v) => match v {
                 Some(vv) => Ok(vv.clone()),
@@ -85,7 +87,7 @@ impl MaterialParameterMap {
     }
 
     pub fn set_parameter(&mut self, parameter_name: &str, value: MaterialParameter) -> Result<()> {
-        let error = Error::new(EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), pill_core::get_enum_variant_type_name(&value).to_string()));
+        let error = Error::new(EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), pill_core::get_enum_variant_type_name(&value).to_string(), self.material_name.to_string()));
         let parameter = self.data.get_mut(parameter_name).context(error)?;
 
         if pill_core::enum_variant_eq::<MaterialParameter>(&parameter, &value) {
@@ -156,7 +158,7 @@ impl MaterialBuilder {
     }
 
     pub fn texture(mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<Self> {
-        self.material.set_texture(slot_name, texture_handle)?;
+        self.material.textures.data.insert(slot_name.to_string(), MaterialTexture::new(TextureType::Color));
         Ok(self)
     }
 
@@ -179,6 +181,31 @@ impl MaterialBuilder {
         self.material.set_rendering_order(order)?;
         Ok(self)
     }
+
+    // pub fn texture(mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<Self> {
+    //     self.material.set_texture(slot_name, texture_handle)?; // TODO: These should be assignements, not setters
+    //     Ok(self)
+    // }
+
+    // pub fn scalar(mut self, slot_name: &str, value: f32) -> Result<Self> {
+    //     self.material.set_scalar(slot_name, value)?;
+    //     Ok(self)
+    // }
+
+    // pub fn bool(mut self, slot_name: &str, value: bool) -> Result<Self> {
+    //     self.material.set_bool(slot_name, value)?;
+    //     Ok(self)
+    // }
+
+    // pub fn color(mut self, slot_name: &str, value: Color) -> Result<Self> {
+    //     self.material.set_color(slot_name, value)?;
+    //     Ok(self)
+    // }
+
+    // pub fn rendering_order(mut self, order: u8) -> Result<Self> {
+    //     self.material.set_rendering_order(order)?;
+    //     Ok(self)
+    // }
 
     pub fn build(self) -> Material {
         self.material
@@ -205,6 +232,7 @@ pub struct Material {
     pub rendering_order: u8,
     pub renderer_resource_handle: Option<RendererMaterialHandle>,
    
+    shader_name: Option<String>,
     handle: Option<MaterialHandle>,
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
@@ -215,14 +243,19 @@ impl Material {
     }
 
     // Creates default lit material with default shader and textures
-    pub fn new(name: &str) -> Self {     
+    pub fn new(name: &str) -> Self {
+
+        aaa
+
+
+
         let mut textures = MaterialTextureMap::new();
         textures.data.insert(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), MaterialTexture::new(TextureType::Color));
         textures.mapping.push(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string());
         textures.data.insert(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string(), MaterialTexture::new(TextureType::Normal));
         textures.mapping.push(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string());
 
-        let mut parameters = MaterialParameterMap::new();
+        let mut parameters = MaterialParameterMap::new(name.to_string());
         parameters.data.insert(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), MaterialParameter::Color(None));
         textures.mapping.push(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string());
         parameters.data.insert(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string(), MaterialParameter::Scalar(None));
@@ -235,6 +268,7 @@ impl Material {
             parameters,
             rendering_order: RENDER_QUEUE_KEY_ORDER.max as u8,
             renderer_resource_handle: None, 
+            shader_name: None,
             handle: None,
             deferred_update_manager: None,
         }
@@ -243,7 +277,7 @@ impl Material {
     pub fn set_texture(&mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<()> {
         // Get texture slot
         let texture_slot = self.textures.data.get_mut(slot_name)
-            .ok_or( Error::new(EngineError::MaterialTextureSlotNotFound(slot_name.to_string())))?;
+            .ok_or( Error::new(EngineError::MaterialTextureSlotNotFound(slot_name.to_string(), self.name.to_string())))?;
 
         // Get texture slot index
         let texture_slot_index = self.textures.mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping"); 
@@ -262,7 +296,7 @@ impl Material {
     pub fn remove_texture(&mut self, slot_name: &str) -> Result<()> {
         // Get texture slot
         let texture_slot = self.textures.data.get_mut(slot_name)
-            .ok_or( Error::new(EngineError::MaterialTextureSlotNotFound(slot_name.to_string())))?;
+            .ok_or( Error::new(EngineError::MaterialTextureSlotNotFound(slot_name.to_string(), self.name.to_string())))?;
 
         // Get texture slot index
         let texture_slot_index = self.textures.mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping"); 
@@ -324,7 +358,7 @@ impl Material {
 
     fn set_parameter(&mut self, parameter_name: &str, value: MaterialParameter) -> Result<()> {
         // Set parameter
-        self.parameters.set_parameter(parameter_name, value)?;
+        self.parameters.set_parameter(parameter_name, value).context(format!("Failed to set parameter '{}' for material '{}'", parameter_name, self.name))?;
 
         // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
         if self.renderer_resource_handle.is_some() { 
@@ -385,7 +419,9 @@ impl Resource for Material {
         }
 
         // Get shader renderer resource handle
-        let shader_renderer_resource_handle = engine.get_resource::<Shader>(&self.shader_handle)?.renderer_resource_handle.unwrap();
+        let shader = engine.get_resource::<Shader>(&self.shader_handle)?;
+        self.shader_name = Some(shader.get_name());
+        let shader_renderer_resource_handle = shader.renderer_resource_handle.unwrap();
 
         // Create new renderer material resource
         let renderer_resource_handle = engine.renderer.create_material(&self.name, shader_renderer_resource_handle, &self.textures, &self.parameters).context(error_message)?;

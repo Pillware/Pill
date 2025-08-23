@@ -1,14 +1,6 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
 
-
-use crate::{ RendererResourceStorage };
-use crate::config::{
-    MATERIAL_PARAMETERS_BINDING_INDEX, 
-    PARAMETERS_BIND_GROUP_LAYOUT_INDEX, 
-    TEXTURES_BIND_GROUP_LAYOUT_INDEX
-};
-
-use pill_core::RendererError;
+use pill_core::{ debug, LogContext, PillStyle, RendererError };
 use pill_engine::internal::{
     get_default_texture_handles, 
     get_renderer_texture_handle_from_material_texture, 
@@ -24,6 +16,7 @@ use pill_engine::internal::{
 use wgpu::util::DeviceExt;
 use anyhow::{ Result, Error};
 use std::collections::HashMap;
+use crate::resources::RendererResourceStorage;
 
 // --- Material ---
 
@@ -31,9 +24,8 @@ pub struct RendererMaterial {
     pub name: String,
     pub shader_handle: RendererShaderHandle,
     pub parameters_bind_group: Option<wgpu::BindGroup>,
-    pub texture_bind_group: Option<wgpu::BindGroup>,
-    pub(crate) material_parameters_uniform_buffer: Option<wgpu::Buffer>,
-    pub(crate) material_parameters_uniform_size: usize,
+    pub textures_bind_group: Option<wgpu::BindGroup>,
+    pub(crate) parameters_uniform_buffer: Option<wgpu::Buffer>,
 }
 
 impl RendererMaterial {
@@ -46,56 +38,60 @@ impl RendererMaterial {
         textures: &MaterialTextureMap,
         parameters: &MaterialParameterMap,
     ) -> Result<Self> {
+        debug!(LogContext::Rendering => "Creating material {}", name.name_style());
+        
         let shader = rendering_resource_storage.shaders.get(shader_handle)
             .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
         let parameter_slots = &shader.parameter_slots;
         let texture_slots = &shader.texture_slots;
 
-        // Calculate uniform buffer size, create buffer if needed and write data to it
-        let material_parameters_uniform_size = if !parameter_slots.is_empty() && !shader.bind_group_layouts.is_empty() {
-            Self::calculate_uniform_size(parameter_slots)
-        } else {
-            0
+
+        // Create parameters uniform buffer and bind group if there are parameter slots
+        let (parameters_bind_group, parameters_uniform_buffer) = { 
+            if !parameter_slots.is_empty() {
+                // Calculate uniform buffer size, create buffer if needed and write data to it
+                let parameters_uniform_buffer_size = Self::calculate_uniform_size(parameter_slots);
+
+                let parameters_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&format!("{}_material_parameters_buffer", name)),
+                    size: parameters_uniform_buffer_size as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+
+                // Write parameter data to buffer
+                Self::write_parameters_to_buffer(queue, &parameters_uniform_buffer, parameter_slots, parameters)?;
+
+                debug!(LogContext::Rendering => "Uniform buffer of size {} bytes created", parameters_uniform_buffer_size);
+
+                // Create parameters uniform buffer bind group
+                let parameters_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(&format!("{}_material_parameters_bind_group", name)),
+                    layout: shader.parameters_bind_group_layout.as_ref().unwrap(),
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0, // (set = 2, binding = 0)
+                            resource: parameters_uniform_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+
+                debug!(LogContext::Rendering => "Parameters bind group created");
+
+                (Some(parameters_bind_group), Some(parameters_uniform_buffer))
+            } else {
+                debug!(LogContext::Rendering => "No parameter slots found, skipping uniform buffer and bind group creation");
+                (None, None)
+            }
         };
-        let material_parameters_uniform_buffer = if material_parameters_uniform_size > 0 {
-            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("{}_material_buffer", name)),
-                size: material_parameters_uniform_size as u64,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
 
-            // Write parameter data to buffer
-            Self::write_parameters_to_buffer(queue, &buffer, parameter_slots, parameters)?;
-            Some(buffer)
-        } else {
-            None
-        };
-
-        // Create bind groups based on shader's bind group layouts
-        //let mut bind_groups = Vec::new();
-        
-// TODO: Do in need to define also bind groups for engine and camera parameters? so it matches the parameter layout? or some entries can be empty?
-
-        // Create parameters uniform buffer bind group if we have uniform buffer
-        let parameters_bind_group = if let Some(ref buffer) = material_parameters_uniform_buffer {
-            Some(Self::create_parameters_bind_group(
-                device,
-                &shader.bind_group_layouts[PARAMETERS_BIND_GROUP_LAYOUT_INDEX as usize],
-                &format!("{}_parameters", name),
-                buffer,
-            )?)
-        } else {
-            None
-        };
-
-        // Create texture bind groups
-        let texture_bind_group = if !texture_slots.is_empty() && !shader.bind_group_layouts.is_empty() {
-            Some(Self::create_texture_bind_group(
+        // Create texture bind group
+        let textures_bind_group = if !texture_slots.is_empty() {
+            Some(Self::create_textures_bind_group(
                 device,
                 rendering_resource_storage,
-                &shader.bind_group_layouts[TEXTURES_BIND_GROUP_LAYOUT_INDEX as usize],
+                &shader.textures_bind_group_layout.as_ref().unwrap(),
                 &format!("{}_textures", name),
                 texture_slots,
                 textures,
@@ -104,14 +100,17 @@ impl RendererMaterial {
             None
         };
 
+        debug!(LogContext::Rendering => "Textures bind group created");
+
         let renderer_material = Self {
             name: name.to_string(),
             shader_handle,
             parameters_bind_group,
-            texture_bind_group,
-            material_parameters_uniform_buffer,
-            material_parameters_uniform_size,
+            textures_bind_group,
+            parameters_uniform_buffer,
         };
+
+        debug!(LogContext::Rendering => "Material creation successful");
 
         Ok(renderer_material)
     }
@@ -172,7 +171,7 @@ impl RendererMaterial {
             .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
         // Update uniform buffer if it exists
-        if let Some(ref buffer) = material.material_parameters_uniform_buffer {
+        if let Some(ref buffer) = material.parameters_uniform_buffer {
             Self::write_parameters_to_buffer(queue, buffer, parameter_slots, parameters)?;
         }
 
@@ -240,7 +239,7 @@ impl RendererMaterial {
         Ok(())
     }
 
-    fn create_texture_bind_group(
+    fn create_textures_bind_group(
         device: &wgpu::Device, 
         rendering_resource_storage: &RendererResourceStorage, 
         texture_bind_group_layout: &wgpu::BindGroupLayout,
@@ -282,25 +281,25 @@ impl RendererMaterial {
         Ok(bind_group)
     }
 
-    fn create_parameters_bind_group(
-        device: &wgpu::Device, 
-        parameter_bind_group_layout: &wgpu::BindGroupLayout,
-        name: &str,
-        buffer: &wgpu::Buffer,
-    ) -> Result<wgpu::BindGroup> {
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: parameter_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: MATERIAL_PARAMETERS_BINDING_INDEX as u32,
-                    resource: buffer.as_entire_binding(),
-                },
-            ],
-            label: Some(name),
-        });
+    // fn create_parameters_bind_group(
+    //     device: &wgpu::Device, 
+    //     parameter_bind_group_layout: &wgpu::BindGroupLayout,
+    //     name: &str,
+    //     buffer: &wgpu::Buffer,
+    // ) -> Result<wgpu::BindGroup> {
+    //     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    //         layout: parameter_bind_group_layout,
+    //         entries: &[
+    //             wgpu::BindGroupEntry {
+    //                 binding: MATERIAL_PARAMETERS_BINDING_INDEX as u32,
+    //                 resource: buffer.as_entire_binding(),
+    //             },
+    //         ],
+    //         label: Some(name),
+    //     });
 
-        Ok(bind_group)
-    }
+    //     Ok(bind_group)
+    // }
 
     // Helper method to get bind group by index
     // pub fn get_bind_group(&self, index: usize) -> Option<&wgpu::BindGroup> {

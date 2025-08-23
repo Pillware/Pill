@@ -1,19 +1,24 @@
 #version 450
 
 // Input vertex data
-layout(location=0) in vec3 vertex_position;
-layout(location=1) in vec2 vertex_texture_coordinates;
-layout(location=2) in vec3 vertex_normal;
-layout(location=3) in vec3 vertex_tangent;
-layout(location=4) in vec3 vertex_bitangent;
+layout(location=0) in vec3 in_vertex_position;
+layout(location=1) in vec2 in_vertex_texture_coordinates;
+layout(location=2) in vec3 in_vertex_normal;
+layout(location=3) in vec3 in_vertex_tangent;
+layout(location=4) in vec3 in_vertex_bitangent;
 
 // Input model data (instance data)
 layout(location=5) in vec3 transform_position;
 layout(location=6) in vec3 transform_rotation;
 layout(location=7) in vec3 transform_scale;
 
-// Input camera data
-layout(set=2, binding=0) uniform camera {
+// Input engine parameters
+layout(set=0, binding=0) uniform engine {
+    float delta_time; 
+};
+
+// Input camera parameters
+layout(set=1, binding=0) uniform camera {
     vec3 camera_position; 
     mat4 camera_view_projection;
 };
@@ -117,20 +122,20 @@ void main() {
     
 
     // Create tangent matrix
-    vec3 tangent = normalize(normal_matrix * vertex_tangent);
-    vec3 bitangent = normalize(normal_matrix * vertex_bitangent);
-    vec3 normal = normalize(normal_matrix * vertex_normal);
+    vec3 tangent = normalize(normal_matrix * in_vertex_tangent);
+    vec3 bitangent = normalize(normal_matrix * in_vertex_bitangent);
+    vec3 normal = normalize(normal_matrix * in_vertex_normal);
     mat3 TBN_matrix = transpose(mat3(tangent, bitangent, normal));
     out_TBN_tangent = TBN_matrix[0];  // First row (Tangent)
     out_TBN_bitangent = TBN_matrix[1]; // Second row (Bitangent)
     out_TBN_normal = TBN_matrix[2];   // Third row (Normal)
 
     // Calculate vertex position in model space
-    vec4 model_space = model_matrix * vec4(vertex_position, 1.0);
+    vec4 model_space = model_matrix * vec4(in_vertex_position, 1.0);
     out_vertex_position = TBN_matrix * model_space.xyz;
 
     // Just forward texture coordinates
-    out_vertex_texture_coordinates = vertex_texture_coordinates;
+    out_vertex_texture_coordinates = in_vertex_texture_coordinates;
 
     gl_Position = camera_view_projection * model_space;
 }

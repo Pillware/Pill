@@ -19,7 +19,7 @@ pub enum LogContext {
     ECS,
     Rendering,
     Resources,
-    Update,
+    Frame
 }
 
 pub fn get_default_log_levels() -> String {
@@ -30,7 +30,7 @@ pub fn get_default_log_levels() -> String {
         format!("{}: info", LogContext::ECS.as_ref()),
         format!("{}: info", LogContext::Rendering.as_ref()),
         format!("{}: info", LogContext::Resources.as_ref()),
-        format!("{}: info", LogContext::Update.as_ref()),
+        format!("{}: info", LogContext::Frame.as_ref()),
     ]
     .join(", ")
 }
@@ -93,6 +93,7 @@ pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
     //builder.filter_module("wgpu_hal::vulkan::instance", LevelFilter::Info); 
 
     // Allow default context logging
+    // TODO: Does it work??
     builder.filter_module("default", LevelFilter::Info);
 
     // Apply per-module filters
