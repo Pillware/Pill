@@ -25,7 +25,16 @@ use crate::{
 };
 
 use pill_core::{ 
-    debug, enum_variant_eq, get_enum_variant_type_name, get_type_name, Color, EngineError, LogContext, PillSlotMapKey, PillStyle, PillTypeMapKey 
+    debug, 
+    enum_variant_eq, 
+    get_enum_variant_type_name, 
+    get_type_name, 
+    Color, 
+    EngineError, 
+    LogContext, 
+    PillSlotMapKey, 
+    PillStyle, 
+    PillTypeMapKey 
 };
 
 use anyhow::{ Result, Context, Error };

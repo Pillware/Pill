@@ -14,26 +14,10 @@ use crate::{
     }
 };
 
+use indexmap::IndexMap;
+
 use pill_engine::internal::{
-    get_renderer_resource_handle_from_camera_component, 
-    CameraComponent, 
-    ComponentStorage, 
-    EntityHandle, 
-    MaterialParameterMap, 
-    MaterialTextureMap, 
-    MeshData, 
-    PillRenderer, 
-    RenderQueueItem, 
-    RendererCameraHandle, 
-    RendererMaterialHandle, 
-    RendererMeshHandle, 
-    RendererShaderHandle, 
-    RendererTextureHandle, 
-    ShaderParameterSlot, 
-    ShaderTextureSlot, 
-    TextureType, 
-    TransformComponent, 
-    RENDER_QUEUE_KEY_ORDER
+    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
 };
 
 use pill_core::{ 
@@ -111,8 +95,8 @@ impl PillRenderer for Renderer {
         &mut self, 
         name: &str, 
         renderer_shader_handle: RendererShaderHandle, 
-        textures: &MaterialTextureMap, 
-        parameters: &MaterialParameterMap
+        textures: &IndexMap<String, MaterialTexture>, 
+        parameters: &HashMap<String, MaterialParameter>
     ) -> Result<RendererMaterialHandle> {
         let material = RendererMaterial::new(
             &self.state.device,
@@ -147,7 +131,7 @@ impl PillRenderer for Renderer {
 
     // --- Update ---
 
-    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &MaterialTextureMap) -> Result<()> {
+    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &IndexMap<String, MaterialTexture>) -> Result<()> {
         RendererMaterial::update_textures(
             &self.state.device, 
             renderer_material_handle, 
@@ -156,7 +140,7 @@ impl PillRenderer for Renderer {
         )
     }
 
-    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &MaterialParameterMap) -> Result<()> {
+    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &HashMap<String, MaterialParameter>) -> Result<()> {
         RendererMaterial::update_parameters(
             &self.state.device, 
             &self.state.queue, 

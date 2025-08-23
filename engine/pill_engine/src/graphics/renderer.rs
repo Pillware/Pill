@@ -1,27 +1,18 @@
 use crate::{ 
-    engine::Engine, 
     ecs::{
-        EntityHandle,
-        ComponentStorage, 
-        TransformComponent, 
-        CameraComponent,   
-    }, 
-    resources::{
+        CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
+    }, engine::Engine, graphics::RenderQueueItem, internal::{MaterialParameter, MaterialTexture}, resources::{
         MaterialHandle, 
-        MaterialParameterMap,
-        MaterialTextureMap,
         MeshData, 
         MeshHandle, 
         ShaderParameterSlot,
         ShaderTextureSlot,
         TextureHandle, 
         TextureType, 
-    },
-    graphics::{
-        RenderQueueItem,
-    },
+    }
 };
 
+use indexmap::IndexMap;
 use pill_core::{PillSlotMapKey, Timer};
 use pill_core::PillStyle;
 
@@ -74,8 +65,8 @@ pub trait PillRenderer {
         &mut self, 
         name: &str, 
         renderer_shader_handle: RendererShaderHandle,
-        textures: &MaterialTextureMap, 
-        parameters: &MaterialParameterMap
+        textures: &IndexMap<String, MaterialTexture>, 
+        parameters: &HashMap<String, MaterialParameter>
     ) -> Result<RendererMaterialHandle>;
 
     fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle>;
@@ -86,9 +77,9 @@ pub trait PillRenderer {
 
     // --- Update ---
 
-    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &MaterialTextureMap) -> Result<()>;
+    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &IndexMap<String, MaterialTexture>) -> Result<()>;
 
-    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &MaterialParameterMap) -> Result<()>;
+    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &HashMap<String, MaterialParameter>) -> Result<()>;
 
     // --- Destroy ---
 

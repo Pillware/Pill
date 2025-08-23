@@ -65,21 +65,21 @@ impl PillGame for Game {
        
 	   println!("Added resources!!!!!!!!!!!!!!!");
 		// Add materials
-		let chimpanzini_bananini_material_handle = engine.add_resource::<Material>(
-			Material::builder("chimpanzini_bananini")
-    			.shader(cartoon_shader_handle)?
-				.texture("color", chimpanzini_bananini_color_texture_handle)?
-				.scalar("posterize_level",  3.0)?
-				.build()
-		)?;
-
 		// let chimpanzini_bananini_material_handle = engine.add_resource::<Material>(
 		// 	Material::builder("chimpanzini_bananini")
+    	// 		.shader(cartoon_shader_handle)?
 		// 		.texture("color", chimpanzini_bananini_color_texture_handle)?
-		// 		.color("tint", Color::new(1.0, 1.0, 1.0))?
-		// 		.scalar("specularity", 0.5)?
+		// 		.scalar_parameter("posterize_level",  3.0)?
 		// 		.build()
 		// )?;
+
+		let chimpanzini_bananini_material_handle1 = engine.add_resource::<Material>(
+			Material::builder("chimpanzini_bananini1")
+				.texture("color", chimpanzini_bananini_color_texture_handle)?
+				.color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
+				.scalar_parameter("specularity", 0.5)?
+				.build()
+		)?;
 
 		// --- Create entities ---
 
@@ -95,11 +95,23 @@ impl PillGame for Game {
 				.build())
 			.build();
 
-		// Create chimpanzini bananini entity
+		// // Create chimpanzini bananini entity
+		// engine.build_entity(active_scene)
+		// 	.with_component(TransformComponent::new())
+		// 	.with_component(MeshRenderingComponent::builder()
+		// 		.material(&chimpanzini_bananini_material_handle)
+		// 		.mesh(&chimpanzini_bananini_mesh_handle)
+		// 		.build())
+		// 	.with_component(TagAlphaComponent {})
+		// 	.build();
+
+		// Create chimpanzini bananini entity 2
 		engine.build_entity(active_scene)
-			.with_component(TransformComponent::new())
+			.with_component(TransformComponent::builder()
+				.position(Vector3f::new(0.2, 0.0, 0.0))
+				.build())
 			.with_component(MeshRenderingComponent::builder()
-				.material(&chimpanzini_bananini_material_handle)
+				.material(&chimpanzini_bananini_material_handle1)
 				.mesh(&chimpanzini_bananini_mesh_handle)
 				.build())
 			.with_component(TagAlphaComponent {})

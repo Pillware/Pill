@@ -170,8 +170,8 @@ impl Engine {
         self.add_default_resource(
             Material::builder(DEFAULT_LIT_MATERIAL_NAME)
                 .shader(default_lit_shader_handle)?
-                .color(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME, Color::new(1.0, 1.0, 1.0))?
-                .scalar(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME, 0.5)?
+                .color_parameter(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME, Color::new(1.0, 1.0, 1.0))?
+                .scalar_parameter(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME, 0.5)?
                 .texture(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME, default_color_texture_handle)?
                 .texture(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME, default_normal_texture_handle)?
                 .build()

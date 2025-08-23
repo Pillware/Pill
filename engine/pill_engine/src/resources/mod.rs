@@ -40,10 +40,8 @@ pub use texture::{
 
 pub use material::{ 
     Material, 
-    MaterialTextureMap, 
     MaterialParameter, 
     MaterialTexture, 
-    MaterialParameterMap, 
     MaterialHandle,
     get_renderer_texture_handle_from_material_texture,
 };

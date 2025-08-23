@@ -10,6 +10,7 @@ pill_engine = {path = "../pill_engine", features = ["internal"]}
 # Data containers
 slotmap = "1.0.6"
 slab = "0.4.5"
+indexmap = "1.7.0"
 
 # Loaders
 image = "0.23"

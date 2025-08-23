@@ -93,25 +93,44 @@ impl Resource for Texture {
         }
 
         // Take resource storage from engine
-        let resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>().expect("Critical: Resource not registered");
+        let resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>()?;
         let materials = &mut resource_storage.data;
 
         // Find materials that use this texture and update them
         for material_slot in materials.iter_mut() {
-            let material = material_slot.1.as_mut().expect("Critical: Resource is None");
+            let material: &mut Material = material_slot.1.as_mut().expect("Critical: Resource is None");
 
             // Update texture slots
             let mut material_updated = false;
-            for texture_slot in material.get_textures().data.iter_mut() {
-                if let Some(texture_handle) = texture_slot.1.texture_handle {
-                    // If material texture has handle to this texture
-                    if texture_handle.data() == self_handle.data() {
-                        texture_slot.1.texture_handle = None;
-                        texture_slot.1.renderer_texture_handle = None;
-                        material_updated = true;
-                    }
+            // Iterate all texture slots in material and remove one with handle to this texture
+            // for (texture_slot_name, texture_slot) in material.textures.iter_mut() {
+            //     if texture_slot.texture_handle.data() == self_handle.data() { // TODO: Add proper handle comparison method
+            //         material.textures.remove(texture_slot_name);
+            //         material_updated = true;
+            //     }
+            // }
+
+            let mut texture_slots_to_remove = Vec::new();
+            for (texture_slot_name, texture_slot) in material.textures.iter() {
+                if texture_slot.texture_handle.data() == self_handle.data() {
+                    texture_slots_to_remove.push(texture_slot_name.clone());
                 }
             }
+            for texture_slot in texture_slots_to_remove {
+                material.textures.remove(&texture_slot);
+                material_updated = true;
+            }
+
+            // for texture_slot in material.textures.iter_mut() {
+            //     if let Some(texture_handle) = texture_slot.1.texture_handle {
+            //         // If material texture has handle to this texture
+            //         if texture_handle.data() == self_handle.data() {
+            //             texture_slot.1.texture_handle = None;
+            //             texture_slot.1.renderer_texture_handle = None;
+            //             material_updated = true;
+            //         }
+            //     }
+            // }
 
             if material_updated {
                 engine.renderer.update_material_textures(material.renderer_resource_handle.unwrap(), &material.textures).unwrap();

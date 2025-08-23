@@ -73,7 +73,7 @@ impl<T> Slot<T> {
         self.version % 2 > 0
     }
 
-    pub fn get(&'_ self) -> SlotContent<'_, T> {
+    pub fn get(&self) -> SlotContent<T> {
         unsafe {
             if self.occupied() {
                 Occupied(&*self.u.value)

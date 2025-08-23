@@ -175,9 +175,7 @@ pub mod internal {
             ResourceManager,
 
             MaterialTexture,
-            MaterialTextureMap,
             MaterialParameter,
-            MaterialParameterMap,
             get_renderer_texture_handle_from_material_texture,
         },
     };

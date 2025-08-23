@@ -1,16 +1,9 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
 
-use pill_core::{ debug, LogContext, PillStyle, RendererError };
+use indexmap::IndexMap;
+use pill_core::{ debug, Color, LogContext, PillStyle, RendererError };
 use pill_engine::internal::{
-    get_default_texture_handles, 
-    get_renderer_texture_handle_from_material_texture, 
-    MaterialParameterMap, 
-    MaterialTextureMap, 
-    RendererMaterialHandle, 
-    RendererShaderHandle, 
-    ShaderParameterSlot, 
-    ShaderParameterType, 
-    ShaderTextureSlot,
+    get_default_texture_handles, get_renderer_texture_handle_from_material_texture, MaterialParameter, MaterialTexture, RendererMaterialHandle, RendererShaderHandle, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot
 };
 
 use wgpu::util::DeviceExt;
@@ -35,8 +28,8 @@ impl RendererMaterial {
         rendering_resource_storage: &RendererResourceStorage,
         name: &str,
         shader_handle: RendererShaderHandle,
-        textures: &MaterialTextureMap,
-        parameters: &MaterialParameterMap,
+        textures: &IndexMap<String, MaterialTexture>,
+        parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<Self> {
         debug!(LogContext::Rendering => "Creating material {}", name.name_style());
         
@@ -119,7 +112,7 @@ impl RendererMaterial {
         device: &wgpu::Device, 
         material_renderer_handle: RendererMaterialHandle,
         rendering_resource_storage: &mut RendererResourceStorage,
-        textures: &MaterialTextureMap
+        textures: &IndexMap<String, MaterialTexture>
     ) -> Result<()> {
         // let material = rendering_resource_storage.materials.get(material_renderer_handle)
         //     .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
@@ -157,7 +150,7 @@ impl RendererMaterial {
         queue: &wgpu::Queue, 
         material_renderer_handle: RendererMaterialHandle,
         rendering_resource_storage: &mut RendererResourceStorage,
-        parameters: &MaterialParameterMap
+        parameters: &HashMap<String, MaterialParameter>
     ) -> Result<()> {
         let material = rendering_resource_storage.materials.get(material_renderer_handle)
             .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
@@ -188,7 +181,7 @@ impl RendererMaterial {
         queue: &wgpu::Queue,
         buffer: &wgpu::Buffer,
         parameter_slots: &HashMap<String, ShaderParameterSlot>,
-        parameters: &MaterialParameterMap
+        parameters: &HashMap<String, MaterialParameter>
     ) -> Result<()> {
         // Create a temporary buffer to hold all parameter data
         let mut data = Vec::new();
@@ -201,10 +194,10 @@ impl RendererMaterial {
             match slot.parameter_type {
                 ShaderParameterType::Color => {
                     // Color parameter (3 floats + padding)
-                    if let Ok(color) = parameters.get_color(slot_name) {
-                        data.extend_from_slice(&color.x.to_le_bytes());
-                        data.extend_from_slice(&color.y.to_le_bytes());
-                        data.extend_from_slice(&color.z.to_le_bytes());
+                    if let Some(MaterialParameter::Color(value)) = parameters.get(slot_name) {
+                        data.extend_from_slice(&value.x.to_le_bytes());
+                        data.extend_from_slice(&value.y.to_le_bytes());
+                        data.extend_from_slice(&value.z.to_le_bytes());
                         data.extend_from_slice(&0.0f32.to_le_bytes()); // Padding
                     } else {
                         data.extend_from_slice(&[0u8; 16]);
@@ -212,8 +205,8 @@ impl RendererMaterial {
                 }
                 ShaderParameterType::Scalar => {
                     // Scalar parameter (1 float + padding)
-                    if let Ok(scalar) = parameters.get_scalar(slot_name) {
-                        data.extend_from_slice(&scalar.to_le_bytes());
+                    if let Some(MaterialParameter::Scalar(value)) = parameters.get(slot_name) {
+                        data.extend_from_slice(&value.to_le_bytes());
                         data.extend_from_slice(&[0u8; 12]); // Padding to 16 bytes
                     } else {
                         data.extend_from_slice(&[0u8; 16]);
@@ -221,8 +214,8 @@ impl RendererMaterial {
                 }
                 ShaderParameterType::Bool => {
                     // Bool parameter (1 u32 + padding)
-                    if let Ok(boolean) = parameters.get_bool(slot_name) {
-                    let value: u32 = if boolean { 1 } else { 0 };
+                    if let Some(MaterialParameter::Bool(value)) = parameters.get(slot_name) {
+                        let value: u32 = if *value { 1 } else { 0 };
                         data.extend_from_slice(&value.to_le_bytes());
                         data.extend_from_slice(&[0u8; 12]); // Padding to 16 bytes
                     } else {
@@ -245,30 +238,36 @@ impl RendererMaterial {
         texture_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        textures: &MaterialTextureMap
+        textures: &IndexMap<String, MaterialTexture>
     ) -> Result<wgpu::BindGroup> {
         let mut entries = Vec::new();
-        
+
         for (slot_name, slot) in texture_slots {
             // Get texture from material texture map or use default
-            if let Some(material_texture) = textures.data.get(slot_name) {
-                let renderer_texture_handle = get_renderer_texture_handle_from_material_texture(material_texture)
-                    .unwrap_or_else(|| get_default_texture_handles(material_texture.texture_type).1);
-                
-                let texture = rendering_resource_storage.textures.get(renderer_texture_handle).unwrap();
-                
-                // Add texture view entry
-                entries.push(wgpu::BindGroupEntry {
-                    binding: slot.texture_binding,
-                    resource: wgpu::BindingResource::TextureView(&texture.texture_view),
-                });
-                
-                // Add sampler entry
-                entries.push(wgpu::BindGroupEntry {
-                    binding: slot.sampler_binding,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
-                });
-            }
+            let renderer_texture_handle = match textures.get(slot_name) {
+                Some(material_texture) => {
+                    debug!(LogContext::Rendering => "Material texture slot {} found in material textures", slot_name.name_style());
+                    get_renderer_texture_handle_from_material_texture(material_texture).unwrap()
+                },
+                None => {
+                    debug!(LogContext::Rendering => "Material texture slot {} not found in material textures, using default texture", slot_name.name_style());
+                    get_default_texture_handles(slot.texture_type).1
+                }
+            };
+
+            let texture = rendering_resource_storage.textures.get(renderer_texture_handle).unwrap();
+
+            // Add texture view entry
+            entries.push(wgpu::BindGroupEntry {
+                binding: slot.texture_binding,
+                resource: wgpu::BindingResource::TextureView(&texture.texture_view),
+            });
+            
+            // Add sampler entry
+            entries.push(wgpu::BindGroupEntry {
+                binding: slot.sampler_binding,
+                resource: wgpu::BindingResource::Sampler(&texture.sampler),
+            });
         }
 
         // Set texture resources to the bind group
