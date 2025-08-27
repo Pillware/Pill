@@ -71,6 +71,16 @@ pub use components::time_component::{
     TimeComponent,
 };
 
+pub use components::net_components::{
+    NetState,
+    NetSide,
+};
+
+pub use components::network_state_component::{
+    NetworkStateComponent,
+    NetEntityState,
+};
+
 // - Systems
 
 pub use systems::{
@@ -97,6 +107,14 @@ pub use systems::time_system::{
 
 pub use systems::audio_system::{
     audio_system,
+};
+
+pub use systems::networking_system::{
+    networking_system_client,
+    networking_system_server,
+    EntityUpdate,
+    NetworkUpdatePayload,
+    NetEntityAction
 };
 
 // - Other

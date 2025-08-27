@@ -58,6 +58,9 @@ pub use utils::{
     get_enum_variant_type_name,
     validate_asset_path,
     get_game_error_message,
+	generate_color_palette,
+    hsl_to_rgb,
+    DISTINCT_COLOR_PALETTE
 };
 
 pub use timer::{
@@ -69,6 +72,7 @@ pub use net::{
     NetServer,
     NetClient,
     WireMsg,
+    WireTag,
     RELIABLE_CHANNEL_ID,
     UNRELIABLE_CHANNEL_ID,
     srv_start,
@@ -79,4 +83,5 @@ pub use net::{
     cli_connect,
     cli_send,
     cli_update,
+    cli_flush,
 };

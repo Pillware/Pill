@@ -1,6 +1,8 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
 
 mod renderer;
+#[cfg(feature = "headless")]
+mod dummy_renderer;
 mod render_queue;
 
 // --- Use ---
@@ -14,6 +16,9 @@ pub use renderer::{
     RendererTextureHandle,
     RendererPipelineHandle,
 };
+
+#[cfg(feature = "headless")]
+pub use self::dummy_renderer::DummyRenderer;
 
 pub use render_queue::{
     RenderQueueItem,

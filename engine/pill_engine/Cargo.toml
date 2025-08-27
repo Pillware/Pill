@@ -49,3 +49,5 @@ glob = "0.3"
 [features]
 game = []
 internal = []
+headless = []
+net = []

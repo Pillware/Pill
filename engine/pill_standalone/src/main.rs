@@ -91,20 +91,9 @@ fn set_log_level(config: &Config) {
 }
 
 pub fn load_window_icon(path: &Path) -> Option<Icon> {
-    // Fast path on Windows: let the OS decode common formats for us.
-    #[cfg(target_os = "windows")]
-    {
-        let icon = Icon::from_path(path, None).ok()?;
-        return Some(icon);
-    }
-
-    // Cross‑platform path: decode with the `image` crate.
-    #[cfg(not(target_os = "windows"))]
-    {
-        let image = image::open(path).ok()?.into_rgba8();
-        let (width, height) = image.dimensions();
-        Icon::from_rgba(image.into_raw(), width, height).ok()
-    }
+    let image = image::open(path).ok()?.into_rgba8();
+    let (width, height) = image.dimensions();
+    Icon::from_rgba(image.into_raw(), width, height).ok()
 }
 
 fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> WindowData {
