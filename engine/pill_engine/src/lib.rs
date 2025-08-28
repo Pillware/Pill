@@ -158,7 +158,7 @@ pub mod internal {
             NetworkStateComponent,
             networking_system_server,
             networking_system_client,
-            NetState,
+            GlobalNetState,
             NetEntityState,
             EntityUpdate,
             NetworkUpdatePayload,

@@ -1,14 +1,15 @@
 use pill_engine::game::*;
 
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 
 use pill_engine::internal::{
     TransformComponent,
-    NetState, NetSide, NetworkStateComponent, NetEntityState, EntityUpdate, NetworkUpdatePayload, NetEntityAction,
+    GlobalNetState, NetSide, NetworkStateComponent, NetEntityState, EntityUpdate, NetworkUpdatePayload, NetEntityAction,
     networking_system_client,
 };
 
-use pill_core::{WireMsg, WireTag, cli_send, cli_flush};
+use pill_core::{WireMsg, WireTag, cli_send, cli_flush, DISTINCT_COLOR_PALETTE};
 
 // ----- CONSTANTS -----------------------------------------------------------
 
@@ -138,7 +139,10 @@ impl PillGame for Game {
 		engine.add_global_component(JoinState { sent: false })?;
 		let client_id = rand::thread_rng().gen_range(1..=10_000_000);
 		let server_addr = format!("{REMOTE_SERVER_ADDR}:{REMOTE_SERVER_PORT}");
-		engine.add_global_component(NetState::new_client(&server_addr, client_id)?)?;
+
+        let mut net_state = GlobalNetState::new_client(&server_addr, client_id)?;
+        net_state.spawn_handlers.insert("player".into(), spawn_player);
+        engine.add_global_component(net_state);
 
 		println!("Client will connect to {server_addr} with ID {client_id}");
 
@@ -152,6 +156,7 @@ impl PillGame for Game {
 				owner_id: client_id,
 				state: NetEntityState::Spawn,
 				transform: Some(transform_component),
+                kind: "player".into(),
 			},
 		)?;
 
@@ -171,15 +176,14 @@ fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> R
 
     //println!("Flushing {} updates to server", updates.len());
 
-    let my_id = engine.get_global_component::<NetState>()?.my_id;
+    let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
     let payload = NetworkUpdatePayload {
         client_id: my_id as u64,
         updates,
         timestamp: engine.get_global_component::<TimeComponent>()?.time,
-        sequence: rand::thread_rng().gen(),
     };
 
-    if let NetSide::Client(net) = &mut engine.get_global_component_mut::<NetState>()?.side {
+    if let NetSide::Client(net) = &mut engine.get_global_component_mut::<GlobalNetState>()?.side {
         cli_send(
             net,
             &WireMsg {
@@ -197,7 +201,7 @@ fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> R
 // ───────────────────────────────────────────────────────────────────────────
 fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let owner_id = engine.get_global_component::<NetState>()?.my_id;
+    let owner_id = engine.get_global_component::<GlobalNetState>()?.my_id;
     let input = engine.get_global_component_mut::<InputComponent>()?;
 
     // Build a direction vector from arrow-key input ------------------------
@@ -268,7 +272,7 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
 fn send_join_system(engine: &mut Engine) -> Result<()> {
     // 1. Short immutable borrow: are we connected yet?
     let connected = {
-        let state = engine.get_global_component::<NetState>()?;
+        let state = engine.get_global_component::<GlobalNetState>()?;
         matches!(&state.side, NetSide::Client(net) if net.client.is_connected())
     };
     if !connected {
@@ -282,7 +286,7 @@ fn send_join_system(engine: &mut Engine) -> Result<()> {
 
     // 3. We’re connected and haven’t sent JOIN – do it now (separate scope)
     {
-        let mut state = engine.get_global_component_mut::<NetState>()?;
+        let mut state = engine.get_global_component_mut::<GlobalNetState>()?;
         if let NetSide::Client(net) = &mut state.side {
             cli_send(
                 net,
@@ -301,3 +305,60 @@ fn send_join_system(engine: &mut Engine) -> Result<()> {
 
     Ok(())
 }
+
+fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
+    let my_id = engine.get_global_component_mut::<GlobalNetState>()?.my_id;
+    let scene = engine.get_active_scene_handle()?;
+    println!("[SPAWN] Spawning player with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+
+    // randomness for capsules tint and transforms
+    //let mut rng = rng();
+    let net_entity_id = net_state_component.net_entity_id;
+
+	let mut rng = StdRng::seed_from_u64(net_entity_id as u64);
+	let index = rng.random_range(0..DISTINCT_COLOR_PALETTE.len());
+	let (r, g, b) = DISTINCT_COLOR_PALETTE[index];
+	// // Use net_entity_id as seed to generate a random color
+	// let mut rng = rand::rngs::StdRng::seed_from_u64(net_entity_id as u64);
+	// let r = rng.gen_range(0.2..1.0);
+	// let g = rng.gen_range(0.2..1.0);
+	// let b = rng.gen_range(0.2..1.0);
+
+    let (mesh, mat) = {
+        use pill_core::Color;
+        //let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Truck") {
+        //    Ok(h) => h,
+        //    Err(_) => engine.add_resource(Mesh::new("Truck", "models/Truck.obj".into()))?,
+        let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("pill") {
+            Ok(h) => h,
+            Err(_) => engine.add_resource(Mesh::new("pill", "models/pill.obj".into()))?,
+        };
+
+        let mat = engine.add_resource::<Material>(
+        Material::builder(&net_entity_id.to_string())
+            .color("tint", Color::new(r, g, b))?
+            .scalar("specularity", 0.5)?
+            .build()
+		)?;
+
+        (mesh, mat)
+    };
+
+
+    let ent = engine.create_entity(scene)?;
+
+	let mut ns = net_state_component.clone();
+	ns.state = NetEntityState::Alive;
+
+    engine.add_component_to_entity(scene, ent, ns)?;
+
+    engine.add_component_to_entity(scene, ent,*transform)?;
+
+    // TODO: missing playerTag and targetTransform components
+
+	engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
+
+    println!("[SPAWN] finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+    Ok(())
+}
+

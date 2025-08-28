@@ -72,7 +72,7 @@ pub use components::time_component::{
 };
 
 pub use components::net_components::{
-    NetState,
+    GlobalNetState,
     NetSide,
 };
 

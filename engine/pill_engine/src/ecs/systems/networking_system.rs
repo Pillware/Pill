@@ -1,12 +1,11 @@
 use anyhow::Result;
 use log::debug;
 use pill_core::{NetClient, cli_update, srv_update, cli_send, srv_broadcast, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
-use rand::rngs::StdRng;
 
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
-use crate::ecs::{EntityHandle, TransformComponent, TimeComponent, NetworkStateComponent, NetEntityState, NetSide, NetState};
-use pill_core::{Vector3f, DISTINCT_COLOR_PALETTE};
+use crate::ecs::{EntityHandle, TransformComponent, TimeComponent, NetworkStateComponent, NetEntityState, NetSide, GlobalNetState};
+use pill_core::{Vector3f};
 
 #[cfg(not(feature = "headless"))]
 use crate::{
@@ -40,7 +39,6 @@ pub struct NetworkUpdatePayload {
     pub client_id: u64,
     pub updates: Vec<EntityUpdate>,
     pub timestamp: f32,
-    pub sequence: u64,
 }
 
 fn is_not_ready(err: &anyhow::Error) -> bool {
@@ -76,7 +74,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     // 0.  Immutable borrow just to read the timeout
     // ────────────────────────────────────────────────────────────────
     let timeout = {
-        let state = engine.get_global_component::<NetState>()?;
+        let state = engine.get_global_component::<GlobalNetState>()?;
         state.timeout
     };
     let dt = Duration::from_secs_f32(timeout);
@@ -89,7 +87,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     // 1.  Handle wire traffic – first and only long-lived &mut borrow
     // ────────────────────────────────────────────────────────────────
     {
-        let mut state = engine.get_global_component_mut::<NetState>()?;
+        let mut state = engine.get_global_component_mut::<GlobalNetState>()?;
 
         match &mut state.side {
             // ── CLIENT ────────────────────────────────────────────
@@ -100,8 +98,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                             if msg.tag == WireTag::Update {
                                 let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
                                 debug!(
-                                    "[Client] ◂ received pkt nr: {} from srv at time {}",
-                                    pkt.sequence, pkt.timestamp
+                                    "[Client] ◂ received pkt from srv at time {}", pkt.timestamp
                                 );
                                 updates.push(pkt);
                             }
@@ -125,8 +122,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                     if msg.tag == WireTag::Update {
                         let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
                         println!(
-                            "[Server] ◂ received pkt nr: {} from cid={cid} at time {}",
-                            pkt.sequence, pkt.timestamp
+                            "[Server] ◂ received pkt from cid={cid} at time {}", pkt.timestamp
                         );
                         //println!("Server ◂ received {} updates from cid={cid}", pkt.updates.len());
                         updates.push(pkt);
@@ -163,13 +159,12 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
         let snapshot = NetworkUpdatePayload {
             client_id: 0,   // 0 = "server"
             updates:   entity_updates,
-            timestamp: engine.get_global_component::<TimeComponent>()?.time,
-            sequence:  rand::rng().random(),
+            timestamp: engine.get_global_component::<TimeComponent>()?.time, // TODO: debug
         };
 
         // short-lived borrow only to send/flush
         {
-            let mut state = engine.get_global_component_mut::<NetState>()?;
+            let mut state = engine.get_global_component_mut::<GlobalNetState>()?;
             if let NetSide::Server(net) = &mut state.side {
                 srv_send_one(
                     net,
@@ -192,129 +187,10 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     Ok(updates)
 }
 
-/* For Pill TODO: instead inject the custom spawner into the system */
-/*
-fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
-    let my_id = engine.get_global_component_mut::<NetState>()?.my_id;
-    let scene = engine.get_active_scene_handle()?;
-    println!("Spawning entity with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
-
-    // randomness for capsules tint and transforms
-    let mut rng = rng();
-
-    #[cfg(feature = "rendering")]
-    let (mesh, mat) = {
-        // load once
-        let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Pill") {
-            Ok(h) => h,
-            Err(_) => engine.add_resource(Mesh::new("Pill", "./res/models/Pill.obj".into()))?,
-        };
-        let mat: MaterialHandle = match engine.get_resource_handle::<Material>("PillMat") {
-            Ok(h) => h,
-            Err(_) => {
-                let mut m = Material::new("PillMat");
-                m.set_color("Tint", Vector3f::new(rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0), rng.random_range(0.0..=1.0)));
-                engine.add_resource(m)?
-            }
-        };
-        (mesh, mat)
-    };
-
-
-    let ent = engine.create_entity(scene)?;
-
-    //transform.position.x += rng.random_range(-2.0..=2.0); // TODO: is this necessary?
-    //transform.position.z += rng.random_range(-2.0..=2.0);
-    //
-    // TODO: what about dirty flag!
-    //transform.net_dirty = false; // reset net dirty flag
-
-    // add the network state component and mark it as spawned
-    //engine.add_component_to_entity(scene, ent, NetworkStateComponent {
-    //    owner_id: my_id,
-    //    state: NetEntityState::Alive,
-    //    net_entity_id: net_state_component.net_entity_id,
-    //    transform: Some(transform.clone()),
-    //})?;
-	let mut ns = net_state_component.clone();
-	ns.state = NetEntityState::Alive;
-    engine.add_component_to_entity(scene, ent, ns)?;
-
-    engine.add_component_to_entity(scene, ent,*transform)?;
-
-    #[cfg(feature = "rendering")]
-    {
-        engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
-    }
-
-    println!("Spawn finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
-    Ok(())
-}
-*/
-
-fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
-    let my_id = engine.get_global_component_mut::<NetState>()?.my_id;
-    let scene = engine.get_active_scene_handle()?;
-    println!("Spawning entity with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
-
-    // randomness for capsules tint and transforms
-    //let mut rng = rng();
-    let net_entity_id = net_state_component.net_entity_id;
-
-	let mut rng = StdRng::seed_from_u64(net_entity_id as u64);
-	let index = rng.random_range(0..DISTINCT_COLOR_PALETTE.len());
-	let (r, g, b) = DISTINCT_COLOR_PALETTE[index];
-	// // Use net_entity_id as seed to generate a random color
-	// let mut rng = rand::rngs::StdRng::seed_from_u64(net_entity_id as u64);
-	// let r = rng.gen_range(0.2..1.0);
-	// let g = rng.gen_range(0.2..1.0);
-	// let b = rng.gen_range(0.2..1.0);
-
-    #[cfg(not(feature = "headless"))]
-    let (mesh, mat) = {
-        use pill_core::Color;
-        //let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Truck") {
-        //    Ok(h) => h,
-        //    Err(_) => engine.add_resource(Mesh::new("Truck", "models/Truck.obj".into()))?,
-        let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("pill") {
-            Ok(h) => h,
-            Err(_) => engine.add_resource(Mesh::new("pill", "models/pill.obj".into()))?,
-        };
-
-        let mat = engine.add_resource::<Material>(
-        Material::builder(&net_entity_id.to_string())
-            .color("tint", Color::new(r, g, b))?
-            .scalar("specularity", 0.5)?
-            .build()
-		)?;
-
-        (mesh, mat)
-    };
-
-
-    let ent = engine.create_entity(scene)?;
-
-	let mut ns = net_state_component.clone();
-	ns.state = NetEntityState::Alive;
-
-    engine.add_component_to_entity(scene, ent, ns)?;
-
-    engine.add_component_to_entity(scene, ent,*transform)?;
-
-    // TODO: missing playerTag and targetTransform components
-
-    #[cfg(not(feature = "headless"))]
-	engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
-
-    println!("Spawn finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
-    Ok(())
-}
-
-
 pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
     {
 		let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
-		let state = engine.get_global_component_mut::<NetState>()?;
+		let state = engine.get_global_component_mut::<GlobalNetState>()?;
 		state.accumulator += dt;
 		if state.accumulator < state.timeout {
 			// Not enough time has passed to process the next network update
@@ -338,7 +214,16 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                             let tr = entity_update.transform
                                                   .clone()
                                                   .unwrap_or_else(TransformComponent::default);
-                            spawn_entity(engine, &entity_update.net_state, &tr)?;
+                            let spawn_fn = {
+                                let global_net_state = engine.get_global_component::<GlobalNetState>()?;
+                                global_net_state.spawn_handlers.get(&entity_update.net_state.kind).copied()
+                            };
+
+                            if let Some(spawn_fn) = spawn_fn{
+                                spawn_fn(engine, &entity_update.net_state, &tr)?;
+                            } else {
+                                println!("No spawn handler for entity kind '{}'", entity_update.net_state.kind);
+                            }
                         },
                         NetEntityAction::Despawn => {
                             println!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id);
@@ -363,7 +248,7 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                     }
                 }
 
-                let state = engine.get_global_component_mut::<NetState>()?;
+                let state = engine.get_global_component_mut::<GlobalNetState>()?;
                 if let NetSide::Server(net) = &mut state.side {
                     // Broadcast the update to everyone except the sender
                     srv_broadcast(net, update.client_id, &WireMsg {
@@ -383,12 +268,11 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-const LERP_HALFLIFE: f32 = 0.10;
 const LERP_RATE: f32 = 0.001;
 
 pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     {
-        let my_id = engine.get_global_component::<NetState>()?.my_id;
+        let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
         let delta_time = engine.frame_delta_time;
         // Peform interpolation for the components that have a transform and are not owned by the
         // client
@@ -410,7 +294,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     // Run it with a given frequency
     {
 		let dt = engine.frame_delta_time;
-		let state = engine.get_global_component_mut::<NetState>()?;
+		let state = engine.get_global_component_mut::<GlobalNetState>()?;
 		state.accumulator += dt;
 		if state.accumulator < state.timeout {
 			// Not enough time has passed to process the next network update
@@ -421,7 +305,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     // Step 0: Iterate over all entities living on the client that have Networking component and send them to the server
     {
         let mut updates: Vec<EntityUpdate> = Vec::new();
-        let my_id = engine.get_global_component::<NetState>()?.my_id;
+        let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
         for (_, transform, net_state)
             in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
             if net_state.state == NetEntityState::Spawn {
@@ -444,9 +328,8 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
             client_id: my_id,
             updates,
             timestamp: engine.get_global_component::<TimeComponent>()?.time,
-            sequence: rng().random(), // generate a random sequence number
         };
-        if let NetSide::Client(net) = &mut engine.get_global_component_mut::<NetState>()?.side {
+        if let NetSide::Client(net) = &mut engine.get_global_component_mut::<GlobalNetState>()?.side {
             //println!("▸ Sending {} updates to server", payload.updates.len());
             try_send_and_flush(net, &WireMsg {
                 tag: WireTag::Update,
@@ -470,7 +353,16 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                             let tr = entity_update.transform
                                                   .clone()
                                                   .unwrap_or_else(TransformComponent::default);
-                            spawn_entity(engine, &entity_update.net_state, &tr)?;
+                            let spawn_fn = {
+                                let global_net_state = engine.get_global_component::<GlobalNetState>()?;
+                                global_net_state.spawn_handlers.get(&entity_update.net_state.kind).copied()
+                            };
+
+                            if let Some(spawn_fn) = spawn_fn {
+                                spawn_fn(engine, &entity_update.net_state, &tr)?;
+                            } else {
+                                println!("No spawn handler for entity kind '{}'", entity_update.net_state.kind);
+                            }
                         },
                         NetEntityAction::Despawn => {
                             println!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id);
@@ -497,7 +389,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                     }
                 }
 
-                let state = engine.get_global_component_mut::<NetState>()?;
+                let state = engine.get_global_component_mut::<GlobalNetState>()?;
                 if let NetSide::Server(net) = &mut state.side {
                     // Broadcast the update to everyone except the sender
                     srv_broadcast(net, update.client_id, &WireMsg {
@@ -518,21 +410,11 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-fn blend(dt: f32, half_life: f32) -> f32 {
-    // half_life = time in seconds to reduce the error to 50 %
-    1.0 - (-(std::f32::consts::LN_2) * dt / half_life).exp()
-}
-
 #[inline(always)]
 fn exp_blend(dt: f32) -> f32 {
         1.0 - (-LERP_RATE * dt).exp()           // ≈ LERP_RATE * dt for small dt
 }
 
 fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
-    from + (to - from) * t.clamp(0.0, 1.0)
-}
-
- // lerp one parameter
-fn lerp_f32(from: f32, to: f32, t: f32) -> f32 {
     from + (to - from) * t.clamp(0.0, 1.0)
 }

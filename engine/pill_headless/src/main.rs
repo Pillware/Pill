@@ -1,13 +1,36 @@
 
 use anyhow::Result;
-use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, networking_system_server};
+use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, NetEntityState, networking_system_server};
 use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
 use std::io::Write;
 
 #[cfg(feature = "net")]
-use pill_engine::internal::{NetState};
+use pill_engine::internal::{GlobalNetState};
+
+fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
+    let my_id = engine.get_global_component_mut::<GlobalNetState>()?.my_id;
+    let scene = engine.get_active_scene_handle()?;
+    println!("[SERVER] Spawning PLAYER with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+
+    let net_entity_id = net_state_component.net_entity_id;
+
+    let ent = engine.create_entity(scene)?;
+
+	let mut ns = net_state_component.clone();
+	ns.state = NetEntityState::Alive;
+
+    engine.add_component_to_entity(scene, ent, ns)?;
+
+    engine.add_component_to_entity(scene, ent,*transform)?;
+
+    // TODO: missing playerTag and targetTransform components
+
+    println!("[SERVER] Spawn finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+    Ok(())
+}
+
 
 struct HeadlessGame; // TODO: placeholder for the actual game struct
                      //
@@ -23,7 +46,11 @@ impl PillGame for HeadlessGame {
 
         #[cfg(feature = "net")]
         {
-            engine.add_global_component(NetState::new_server("0.0.0.0:5000", 8)?)?;
+            let mut net_state = GlobalNetState::new_server("0.0.0.0:5000", 8)?;
+
+            net_state.spawn_handlers.insert("player".into(), spawn_player);
+            engine.add_global_component(net_state)?;
+
             engine.add_system(
                 "NetworkingSystemServer",
                 networking_system_server,
