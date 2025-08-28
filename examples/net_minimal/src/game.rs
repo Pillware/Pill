@@ -1,0 +1,303 @@
+use pill_engine::game::*;
+
+use rand::Rng;
+
+use pill_engine::internal::{
+    TransformComponent,
+    NetState, NetSide, NetworkStateComponent, NetEntityState, EntityUpdate, NetworkUpdatePayload, NetEntityAction,
+    networking_system_client,
+};
+
+use pill_core::{WireMsg, WireTag, cli_send, cli_flush};
+
+// ----- CONSTANTS -----------------------------------------------------------
+
+// Move speed in world units per second
+const PILL_MOVE_SPEED: f32 = 3.0;
+const UPDATE_FREQ_HZ: f32 = 24.0;
+const UPDATE_FREQ_SEC: f32 = 1.0 / UPDATE_FREQ_HZ;
+
+//const REMOTE_SERVER_ADDR: &str = "145.223.100.1";
+const REMOTE_SERVER_ADDR: &str = "127.0.0.1";
+const REMOTE_SERVER_PORT: u16 = 5000;
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Temporary global component used only on the client for throttling updates
+// ───────────────────────────────────────────────────────────────────────────
+
+pub struct TimeAccumulationComponent {
+    pub accumulator: f32,
+}
+
+impl GlobalComponent for TimeAccumulationComponent {}
+impl PillTypeMapKey for TimeAccumulationComponent {
+    type Storage = GlobalComponentStorage<Self>;
+}
+
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Track whether we already sent JOIN after connecting
+// ───────────────────────────────────────────────────────────────────────────
+pub struct JoinState {
+    pub sent: bool,
+}
+
+impl GlobalComponent for JoinState {}
+
+impl PillTypeMapKey for JoinState {
+    type Storage = GlobalComponentStorage<Self>;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Custom per-entity tag so we can quickly query all "pills"
+// ───────────────────────────────────────────────────────────────────────────
+
+pub struct PillComponent;
+
+impl Component for PillComponent {}
+impl PillTypeMapKey for PillComponent {
+    type Storage = ComponentStorage<Self>;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//                                GAME
+// ───────────────────────────────────────────────────────────────────────────
+
+pub struct Game;
+
+impl PillGame for Game {
+    fn start(&self, engine: &mut Engine) -> Result<()> {
+        // Create scene
+        let active_scene = engine.create_scene("NetMinimal")?;
+        engine.set_active_scene(active_scene)?;
+
+        // Register components
+        engine.register_component::<TransformComponent>(active_scene)?;
+        engine.register_component::<MeshRenderingComponent>(active_scene)?;
+        engine.register_component::<CameraComponent>(active_scene)?;
+        engine.register_component::<AudioListenerComponent>(active_scene)?;
+        engine.register_component::<AudioSourceComponent>(active_scene)?;
+        engine.register_component::<PillComponent>(active_scene)?;
+        engine.register_component::<NetworkStateComponent>(active_scene)?;
+
+        // Add systems
+        engine.add_system("NetworkingSystemClient", networking_system_client)?;
+        engine.add_system("PillMovement", pill_movement_system)?;
+        engine.add_system("SendJoin", send_join_system)?;
+
+        // Add meshes
+        let pill_mesh = Mesh::new("Pill", "models/pill.obj".into());
+        let pill_mesh_handle = engine.add_resource(pill_mesh)?;
+
+        // Add textures
+        let pill_color_texture = Texture::new(
+            "pill_color",
+            TextureType::Color,
+            ResourceLoadType::Path("textures/pill_color.png".into()),
+        );
+        let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
+        let pill_normal_texture = Texture::new(
+            "pill_normal",
+            TextureType::Normal,
+            ResourceLoadType::Path("textures/pill_normal.png".into()),
+        );
+        let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
+
+        // Add materials
+        let mut pill_material = Material::new("pill");
+        pill_material.set_texture("color", pill_color_texture_handle)?;
+        pill_material.set_texture("normal", pill_normal_texture_handle)?;
+        pill_material.set_color("tint", Color::new(1.0, 1.0, 1.0))?;
+        pill_material.set_scalar("specularity", 0.5)?;
+        let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
+
+        // Create camera entity
+        let camera = engine.create_entity(active_scene)?;
+        let transform_component = TransformComponent::builder()
+            .position(Vector3f::new(0.0, 0.0, -8.0))
+            .rotation(Vector3f::new(0.0, 0.0, -20.0))
+            .build();
+        engine.add_component_to_entity(active_scene, camera, transform_component)?;
+        let camera_component = CameraComponent::builder().enabled(true).build();
+        engine.add_component_to_entity(active_scene, camera, camera_component)?;
+
+        // Create pill entity ------------------------------------------------
+        let pill = engine.create_entity(active_scene)?;
+        let transform_component = TransformComponent::builder()
+            .position(Vector3f::new(rand::thread_rng().gen_range(-2.0..=2.0), 0.0, 0.0))
+            .rotation(Vector3f::new(-210.0, 0.0, 0.0))
+            .build();
+        engine.add_component_to_entity(active_scene, pill, transform_component.clone())?;
+        let mesh_rendering_component = MeshRenderingComponent::builder()
+            .mesh(&pill_mesh_handle)
+            .material(&pill_material_handle)
+            .build();
+        engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
+        engine.add_component_to_entity(active_scene, pill, PillComponent)?;
+
+		engine.add_global_component(JoinState { sent: false })?;
+		let client_id = rand::thread_rng().gen_range(1..=10_000_000);
+		let server_addr = format!("{REMOTE_SERVER_ADDR}:{REMOTE_SERVER_PORT}");
+		engine.add_global_component(NetState::new_client(&server_addr, client_id)?)?;
+
+		println!("Client will connect to {server_addr} with ID {client_id}");
+
+		// Add the network component marker so the server can identify us
+		let net_entity_id = rand::thread_rng().gen_range(1..=1000);
+		engine.add_component_to_entity(
+			active_scene,
+			pill,
+			NetworkStateComponent {
+				net_entity_id,
+				owner_id: client_id,
+				state: NetEntityState::Spawn,
+				transform: Some(transform_component),
+			},
+		)?;
+
+        Ok(())
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Helper: actually send the batch of entity updates after the ECS loop.
+// ───────────────────────────────────────────────────────────────────────────
+fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> Result<()> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    use bincode;
+
+    //println!("Flushing {} updates to server", updates.len());
+
+    let my_id = engine.get_global_component::<NetState>()?.my_id;
+    let payload = NetworkUpdatePayload {
+        client_id: my_id as u64,
+        updates,
+        timestamp: engine.get_global_component::<TimeComponent>()?.time,
+        sequence: rand::thread_rng().gen(),
+    };
+
+    if let NetSide::Client(net) = &mut engine.get_global_component_mut::<NetState>()?.side {
+        cli_send(
+            net,
+            &WireMsg {
+                tag: WireTag::Update,
+                data: bincode::serialize(&payload)?,
+            },
+        )?;
+        cli_flush(net)?;
+    }
+    Ok(())
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Player-controlled pill movement & optional network sync
+// ───────────────────────────────────────────────────────────────────────────
+fn pill_movement_system(engine: &mut Engine) -> Result<()> {
+    let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
+    let owner_id = engine.get_global_component::<NetState>()?.my_id;
+    let input = engine.get_global_component_mut::<InputComponent>()?;
+
+    // Build a direction vector from arrow-key input ------------------------
+    let mut dir = Vector3f::new(0.0, 0.0, 0.0);
+    if input.get_key(KeyboardKey::ArrowUp) {
+        dir.z -= 1.0;
+    }
+    if input.get_key(KeyboardKey::ArrowDown) {
+        dir.z += 1.0;
+    }
+    if input.get_key(KeyboardKey::ArrowLeft) {
+        dir.x -= 1.0;
+    }
+    if input.get_key(KeyboardKey::ArrowRight) {
+        dir.x += 1.0;
+    }
+    if input.get_key(KeyboardKey::ControlLeft) {
+        dir.y += 1.0;
+    }
+    if input.get_key(KeyboardKey::ShiftLeft) {
+        dir.y -= 1.0;
+    }
+
+    if dir.x == 0.0 && dir.y == 0.0 {
+        return Ok(()); // nothing to do this frame
+    }
+
+    // Normalize XY so diagonal speed == straight speed ---------------------
+    let len = (dir.x * dir.x + dir.y * dir.y).sqrt();
+    let inv = 1.0 / len;
+    dir.x *= inv;
+    dir.y *= inv;
+
+    let mut pending_updates: Vec<EntityUpdate> = Vec::new();
+
+    // ── first pass: move entities & collect updates -----------------------
+    for (_, transform, _, net_state) in engine.iterate_three_components_mut::<
+        TransformComponent,
+        PillComponent,
+        NetworkStateComponent,
+    >()? {
+        if net_state.owner_id != owner_id {
+            continue; // only move entities we own
+        }
+
+        transform.translate_world(dt * PILL_MOVE_SPEED * dir);
+
+        {
+            net_state.transform = Some(transform.clone());
+            net_state.transform.as_mut().unwrap().net_dirty = false;
+            pending_updates.push(EntityUpdate {
+                action: NetEntityAction::Update,
+                net_state: net_state.clone(),
+                transform: Some(transform.clone()),
+            });
+            //println!("Pushed update for entity with ID {}", net_state.net_entity_id);
+        }
+    } // iterator dropped here – the &mut Engine borrow ends
+
+    flush_updates_to_server(engine, pending_updates)?;
+
+    Ok(())
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  System: once connected, send JOIN exactly once
+// ───────────────────────────────────────────────────────────────────────────
+fn send_join_system(engine: &mut Engine) -> Result<()> {
+    // 1. Short immutable borrow: are we connected yet?
+    let connected = {
+        let state = engine.get_global_component::<NetState>()?;
+        matches!(&state.side, NetSide::Client(net) if net.client.is_connected())
+    };
+    if !connected {
+        return Ok(()); // handshake still in progress
+    }
+
+    // 2. Have we already sent JOIN?
+    if engine.get_global_component::<JoinState>()?.sent {
+        return Ok(());
+    }
+
+    // 3. We’re connected and haven’t sent JOIN – do it now (separate scope)
+    {
+        let mut state = engine.get_global_component_mut::<NetState>()?;
+        if let NetSide::Client(net) = &mut state.side {
+            cli_send(
+                net,
+                &WireMsg {
+                    tag:  WireTag::Join,
+                    data: Vec::new(),
+                },
+            )?;
+            cli_flush(net)?;
+        }
+    }
+
+    // 4. Mark as sent (new mutable borrow, no overlap with the one above)
+    engine.get_global_component_mut::<JoinState>()?.sent = true;
+    println!("JOIN sent after connection established");
+
+    Ok(())
+}

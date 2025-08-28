@@ -8,6 +8,7 @@ use crate::engine::Engine;
 use crate::ecs::{EntityHandle, TransformComponent, TimeComponent, NetworkStateComponent, NetEntityState, NetSide, NetState};
 use pill_core::{Vector3f, DISTINCT_COLOR_PALETTE};
 
+#[cfg(not(feature = "headless"))]
 use crate::{
     ecs::{MeshRenderingComponent},
     resources::{Material, MaterialHandle, Mesh, MeshHandle},
@@ -269,17 +270,21 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
 	// let g = rng.gen_range(0.2..1.0);
 	// let b = rng.gen_range(0.2..1.0);
 
+    #[cfg(not(feature = "headless"))]
     let (mesh, mat) = {
         use pill_core::Color;
-        let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Truck") {
+        //let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Truck") {
+        //    Ok(h) => h,
+        //    Err(_) => engine.add_resource(Mesh::new("Truck", "models/Truck.obj".into()))?,
+        let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("pill") {
             Ok(h) => h,
-            Err(_) => engine.add_resource(Mesh::new("Truck", "./res/models/Truck.obj".into()))?,
+            Err(_) => engine.add_resource(Mesh::new("pill", "models/pill.obj".into()))?,
         };
 
         let mat = engine.add_resource::<Material>(
         Material::builder(&net_entity_id.to_string())
-            .color("Tint", Color::new(r, g, b))?
-            .scalar("Specularity", 0.5)?
+            .color("tint", Color::new(r, g, b))?
+            .scalar("specularity", 0.5)?
             .build()
 		)?;
 
@@ -298,6 +303,7 @@ fn spawn_entity(engine: &mut Engine, net_state_component: &NetworkStateComponent
 
     // TODO: missing playerTag and targetTransform components
 
+    #[cfg(not(feature = "headless"))]
 	engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
 
     println!("Spawn finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);

@@ -11,6 +11,9 @@ mod config;
 pub use pill_core::PillTypeMapKey;
 pub use ecs::{Component, GlobalComponent, ComponentStorage, GlobalComponentStorage};
 
+#[cfg(feature = "headless")]
+pub use graphics::DummyRenderer;
+
 #[macro_export]
 macro_rules! define_component {
     (
@@ -122,7 +125,6 @@ pub mod internal {
         config::*,
         graphics::{
             PillRenderer,
-            DummyRenderer,
             RenderQueueKey,
             RenderQueueItem,
             RenderQueueKeyFields,
@@ -157,6 +159,11 @@ pub mod internal {
             networking_system_server,
             networking_system_client,
             NetState,
+            NetEntityState,
+            EntityUpdate,
+            NetworkUpdatePayload,
+            NetEntityAction,
+            NetSide,
         },
         resources::{
             Texture,

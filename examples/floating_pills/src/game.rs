@@ -1,7 +1,7 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100000;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyO;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyL;

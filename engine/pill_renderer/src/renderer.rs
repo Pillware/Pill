@@ -90,12 +90,6 @@ impl PillRenderer for Renderer {
         }
     }
 
-    fn new_headless() -> Self {
-        info!("Initializing a headless {}", "Renderer".mobj_style());
-
-        Self
-    }
-
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         info!("Resizing {} resources", "Renderer".mobj_style());
         self.state.resize(new_window_size)
@@ -312,6 +306,9 @@ impl State {
         // Create device and queue
         let (device, queue) = adapter.request_device(&device_descriptor,None).await.unwrap();
 
+        // Fallback modes for display
+        let present_mode = wgpu::PresentMode::AutoNoVsync;
+
         // Specify surface configuration
         let format = wgpu::TextureFormat::Rgba8UnormSrgb;
         let surface_configuration = wgpu::SurfaceConfiguration {
@@ -320,7 +317,7 @@ impl State {
             width: window_size.width,
             height: window_size.height,
             desired_maximum_frame_latency: 2,
-            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
+            present_mode: present_mode,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![format],
         };
