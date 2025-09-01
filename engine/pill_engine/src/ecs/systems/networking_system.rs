@@ -41,6 +41,42 @@ pub struct NetworkUpdatePayload {
     pub timestamp: f32,
 }
 
+#[inline(always)]
+fn exp_blend(dt: f32) -> f32 {
+        1.0 - (-LERP_RATE * dt).exp()           // ≈ LERP_RATE * dt for small dt
+}
+
+fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
+    from + (to - from) * t.clamp(0.0, 1.0)
+}
+
+const LERP_RATE: f32 = 0.001;
+
+fn run_client_interpolation(engine: &mut Engine) -> Result<()> {
+    // Run the client-side interpolation for non-owned entities TODO: this can be injected by the
+    // game later
+    {
+        let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
+        let delta_time = engine.frame_delta_time;
+        // Peform interpolation for the components that have a transform and are not owned by the
+        // client
+        for (_, transform, net_state) in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
+            if let Some(tr) = &net_state.transform  {
+                if net_state.owner_id != my_id {
+                    //println!("interpolating: source {:?} dest {:?} delta_time={}", transform.position, tr.position, delta_time);
+                    // Interpolate the transform based on the current time and the last known state
+                                       //let t         = blend(delta_time, LERP_HALFLIFE);
+                    let t = exp_blend(delta_time);
+                    transform.set_position(lerp_vec3(transform.position, tr.position, t));
+                    transform.set_rotation(lerp_vec3(transform.rotation, tr.rotation, t));
+                    // TODO: scale?
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn is_not_ready(err: &anyhow::Error) -> bool {
     let s = err.to_string().to_lowercase();
     s.contains("disconnected")
@@ -48,30 +84,6 @@ fn is_not_ready(err: &anyhow::Error) -> bool {
         || s.contains("timeout")
         || s.contains("not connected")
         || s.contains("connecting")
-}
-
-fn try_send_and_flush(net: &mut NetClient,
-                      msg: &WireMsg) -> Result<()> {
-
-    // ── send ───────────────────────────────────────────────────────────────
-    match cli_send(net, msg) {
-        Ok(_) => {}
-        Err(e) if is_not_ready(&e) => {
-            println!("[Client] ▸ not connected yet – send skipped");
-            return Ok(());                    // bail out early this frame
-        }
-        Err(e) => return Err(e),              // real error → bubble up
-    }
-
-    // ── flush ──────────────────────────────────────────────────────────────
-    match cli_flush(net) {
-        Ok(_) => {}
-        Err(e) if is_not_ready(&e) => {
-            println!("[Client] ▸ not connected yet – flush skipped");
-        }
-        Err(e) => return Err(e),
-    }
-    Ok(())
 }
 
 fn pump_transport(engine: &mut Engine) -> Result<()> {
@@ -100,7 +112,6 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     let state = engine.get_global_component_mut::<GlobalNetState>()?;
 
     match &mut state.side {
-        // ── CLIENT ────────────────────────────────────────────
         NetSide::Client(net) => {
             match cli_get_events(net) {
                 Ok(msgs) => {
@@ -120,14 +131,8 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                 }
                 Err(e) => return Err(e),
             }
-
-            // flush keepalives/acks/challenges even when no app messages
-            if let Err(e) = cli_flush(net) {
-                if !is_not_ready(&e) { return Err(e); }
-            }
         }
 
-        // ── SERVER ────────────────────────────────────────────
         NetSide::Server(net) => {
             for (cid, msg) in srv_get_events(net)? {
                 println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
@@ -142,11 +147,6 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                     println!("[Server] Client {cid} JOIN with cid={cid}");
                     join_cids.push(cid);
                 }
-            }
-
-            // flush keepalives/acks/challenges even when no app messages
-            if let Err(e) = srv_flush(net) {
-                if !is_not_ready(&e) { return Err(e); }
             }
         }
     }
@@ -189,7 +189,6 @@ fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()
                     data: bincode::serialize(&snapshot)?,
                 },
             )?;
-            srv_flush(net)?;
         }
 
         println!(
@@ -221,21 +220,71 @@ fn run_despawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Resul
     Err(anyhow::anyhow!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id))
 }
 
+fn send_client_updates(engine: &mut Engine) -> Result<()> {
+    // Iterate over all entities living on the client that have Networking component and send them to the server
+    {
+        let mut updates: Vec<EntityUpdate> = Vec::new();
+        let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
+        for (_, transform, net_state)
+            in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
+            if net_state.state == NetEntityState::Spawn {
+                // send the entity's state to the server only if this client is the owner of the
+                // entity
+                if net_state.owner_id != my_id {
+                    continue; // skip entities not owned by this client
+                }
+               println!("▸ Queuing for spawn: new entity for nid={:?} from cid={my_id}", net_state.net_entity_id);
+                let update = EntityUpdate {
+                    action: NetEntityAction::Spawn,
+                    net_state: net_state.clone(),
+                    transform: Some(transform.clone()),
+                };
+                updates.push(update);
+            }
+            net_state.state = NetEntityState::Alive; // mark the entity as alive
+        }
+        let payload = NetworkUpdatePayload {
+            client_id: my_id,
+            updates,
+            timestamp: engine.get_global_component::<TimeComponent>()?.time,
+        };
+        if let NetSide::Client(net) = &mut engine.get_global_component_mut::<GlobalNetState>()?.side {
+            let msg = WireMsg {
+                tag: WireTag::Update,
+                data: bincode::serialize(&payload)?,
+            };
+			match cli_send(net, &msg) {
+				Ok(_) => {}
+				Err(e) if is_not_ready(&e) => {
+					println!("[Client] ▸ not connected yet – send skipped");
+					return Ok(());
+				}
+				Err(e) => return Err(e),
+			}
+        }
+    }
+    Ok(())
+}
+
+fn timeout_elapsed(engine: &mut Engine) -> bool {
+    let dt = engine.get_global_component::<TimeComponent>().map(|c| c.delta_time).unwrap_or(0.0);
+    let state = engine.get_global_component_mut::<GlobalNetState>().unwrap();
+    state.accumulator += dt;
+    if state.accumulator >= state.timeout {
+        state.accumulator = 0.0;
+        return true;
+    }
+    false
+}
+
 pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
     // Run transport pump every tick to avoid timeouts
     pump_transport(engine)?;
 
-    // TODO: The timeout cannot be too much otherwise we miss keepalives
-    {
-		let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
-		let state = engine.get_global_component_mut::<GlobalNetState>()?;
-		state.accumulator += dt;
-		if state.accumulator < state.timeout {
-			// Not enough time has passed to process the next network update
-			return Ok(());
-		}
-		state.accumulator = 0.0;
-	}
+    if !timeout_elapsed(engine) {
+        // Not enough time has passed to process the next network update
+        return Ok(());
+    }
 
     // Step 1: Receive network updates from clients and broadcast them to all clients
     match receive_updates(engine) {
@@ -282,7 +331,6 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                         tag: WireTag::Update,
                         data: bincode::serialize(&update)?,
                     })?;
-                    srv_flush(net)?;
                 };
             }
         },
@@ -294,90 +342,21 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-const LERP_RATE: f32 = 0.001;
-
-fn run_client_interpolation(engine: &mut Engine) -> Result<()> {
-    // Run the client-side interpolation for non-owned entities TODO: this can be injected by the
-    // game later
-    {
-        let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
-        let delta_time = engine.frame_delta_time;
-        // Peform interpolation for the components that have a transform and are not owned by the
-        // client
-        for (_, transform, net_state) in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
-            if let Some(tr) = &net_state.transform  {
-                if net_state.owner_id != my_id {
-                    //println!("interpolating: source {:?} dest {:?} delta_time={}", transform.position, tr.position, delta_time);
-                    // Interpolate the transform based on the current time and the last known state
-					//let t         = blend(delta_time, LERP_HALFLIFE);
-                    let t = exp_blend(delta_time);
-                    transform.set_position(lerp_vec3(transform.position, tr.position, t));
-                    transform.set_rotation(lerp_vec3(transform.rotation, tr.rotation, t));
-                    // TODO: scale?
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     // Run transport pump every tick to avoid timeouts
     pump_transport(engine)?;
 
     run_client_interpolation(engine)?;
 
-    // Run it with a given frequency
-    {
-		let dt = engine.frame_delta_time;
-		let state = engine.get_global_component_mut::<GlobalNetState>()?;
-		state.accumulator += dt;
-		if state.accumulator < state.timeout {
-			// Not enough time has passed to process the next network update
-			return Ok(());
-		}
-		state.accumulator = 0.0;
-	}
-    // Step 0: Iterate over all entities living on the client that have Networking component and send them to the server
-    {
-        let mut updates: Vec<EntityUpdate> = Vec::new();
-        let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
-        for (_, transform, net_state)
-            in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
-            if net_state.state == NetEntityState::Spawn {
-                // send the entity's state to the server only if this client is the owner of the
-                // entity
-                if net_state.owner_id != my_id {
-                    continue; // skip entities not owned by this client
-                }
-               println!("▸ Queuing for spawn: new entity for nid={:?} from cid={my_id}", net_state.net_entity_id);
-                let update = EntityUpdate {
-                    action: NetEntityAction::Spawn,
-                    net_state: net_state.clone(),
-                    transform: Some(transform.clone()),
-                };
-                updates.push(update);
-            }
-            net_state.state = NetEntityState::Alive; // mark the entity as alive
-        }
-        let payload = NetworkUpdatePayload {
-            client_id: my_id,
-            updates,
-            timestamp: engine.get_global_component::<TimeComponent>()?.time,
-        };
-        if let NetSide::Client(net) = &mut engine.get_global_component_mut::<GlobalNetState>()?.side {
-            try_send_and_flush(net, &WireMsg {
-                tag: WireTag::Update,
-                data: bincode::serialize(&payload)?,
-            })?;
-        }
+    if !timeout_elapsed(engine) {
+        // Not enough time has passed to process the next network update
+        return Ok(());
     }
 
-    // Step 1: Receive network updates from server
+    send_client_updates(engine)?;
+
     match receive_updates(engine) {
         Ok(updates) => {
-            // Step 2: Process the updates and apply interpolation to the entities in the client's
-            // world
             // there is just one Update in the vector
             for update in &updates {
                 for entity_update in &update.updates {
@@ -419,13 +398,4 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[inline(always)]
-fn exp_blend(dt: f32) -> f32 {
-        1.0 - (-LERP_RATE * dt).exp()           // ≈ LERP_RATE * dt for small dt
-}
-
-fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
-    from + (to - from) * t.clamp(0.0, 1.0)
 }
