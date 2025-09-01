@@ -123,6 +123,9 @@ pub fn srv_update(net: &mut NetServer, dt: Duration) -> Result<Vec<(u64, WireMsg
     let mut inbox = Vec::new();
     for cid in net.server.clients_id() {
         while let Some(bytes) = net.server.receive_message(cid, RELIABLE_CHANNEL_ID) {
+            if bytes.is_empty() {
+                continue; // Skip empty messages
+            }
             inbox.push((cid, decode_wire(&bytes)?));
         }
     }
@@ -179,7 +182,9 @@ pub fn cli_flush(net: &mut NetClient) -> Result<()> {
 }
 
 fn decode_wire(buf: &[u8]) -> Result<WireMsg> {
-    let (tag_byte, data) = buf.split_first().unwrap();
+    let (tag_byte, data) = buf.split_first() else {
+        return anyhow::bail!("Received empty message");
+    };
     let tag = WireTag::try_from(*tag_byte)?;
     Ok(WireMsg {
         tag,

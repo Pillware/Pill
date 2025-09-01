@@ -42,7 +42,12 @@ pub struct NetworkUpdatePayload {
 }
 
 fn is_not_ready(err: &anyhow::Error) -> bool {
-        err.to_string().contains("disconnected or connecting")
+    let s = err.to_string().to_lowercase();
+    s.contains("disconnected")
+        || s.contains("timed out")
+        || s.contains("timeout")
+        || s.contains("not connected")
+        || s.contains("connecting")
 }
 
 fn try_send_and_flush(net: &mut NetClient,
@@ -73,11 +78,10 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     // ────────────────────────────────────────────────────────────────
     // 0.  Immutable borrow just to read the timeout
     // ────────────────────────────────────────────────────────────────
-    let timeout = {
-        let state = engine.get_global_component::<GlobalNetState>()?;
-        state.timeout
+    let dt = {
+        let frame_dt = engine.get_global_component::<TimeComponent>()?.delta_time;
+        Duration::from_secs_f32(frame_dt)
     };
-    let dt = Duration::from_secs_f32(timeout);
     //println!("Advancing networking system with dt={}", dt.as_secs_f32());
 
     let mut updates:    Vec<NetworkUpdatePayload> = Vec::new();
@@ -111,6 +115,11 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                     }
                     Err(e) => return Err(e),
                 }
+
+				// flush keepalives/acks/challenges even when no app messages
+				if let Err(e) = cli_flush(net) {
+					if !is_not_ready(&e) { return Err(e); }
+				}
             }
 
             // ── SERVER ────────────────────────────────────────────
@@ -132,6 +141,11 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                         join_cids.push(cid);      // snapshot will be sent later
                     }
                 }
+
+				// flush keepalives/acks/challenges even when no app messages
+				if let Err(e) = srv_flush(net) {
+					if !is_not_ready(&e) { return Err(e); }
+				}
             }
         }
     } // ← first &mut borrow ends here
