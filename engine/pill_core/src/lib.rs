@@ -11,8 +11,21 @@ mod bitmask_utils;
 mod timer;
 mod log;
 mod style;
+mod bounding_box;
+mod pill_trait_typemap;
 
 // --- Use ---
+
+pub use pill_trait_typemap::{
+    PillTraitTypeMap, 
+    TraitAccessor,
+    VectorStorage,
+    VectorOptionStorage,
+    OptionStorage, 
+    SingleStorage,
+    TraitAccessible
+};
+
 
 pub use math::{
     Vector3i,
@@ -23,6 +36,10 @@ pub use math::{
     Matrix3f,
     Direction, 
     Vector3fExt,
+};
+
+pub use bounding_box::{
+    BoundingBox,
 };
 
 pub use error::{

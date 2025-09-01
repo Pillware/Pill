@@ -3,6 +3,7 @@
 mod renderer;
 mod render_queue;
 mod egui;
+mod postprocessing_effects;
 
 // --- Use ---
 
@@ -25,4 +26,11 @@ pub use render_queue::{
     compose_render_queue_key,
     decompose_render_queue_key,
     RENDER_QUEUE_KEY_ORDER,
+};
+
+pub use postprocessing_effects::{
+    PostprocessingEffect,
+    Vignette,
+    register_vignette_postprocessing_effect,
+    register_color_adjustments_postprocessing_effect
 };

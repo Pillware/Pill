@@ -28,14 +28,13 @@ layout(set=3, binding=0) uniform texture2D diffuse_texture;
 layout(set=3, binding=1) uniform sampler diffuse_sampler;
 
 // Output data
-layout(location=0) out vec4 out_final_color;
+layout(location=0) out vec4 out_color;
 
 void main() {
-
     // Texture
     vec4 object_color = texture(sampler2D(diffuse_texture, diffuse_sampler), in_vertex_texture_coordinates);
 
     // Final color
     vec3 final_color = object_color.xyz * tint;
-    out_final_color = vec4(final_color, 1.0); 
+    out_color = vec4(final_color, 1.0); 
 }

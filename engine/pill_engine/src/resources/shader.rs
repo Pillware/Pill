@@ -50,6 +50,7 @@ pub enum ShaderParameterType {
     Scalar,
     Bool,
     Color,
+    Vector2,
     // Extend by additional types if needed
 }
 

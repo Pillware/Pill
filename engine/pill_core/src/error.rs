@@ -67,6 +67,13 @@ pub enum EngineError<'a> {
     #[error("{} is {} that cannot be removed", .0.specific_object_style(), "GlobalComponent".general_object_style())]
     GlobalComponentCannotBeRemoved(String),
 
+    // Postprocessing effects
+    #[error("Postprocessing effect {} already exists in {}", .0.specific_object_style(), "PostprocessVolumeComponent".specific_object_style())]
+    PostprocessingEffectAlreadyExists(String),
+    #[error("Postprocessing effect {} not found in {}", .0.specific_object_style(), "PostprocessVolumeComponent".specific_object_style())]
+    PostprocessingEffectNotFound(String),
+
+
     // System
     #[error("Failed to update {} {} in {} {}", "System".general_object_style(), .0.specific_object_style(), "UpdatePhase".specific_object_style(), .1.name_style())]
     SystemUpdateFailed(String, String),

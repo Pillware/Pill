@@ -37,7 +37,7 @@ pub trait GlobalComponent : PillTypeMapKey + Send {
 
 // Approach that makes it possible to delete components by iterating over typemap of component storages and not knowing the types of the components
 // Use DynClone to be able to clone Boxed component destroyers
-pub trait ComponentDestroyer: DynClone {
+pub trait ComponentDestroyer: DynClone  {
     fn destroy(&mut self, engine: &mut Engine, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()>;
 }
 

@@ -21,6 +21,7 @@ use pill_core::{
     warn,
     debug,
     error,
+    Color
 };
 
 use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell, ops::RangeBounds };
@@ -89,9 +90,6 @@ impl Engine {
     fn create_default_resources(&mut self) -> Result<()> {
         
         // Register resources and their limits
-
-        use bincode::de;
-        use pill_core::Color;
         let max_shader_count = self.config.get_int("MAX_SHADERS").unwrap_or(MAX_SHADERS as i64) as usize;
         let max_material_count = self.config.get_int("MAX_MATERIALS").unwrap_or(MAX_MATERIALS as i64) as usize;
         let max_texture_count = self.config.get_int("MAX_TEXTURES").unwrap_or(MAX_TEXTURES as i64) as usize;
@@ -194,6 +192,10 @@ impl Engine {
         )?;
 
         debug!(LogContext::Engine => "Default unlit material {} created", DEFAULT_UNLIT_MATERIAL_NAME.name_style());
+
+        // Create postprocessing shaders
+        register_vignette_postprocessing_effect(self)?;
+        register_color_adjustments_postprocessing_effect(self)?;
 
         Ok(())
     }
@@ -701,7 +703,7 @@ impl Engine {
     }
 
     // Allows to add resource without checking its name to be a valid one (not starting with DEFAULT_RESOURCE_PREFIX)
-    fn add_default_resource<T>(&mut self, resource: T) -> Result<T::Handle> 
+    pub(crate) fn add_default_resource<T>(&mut self, resource: T) -> Result<T::Handle> 
         where T: Resource<Storage = ResourceStorage<T>>,
     {
         self.add_resource_internal(resource, false)

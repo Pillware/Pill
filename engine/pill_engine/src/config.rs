@@ -1,7 +1,5 @@
 use crate::{
-    ecs::{ audio_system, deferred_update_system, input_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase }, 
-    graphics::{ RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle }, 
-    resources::{ MaterialHandle, ShaderHandle, TextureHandle, TextureType }
+    ecs::{ audio_system, deferred_update_system, input_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase }, game::ShaderParameterType, graphics::{ RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle }, resources::{ MaterialHandle, ShaderHandle, TextureHandle, TextureType }
 };
 
 use pill_core::PillSlotMapKeyData;
@@ -81,12 +79,36 @@ pub const DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
 pub const DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME: &str = "specularity";
 pub const DEFAULT_LIT_MATERIAL_NAME: &str = "pill_engine_default_lit_material";
 
+// Default unlit shader
 pub const DEFAULT_UNLIT_SHADER_NAME: &str = "pill_engine_default_unlit_shader";
 pub const DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_NAME: &str = "color";
 pub const DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS: (u32, u32) = (0, 1);
 pub const DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
 pub const DEFAULT_UNLIT_MATERIAL_NAME: &str = "pill_engine_default_unlit_material";
 
+// Color adjustments postprocessing effect
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_NAME: &str = "pill_engine_color_adjustments_postprocessing_shader";
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT: (&str, TextureType, (u32, u32)) = ("scene", TextureType::Color, (0, 1));
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT: (&str, ShaderParameterType) = ("opacity", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_EXPOSURE_PARAMETER_SLOT: (&str, ShaderParameterType) = ("exposure", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_TINT_PARAMETER_SLOT: (&str, ShaderParameterType) = ("tint", ShaderParameterType::Color);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_WHITE_BALANCE_PARAMETER_SLOT: (&str, ShaderParameterType) = ("white_balance", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_HUE_PARAMETER_SLOT: (&str, ShaderParameterType) = ("hue", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_SATURATION_PARAMETER_SLOT: (&str, ShaderParameterType) = ("saturation", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_CONTRAST_PARAMETER_SLOT: (&str, ShaderParameterType) = ("contrast", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_BRIGHTNESS_PARAMETER_SLOT: (&str, ShaderParameterType) = ("brightness", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_INVERT_FLAG_PARAMETER_SLOT: (&str, ShaderParameterType) = ("invert_flag", ShaderParameterType::Bool);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_GAMMA_PARAMETER_SLOT: (&str, ShaderParameterType) = ("gamma", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_MATERIAL_NAME: &str = "pill_engine_color_adjustments_postprocessing_material";
+
+// Vignette postprocessing effect
+pub const VIGNETTE_POSTPROCESSING_SHADER_NAME: &str = "pill_engine_vignette_postprocessing_shader";
+pub const VIGNETTE_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT: (&str, TextureType, (u32, u32)) = ("scene", TextureType::Color, (0, 1));
+pub const VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT: (&str, ShaderParameterType) = ("opacity", ShaderParameterType::Scalar);
+pub const VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT: (&str, ShaderParameterType) = ("smoothness", ShaderParameterType::Scalar);
+pub const VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT: (&str, ShaderParameterType) = ("roundness", ShaderParameterType::Scalar);
+pub const VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT: (&str, ShaderParameterType) = ("center", ShaderParameterType::Vector2);
+pub const VIGNETTE_POSTPROCESSING_MATERIAL_NAME: &str = "pill_engine_vignette_postprocessing_material";
 
 // Render queue key
 pub type RenderQueueKeyType = u64; // Defines size of renderer queue key (Should be u8, u16, u32, or u64)

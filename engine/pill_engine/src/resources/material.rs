@@ -32,7 +32,7 @@ use pill_core::{
     LogContext, 
     PillSlotMapKey,
     PillStyle, 
-    PillTypeMapKey 
+    PillTypeMapKey, Vector2f 
 };
 
 use anyhow::{ Result, Context, Error };
@@ -57,6 +57,7 @@ pub enum MaterialParameter {
     Scalar(f32),
     Bool(bool),
     Color(Color),
+    Vector2(Vector2f),
 }
 
 // --- Material textures ---
@@ -108,6 +109,11 @@ impl MaterialBuilder {
 
     pub fn scalar_parameter(mut self, slot_name: &str, value: f32) -> Result<Self> {
         self.material.parameters.insert(slot_name.to_string(), MaterialParameter::Scalar(value));
+        Ok(self)
+    }
+
+    pub fn vector2_parameter(mut self, slot_name: &str, value: Vector2f) -> Result<Self> {
+        self.material.parameters.insert(slot_name.to_string(), MaterialParameter::Vector2(value));
         Ok(self)
     }
 

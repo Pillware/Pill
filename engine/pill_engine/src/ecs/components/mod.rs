@@ -12,6 +12,8 @@ pub(crate) mod audio_listener_component;
 pub(crate) mod audio_source_component;
 pub(crate) mod audio_manager_component;
 pub(crate) mod egui_manager_component;
+pub(crate) mod volume;
+pub(crate) mod postprocessing_volume_component;
 
 // --- Use ---
 

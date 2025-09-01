@@ -98,7 +98,7 @@ impl DrawingContext {
         }
 
         self.rendering_context_change_number += 1;
-        debug!(LogContext::Frame => "Renderer pipeline shader changed to: {}", self.shader_name.name_style());
+        debug!(LogContext::Frame => "Renderer pipeline shader changed");
     }
 
     pub fn change_material(
@@ -124,7 +124,7 @@ impl DrawingContext {
         }
         
         self.rendering_context_change_number += 1;
-        debug!(LogContext::Frame => "Renderer pipeline material changed to: {}", self.material_name.name_style());
+        debug!(LogContext::Frame => "Renderer pipeline material changed");
     }
 
     pub fn change_mesh(

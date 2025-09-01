@@ -31,10 +31,9 @@ layout(set=3, binding=2) uniform texture2D normal_texture;
 layout(set=3, binding=3) uniform sampler normal_sampler;
 
 // Output data
-layout(location=0) out vec4 out_final_color;
+layout(location=0) out vec4 out_color;
 
 void main() {
-
     // Settings
     float ambient_light_strength = 0.02;
     vec3 light_position = vec3(-10.0, 10.0, -10.0);
@@ -65,5 +64,5 @@ void main() {
 
     // Final color
     vec3 final_color = (ambient_light_factor + diffuse_light_factor + specular_light_factor) * object_color.xyz * tint;
-    out_final_color = vec4(final_color, 1.0); 
+    out_color = vec4(final_color, 1.0); 
 }

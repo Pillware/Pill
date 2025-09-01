@@ -1,13 +1,11 @@
 use crate::{
     config::RENDERING_SYSTEM, 
-    ecs::{ scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent, UpdatePhase }, 
+    ecs::{ components::transform_component, scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent, UpdatePhase }, 
     engine::Engine, 
     graphics::{ compose_render_queue_key, RenderQueueItem, RenderQueueKey }, 
     resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
-
-use pill_core::{ warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer };
-
+use pill_core::{ warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer, Vector3f };
 use std::{ ops::Range, time::Instant };
 use anyhow::{ Result, Context, Error };
 use boolinator::Boolinator;
@@ -19,6 +17,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
     let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
+    let mut active_camera_position: Option<Vector3f> = None;
     
     {
         let active_scene = engine.scene_manager.get_active_scene_mut()?;
@@ -26,7 +25,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         // - Find active camera and update its aspect ratio if needed
 
         // Find first enabled camera and use it as active
-        for (entity_handle, camera_component) in active_scene.get_one_component_iterator_mut::<CameraComponent>()? {
+        for (entity_handle, camera_component,  transform_component) in active_scene.get_two_component_iterator_mut::<CameraComponent, TransformComponent>()? {
             if camera_component.enabled {
                 // Update active camera aspect ratio if it is set to automatic
                 if let CameraAspectRatio::Automatic(_) = camera_component.aspect {
@@ -34,6 +33,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     camera_component.aspect = CameraAspectRatio::Automatic(aspect_ratio);
                 }
                 active_camera_entity_handle_result = Some(entity_handle);
+                active_camera_position = Some(transform_component.position);
                 break;
             }
         }
@@ -125,4 +125,17 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             }
         }
     }
+}
+
+fn find_active_camera_entity_handle(engine: &mut Engine, active_scene_handle: scene::SceneHandle) -> Result<Option<EntityHandle>> {
+    let active_scene = engine.scene_manager.get_active_scene_mut()?;
+
+    // Find first enabled camera and use it as active
+    for (entity_handle, camera_component) in active_scene.get_one_component_iterator_mut::<CameraComponent>()? {
+        if camera_component.enabled {
+            return Ok(Some(entity_handle));
+        }
+    }
+
+    Ok(None)
 }

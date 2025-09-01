@@ -173,7 +173,7 @@ impl PillTypeMap {
     }
 
     /// Removes a value from the map based on its [`PillTypeMapKey`], returning the value or `None` if
-    /// the key has not been in the map.
+    /// the key has not been in the map. 
     ///
     /// ```rust
     /// use pill_typemap::{PillTypeMap, PillTypeMapKey};

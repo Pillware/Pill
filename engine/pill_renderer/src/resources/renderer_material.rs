@@ -222,6 +222,17 @@ impl RendererMaterial {
                         data.extend_from_slice(&[0u8; 16]);
                     }
                 }
+                ShaderParameterType::Vector2 => {
+                    // Vector2 parameter (2 floats + padding)
+                    if let Some(MaterialParameter::Vector2(value)) = parameters.get(slot_name) {
+                        data.extend_from_slice(&value.x.to_le_bytes());
+                        data.extend_from_slice(&value.y.to_le_bytes());
+                        data.extend_from_slice(&0.0f32.to_le_bytes()); // Padding
+                        data.extend_from_slice(&0.0f32.to_le_bytes()); // Padding
+                    } else {
+                        data.extend_from_slice(&[0u8; 16]);
+                    }
+                }
             }
         }
         
