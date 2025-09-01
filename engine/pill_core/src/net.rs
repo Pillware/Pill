@@ -155,7 +155,7 @@ pub fn srv_send_one(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Resul
     Ok(())
 }
 
-pub fn srv_broadcast(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Result<()> {
+pub fn srv_broadcast_except(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -182,8 +182,8 @@ pub fn cli_flush(net: &mut NetClient) -> Result<()> {
 }
 
 fn decode_wire(buf: &[u8]) -> Result<WireMsg> {
-    let (tag_byte, data) = buf.split_first() else {
-        return anyhow::bail!("Received empty message");
+    let Some((tag_byte, data)) = buf.split_first() else {
+        anyhow::bail!("Received empty message")
     };
     let tag = WireTag::try_from(*tag_byte)?;
     Ok(WireMsg {

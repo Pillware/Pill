@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::debug;
-use pill_core::{NetClient, cli_update, srv_update, cli_send, srv_broadcast, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
+use pill_core::{NetClient, cli_update, srv_update, cli_send, srv_broadcast_except, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
 
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
@@ -75,87 +75,78 @@ fn try_send_and_flush(net: &mut NetClient,
 }
 
 fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
-    // ────────────────────────────────────────────────────────────────
-    // 0.  Immutable borrow just to read the timeout
-    // ────────────────────────────────────────────────────────────────
     let dt = {
         let frame_dt = engine.get_global_component::<TimeComponent>()?.delta_time;
         Duration::from_secs_f32(frame_dt)
     };
-    //println!("Advancing networking system with dt={}", dt.as_secs_f32());
 
     let mut updates:    Vec<NetworkUpdatePayload> = Vec::new();
-    let mut join_cids:  Vec<u64>                  = Vec::new();   // remember JOINs
+    let mut join_cids:  Vec<u64>                  = Vec::new();
+    let state = engine.get_global_component_mut::<GlobalNetState>()?;
 
-    // ────────────────────────────────────────────────────────────────
-    // 1.  Handle wire traffic – first and only long-lived &mut borrow
-    // ────────────────────────────────────────────────────────────────
-    {
-        let mut state = engine.get_global_component_mut::<GlobalNetState>()?;
-
-        match &mut state.side {
-            // ── CLIENT ────────────────────────────────────────────
-            NetSide::Client(net) => {
-                match cli_update(net, dt) {
-                    Ok(msgs) => {
-                        for msg in &msgs {
-                            if msg.tag == WireTag::Update {
-                                let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                                debug!(
-                                    "[Client] ◂ received pkt from srv at time {}", pkt.timestamp
-                                );
-                                updates.push(pkt);
-                            }
+    match &mut state.side {
+        // ── CLIENT ────────────────────────────────────────────
+        NetSide::Client(net) => {
+            match cli_update(net, dt) {
+                Ok(msgs) => {
+                    for msg in &msgs {
+                        if msg.tag == WireTag::Update {
+                            let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
+                            debug!(
+                                "[Client] ◂ received pkt from srv at time {}", pkt.timestamp
+                            );
+                            updates.push(pkt);
                         }
-                        //println!("Client ◂ received {} updates from srv", msgs.len());
                     }
-                    Err(e) if is_not_ready(&e) => {
-                        println!("[Client] ▸ not connected yet – update skipped");
-                        return Ok(updates); // keep early-out behaviour
-                    }
-                    Err(e) => return Err(e),
                 }
-
-				// flush keepalives/acks/challenges even when no app messages
-				if let Err(e) = cli_flush(net) {
-					if !is_not_ready(&e) { return Err(e); }
-				}
+                Err(e) if is_not_ready(&e) => {
+                    println!("[Client] ▸ not connected yet – update skipped");
+                    return Ok(updates);
+                }
+                Err(e) => return Err(e),
             }
 
-            // ── SERVER ────────────────────────────────────────────
-            NetSide::Server(net) => {
-               // println!("[Server] receiving updates from clients...");
-                for (cid, msg) in srv_update(net, dt)? {
-                    println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
-
-                    if msg.tag == WireTag::Update {
-                        let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                        println!(
-                            "[Server] ◂ received pkt from cid={cid} at time {}", pkt.timestamp
-                        );
-                        //println!("Server ◂ received {} updates from cid={cid}", pkt.updates.len());
-                        updates.push(pkt);
-                    } else if msg.tag == WireTag::Join {
-                        // handle client joining
-                        println!("[Server] Client {cid} JOIN with cid={cid}");
-                        join_cids.push(cid);      // snapshot will be sent later
-                    }
-                }
-
-				// flush keepalives/acks/challenges even when no app messages
-				if let Err(e) = srv_flush(net) {
-					if !is_not_ready(&e) { return Err(e); }
-				}
+            // flush keepalives/acks/challenges even when no app messages
+            if let Err(e) = cli_flush(net) {
+                if !is_not_ready(&e) { return Err(e); }
             }
         }
-    } // ← first &mut borrow ends here
 
-    // ────────────────────────────────────────────────────────────────
-    // 2.  For every JOIN, build & send a world snapshot
-    //     (short, independent borrows – no double-borrow)
-    // ────────────────────────────────────────────────────────────────
+        // ── SERVER ────────────────────────────────────────────
+        NetSide::Server(net) => {
+
+            for (cid, msg) in srv_update(net, dt)? {
+                println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
+
+                if msg.tag == WireTag::Update {
+                    let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
+                    println!(
+                        "[Server] ◂ received pkt from cid={cid} at time {}", pkt.timestamp
+                    );
+                    updates.push(pkt);
+                } else if msg.tag == WireTag::Join {
+                    println!("[Server] Client {cid} JOIN with cid={cid}");
+                    join_cids.push(cid);
+                }
+            }
+
+            // flush keepalives/acks/challenges even when no app messages
+            if let Err(e) = srv_flush(net) {
+                if !is_not_ready(&e) { return Err(e); }
+            }
+        }
+    }
+
+    if !join_cids.is_empty() {
+        send_existing_entities(engine, join_cids)?;
+    }
+
+	Ok(updates)
+}
+
+fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()> {
+    // Inform every new client about all existing entities on the server
     for cid in join_cids {
-        // gather all entities currently on the server
         let mut entity_updates: Vec<EntityUpdate> = Vec::new();
         for (_, transform, net_state) in
             engine.iterate_two_components_mut::<TransformComponent,
@@ -167,29 +158,24 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                 transform: Some(transform.clone()),
             });
         }
-        //println!("[Server] Sending {} entities to client {cid}", entity_updates.len());
 
-        // wrap them in the usual payload
         let snapshot = NetworkUpdatePayload {
             client_id: 0,   // 0 = "server"
             updates:   entity_updates,
-            timestamp: engine.get_global_component::<TimeComponent>()?.time, // TODO: debug
+            timestamp: engine.get_global_component::<TimeComponent>()?.time,
         };
 
-        // short-lived borrow only to send/flush
-        {
-            let mut state = engine.get_global_component_mut::<GlobalNetState>()?;
-            if let NetSide::Server(net) = &mut state.side {
-                srv_send_one(
-                    net,
-                    cid,   // **only** the newcomer
-                    &WireMsg {
-                        tag:  WireTag::Update,
-                        data: bincode::serialize(&snapshot)?,
-                    },
-                )?;
-                srv_flush(net)?;
-            }
+        let state = engine.get_global_component_mut::<GlobalNetState>()?;
+        if let NetSide::Server(net) = &mut state.side {
+            srv_send_one(
+                net,
+                cid,   // **only** the newcomer
+                &WireMsg {
+                    tag:  WireTag::Update,
+                    data: bincode::serialize(&snapshot)?,
+                },
+            )?;
+            srv_flush(net)?;
         }
 
         println!(
@@ -197,11 +183,32 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
             snapshot.updates.len()
         );
     }
+    Ok(())
+}
 
-    Ok(updates)
+fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<()> {
+    let tr = entity_update.transform
+                          .clone()
+                          .unwrap_or_else(TransformComponent::default);
+    let spawn_fn = {
+        let global_net_state = engine.get_global_component::<GlobalNetState>()?;
+        global_net_state.spawn_handlers.get(&entity_update.net_state.kind).copied()
+    };
+
+    if let Some(spawn_fn) = spawn_fn{
+        spawn_fn(engine, &entity_update.net_state, &tr)?;
+    } else {
+        println!("No spawn handler for entity kind '{}'", entity_update.net_state.kind);
+    }
+    Ok(())
+}
+
+fn run_despawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<()> {
+    Err(anyhow::anyhow!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id))
 }
 
 pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
+    // TODO: The timeout cannot be too much otherwise we miss keepalives
     {
 		let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
 		let state = engine.get_global_component_mut::<GlobalNetState>()?;
@@ -212,38 +219,27 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
 		}
 		state.accumulator = 0.0;
 	}
+
     // Step 1: Receive network updates from clients and broadcast them to all clients
-    //println!("networking_system_server: receiving updates from clients...");
     match receive_updates(engine) {
         Ok(updates) => {
             println!("Got {} updates from clients", updates.len());
             // Step 2: Process the updates and apply them to the entities in the server's world immediately
-            // Broadcast the updates to all clients
             for update in &updates {
                 // handle each NetworkUpdatePayload from a client
                 for entity_update in &update.updates {
                     match entity_update.action {
                         NetEntityAction::Spawn => {
                             println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
-                            let tr = entity_update.transform
-                                                  .clone()
-                                                  .unwrap_or_else(TransformComponent::default);
-                            let spawn_fn = {
-                                let global_net_state = engine.get_global_component::<GlobalNetState>()?;
-                                global_net_state.spawn_handlers.get(&entity_update.net_state.kind).copied()
-                            };
-
-                            if let Some(spawn_fn) = spawn_fn{
-                                spawn_fn(engine, &entity_update.net_state, &tr)?;
-                            } else {
-                                println!("No spawn handler for entity kind '{}'", entity_update.net_state.kind);
-                            }
+                            run_spawn_hooks(engine, entity_update)?;
                         },
                         NetEntityAction::Despawn => {
-                            println!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id);
+                            run_despawn_hooks(engine, entity_update)?;
                         },
                         NetEntityAction::Update => {
                             // Handle updating the entity's transform
+                            // TODO: we will handle multiple entities/components - allow for
+                            // injection?
                             if let Some(tr) = &entity_update.transform {
                                 for (_, transform, net_state)
                                     in engine.iterate_two_components_mut::<TransformComponent,
@@ -265,14 +261,13 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                 let state = engine.get_global_component_mut::<GlobalNetState>()?;
                 if let NetSide::Server(net) = &mut state.side {
                     // Broadcast the update to everyone except the sender
-                    srv_broadcast(net, update.client_id, &WireMsg {
+                    srv_broadcast_except(net, update.client_id, &WireMsg {
                         tag: WireTag::Update,
                         data: bincode::serialize(&update)?,
                     })?;
                     srv_flush(net)?;
                 };
             }
-            //println!("Received and broadcasted {} network updates", updates.len());
         },
         Err(e) => {
             println!("Failed to receive or broadcast network updates: {}", e);
@@ -285,6 +280,8 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
 const LERP_RATE: f32 = 0.001;
 
 pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
+    // Run the client-side interpolation for non-owned entities TODO: this can be injected by the
+    // game later
     {
         let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
         let delta_time = engine.frame_delta_time;
@@ -328,7 +325,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                 if net_state.owner_id != my_id {
                     continue; // skip entities not owned by this client
                 }
-               println!("▸ Spawning new entity for nid={:?} from cid={my_id}", net_state.net_entity_id);
+               println!("▸ Queuing for spawn: new entity for nid={:?} from cid={my_id}", net_state.net_entity_id);
                 let update = EntityUpdate {
                     action: NetEntityAction::Spawn,
                     net_state: net_state.clone(),
@@ -344,14 +341,12 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
             timestamp: engine.get_global_component::<TimeComponent>()?.time,
         };
         if let NetSide::Client(net) = &mut engine.get_global_component_mut::<GlobalNetState>()?.side {
-            //println!("▸ Sending {} updates to server", payload.updates.len());
             try_send_and_flush(net, &WireMsg {
                 tag: WireTag::Update,
                 data: bincode::serialize(&payload)?,
             })?;
         }
     }
-
 
     // Step 1: Receive network updates from server
     match receive_updates(engine) {
@@ -364,22 +359,10 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                     match entity_update.action {
                         NetEntityAction::Spawn => {
                             println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.net_entity_id);
-                            let tr = entity_update.transform
-                                                  .clone()
-                                                  .unwrap_or_else(TransformComponent::default);
-                            let spawn_fn = {
-                                let global_net_state = engine.get_global_component::<GlobalNetState>()?;
-                                global_net_state.spawn_handlers.get(&entity_update.net_state.kind).copied()
-                            };
-
-                            if let Some(spawn_fn) = spawn_fn {
-                                spawn_fn(engine, &entity_update.net_state, &tr)?;
-                            } else {
-                                println!("No spawn handler for entity kind '{}'", entity_update.net_state.kind);
-                            }
+                            run_spawn_hooks(engine, entity_update)?;
                         },
                         NetEntityAction::Despawn => {
-                            println!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id);
+                            run_despawn_hooks(engine, entity_update)?;
                         },
                         NetEntityAction::Update => {
                             // Handle updating the entity's transform
@@ -402,21 +385,10 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                         },
                     }
                 }
-
-                let state = engine.get_global_component_mut::<GlobalNetState>()?;
-                if let NetSide::Server(net) = &mut state.side {
-                    // Broadcast the update to everyone except the sender
-                    srv_broadcast(net, update.client_id, &WireMsg {
-                        tag: WireTag::Update,
-                        data: bincode::serialize(&update)?,
-                    })?;
-                    srv_flush(net)?;
-                };
             }
-            //println!("Received and broadcasted {} network updates", updates.len());
         },
         Err(e) => {
-            println!("Failed to receive or broadcast network updates: {}", e);
+            println!("Failed to receive network updates: {}", e);
             return Err(e);
         }
     }
