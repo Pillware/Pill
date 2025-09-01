@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::debug;
-use pill_core::{NetClient, cli_update, srv_update, cli_send, srv_broadcast_except, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
+use pill_core::{NetClient, cli_update, cli_get_events, srv_update, srv_get_events, cli_send, srv_broadcast_except, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
 
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
@@ -74,12 +74,27 @@ fn try_send_and_flush(net: &mut NetClient,
     Ok(())
 }
 
-fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
+fn pump_transport(engine: &mut Engine) -> Result<()> {
     let dt = {
         let frame_dt = engine.get_global_component::<TimeComponent>()?.delta_time;
-        Duration::from_secs_f32(frame_dt)
+        Duration::from_secs_f32(frame_dt.max(0.0))
     };
 
+    let mut state = engine.get_global_component_mut::<GlobalNetState>()?;
+    match &mut state.side {
+        NetSide::Client(net) => {
+            if let Err(e) = cli_update(net, dt) { if !is_not_ready(&e) { return Err(e); } }
+            if let Err(e) = cli_flush(net)     { if !is_not_ready(&e) { return Err(e); } }
+        }
+        NetSide::Server(net) => {
+            if let Err(e) = srv_update(net, dt) { if !is_not_ready(&e) { return Err(e); } }
+            if let Err(e) = srv_flush(net) { if !is_not_ready(&e) { return Err(e); } }
+        }
+    }
+    Ok(())
+}
+
+fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     let mut updates:    Vec<NetworkUpdatePayload> = Vec::new();
     let mut join_cids:  Vec<u64>                  = Vec::new();
     let state = engine.get_global_component_mut::<GlobalNetState>()?;
@@ -87,7 +102,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     match &mut state.side {
         // ── CLIENT ────────────────────────────────────────────
         NetSide::Client(net) => {
-            match cli_update(net, dt) {
+            match cli_get_events(net) {
                 Ok(msgs) => {
                     for msg in &msgs {
                         if msg.tag == WireTag::Update {
@@ -114,8 +129,7 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
 
         // ── SERVER ────────────────────────────────────────────
         NetSide::Server(net) => {
-
-            for (cid, msg) in srv_update(net, dt)? {
+            for (cid, msg) in srv_get_events(net)? {
                 println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
 
                 if msg.tag == WireTag::Update {
@@ -208,6 +222,9 @@ fn run_despawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Resul
 }
 
 pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
+    // Run transport pump every tick to avoid timeouts
+    pump_transport(engine)?;
+
     // TODO: The timeout cannot be too much otherwise we miss keepalives
     {
 		let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
@@ -279,7 +296,7 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
 
 const LERP_RATE: f32 = 0.001;
 
-pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
+fn run_client_interpolation(engine: &mut Engine) -> Result<()> {
     // Run the client-side interpolation for non-owned entities TODO: this can be injected by the
     // game later
     {
@@ -301,6 +318,14 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
+    // Run transport pump every tick to avoid timeouts
+    pump_transport(engine)?;
+
+    run_client_interpolation(engine)?;
 
     // Run it with a given frequency
     {

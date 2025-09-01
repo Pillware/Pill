@@ -80,8 +80,10 @@ pub use net::{
     srv_broadcast_except,
     srv_flush,
     srv_update,
+    srv_get_events,
     cli_connect,
     cli_send,
     cli_update,
+    cli_get_events,
     cli_flush,
 };

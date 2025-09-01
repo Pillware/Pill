@@ -104,10 +104,13 @@ pub fn cli_connect(bind: &str, client_id: u64) -> Result<NetClient> {
     })
 }
 
-pub fn srv_update(net: &mut NetServer, dt: Duration) -> Result<Vec<(u64, WireMsg)>> {
+pub fn srv_update(net: &mut NetServer, dt: Duration) -> Result<()> {
     net.server.update(dt);
     net.transport.update(dt, &mut net.server)?;
+    Ok(())
+}
 
+pub fn srv_get_events(net: &mut NetServer) -> Result<Vec<(u64, WireMsg)>> {
     // handle connect/disconnect
     while let Some(e) = net.server.get_event() {
         match e {
@@ -133,10 +136,13 @@ pub fn srv_update(net: &mut NetServer, dt: Duration) -> Result<Vec<(u64, WireMsg
     Ok(inbox)
 }
 
-pub fn cli_update(net: &mut NetClient, dt: Duration) -> Result<Vec<WireMsg>> {
+pub fn cli_update(net: &mut NetClient, dt: Duration) -> Result<()> {
     net.client.update(dt);
     net.transport.update(dt, &mut net.client)?;
+    Ok(())
+}
 
+pub fn cli_get_events(net: &mut NetClient) -> Result<Vec<WireMsg>> {
     let mut inbox = Vec::new();
     while let Some(bytes) = net.client.receive_message(RELIABLE_CHANNEL_ID) {
         if bytes.is_empty() {
