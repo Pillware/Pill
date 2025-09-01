@@ -142,6 +142,7 @@ impl PillGame for Game {
 
         let mut net_state = GlobalNetState::new_client(&server_addr, client_id)?;
         net_state.spawn_handlers.insert("player".into(), spawn_player);
+        net_state.despawn_handlers.insert("player".into(), despawn_player);
         engine.add_global_component(net_state);
 
 		println!("Client will connect to {server_addr} with ID {client_id}");
@@ -251,7 +252,6 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
 
         {
             net_state.transform = Some(transform.clone());
-            net_state.transform.as_mut().unwrap().net_dirty = false;
             pending_updates.push(EntityUpdate {
                 action: NetEntityAction::Update,
                 net_state: net_state.clone(),
@@ -362,3 +362,22 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
     Ok(())
 }
 
+fn despawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent) -> Result<()> {
+    let my_id = engine.get_global_component_mut::<GlobalNetState>()?.my_id;
+    let scene = engine.get_active_scene_handle()?;
+    println!("[DESPAWN] Despawning player with nid{ } for cid {}", net_state_component.net_entity_id, my_id);
+
+    let mut to_despawn = Vec::new();
+    for (ent, ns) in engine.iterate_one_component::<NetworkStateComponent>()? {
+        if ns.net_entity_id == net_state_component.net_entity_id {
+            to_despawn.push(ent);
+        }
+    }
+
+    for ent in to_despawn {
+        engine.remove_entity_default_scene(ent)?;
+        println!("[DESPAWN] Deleted entity {:?}", ent);
+    }
+
+    Ok(())
+}

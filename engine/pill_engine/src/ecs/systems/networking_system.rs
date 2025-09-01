@@ -31,6 +31,8 @@ pub struct EntityUpdate {
     pub action: NetEntityAction,
     pub net_state: NetworkStateComponent,
     // TODO: maybe need net_scene_id to identify the scene
+    // TODO: update this as a Vec of Nettable components after Hist0r merge, inject the
+    // arbiter/conflict resolver function
     pub transform: Option<TransformComponent>,
 }
 
@@ -53,26 +55,37 @@ fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
 const LERP_RATE: f32 = 0.001;
 
 fn run_client_interpolation(engine: &mut Engine) -> Result<()> {
-    // Run the client-side interpolation for non-owned entities TODO: this can be injected by the
-    // game later
-    {
-        let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
-        let delta_time = engine.frame_delta_time;
-        // Peform interpolation for the components that have a transform and are not owned by the
-        // client
-        for (_, transform, net_state) in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
-            if let Some(tr) = &net_state.transform  {
-                if net_state.owner_id != my_id {
-                    //println!("interpolating: source {:?} dest {:?} delta_time={}", transform.position, tr.position, delta_time);
-                    // Interpolate the transform based on the current time and the last known state
-                                       //let t         = blend(delta_time, LERP_HALFLIFE);
-                    let t = exp_blend(delta_time);
-                    transform.set_position(lerp_vec3(transform.position, tr.position, t));
-                    transform.set_rotation(lerp_vec3(transform.rotation, tr.rotation, t));
-                    // TODO: scale?
-                }
+    // Run the client-side interpolation for non-owned entities
+    let my_id = engine.get_global_component::<GlobalNetState>()?.my_id;
+    let delta_time = engine.frame_delta_time;
+    // Peform interpolation for the components that have a transform and are not owned by the
+    // client
+    for (_, transform, net_state) in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
+        if let Some(tr) = &net_state.transform  {
+            if net_state.owner_id != my_id {
+                //println!("interpolating: source {:?} dest {:?} delta_time={}", transform.position, tr.position, delta_time);
+                // Interpolate the transform based on the current time and the last known state
+                                   //let t         = blend(delta_time, LERP_HALFLIFE);
+                let t = exp_blend(delta_time);
+                transform.set_position(lerp_vec3(transform.position, tr.position, t));
+                transform.set_rotation(lerp_vec3(transform.rotation, tr.rotation, t));
+                // TODO: scale?
             }
         }
+    }
+    Ok(())
+}
+
+fn run_client_interpolation_hook(engine: &mut Engine) -> Result<()> {
+    // Run the client-side interpolation for non-owned entities
+    let transform_interpolation_hook = {
+        let global_net_state = engine.get_global_component::<GlobalNetState>()?;
+        global_net_state.client_interpolation_hook
+    };
+    if let Some(hook) = transform_interpolation_hook {
+        hook(engine)?;
+    } else {
+        run_client_interpolation(engine)?;
     }
     Ok(())
 }
@@ -425,7 +438,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
     // Run transport pump every tick to avoid timeouts
     pump_transport(engine)?;
 
-    run_client_interpolation(engine)?;
+    run_client_interpolation_hook(engine)?;
 
     if !timeout_elapsed(engine) {
         // Not enough time has passed to process the next network update

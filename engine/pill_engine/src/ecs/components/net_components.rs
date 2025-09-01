@@ -14,6 +14,7 @@ pub enum NetSide {
 
 type SpawnFn = fn(&mut Engine, &NetworkStateComponent, &TransformComponent) -> Result<()>;
 type DespawnFn = fn(&mut Engine, &NetworkStateComponent) -> Result<()>;
+type InterpolationHookFn = fn(&mut Engine) -> Result<()>;
 
 // Global state of networking in this instance of the engine
 pub struct GlobalNetState {
@@ -24,6 +25,7 @@ pub struct GlobalNetState {
     pub timeout: f32,
     pub spawn_handlers: HashMap<String, SpawnFn>, // Handlers for spawning entities based on type
     pub despawn_handlers: HashMap<String, DespawnFn>,
+    pub client_interpolation_hook: Option<InterpolationHookFn>, // Optional hook for client-side interpolation
 }
 
 impl PillTypeMapKey for GlobalNetState {
@@ -41,6 +43,7 @@ impl GlobalNetState {
             timeout: UPDATE_FREQ_SEC,
             spawn_handlers: HashMap::new(),
             despawn_handlers: HashMap::new(),
+            client_interpolation_hook: None,
         })
     }
 
@@ -53,6 +56,7 @@ impl GlobalNetState {
             timeout: UPDATE_FREQ_SEC,
             spawn_handlers: HashMap::new(),
             despawn_handlers: HashMap::new(),
+            client_interpolation_hook: None,
         })
     }
 }
