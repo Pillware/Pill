@@ -422,6 +422,21 @@ impl Engine {
         Ok(())
     }
 
+    // Removes entity specified with entity handle from its scene
+    pub fn remove_entity_default_scene(&mut self, entity_handle: EntityHandle) -> Result<()> {
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+        debug!("Removing {} from {} {}", "Entity".gobj_style(), "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
+        let component_destroyers = self.scene_manager.remove_entity(scene_handle, entity_handle).context(format!("Creating {} failed", "Entity".gobj_style()))?;
+
+        // Destroy components using destroyers
+        for mut component_destroyer in component_destroyers {
+            component_destroyer.destroy(self, scene_handle, entity_handle)?;
+        }
+
+        Ok(())
+    }
+
     // --- Component API ---
 
     /// Registers new component type in scene specified with scene handle

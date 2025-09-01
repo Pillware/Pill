@@ -13,6 +13,7 @@ pub enum NetSide {
 }
 
 type SpawnFn = fn(&mut Engine, &NetworkStateComponent, &TransformComponent) -> Result<()>;
+type DespawnFn = fn(&mut Engine, &NetworkStateComponent) -> Result<()>;
 
 // Global state of networking in this instance of the engine
 pub struct GlobalNetState {
@@ -22,6 +23,7 @@ pub struct GlobalNetState {
     pub accumulator: f32, // running counter to reduce the tick rate
     pub timeout: f32,
     pub spawn_handlers: HashMap<String, SpawnFn>, // Handlers for spawning entities based on type
+    pub despawn_handlers: HashMap<String, DespawnFn>,
 }
 
 impl PillTypeMapKey for GlobalNetState {
@@ -38,6 +40,7 @@ impl GlobalNetState {
             accumulator: 0.0,
             timeout: UPDATE_FREQ_SEC,
             spawn_handlers: HashMap::new(),
+            despawn_handlers: HashMap::new(),
         })
     }
 
@@ -49,6 +52,7 @@ impl GlobalNetState {
             accumulator: 0.0,
             timeout: UPDATE_FREQ_SEC,
             spawn_handlers: HashMap::new(),
+            despawn_handlers: HashMap::new(),
         })
     }
 }

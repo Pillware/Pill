@@ -6,10 +6,9 @@ use std::{net::{UdpSocket, SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr}, time::{Durat
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WireTag {
-    Ping = 0,
-    Pong = 1,
-    Update = 3,
-    Join = 4
+    Update = 0,
+    Join = 1,
+    Exit = 2,
 }
 
 impl TryFrom<u8> for WireTag {
@@ -17,10 +16,9 @@ impl TryFrom<u8> for WireTag {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(WireTag::Ping),
-            1 => Ok(WireTag::Pong),
-            3 => Ok(WireTag::Update),
-            4 => Ok(WireTag::Join),
+            0 => Ok(WireTag::Update),
+            1 => Ok(WireTag::Join),
+            2 => Ok(WireTag::Exit),
             _ => Err(anyhow::anyhow!("Invalid WireTag byte: {}", value)),
         }
     }
@@ -111,6 +109,7 @@ pub fn srv_update(net: &mut NetServer, dt: Duration) -> Result<()> {
 }
 
 pub fn srv_get_events(net: &mut NetServer) -> Result<Vec<(u64, WireMsg)>> {
+    let mut inbox = Vec::new();
     // handle connect/disconnect
     while let Some(e) = net.server.get_event() {
         match e {
@@ -119,11 +118,11 @@ pub fn srv_get_events(net: &mut NetServer) -> Result<Vec<(u64, WireMsg)>> {
             },
             ServerEvent::ClientDisconnected{ client_id, reason} => {
                 log::info!("Client {client_id} disconnected: {reason:?}");
+                inbox.push((client_id, WireMsg { tag: WireTag::Exit, data: Vec::new() }));
             }
         }
     }
 
-    let mut inbox = Vec::new();
     for cid in net.server.clients_id() {
         while let Some(bytes) = net.server.receive_message(cid, RELIABLE_CHANNEL_ID) {
             if bytes.is_empty() {
@@ -158,6 +157,14 @@ pub fn srv_send_one(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Resul
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
     net.server.send_message(client_id, RELIABLE_CHANNEL_ID, bytes);
+    Ok(())
+}
+
+pub fn srv_broadcast(net: &mut NetServer, msg: &WireMsg) -> Result<()> {
+    let mut bytes = Vec::with_capacity(1 + msg.data.len());
+    bytes.push(msg.tag as u8);
+    bytes.extend_from_slice(&msg.data);
+    net.server.broadcast_message(RELIABLE_CHANNEL_ID, bytes);
     Ok(())
 }
 

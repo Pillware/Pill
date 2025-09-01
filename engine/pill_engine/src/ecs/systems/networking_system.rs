@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::debug;
-use pill_core::{NetClient, cli_update, cli_get_events, srv_update, srv_get_events, cli_send, srv_broadcast_except, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
+use pill_core::{NetClient, cli_update, cli_get_events, srv_update, srv_get_events, cli_send, srv_broadcast, srv_broadcast_except, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
 
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
@@ -77,6 +77,21 @@ fn run_client_interpolation(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+fn default_despawn_hook(engine: &mut Engine, net_state: &NetworkStateComponent) -> Result<()> {
+    // Default despawn hook - simply remove the entity with the given net_entity_id
+    let mut to_despawn: Vec<EntityHandle> = Vec::new();
+    for (handle, net_state_comp) in engine.iterate_one_component_mut::<NetworkStateComponent>()? {
+        if net_state_comp.net_entity_id == net_state.net_entity_id {
+            to_despawn.push(handle);
+        }
+    }
+    for handle in to_despawn {
+        engine.remove_entity_default_scene(handle)?; // TODO: maybe we want to just ghost-posess the
+                                               // entity with AI?
+    }
+    Ok(())
+}
+
 fn is_not_ready(err: &anyhow::Error) -> bool {
     let s = err.to_string().to_lowercase();
     s.contains("disconnected")
@@ -109,6 +124,7 @@ fn pump_transport(engine: &mut Engine) -> Result<()> {
 fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     let mut updates:    Vec<NetworkUpdatePayload> = Vec::new();
     let mut join_cids:  Vec<u64>                  = Vec::new();
+    let mut despawn_cids: Vec<u64>                  = Vec::new();
     let state = engine.get_global_component_mut::<GlobalNetState>()?;
 
     match &mut state.side {
@@ -146,6 +162,12 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                 } else if msg.tag == WireTag::Join {
                     println!("[Server] Client {cid} JOIN with cid={cid}");
                     join_cids.push(cid);
+                } else if msg.tag == WireTag::Exit {
+                    println!("[Server] Client {cid} EXIT");
+                    // TODO: please review - we might not want to despawn all or just ghost-posess
+                    // the player with AI in some games - or maybe we want to keep the entities
+                    // For now this needs to despawn all entities owned by this client
+                    despawn_cids.push(cid);
                 }
             }
         }
@@ -153,6 +175,10 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
 
     if !join_cids.is_empty() {
         send_existing_entities(engine, join_cids)?;
+    }
+
+    if !despawn_cids.is_empty() {
+        despawn_entities(engine, despawn_cids)?;
     }
 
 	Ok(updates)
@@ -199,6 +225,49 @@ fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()
     Ok(())
 }
 
+fn despawn_entities(engine: &mut Engine, despawn_cids: Vec<u64>) -> Result<()> {
+    // Despawn all entities owned by the clients that disconnected
+    let mut entity_updates: Vec<EntityUpdate> = Vec::new();
+    for cid in despawn_cids {
+        for (_, net_state) in
+            engine.iterate_one_component_mut::<NetworkStateComponent>()?
+        {
+            if net_state.owner_id == cid {
+                entity_updates.push(EntityUpdate {
+                    action:    NetEntityAction::Despawn,
+                    net_state: net_state.clone(),
+                    transform: None,
+                });
+            }
+        }
+    }
+
+    if !entity_updates.is_empty() {
+        let snapshot = NetworkUpdatePayload {
+            client_id: 0,   // 0 = "server"
+            updates:   entity_updates,
+            timestamp: engine.get_global_component::<TimeComponent>()?.time,
+        };
+
+        let state = engine.get_global_component_mut::<GlobalNetState>()?;
+        if let NetSide::Server(net) = &mut state.side {
+            srv_broadcast(
+                net,
+                &WireMsg {
+                    tag:  WireTag::Update,
+                    data: bincode::serialize(&snapshot)?,
+                },
+            )?;
+        }
+
+        println!(
+            "[Server] → despawned {} entities from disconnected clients",
+            snapshot.updates.len()
+        );
+    }
+    Ok(())
+}
+
 fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<()> {
     let tr = entity_update.transform
                           .clone()
@@ -208,7 +277,7 @@ fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<
         global_net_state.spawn_handlers.get(&entity_update.net_state.kind).copied()
     };
 
-    if let Some(spawn_fn) = spawn_fn{
+    if let Some(spawn_fn) = spawn_fn {
         spawn_fn(engine, &entity_update.net_state, &tr)?;
     } else {
         println!("No spawn handler for entity kind '{}'", entity_update.net_state.kind);
@@ -217,7 +286,18 @@ fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<
 }
 
 fn run_despawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<()> {
-    Err(anyhow::anyhow!("Despawn action not yet implemented (nid={:?})", entity_update.net_state.net_entity_id))
+    let despawn_fn = {
+        let global_net_state = engine.get_global_component::<GlobalNetState>()?;
+        global_net_state.despawn_handlers.get(&entity_update.net_state.kind).copied()
+    };
+
+    if let Some(despawn_fn) = despawn_fn {
+        despawn_fn(engine, &entity_update.net_state)?;
+    } else {
+        println!("No despawn handler for entity kind '{}' Running the default despawn hook", entity_update.net_state.kind);
+       default_despawn_hook(engine, &entity_update.net_state)?;
+    }
+    Ok(())
 }
 
 fn send_client_updates(engine: &mut Engine) -> Result<()> {
@@ -312,7 +392,6 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                                                                            NetworkStateComponent>()? {
                                     if entity_update.net_state.net_entity_id == net_state.net_entity_id {
                                         net_state.transform = Some(tr.clone());
-                                        net_state.transform.as_mut().unwrap().net_dirty = false;
 
                                         // authoritative change on the server
                                         *transform = *tr;
@@ -376,7 +455,6 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                                                                            NetworkStateComponent>()? {
                                     if entity_update.net_state.net_entity_id == net_state.net_entity_id {
                                         net_state.transform = Some(tr.clone());
-                                        net_state.transform.as_mut().unwrap().net_dirty = false;
                                         debug!("▸ Updating entity with nid={:?} for cid={} net_state={:?} with transform {:?}",
                                                  net_state.net_entity_id, update.client_id, net_state, tr);
 

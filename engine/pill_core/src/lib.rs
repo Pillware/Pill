@@ -77,6 +77,7 @@ pub use net::{
     UNRELIABLE_CHANNEL_ID,
     srv_start,
     srv_send_one,
+    srv_broadcast,
     srv_broadcast_except,
     srv_flush,
     srv_update,
