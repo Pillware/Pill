@@ -11,7 +11,9 @@ env_logger = "0.11"
 config     = "0.11"
 
 pill_engine = { path = "../pill_engine", default-features = false }
+pill_core = { path = "../pill_core", default-features = false }
 chrono = "0.4.41"
+ctrlc = "3.4.7"
 
 [features]
 default = []

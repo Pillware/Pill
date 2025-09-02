@@ -1,6 +1,7 @@
 
 use anyhow::Result;
-use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, NetEntityState, networking_system_server};
+use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, NetSide, NetEntityState, networking_system_server};
+use pill_core::{srv_broacast_exit, srv_dying_grasp};
 use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
@@ -84,6 +85,10 @@ fn main() -> Result<()> {
     let mut engine = Engine::new(game, cfg);
 
     engine.initialize(None)?;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    ctrlc::set_handler(move || { let _ = tx.send(()); }).expect("Error setting Ctrl-C handler");
+
     let tick = Duration::from_millis(1000 / 60); // 60 FPS
 
     let mut last = Instant::now();
@@ -91,6 +96,18 @@ fn main() -> Result<()> {
     info!("Starting headless game loop...");
 
     loop {
+        // graceful shutdown on Ctrl-C
+        if rx.try_recv().is_ok() {
+            info!("Shutdown requested, broadcasting Exit");
+            if let Ok(mut net_state) = engine.get_global_component_mut::<GlobalNetState>() {
+                if let NetSide::Server(net) = &mut net_state.side {
+                    let _ = srv_broacast_exit(net, "Server shutting down");
+                    let _ = srv_dying_grasp(net, std::time::Duration::from_millis(500));
+                }
+            }
+            break Ok(());
+        }
+
         let now = Instant::now();
         if now.duration_since(last) >= tick {
             last += tick;

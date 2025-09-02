@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use renet::{ ConnectionConfig, DefaultChannel, RenetClient, RenetServer, ServerEvent};
 use renet_netcode::{ClientAuthentication, NetcodeClientTransport, NetcodeServerTransport, ServerAuthentication, ServerConfig};
 use std::{net::{UdpSocket, SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr}, time::{Duration, SystemTime}};
+use serde::{Serialize, Deserialize};
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -9,6 +10,12 @@ pub enum WireTag {
     Update = 0,
     Join = 1,
     Exit = 2,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExitNotice {
+    pub reason: String,
+    pub when_ms: u64,
 }
 
 impl TryFrom<u8> for WireTag {
@@ -173,6 +180,34 @@ pub fn srv_broadcast_except(net: &mut NetServer, client_id: u64, msg: &WireMsg) 
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
     net.server.broadcast_message_except(client_id, RELIABLE_CHANNEL_ID, bytes);
+    Ok(())
+}
+
+pub fn srv_broacast_exit(net: &mut NetServer, reason: &str) -> Result<()> {
+    let notice = ExitNotice {
+        reason: reason.to_string(),
+        when_ms: now().as_millis() as u64,
+    };
+    let data = bincode::serialize(&notice)?;
+    let msg = WireMsg {
+        tag: WireTag::Exit,
+        data,
+    };
+    srv_broadcast(net, &msg);
+    srv_flush(net)?;
+    Ok(())
+}
+
+pub fn srv_dying_grasp(net: &mut NetServer, wait: Duration) -> Result<()> {
+    let start = now();
+    let step = Duration::from_millis(16);
+
+    while now() - start < wait {
+        srv_update(net, step)?;
+        srv_flush(net)?;
+        std::thread::sleep(step);
+    }
+
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::debug;
-use pill_core::{NetClient, cli_update, cli_get_events, srv_update, srv_get_events, cli_send, srv_broadcast, srv_broadcast_except, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag};
+use pill_core::{NetClient, cli_update, cli_get_events, srv_update, srv_get_events, cli_send, srv_broadcast, srv_broadcast_except, srv_send_one, cli_flush, srv_flush, WireMsg, WireTag, ExitNotice};
 
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
@@ -151,6 +151,11 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                                 "[Client] ◂ received pkt from srv at time {}", pkt.timestamp
                             );
                             updates.push(pkt);
+                        } else if msg.tag == WireTag::Exit {
+                            let notice: ExitNotice = bincode::deserialize(&msg.data)
+                              .unwrap_or(ExitNotice { reason: "Server exit".into(), when_ms: 0 });
+                            println!("[Client] Server Exit: {} (t={})", notice.reason, notice.when_ms);
+                            // TODO: implement the rest of complex system handling
                         }
                     }
                 }
