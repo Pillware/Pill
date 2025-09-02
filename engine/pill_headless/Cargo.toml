@@ -24,14 +24,14 @@ headless = [
   "pill_engine/headless",
 ]
 
-net = [
-    "pill_engine/net",
+networking = [
+    "pill_engine/networking",
 ]
 
 # Run headless + start an authoritative server
 headless-server = [
   "pill_engine/internal",
   "pill_engine/headless",
-  "net"
+  "networking"
 ]
 

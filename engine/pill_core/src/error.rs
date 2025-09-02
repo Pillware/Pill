@@ -8,7 +8,7 @@ use colored::*;
 // --- Renderer error ---
 
 #[derive(Error, Debug, Clone)]
-pub enum RendererError { 
+pub enum RendererError {
     #[error("Undefined {} error \n\nSource: ", "Renderer".gobj_style())]
     Other,
     #[error("{} {} not found \n\nSource: ", "Renderer".gobj_style(), "Resource".sobj_style())]
@@ -47,7 +47,7 @@ pub enum EngineError<'a> {
 
     // Camera
     #[error("There is no active {} set in active {}",  "Camera".gobj_style(), "Scene".gobj_style())]
-    NoActiveCamera,   
+    NoActiveCamera,
 
     // Component
     #[error("{} {} is already registered for {} {}", "Component".gobj_style(), .0.sobj_style(), "Scene".gobj_style(), .1.name_style())]
@@ -72,7 +72,7 @@ pub enum EngineError<'a> {
     SystemNotFound(String, String),
     #[error("{} {} not found", "UpdatePhase".sobj_style(), .0.name_style())]
     SystemUpdatePhaseNotFound(String),
-    
+
     // Resource
     #[error("Path to {} is invalid: {}", "Asset".gobj_style(), .0.name_style())]
     InvalidAssetPath(String),
@@ -114,7 +114,13 @@ pub enum EngineError<'a> {
     NonReturnedSystemTimer(String),
     #[error("There is no active timer context to end")]
     NoTimerContextToEnd(),
-    
+
+    // Network
+    #[error("Invalid NetworkAction byte: {}", .0)]
+    InvalidNetworkAction(u8),
+    #[error("Connection not stable yet")]
+    ConnectionNotStable,
+
     // Other
     #[error("{} error: {}", "Engine".mobj_style(), .0)]
     Other(String),

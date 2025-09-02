@@ -7,7 +7,7 @@ use pill_core::{ PillTypeMap, PillTypeMapKey };
 use serde::{Serialize, Deserialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum NetEntityState {
+pub enum NetworkEntityState {
     Spawn,
     Despawn,
     Alive,
@@ -16,7 +16,7 @@ pub enum NetEntityState {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkStateComponent{
     pub owner_id: u64, // client id
-    pub state: NetEntityState,
+    pub state: NetworkEntityState,
     pub net_entity_id: u64, // unique entity id in the network
     pub transform: Option<TransformComponent>,
     pub kind: String, // type of entity

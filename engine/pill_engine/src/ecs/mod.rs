@@ -71,14 +71,14 @@ pub use components::time_component::{
     TimeComponent,
 };
 
-pub use components::net_components::{
-    GlobalNetState,
+pub use components::network_manager_component::{
+    NetworkManagerComponent,
     NetSide,
 };
 
 pub use components::network_state_component::{
     NetworkStateComponent,
-    NetEntityState,
+    NetworkEntityState,
 };
 
 // - Systems
@@ -114,7 +114,7 @@ pub use systems::networking_system::{
     networking_system_server,
     EntityUpdate,
     NetworkUpdatePayload,
-    NetEntityAction
+    NetworkEntityAction
 };
 
 // - Other

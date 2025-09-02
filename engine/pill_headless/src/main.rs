@@ -1,17 +1,17 @@
 
 use anyhow::Result;
-use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, NetSide, NetEntityState, networking_system_server};
-use pill_core::{srv_broacast_exit, srv_dying_grasp};
+use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, NetSide, NetworkEntityState, networking_system_server};
+use pill_core::{server_broacast_exit, server_dying_grasp};
 use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
 use std::io::Write;
 
-#[cfg(feature = "net")]
-use pill_engine::internal::{GlobalNetState};
+#[cfg(feature = "networking")]
+use pill_engine::internal::{NetworkManagerComponent};
 
 fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
-    let my_id = engine.get_global_component_mut::<GlobalNetState>()?.my_id;
+    let my_id = engine.get_global_component_mut::<NetworkManagerComponent>()?.my_id;
     let scene = engine.get_active_scene_handle()?;
     println!("[SERVER] Spawning PLAYER with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
 
@@ -20,7 +20,7 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
     let ent = engine.create_entity(scene)?;
 
 	let mut ns = net_state_component.clone();
-	ns.state = NetEntityState::Alive;
+	ns.state = NetworkEntityState::Alive;
 
     engine.add_component_to_entity(scene, ent, ns)?;
 
@@ -45,9 +45,9 @@ impl PillGame for HeadlessGame {
         engine.register_component::<TransformComponent>(scene)?;
         engine.register_component::<NetworkStateComponent>(scene)?;
 
-        #[cfg(feature = "net")]
+        #[cfg(feature = "networking")]
         {
-            let mut net_state = GlobalNetState::new_server("0.0.0.0:5000", 8)?;
+            let mut net_state = NetworkManagerComponent::new_server("0.0.0.0:5000", 8)?;
 
             net_state.spawn_handlers.insert("player".into(), spawn_player);
             engine.add_global_component(net_state)?;
@@ -99,10 +99,10 @@ fn main() -> Result<()> {
         // graceful shutdown on Ctrl-C
         if rx.try_recv().is_ok() {
             info!("Shutdown requested, broadcasting Exit");
-            if let Ok(mut net_state) = engine.get_global_component_mut::<GlobalNetState>() {
+            if let Ok(mut net_state) = engine.get_global_component_mut::<NetworkManagerComponent>() {
                 if let NetSide::Server(net) = &mut net_state.side {
-                    let _ = srv_broacast_exit(net, "Server shutting down");
-                    let _ = srv_dying_grasp(net, std::time::Duration::from_millis(500));
+                    let _ = server_broacast_exit(net, "Server shutting down");
+                    let _ = server_dying_grasp(net, std::time::Duration::from_millis(500));
                 }
             }
             break Ok(());

@@ -1,12 +1,14 @@
 use anyhow::{Context, Result};
 use renet::{ ConnectionConfig, DefaultChannel, RenetClient, RenetServer, ServerEvent};
-use renet_netcode::{ClientAuthentication, NetcodeClientTransport, NetcodeServerTransport, ServerAuthentication, ServerConfig};
+use renet_netcode::{ClientAuthentication, NetcodeClientTransport, NetcodeServerTransport, ServerAuthentication, ServerConfig, NetcodeError, NetcodeTransportError};
 use std::{net::{UdpSocket, SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr}, time::{Duration, SystemTime}};
+use std::io::ErrorKind;
 use serde::{Serialize, Deserialize};
+use crate::EngineError;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WireTag {
+pub enum NetworkAction {
     Update = 0,
     Join = 1,
     Exit = 2,
@@ -18,22 +20,22 @@ pub struct ExitNotice {
     pub when_ms: u64,
 }
 
-impl TryFrom<u8> for WireTag {
+impl TryFrom<u8> for NetworkAction {
     type Error = anyhow::Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(WireTag::Update),
-            1 => Ok(WireTag::Join),
-            2 => Ok(WireTag::Exit),
-            _ => Err(anyhow::anyhow!("Invalid WireTag byte: {}", value)),
+            0 => Ok(NetworkAction::Update),
+            1 => Ok(NetworkAction::Join),
+            2 => Ok(NetworkAction::Exit),
+            _ => Err(EngineError::InvalidNetworkAction(value).into()),
         }
     }
 }
 
 #[derive(Clone)]
-pub struct WireMsg {
-    pub tag: WireTag,
+pub struct NetworkPacket {
+    pub tag: NetworkAction,
     pub data: Vec<u8>,
 }
 
@@ -56,9 +58,36 @@ fn now() -> Duration {
         .unwrap_or(Duration::ZERO)
 }
 
-pub fn srv_start(bind: &str, max_clients: usize) -> Result<NetServer> {
-    let addr: SocketAddr = bind.parse()?;
-    let socket = UdpSocket::bind(addr)?;
+#[inline]
+pub fn is_not_ready(err: &anyhow::Error) -> bool {
+    if let Some(e) = err.downcast_ref::<NetcodeTransportError>() {
+        return match e {
+            NetcodeTransportError::Netcode(ne) => {
+                matches!(ne,
+                    NetcodeError::ClientNotConnected |
+                    NetcodeError::Disconnected(_)
+                )
+            }
+            NetcodeTransportError::IO(ioe) => {
+                matches!(ioe.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted)
+            }
+            _ => false,
+        };
+    }
+
+    if let Some(ne) = err.downcast_ref::<NetcodeError>() {
+        return matches!(ne,
+            NetcodeError::ClientNotConnected |
+            NetcodeError::Disconnected(_)
+        );
+    }
+    false
+}
+
+pub fn server_start(bind: &str, max_clients: usize) -> Result<NetServer> {
+    let address: SocketAddr = bind.parse()?;
+
+    let socket = UdpSocket::bind(address)?;
     socket.set_nonblocking(true)?;
 
     let server = RenetServer::new(ConnectionConfig::default());
@@ -66,12 +95,12 @@ pub fn srv_start(bind: &str, max_clients: usize) -> Result<NetServer> {
         current_time: now(),
         max_clients,
         protocol_id: 0,
-        public_addresses: vec![addr],
+        public_addresses: vec![address],
         authentication: ServerAuthentication::Unsecure,
     };
     let transport = NetcodeServerTransport::new(server_config, socket)?;
 
-    log::info!("Server started at {addr}, max clients: {max_clients}");
+    log::info!("Server started at {address}, max clients: {max_clients}");
 
     Ok(NetServer {
         server,
@@ -79,7 +108,7 @@ pub fn srv_start(bind: &str, max_clients: usize) -> Result<NetServer> {
     })
 }
 
-pub fn cli_connect(bind: &str, client_id: u64) -> Result<NetClient> {
+pub fn client_connect(bind: &str, client_id: u64) -> Result<NetClient> {
     let server_addr: SocketAddr = bind.parse()?;
 
 	let local_bind = match server_addr {
@@ -109,13 +138,13 @@ pub fn cli_connect(bind: &str, client_id: u64) -> Result<NetClient> {
     })
 }
 
-pub fn srv_update(net: &mut NetServer, dt: Duration) -> Result<()> {
+pub fn server_update(net: &mut NetServer, dt: Duration) -> Result<()> {
     net.server.update(dt);
     net.transport.update(dt, &mut net.server)?;
     Ok(())
 }
 
-pub fn srv_get_events(net: &mut NetServer) -> Result<Vec<(u64, WireMsg)>> {
+pub fn server_get_events(net: &mut NetServer) -> Result<Vec<(u64, NetworkPacket)>> {
     let mut inbox = Vec::new();
     // handle connect/disconnect
     while let Some(e) = net.server.get_event() {
@@ -125,7 +154,7 @@ pub fn srv_get_events(net: &mut NetServer) -> Result<Vec<(u64, WireMsg)>> {
             },
             ServerEvent::ClientDisconnected{ client_id, reason} => {
                 log::info!("Client {client_id} disconnected: {reason:?}");
-                inbox.push((client_id, WireMsg { tag: WireTag::Exit, data: Vec::new() }));
+                inbox.push((client_id, NetworkPacket { tag: NetworkAction::Exit, data: Vec::new() }));
             }
         }
     }
@@ -142,13 +171,13 @@ pub fn srv_get_events(net: &mut NetServer) -> Result<Vec<(u64, WireMsg)>> {
     Ok(inbox)
 }
 
-pub fn cli_update(net: &mut NetClient, dt: Duration) -> Result<()> {
+pub fn client_update(net: &mut NetClient, dt: Duration) -> Result<()> {
     net.client.update(dt);
     net.transport.update(dt, &mut net.client)?;
     Ok(())
 }
 
-pub fn cli_get_events(net: &mut NetClient) -> Result<Vec<WireMsg>> {
+pub fn client_get_events(net: &mut NetClient) -> Result<Vec<NetworkPacket>> {
     let mut inbox = Vec::new();
     while let Some(bytes) = net.client.receive_message(RELIABLE_CHANNEL_ID) {
         if bytes.is_empty() {
@@ -159,7 +188,7 @@ pub fn cli_get_events(net: &mut NetClient) -> Result<Vec<WireMsg>> {
     Ok(inbox)
 }
 
-pub fn srv_send_one(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Result<()> {
+pub fn server_send_one(net: &mut NetServer, client_id: u64, msg: &NetworkPacket) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -167,7 +196,7 @@ pub fn srv_send_one(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Resul
     Ok(())
 }
 
-pub fn srv_broadcast(net: &mut NetServer, msg: &WireMsg) -> Result<()> {
+pub fn server_broadcast(net: &mut NetServer, msg: &NetworkPacket) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -175,7 +204,7 @@ pub fn srv_broadcast(net: &mut NetServer, msg: &WireMsg) -> Result<()> {
     Ok(())
 }
 
-pub fn srv_broadcast_except(net: &mut NetServer, client_id: u64, msg: &WireMsg) -> Result<()> {
+pub fn server_broadcast_except(net: &mut NetServer, client_id: u64, msg: &NetworkPacket) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -183,35 +212,35 @@ pub fn srv_broadcast_except(net: &mut NetServer, client_id: u64, msg: &WireMsg) 
     Ok(())
 }
 
-pub fn srv_broacast_exit(net: &mut NetServer, reason: &str) -> Result<()> {
+pub fn server_broacast_exit(net: &mut NetServer, reason: &str) -> Result<()> {
     let notice = ExitNotice {
         reason: reason.to_string(),
         when_ms: now().as_millis() as u64,
     };
     let data = bincode::serialize(&notice)?;
-    let msg = WireMsg {
-        tag: WireTag::Exit,
+    let msg = NetworkPacket {
+        tag: NetworkAction::Exit,
         data,
     };
-    srv_broadcast(net, &msg);
-    srv_flush(net)?;
+    server_broadcast(net, &msg)?;
+    server_flush(net)?;
     Ok(())
 }
 
-pub fn srv_dying_grasp(net: &mut NetServer, wait: Duration) -> Result<()> {
+pub fn server_dying_grasp(net: &mut NetServer, wait: Duration) -> Result<()> {
     let start = now();
     let step = Duration::from_millis(16);
 
     while now() - start < wait {
-        srv_update(net, step)?;
-        srv_flush(net)?;
+        //server_update(net, step)?;
+        server_flush(net)?;
         std::thread::sleep(step);
     }
 
     Ok(())
 }
 
-pub fn cli_send(net: &mut NetClient, msg: &WireMsg) -> Result<()> {
+pub fn client_send(net: &mut NetClient, msg: &NetworkPacket) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -219,22 +248,22 @@ pub fn cli_send(net: &mut NetClient, msg: &WireMsg) -> Result<()> {
     Ok(())
 }
 
-pub fn srv_flush(net: &mut NetServer) -> Result<()> {
+pub fn server_flush(net: &mut NetServer) -> Result<()> {
     net.transport.send_packets(&mut net.server);
     Ok(())
 }
 
-pub fn cli_flush(net: &mut NetClient) -> Result<()> {
+pub fn client_flush(net: &mut NetClient) -> Result<()> {
     net.transport.send_packets(&mut net.client)?;
     Ok(())
 }
 
-fn decode_wire(buf: &[u8]) -> Result<WireMsg> {
+fn decode_wire(buf: &[u8]) -> Result<NetworkPacket> {
     let Some((tag_byte, data)) = buf.split_first() else {
         anyhow::bail!("Received empty message")
     };
-    let tag = WireTag::try_from(*tag_byte)?;
-    Ok(WireMsg {
+    let tag = NetworkAction::try_from(*tag_byte)?;
+    Ok(NetworkPacket {
         tag,
         data: data.to_vec(),
     })

@@ -9,6 +9,7 @@ mod pill_twinmap;
 mod pill_typemap;
 mod bitmask_utils;
 mod timer;
+mod color;
 mod net;
 
 // --- Use ---
@@ -58,6 +59,9 @@ pub use utils::{
     get_enum_variant_type_name,
     validate_asset_path,
     get_game_error_message,
+};
+
+pub use color::{
 	generate_color_palette,
     hsl_to_rgb,
     DISTINCT_COLOR_PALETTE
@@ -71,23 +75,24 @@ pub use timer::{
 pub use net::{
     NetServer,
     NetClient,
-    WireMsg,
-    WireTag,
+    NetworkPacket,
+    NetworkAction,
     ExitNotice,
     RELIABLE_CHANNEL_ID,
     UNRELIABLE_CHANNEL_ID,
-    srv_start,
-    srv_send_one,
-    srv_broadcast,
-    srv_broadcast_except,
-    srv_broacast_exit,
-    srv_dying_grasp,
-    srv_flush,
-    srv_update,
-    srv_get_events,
-    cli_connect,
-    cli_send,
-    cli_update,
-    cli_get_events,
-    cli_flush,
+    server_start,
+    server_send_one,
+    server_broadcast,
+    server_broadcast_except,
+    server_broacast_exit,
+    server_dying_grasp,
+    server_flush,
+    server_update,
+    server_get_events,
+    client_connect,
+    client_send,
+    client_update,
+    client_get_events,
+    client_flush,
+    is_not_ready,
 };

@@ -50,4 +50,4 @@ glob = "0.3"
 game = []
 internal = []
 headless = []
-net = []
+networking = []
