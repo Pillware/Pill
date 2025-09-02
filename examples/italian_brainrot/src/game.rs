@@ -146,9 +146,18 @@ impl PillGame for Game {
 			.with_component(TagAlphaComponent {})
 			.build();
 
+		engine.build_entity(active_scene)
+			.with_component(TransformComponent::builder()
+				.position(Vector3f::new(0.0, -1.0, 0.0))
+				.build())
+			.with_component(PostprocessingVolumeComponent::builder()
+				.is_global(true)
+				.add_effect(ColorAdjustmentsPostprocessingEffect::new())?
+				.build())
+			.build();
+
 		Ok(())
 	}
-
 }
 
 // --- Systems ---

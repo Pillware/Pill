@@ -13,22 +13,14 @@ use crate::{
         Vertex
     }
 };
-
 use indexmap::IndexMap;
 
 use pill_engine::internal::{
-    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
+    CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
 };
 
 use pill_core::{ 
-    debug, 
-    info, 
-    LogContext, 
-    PillSlotMapKey, 
-    PillSlotMapKeyData, 
-    PillStyle, 
-    RendererError, 
-    Timer 
+    debug, info, Color, LogContext, PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer, Vector3f 
 };
 
 use std::{
@@ -150,6 +142,30 @@ impl PillRenderer for Renderer {
         )
     }
 
+    fn update_camera(
+        &mut self, 
+        renderer_camera_handle: RendererCameraHandle,
+        position: Vector3f,
+        rotation: Vector3f,
+        fov: f32,
+        aspect: f32,
+        range: Range<f32>,
+        clear_color: Color
+    ) -> Result<()> {
+        RendererCamera::update_parameters(
+            &self.state.device,
+            &self.state.queue,
+            renderer_camera_handle,
+            &mut self.state.renderer_resource_storage,
+            position,
+            rotation,
+            fov,
+            aspect,
+            range,
+            clear_color
+        )
+    }
+
     // --- Destroy ---
 
     fn destroy_shader(&mut self, renderer_shader_handle: RendererShaderHandle) -> Result<()> {
@@ -193,18 +209,19 @@ impl PillRenderer for Renderer {
 
     fn render(
         &mut self,
-        active_camera_entity_handle: EntityHandle,
+        renderer_camera_handle: RendererCameraHandle,
+       // active_camera_entity_handle: EntityHandle,
         render_queue: &Vec<RenderQueueItem>, 
-        camera_component_storage: &ComponentStorage<CameraComponent>,
+        //camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer
     ) -> Result<()> {
         self.state.render(
-            active_camera_entity_handle,
+            renderer_camera_handle,
             render_queue,
-            camera_component_storage,
+            //camera_component_storage,
             transform_component_storage,
             egui_ui,
             delta_time,
@@ -412,9 +429,8 @@ impl State {
   
     fn render(
         &mut self, 
-        active_camera_entity_handle: EntityHandle,
+        renderer_camera_handle: RendererCameraHandle,
         render_queue: &Vec<RenderQueueItem>, 
-        camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
@@ -446,22 +462,17 @@ impl State {
         timer.record("Update camera parameters");
 
         // Get active camera and update it
-        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
-        let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = self.renderer_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
-        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
-        let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
-        renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
-        let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
-        let clear_color = active_camera_component.clear_color;
+        let renderer_camera = self.renderer_resource_storage.cameras.get(renderer_camera_handle)
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        
+        let clear_color = renderer_camera.clear_color;
 
         // Build a command buffer that can be sent to the GPU
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("render_encoder"),
         });
 
-
- // let _timestamp_query_start = self.profiler.write_timestamp(&mut encoder, "Start Render Pass");
+        // let _timestamp_query_start = self.profiler.write_timestamp(&mut encoder, "Start Render Pass");
 
         // Render meshes
         {
@@ -528,7 +539,7 @@ impl State {
 
             timer.end_context()?; // End Egui Draw context
         }
- // let _timestamp_query_end = self.profiler.write_timestamp(&mut encoder, "End Render Pass");
+        // let _timestamp_query_end = self.profiler.write_timestamp(&mut encoder, "End Render Pass");
 
         // Resolve queries recorded this frame
         // self.profiler.resolve_timestamp_queries(&self.device, &mut encoder);
@@ -542,7 +553,7 @@ impl State {
 
         timer.record("Read profiling data");
 
-      //  self.profiler.end_frame();
+        //self.profiler.end_frame();
 
         // Read profiling data
         //self.profiler.summarize_all_blocking(&self.device);

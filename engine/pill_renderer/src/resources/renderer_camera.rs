@@ -1,17 +1,17 @@
 use cgmath::{EuclideanSpace, SquareMatrix, Zero};
+use pill_core::{Color, RendererError, Vector3f};
 use pill_engine::internal::{
-    TransformComponent,
-    CameraComponent
+    CameraComponent, RendererCameraHandle, TransformComponent
 };
 
 use anyhow::{ Result };
 use wgpu::util::DeviceExt;
-use std::f32::consts::FRAC_PI_2;
+use std::{f32::consts::FRAC_PI_2, ops::Range};
 
-use crate::config::{
+use crate::{config::{
     CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, 
     MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX
-};
+}, resources::RendererResourceStorage};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -38,25 +38,34 @@ impl CameraParametersData {
         }
     }
 
-    pub fn update_data(&mut self, camera_component: &CameraComponent, transform_component: &TransformComponent) {
+    pub fn update_data(
+        &mut self,
+        position: Vector3f,
+        rotation: Vector3f,
+        fov: f32,
+        aspect: f32,
+        range: Range<f32>
+    ) {
         // Update position
         self.position = cgmath::Vector4::<f32> { 
-            x: transform_component.position.x, 
-            y: transform_component.position.y, 
-            z: transform_component.position.z, 
+            x: position.x, 
+            y: position.y, 
+            z: position.z, 
             w: 0.0
         }.into();
 
         // Update view-projection
-        self.view_projection_matrix = (CameraParametersData::calculate_projection_matrix(camera_component) * CameraParametersData::calculate_view_matrix(transform_component)).into();
+        let view_matrix = CameraParametersData::calculate_view_matrix(position, rotation);
+        let projection_matrix = CameraParametersData::calculate_projection_matrix(fov, aspect, range);
+        self.view_projection_matrix = (projection_matrix * view_matrix).into();
     }
 
-    fn calculate_view_matrix(transform_component: &TransformComponent) -> cgmath::Matrix4::<f32> {
-        let position = cgmath::Point3::from_vec(transform_component.position);
+    fn calculate_view_matrix(position: Vector3f, rotation: Vector3f) -> cgmath::Matrix4::<f32> {
+        let position = cgmath::Point3::from_vec(position);
 
-        let roll_matrix  = cgmath::Matrix3::from_angle_z(cgmath::Deg(transform_component.rotation.z));
-        let yaw_matrix  = cgmath::Matrix3::from_angle_y(cgmath::Deg(transform_component.rotation.y));
-        let pitch_matrix  = cgmath::Matrix3::from_angle_x(cgmath::Deg(transform_component.rotation.x));
+        let roll_matrix  = cgmath::Matrix3::from_angle_z(cgmath::Deg(rotation.z));
+        let yaw_matrix  = cgmath::Matrix3::from_angle_y(cgmath::Deg(rotation.y));
+        let pitch_matrix  = cgmath::Matrix3::from_angle_x(cgmath::Deg(rotation.x));
         let rotation_matrix = yaw_matrix * pitch_matrix * roll_matrix;
         let direction  = rotation_matrix * cgmath::Vector3::<f32>::unit_z();
 
@@ -67,12 +76,12 @@ impl CameraParametersData {
         )
     }
 
-    fn calculate_projection_matrix(camera_component: &CameraComponent) -> cgmath::Matrix4::<f32> {
+    fn calculate_projection_matrix(fov: f32, aspect: f32, range: Range<f32>) -> cgmath::Matrix4::<f32> {
         OPENGL_TO_WGPU_MATRIX * cgmath::perspective(
-            cgmath::Deg(camera_component.fov), 
-            camera_component.aspect.get_value(), 
-            camera_component.range.start,
-            camera_component.range.end
+            cgmath::Deg(fov), 
+            aspect,
+            range.start,
+            range.end
         )
     }
 }
@@ -81,6 +90,7 @@ impl CameraParametersData {
 
 #[derive(Debug)]
 pub struct RendererCamera {
+    pub clear_color: Color,
     pub parameters_data: CameraParametersData,
     pub parameters_uniform_buffer: wgpu::Buffer,
     pub bind_group_layout: wgpu::BindGroupLayout,
@@ -108,6 +118,7 @@ impl RendererCamera {
         });
 
         let camera = Self {
+            clear_color: Color::new(0.15, 0.15, 0.15),
             parameters_data,
             parameters_uniform_buffer,
             bind_group_layout: camera_bind_group_layout,
@@ -117,9 +128,33 @@ impl RendererCamera {
         Ok(camera)
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue, camera_component: &CameraComponent, transform_component: &TransformComponent) {
-        self.parameters_data.update_data(camera_component, transform_component);
-        queue.write_buffer(&self.parameters_uniform_buffer, 0, bytemuck::cast_slice(&[self.parameters_data]));
+    pub fn update_parameters(
+        device: &wgpu::Device, 
+        queue: &wgpu::Queue, 
+        renderer_camera_handle: RendererCameraHandle,
+        rendering_resource_storage: &mut RendererResourceStorage,
+        position: Vector3f,
+        rotation: Vector3f,
+        fov: f32,
+        aspect: f32,
+        range: Range<f32>,
+        clear_color: Color
+    ) -> Result<()> {
+        let camera = rendering_resource_storage.cameras.get_mut(renderer_camera_handle)
+            .ok_or(RendererError::RendererResourceNotFound)?;
+
+        camera.parameters_data.update_data(
+            position,
+            rotation,
+            fov,
+            aspect,
+            range
+        );
+
+        camera.clear_color = clear_color;
+        queue.write_buffer(&camera.parameters_uniform_buffer, 0, bytemuck::cast_slice(&[camera.parameters_data]));
+
+        Ok(())
     }
 }
 

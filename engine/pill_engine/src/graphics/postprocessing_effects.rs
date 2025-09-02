@@ -21,83 +21,11 @@ pub trait PostprocessingEffect: Any + Send {
     fn get_parameters(&self) -> HashMap<String, MaterialParameter>;
 }
 
-// --- Vignette effect ---
-
-pub struct Vignette {
-    pub enabled: bool,
-    pub opacity: f32,
-
-    pub smoothness: f32,
-    pub roundness: f32,
-    pub center: Vector2f,
-}
-
-impl Vignette {
-    pub fn new() -> Self {
-        Self {
-            enabled: true,
-            opacity: 0.0,
-            smoothness: 0.0,
-            roundness: 0.0,
-            center: Vector2f::new(0.0, 0.0),
-        }
-    }
-}
-
-impl PostprocessingEffect for Vignette {
-    fn name(&self) -> &'static str { "Vignette" }
-    fn is_enabled(&self) -> bool { self.enabled }
-    fn get_opacity(&self) -> f32 { self.opacity }
-    fn get_material_handle(&self, engine: &Engine) -> MaterialHandle { engine.get_resource_handle::<Material>(VIGNETTE_POSTPROCESSING_MATERIAL_NAME).unwrap() }
-    fn get_parameters(&self) -> HashMap<String, MaterialParameter> {
-        let mut parameters = HashMap::new();
-        parameters.insert("opacity".to_string(), MaterialParameter::Scalar(self.opacity));
-        parameters.insert("smoothness".to_string(), MaterialParameter::Scalar(self.smoothness));
-        parameters.insert("roundness".to_string(), MaterialParameter::Scalar(self.roundness));
-        parameters.insert("center".to_string(), MaterialParameter::Vector2(self.center));
-        parameters
-    }
-}
-
-impl_trait_accessible!(dyn PostprocessingEffect; Vignette);
-
-pub fn register_vignette_postprocessing_effect(engine: &mut Engine) -> Result<()> {
-    let shader_handle = engine.add_default_resource(
-        Shader::new(
-            VIGNETTE_POSTPROCESSING_SHADER_NAME,
-            ResourceLoader::Bytes(Box::new(*include_bytes!("../../res/shaders/postprocessing/postprocessing_vertex.glsl"))),
-            ResourceLoader::Bytes(Box::new(*include_bytes!("../../res/shaders/postprocessing/postprocessing_vignette_fragment.glsl"))),
-            vec![
-                (VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT.0.to_string(), ShaderParameterSlot::new(VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT.1)),
-                (VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT.0.to_string(), ShaderParameterSlot::new(VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT.1)),
-                (VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT.0.to_string(), ShaderParameterSlot::new(VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT.1)),
-                (VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT.0.to_string(), ShaderParameterSlot::new(VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT.1)),
-            ].into_iter().collect(),
-            vec![
-                (VIGNETTE_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT.0.to_string(), ShaderTextureSlot::new(VIGNETTE_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT.1, VIGNETTE_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT.2)),
-            ].into_iter().collect(),
-            true,
-            true
-        )
-    )?;
-
-    engine.add_default_resource(
-        Material::builder(VIGNETTE_POSTPROCESSING_MATERIAL_NAME)
-            .shader(shader_handle)?
-            .scalar_parameter(VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT.0, 0.0)?
-            .scalar_parameter(VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT.0, 0.0)?
-            .scalar_parameter(VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT.0, 0.0)?
-            .vector2_parameter(VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT.0, Vector2f::new(0.0, 0.0))?
-            .build()
-    )?;
-
-    Ok(())
-}
 
 // --- Color adjustments effect ---
 
 
-pub struct ColorAdjustments {
+pub struct ColorAdjustmentsPostprocessingEffect {
     pub enabled: bool,
     pub opacity: f32,
 
@@ -112,11 +40,11 @@ pub struct ColorAdjustments {
     pub gamma: f32,
 }
 
-impl ColorAdjustments {
+impl ColorAdjustmentsPostprocessingEffect {
     pub fn new() -> Self {
         Self {
             enabled: true,
-            opacity: 0.0,
+            opacity: 1.0,
             exposure: 0.0,
             tint: Color::new(1.0, 1.0, 1.0),
             white_balance: 0.0,
@@ -130,7 +58,7 @@ impl ColorAdjustments {
     }
 }
 
-impl PostprocessingEffect for ColorAdjustments {
+impl PostprocessingEffect for ColorAdjustmentsPostprocessingEffect {
     fn name(&self) -> &'static str { "ColorAdjustments" }
     fn is_enabled(&self) -> bool { self.enabled }
     fn get_opacity(&self) -> f32 { self.opacity }
@@ -151,7 +79,7 @@ impl PostprocessingEffect for ColorAdjustments {
     }
 }
 
-impl_trait_accessible!(dyn PostprocessingEffect; ColorAdjustments);
+impl_trait_accessible!(dyn PostprocessingEffect; ColorAdjustmentsPostprocessingEffect);
 
 
 pub fn register_color_adjustments_postprocessing_effect(engine: &mut Engine) -> Result<()> {
@@ -193,6 +121,79 @@ pub fn register_color_adjustments_postprocessing_effect(engine: &mut Engine) -> 
             .scalar_parameter(COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_BRIGHTNESS_PARAMETER_SLOT.0, 0.0)?
             .bool_parameter(COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_INVERT_FLAG_PARAMETER_SLOT.0, false)?
             .scalar_parameter(COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_GAMMA_PARAMETER_SLOT.0, 1.0)?
+            .build()
+    )?;
+
+    Ok(())
+}
+
+// --- Vignette effect ---
+
+pub struct VignettePostProcessingEffect {
+    pub enabled: bool,
+    pub opacity: f32,
+
+    pub smoothness: f32,
+    pub roundness: f32,
+    pub center: Vector2f,
+}
+
+impl VignettePostProcessingEffect {
+    pub fn new() -> Self {
+        Self {
+            enabled: true,
+            opacity: 1.0,
+            smoothness: 0.0,
+            roundness: 0.0,
+            center: Vector2f::new(0.0, 0.0),
+        }
+    }
+}
+
+impl PostprocessingEffect for VignettePostProcessingEffect {
+    fn name(&self) -> &'static str { "Vignette" }
+    fn is_enabled(&self) -> bool { self.enabled }
+    fn get_opacity(&self) -> f32 { self.opacity }
+    fn get_material_handle(&self, engine: &Engine) -> MaterialHandle { engine.get_resource_handle::<Material>(VIGNETTE_POSTPROCESSING_MATERIAL_NAME).unwrap() }
+    fn get_parameters(&self) -> HashMap<String, MaterialParameter> {
+        let mut parameters = HashMap::new();
+        parameters.insert("opacity".to_string(), MaterialParameter::Scalar(self.opacity));
+        parameters.insert("smoothness".to_string(), MaterialParameter::Scalar(self.smoothness));
+        parameters.insert("roundness".to_string(), MaterialParameter::Scalar(self.roundness));
+        parameters.insert("center".to_string(), MaterialParameter::Vector2(self.center));
+        parameters
+    }
+}
+
+impl_trait_accessible!(dyn PostprocessingEffect; VignettePostProcessingEffect);
+
+pub fn register_vignette_postprocessing_effect(engine: &mut Engine) -> Result<()> {
+    let shader_handle = engine.add_default_resource(
+        Shader::new(
+            VIGNETTE_POSTPROCESSING_SHADER_NAME,
+            ResourceLoader::Bytes(Box::new(*include_bytes!("../../res/shaders/postprocessing/postprocessing_vertex.glsl"))),
+            ResourceLoader::Bytes(Box::new(*include_bytes!("../../res/shaders/postprocessing/postprocessing_vignette_fragment.glsl"))),
+            vec![
+                (VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT.0.to_string(), ShaderParameterSlot::new(VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT.1)),
+                (VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT.0.to_string(), ShaderParameterSlot::new(VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT.1)),
+                (VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT.0.to_string(), ShaderParameterSlot::new(VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT.1)),
+                (VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT.0.to_string(), ShaderParameterSlot::new(VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT.1)),
+            ].into_iter().collect(),
+            vec![
+                (VIGNETTE_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT.0.to_string(), ShaderTextureSlot::new(VIGNETTE_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT.1, VIGNETTE_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT.2)),
+            ].into_iter().collect(),
+            true,
+            true
+        )
+    )?;
+
+    engine.add_default_resource(
+        Material::builder(VIGNETTE_POSTPROCESSING_MATERIAL_NAME)
+            .shader(shader_handle)?
+            .scalar_parameter(VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT.0, 0.0)?
+            .scalar_parameter(VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT.0, 0.0)?
+            .scalar_parameter(VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT.0, 0.0)?
+            .vector2_parameter(VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT.0, Vector2f::new(0.0, 0.0))?
             .build()
     )?;
 

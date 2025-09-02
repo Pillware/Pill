@@ -22,7 +22,6 @@ pub use components:: {
 pub use components::camera_component::{
     CameraComponent,
     CameraAspectRatio,
-    get_renderer_resource_handle_from_camera_component,
 };
 
 pub use components::audio_manager_component::{
@@ -49,6 +48,10 @@ pub use components::deferred_update_component::{
     DeferredUpdateRequest,
     DeferredUpdateComponentRequest,
     DeferredUpdateResourceRequest
+};
+
+pub use components::postprocessing_volume_component::{
+    PostprocessingVolumeComponent,
 };
 
 pub use components::input_component::{

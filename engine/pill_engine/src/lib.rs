@@ -78,6 +78,7 @@ pub mod game {
             GlobalComponent,
             GlobalComponentStorage,
             SoundType,
+            PostprocessingVolumeComponent,
         },
         resources::{
             Resource,
@@ -95,6 +96,10 @@ pub mod game {
             ShaderParameterSlot,
             ShaderTextureSlot,
             ShaderParameterType,
+        },
+        graphics::{
+            ColorAdjustmentsPostprocessingEffect,
+            VignettePostProcessingEffect
         },
     };
     
@@ -150,7 +155,6 @@ pub mod internal {
             AudioListenerComponent,
             AudioManagerComponent,
             EguiManagerComponent,
-            get_renderer_resource_handle_from_camera_component,
             update_transform_matrices,
             get_model_matrix,
             get_normal_matrix,

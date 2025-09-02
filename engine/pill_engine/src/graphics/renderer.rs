@@ -1,6 +1,6 @@
 use crate::{ 
     ecs::{
-        CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
+        CameraAspectRatio, CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
     }, engine::Engine, graphics::RenderQueueItem, internal::{MaterialParameter, MaterialTexture}, resources::{
         MaterialHandle, 
         MeshData, 
@@ -13,10 +13,10 @@ use crate::{
 };
 
 use indexmap::IndexMap;
-use pill_core::{PillSlotMapKey, Timer};
+use pill_core::{Color, PillSlotMapKey, Timer, Vector3f};
 use pill_core::PillStyle;
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, ops::Range, path::PathBuf, sync::Arc};
 use thiserror::Error;
 use anyhow::{Result, Context, Error};
 
@@ -81,6 +81,17 @@ pub trait PillRenderer {
 
     fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &HashMap<String, MaterialParameter>) -> Result<()>;
 
+    fn update_camera(
+        &mut self, 
+        renderer_camera_handle: RendererCameraHandle,
+        position: Vector3f,
+        rotation: Vector3f,
+        fov: f32,
+        aspect: f32,
+        range: Range<f32>,
+        clear_color: Color
+    ) -> Result<()>;
+
     // --- Destroy ---
 
     fn destroy_shader(&mut self, renderer_shader_handle: RendererShaderHandle) -> Result<()>;
@@ -100,9 +111,11 @@ pub trait PillRenderer {
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;
 
     fn render(&mut self, 
-        active_camera_entity_handle: EntityHandle,
+        renderer_camera_handle: RendererCameraHandle,
+        //active_camera_entity_handle: EntityHandle,
+        //active_camera_component: &CameraComponent,
         render_queue: &Vec::<RenderQueueItem>, 
-        camera_component_storage: &ComponentStorage<CameraComponent>,
+        //camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui:  Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,

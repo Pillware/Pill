@@ -194,8 +194,8 @@ impl Engine {
         debug!(LogContext::Engine => "Default unlit material {} created", DEFAULT_UNLIT_MATERIAL_NAME.name_style());
 
         // Create postprocessing shaders
-        register_vignette_postprocessing_effect(self)?;
         register_color_adjustments_postprocessing_effect(self)?;
+        register_vignette_postprocessing_effect(self)?;
 
         Ok(())
     }

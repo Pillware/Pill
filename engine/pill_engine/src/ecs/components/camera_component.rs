@@ -97,11 +97,6 @@ impl CameraComponent {
     }
 }
 
-// This needed so that renderer can get renderer camera handle from camera component while it is still hidden in game API
-pub fn get_renderer_resource_handle_from_camera_component(camera_component: &CameraComponent) -> RendererCameraHandle {
-    camera_component.renderer_resource_handle.expect("Critical: No renderer resource handle")
-}
-
 impl PillTypeMapKey for CameraComponent {
     type Storage = ComponentStorage<CameraComponent>; 
 }

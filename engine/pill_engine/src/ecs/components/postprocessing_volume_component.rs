@@ -1,5 +1,10 @@
 use crate::{
-    config::DEFAULT_MATERIAL_HANDLE, ecs::{ components::volume::Volume3D, Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle }, engine::Engine, graphics::{ compose_render_queue_key, PostprocessingEffect, RenderQueueKey }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
+    config::DEFAULT_MATERIAL_HANDLE, 
+    ecs::{ components::volume::Volume3D, Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle }, 
+    engine::Engine, 
+    graphics::{ compose_render_queue_key, PostprocessingEffect, RenderQueueKey }, 
+    internal::MaterialParameter, 
+    resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 use pill_core::{
     get_type_name, impl_trait_accessible, BoundingBox, Color, EngineError, OptionStorage, PillTraitTypeMap, PillTypeMap, PillTypeMapKey, SingleStorage, TraitAccessible, TraitAccessor, Vector2f, Vector3f
@@ -119,15 +124,20 @@ use std::{
 
 // --- Builder ---
 
-pub struct PostprocessVolumeComponentBuilder {
-    component: PostprocessVolumeComponent,
+pub struct PostprocessingVolumeComponentBuilder {
+    component: PostprocessingVolumeComponent,
 }
 
-impl PostprocessVolumeComponentBuilder {
+impl PostprocessingVolumeComponentBuilder {
     pub fn default() -> Self {
         Self {
-            component: PostprocessVolumeComponent::new(),
+            component: PostprocessingVolumeComponent::new(),
         }
+    }
+
+    pub fn is_enabled(mut self, is_enabled: bool) -> Self {
+        self.component.is_enabled = is_enabled;
+        self
     }
 
     pub fn is_global(mut self, is_global: bool) -> Self {
@@ -148,27 +158,33 @@ impl PostprocessVolumeComponentBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> PostprocessVolumeComponent {
+    pub fn build(self) -> PostprocessingVolumeComponent {
         self.component
     }
 }
 
 #[readonly::make]
-pub struct PostprocessVolumeComponent {
-    pub(crate) is_global: bool,
-    pub(crate) bounding_box: BoundingBox,
-    pub(crate) effects: PillTraitTypeMap<dyn PostprocessingEffect, SingleStorage>,
+pub struct PostprocessingVolumeComponent {
+    pub is_enabled: bool,
+    pub is_global: bool,
+    pub bounding_box: BoundingBox,
+    pub effects: PillTraitTypeMap<dyn PostprocessingEffect, SingleStorage>,
 
     entity_handle: Option<EntityHandle>,
     scene_handle: Option<SceneHandle>,
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
 
-impl PostprocessVolumeComponent {
+impl PostprocessingVolumeComponent {
+    pub fn builder() -> PostprocessingVolumeComponentBuilder {
+        PostprocessingVolumeComponentBuilder::default()
+    }
+
     pub fn new() -> Self {
         Self {
+            is_enabled: true,
             is_global: false,
-            bounding_box: BoundingBox::new(Vector3f::new(-0.0, -0.0, -0.0), Vector3f::new(1.0, 1.0, 1.0)),
+            bounding_box: BoundingBox::new(Vector3f::new(-1.0, -1.0, -1.0), Vector3f::new(1.0, 1.0, 1.0)),
             effects: PillTraitTypeMap::new(),
             entity_handle: None,
             scene_handle: None,
@@ -260,7 +276,7 @@ impl PostprocessVolumeComponent {
     }
 }
 
-impl Volume3D for PostprocessVolumeComponent {
+impl Volume3D for PostprocessingVolumeComponent {
     fn set_is_global(&mut self, is_global: bool) {
         self.is_global = is_global;
     }
@@ -278,86 +294,86 @@ impl Volume3D for PostprocessVolumeComponent {
     }
 }
 
-impl PillTypeMapKey for PostprocessVolumeComponent {
-    type Storage = ComponentStorage<PostprocessVolumeComponent>; 
+impl PillTypeMapKey for PostprocessingVolumeComponent {
+    type Storage = ComponentStorage<PostprocessingVolumeComponent>; 
 }
 
-// impl Component for PostprocessVolumeComponent {
-// //     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-// //         // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
-// //         let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
-// //         self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
+impl Component for PostprocessingVolumeComponent {
+//     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
+//         // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
+//         let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
+//         self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
 
-// //         // Check if material handle is valid
-// //         // if self.material_handle.is_some() {
-// //         //     engine.get_resource::<Material>(&self.material_handle.unwrap())
-// //         //         .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
-// //         // }
+//         // Check if material handle is valid
+//         // if self.material_handle.is_some() {
+//         //     engine.get_resource::<Material>(&self.material_handle.unwrap())
+//         //         .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
+//         // }
 
-// //         // // Check if mesh handle is valid
-// //         // if self.mesh_handle.is_some() {
-// //         //     engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
-// //         //         .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
-// //         // }
+//         // // Check if mesh handle is valid
+//         // if self.mesh_handle.is_some() {
+//         //     engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
+//         //         .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
+//         // }
 
-// //         // Update mesh rendering queue
-// //        // self.update_render_queue_key(&engine.resource_manager)?;
-// // // for effect in self.effects.iter_as_trait::<dyn PostprocessingEffect>() {
-// // //     println!("Effect: {}", effect.name());
-// // // }
-// //         // // Create shader for each postprocessing effect
-// //         // for effect in self.effects.iter_as::<dyn PostprocessingEffect>() {
-// //         //     println!("Effect: {}", effect.name());
-// //         // }
-
-
-// //         //let storage: = self.effects.get::<dyn PostprocessingEffect>().unwrap().data.as_ref();
-
-// //         // for (_type_id, boxed) in &storage.0 {
-// //         //     if let Some(effect) = boxed.downcast_ref::<Box<dyn PostprocessingEffect>>() {
-// //         //         println!("Effect: {}", effect.name());
-// //         //     }
-// //         // }
+//         // Update mesh rendering queue
+//        // self.update_render_queue_key(&engine.resource_manager)?;
+// // for effect in self.effects.iter_as_trait::<dyn PostprocessingEffect>() {
+// //     println!("Effect: {}", effect.name());
+// // }
+//         // // Create shader for each postprocessing effect
+//         // for effect in self.effects.iter_as::<dyn PostprocessingEffect>() {
+//         //     println!("Effect: {}", effect.name());
+//         // }
 
 
-// //         Ok(())
-// //     }
+//         //let storage: = self.effects.get::<dyn PostprocessingEffect>().unwrap().data.as_ref();
 
-// //     fn pass_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {
-// //         self.scene_handle = Some(self_scene_handle);
-// //         self.entity_handle = Some(self_entity_handle);
-// //     }
+//         // for (_type_id, boxed) in &storage.0 {
+//         //     if let Some(effect) = boxed.downcast_ref::<Box<dyn PostprocessingEffect>>() {
+//         //         println!("Effect: {}", effect.name());
+//         //     }
+//         // }
 
-// //     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
-// //         // match request {
-// //         //     DEFERRED_REQUEST_VARIANT_SET_MATERIAL => 
-// //         //     {
-// //         //         // Check if material handle is valid
-// //         //         engine.get_resource::<Material>(&self.material_handle.unwrap())
-// //         //             .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Material".specific_object_style()))?;
+
+//         Ok(())
+//     }
+
+//     fn pass_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {
+//         self.scene_handle = Some(self_scene_handle);
+//         self.entity_handle = Some(self_entity_handle);
+//     }
+
+//     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
+//         // match request {
+//         //     DEFERRED_REQUEST_VARIANT_SET_MATERIAL => 
+//         //     {
+//         //         // Check if material handle is valid
+//         //         engine.get_resource::<Material>(&self.material_handle.unwrap())
+//         //             .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Material".specific_object_style()))?;
                 
-// //         //         self.update_render_queue_key(&engine.resource_manager)?;
-// //         //     },
-// //         //     DEFERRED_REQUEST_VARIANT_SET_MESH =>
-// //         //     {
-// //         //         // Check if mesh handle is valid
-// //         //         engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
-// //         //             .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Mesh".specific_object_style()))?;
+//         //         self.update_render_queue_key(&engine.resource_manager)?;
+//         //     },
+//         //     DEFERRED_REQUEST_VARIANT_SET_MESH =>
+//         //     {
+//         //         // Check if mesh handle is valid
+//         //         engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
+//         //             .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Mesh".specific_object_style()))?;
 
-// //         //         self.update_render_queue_key(&engine.resource_manager)?;
-// //         //     },
-// //         //     DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE => 
-// //         //     {
-// //         //         // Update mesh rendering queue
-// //         //         self.update_render_queue_key(&engine.resource_manager)?;
-// //         //     },
-// //         //     _ => 
-// //         //     {
-// //         //         panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
-// //         //     }
-// //         // }
+//         //         self.update_render_queue_key(&engine.resource_manager)?;
+//         //     },
+//         //     DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE => 
+//         //     {
+//         //         // Update mesh rendering queue
+//         //         self.update_render_queue_key(&engine.resource_manager)?;
+//         //     },
+//         //     _ => 
+//         //     {
+//         //         panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
+//         //     }
+//         // }
 
-// //         Ok(()) 
-// //     }
-// }
+//         Ok(()) 
+//     }
+}
 

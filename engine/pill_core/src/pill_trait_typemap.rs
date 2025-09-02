@@ -193,11 +193,11 @@ impl<D: ?Sized + 'static> StorageFamily<D> for SingleStorage {
 /// let mut_storage = type_map.get_storage_mut::<MyComponent>().unwrap();
 /// ```
 pub struct PillTraitTypeMap<Trait: ?Sized + 'static, F: StorageFamily<Trait>> {
-    entries: HashMap<TypeId, Box<F::Trait>>,
+    storages: HashMap<TypeId, Box<F::Trait>>,
 }
 
 impl<Trait: ?Sized + 'static, F: StorageFamily<Trait>> PillTraitTypeMap<Trait, F> {
-    pub fn new() -> Self { Self { entries: HashMap::new() } }
+    pub fn new() -> Self { Self { storages: HashMap::new() } }
 
     pub fn register_type_storage<T>(&mut self) -> Result<(), &'static str>
         where T: 'static + TraitAccessible<Trait>,
@@ -206,14 +206,14 @@ impl<Trait: ?Sized + 'static, F: StorageFamily<Trait>> PillTraitTypeMap<Trait, F
             return Err("Storage for this type is already registered");
         }
 
-        self.entries.insert(TypeId::of::<T>(), F::make::<T>(T::get_accessor()));
+        self.storages.insert(TypeId::of::<T>(), F::make::<T>(T::get_accessor()));
         Ok(())
     }
 
     pub fn is_type_storage_registered<T>(&self) -> bool
         where T: 'static + TraitAccessible<Trait>,
     {
-        self.entries.contains_key(&TypeId::of::<T>())
+        self.storages.contains_key(&TypeId::of::<T>())
     }
 
     pub fn unregister_type_storage<T>(&mut self) -> Result<(), &'static str>
@@ -223,14 +223,14 @@ impl<Trait: ?Sized + 'static, F: StorageFamily<Trait>> PillTraitTypeMap<Trait, F
             return Err("Storage for this type is not registered");
         }
         
-        self.entries.remove(&TypeId::of::<T>());
+        self.storages.remove(&TypeId::of::<T>());
         Ok(())
     }
 
     pub fn get_storage<T>(&self) -> Result<&F::Storage<T>, &'static str>
         where T: 'static + TraitAccessible<Trait>,
     {
-        self.entries
+        self.storages
             .get(&TypeId::of::<T>())
             .map(|storage| F::storage_ref::<T>(&**storage))
             .ok_or("Storage for this type is not registered")
@@ -239,19 +239,23 @@ impl<Trait: ?Sized + 'static, F: StorageFamily<Trait>> PillTraitTypeMap<Trait, F
     pub fn get_storage_mut<T>(&mut self) -> Result<&mut F::Storage<T>, &'static str>
         where T: 'static + TraitAccessible<Trait>,
     {
-        self.entries
+        self.storages
             .get_mut(&TypeId::of::<T>())
             .map(|storage| F::storage_mut::<T>(&mut **storage))
             .ok_or("Storage for this type is not registered")
     }
 
     pub fn get_trait_storage(&self, type_id: TypeId) -> Result<&F::Trait, &'static str> {
-        self.entries.get(&type_id).map(|b| &**b)
+        self.storages.get(&type_id).map(|b| &**b)
         .ok_or("Storage for this type is not registered")
     }
 
     pub fn get_trait_storage_mut(&mut self, type_id: TypeId) -> Result<&mut F::Trait, &'static str> {
-        self.entries.get_mut(&type_id).map(|b| &mut **b)
+        self.storages.get_mut(&type_id).map(|b| &mut **b)
         .ok_or("Storage for this type is not registered")
+    }
+
+    pub fn iter_storages(&self) -> impl Iterator<Item = (&TypeId, &Box<F::Trait>)> {
+        self.storages.iter()
     }
 }
