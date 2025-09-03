@@ -6,7 +6,7 @@ use std::{
 use config::Config;
 use fs_extra::dir::CopyOptions;
 use anyhow::*;
-use clap::{ Arg, App };
+use clap::{ Arg, App, AppSettings };
 use path_absolutize::Absolutize;
 
 // - Cargo commands
@@ -225,7 +225,7 @@ fn create_game_project(game_project_parent_directory_path: &PathBuf, game_name: 
     Ok(())
 }
 
-fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode) -> Result<()> {
+fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode, game_args: &[String]) -> Result<()> {
     // Build game project
     build_game_project(game_project_directory_path, output_directory_path, compile_mode)?;
 
@@ -237,6 +237,7 @@ fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path
     // Run exe (capture potential IO error here)
     let status = Command::new(&standalone_executable_path)
         .current_dir(output_directory_path)
+        .args(game_args)
         .status()
         .context(format!(
             "Failed to launch game project executable: {}",
@@ -487,13 +488,20 @@ fn main() {
         .default_value("debug")
         .required(false);
 
+    let game_args = Arg::with_name("game-args")
+        .help("Arguments passed to the game (use `--` to separate them)")
+        .multiple(true)
+        .last(true)
+        .allow_hyphen_values(true);
+
     // Addition of the options to the CLI
-    let app = app.arg(action_option).arg(name_option).arg(path_option).arg(output_path_option).arg(compile_mode_option);
+    let app = app.arg(action_option).arg(name_option).arg(path_option).arg(output_path_option).arg(compile_mode_option).arg(game_args).setting(AppSettings::TrailingVarArg);
 
     // Extraction of the arguments
     let matches = app.get_matches();
 
     // Arguments
+    let passthrough_args: Vec<String> = matches.values_of("game-args").map(|vals| vals.map(|s| s.to_string()).collect()).unwrap_or_default();
     let action_argument = matches.value_of("action").expect("Action has to be specified");
     let directory_path_argument = matches.value_of("path");
     let game_name_argument = matches.value_of("name");
@@ -522,7 +530,7 @@ fn main() {
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
             output_directory_path = get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
-            run_game_project(&game_project_directory_path, &output_directory_path, &compile_mode).context("Failed to run game project").unwrap();
+            run_game_project(&game_project_directory_path, &output_directory_path, &compile_mode, &passthrough_args).context("Failed to run game project").unwrap();
         },
         "build" => {
             let game_project_directory_path = PathBuf::from(directory_path_argument.expect("Game project directory path has to be specified using --path flag. For example: --path <GAME_PROJECT_DIR>"))

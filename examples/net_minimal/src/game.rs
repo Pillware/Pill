@@ -22,23 +22,6 @@ const UPDATE_FREQUENCY_SEC: f32 = 1.0 / UPDATE_FREQUENCY_HZ;
 const REMOTE_SERVER_ADDR: &str = "127.0.0.1";
 const REMOTE_SERVER_PORT: u16 = 5000;
 
-// ───────────────────────────────────────────────────────────────────────────
-//  Temporary global component used only on the client for throttling updates
-// ───────────────────────────────────────────────────────────────────────────
-
-pub struct TimeAccumulationComponent {
-    pub accumulator: f32,
-}
-
-impl GlobalComponent for TimeAccumulationComponent {}
-impl PillTypeMapKey for TimeAccumulationComponent {
-    type Storage = GlobalComponentStorage<Self>;
-}
-
-
-// ───────────────────────────────────────────────────────────────────────────
-//  Track whether we already sent JOIN after connecting
-// ───────────────────────────────────────────────────────────────────────────
 pub struct JoinState {
     pub sent: bool,
 }
@@ -48,10 +31,6 @@ impl GlobalComponent for JoinState {}
 impl PillTypeMapKey for JoinState {
     type Storage = GlobalComponentStorage<Self>;
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-//  Custom per-entity tag so we can quickly query all "pills"
-// ───────────────────────────────────────────────────────────────────────────
 
 pub struct PillComponent;
 
@@ -137,7 +116,15 @@ impl PillGame for Game {
         engine.add_component_to_entity(active_scene, pill, PillComponent)?;
 
 		engine.add_global_component(JoinState { sent: false })?;
-		let client_id = rand::thread_rng().gen_range(1..=10_000_000);
+
+        let client_id = {
+            let args: Vec<String> = std::env::args().collect();
+            if args.len() > 1 {
+                args[1].parse::<u64>().unwrap_or(0)
+            } else {
+                rand::thread_rng().gen_range(1..=10_000_000)
+            }
+        };
 		let server_addr = format!("{REMOTE_SERVER_ADDR}:{REMOTE_SERVER_PORT}");
 
         let mut net_state = NetworkManagerComponent::new_client(&server_addr, client_id)?;
