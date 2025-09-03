@@ -101,8 +101,8 @@ fn main() -> Result<()> {
             info!("Shutdown requested, broadcasting Exit");
             if let Ok(mut network_manager) = engine.get_global_component_mut::<NetworkManagerComponent>() {
                 if let NetworkSide::Server(state) = &mut network_manager.side {
-                    let _ = server_broacast_exit(&mut state.server, "Server shutting down");
-                    let _ = server_dying_grasp(&mut state.server, std::time::Duration::from_millis(500));
+                    let _ = server_broacast_exit(&mut state.net, "Server shutting down");
+                    let _ = server_dying_grasp(&mut state.net, std::time::Duration::from_millis(500));
                 }
             }
             break Ok(());

@@ -17,7 +17,7 @@ pub enum ConnectionState {
 
 #[derive(Debug)]
 pub struct ClientState {
-    pub client: NetworkClient,
+    pub net: NetworkClient,
     pub server_address: String,
     pub connection_state: ConnectionState,
     pub want_reconnect: bool,
@@ -51,7 +51,7 @@ pub struct Session {
 
 #[derive(Debug)]
 pub struct ServerState {
-    pub server: NetworkServer,
+    pub net: NetworkServer,
     pub world_epoch: u64,
     pub default_offline_policy: OfflinePolicy,
     pub sessions: HashMap<ClientId, Session>,
@@ -61,7 +61,6 @@ pub enum NetworkSide {
     Server(ServerState),
     Client(ClientState),
 }
-
 
 type SpawnFn = fn(&mut Engine, &NetworkStateComponent, &TransformComponent) -> Result<()>;
 type DespawnFn = fn(&mut Engine, &NetworkStateComponent) -> Result<()>;
@@ -93,7 +92,7 @@ impl NetworkManagerComponent {
         let server = server_start(address, max_clients)?;
         Ok(Self {
             side: NetworkSide::Server(ServerState {
-                server,
+                net: server,
                 world_epoch: 1,
                 default_offline_policy: OfflinePolicy::Despawn,
                 sessions: HashMap::new(),
@@ -112,7 +111,7 @@ impl NetworkManagerComponent {
         let client = client_connect(address, my_id)?;
         Ok(Self {
             side: NetworkSide::Client(ClientState {
-                client,
+                net: client,
                 server_address: address.to_string(),
                 connection_state: ConnectionState::Connecting,
                 want_reconnect: false,

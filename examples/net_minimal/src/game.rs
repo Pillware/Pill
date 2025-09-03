@@ -160,13 +160,13 @@ fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> R
 
     if let NetworkSide::Client(state) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
         client_send(
-            &mut state.client,
+            &mut state.net,
             &NetworkPacket {
                 tag: NetworkAction::Update,
                 data: bincode::serialize(&payload)?,
             },
         )?;
-        client_flush(&mut state.client)?;
+        client_flush(&mut state.net)?;
     }
     Ok(())
 }
