@@ -151,6 +151,7 @@ pub fn server_get_events(net: &mut NetServer) -> Result<Vec<(u64, NetworkPacket)
         match e {
             ServerEvent::ClientConnected { client_id }=> {
                 log::info!("Client {client_id} connected");
+                inbox.push((client_id, NetworkPacket { tag: NetworkAction::Join, data: Vec::new() }));
             },
             ServerEvent::ClientDisconnected{ client_id, reason} => {
                 log::info!("Client {client_id} disconnected: {reason:?}");

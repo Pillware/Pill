@@ -22,16 +22,6 @@ const UPDATE_FREQUENCY_SEC: f32 = 1.0 / UPDATE_FREQUENCY_HZ;
 const REMOTE_SERVER_ADDRESS: &str = "127.0.0.1";
 const REMOTE_SERVER_PORT: u16 = 5000;
 
-pub struct JoinState {
-    pub sent: bool,
-}
-
-impl GlobalComponent for JoinState {}
-
-impl PillTypeMapKey for JoinState {
-    type Storage = GlobalComponentStorage<Self>;
-}
-
 pub struct PillComponent;
 
 impl Component for PillComponent {}
@@ -63,7 +53,6 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("NetworkingSystemClient", networking_system_client)?;
         engine.add_system("PillMovement", pill_movement_system)?;
-        engine.add_system("SendJoin", send_join_system)?;
 
         // Add meshes
         let pill_mesh = Mesh::new("Pill", "models/pill.obj".into());
@@ -114,8 +103,6 @@ impl PillGame for Game {
             .build();
         engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
         engine.add_component_to_entity(active_scene, pill, PillComponent)?;
-
-		engine.add_global_component(JoinState { sent: false })?;
 
         let client_id = {
             let args: Vec<String> = std::env::args().collect();
@@ -249,46 +236,6 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     } // iterator dropped here – the &mut Engine borrow ends
 
     flush_updates_to_server(engine, pending_updates)?;
-
-    Ok(())
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-//  System: once connected, send JOIN exactly once
-// ───────────────────────────────────────────────────────────────────────────
-fn send_join_system(engine: &mut Engine) -> Result<()> {
-    // 1. Short immutable borrow: are we connected yet?
-    let connected = {
-        let state = engine.get_global_component::<NetworkManagerComponent>()?;
-        matches!(&state.side, NetworkSide::Client(net) if net.client.is_connected())
-    };
-    if !connected {
-        return Ok(()); // handshake still in progress
-    }
-
-    // 2. Have we already sent JOIN?
-    if engine.get_global_component::<JoinState>()?.sent {
-        return Ok(());
-    }
-
-    // 3. We’re connected and haven’t sent JOIN – do it now (separate scope)
-    {
-        let mut state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
-        if let NetworkSide::Client(net) = &mut state.side {
-            client_send(
-                net,
-                &NetworkPacket {
-                    tag:  NetworkAction::Join,
-                    data: Vec::new(),
-                },
-            )?;
-            client_flush(net)?;
-        }
-    }
-
-    // 4. Mark as sent (new mutable borrow, no overlap with the one above)
-    engine.get_global_component_mut::<JoinState>()?.sent = true;
-    println!("JOIN sent after connection established");
 
     Ok(())
 }
