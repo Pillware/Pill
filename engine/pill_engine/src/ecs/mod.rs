@@ -73,7 +73,7 @@ pub use components::time_component::{
 
 pub use components::network_manager_component::{
     NetworkManagerComponent,
-    NetSide,
+    NetworkSide,
 };
 
 pub use components::network_state_component::{

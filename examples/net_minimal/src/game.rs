@@ -5,7 +5,7 @@ use rand::rngs::StdRng;
 
 use pill_engine::internal::{
     TransformComponent,
-    NetworkManagerComponent, NetSide, NetworkStateComponent, NetworkEntityState, EntityUpdate, NetworkUpdatePayload, NetworkEntityAction,
+    NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkEntityState, EntityUpdate, NetworkUpdatePayload, NetworkEntityAction,
     networking_system_client,
 };
 
@@ -18,8 +18,8 @@ const PILL_MOVE_SPEED: f32 = 3.0;
 const UPDATE_FREQUENCY_HZ: f32 = 24.0;
 const UPDATE_FREQUENCY_SEC: f32 = 1.0 / UPDATE_FREQUENCY_HZ;
 
-//const REMOTE_SERVER_ADDR: &str = "145.223.100.1";
-const REMOTE_SERVER_ADDR: &str = "127.0.0.1";
+//const REMOTE_SERVER_ADDRESS: &str = "145.223.100.1";
+const REMOTE_SERVER_ADDRESS: &str = "127.0.0.1";
 const REMOTE_SERVER_PORT: u16 = 5000;
 
 pub struct JoinState {
@@ -120,31 +120,31 @@ impl PillGame for Game {
         let client_id = {
             let args: Vec<String> = std::env::args().collect();
             if args.len() > 1 {
-                args[1].parse::<u64>().unwrap_or(0)
+               args[1].parse::<u64>().unwrap_or(0)
             } else {
                 rand::thread_rng().gen_range(1..=10_000_000)
             }
         };
-		let server_addr = format!("{REMOTE_SERVER_ADDR}:{REMOTE_SERVER_PORT}");
+		let server_address = format!("{REMOTE_SERVER_ADDRESS}:{REMOTE_SERVER_PORT}");
 
-        let mut net_state = NetworkManagerComponent::new_client(&server_addr, client_id)?;
+        let mut net_state = NetworkManagerComponent::new_client(&server_address, client_id)?;
         net_state.spawn_handlers.insert("player".into(), spawn_player);
         net_state.despawn_handlers.insert("player".into(), despawn_player);
         engine.add_global_component(net_state);
 
-		println!("Client will connect to {server_addr} with ID {client_id}");
+		println!("Client will connect to {server_address} with ID {client_id}");
 
 		// Add the network component marker so the server can identify us
-		let net_entity_id = rand::thread_rng().gen_range(1..=1000);
+		let network_entity_id = rand::thread_rng().gen_range(1..=1000);
 		engine.add_component_to_entity(
 			active_scene,
 			pill,
 			NetworkStateComponent {
-				net_entity_id,
+				network_entity_id,
 				owner_id: client_id,
 				state: NetworkEntityState::Spawn,
 				transform: Some(transform_component),
-                kind: "player".into(),
+                entity_type: "player".into(),
 			},
 		)?;
 
@@ -171,7 +171,7 @@ fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> R
         timestamp: engine.get_global_component::<TimeComponent>()?.time,
     };
 
-    if let NetSide::Client(net) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
+    if let NetworkSide::Client(net) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
         client_send(
             net,
             &NetworkPacket {
@@ -244,7 +244,7 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
                 net_state: net_state.clone(),
                 transform: Some(transform.clone()),
             });
-            //println!("Pushed update for entity with ID {}", net_state.net_entity_id);
+            //println!("Pushed update for entity with ID {}", net_state.network_entity_id);
         }
     } // iterator dropped here – the &mut Engine borrow ends
 
@@ -260,7 +260,7 @@ fn send_join_system(engine: &mut Engine) -> Result<()> {
     // 1. Short immutable borrow: are we connected yet?
     let connected = {
         let state = engine.get_global_component::<NetworkManagerComponent>()?;
-        matches!(&state.side, NetSide::Client(net) if net.client.is_connected())
+        matches!(&state.side, NetworkSide::Client(net) if net.client.is_connected())
     };
     if !connected {
         return Ok(()); // handshake still in progress
@@ -274,7 +274,7 @@ fn send_join_system(engine: &mut Engine) -> Result<()> {
     // 3. We’re connected and haven’t sent JOIN – do it now (separate scope)
     {
         let mut state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
-        if let NetSide::Client(net) = &mut state.side {
+        if let NetworkSide::Client(net) = &mut state.side {
             client_send(
                 net,
                 &NetworkPacket {
@@ -296,17 +296,17 @@ fn send_join_system(engine: &mut Engine) -> Result<()> {
 fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
     let my_id = engine.get_global_component_mut::<NetworkManagerComponent>()?.my_id;
     let scene = engine.get_active_scene_handle()?;
-    println!("[SPAWN] Spawning player with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+    println!("[SPAWN] Spawning player with nid{ } for cid {} with transform {:?}", net_state_component.network_entity_id, my_id, transform);
 
     // randomness for capsules tint and transforms
     //let mut rng = rng();
-    let net_entity_id = net_state_component.net_entity_id;
+    let network_entity_id = net_state_component.network_entity_id;
 
-	let mut rng = StdRng::seed_from_u64(net_entity_id as u64);
+	let mut rng = StdRng::seed_from_u64(network_entity_id as u64);
 	let index = rng.random_range(0..DISTINCT_COLOR_PALETTE.len());
 	let (r, g, b) = DISTINCT_COLOR_PALETTE[index];
-	// // Use net_entity_id as seed to generate a random color
-	// let mut rng = rand::rngs::StdRng::seed_from_u64(net_entity_id as u64);
+	// // Use network_entity_id as seed to generate a random color
+	// let mut rng = rand::rngs::StdRng::seed_from_u64(network_entity_id as u64);
 	// let r = rng.gen_range(0.2..1.0);
 	// let g = rng.gen_range(0.2..1.0);
 	// let b = rng.gen_range(0.2..1.0);
@@ -322,7 +322,7 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
         };
 
         let mat = engine.add_resource::<Material>(
-        Material::builder(&net_entity_id.to_string())
+        Material::builder(&network_entity_id.to_string())
             .color("tint", Color::new(r, g, b))?
             .scalar("specularity", 0.5)?
             .build()
@@ -345,18 +345,18 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
 
 	engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
 
-    println!("[SPAWN] finished with nid{ } for cid {} with transform {:?}", net_state_component.net_entity_id, my_id, transform);
+    println!("[SPAWN] finished with nid{ } for cid {} with transform {:?}", net_state_component.network_entity_id, my_id, transform);
     Ok(())
 }
 
 fn despawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent) -> Result<()> {
     let my_id = engine.get_global_component_mut::<NetworkManagerComponent>()?.my_id;
     let scene = engine.get_active_scene_handle()?;
-    println!("[DESPAWN] Despawning player with nid{ } for cid {}", net_state_component.net_entity_id, my_id);
+    println!("[DESPAWN] Despawning player with nid{ } for cid {}", net_state_component.network_entity_id, my_id);
 
     let mut to_despawn = Vec::new();
     for (ent, ns) in engine.iterate_one_component::<NetworkStateComponent>()? {
-        if ns.net_entity_id == net_state_component.net_entity_id {
+        if ns.network_entity_id == net_state_component.network_entity_id {
             to_despawn.push(ent);
         }
     }

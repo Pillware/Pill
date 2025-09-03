@@ -7,7 +7,7 @@ use crate::{ecs::{EntityHandle, Component, GlobalComponent, GlobalComponentStora
 const UPDATE_FREQUENCY_HZ: f32 = 3.0; // Update frequency in Hz
 const UPDATE_FREQUENCY_SEC: f32 = 1.0 / UPDATE_FREQUENCY_HZ; // Update frequency in seconds
 
-pub enum NetSide {
+pub enum NetworkSide {
     Server(NetServer),
     Client(NetClient),
 }
@@ -18,7 +18,7 @@ type InterpolationHookFn = fn(&mut Engine) -> Result<()>;
 
 // Global state of networking in this instance of the engine
 pub struct NetworkManagerComponent {
-    pub side: NetSide,
+    pub side: NetworkSide,
     pub my_id: u64, // Client ID
     pub tick: u64,
     pub accumulator: f32, // running counter to reduce the tick rate
@@ -36,7 +36,7 @@ impl GlobalComponent for NetworkManagerComponent {}
 impl NetworkManagerComponent {
     pub fn new_server(addr: &str, max_clients: usize) -> Result<Self> {
         Ok(Self {
-            side: NetSide::Server(server_start(addr, max_clients)?),
+            side: NetworkSide::Server(server_start(addr, max_clients)?),
             my_id: 0, // Server does not have a client ID
             tick: 0,
             accumulator: 0.0,
@@ -49,7 +49,7 @@ impl NetworkManagerComponent {
 
     pub fn new_client(addr: &str, my_id: u64) -> Result<Self> {
         Ok(Self {
-            side: NetSide::Client(client_connect(addr, my_id)?),
+            side: NetworkSide::Client(client_connect(addr, my_id)?),
             my_id,
             tick: 0,
             accumulator: 0.0,

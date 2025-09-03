@@ -10,7 +10,7 @@ mod pill_typemap;
 mod bitmask_utils;
 mod timer;
 mod color;
-mod net;
+mod networking;
 
 // --- Use ---
 
@@ -72,7 +72,7 @@ pub use timer::{
     TimerRecord
 };
 
-pub use net::{
+pub use networking::{
     NetServer,
     NetClient,
     NetworkPacket,

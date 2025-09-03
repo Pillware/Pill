@@ -163,7 +163,7 @@ pub mod internal {
             EntityUpdate,
             NetworkUpdatePayload,
             NetworkEntityAction,
-            NetSide,
+            NetworkSide,
         },
         resources::{
             Texture,

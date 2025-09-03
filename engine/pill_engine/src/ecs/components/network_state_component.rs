@@ -17,9 +17,9 @@ pub enum NetworkEntityState {
 pub struct NetworkStateComponent{
     pub owner_id: u64, // client id
     pub state: NetworkEntityState,
-    pub net_entity_id: u64, // unique entity id in the network
+    pub network_entity_id: u64, // unique entity id in the network
     pub transform: Option<TransformComponent>,
-    pub kind: String, // type of entity
+    pub entity_type: String, // type of entity
     // TODO: add more components (Health etc.)
 }
 
