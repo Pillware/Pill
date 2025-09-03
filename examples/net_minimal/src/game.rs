@@ -114,10 +114,10 @@ impl PillGame for Game {
         };
 		let server_address = format!("{REMOTE_SERVER_ADDRESS}:{REMOTE_SERVER_PORT}");
 
-        let mut net_state = NetworkManagerComponent::new_client(&server_address, client_id)?;
-        net_state.spawn_handlers.insert("player".into(), spawn_player);
-        net_state.despawn_handlers.insert("player".into(), despawn_player);
-        engine.add_global_component(net_state);
+        let mut network_manager = NetworkManagerComponent::new_client(&server_address, client_id)?;
+        network_manager.spawn_handlers.insert("player".into(), spawn_player);
+        network_manager.despawn_handlers.insert("player".into(), despawn_player);
+        engine.add_global_component(network_manager);
 
 		println!("Client will connect to {server_address} with ID {client_id}");
 
@@ -158,15 +158,15 @@ fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> R
         timestamp: engine.get_global_component::<TimeComponent>()?.time,
     };
 
-    if let NetworkSide::Client(net) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
+    if let NetworkSide::Client(state) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
         client_send(
-            net,
+            &mut state.client,
             &NetworkPacket {
                 tag: NetworkAction::Update,
                 data: bincode::serialize(&payload)?,
             },
         )?;
-        client_flush(net)?;
+        client_flush(&mut state.client)?;
     }
     Ok(())
 }

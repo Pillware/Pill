@@ -42,12 +42,14 @@ pub struct NetworkPacket {
 pub const RELIABLE_CHANNEL_ID: u8 = DefaultChannel::ReliableOrdered as u8;
 pub const UNRELIABLE_CHANNEL_ID: u8 = DefaultChannel::Unreliable as u8;
 
-pub struct NetServer {
+#[derive(Debug)]
+pub struct NetworkServer {
     pub server: RenetServer,
     pub transport: NetcodeServerTransport
 }
 
-pub struct NetClient {
+#[derive(Debug)]
+pub struct NetworkClient {
     pub client: RenetClient,
     pub transport: NetcodeClientTransport
 }
@@ -84,7 +86,7 @@ pub fn is_not_ready(err: &anyhow::Error) -> bool {
     false
 }
 
-pub fn server_start(bind: &str, max_clients: usize) -> Result<NetServer> {
+pub fn server_start(bind: &str, max_clients: usize) -> Result<NetworkServer> {
     let address: SocketAddr = bind.parse()?;
 
     let socket = UdpSocket::bind(address)?;
@@ -102,13 +104,13 @@ pub fn server_start(bind: &str, max_clients: usize) -> Result<NetServer> {
 
     log::info!("Server started at {address}, max clients: {max_clients}");
 
-    Ok(NetServer {
+    Ok(NetworkServer {
         server,
         transport,
     })
 }
 
-pub fn client_connect(bind: &str, client_id: u64) -> Result<NetClient> {
+pub fn client_connect(bind: &str, client_id: u64) -> Result<NetworkClient> {
     let server_addr: SocketAddr = bind.parse()?;
 
 	let local_bind = match server_addr {
@@ -132,19 +134,19 @@ pub fn client_connect(bind: &str, client_id: u64) -> Result<NetClient> {
 
     let transport = NetcodeClientTransport::new(now(), authentication, socket)?;
 
-    Ok(NetClient {
+    Ok(NetworkClient {
         client,
         transport,
     })
 }
 
-pub fn server_update(net: &mut NetServer, dt: Duration) -> Result<()> {
+pub fn server_update(net: &mut NetworkServer, dt: Duration) -> Result<()> {
     net.server.update(dt);
     net.transport.update(dt, &mut net.server)?;
     Ok(())
 }
 
-pub fn server_get_events(net: &mut NetServer) -> Result<Vec<(u64, NetworkPacket)>> {
+pub fn server_get_events(net: &mut NetworkServer) -> Result<Vec<(u64, NetworkPacket)>> {
     let mut inbox = Vec::new();
     // handle connect/disconnect
     while let Some(e) = net.server.get_event() {
@@ -172,13 +174,13 @@ pub fn server_get_events(net: &mut NetServer) -> Result<Vec<(u64, NetworkPacket)
     Ok(inbox)
 }
 
-pub fn client_update(net: &mut NetClient, dt: Duration) -> Result<()> {
+pub fn client_update(net: &mut NetworkClient, dt: Duration) -> Result<()> {
     net.client.update(dt);
     net.transport.update(dt, &mut net.client)?;
     Ok(())
 }
 
-pub fn client_get_events(net: &mut NetClient) -> Result<Vec<NetworkPacket>> {
+pub fn client_get_events(net: &mut NetworkClient) -> Result<Vec<NetworkPacket>> {
     let mut inbox = Vec::new();
     while let Some(bytes) = net.client.receive_message(RELIABLE_CHANNEL_ID) {
         if bytes.is_empty() {
@@ -189,7 +191,7 @@ pub fn client_get_events(net: &mut NetClient) -> Result<Vec<NetworkPacket>> {
     Ok(inbox)
 }
 
-pub fn server_send_one(net: &mut NetServer, client_id: u64, msg: &NetworkPacket) -> Result<()> {
+pub fn server_send_one(net: &mut NetworkServer, client_id: u64, msg: &NetworkPacket) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -197,7 +199,7 @@ pub fn server_send_one(net: &mut NetServer, client_id: u64, msg: &NetworkPacket)
     Ok(())
 }
 
-pub fn server_broadcast(net: &mut NetServer, msg: &NetworkPacket) -> Result<()> {
+pub fn server_broadcast(net: &mut NetworkServer, msg: &NetworkPacket) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -205,7 +207,7 @@ pub fn server_broadcast(net: &mut NetServer, msg: &NetworkPacket) -> Result<()> 
     Ok(())
 }
 
-pub fn server_broadcast_except(net: &mut NetServer, client_id: u64, msg: &NetworkPacket) -> Result<()> {
+pub fn server_broadcast_except(net: &mut NetworkServer, client_id: u64, msg: &NetworkPacket) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -213,7 +215,7 @@ pub fn server_broadcast_except(net: &mut NetServer, client_id: u64, msg: &Networ
     Ok(())
 }
 
-pub fn server_broacast_exit(net: &mut NetServer, reason: &str) -> Result<()> {
+pub fn server_broacast_exit(net: &mut NetworkServer, reason: &str) -> Result<()> {
     let notice = ExitNotice {
         reason: reason.to_string(),
         when_ms: now().as_millis() as u64,
@@ -228,7 +230,7 @@ pub fn server_broacast_exit(net: &mut NetServer, reason: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn server_dying_grasp(net: &mut NetServer, wait: Duration) -> Result<()> {
+pub fn server_dying_grasp(net: &mut NetworkServer, wait: Duration) -> Result<()> {
     let start = now();
     let step = Duration::from_millis(16);
 
@@ -241,7 +243,7 @@ pub fn server_dying_grasp(net: &mut NetServer, wait: Duration) -> Result<()> {
     Ok(())
 }
 
-pub fn client_send(net: &mut NetClient, msg: &NetworkPacket) -> Result<()> {
+pub fn client_send(net: &mut NetworkClient, msg: &NetworkPacket) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
@@ -249,12 +251,12 @@ pub fn client_send(net: &mut NetClient, msg: &NetworkPacket) -> Result<()> {
     Ok(())
 }
 
-pub fn server_flush(net: &mut NetServer) -> Result<()> {
+pub fn server_flush(net: &mut NetworkServer) -> Result<()> {
     net.transport.send_packets(&mut net.server);
     Ok(())
 }
 
-pub fn client_flush(net: &mut NetClient) -> Result<()> {
+pub fn client_flush(net: &mut NetworkClient) -> Result<()> {
     net.transport.send_packets(&mut net.client)?;
     Ok(())
 }

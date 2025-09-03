@@ -73,8 +73,8 @@ pub use timer::{
 };
 
 pub use networking::{
-    NetServer,
-    NetClient,
+    NetworkServer,
+    NetworkClient,
     NetworkPacket,
     NetworkAction,
     ExitNotice,

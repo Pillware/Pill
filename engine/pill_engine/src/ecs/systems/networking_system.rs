@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::debug;
-use pill_core::{NetClient, client_update, client_get_events, server_update, server_get_events, client_send, server_broadcast, server_broadcast_except, server_send_one, client_flush, server_flush, NetworkPacket, NetworkAction, ExitNotice, is_not_ready};
+use pill_core::{NetworkClient, client_update, client_get_events, server_update, server_get_events, client_send, server_broadcast, server_broadcast_except, server_send_one, client_flush, server_flush, NetworkPacket, NetworkAction, ExitNotice, is_not_ready};
 
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
@@ -111,15 +111,15 @@ fn pump_transport(engine: &mut Engine) -> Result<()> {
         Duration::from_secs_f32(frame_delta_time.max(0.0))
     };
 
-    let mut state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
-    match &mut state.side {
-        NetworkSide::Client(net) => {
-            if let Err(e) = client_update(net, delta_time) { if !is_not_ready(&e) { return Err(e); } }
-            if let Err(e) = client_flush(net)     { if !is_not_ready(&e) { return Err(e); } }
+    let mut network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+    match network_manager.side {
+        NetworkSide::Client(ref mut state) => {
+            if let Err(e) = client_update(&mut state.client, delta_time) { if !is_not_ready(&e) { return Err(e); } }
+            if let Err(e) = client_flush(&mut state.client)     { if !is_not_ready(&e) { return Err(e); } }
         }
-        NetworkSide::Server(net) => {
-            if let Err(e) = server_update(net, delta_time) { if !is_not_ready(&e) { return Err(e); } }
-            if let Err(e) = server_flush(net) { if !is_not_ready(&e) { return Err(e); } }
+        NetworkSide::Server(ref mut state) => {
+            if let Err(e) = server_update(&mut state.server, delta_time) { if !is_not_ready(&e) { return Err(e); } }
+            if let Err(e) = server_flush(&mut state.server) { if !is_not_ready(&e) { return Err(e); } }
         }
     }
     Ok(())
@@ -132,8 +132,8 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
 
     match &mut state.side {
-        NetworkSide::Client(net) => {
-            match client_get_events(net) {
+        NetworkSide::Client(state) => {
+            match client_get_events(&mut state.client) {
                 Ok(msgs) => {
                     for msg in &msgs {
                         if msg.tag == NetworkAction::Update {
@@ -158,8 +158,8 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
             }
         }
 
-        NetworkSide::Server(net) => {
-            for (cid, msg) in server_get_events(net)? {
+        NetworkSide::Server(state) => {
+            for (cid, msg) in server_get_events(&mut state.server)? {
                 println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
 
                 if msg.tag == NetworkAction::Update {
@@ -215,9 +215,9 @@ fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()
         };
 
         let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
-        if let NetworkSide::Server(net) = &mut state.side {
+        if let NetworkSide::Server(state) = &mut state.side {
             server_send_one(
-                net,
+                &mut state.server,
                 cid,   // **only** the newcomer
                 &NetworkPacket {
                     tag:  NetworkAction::Update,
@@ -259,9 +259,9 @@ fn despawn_entities(engine: &mut Engine, despawn_cids: Vec<u64>) -> Result<()> {
         };
 
         let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
-        if let NetworkSide::Server(net) = &mut state.side {
+        if let NetworkSide::Server(state) = &mut state.side {
             server_broadcast(
-                net,
+                &mut state.server,
                 &NetworkPacket {
                     tag:  NetworkAction::Update,
                     data: bincode::serialize(&snapshot)?,
@@ -282,8 +282,8 @@ fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<
                           .clone()
                           .unwrap_or_else(TransformComponent::default);
     let spawn_fn = {
-        let global_net_state = engine.get_global_component::<NetworkManagerComponent>()?;
-        global_net_state.spawn_handlers.get(&entity_update.net_state.entity_type).copied()
+        let network_manager = engine.get_global_component::<NetworkManagerComponent>()?;
+        network_manager.spawn_handlers.get(&entity_update.net_state.entity_type).copied()
     };
 
     if let Some(spawn_fn) = spawn_fn {
@@ -296,15 +296,15 @@ fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<
 
 fn run_despawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<()> {
     let despawn_fn = {
-        let global_net_state = engine.get_global_component::<NetworkManagerComponent>()?;
-        global_net_state.despawn_handlers.get(&entity_update.net_state.entity_type).copied()
+        let network_manager = engine.get_global_component::<NetworkManagerComponent>()?;
+        network_manager.despawn_handlers.get(&entity_update.net_state.entity_type).copied()
     };
 
     if let Some(despawn_fn) = despawn_fn {
         despawn_fn(engine, &entity_update.net_state)?;
     } else {
         println!("No despawn handler for entity entity_type '{}' Running the default despawn hook", entity_update.net_state.entity_type);
-       default_despawn_hook(engine, &entity_update.net_state)?;
+        default_despawn_hook(engine, &entity_update.net_state)?;
     }
     Ok(())
 }
@@ -337,12 +337,12 @@ fn send_client_updates(engine: &mut Engine) -> Result<()> {
             updates,
             timestamp: engine.get_global_component::<TimeComponent>()?.time,
         };
-        if let NetworkSide::Client(net) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
+        if let NetworkSide::Client(state) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
             let msg = NetworkPacket {
                 tag: NetworkAction::Update,
                 data: bincode::serialize(&payload)?,
             };
-			match client_send(net, &msg) {
+			match client_send(&mut state.client, &msg) {
 				Ok(_) => {}
 				Err(e) if is_not_ready(&e) => {
 					println!("[Client] ▸ not connected yet – send skipped");
@@ -357,10 +357,10 @@ fn send_client_updates(engine: &mut Engine) -> Result<()> {
 
 fn timeout_elapsed(engine: &mut Engine) -> bool {
     let delta_time = engine.get_global_component::<TimeComponent>().map(|c| c.delta_time).unwrap_or(0.0);
-    let state = engine.get_global_component_mut::<NetworkManagerComponent>().unwrap();
-    state.accumulator += delta_time;
-    if state.accumulator >= state.timeout {
-        state.accumulator = 0.0;
+    let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>().unwrap();
+    network_manager.accumulator += delta_time;
+    if network_manager.accumulator >= network_manager.timeout {
+        network_manager.accumulator = 0.0;
         return true;
     }
     false
@@ -412,10 +412,10 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                     }
                 }
 
-                let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
-                if let NetworkSide::Server(net) = &mut state.side {
+                let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+                if let NetworkSide::Server(state) = &mut network_manager.side {
                     // Broadcast the update to everyone except the sender
-                    server_broadcast_except(net, update.client_id, &NetworkPacket {
+                    server_broadcast_except(&mut state.server, update.client_id, &NetworkPacket {
                         tag: NetworkAction::Update,
                         data: bincode::serialize(&update)?,
                     })?;
