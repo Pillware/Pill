@@ -10,6 +10,8 @@ pub trait Volume3D {
 
     fn get_bounding_box(&self) -> Option<BoundingBox>;
 
+    fn get_falloff(&self) -> f32 { 0.0 }
+
     /// Checks if a point is inside the volume.
     fn contains_point(&self, point: Vector3f) -> bool {
         if self.is_global() {
@@ -26,7 +28,7 @@ pub trait Volume3D {
     /// Soft containment (inward falloff). 
     /// `falloff` is the thickness (in world units) from the AABB surface toward its interior
     /// at which the weight ramps from 0 (on surface) to 1 (>= falloff deep).
-    fn contains_point_falloffed(&self, point: Vector3f, falloff: f32) -> f32 {
+    fn contains_point_falloffed(&self, point: Vector3f) -> f32 {
         if self.is_global() {
             return 1.0;
         }
@@ -47,23 +49,14 @@ pub trait Volume3D {
         let distance_z = (point.z - min_bound.z).min(max_bound.z - point.z);
         let inward_distance = distance_x.min(distance_y.min(distance_z));
 
-        if falloff <= 0.0 {
+        if self.get_falloff() <= 0.0 {
             // No falloff region: anything inside is fully "1"
             return 1.0;
         }
 
         // Linear ramp (0 at surface → 1 after falloff distance)
-        saturate(inward_distance / falloff)
-    }
+        let weight = saturate(inward_distance / self.get_falloff());
 
-    /// Optional: smoother ramp using smoothstep (less banding near the edge).
-    fn contains_point_falloffed_smooth(&self, point: Vector3f, falloff: f32) -> f32 {
-        if self.is_global() {
-            return 1.0;
-        }
-
-        let weight = self.contains_point_falloffed(point, falloff);
-        // Smoothstep(0,1,w)
         weight * weight * (3.0 - 2.0 * weight)
     }
 }

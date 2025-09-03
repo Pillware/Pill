@@ -7,13 +7,16 @@ use pill_renderer;
 use anyhow::{ Context, Ok, Result };
 use winit::{
     event::{ Event, WindowEvent, DeviceEvent },
-    window::{Icon},
+    window::{ Icon },
 };
 
 #[cfg(target_os = "windows")]
 use winit::platform::windows::IconExtWindows;
 use std::{
-    fs::{remove_file, rename}, path::{Path, PathBuf}, sync::Arc, time::{Duration, Instant}
+    fs::{remove_file, rename}, 
+    path::{Path, PathBuf}, 
+    sync::Arc, 
+    time::{Duration, Instant}
 };
 use libloading::{Library, Symbol};
 use std::ffi::c_void;
@@ -71,35 +74,6 @@ fn configure_logging(config: &Config) {
     if using_default_log_levels {
         warn!("Using default log levels: {}", log_level);
     }
-
-    // // Configure logging
-    // let log_level = config.get_str("LOG_LEVEL").unwrap_or("Info".to_string());
-    // let log_level = match log_level.as_str() {
-    //     "Info" => log::LevelFilter::Info,
-    //     "Warning" => log::LevelFilter::Warn,
-    //     "Debug" => log::LevelFilter::Debug,
-    //     "Error" => log::LevelFilter::Error,
-    //     "Off" => log::LevelFilter::Off,
-    //     _ => log::LevelFilter::Info,
-    // };
-
-    // #[cfg(debug_assertions)]
-    // env_logger::Builder::new()
-    //     .format(|buf, record| {
-    //         writeln!(buf, "[{}] {} {}:{}: {}",
-    //             record.level(),
-    //             chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
-    //             record.file().unwrap_or("unknown"),
-    //             record.line().unwrap_or(0),
-    //             record.args()
-    //         )
-    //     })
-    //     .filter_module("pill_core", log_level)
-    //     .filter_module("pill_standalone", log_level)
-    //     .filter_module("pill_engine", log_level)
-    //     .filter_module("pill_renderer", log_level)
-	//     .filter_module("pill_game",       log_level)
-    //     .init();
 }
 
 pub fn load_window_icon(path: &Path) -> Option<Icon> {
@@ -390,10 +364,6 @@ fn main_loop(
 
     Ok(())
 }
-
-
-
-
 
 fn main() {
     // In the development build, standalone will look for the resource files in the "res" directory of the game project directory

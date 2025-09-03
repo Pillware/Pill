@@ -16,7 +16,7 @@ use crate::{
 use indexmap::IndexMap;
 
 use pill_engine::internal::{
-    CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
+    CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, PostprocessingEffectsRendererData, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
 };
 
 use pill_core::{ 
@@ -210,10 +210,9 @@ impl PillRenderer for Renderer {
     fn render(
         &mut self,
         renderer_camera_handle: RendererCameraHandle,
-       // active_camera_entity_handle: EntityHandle,
         render_queue: &Vec<RenderQueueItem>, 
-        //camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        postprocessing_effects: Vec<PostprocessingEffectsRendererData>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer
@@ -221,8 +220,8 @@ impl PillRenderer for Renderer {
         self.state.render(
             renderer_camera_handle,
             render_queue,
-            //camera_component_storage,
             transform_component_storage,
+            postprocessing_effects,
             egui_ui,
             delta_time,
             timer
@@ -432,6 +431,7 @@ impl State {
         renderer_camera_handle: RendererCameraHandle,
         render_queue: &Vec<RenderQueueItem>, 
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        postprocessing_effects: Vec<PostprocessingEffectsRendererData>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer

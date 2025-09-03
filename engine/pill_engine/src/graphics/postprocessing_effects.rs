@@ -1,5 +1,5 @@
 use crate::{
-    config::*, ecs::{ Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle }, engine::Engine, game::{ResourceLoader, Shader, ShaderParameterSlot, ShaderTextureSlot}, graphics::{ compose_render_queue_key, RenderQueueKey }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
+    config::*, ecs::{ Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle }, engine::Engine, game::{ResourceLoader, Shader, ShaderParameterSlot, ShaderTextureSlot}, graphics::{ compose_render_queue_key, RenderQueueKey, RendererMaterialHandle }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 use pill_core::{
     get_type_name, impl_trait_accessible, BoundingBox, Color, EngineError, OptionStorage, PillTraitTypeMap, PillTypeMap, PillTypeMapKey, SingleStorage, TraitAccessible, TraitAccessor, Vector2f, Vector3f
@@ -21,6 +21,11 @@ pub trait PostprocessingEffect: Any + Send {
     fn get_parameters(&self) -> HashMap<String, MaterialParameter>;
 }
 
+pub struct PostprocessingEffectsRendererData {
+    pub material_handle: RendererMaterialHandle,
+    pub material_parameters: HashMap<String, MaterialParameter>,
+    pub influence: f32,
+}
 
 // --- Color adjustments effect ---
 

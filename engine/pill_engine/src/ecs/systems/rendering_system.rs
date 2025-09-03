@@ -1,5 +1,5 @@
 use crate::{
-    config::RENDERING_SYSTEM, ecs::{ components::{postprocessing_volume_component, transform_component, volume::Volume3D}, scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, PostprocessingVolumeComponent, TransformComponent, UpdatePhase }, engine::{self, Engine}, graphics::{ compose_render_queue_key, PostprocessingEffect, RenderQueueItem, RenderQueueKey, RendererMaterialHandle }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
+    config::RENDERING_SYSTEM, ecs::{ components::{postprocessing_volume_component, transform_component, volume::Volume3D}, scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, PostprocessingVolumeComponent, TransformComponent, UpdatePhase }, engine::{self, Engine}, graphics::{ compose_render_queue_key, PostprocessingEffect, PostprocessingEffectsRendererData, RenderQueueItem, RenderQueueKey, RendererMaterialHandle }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 use pill_core::{ warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer, Vector3f };
 use std::{ collections::HashMap, ops::Range, time::Instant };
@@ -38,27 +38,26 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
     // Extract values before calling renderer
-    let position = transform_component.position.clone();
-    let rotation = transform_component.rotation.clone();
-    let fov = camera_component.fov;
-    let aspect_value = camera_component.aspect.get_value().clone();
-    let range = camera_component.range.clone();
-    let clear_color = camera_component.clear_color.clone();
+    let active_camera_position = transform_component.position.clone();
+    let active_camera_rotation = transform_component.rotation.clone();
+    let active_camera_fov = camera_component.fov;
+    let active_camera_aspect_value = camera_component.aspect.get_value().clone();
+    let active_camera_range = camera_component.range.clone();
+    let active_camera_clear_color = camera_component.clear_color.clone();
 
     // Update camera in the renderer
     engine.renderer.update_camera(
         active_camera_renderer_handle,
-        position,
-        rotation,
-        fov,
-        aspect_value,
-        range,
-        clear_color
+        active_camera_position,
+        active_camera_rotation,
+        active_camera_fov,
+        active_camera_aspect_value,
+        active_camera_range,
+        active_camera_clear_color
     )?;
 
-    // 2. Get postprocessing volumes
+    // 2. Get postprocessing effects from postprocessing volumes
     timer.record("Get postprocessing volumes");
-
 
 
      // Find all postprocessing volumes affecting active camera.
@@ -68,17 +67,16 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     // their intensity depening on the camera position (caluclated here)
     // Then in render pass, iterate over effects, get material from each and update its parameters buffer
     // Then bind material and draw full screen triangle
-    {
+   let mut postprocessing_effects_to_apply: Vec<PostprocessingEffectsRendererData> = {
+
+        let mut postprocessing_effects: Vec<PostprocessingEffectsRendererData> = Vec::new();
         let active_scene = engine.scene_manager.get_active_scene()?;
-
-        let mut postprocess_effects_to_apply: Vec<(RendererMaterialHandle, HashMap<String, MaterialParameter>)> = vec![];
-
         for (entity_handle, postprocessing_volume_component, transform_component) in active_scene.get_two_component_iterator::<PostprocessingVolumeComponent, TransformComponent>()? {
             if postprocessing_volume_component.is_enabled {
                 let postprocessing_volume_influence = if postprocessing_volume_component.is_global {
                     1.0
                 } else {
-                    postprocessing_volume_component.contains_point_falloffed(position, 0.5)
+                    postprocessing_volume_component.contains_point_falloffed(active_camera_position)
                 };
 
                 if postprocessing_volume_influence <= 0.0 {
@@ -98,13 +96,18 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                         .renderer_resource_handle
                         .unwrap();
 
-                    let effect_data: (RendererMaterialHandle, HashMap<String, MaterialParameter>) = (material_renderer_resource_handle, effect.get_parameters());
-                    postprocess_effects_to_apply.push(effect_data);
+                    postprocessing_effects.push(PostprocessingEffectsRendererData {
+                        material_handle: material_renderer_resource_handle,
+                        material_parameters: effect.get_parameters(),
+                        influence: postprocessing_volume_influence,
+                    });
                 }
             }
         }
-    }
-    
+
+        postprocessing_effects
+    };
+
     // 3. Clear the render queue
     timer.record("Clear render queue");
 
@@ -164,6 +167,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         active_camera_renderer_handle, 
         &engine.render_queue, 
         transform_component_storage,
+        postprocessing_effects_to_apply,
         egui_ui,
         0.0,
         &mut timer

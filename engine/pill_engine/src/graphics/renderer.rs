@@ -1,7 +1,7 @@
 use crate::{ 
     ecs::{
         CameraAspectRatio, CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
-    }, engine::Engine, graphics::RenderQueueItem, internal::{MaterialParameter, MaterialTexture}, resources::{
+    }, engine::Engine, graphics::{postprocessing_effects, PostprocessingEffectsRendererData, RenderQueueItem}, internal::{MaterialParameter, MaterialTexture}, resources::{
         MaterialHandle, 
         MeshData, 
         MeshHandle, 
@@ -112,11 +112,9 @@ pub trait PillRenderer {
 
     fn render(&mut self, 
         renderer_camera_handle: RendererCameraHandle,
-        //active_camera_entity_handle: EntityHandle,
-        //active_camera_component: &CameraComponent,
         render_queue: &Vec::<RenderQueueItem>, 
-        //camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        postprocessing_effects: Vec<PostprocessingEffectsRendererData>,
         egui_ui:  Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer

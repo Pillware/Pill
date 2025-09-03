@@ -145,6 +145,11 @@ impl PostprocessingVolumeComponentBuilder {
         self
     }
 
+    pub fn falloff(mut self, falloff: f32) -> Self {
+        self.component.falloff = falloff;
+        self
+    }
+
     pub fn bounding_box(mut self, bounding_box: BoundingBox) -> Self 
     {
         self.component.bounding_box = bounding_box;
@@ -168,6 +173,7 @@ pub struct PostprocessingVolumeComponent {
     pub is_enabled: bool,
     pub is_global: bool,
     pub bounding_box: BoundingBox,
+    pub falloff: f32,
     pub effects: PillTraitTypeMap<dyn PostprocessingEffect, SingleStorage>,
 
     entity_handle: Option<EntityHandle>,
@@ -185,6 +191,7 @@ impl PostprocessingVolumeComponent {
             is_enabled: true,
             is_global: false,
             bounding_box: BoundingBox::new(Vector3f::new(-1.0, -1.0, -1.0), Vector3f::new(1.0, 1.0, 1.0)),
+            falloff: 0.0,
             effects: PillTraitTypeMap::new(),
             entity_handle: None,
             scene_handle: None,

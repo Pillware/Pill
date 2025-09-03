@@ -139,7 +139,8 @@ pub mod internal {
             RendererMaterialHandle,
             RendererMeshHandle,
             RendererTextureHandle,
-            RENDER_QUEUE_KEY_ORDER
+            PostprocessingEffectsRendererData,
+            RENDER_QUEUE_KEY_ORDER,
         },
         ecs::{
             Scene,
