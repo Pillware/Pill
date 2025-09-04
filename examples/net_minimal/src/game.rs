@@ -7,6 +7,7 @@ use pill_engine::internal::{
     TransformComponent,
     NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkEntityState, EntityUpdate, NetworkUpdatePayload, NetworkEntityAction,
     networking_system_client,
+    client_go_offline,
 };
 
 use pill_core::{NetworkPacket, NetworkAction, client_send, client_flush, DISTINCT_COLOR_PALETTE};
@@ -21,6 +22,16 @@ const UPDATE_FREQUENCY_SEC: f32 = 1.0 / UPDATE_FREQUENCY_HZ;
 //const REMOTE_SERVER_ADDRESS: &str = "145.223.100.1";
 const REMOTE_SERVER_ADDRESS: &str = "127.0.0.1";
 const REMOTE_SERVER_PORT: u16 = 5000;
+
+pub struct CoolDownComponent {
+    pub timer: f32,
+    pub interval: f32,
+}
+
+impl GlobalComponent for CoolDownComponent {}
+impl PillTypeMapKey for CoolDownComponent {
+    type Storage = GlobalComponentStorage<Self>;
+}
 
 pub struct PillComponent;
 
@@ -53,6 +64,7 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("NetworkingSystemClient", networking_system_client)?;
         engine.add_system("PillMovement", pill_movement_system)?;
+        engine.add_system("ConnectivitySimulation", connectivity_simulation_system)?;
 
         // Add meshes
         let pill_mesh = Mesh::new("Pill", "models/pill.obj".into());
@@ -119,6 +131,11 @@ impl PillGame for Game {
         network_manager.despawn_handlers.insert("player".into(), despawn_player);
         engine.add_global_component(network_manager);
 
+        engine.add_global_component(CoolDownComponent {
+            timer: 0.0,
+            interval: 3.0,
+        });
+
 		println!("Client will connect to {server_address} with ID {client_id}");
 
 		// Add the network component marker so the server can identify us
@@ -159,6 +176,7 @@ fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> R
     };
 
     if let NetworkSide::Client(state) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
+        // TODO: add guards for not being ready?
         client_send(
             &mut state.net,
             &NetworkPacket {
@@ -240,6 +258,24 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+fn connectivity_simulation_system(engine: &mut Engine) -> Result<()> {
+    let reset_key_pressed = engine.get_global_component_mut::<InputComponent>()?.get_key(KeyboardKey::KeyC);
+    let timer = engine.get_global_component_mut::<CoolDownComponent>()?.timer;
+    let interval = engine.get_global_component_mut::<CoolDownComponent>()?.interval;
+
+    if timer > interval {
+        if reset_key_pressed {
+            println!("Simulating connectivity loss");
+            client_go_offline(engine, "Simulated loss of connection")?;
+            engine.get_global_component_mut::<CoolDownComponent>()?.timer = 0.0;
+        }
+    } else {
+        engine.get_global_component_mut::<CoolDownComponent>()?.timer += engine.get_global_component::<TimeComponent>()?.delta_time;
+    }
+
+    Ok(())
+}
+
 fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
     let my_id = engine.get_global_component_mut::<NetworkManagerComponent>()?.my_id;
     let scene = engine.get_active_scene_handle()?;
@@ -268,12 +304,17 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
             Err(_) => engine.add_resource(Mesh::new("pill", "models/pill.obj".into()))?,
         };
 
-        let mat = engine.add_resource::<Material>(
-        Material::builder(&network_entity_id.to_string())
-            .color("tint", Color::new(r, g, b))?
-            .scalar("specularity", 0.5)?
-            .build()
-		)?;
+        let mat = match engine.get_resource_handle::<Material>("pill_other") {
+            Ok(h) => h,
+            Err(_) => {
+                engine.add_resource::<Material>(
+                    Material::builder("pill_other")
+                        .color("tint", Color::new(r, g, b))?
+                        .scalar("specularity", 0.5)?
+                        .build()
+                    )?
+            }
+        };
 
         (mesh, mat)
     };
@@ -298,7 +339,6 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
 
 fn despawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent) -> Result<()> {
     let my_id = engine.get_global_component_mut::<NetworkManagerComponent>()?.my_id;
-    let scene = engine.get_active_scene_handle()?;
     println!("[DESPAWN] Despawning player with nid{ } for cid {}", net_state_component.network_entity_id, my_id);
 
     let mut to_despawn = Vec::new();

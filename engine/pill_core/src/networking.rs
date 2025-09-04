@@ -140,6 +140,11 @@ pub fn client_connect(bind: &str, client_id: u64) -> Result<NetworkClient> {
     })
 }
 
+pub fn client_disconnect(net: &mut NetworkClient) -> Result<()> {
+    net.transport.disconnect();
+    Ok(())
+}
+
 pub fn server_update(net: &mut NetworkServer, dt: Duration) -> Result<()> {
     net.server.update(dt);
     net.transport.update(dt, &mut net.server)?;

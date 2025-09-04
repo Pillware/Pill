@@ -116,7 +116,8 @@ pub use systems::networking_system::{
     networking_system_server,
     EntityUpdate,
     NetworkUpdatePayload,
-    NetworkEntityAction
+    NetworkEntityAction,
+    client_go_offline
 };
 
 // - Other

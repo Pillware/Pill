@@ -90,6 +90,7 @@ pub use networking::{
     server_update,
     server_get_events,
     client_connect,
+    client_disconnect,
     client_send,
     client_update,
     client_get_events,

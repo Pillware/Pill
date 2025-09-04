@@ -69,7 +69,7 @@ type InterpolationHookFn = fn(&mut Engine) -> Result<()>;
 // Global state of networking in this instance of the engine
 pub struct NetworkManagerComponent {
     pub side: NetworkSide,
-    pub my_id: u64, // Client ID
+    pub my_id: u64, // Client ID for this instance (0 for server)
     pub tick: u64,
     pub accumulator: f32, // running counter to reduce the tick rate
     pub timeout: f32,

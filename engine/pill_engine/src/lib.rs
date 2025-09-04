@@ -164,6 +164,7 @@ pub mod internal {
             NetworkUpdatePayload,
             NetworkEntityAction,
             NetworkSide,
+            client_go_offline
         },
         resources::{
             Texture,
