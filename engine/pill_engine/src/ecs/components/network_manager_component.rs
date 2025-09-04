@@ -53,7 +53,7 @@ pub struct Session {
 pub struct ServerState {
     pub net: NetworkServer,
     pub world_epoch: u64,
-    pub default_offline_policy: OfflinePolicy,
+    pub offline_policy: OfflinePolicy,
     pub sessions: HashMap<ClientId, Session>,
 }
 
@@ -94,7 +94,7 @@ impl NetworkManagerComponent {
             side: NetworkSide::Server(ServerState {
                 net: server,
                 world_epoch: 1,
-                default_offline_policy: OfflinePolicy::Despawn,
+                offline_policy: OfflinePolicy::Despawn,
                 sessions: HashMap::new(),
             }),
             my_id: 0, // Server does not have a client ID

@@ -3,6 +3,7 @@ use log::debug;
 use pill_core::{NetworkClient, client_connect, client_update, client_get_events, server_update, server_get_events, client_send, server_broadcast,
     server_broadcast_except, server_send_one, client_flush, server_flush, NetworkPacket, NetworkAction, ExitNotice, is_not_ready};
 
+use crate::ecs::components::network_manager_component::OfflinePolicy;
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
 use crate::ecs::{EntityHandle, TransformComponent, TimeComponent, NetworkStateComponent, NetworkEntityState, NetworkSide, NetworkManagerComponent, ConnectionState, ClientState};
@@ -177,55 +178,57 @@ fn pump_transport(engine: &mut Engine) -> Result<()> {
 fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
     let mut updates:    Vec<NetworkUpdatePayload> = Vec::new();
     let mut join_cids:  Vec<u64>                  = Vec::new();
-    let mut despawn_cids: Vec<u64>                  = Vec::new();
-    let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+    let mut exit_cids: Vec<u64>                  = Vec::new();
+    {
+        let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
 
-    match &mut state.side {
-        NetworkSide::Client(state) => {
-            match client_get_events(&mut state.net) {
-                Ok(msgs) => {
-                    for msg in &msgs {
-                        if msg.tag == NetworkAction::Update {
-                            let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                            debug!(
-                                "[Client] ◂ received pkt from srv at time {}", pkt.timestamp
-                            );
-                            updates.push(pkt);
-                        } else if msg.tag == NetworkAction::Exit {
-                            let notice: ExitNotice = bincode::deserialize(&msg.data)
-                              .unwrap_or(ExitNotice { reason: "Server exit".into(), when_ms: 0 });
-                            println!("[Client] Server Exit: {} (t={})", notice.reason, notice.when_ms);
-                            mark_disconnected(engine, &notice.reason)?;
+        match &mut state.side {
+            NetworkSide::Client(state) => {
+                match client_get_events(&mut state.net) {
+                    Ok(msgs) => {
+                        for msg in &msgs {
+                            if msg.tag == NetworkAction::Update {
+                                let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
+                                debug!(
+                                    "[Client] ◂ received pkt from srv at time {}", pkt.timestamp
+                                );
+                                updates.push(pkt);
+                            } else if msg.tag == NetworkAction::Exit {
+                                let notice: ExitNotice = bincode::deserialize(&msg.data)
+                                  .unwrap_or(ExitNotice { reason: "Server exit".into(), when_ms: 0 });
+                                println!("[Client] Server Exit: {} (t={})", notice.reason, notice.when_ms);
+                                mark_disconnected(engine, &notice.reason)?;
+                            }
                         }
                     }
+                    Err(e) if is_not_ready(&e) => {
+                        println!("[Client] ▸ not connected yet – update skipped");
+                        return Ok(updates);
+                    }
+                    Err(e) => return Err(e),
                 }
-                Err(e) if is_not_ready(&e) => {
-                    println!("[Client] ▸ not connected yet – update skipped");
-                    return Ok(updates);
-                }
-                Err(e) => return Err(e),
             }
-        }
 
-        NetworkSide::Server(state) => {
-            for (cid, msg) in server_get_events(&mut state.net)? {
-                println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
+            NetworkSide::Server(state) => {
+                for (cid, msg) in server_get_events(&mut state.net)? {
+                    println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
 
-                if msg.tag == NetworkAction::Update {
-                    let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                    println!(
-                        "[Server] ◂ received pkt from cid={cid} at time {}", pkt.timestamp
-                    );
-                    updates.push(pkt);
-                } else if msg.tag == NetworkAction::Join {
-                    println!("[Server] Client {cid} JOIN with cid={cid}");
-                    join_cids.push(cid);
-                } else if msg.tag == NetworkAction::Exit {
-                    println!("[Server] Client {cid} EXIT");
-                    // TODO: please review - we might not want to despawn all or just ghost-posess
-                    // the player with AI in some games - or maybe we want to keep the entities
-                    // For now this needs to despawn all entities owned by this client
-                    despawn_cids.push(cid);
+                    if msg.tag == NetworkAction::Update {
+                        let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
+                        println!(
+                            "[Server] ◂ received pkt from cid={cid} at time {}", pkt.timestamp
+                        );
+                        updates.push(pkt);
+                    } else if msg.tag == NetworkAction::Join {
+                        println!("[Server] Client {cid} JOIN with cid={cid}");
+                        join_cids.push(cid);
+                    } else if msg.tag == NetworkAction::Exit {
+                        println!("[Server] Client {cid} EXIT");
+                        // TODO: please review - we might not want to despawn all or just ghost-posess
+                        // the player with AI in some games - or maybe we want to keep the entities
+                        // For now this needs to despawn all entities owned by this client
+                        exit_cids.push(cid);
+                    }
                 }
             }
         }
@@ -235,8 +238,20 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
         send_existing_entities(engine, join_cids)?;
     }
 
-    if !despawn_cids.is_empty() {
-        despawn_entities(engine, despawn_cids)?;
+    if !exit_cids.is_empty() {
+        let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+        let policy = state.server_mut().map(|s| s.offline_policy).unwrap_or(OfflinePolicy::Despawn);
+        match policy {
+            OfflinePolicy::Despawn => {
+                despawn_entities(engine, exit_cids)?;
+            },
+            OfflinePolicy::Freeze => {
+                println!("Freezing entities from disconnected clients is not implemented yet");
+            },
+            OfflinePolicy::AI => {
+                println!("AI takeover for entities from disconnected clients is not implemented yet");
+            }
+        }
     }
 
 	Ok(updates)
