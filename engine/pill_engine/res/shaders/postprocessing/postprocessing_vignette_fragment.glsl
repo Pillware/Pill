@@ -2,17 +2,31 @@
 
 layout(location=0) in vec2 in_texture_coordinates;
 
-layout(set = 0, binding = 0) uniform texture2D scene_texture;
-layout(set = 0, binding = 1) uniform sampler scene_sampler;
+// Input engine parameters
+layout(set=0, binding=0) uniform engine {
+    float delta_time; 
+};
 
-layout(set = 1, binding = 0) uniform material {
+// Input camera parameters
+layout(set=1, binding=0) uniform camera {
+    vec3 camera_position; 
+    mat4 camera_view_projection;
+};
+
+// Input material parameters
+layout(set=2, binding=0) uniform material {
     vec2  screen_resolution; // xy = pixels
     float strength; // 0..1 (1 = strongest darkening at edges)
     float extent;   // 0..1 radius where falloff starts (from center)
     float falloff_width;     // 0..1 how wide the falloff is
 } material;
 
-layout(location = 0) out vec4 out_color;
+// Input material textures
+layout(set=3, binding=0) uniform texture2D scene_texture;
+layout(set=3, binding=1) uniform sampler scene_sampler;
+
+// Output data
+layout(location=0) out vec4 out_color;
 
 void main() {
     vec3 scene_color = texture(sampler2D(scene_texture, scene_sampler), in_texture_coordinates).rgb;

@@ -52,4 +52,5 @@ pub use shader::{
     ShaderTextureSlot,
     ShaderParameterSlot,
     ShaderParameterType,
+    ShaderType,
 };

@@ -96,6 +96,7 @@ pub mod game {
             ShaderParameterSlot,
             ShaderTextureSlot,
             ShaderParameterType,
+            ShaderType
         },
         graphics::{
             ColorAdjustmentsPostprocessingEffect,
@@ -139,7 +140,8 @@ pub mod internal {
             RendererMaterialHandle,
             RendererMeshHandle,
             RendererTextureHandle,
-            PostprocessingEffectsRendererData,
+            PostprocessingVolumeRendererData,
+            PostprocessingEffectRendererData,
             RENDER_QUEUE_KEY_ORDER,
         },
         ecs::{

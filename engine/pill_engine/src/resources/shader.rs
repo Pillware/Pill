@@ -45,6 +45,12 @@ use std::{
     ops::{Range, RangeInclusive} 
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShaderType {
+    Mesh,
+    Fullscreen,
+}
+
 #[derive(Debug, Clone)]
 pub enum ShaderParameterType {
     Scalar,
@@ -103,6 +109,8 @@ pub struct Shader {
     #[readonly]
     pub name: String,
     #[readonly]
+    pub shader_type: ShaderType,
+    #[readonly]
     pub vertex_shader_resource_loader: ResourceLoader,
     #[readonly]
     pub fragment_shader_resource_loader: ResourceLoader,
@@ -125,7 +133,8 @@ impl Shader {
     // TODO: Parse shader files and create slots automatically as well as pass_engine_parameters and pass_camera_parameters options
 
     pub fn new(
-        name: &str, 
+        name: &str,
+        shader_type: ShaderType,
         vertex_shader_resource_loader: ResourceLoader, 
         fragment_shader_resource_loader: ResourceLoader,
         parameter_slots: HashMap<String, ShaderParameterSlot>,
@@ -135,6 +144,7 @@ impl Shader {
     ) -> Self {
         Self {
             name: name.to_string(),
+            shader_type,
             vertex_shader_resource_loader,
             fragment_shader_resource_loader,
             parameter_slots,
@@ -213,6 +223,7 @@ impl Resource for Shader {
         // Load data
         let renderer_resource_handle = engine.renderer.create_shader(
             &self.name, 
+            self.shader_type.clone(),
             &vertex_shader_bytes, 
             &fragment_shader_bytes,
             &self.texture_slots,

@@ -1,4 +1,5 @@
 use pill_core::{debug, EngineError, LogContext, PillStyle, RendererError};
+use pill_engine::game::ShaderType;
 use pill_engine::internal::{ShaderParameterSlot, ShaderTextureSlot};
 use std::collections::HashMap;
 use anyhow::{Error, Result};
@@ -10,6 +11,7 @@ pub enum ShaderBindGroupLayout {
 
 pub struct RendererShader {
     pub name: String,
+    pub shader_type: ShaderType,
     pub render_pipeline: wgpu::RenderPipeline,
 
     pub parameter_slots: HashMap<String, ShaderParameterSlot>,
@@ -28,6 +30,7 @@ use naga::back::wgsl;
 impl RendererShader {
     pub fn new(
         name: &str,
+        shader_type: ShaderType,
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         depth_format: Option<wgpu::TextureFormat>,
@@ -186,12 +189,22 @@ impl RendererShader {
         // Create color target states that specifies what what color outputs wgpu should set up
         let color_target_states = &[Some(wgpu::ColorTargetState { 
             format: color_format,
-            blend: Some(wgpu::BlendState {
+            blend: if shader_type == ShaderType::Fullscreen { None } else { Some(wgpu::BlendState {
                 alpha: wgpu::BlendComponent::REPLACE,
                 color: wgpu::BlendComponent::REPLACE,
-            }),
+            })},
             write_mask: wgpu::ColorWrites::ALL,
         })];
+
+        let depth_stencil_state = if shader_type == ShaderType::Fullscreen { None } else {
+            depth_format.map(|format| wgpu::DepthStencilState {
+                format,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less, // Specifies when to discard a new pixel. Using LESS means pixels will be drawn front to back
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            })
+        };
 
         let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
             label: Some(&format!("{}_render_pipeline", name)),
@@ -199,7 +212,7 @@ impl RendererShader {
             vertex: wgpu::VertexState { 
                 module: &vertex_shader,
                 entry_point: Some("main"),
-                buffers: vertex_layouts, // Specifies structure of vertices that will be passed to the vertex shader
+                buffers: if shader_type == ShaderType::Fullscreen { &[] } else { vertex_layouts }, // Specifies structure of vertices that will be passed to the vertex shader
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -212,18 +225,12 @@ impl RendererShader {
                 topology: wgpu::PrimitiveTopology::TriangleList, // Each three vertices will correspond to one triangle
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw, // Specifies how to determine whether a given triangle is facing forward or not (FrontFace::Ccw means that a triangle is facing forward if the vertices are arranged in a counter clockwise direction)
-                cull_mode: Some(wgpu::Face::Back), // Triangles that are not considered facing forward are culled (not included in the render) as specified by CullMode::Back            
-                polygon_mode: wgpu::PolygonMode::Fill, // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE     
+                cull_mode: if shader_type == ShaderType::Fullscreen { None } else { Some(wgpu::Face::Back) }, // Triangles that are not considered facing forward are culled (not included in the render) as specified by CullMode::Back
+                polygon_mode: wgpu::PolygonMode::Fill, // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                 conservative: false, // Requires Features::CONSERVATIVE_RASTERIZATION
-                unclipped_depth: true, // Requires Features::DEPTH_CLAMPING
+                unclipped_depth: if shader_type == ShaderType::Fullscreen { false } else { true }, // Requires Features::DEPTH_CLAMPING
             },
-            depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
-                format,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less, // Specifies when to discard a new pixel. Using LESS means pixels will be drawn front to back
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil: depth_stencil_state,
             multisample: wgpu::MultisampleState {
                 count: 1, // Determines how many samples pipeline will use (Multisampling)
                 mask: !0, // Specifies which samples should be active
@@ -237,6 +244,7 @@ impl RendererShader {
 
         let pipeline = Self { 
             name: name.to_string(),
+            shader_type,
             render_pipeline,
             parameter_slots: parameter_slots.clone(),
             textures_bind_group_layout,

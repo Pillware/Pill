@@ -19,6 +19,7 @@ impl PillGame for Game {
 		engine.register_component::<AudioListenerComponent>(active_scene)?;
 		engine.register_component::<AudioSourceComponent>(active_scene)?;
 		engine.register_component::<TagAlphaComponent>(active_scene)?;
+		engine.register_component::<PostprocessingVolumeComponent>(active_scene)?;
 
 		// Add systems
         engine.add_system("rotation_system", rotation_system)?;
@@ -29,6 +30,7 @@ impl PillGame for Game {
 		let cartoon_shader_handle = engine.add_resource(
             Shader::new(
                 "cartoon", 
+				ShaderType::Mesh,
                 ResourceLoader::Path("shaders/default_vertex.glsl".into()),
                 ResourceLoader::Path("shaders/cartoon_fragment.glsl".into()),
                 vec![
@@ -146,13 +148,16 @@ impl PillGame for Game {
 			.with_component(TagAlphaComponent {})
 			.build();
 
+let mut col = ColorAdjustmentsPostprocessingEffect::new();
+		col.exposure = 1.2;
+
 		engine.build_entity(active_scene)
 			.with_component(TransformComponent::builder()
 				.position(Vector3f::new(0.0, -1.0, 0.0))
 				.build())
 			.with_component(PostprocessingVolumeComponent::builder()
 				.is_global(true)
-				.add_effect(ColorAdjustmentsPostprocessingEffect::new())?
+				.add_effect(col)?
 				.build())
 			.build();
 

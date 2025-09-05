@@ -22,7 +22,7 @@ impl RendererTexture {
     pub fn new_texture(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        name: Option<&str>,
+        name: &str,
         image_data: &image::DynamicImage,
         texture_type: TextureType,
     ) -> Result<Self> {
@@ -44,7 +44,7 @@ impl RendererTexture {
 
         // Create texture
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: name,
+            label: Some(name),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -115,10 +115,59 @@ impl RendererTexture {
         Ok(texture)
     }
 
+    pub fn create_scene_texture(
+        device: &wgpu::Device,
+        surface_configuration: &wgpu::SurfaceConfiguration,
+        name: &str,
+    ) -> Result<Self> {
+
+        // Get size
+        let size = wgpu::Extent3d { // Scene texture needs to be the same size as window
+            width: surface_configuration.width,
+            height: surface_configuration.height,
+            depth_or_array_layers: 1,
+        };
+
+        // Create texture
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(name),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: surface_configuration.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING, // Rendering to this texture so RENDER_ATTACHMENT flag is needed
+            view_formats: &[],
+        });
+
+        // Create texture view
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Create sampler
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        // Create final texture
+        let texture  = Self {
+            texture,
+            texture_view,
+            sampler,
+        };
+
+        Ok(texture)
+    }
+
     pub fn new_depth_texture(
         device: &wgpu::Device,
         surface_configuration: &wgpu::SurfaceConfiguration,
-        label: &str,
+        name: &str,
     ) -> Result<Self> {
 
         // Get size
@@ -130,7 +179,7 @@ impl RendererTexture {
 
          // Create texture
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(label),
+            label: Some(name),
             size,
             mip_level_count: 1,
             sample_count: 1,

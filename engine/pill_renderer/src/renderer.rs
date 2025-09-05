@@ -1,23 +1,16 @@
 use crate::{
     config::MAX_INSTANCE_PER_DRAWCALL_COUNT, 
+    drawers::{egui_drawer::EguiDrawer, mesh_drawer::MeshDrawer, postprocessing_drawer::PostprocessingDrawer}, 
     instance::Instance, 
-    drawers::mesh_drawer::MeshDrawer, 
-    drawers::egui_drawer::EguiDrawer,
     resources::{
-        RendererResourceStorage,
-        RendererCamera, 
-        RendererMaterial, 
-        RendererMesh, 
-        RendererShader, 
-        RendererTexture, 
-        Vertex
+        RendererCamera, RendererMaterial, RendererMesh, RendererResourceStorage, RendererShader, RendererTexture, Vertex
     }
 };
 use indexmap::IndexMap;
 
-use pill_engine::internal::{
-    CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, PostprocessingEffectsRendererData, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
-};
+use pill_engine::{game::ShaderType, internal::{
+    CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, PostprocessingVolumeRendererData, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
+}};
 
 use pill_core::{ 
     debug, info, Color, LogContext, PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer, Vector3f 
@@ -56,6 +49,7 @@ impl PillRenderer for Renderer {
     fn create_shader(
         &mut self, 
         name: &str, 
+        shader_type: ShaderType,
         vertex_shader_bytes: &[u8], 
         fragment_shader_bytes: &[u8], 
         texture_slots: &HashMap<String, ShaderTextureSlot>,
@@ -65,6 +59,7 @@ impl PillRenderer for Renderer {
     ) -> Result<RendererShaderHandle> {
         let shader = RendererShader::new(
             name,
+            shader_type,
             &self.state.device,
             self.state.color_format,
             Some(self.state.depth_format),
@@ -104,7 +99,7 @@ impl PillRenderer for Renderer {
     }
 
     fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle> {
-        let texture = RendererTexture::new_texture(&self.state.device, &self.state.queue, Some(name), image_data, texture_type)?;
+        let texture = RendererTexture::new_texture(&self.state.device, &self.state.queue, name, image_data, texture_type)?;
         let handle = self.state.renderer_resource_storage.textures.insert(texture);
         Ok(handle)
     }
@@ -212,7 +207,7 @@ impl PillRenderer for Renderer {
         renderer_camera_handle: RendererCameraHandle,
         render_queue: &Vec<RenderQueueItem>, 
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        postprocessing_effects: Vec<PostprocessingEffectsRendererData>,
+        postprocessing_effects: &Vec<PostprocessingVolumeRendererData>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer
@@ -240,9 +235,13 @@ pub struct State {
     window_size: winit::dpi::PhysicalSize<u32>, 
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
+    // Target
+    scene_texture: RendererTexture,
+    scene_texture_bind_group: Option<wgpu::BindGroup>,
     depth_texture: RendererTexture,
     // Drawers
     mesh_drawer: MeshDrawer,
+    postprocessing_drawer: PostprocessingDrawer,
     egui_drawer: EguiDrawer,
     // Other
     camera_bind_group_layout: wgpu::BindGroupLayout,
@@ -341,6 +340,31 @@ impl State {
             )
             .context("Failed to create depth texture")?;
 
+
+            // aaaaaaaaaaaaa scene texture
+
+        let scene_texture  = RendererTexture::create_scene_texture(
+            &device,
+            &surface_configuration,
+            "scene_texture"
+        ).context("Failed to create scene texture")?;
+
+        // let scene_texture_bind_group = {
+        //     let texture_view = scene_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        //     device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //         layout: &scene_texture_bind_group_layout,
+        //         entries: &[wgpu::BindGroupEntry {
+        //             binding: 0,
+        //             resource: wgpu::BindingResource::TextureView(&texture_view),
+        //         }],
+        //         label: Some("scene_texture_bind_group"),
+        //     })
+        // };
+
+
+
+
+
         // 6. Define camera bind group layout
         // Each camera instance has the same bind group layout is we define it here once
         let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -361,8 +385,9 @@ impl State {
         let renderer_resource_storage = RendererResourceStorage::new(&device, &config)?;
 
         // 8. Drawers
-        let (mesh_drawer, egui_drawer) = {
+        let (mesh_drawer, egui_drawer, postprocessing_drawer) = {
             let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
+            let postprocessing_drawer = PostprocessingDrawer::new();
             let egui_drawer = EguiDrawer::new(
                 &device,
                 surface_configuration.format,
@@ -370,7 +395,7 @@ impl State {
                 1,
                 window_ref,
             );
-            (mesh_drawer, egui_drawer)
+            (mesh_drawer, egui_drawer, postprocessing_drawer)
         };
 
         // 9. Profiler
@@ -399,9 +424,13 @@ impl State {
             window_size,
             color_format,
             depth_format,
+            // Targets
+            scene_texture,
+            scene_texture_bind_group: None,
             depth_texture,
             // Drawers
             mesh_drawer,
+            postprocessing_drawer,
             egui_drawer,
             // Other
             camera_bind_group_layout,
@@ -431,7 +460,7 @@ impl State {
         renderer_camera_handle: RendererCameraHandle,
         render_queue: &Vec<RenderQueueItem>, 
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        postprocessing_effects: Vec<PostprocessingEffectsRendererData>,
+        postprocessing_effects: &Vec<PostprocessingVolumeRendererData>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer
@@ -478,9 +507,11 @@ impl State {
         {
             timer.record("Create render pass attachments");
 
+            // Render scene to the postprocess texture
+
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view, // Specifies what texture to save the colors to
+                view: &self.scene_texture.texture_view, // Specifies what texture to save the colors to
                 resolve_target: None, // Specifies what texture will receive the resolved output
                 ops: wgpu::Operations { // Specifies what to do with the colors on the screen
                     load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
@@ -517,6 +548,25 @@ impl State {
 
             timer.end_context()?;
         }  
+
+        // Render postprocessing 
+        {
+            timer.begin_context("Postprocessing Drawer");
+
+            self.postprocessing_drawer.record_draw_commands(
+                &self.device,
+                &self.queue, 
+                &mut encoder,
+                &view, 
+                postprocessing_effects,
+                &renderer_camera,
+                &mut self.renderer_resource_storage,
+                timer,
+                //&mut self.profiler
+            )?;
+
+            timer.end_context()?;
+        }
 
         // Render egui UI
         {

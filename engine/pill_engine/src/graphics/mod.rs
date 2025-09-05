@@ -30,7 +30,8 @@ pub use render_queue::{
 
 pub use postprocessing_effects::{
     PostprocessingEffect,
-    PostprocessingEffectsRendererData,
+    PostprocessingVolumeRendererData,
+    PostprocessingEffectRendererData,
     ColorAdjustmentsPostprocessingEffect,
     register_color_adjustments_postprocessing_effect,
     VignettePostProcessingEffect,

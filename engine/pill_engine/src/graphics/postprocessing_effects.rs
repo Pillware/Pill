@@ -1,5 +1,5 @@
 use crate::{
-    config::*, ecs::{ Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle }, engine::Engine, game::{ResourceLoader, Shader, ShaderParameterSlot, ShaderTextureSlot}, graphics::{ compose_render_queue_key, RenderQueueKey, RendererMaterialHandle }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
+    config::*, ecs::{ Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle }, engine::Engine, game::{ResourceLoader, Shader, ShaderParameterSlot, ShaderTextureSlot}, graphics::{ compose_render_queue_key, RenderQueueKey, RendererMaterialHandle }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, ShaderType }
 };
 use pill_core::{
     get_type_name, impl_trait_accessible, BoundingBox, Color, EngineError, OptionStorage, PillTraitTypeMap, PillTypeMap, PillTypeMapKey, SingleStorage, TraitAccessible, TraitAccessor, Vector2f, Vector3f
@@ -21,7 +21,11 @@ pub trait PostprocessingEffect: Any + Send {
     fn get_parameters(&self) -> HashMap<String, MaterialParameter>;
 }
 
-pub struct PostprocessingEffectsRendererData {
+pub struct PostprocessingVolumeRendererData {
+    pub effect_data: Vec<PostprocessingEffectRendererData>,
+}
+
+pub struct PostprocessingEffectRendererData {
     pub material_handle: RendererMaterialHandle,
     pub material_parameters: HashMap<String, MaterialParameter>,
     pub influence: f32,
@@ -91,6 +95,7 @@ pub fn register_color_adjustments_postprocessing_effect(engine: &mut Engine) -> 
     engine.add_default_resource(
         Shader::new(
             COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_NAME,
+            ShaderType::Fullscreen,
             ResourceLoader::Bytes(Box::new(*include_bytes!("../../res/shaders/postprocessing/postprocessing_vertex.glsl"))),
             ResourceLoader::Bytes(Box::new(*include_bytes!("../../res/shaders/postprocessing/postprocessing_color_adjustments_fragment.glsl"))),
             vec![
@@ -176,6 +181,7 @@ pub fn register_vignette_postprocessing_effect(engine: &mut Engine) -> Result<()
     let shader_handle = engine.add_default_resource(
         Shader::new(
             VIGNETTE_POSTPROCESSING_SHADER_NAME,
+            ShaderType::Fullscreen,
             ResourceLoader::Bytes(Box::new(*include_bytes!("../../res/shaders/postprocessing/postprocessing_vertex.glsl"))),
             ResourceLoader::Bytes(Box::new(*include_bytes!("../../res/shaders/postprocessing/postprocessing_vignette_fragment.glsl"))),
             vec![

@@ -1,5 +1,13 @@
 use crate::{
-    config::RENDERING_SYSTEM, ecs::{ components::{postprocessing_volume_component, transform_component, volume::Volume3D}, scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, PostprocessingVolumeComponent, TransformComponent, UpdatePhase }, engine::{self, Engine}, graphics::{ compose_render_queue_key, PostprocessingEffect, PostprocessingEffectsRendererData, RenderQueueItem, RenderQueueKey, RendererMaterialHandle }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
+    config::RENDERING_SYSTEM, 
+    ecs::{ 
+        components::{postprocessing_volume_component, transform_component, volume::Volume3D}, 
+        scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, PostprocessingVolumeComponent, TransformComponent, UpdatePhase 
+    }, 
+    engine::{self, Engine}, 
+    graphics::{ compose_render_queue_key, PostprocessingEffect, PostprocessingEffectRendererData, PostprocessingVolumeRendererData, RenderQueueItem, RenderQueueKey, RendererMaterialHandle }, 
+    internal::MaterialParameter, 
+    resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 use pill_core::{ warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer, Vector3f };
 use std::{ collections::HashMap, ops::Range, time::Instant };
@@ -67,11 +75,13 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     // their intensity depening on the camera position (caluclated here)
     // Then in render pass, iterate over effects, get material from each and update its parameters buffer
     // Then bind material and draw full screen triangle
-   let mut postprocessing_effects_to_apply: Vec<PostprocessingEffectsRendererData> = {
+   let postprocessing_volumes_renderer_data: Vec<PostprocessingVolumeRendererData> = {
 
-        let mut postprocessing_effects: Vec<PostprocessingEffectsRendererData> = Vec::new();
+        let mut postprocessing_effects_renderer_data: Vec<PostprocessingVolumeRendererData> = Vec::new();
+
         let active_scene = engine.scene_manager.get_active_scene()?;
         for (entity_handle, postprocessing_volume_component, transform_component) in active_scene.get_two_component_iterator::<PostprocessingVolumeComponent, TransformComponent>()? {
+            let mut postprocessing_effects: Vec<PostprocessingEffectRendererData> = Vec::new();
             if postprocessing_volume_component.is_enabled {
                 let postprocessing_volume_influence = if postprocessing_volume_component.is_global {
                     1.0
@@ -96,16 +106,24 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                         .renderer_resource_handle
                         .unwrap();
 
-                    postprocessing_effects.push(PostprocessingEffectsRendererData {
+                    postprocessing_effects.push(PostprocessingEffectRendererData {
                         material_handle: material_renderer_resource_handle,
                         material_parameters: effect.get_parameters(),
                         influence: postprocessing_volume_influence,
                     });
                 }
             }
+
+            if !postprocessing_effects.is_empty() {
+                postprocessing_effects_renderer_data.push(
+                    PostprocessingVolumeRendererData {
+                        effect_data: postprocessing_effects
+                    }
+                );
+            }
         }
 
-        postprocessing_effects
+        postprocessing_effects_renderer_data
     };
 
     // 3. Clear the render queue
@@ -167,7 +185,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         active_camera_renderer_handle, 
         &engine.render_queue, 
         transform_component_storage,
-        postprocessing_effects_to_apply,
+        &postprocessing_volumes_renderer_data,
         egui_ui,
         0.0,
         &mut timer

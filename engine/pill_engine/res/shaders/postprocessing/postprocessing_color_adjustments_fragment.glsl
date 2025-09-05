@@ -24,7 +24,7 @@ layout(set = 2, binding = 0) uniform material {
     float brightness;       // additive in display space, -1..+1 (0 = none)
     int   invert_flag;      // 1 = invert final color
     float gamma;            // >0, output = pow(color, 1/gamma), 1 = none
-} color_adjust;
+} material;
 
 // Input material textures
 layout(set=3, binding=0) uniform texture2D scene_texture;
@@ -81,30 +81,30 @@ void main() {
     vec3 adjusted_color_rgb = input_color_rgb;
 
     // 1) Exposure (assumes linear input; if in sRGB, ensure hardware decoding or de-gamma first)
-    adjusted_color_rgb *= exp2(color_adjust.exposure);
+    adjusted_color_rgb *= exp2(material.exposure);
 
     // 2) Tint (apply early to maintain color relationships)
-    adjusted_color_rgb *= color_adjust.tint;
+    adjusted_color_rgb *= material.tint;
 
     // 3) White balance (simple gain model)
-    adjusted_color_rgb = apply_white_balance_simple(adjusted_color_rgb, color_adjust.white_balance);
+    adjusted_color_rgb = apply_white_balance_simple(adjusted_color_rgb, material.white_balance);
 
     // 4) Hue rotation
-    adjusted_color_rgb = hue_rotation_matrix(color_adjust.hue) * adjusted_color_rgb;
+    adjusted_color_rgb = hue_rotation_matrix(material.hue) * adjusted_color_rgb;
 
     // 5) Saturation
-    adjusted_color_rgb = apply_saturation(adjusted_color_rgb, color_adjust.saturation);
+    adjusted_color_rgb = apply_saturation(adjusted_color_rgb, material.saturation);
 
     // 6) Contrast & Brightness
-    adjusted_color_rgb = apply_contrast_and_brightness(adjusted_color_rgb, color_adjust.contrast, color_adjust.brightness);
+    adjusted_color_rgb = apply_contrast_and_brightness(adjusted_color_rgb, material.contrast, material.brightness);
 
     // 7) Invert (optional)
-    if (color_adjust.invert_flag != 0) {
+    if (material.invert_flag != 0) {
         adjusted_color_rgb = 1.0 - adjusted_color_rgb;
     }
 
     // 8) Output gamma
-    float inverse_gamma = safe_reciprocal(max(color_adjust.gamma, 1e-6));
+    float inverse_gamma = safe_reciprocal(max(material.gamma, 1e-6));
     adjusted_color_rgb = pow(max(adjusted_color_rgb, 0.0), vec3(inverse_gamma));
 
     out_color = vec4(clamp(adjusted_color_rgb, 0.0, 1.0), 1.0);

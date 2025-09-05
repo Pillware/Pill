@@ -111,6 +111,7 @@ impl Engine {
         let default_lit_shader_handle = self.add_default_resource(
             Shader::new(
                 DEFAULT_LIT_SHADER_NAME, 
+                ShaderType::Mesh,
                 ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_vertex.glsl"))),
                 ResourceLoader::Bytes( Box::new(*include_bytes!("../res/shaders/default_lit_fragment.glsl"))),
                 vec![
@@ -129,6 +130,7 @@ impl Engine {
         let default_unlit_shader_handle = self.add_default_resource(
             Shader::new(
                 DEFAULT_UNLIT_SHADER_NAME, 
+                ShaderType::Mesh,
                 ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_vertex.glsl"))),
                 ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_unlit_fragment.glsl"))),
                 vec![

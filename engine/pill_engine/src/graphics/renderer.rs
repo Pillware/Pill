@@ -1,7 +1,7 @@
 use crate::{ 
     ecs::{
         CameraAspectRatio, CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
-    }, engine::Engine, graphics::{postprocessing_effects, PostprocessingEffectsRendererData, RenderQueueItem}, internal::{MaterialParameter, MaterialTexture}, resources::{
+    }, engine::Engine, game::ShaderType, graphics::{postprocessing_effects, PostprocessingVolumeRendererData, RenderQueueItem}, internal::{MaterialParameter, MaterialTexture}, resources::{
         MaterialHandle, 
         MeshData, 
         MeshHandle, 
@@ -53,6 +53,7 @@ pub trait PillRenderer {
     fn create_shader(
         &mut self, 
         name: &str, 
+        shader_type: ShaderType,
         vertex_shader_bytes: &[u8], 
         fragment_shader_bytes: &[u8], 
         texture_slots: &HashMap<String, ShaderTextureSlot>,
@@ -114,7 +115,7 @@ pub trait PillRenderer {
         renderer_camera_handle: RendererCameraHandle,
         render_queue: &Vec::<RenderQueueItem>, 
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        postprocessing_effects: Vec<PostprocessingEffectsRendererData>,
+        postprocessing_effects: &Vec<PostprocessingVolumeRendererData>,
         egui_ui:  Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer
