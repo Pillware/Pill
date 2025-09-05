@@ -118,7 +118,7 @@ fn default_despawn_hook(engine: &mut Engine, net_state: &NetworkStateComponent) 
 
 fn mark_disconnected(engine: &mut Engine, reason: &str) -> Result<()> {
     let time = engine.get_global_component::<TimeComponent>()?.time;
-    let mut network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+    let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
     if network_manager.is_client() {
         if let Some(client) = network_manager.client_mut() {
             if client.connection_state == ConnectionState::Disconnected {
@@ -136,7 +136,7 @@ fn mark_disconnected(engine: &mut Engine, reason: &str) -> Result<()> {
 }
 
 fn mark_connected(engine: &mut Engine) -> Result<()> {
-    let mut network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+    let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
     if network_manager.is_client() {
         if let Some(client) = network_manager.client_mut() {
             if client.connection_state == ConnectionState::Connected {
@@ -214,7 +214,7 @@ pub fn client_go_offline(engine: &mut Engine, reason: &str) -> Result<()> {
 
     // close the underlying connection
     {
-        let mut network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+        let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
         if let Some(client) = network_manager.client_mut() {
             client_disconnect(&mut client.net)?;
         }
@@ -232,7 +232,7 @@ fn pump_transport(engine: &mut Engine) -> Result<()> {
     let mut disconnect_reason: Option<String> = None;
 
     {
-        let mut network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+        let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
         match &mut network_manager.side {
             NetworkSide::Client(ref mut state) => {
                 if let Err(e) = client_update(&mut state.net, delta_time) { if is_not_ready(&e) { disconnect_reason = Some(e.to_string()); } else { return Err(e); }}
@@ -430,7 +430,7 @@ fn despawn_entities(engine: &mut Engine, despawn_cids: Vec<u64>) -> Result<()> {
 
     // Server needs to despawn them locally as well
     for entity_update in &entity_updates {
-        run_despawn_hooks(engine, entity_update);
+        run_despawn_hooks(engine, entity_update)?;
     }
 
     println!(

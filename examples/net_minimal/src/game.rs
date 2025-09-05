@@ -5,12 +5,12 @@ use rand::rngs::StdRng;
 
 use pill_engine::internal::{
     TransformComponent,
-    NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkEntityState, EntityUpdate, NetworkUpdatePayload, NetworkEntityAction,
+    NetworkManagerComponent, NetworkStateComponent, NetworkEntityState,
     networking_system_client,
     client_go_offline,
 };
 
-use pill_core::{NetworkPacket, NetworkAction, client_send, client_flush, DISTINCT_COLOR_PALETTE};
+use pill_core::DISTINCT_COLOR_PALETTE;
 
 // ----- CONSTANTS -----------------------------------------------------------
 
@@ -103,7 +103,7 @@ impl PillGame for Game {
         // Create pill entity ------------------------------------------------
         let pill = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .position(Vector3f::new(rand::thread_rng().gen_range(-2.0..=2.0), 0.0, 0.0))
+            .position(Vector3f::new(rand::rng().random_range(-2.0..=2.0), 0.0, 0.0))
             .rotation(Vector3f::new(-210.0, 0.0, 0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component.clone())?;
@@ -119,7 +119,7 @@ impl PillGame for Game {
             if args.len() > 1 {
                args[1].parse::<u64>().unwrap_or(0)
             } else {
-                rand::thread_rng().gen_range(1..=10_000_000)
+                rand::rng().random_range(1..=10_000_000)
             }
         };
 		let server_address = format!("{REMOTE_SERVER_ADDRESS}:{REMOTE_SERVER_PORT}");
@@ -137,7 +137,7 @@ impl PillGame for Game {
 		println!("Client will connect to {server_address} with ID {client_id}");
 
 		// Add the network component marker so the server can identify us
-		let network_entity_id = rand::thread_rng().gen_range(1..=1000);
+		let network_entity_id = rand::rng().random_range(1..=1000);
 		engine.add_component_to_entity(
 			active_scene,
 			pill,
@@ -194,8 +194,6 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     dir.y *= inv;
     dir.z *= inv;
 
-    let mut pending_updates: Vec<EntityUpdate> = Vec::new();
-
     for (_, transform, _, net_state) in engine.iterate_three_components_mut::<
         TransformComponent,
         PillComponent,
@@ -247,9 +245,9 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
 	let (r, g, b) = DISTINCT_COLOR_PALETTE[index];
 	// // Use network_entity_id as seed to generate a random color
 	// let mut rng = rand::rngs::StdRng::seed_from_u64(network_entity_id as u64);
-	// let r = rng.gen_range(0.2..1.0);
-	// let g = rng.gen_range(0.2..1.0);
-	// let b = rng.gen_range(0.2..1.0);
+	// let r = rng.random_range(0.2..1.0);
+	// let g = rng.random_range(0.2..1.0);
+	// let b = rng.random_range(0.2..1.0);
 
     let (mesh, mat) = {
         use pill_core::Color;
