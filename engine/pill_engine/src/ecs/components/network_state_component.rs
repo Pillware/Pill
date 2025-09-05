@@ -19,6 +19,7 @@ pub struct NetworkStateComponent{
     pub state: NetworkEntityState,
     pub network_entity_id: u64, // unique entity id in the network
     pub transform: Option<TransformComponent>,
+    pub last_transform: Option<TransformComponent>,
     pub entity_type: String, // type of entity
     // TODO: add more components (Health etc.)
 }

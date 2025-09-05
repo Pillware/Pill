@@ -16,8 +16,6 @@ use pill_core::{NetworkPacket, NetworkAction, client_send, client_flush, DISTINC
 
 // Move speed in world units per second
 const PILL_MOVE_SPEED: f32 = 3.0;
-const UPDATE_FREQUENCY_HZ: f32 = 24.0;
-const UPDATE_FREQUENCY_SEC: f32 = 1.0 / UPDATE_FREQUENCY_HZ;
 
 //const REMOTE_SERVER_ADDRESS: &str = "145.223.100.1";
 const REMOTE_SERVER_ADDRESS: &str = "127.0.0.1";
@@ -129,12 +127,12 @@ impl PillGame for Game {
         let mut network_manager = NetworkManagerComponent::new_client(&server_address, client_id)?;
         network_manager.spawn_handlers.insert("player".into(), spawn_player);
         network_manager.despawn_handlers.insert("player".into(), despawn_player);
-        engine.add_global_component(network_manager);
+        engine.add_global_component(network_manager)?;
 
         engine.add_global_component(CoolDownComponent {
             timer: 0.0,
             interval: 3.0,
-        });
+        })?;
 
 		println!("Client will connect to {server_address} with ID {client_id}");
 
@@ -148,45 +146,13 @@ impl PillGame for Game {
 				owner_id: client_id,
 				state: NetworkEntityState::Spawn,
 				transform: Some(transform_component),
+                last_transform: None,
                 entity_type: "player".into(),
 			},
 		)?;
 
         Ok(())
     }
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-//  Helper: actually send the batch of entity updates after the ECS loop.
-// ───────────────────────────────────────────────────────────────────────────
-fn flush_updates_to_server(engine: &mut Engine, updates: Vec<EntityUpdate>) -> Result<()> {
-    if updates.is_empty() {
-        return Ok(());
-    }
-
-    use bincode;
-
-    //println!("Flushing {} updates to server", updates.len());
-
-    let my_id = engine.get_global_component::<NetworkManagerComponent>()?.my_id;
-    let payload = NetworkUpdatePayload {
-        client_id: my_id as u64,
-        updates,
-        timestamp: engine.get_global_component::<TimeComponent>()?.time,
-    };
-
-    if let NetworkSide::Client(state) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
-        // TODO: add guards for not being ready?
-        client_send(
-            &mut state.net,
-            &NetworkPacket {
-                tag: NetworkAction::Update,
-                data: bincode::serialize(&payload)?,
-            },
-        )?;
-        client_flush(&mut state.net)?;
-    }
-    Ok(())
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -218,19 +184,18 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
         dir.y -= 1.0;
     }
 
-    if dir.x == 0.0 && dir.y == 0.0 {
-        return Ok(()); // nothing to do this frame
+    // Normalize XYZ
+    let len = (dir.x * dir.x + dir.y * dir.y + dir.z * dir.z).sqrt();
+    if len < 0.01 {
+        return Ok(()); // no movement
     }
-
-    // Normalize XY so diagonal speed == straight speed ---------------------
-    let len = (dir.x * dir.x + dir.y * dir.y).sqrt();
     let inv = 1.0 / len;
     dir.x *= inv;
     dir.y *= inv;
+    dir.z *= inv;
 
     let mut pending_updates: Vec<EntityUpdate> = Vec::new();
 
-    // ── first pass: move entities & collect updates -----------------------
     for (_, transform, _, net_state) in engine.iterate_three_components_mut::<
         TransformComponent,
         PillComponent,
@@ -244,16 +209,8 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
 
         {
             net_state.transform = Some(transform.clone());
-            pending_updates.push(EntityUpdate {
-                action: NetworkEntityAction::Update,
-                net_state: net_state.clone(),
-                transform: Some(transform.clone()),
-            });
-            //println!("Pushed update for entity with ID {}", net_state.network_entity_id);
         }
-    } // iterator dropped here – the &mut Engine borrow ends
-
-    flush_updates_to_server(engine, pending_updates)?;
+    }
 
     Ok(())
 }

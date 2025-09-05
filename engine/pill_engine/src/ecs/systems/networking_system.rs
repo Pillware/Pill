@@ -16,6 +16,7 @@ use std::time::Duration;
 use std::collections::HashSet;
 use bincode;
 use rand::{rng, Rng, SeedableRng};
+use cgmath::InnerSpace;
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,6 +52,12 @@ fn exp_blend(delta_time: f32) -> f32 {
 
 fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
     from + (to - from) * t.clamp(0.0, 1.0)
+}
+
+fn changed_enough(current: &TransformComponent, previous: &TransformComponent) -> bool {
+    let pos_diff = (current.position - previous.position).magnitude2();
+    let rot_diff = (current.rotation - previous.rotation).magnitude2();
+    pos_diff > 0.01 || rot_diff > 0.01
 }
 
 const LERP_RATE: f32 = 0.001;
@@ -120,12 +127,31 @@ fn mark_disconnected(engine: &mut Engine, reason: &str) -> Result<()> {
             println!("[Client] Disconnected: {reason}");
             client.connection_state = ConnectionState::Disconnected;
             client.want_reconnect = true;
-            client.backoff_ms = (client.backoff_ms.saturating_mul(2)).min(500);
-            client.next_try_s = time + (client.backoff_ms as f32 / 1000.0) + 10.0; // TODO: debug
+            client.backoff_ms = (client.backoff_ms.saturating_mul(2)).min(2_000);
+            client.next_try_s = time + (client.backoff_ms as f32 / 1000.0);
         }
     }
     Ok(())
 }
+
+fn mark_connected(engine: &mut Engine) -> Result<()> {
+    let mut network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+    if network_manager.is_client() {
+        if let Some(client) = network_manager.client_mut() {
+            if client.connection_state == ConnectionState::Connected {
+                // already connected
+                return Ok(());
+            }
+            println!("[Client] Connected to server at {}", client.server_address);
+            client.connection_state = ConnectionState::Connected;
+            client.want_reconnect = false;
+            client.backoff_ms = 500;
+            client.next_try_s = 0.0;
+        }
+    }
+    Ok(())
+}
+
 
 fn client_try_reconnect(engine: &mut Engine) -> Result<()> {
     let time = engine.get_global_component::<TimeComponent>()?.time;
@@ -133,6 +159,7 @@ fn client_try_reconnect(engine: &mut Engine) -> Result<()> {
     let my_id = network_manager.my_id;
 
     if let Some(client) = network_manager.client_mut() {
+        //println!("[Client] connection_state={:?} want_reconnect={} next_try_s={} time={}", client.connection_state, client.want_reconnect, client.next_try_s, time);
         if !(client.connection_state == ConnectionState::Disconnected && client.want_reconnect) { return Ok(()); }
         if time < client.next_try_s { return Ok(()); }
 
@@ -299,6 +326,10 @@ fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()
             engine.iterate_two_components_mut::<TransformComponent,
                                                 NetworkStateComponent>()?
         {
+            if net_state.owner_id == cid {
+                // don't reannounce entities owned by the client itself
+                continue;
+            }
             entity_updates.push(EntityUpdate {
                 action:    NetworkEntityAction::Spawn,
                 net_state: net_state.clone(),
@@ -466,15 +497,39 @@ fn send_client_updates(engine: &mut Engine) -> Result<()> {
                     continue; // skip entities not owned by this client
                 }
                println!("▸ Queuing for spawn: new entity for nid={:?} from cid={my_id}", net_state.network_entity_id);
-                let update = EntityUpdate {
+                updates.push(EntityUpdate {
                     action: NetworkEntityAction::Spawn,
                     net_state: net_state.clone(),
                     transform: Some(transform.clone()),
-                };
-                updates.push(update);
+                });
+                net_state.state = NetworkEntityState::Alive; // mark the entity as alive
+                net_state.last_transform = Some(transform.clone());
+                continue;
             }
-            net_state.state = NetworkEntityState::Alive; // mark the entity as alive
+
+            // Update transform only if it has changed since the last update
+            let need_send = match &net_state.last_transform {
+                Some(previous) => changed_enough(&transform, previous),
+                None => true,
+            };
+
+            if need_send {
+                if need_send {
+                    updates.push(EntityUpdate {
+                        action: NetworkEntityAction::Update,
+                        net_state: net_state.clone(),
+                        transform: Some(transform.clone()),
+                    });
+                    net_state.last_transform = Some(transform.clone());
+                }
+            }
         }
+
+        if updates.is_empty() {
+            // Nothing to send
+            return Ok(());
+        }
+
         let payload = NetworkUpdatePayload {
             client_id: my_id,
             updates,
@@ -592,6 +647,8 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
 
     match receive_updates(engine) {
         Ok(updates) => {
+            let got_updates = !updates.is_empty();
+
             // there is just one Update in the vector
             for update in &updates {
                 for entity_update in &update.updates {
@@ -615,9 +672,6 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                                         net_state.transform = Some(tr.clone());
                                         debug!("▸ Updating entity with nid={:?} for cid={} net_state={:?} with transform {:?}",
                                                  net_state.network_entity_id, update.client_id, net_state, tr);
-
-                                        // authoritative change on the server
-                                        //*transform = *tr;
                                         break;
                                     }
                                 }
@@ -625,6 +679,10 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                         },
                     }
                 }
+            }
+
+            if got_updates {
+                mark_connected(engine)?;
             }
         },
         Err(e) => {
