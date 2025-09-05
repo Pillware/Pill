@@ -55,6 +55,7 @@ fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
 }
 
 fn changed_enough(current: &TransformComponent, previous: &TransformComponent) -> bool {
+    // Use squared thresholds (0.1 units in postion)
     let pos_diff = (current.position - previous.position).magnitude2();
     let rot_diff = (current.rotation - previous.rotation).magnitude2();
     pos_diff > 0.01 || rot_diff > 0.01
@@ -319,6 +320,14 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
 }
 
 fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()> {
+    // Send it only if we are fully connected
+    let connected = {
+        let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
+        network_manager.client_mut().map(|c| c.connection_state == ConnectionState::Connected).unwrap_or(true)
+    };
+    if !connected {
+        return Ok(());
+    }
     // Inform every new client about all existing entities on the server
     for cid in join_cids {
         let mut entity_updates: Vec<EntityUpdate> = Vec::new();
@@ -586,6 +595,8 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                     match entity_update.action {
                         NetworkEntityAction::Spawn => {
                             println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.network_entity_id);
+                            // TODO: to verify if we need to verify if we are not spawning a
+                            // duplicate entity on the server
                             run_spawn_hooks(engine, entity_update)?;
                         },
                         NetworkEntityAction::Despawn => {

@@ -4,9 +4,6 @@ use std::{collections::{HashMap, HashSet}, time::Instant};
 use pill_core::{PillTypeMapKey, server_start, client_connect, NetworkClient, NetworkServer};
 use crate::{ecs::{EntityHandle, Component, GlobalComponent, GlobalComponentStorage, NetworkStateComponent, TransformComponent}, engine::Engine};
 
-pub type ClientId = u64;
-pub type NetEntityId = u64;
-
 // Client-side state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionState {
@@ -29,12 +26,6 @@ pub struct ClientState {
 
 // Server-side state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionStatus {
-    Offline,
-    Online
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OfflinePolicy {
     Despawn,
     Freeze,
@@ -42,19 +33,10 @@ pub enum OfflinePolicy {
 }
 
 #[derive(Debug)]
-pub struct Session {
-    pub status: SessionStatus,
-    pub offline_policy: OfflinePolicy,
-    pub owned: HashSet<NetEntityId>,
-    pub reconnect_deadline: Instant
-}
-
-#[derive(Debug)]
 pub struct ServerState {
     pub net: NetworkServer,
     pub world_epoch: u64,
     pub offline_policy: OfflinePolicy,
-    pub sessions: HashMap<ClientId, Session>,
 }
 
 pub enum NetworkSide {
@@ -95,7 +77,6 @@ impl NetworkManagerComponent {
                 net: server,
                 world_epoch: 1,
                 offline_policy: OfflinePolicy::Despawn,
-                sessions: HashMap::new(),
             }),
             my_id: 0, // Server does not have a client ID
             tick: 0,
