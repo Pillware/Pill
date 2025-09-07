@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
-use pill_core::{Color, EngineError, Vector2f};
-use crate::{game::TextureHandle, graphics::RendererTextureHandle};
+use pill_core::{enum_variant_eq, get_enum_variant_type_name, get_type_name, Color, EngineError, Vector2f};
+use crate::{game::{Engine, Shader, ShaderValueParameterType, Texture, TextureHandle}, graphics::RendererTextureHandle, resources::{shader, ShaderHandle}};
 use anyhow::{ Result, Context, Error };
 
 // --- Parameters ---
@@ -11,6 +11,17 @@ pub enum ValueParameter {
     Bool(bool),
     Color(Color),
     Vector2(Vector2f),
+}
+
+impl ValueParameter {
+    pub fn shader_type(&self) -> ShaderValueParameterType {
+        match self {
+            ValueParameter::Float(_)   => ShaderValueParameterType::Float,
+            ValueParameter::Bool(_)    => ShaderValueParameterType::Bool,
+            ValueParameter::Color(_)   => ShaderValueParameterType::Color,
+            ValueParameter::Vector2(_) => ShaderValueParameterType::Vector2,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -47,8 +58,9 @@ pub struct MaterialParametersStore {
     pub is_dirty: bool,
 }
 
-// Getters and setters
 impl MaterialParametersStore {
+
+    // --- Getters and setters ---
 
     // Float
     pub fn does_float_parameter_exist(&self, parameter_name: &str) -> bool {
@@ -274,7 +286,7 @@ impl MaterialParametersStore {
         }
     }
 
-    // Iterators
+    // --- Iterators ---
 
     pub fn value_parameters_iter(&self) -> impl Iterator<Item = (&String, &ValueParameter)> {
         self.parameters.iter().filter_map(|(key, value)| {
@@ -314,5 +326,68 @@ impl MaterialParametersStore {
                 None
             }
         })
+    }
+
+    // --- Validation ---
+
+    // On material initialize, shader is set and some parameters can be also set -> validate them, if errors detected stop initialization
+    // On shader switch clear all parameters and recreate them.
+
+
+    // Return parameters which exist in this store but do not match parameters defined in the shader
+    fn validate_parameters(&self, engine: &mut Engine, shader_handle: ShaderHandle) -> Result<Vec<EngineError>> {
+        let shader: &Shader = engine.get_resource::<Shader>(&shader_handle)?;
+
+        // Check if current parameters are defined in the shader, and match types
+        let mut parameter_validation_issues = Vec::<EngineError>::new();
+        for (parameter_name, parameter) in self.parameters.iter() {
+            match parameter {
+                MaterialParameter::Value(value_parameter) => {
+                    if let Some(slot) = shader.value_parameters_slots.get(parameter_name) {
+                        if !enum_variant_eq(&value_parameter.shader_type(), &slot.parameter_type) {
+                            parameter_validation_issues.push(EngineError::ValueMaterialParameterMismatchWrongType {
+                                parameter_name: parameter_name.to_string(),
+                                value_type: get_enum_variant_type_name(&value_parameter.shader_type()),
+                                expected_value_type: get_enum_variant_type_name(&slot.parameter_type)
+                            });
+                        }
+                    } else {
+                        parameter_validation_issues.push(EngineError::MaterialParameterMismatchNotInShader { 
+                            parameter_name: parameter_name.to_string(), 
+                            shader_name: shader.name.to_string() 
+                        });
+                    }
+                }
+                MaterialParameter::Texture(texture_parameter) => {
+                    if let Some(slot) = shader.texture_parameters_slots.get(parameter_name) {
+                        if let Some(texture_handle) = &texture_parameter.texture_handle {
+                            match engine.get_resource::<Texture>(texture_handle) {
+                                Ok(texture) => {
+                                    if !enum_variant_eq(&texture.texture_type, &slot.texture_type) {
+                                        parameter_validation_issues.push(
+                                            EngineError::TextureMaterialParameterMismatchWrongType {
+                                                parameter_name: parameter_name.to_string(),
+                                                texture_type: get_enum_variant_type_name(&texture.texture_type),
+                                                expected_texture_type: get_enum_variant_type_name(&slot.texture_type),
+                                            }
+                                        );
+                                    }
+                                }
+                                Err(_) => {
+                                    parameter_validation_issues.push(EngineError::InvalidResourceHandle(get_type_name::<Texture>()));
+                                }
+                            }
+                        }
+                    } else {
+                        parameter_validation_issues.push(EngineError::MaterialParameterMismatchNotInShader { 
+                            parameter_name: parameter_name.to_string(), 
+                            shader_name: shader.name.to_string() 
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(Vec::from(parameter_validation_issues))
     }
 }

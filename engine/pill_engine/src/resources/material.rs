@@ -390,7 +390,7 @@ impl Material {
     // If material parameter is missing, create it with default value
     // If material parameter does not exist in shader, return error
     // If material parameter does not match type declared in shader, return error
-    fn validate_parameters_against_shader(&self, engine: &mut Engine) -> Result<()> {
+    fn match_parameters_against_shader(&self, engine: &mut Engine) -> Result<()> {
         let shader: &Shader = engine.get_resource::<Shader>(&self.shader_handle)?;
 
         // Check all parameters against the shader
@@ -448,7 +448,7 @@ impl Material {
                     let shader_texture_parameter_slot = shader.texture_parameters_slots.get(parameter_name)
                         .context(EngineError::MaterialParameterSlotNotFound(parameter_name.to_string(), "Texture".to_string()))?;
                     
-                    if !enum_variant_eq(&texture, &shader_texture_parameter_slot.parameter_type) {
+                    if !enum_variant_eq(&texture_parameter., &shader_texture_parameter_slot.parameter_type) {
                         return Err(Error::new(EngineError::WrongMaterialTextureParameterType(
                             parameter_name.to_string(),
                             get_enum_variant_type_name(&ShaderTextureParameterType::Texture),

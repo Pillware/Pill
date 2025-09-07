@@ -40,9 +40,9 @@ pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static s
     path.exists().ok_or(Error::new(EngineError::InvalidAssetPath(path.display().to_string())))?;
 
     match path.extension() {
-        Some(v) => match allowed_formats.contains(&v.to_str().unwrap()) { //} v.eq(allowed_format) {
+        Some(v) => match allowed_formats.contains(&v.to_str().unwrap()) {
             true => return Ok(()),
-            false => return Err(Error::new(EngineError::InvalidAssetFormat(allowed_formats, v.to_str().unwrap().to_string()))),
+            false => return Err(Error::new(EngineError::InvalidAssetFormat(allowed_formats.join(", "), v.to_str().unwrap().to_string()))),
         },
         None => return Err(Error::new(EngineError::InvalidAssetPath(path.display().to_string()))),
     }

@@ -28,7 +28,7 @@ impl ResourceManager {
 
     // --- Slots ---
 
-    pub(crate) fn get_resource_slot<'a, T>(&'a self, resource_handle: &T::Handle) -> Result<&'a Option<T>>
+    pub(crate) fn get_resource_slot<T>(&self, resource_handle: &T::Handle) -> Result<&Option<T>>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         // Get resource storage
@@ -36,12 +36,12 @@ impl ResourceManager {
 
         // Get resource slot
         let resource_slot = resource_storage.data.get(resource_handle.clone())
-            .ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+            .ok_or(EngineError::InvalidResourceHandle(get_type_name::<T>()))?;
 
         Ok(resource_slot)
     }
 
-    pub(crate) fn get_resource_slot_mut<'a, T>(&'a mut self, resource_handle: &T::Handle) -> Result<&'a mut Option<T>>
+    pub(crate) fn get_resource_slot_mut<T>(&mut self, resource_handle: &T::Handle) -> Result<&mut Option<T>>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         // Get resource storage
@@ -49,7 +49,7 @@ impl ResourceManager {
 
         // Get resource slot
         let resource_slot = resource_storage.data.get_mut(resource_handle.clone())
-            .ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+            .context(EngineError::InvalidResourceHandle(get_type_name::<T>()))?;
 
         Ok(resource_slot)
     }
@@ -59,14 +59,16 @@ impl ResourceManager {
     pub(crate) fn get_resource_storage<T>(&self) -> Result<&ResourceStorage<T>>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        self.resources.get::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
+        self.resources.get::<T>()
+            .ok_or(EngineError::ResourceNotRegistered(get_type_name::<T>()).into())
     }
 
     pub(crate) fn get_resource_storage_mut<T>(&mut self) -> Result<&mut ResourceStorage<T>>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
 
-        self.resources.get_mut::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
+        self.resources.get_mut::<T>()
+            .ok_or(EngineError::ResourceNotRegistered(get_type_name::<T>()).into())
     }
 
     // --- Register - Add - Remove ---
@@ -88,12 +90,12 @@ impl ResourceManager {
 
         // Check if there is space for resource
         if resource_storage.data.len() >= resource_storage.max_resource_count {
-            return Err(Error::new(EngineError::ResourceLimitReached(get_type_name::<T>())));
+            return Err(EngineError::ResourceLimitReached(get_type_name::<T>()).into());
         }
 
         // Check if resource already exists
         if resource_storage.mapping.contains_key(&resource_name) {
-            return Err(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), resource_name.clone())));
+            return Err(EngineError::ResourceAlreadyExists(get_type_name::<T>(), resource_name.clone()).into());
         }
 
         // Insert new resource
@@ -156,7 +158,7 @@ impl ResourceManager {
         Ok(resource_handle)
     }
 
-    pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T>
+    pub fn get_resource<T>(&self, resource_handle: &T::Handle) -> Result<&T>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         // Get resource
@@ -165,7 +167,7 @@ impl ResourceManager {
         Ok(resource)
     }
 
-    pub fn get_resource_by_name<'a, T>(&'a self, name: &str) -> Result<&'a T>
+    pub fn get_resource_by_name<T>(&self, name: &str) -> Result<&T>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         // Get resource storage
@@ -181,7 +183,7 @@ impl ResourceManager {
         Ok(resource)
     }
 
-    pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T>
+    pub fn get_resource_mut<T>(&mut self, resource_handle: &T::Handle) -> Result<&mut T>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         // Get resource
@@ -190,7 +192,7 @@ impl ResourceManager {
         Ok(resource)
     }
 
-    pub fn get_resource_by_name_mut<'a, T>(&'a mut self, name: &str) -> Result<&'a mut T>
+    pub fn get_resource_by_name_mut<T>(&mut self, name: &str) -> Result<&mut T>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         // Get resource storage

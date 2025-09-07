@@ -103,7 +103,7 @@ impl SoundData {
     pub fn new(path: &PathBuf) -> Result<Self> {
         // Open sound file
         let mut sound_file = match File::open(path) {
-            Err(err) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
+            Err(error) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
             file => file?
         };
 

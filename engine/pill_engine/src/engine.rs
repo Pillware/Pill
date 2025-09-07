@@ -1,8 +1,5 @@
 use crate::{ 
-    resources::*,
-    ecs::*,
-    graphics::*,
-    config::*,
+    config::*, ecs::*, graphics::*, resources::{self, *}
 };
 
 use pill_core::{ 
@@ -295,8 +292,8 @@ impl Engine {
 
                     if update_phase == UpdatePhase::Game && stop_on_game_errors {
                         result.unwrap(); // Panic on error if configured
-                    } else if let Err(err) = result {
-                        if let Some(message) = get_game_error_message(Err(err)) {
+                    } else if let Err(error) = result {
+                        if let Some(message) = get_game_error_message(Err(error)) {
                             error!("{}", message);
                         }
                     }
@@ -737,38 +734,38 @@ impl Engine {
     }
 
     // Returns resource associated with resource handle
-    pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T> 
+    pub fn get_resource<T>(&self, resource_handle: &T::Handle) -> Result<&T> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        Ok(self.resource_manager.get_resource::<T>(resource_handle)?)
+        self.resource_manager.get_resource::<T>(resource_handle)
     }
 
     /// Returns resource specified by its name
     pub fn get_resource_by_name<T>(&self, name: &str) -> Result<&T> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        Ok(self.resource_manager.get_resource_by_name::<T>(name)?)
+        self.resource_manager.get_resource_by_name::<T>(name)
     }
 
     /// Returns handle to resource specified by the name of this resource
     pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        Ok(self.resource_manager.get_resource_handle::<T>(name)?)
+        self.resource_manager.get_resource_handle::<T>(name)
     }
 
     // Returns mutable resource associated with resource handle
-    pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T> 
+    pub fn get_resource_mut<T>(&mut self, resource_handle: &T::Handle) -> Result<&mut T> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        Ok(self.resource_manager.get_resource_mut::<T>(resource_handle)?)
+       self.resource_manager.get_resource_mut::<T>(resource_handle)
     }
 
     /// Returns mutable resource specified by its name
     pub fn get_resource_by_name_mut<T>(&mut self, name: &str) -> Result<&mut T> 
         where T: Resource<Storage = ResourceStorage::<T>>
     {
-        Ok(self.resource_manager.get_resource_by_name_mut::<T>(name)?)
+        self.resource_manager.get_resource_by_name_mut::<T>(name)
     }
 
     // Removes resource associated with resource handle from the engine 

@@ -27,7 +27,7 @@ pub enum RendererError {
 
 
 #[derive(Error, Debug, Clone)]
-pub enum EngineError<'a> {
+pub enum EngineError {
 
     // Config
     #[error("Invalid {} config file", "Game".module_object_style())]
@@ -87,8 +87,8 @@ pub enum EngineError<'a> {
     // Resource
     #[error("Path to {} is invalid: {}", "Asset".general_object_style(), .0.name_style())]
     InvalidAssetPath(String),
-    #[error("{} format is not supported. Expected one of: {:?} but is .{}", "Asset".general_object_style(), .0, .1.name_style())]
-    InvalidAssetFormat(&'a [&'a str], String),
+    #[error("{} format is not supported. Expected one of: {} but is .{}", "Asset".general_object_style(), .0, .1.name_style())]
+    InvalidAssetFormat(String, String),
     #[error("{} {} is not registered", "Resource".general_object_style(), .0.specific_object_style())]
     ResourceNotRegistered(String),
     #[error("{} {} {} already exists", "Resource".general_object_style(), .0.specific_object_style(), .1.name_style())]
@@ -116,6 +116,29 @@ pub enum EngineError<'a> {
 
 
 
+    // #[error("{} {} has wrong type ({}). Shader expects: {}", "Material Parameter".specific_object_style(), .0.name_style(), .1.specific_object_style(), .2.specific_object_style())]
+    // MaterialParameterMismatchWrongType(String, String, String),
+
+
+    #[error("{} {} has wrong type ({}). Shader expects: {}", "Value Material Parameter".specific_object_style(), .parameter_name.name_style(), .value_type.specific_object_style(), .expected_value_type.specific_object_style())]
+    ValueMaterialParameterMismatchWrongType {
+        parameter_name: String,
+        value_type: String,
+        expected_value_type: String
+    },
+
+    #[error("{} {} has wrong type ({}). Shader expects: {}", "Texture Material Parameter".specific_object_style(), .parameter_name.name_style(), .texture_type.specific_object_style(), .expected_texture_type.specific_object_style())]
+    TextureMaterialParameterMismatchWrongType {
+        parameter_name: String,
+        texture_type: String,
+        expected_texture_type: String
+    },
+
+    #[error("{} {} not found in shader", "Material Parameter".specific_object_style(), .parameter_name.name_style())]
+    MaterialParameterMismatchNotInShader {
+        parameter_name: String,
+        shader_name: String
+    },
 
     #[error("Failed to get {} {} of type {} from {} {}", "Material Parameter".specific_object_style(), .0.name_style(), .1.specific_object_style(), "Material".specific_object_style(), .2.name_style())]
     FailedToGetMaterialParameter(String, String, String),
