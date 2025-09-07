@@ -2,7 +2,7 @@ use crate::{
     engine::Engine,
     graphics::{ RendererTextureHandle },
     resources::{ ResourceStorage, Resource, ResourceLoader, Material },
-    ecs::{ DeferredUpdateManagerPointer },
+    ecs::{ DeferredOperationManagerPointer },
     config::*,
 };
 
@@ -20,7 +20,7 @@ pill_core::define_new_pill_slotmap_key! {
 #[derive(Clone, Copy, Debug)]
 pub enum TextureType {
     Color,
-    Normal,
+    Normal
 }
 
 #[readonly::make]
@@ -31,6 +31,8 @@ pub struct Texture {
     pub resource_loader: ResourceLoader,
     #[readonly]
     pub texture_type: TextureType,
+
+    handle: Option<TextureHandle>, 
     pub(crate) renderer_resource_handle: Option<RendererTextureHandle>,
 }
 
@@ -44,6 +46,7 @@ impl Texture {
             name: name.to_string(),
             resource_loader: resource_loader,
             texture_type,
+            handle: None,
             renderer_resource_handle: None,
         }
     }
@@ -58,6 +61,14 @@ impl Resource for Texture {
 
     fn get_name(&self) -> String {
         self.name.clone()
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.handle.is_some()
+    }
+
+    fn set_handle(&mut self, self_handle: TextureHandle) {
+        self.handle = Some(self_handle);
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {        
@@ -88,54 +99,54 @@ impl Resource for Texture {
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Destroy renderer resource
-        if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_texture(v).unwrap();
-        }
+        // if let Some(v) = self.renderer_resource_handle {
+        //     engine.renderer.destroy_texture(v).unwrap();
+        // }
 
-        // Take resource storage from engine
-        let resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>()?;
-        let materials = &mut resource_storage.data;
+        // // Take resource storage from engine
+        // let resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>()?;
+        // let materials = &mut resource_storage.data;
 
-        // Find materials that use this texture and update them
-        for material_slot in materials.iter_mut() {
-            let material: &mut Material = material_slot.1.as_mut().expect("Critical: Resource is None");
+        // // Find materials that use this texture and update them
+        // for material_slot in materials.iter_mut() {
+        //     let material: &mut Material = material_slot.1.as_mut().expect("Critical: Resource is None");
 
-            // Update texture slots
-            let mut material_updated = false;
-            // Iterate all texture slots in material and remove one with handle to this texture
-            // for (texture_slot_name, texture_slot) in material.textures.iter_mut() {
-            //     if texture_slot.texture_handle.data() == self_handle.data() { // TODO: Add proper handle comparison method
-            //         material.textures.remove(texture_slot_name);
-            //         material_updated = true;
-            //     }
-            // }
+        //     // Update texture slots
+        //     let mut material_updated = false;
+        //     // Iterate all texture slots in material and remove one with handle to this texture
+        //     // for (texture_slot_name, texture_slot) in material.textures.iter_mut() {
+        //     //     if texture_slot.texture_handle.data() == self_handle.data() { // TODO: Add proper handle comparison method
+        //     //         material.textures.remove(texture_slot_name);
+        //     //         material_updated = true;
+        //     //     }
+        //     // }
 
-            let mut texture_slots_to_remove = Vec::new();
-            for (texture_slot_name, texture_slot) in material.textures.iter() {
-                if texture_slot.texture_handle.data() == self_handle.data() {
-                    texture_slots_to_remove.push(texture_slot_name.clone());
-                }
-            }
-            for texture_slot in texture_slots_to_remove {
-                material.textures.remove(&texture_slot);
-                material_updated = true;
-            }
+        //     let mut texture_slots_to_remove = Vec::new();
+        //     for (texture_slot_name, texture_slot) in material.textures.iter() {
+        //         if texture_slot.texture_handle.data() == self_handle.data() {
+        //             texture_slots_to_remove.push(texture_slot_name.clone());
+        //         }
+        //     }
+        //     for texture_slot in texture_slots_to_remove {
+        //         material.textures.remove(&texture_slot);
+        //         material_updated = true;
+        //     }
 
-            // for texture_slot in material.textures.iter_mut() {
-            //     if let Some(texture_handle) = texture_slot.1.texture_handle {
-            //         // If material texture has handle to this texture
-            //         if texture_handle.data() == self_handle.data() {
-            //             texture_slot.1.texture_handle = None;
-            //             texture_slot.1.renderer_texture_handle = None;
-            //             material_updated = true;
-            //         }
-            //     }
-            // }
+        //     // for texture_slot in material.textures.iter_mut() {
+        //     //     if let Some(texture_handle) = texture_slot.1.texture_handle {
+        //     //         // If material texture has handle to this texture
+        //     //         if texture_handle.data() == self_handle.data() {
+        //     //             texture_slot.1.texture_handle = None;
+        //     //             texture_slot.1.renderer_texture_handle = None;
+        //     //             material_updated = true;
+        //     //         }
+        //     //     }
+        //     // }
 
-            if material_updated {
-                engine.renderer.update_material_textures(material.renderer_resource_handle.unwrap(), &material.textures).unwrap();
-            }
-        }
+        //     if material_updated {
+        //         engine.renderer.update_material_textures(material.renderer_resource_handle.unwrap(), &material.textures).unwrap();
+        //     }
+        // }
 
         Ok(())
     }

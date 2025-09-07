@@ -5,7 +5,7 @@ mod component;
 pub(crate) mod mesh_rendering_component;
 pub(crate) mod transform_component;
 pub(crate) mod camera_component;
-pub(crate) mod deferred_update_component;
+pub(crate) mod deferred_operation_component;
 pub(crate) mod input_component;
 pub(crate) mod time_component;
 pub(crate) mod audio_listener_component;
@@ -21,10 +21,19 @@ pub use component:: {
     Component,
     GlobalComponent,
     ComponentDestroyer,
-    ConcreteComponentDestroyer
+    ConcreteComponentDestroyer,
+    ComponentDeferredOperation
 };
 
 pub use component_storage::{
     ComponentStorage,
     GlobalComponentStorage,
+};
+
+pub use deferred_operation_component::{
+    DeferredOperation,
+    DeferredOperationManager,
+    DeferredOperationManagerPointer,
+    DeferredOperationComponent,
+    
 };

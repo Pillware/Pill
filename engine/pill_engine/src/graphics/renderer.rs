@@ -1,15 +1,10 @@
 use crate::{ 
-    ecs::{
-        CameraAspectRatio, CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
-    }, engine::Engine, game::ShaderType, graphics::{postprocessing_effects, PostprocessingVolumeRendererData, RenderQueueItem}, internal::{MaterialParameter, MaterialTexture}, resources::{
-        MaterialHandle, 
-        MeshData, 
-        MeshHandle, 
-        ShaderParameterSlot,
-        ShaderTextureSlot,
-        TextureHandle, 
-        TextureType, 
-    }
+    ecs::{ CameraAspectRatio, CameraComponent, ComponentStorage, EntityHandle, TransformComponent }, 
+    engine::Engine, 
+    game::{ShaderTextureParameterSlot, ShaderType, ShaderValueParameterSlot}, 
+    graphics::{postprocessing_effects, PostprocessingVolumeRendererData, RenderQueueItem}, 
+    internal::MaterialParameter, 
+    resources::{ MaterialHandle, MaterialParametersStore, MeshData, MeshHandle, TextureHandle, TextureType }
 };
 
 use indexmap::IndexMap;
@@ -56,8 +51,8 @@ pub trait PillRenderer {
         shader_type: ShaderType,
         vertex_shader_bytes: &[u8], 
         fragment_shader_bytes: &[u8], 
-        texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        value_parameters_slots: &HashMap<String, ShaderValueParameterSlot>,
+        texture_parameters_slots: &HashMap<String, ShaderTextureParameterSlot>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle>;
@@ -66,11 +61,15 @@ pub trait PillRenderer {
         &mut self, 
         name: &str, 
         renderer_shader_handle: RendererShaderHandle,
-        textures: &IndexMap<String, MaterialTexture>, 
-        parameters: &HashMap<String, MaterialParameter>
+        parameters: &IndexMap<String, MaterialParameter>
     ) -> Result<RendererMaterialHandle>;
 
-    fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle>;
+    fn create_texture(
+        &mut self, 
+        name: &str, 
+        image_data: &image::DynamicImage, 
+        texture_type: TextureType
+    ) -> Result<RendererTextureHandle>;
     
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
 
@@ -78,9 +77,11 @@ pub trait PillRenderer {
 
     // --- Update ---
 
-    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &IndexMap<String, MaterialTexture>) -> Result<()>;
-
-    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &HashMap<String, MaterialParameter>) -> Result<()>;
+    fn update_material_parameters(
+        &mut self, 
+        renderer_material_handle: RendererMaterialHandle, 
+        parameters: &IndexMap<String, MaterialParameter>
+    ) -> Result<()>;
 
     fn update_camera(
         &mut self, 

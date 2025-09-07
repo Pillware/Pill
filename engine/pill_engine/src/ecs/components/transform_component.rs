@@ -1,6 +1,6 @@
 use crate::{
     ecs::{
-        Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle
+        Component, ComponentStorage, DeferredOperationManagerPointer, EntityHandle, SceneHandle
     }, engine::Engine
 };
 use pill_core::{

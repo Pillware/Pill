@@ -115,12 +115,12 @@ impl Engine {
                 ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_vertex.glsl"))),
                 ResourceLoader::Bytes( Box::new(*include_bytes!("../res/shaders/default_lit_fragment.glsl"))),
                 vec![
-                    (DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), ShaderParameterSlot::new(ShaderParameterType::Color)),
-                    (DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string(), ShaderParameterSlot::new(ShaderParameterType::Scalar)),
+                    (DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), ShaderValueParameterSlot::new(ShaderValueParameterType::Color)),
+                    (DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string(), ShaderValueParameterSlot::new(ShaderValueParameterType::Float)),
                 ].into_iter().collect(),
                 vec![
-                    (DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), ShaderTextureSlot::new(TextureType::Color, DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS)),
-                    (DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string(), ShaderTextureSlot::new(TextureType::Normal, DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS)),
+                    (DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), ShaderTextureParameterSlot::new(TextureType::Color, DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS)),
+                    (DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME.to_string(), ShaderTextureParameterSlot::new(TextureType::Normal, DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS)),
                 ].into_iter().collect(),
                 true,
                 true
@@ -134,10 +134,10 @@ impl Engine {
                 ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_vertex.glsl"))),
                 ResourceLoader::Bytes(Box::new(*include_bytes!("../res/shaders/default_unlit_fragment.glsl"))),
                 vec![
-                    (DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), ShaderParameterSlot::new(ShaderParameterType::Color)),
+                    (DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(), ShaderValueParameterSlot::new(ShaderValueParameterType::Color)),
                 ].into_iter().collect(),
                 vec![
-                    (DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), ShaderTextureSlot::new(TextureType::Color, DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS)),
+                    (DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_NAME.to_string(), ShaderTextureParameterSlot::new(TextureType::Color, DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS)),
                 ].into_iter().collect(),
                 true,
                 true
@@ -175,7 +175,7 @@ impl Engine {
             Material::builder(DEFAULT_LIT_MATERIAL_NAME)
                 .shader(default_lit_shader_handle)?
                 .color_parameter(DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME, Color::new(1.0, 1.0, 1.0))?
-                .scalar_parameter(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME, 0.5)?
+                .float_parameter(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME, 0.5)?
                 .texture(DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME, default_color_texture_handle)?
                 .texture(DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME, default_normal_texture_handle)?
                 .build()
@@ -234,7 +234,7 @@ impl Engine {
         // Register global components
         self.add_global_component(InputComponent::new())?;
         self.add_global_component(TimeComponent::new())?;
-        self.add_global_component(DeferredUpdateComponent::new())?;
+        self.add_global_component(DeferredOperationComponent::new())?;
         self.add_global_component(EguiManagerComponent::new())?;
 
         let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUNDS").unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
@@ -245,7 +245,7 @@ impl Engine {
         self.system_manager.add_system(INPUT_SYSTEM.name, INPUT_SYSTEM.system_function, INPUT_SYSTEM.update_phase)?;
         self.system_manager.add_system(TIME_SYSTEM.name, TIME_SYSTEM.system_function, TIME_SYSTEM.update_phase)?;
         self.system_manager.add_system(AUDIO_SYSTEM.name, AUDIO_SYSTEM.system_function, AUDIO_SYSTEM.update_phase)?;
-        self.system_manager.add_system(DEFERRED_UPDATE_SYSTEM.name, DEFERRED_UPDATE_SYSTEM.system_function, DEFERRED_UPDATE_SYSTEM.update_phase)?;
+        self.system_manager.add_system(deferred_operation_SYSTEM.name, deferred_operation_SYSTEM.system_function, deferred_operation_SYSTEM.update_phase)?;
         self.system_manager.add_system(RENDERING_SYSTEM.name, RENDERING_SYSTEM.system_function, RENDERING_SYSTEM.update_phase)?;
 
         // Create default resources
@@ -482,7 +482,7 @@ impl Engine {
         let component = self.scene_manager.get_entity_component::<T>(entity_handle, scene_handle)?;
 
         // Pass handles to entity and scene to this component so it can store it if needed
-        component.pass_handles(scene_handle, entity_handle);
+        component.set_handles(scene_handle, entity_handle);
 
         Ok(())
     }
@@ -731,7 +731,7 @@ impl Engine {
         let (resource_handle, resource) = self.resource_manager.add_resource(resource)?;
 
         // Pass handle to this resource so it can store it if needed
-        resource.pass_handle(resource_handle);
+        resource.set_handle(resource_handle);
 
         Ok(resource_handle)
     }

@@ -6,7 +6,6 @@ use crate::{
     }, 
     engine::{self, Engine}, 
     graphics::{ compose_render_queue_key, PostprocessingEffect, PostprocessingEffectRendererData, PostprocessingVolumeRendererData, RenderQueueItem, RenderQueueKey, RendererMaterialHandle }, 
-    internal::MaterialParameter, 
     resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
 use pill_core::{ warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer, Vector3f };

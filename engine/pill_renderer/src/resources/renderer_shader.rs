@@ -14,11 +14,11 @@ pub struct RendererShader {
     pub shader_type: ShaderType,
     pub render_pipeline: wgpu::RenderPipeline,
 
-    pub parameter_slots: HashMap<String, ShaderParameterSlot>,
-    pub parameters_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    pub value_parameters_slots: HashMap<String, ShaderParameterSlot>,
+    pub value_parameters_bind_group_layout: Option<wgpu::BindGroupLayout>,
 
-    pub texture_slots: HashMap<String, ShaderTextureSlot>,
-    pub textures_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    pub texture_parameters_slots: HashMap<String, ShaderTextureSlot>,
+    pub texture_parameters_bind_group_layout: Option<wgpu::BindGroupLayout>,
 
     pub pass_engine_parameters: bool,
     pub pass_camera_parameters: bool,
@@ -37,8 +37,8 @@ impl RendererShader {
         vertex_layouts: &[wgpu::VertexBufferLayout],
         vertex_shader_bytes: &[u8],
         fragment_shader_bytes: &[u8],
-        parameter_slots: &HashMap<String, ShaderParameterSlot>,
-        texture_slots: &HashMap<String, ShaderTextureSlot>,
+        value_parameters_slots: &HashMap<String, ShaderValueParameterSlot>,
+        texture_parameters_slots: &HashMap<String, ShaderTextureParameterSlot>,
         engine_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
         pass_engine_parameters: bool,
@@ -99,8 +99,8 @@ impl RendererShader {
             source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
         });
 
-        let parameters_bind_group_layout = {
-            if !parameter_slots.is_empty() {
+        let value_parameters_bind_group_layout = {
+            if !value_parameters_slots.is_empty() {
                 let bind_group_layout_entry = wgpu::BindGroupLayoutEntry {
                     binding: 0, // (set = 2, binding = 0)
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -124,8 +124,8 @@ impl RendererShader {
         debug!(LogContext::Rendering => "Parameters bind group layout created");
 
         // Create bind group layout entries for textures - Bind group slot 1
-        let textures_bind_group_layout = {
-            if !texture_slots.is_empty() {
+        let texture_parameters_bind_group_layout = {
+            if !texture_parameters_slots.is_empty() {
                 let mut entries = Vec::new();
 
                 for texture_slot in texture_slots.values() {
@@ -246,10 +246,10 @@ impl RendererShader {
             name: name.to_string(),
             shader_type,
             render_pipeline,
-            parameter_slots: parameter_slots.clone(),
-            textures_bind_group_layout,
-            texture_slots: texture_slots.clone(),
-            parameters_bind_group_layout,
+            value_parameters_slots: value_parameters_slots.clone(),
+            value_parameters_bind_group_layout,
+            texture_parameters_bind_group_layout,
+            texture_parameters_slots: texture_parameters_slots.clone(),
             pass_engine_parameters,
             pass_camera_parameters,
         };

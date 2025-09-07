@@ -1,27 +1,10 @@
 use crate::{
-    engine::Engine,
-    resources::{ Sound, SoundHandle }, 
-    ecs::{ 
-        AudioManagerComponent, 
-        EntityHandle, 
-        Component, 
-        ComponentStorage, 
-        SceneHandle, 
-        DeferredUpdateManagerPointer, 
-        DeferredUpdateComponentRequest,
-        DeferredUpdateComponent,
-        SoundType
-    },
+    ecs::{ ComponentDeferredOperation, AudioManagerComponent, Component, ComponentStorage, DeferredOperationComponent, DeferredOperationManagerPointer, EntityHandle, SceneHandle, SoundType }, 
+    engine::Engine, 
+    resources::{ Sound, SoundHandle }
 };
-
 use pill_core::{ get_enum_variant_type_name, get_type_name, warn, LogContext, PillStyle, PillTypeMapKey, Vector3f };
 use anyhow::{ Result, Context, Error };
-
-const DEFERRED_REQUEST_VARIANT_SET_SOUND: usize = 0;
-const DEFERRED_REQUEST_VARIANT_SET_VOLUME: usize = 1;
-const DEFERRED_REQUEST_VARIANT_PLAY_SOUND: usize = 2;
-const DEFERRED_REQUEST_VARIANT_PAUSE_SOUND: usize = 3;
-const DEFERRED_REQUEST_VARIANT_STOP_SOUND: usize = 4;
 
 // --- Builder ---
 
@@ -79,7 +62,7 @@ pub struct AudioSourceComponent {
 
     entity_handle: Option<EntityHandle>,
     scene_handle: Option<SceneHandle>,
-    deferred_update_manager: Option<DeferredUpdateManagerPointer>,
+    deferred_operation_manager: Option<DeferredOperationManagerPointer>,
 }
 
 impl AudioSourceComponent {
@@ -98,46 +81,114 @@ impl AudioSourceComponent {
 
             entity_handle: None,
             scene_handle: None,
-            deferred_update_manager: None,
+            deferred_operation_manager: None,
         }
     }
 
     pub fn set_sound(&mut self, sound_handle: SoundHandle) {
         self.sound_handle = Some(sound_handle);
-        if self.sink_handle.is_some() {
-            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_VOLUME);
+
+        if self.is_initialized() {
+            self.schedule_deferred_operation(Box::new(|self_component: &mut AudioSourceComponent, engine: &mut Engine| {
+                // Check if sound handle is valid  
+                engine.get_resource::<Sound>(&self_component.sound_handle.unwrap())
+                    .context(format!("Setting {} {} failed", "Component".general_object_style(), "Sound".specific_object_style()))?;
+
+                // Stop playing
+                self_component.stop_playing(engine)?;
+
+                Ok(())
+            }));
         }
     }
 
-    pub fn remove_sound(&mut self) {
+    pub fn reset_sound(&mut self) {
         self.sound_handle = None;
-        if self.sink_handle.is_some() {
-            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_STOP_SOUND);
+
+        if self.is_initialized() {
+            self.schedule_deferred_operation(Box::new(|self_component: &mut AudioSourceComponent, engine: &mut Engine| {
+                self_component.stop_playing(engine)?;
+
+                Ok(())
+            }));
         }
     }
 
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
-        if self.sink_handle.is_some() {
-            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_VOLUME);
+
+        if self.is_initialized() && self.sink_handle.is_some() {
+            self.schedule_deferred_operation(Box::new(|self_component: &mut AudioSourceComponent, engine: &mut Engine| {
+                let audio_manager = engine.get_global_component::<AudioManagerComponent>()?;
+                match self_component.sound_type {
+                    SoundType::Sound3D => audio_manager.get_spatial_sink(self_component.sink_handle.unwrap()).set_volume(self_component.volume),
+                    SoundType::Sound2D => audio_manager.get_ambient_sink(self_component.sink_handle.unwrap()).set_volume(self_component.volume),
+                } 
+
+                Ok(())
+            }));
         }
     }
 
     pub fn play(&mut self) {
-        if self.sound_handle.is_some() {
-            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PLAY_SOUND);
+        if self.is_initialized() && self.sound_handle.is_some() {
+            self.schedule_deferred_operation(Box::new(|self_component: &mut AudioSourceComponent, engine: &mut Engine| {
+                // Get data from sound resource
+                let sound_handle = self_component.sound_handle.unwrap();
+                let sound = engine.get_resource::<Sound>(&sound_handle)?;
+                let sound_data = sound.sound_data.as_ref().unwrap().get_source_sound();
+
+                // Get free sink, set its volume and play
+                let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
+                if let Some(sink_handle) = audio_manager.get_free_sink_handle(&self_component.sound_type) {
+                    self_component.sink_handle = Some(sink_handle);
+
+                    match self_component.sound_type {
+                        SoundType::Sound2D => {
+                            let sink = audio_manager.get_ambient_sink(sink_handle);
+                            sink.append(sound_data);
+                            sink.set_volume(self_component.volume);
+                            sink.play();
+                        },
+                        SoundType::Sound3D => {
+                            let sink = audio_manager.get_spatial_sink(sink_handle);
+                            sink.append(sound_data);
+                            sink.set_volume(self_component.volume);
+                            sink.play();
+                        }
+                    }
+                    self_component.is_playing = true;
+                }
+                else {
+                    warn!("Cannot play sound, max concurrent {} sound count reached", get_enum_variant_type_name(&self_component.sound_type));
+                }
+
+                Ok(())
+            }));
         }
     }
 
     pub fn pause(&mut self) {
-        if self.sink_handle.is_some() {
-            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PAUSE_SOUND);
+        if self.is_initialized() && self.sink_handle.is_some() && self.is_playing {
+            self.schedule_deferred_operation(Box::new(|self_component: &mut AudioSourceComponent, engine: &mut Engine| {
+                let audio_manager = engine.get_global_component::<AudioManagerComponent>()?;
+                match self_component.sound_type {
+                    SoundType::Sound3D => audio_manager.get_spatial_sink(self_component.sink_handle.unwrap()).pause(),
+                    SoundType::Sound2D => audio_manager.get_ambient_sink(self_component.sink_handle.unwrap()).pause(),
+                }
+
+                Ok(())
+            }));
         }
     }
 
     pub fn stop(&mut self) {
-        if self.sink_handle.is_some() {
-            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_STOP_SOUND);
+        if self.is_initialized() && self.sink_handle.is_some() && self.is_playing {
+            self.schedule_deferred_operation(Box::new(|self_component: &mut AudioSourceComponent, engine: &mut Engine| {
+                self_component.stop_playing(engine)?;
+
+                Ok(())
+            }));
         }
     }
 
@@ -164,14 +215,16 @@ impl AudioSourceComponent {
         Ok(())
     }
 
+    fn is_initialized(&self) -> bool {
+        self.entity_handle.is_some() && self.scene_handle.is_some() && self.deferred_operation_manager.is_some()
+    }
+
     // Post deferred update request
-    fn post_deferred_update_request(&mut self, request_variant: usize) {
-        if self.deferred_update_manager.is_some() {
-            let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
-            let scene_handle = self.scene_handle.expect("Critical: Cannot post deferred update request. No SceneHandle set in Component");
-            let request = DeferredUpdateComponentRequest::<AudioSourceComponent>::new(entity_handle, scene_handle, request_variant);
-            self.deferred_update_manager.as_mut().expect("Critical: No DeferredUpdateManager").post_update_request(request);
-        }
+    fn schedule_deferred_operation(&mut self, operation: Box<dyn Fn(&mut AudioSourceComponent, &mut Engine) -> Result<()> + Send>) {
+        let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
+        let scene_handle = self.scene_handle.expect("Critical: Cannot post deferred update request. No SceneHandle set in Component");
+        let operation_to_schedule = ComponentDeferredOperation::<AudioSourceComponent>::new(entity_handle, scene_handle, operation);
+        self.deferred_operation_manager.as_mut().expect("Critical: No DeferredOperationManager").schedule_deferred_operation(operation_to_schedule);
     }
 }
 
@@ -181,9 +234,9 @@ impl PillTypeMapKey for AudioSourceComponent {
 
 impl Component for AudioSourceComponent { 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
-        let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
-        self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
+        // This component is using DeferredOperationSystem so keep DeferredOperationManager
+        let deferred_operation_component = engine.get_global_component_mut::<DeferredOperationComponent>().expect("Critical: No DeferredOperationComponent");
+        self.deferred_operation_manager = Some(deferred_operation_component.borrow_deferred_operation_manager());
 
         // Check if sound handle is valid
         if self.sound_handle.is_some() {
@@ -191,89 +244,17 @@ impl Component for AudioSourceComponent {
                 .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
         }
 
-        Ok(())
-    }
-
-    fn pass_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {
-        self.scene_handle = Some(self_scene_handle);
-        self.entity_handle = Some(self_entity_handle);
-
         // Play on awake
         if self.play_on_awake {
             self.play();
         }
+
+        Ok(())
     }
 
-    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
-        match request {
-            DEFERRED_REQUEST_VARIANT_SET_SOUND => 
-            {
-                // Check if sound handle is valid  
-                engine.get_resource::<Sound>(&self.sound_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Component".general_object_style(), "Sound".specific_object_style()))?;
-
-                // Stop playing
-                self.stop_playing(engine)?;
-            },
-            DEFERRED_REQUEST_VARIANT_SET_VOLUME => 
-            {
-                let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
-                match self.sound_type {
-                    SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_handle.unwrap()).set_volume(self.volume),
-                    SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_handle.unwrap()).set_volume(self.volume),
-                } 
-            },
-            DEFERRED_REQUEST_VARIANT_PLAY_SOUND => 
-            {
-                // Get data from sound resource
-                let sound_handle = self.sound_handle.unwrap();
-                let sound = (&*engine).get_resource::<Sound>(&sound_handle)?;
-                let sound_data = sound.sound_data.as_ref().unwrap().get_source_sound();
-
-                // Get free sink, set its volume and play
-                let audio_manager = engine.get_global_component_mut::<AudioManagerComponent>()?;
-                if let Some(sink_handle) = audio_manager.get_free_sink_handle(&self.sound_type) {
-                    self.sink_handle = Some(sink_handle);
-                 
-                    match self.sound_type {
-                        SoundType::Sound2D => {
-                            let sink = audio_manager.get_ambient_sink(sink_handle);
-                            sink.append(sound_data);
-                            sink.set_volume(self.volume);
-                            sink.play();
-                        },
-                        SoundType::Sound3D => {
-                            let sink = audio_manager.get_spatial_sink(sink_handle);
-                            sink.append(sound_data);
-                            sink.set_volume(self.volume);
-                            sink.play();
-                        }
-                    }
-                    self.is_playing = true;
-                } 
-                else {
-                    warn!(LogContext::ECS => "Cannot play sound, max concurrent {} sound count reached", get_enum_variant_type_name(&self.sound_type));
-                }
-            },
-            DEFERRED_REQUEST_VARIANT_PAUSE_SOUND  => 
-            {
-                let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
-                match self.sound_type {
-                    SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_handle.unwrap()).pause(),
-                    SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_handle.unwrap()).pause(),
-                } 
-            },
-            DEFERRED_REQUEST_VARIANT_STOP_SOUND  => 
-            {
-                self.stop_playing(engine)?;
-            },
-            _ => 
-            {
-                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
-            }
-        }
-
-        Ok(()) 
+    fn set_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {
+        self.scene_handle = Some(self_scene_handle);
+        self.entity_handle = Some(self_entity_handle);
     }
 
     fn destroy(&mut self, engine: &mut Engine, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) -> Result<()> {

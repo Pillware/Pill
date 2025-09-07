@@ -1,9 +1,7 @@
 use crate::{
     config::*, 
     ecs::{ 
-        DeferredUpdateComponent,
-        DeferredUpdateManagerPointer, 
-        DeferredUpdateResourceRequest, 
+        DeferredOperationManagerPointer, 
         MeshRenderingComponent 
     }, 
     engine::Engine, 
@@ -52,8 +50,8 @@ pub enum ShaderType {
 }
 
 #[derive(Debug, Clone)]
-pub enum ShaderParameterType {
-    Scalar,
+pub enum ShaderValueParameterType {
+    Float,
     Bool,
     Color,
     Vector2,
@@ -61,7 +59,7 @@ pub enum ShaderParameterType {
 }
 
 #[derive(Debug, Clone)]
-pub struct ShaderTextureSlot {
+pub struct ShaderTextureParameterSlot {
     //pub name: String,
     pub texture_type: TextureType,
 
@@ -70,7 +68,7 @@ pub struct ShaderTextureSlot {
     pub sampler_binding: u32,
 }
 
-impl ShaderTextureSlot {
+impl ShaderTextureParameterSlot {
     // NOTE: Textures have to have unique sampler bindings (since they are always passed in their own bind group)
     pub fn new(texture_type: TextureType, (texture_binding, sampler_binding): (u32, u32)) -> Self {
         Self {
@@ -83,14 +81,14 @@ impl ShaderTextureSlot {
 }
 
 #[derive(Debug, Clone)]
-pub struct ShaderParameterSlot {
+pub struct ShaderValueParameterSlot {
     //pub name: String,
-    pub parameter_type: ShaderParameterType,
+    pub parameter_type: ShaderValueParameterType,
 }
 
-impl ShaderParameterSlot {
+impl ShaderValueParameterSlot {
     // NOTE: Multiple parameters can share the same uniform binding (they will be passed together in the same bind group)
-    pub fn new(parameter_type: ShaderParameterType) -> Self {
+    pub fn new(parameter_type: ShaderValueParameterType) -> Self {
         Self {
             //name: name.to_string(),
             parameter_type,
@@ -115,9 +113,9 @@ pub struct Shader {
     #[readonly]
     pub fragment_shader_resource_loader: ResourceLoader,
     #[readonly]
-    pub parameter_slots: HashMap<String, ShaderParameterSlot>, // TODO: We dont need ShaderParameterSlot, just the type is enough
+    pub value_parameters_slots: HashMap<String, ShaderValueParameterSlot>, // TODO: We dont need ShaderParameterSlot, just the type is enough
     #[readonly]
-    pub texture_slots: HashMap<String, ShaderTextureSlot>,
+    pub texture_parameters_slots: HashMap<String, ShaderTextureParameterSlot>,
     #[readonly]
     pub enable_engine_binding: bool,
     #[readonly]
@@ -125,7 +123,7 @@ pub struct Shader {
 
     pub(crate) renderer_resource_handle: Option<RendererShaderHandle>,
     handle: Option<ShaderHandle>,
-    deferred_update_manager: Option<DeferredUpdateManagerPointer>,
+    deferred_operation_manager: Option<DeferredOperationManagerPointer>,
 }
 
 impl Shader {
@@ -137,8 +135,8 @@ impl Shader {
         shader_type: ShaderType,
         vertex_shader_resource_loader: ResourceLoader, 
         fragment_shader_resource_loader: ResourceLoader,
-        parameter_slots: HashMap<String, ShaderParameterSlot>,
-        texture_slots: HashMap<String, ShaderTextureSlot>,
+        value_parameters_slots: HashMap<String, ShaderValueParameterSlot>,
+        texture_parameters_slots: HashMap<String, ShaderTextureParameterSlot>,
         enable_engine_binding: bool, // If true, the engine uniform data will be accessible to the shader at (set = 0, binding = 0)
         enable_camera_binding: bool  // If true, the engine uniform data will be accessible to the shader at (set = 1, binding = 0)
     ) -> Self {
@@ -147,13 +145,13 @@ impl Shader {
             shader_type,
             vertex_shader_resource_loader,
             fragment_shader_resource_loader,
-            parameter_slots,
-            texture_slots,
+            value_parameters_slots,
+            texture_parameters_slots,
             enable_engine_binding,
             enable_camera_binding,
             renderer_resource_handle: None,
             handle: None,
-            deferred_update_manager: None,
+            deferred_operation_manager: None,
         }
     }
 
@@ -173,12 +171,20 @@ impl Resource for Shader {
         self.name.clone()
     }
 
+    fn is_initialized(&self) -> bool {
+        self.handle.is_some()
+    }
+
+    fn set_handle(&mut self, handle: Self::Handle) {
+        self.handle = Some(handle);
+    }
+
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
 
-        // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
-        //let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
-        //self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
+        // This resource is using DeferredOperationSystem so keep DeferredOperationManager
+        //let deferred_operation_component = engine.get_global_component_mut::<DeferredOperationComponent>().expect("Critical: No DeferredOperationComponent");
+        //self.deferred_operation_manager = Some(deferred_operation_component.borrow_deferred_operation_manager());
 
         // Read vertex shader data
         let vertex_shader_bytes_vec: Vec<u8>;
@@ -226,8 +232,8 @@ impl Resource for Shader {
             self.shader_type.clone(),
             &vertex_shader_bytes, 
             &fragment_shader_bytes,
-            &self.texture_slots,
-            &self.parameter_slots,
+            &self.value_parameters_slots,
+            &self.texture_parameters_slots,
             self.enable_engine_binding,
             self.enable_camera_binding
         ).context(error_message)?;
@@ -236,9 +242,9 @@ impl Resource for Shader {
         Ok(())
     }
 
-    fn pass_handle<H: PillSlotMapKey>(&mut self, self_handle: H) { 
-        self.handle = Some(ShaderHandle::from(self_handle.data()));
-    }
+    // fn pass_handle<H: PillSlotMapKey>(&mut self, self_handle: H) { 
+    //     self.handle = Some(ShaderHandle::from(self_handle.data()));
+    // }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Destroy renderer resource

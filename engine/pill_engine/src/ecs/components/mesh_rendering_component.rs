@@ -1,20 +1,13 @@
 use crate::{
-    engine::Engine,
-    graphics::{ RenderQueueKey, compose_render_queue_key }, 
-    resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager },
-    ecs::{ EntityHandle, ComponentStorage, Component, SceneHandle, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, DeferredUpdateComponent }, 
-    config::DEFAULT_MATERIAL_HANDLE,
+    config::DEFAULT_MATERIAL_HANDLE, 
+    ecs::{ components::component::ComponentDeferredOperation, Component, ComponentStorage, DeferredOperationComponent, DeferredOperationManagerPointer, EntityHandle, SceneHandle }, 
+    engine::Engine, 
+    graphics::{ compose_render_queue_key, RenderQueueKey }, 
+    resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
 };
-
 use cgmath::num_traits::Float;
 use pill_core::{ PillTypeMap, PillTypeMapKey, PillStyle, get_type_name, PillSlotMapKey };
-
 use anyhow::{ Result, Context, Error };
-
-
-const DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE: usize = 0;
-const DEFERRED_REQUEST_VARIANT_SET_MATERIAL: usize = 1;
-const DEFERRED_REQUEST_VARIANT_SET_MESH: usize = 2;
 
 // --- Builder ---
 
@@ -56,7 +49,7 @@ pub struct MeshRenderingComponent {
 
     entity_handle: Option<EntityHandle>,
     scene_handle: Option<SceneHandle>,
-    deferred_update_manager: Option<DeferredUpdateManagerPointer>,
+    deferred_operation_manager: Option<DeferredOperationManagerPointer>,
 }
 
 impl MeshRenderingComponent {
@@ -71,37 +64,73 @@ impl MeshRenderingComponent {
             render_queue_key: None,
             entity_handle: None,
             scene_handle: None,
-            deferred_update_manager: None,
+            deferred_operation_manager: None,
         }
     }
 
     pub fn set_material(&mut self, material_handle: &MaterialHandle) {
         self.material_handle = Some(material_handle.clone());
-        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_MATERIAL);
+
+        if self.is_initialized() {
+            self.schedule_deferred_operation(Box::new(|self_mesh_rendering_component: &mut MeshRenderingComponent, engine: &mut Engine| {
+                // Check if material handle is valid
+                engine.get_resource::<Material>(&self_mesh_rendering_component.material_handle.unwrap())
+                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Material".specific_object_style()))?;
+                
+                self_mesh_rendering_component.update_render_queue_key(&engine.resource_manager)?;
+
+                Ok(())
+            }));
+        }
+    }
+
+     pub fn reset_material(&mut self) {
+        self.material_handle = None;
+
+        if self.is_initialized() {
+            self.schedule_deferred_operation(Box::new(|self_mesh_rendering_component: &mut MeshRenderingComponent, engine: &mut Engine| {
+                self_mesh_rendering_component.update_render_queue_key(&engine.resource_manager)?;
+
+                Ok(())
+            }));
+        }
     }
 
     pub fn set_mesh(&mut self, mesh_handle: &MeshHandle) {
         self.mesh_handle = Some(mesh_handle.clone());
-        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_MESH);
+
+        if self.is_initialized() {
+            self.schedule_deferred_operation(Box::new(|self_mesh_rendering_component: &mut MeshRenderingComponent, engine: &mut Engine| {
+                // Check if mesh handle is valid
+                engine.get_resource::<Mesh>(&self_mesh_rendering_component.mesh_handle.unwrap())
+                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Mesh".specific_object_style()))?;
+
+                self_mesh_rendering_component.update_render_queue_key(&engine.resource_manager)?;
+
+                Ok(())
+            }));
+        }
     }
 
-    pub fn remove_material(&mut self) {
-        self.material_handle = None;
-        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
-    }
-
-    pub fn remove_mesh(&mut self) {
+    pub fn reset_mesh(&mut self) {
         self.mesh_handle = None;
-        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
+
+        if self.is_initialized() {
+            self.schedule_deferred_operation(Box::new(|self_mesh_rendering_component: &mut MeshRenderingComponent, engine: &mut Engine| {
+                self_mesh_rendering_component.update_render_queue_key(&engine.resource_manager)?;
+
+                Ok(())
+            }));
+        }
     }
 
-    pub(crate) fn set_material_handle(&mut self, material_handle: Option<MaterialHandle>) {
-        self.material_handle = material_handle;
-    }
+    // pub(crate) fn set_material_handle(&mut self, material_handle: Option<MaterialHandle>) {
+    //     self.material_handle = material_handle;
+    // }
 
-    pub(crate) fn set_mesh_handle(&mut self, mesh_handle: Option<MeshHandle>) {
-        self.mesh_handle = mesh_handle;
-    }
+    // pub(crate) fn set_mesh_handle(&mut self, mesh_handle: Option<MeshHandle>) {
+    //     self.mesh_handle = mesh_handle;
+    // }
 
     pub(crate) fn update_render_queue_key(&mut self, resource_manager: &ResourceManager) -> Result<()> {
         if self.mesh_handle.is_some() {
@@ -128,13 +157,15 @@ impl MeshRenderingComponent {
         Ok(())
     }
 
-    fn post_deferred_update_request(&mut self, request_variant: usize) {
-        if self.deferred_update_manager.is_some() {
-            let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
-            let scene_handle = self.scene_handle.expect("Critical: Cannot post deferred update request. No SceneHandle set in Component");
-            let request = DeferredUpdateComponentRequest::<MeshRenderingComponent>::new(entity_handle, scene_handle, request_variant);
-            self.deferred_update_manager.as_mut().expect("Critical: No DeferredUpdateManager").post_update_request(request);
-        }
+    fn schedule_deferred_operation(&mut self, operation: Box<dyn Fn(&mut MeshRenderingComponent, &mut Engine) -> Result<()> + Send>) {
+        let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
+        let scene_handle = self.scene_handle.expect("Critical: Cannot post deferred update request. No SceneHandle set in Component");
+        let operation_to_schedule = ComponentDeferredOperation::<MeshRenderingComponent>::new(entity_handle, scene_handle, operation);
+        self.deferred_operation_manager.as_mut().expect("Critical: No DeferredOperationManager").schedule_deferred_operation(operation_to_schedule);
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.entity_handle.is_some() && self.scene_handle.is_some() && self.deferred_operation_manager.is_some()
     }
 }
 
@@ -144,9 +175,9 @@ impl PillTypeMapKey for MeshRenderingComponent {
 
 impl Component for MeshRenderingComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
-        let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
-        self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
+        // This component is using DeferredOperationSystem so keep DeferredOperationComponent
+        let deferred_operation_component = engine.get_global_component_mut::<DeferredOperationComponent>().expect("Critical: No DeferredOperationComponent");
+        self.deferred_operation_manager = Some(deferred_operation_component.borrow_deferred_operation_manager());
 
         // Check if material handle is valid
         if self.material_handle.is_some() {
@@ -166,40 +197,8 @@ impl Component for MeshRenderingComponent {
         Ok(())
     }
 
-    fn pass_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {
+    fn set_handles(&mut self, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) {
         self.scene_handle = Some(self_scene_handle);
         self.entity_handle = Some(self_entity_handle);
-    }
-
-    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
-        match request {
-            DEFERRED_REQUEST_VARIANT_SET_MATERIAL => 
-            {
-                // Check if material handle is valid
-                engine.get_resource::<Material>(&self.material_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Material".specific_object_style()))?;
-                
-                self.update_render_queue_key(&engine.resource_manager)?;
-            },
-            DEFERRED_REQUEST_VARIANT_SET_MESH =>
-            {
-                // Check if mesh handle is valid
-                engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Mesh".specific_object_style()))?;
-
-                self.update_render_queue_key(&engine.resource_manager)?;
-            },
-            DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE => 
-            {
-                // Update mesh rendering queue
-                self.update_render_queue_key(&engine.resource_manager)?;
-            },
-            _ => 
-            {
-                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
-            }
-        }
-
-        Ok(()) 
     }
 }

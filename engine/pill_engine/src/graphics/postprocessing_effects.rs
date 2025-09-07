@@ -1,5 +1,5 @@
 use crate::{
-    config::*, ecs::{ Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle }, engine::Engine, game::{ResourceLoader, Shader, ShaderParameterSlot, ShaderTextureSlot}, graphics::{ compose_render_queue_key, RenderQueueKey, RendererMaterialHandle }, internal::MaterialParameter, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, ShaderType }
+    config::*, ecs::{ Component, ComponentStorage, DeferredOperationComponent, DeferredOperationManagerPointer, EntityHandle, SceneHandle }, engine::Engine, game::{ResourceLoader, Shader}, graphics::{ compose_render_queue_key, RenderQueueKey, RendererMaterialHandle }, internal::MaterialParametersStore, resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, ShaderType }
 };
 use pill_core::{
     get_type_name, impl_trait_accessible, BoundingBox, Color, EngineError, OptionStorage, PillTraitTypeMap, PillTypeMap, PillTypeMapKey, SingleStorage, TraitAccessible, TraitAccessor, Vector2f, Vector3f
@@ -12,6 +12,10 @@ use std::{
     marker::PhantomData, 
     ops::IndexMut
 };
+
+
+
+
 
 pub trait PostprocessingEffect: Any + Send {
     fn name(&self) -> &'static str;
@@ -31,8 +35,51 @@ pub struct PostprocessingEffectRendererData {
     pub influence: f32,
 }
 
-// --- Color adjustments effect ---
 
+
+pub trait PostprocessingEffectX: Any + Send {
+    fn name(&self) -> &'static str;
+    fn is_enabled(&self) -> bool;
+    fn get_opacity(&self) -> f32;
+    fn get_material_handle(&self, engine: &Engine) -> MaterialHandle;
+    fn get_parameters_store_mut(&self) -> &mut MaterialParametersStore;
+}
+
+
+pub struct TestPostprocessingEffect {
+    pub enabled: bool,
+    pub opacity: f32,
+    pub(crate) parameters_store: MaterialParametersStore,
+}
+
+impl TestPostprocessingEffect {
+    pub fn new(shader_handle: ShaderHandle) -> Self {
+        Self {
+            enabled: true,
+            opacity: 1.0,
+            material: Material::new(shader_handle),
+            //parameters_store: MaterialParametersStore::default(),
+        }
+    }
+}
+
+
+// When we delete shader we want to visit all effects and and update them. Set shader to none and disable effect. But keep the parameter values.
+// This can't be component since components my be unloaded.
+// So the only way is to store all effects as resources.
+// We should have postprocessing effect template resource. But then for each postprocessing volume will actually store instance (set of parameters).
+// But then we still have a problem. Since someone can delete texture resource and reference to this resource is in set of parameters, not in effect template.
+// So on delete of this texture we cant iterate over all components with parameters since they can be unloaded.
+
+
+
+// 
+// 
+
+
+
+
+// --- Color adjustments effect ---
 
 pub struct ColorAdjustmentsPostprocessingEffect {
     pub enabled: bool,
@@ -71,7 +118,7 @@ impl PostprocessingEffect for ColorAdjustmentsPostprocessingEffect {
     fn name(&self) -> &'static str { "ColorAdjustments" }
     fn is_enabled(&self) -> bool { self.enabled }
     fn get_opacity(&self) -> f32 { self.opacity }
-    fn get_material_handle(&self, engine: &Engine) -> MaterialHandle { engine.get_resource_handle::<Material>(VIGNETTE_POSTPROCESSING_MATERIAL_NAME).unwrap() }
+    fn get_material_handle(&self, engine: &Engine) -> MaterialHandle { engine.get_resource_handle::<Material>(COLOR_ADJUSTMENTS_POSTPROCESSING_MATERIAL_NAME).unwrap() }
     fn get_parameters(&self) -> HashMap<String, MaterialParameter> {
         let mut parameters = HashMap::new();
         parameters.insert("opacity".to_string(), MaterialParameter::Scalar(self.opacity));

@@ -92,7 +92,19 @@ impl PillGame for Game {
 				.build()
 		)?;
 
-		
+
+		let material = Material::builder(engine)
+			.bool_parameter(slot_name, value)
+			.scalar_parameter(slot_name, value)
+			.build();
+
+		engine.add_resource(material);
+
+
+
+
+
+
 		let default_unlit_shader_handle = engine.get_resource_handle::<Shader>("pill_engine_default_unlit_shader")?;
 		let chimpanzini_bananini_material_handle_unlit = engine.add_resource::<Material>(
 			Material::builder("chimpanzini_bananini_unlit")

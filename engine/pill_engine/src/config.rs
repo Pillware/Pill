@@ -1,12 +1,10 @@
 use crate::{
-    ecs::{ audio_system, deferred_update_system, input_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase }, 
-    game::ShaderParameterType, 
-    graphics::{ RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle },
+    ecs::{ audio_system, deferred_operation_system, input_system, rendering_system, time_system, AudioManagerComponent, DeferredOperationComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase }, 
+    game::ShaderValueParameterType, 
+    graphics::{ RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle }, 
     resources::{ MaterialHandle, ShaderHandle, TextureHandle, TextureType }
 };
-
 use pill_core::PillSlotMapKeyData;
-
 use std::{num::NonZeroU32, any::TypeId};
 use lazy_static::lazy_static;
 
@@ -45,9 +43,9 @@ pub const AUDIO_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PostGame,
 };
 
-pub const DEFERRED_UPDATE_SYSTEM: SystemConfig = SystemConfig {
-    name: "deferred_update_system",
-    system_function: deferred_update_system,
+pub const deferred_operation_SYSTEM: SystemConfig = SystemConfig {
+    name: "deferred_operation_system",
+    system_function: deferred_operation_system,
     update_phase: UpdatePhase::PostGame,
 };
 
@@ -92,25 +90,25 @@ pub const DEFAULT_UNLIT_MATERIAL_NAME: &str = "pill_engine_default_unlit_materia
 // Color adjustments postprocessing effect
 pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_NAME: &str = "pill_engine_color_adjustments_postprocessing_shader";
 pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT: (&str, TextureType, (u32, u32)) = ("scene", TextureType::Color, (0, 1));
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT: (&str, ShaderParameterType) = ("opacity", ShaderParameterType::Scalar);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_EXPOSURE_PARAMETER_SLOT: (&str, ShaderParameterType) = ("exposure", ShaderParameterType::Scalar);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_TINT_PARAMETER_SLOT: (&str, ShaderParameterType) = ("tint", ShaderParameterType::Color);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_WHITE_BALANCE_PARAMETER_SLOT: (&str, ShaderParameterType) = ("white_balance", ShaderParameterType::Scalar);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_HUE_PARAMETER_SLOT: (&str, ShaderParameterType) = ("hue", ShaderParameterType::Scalar);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_SATURATION_PARAMETER_SLOT: (&str, ShaderParameterType) = ("saturation", ShaderParameterType::Scalar);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_CONTRAST_PARAMETER_SLOT: (&str, ShaderParameterType) = ("contrast", ShaderParameterType::Scalar);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_BRIGHTNESS_PARAMETER_SLOT: (&str, ShaderParameterType) = ("brightness", ShaderParameterType::Scalar);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_INVERT_FLAG_PARAMETER_SLOT: (&str, ShaderParameterType) = ("invert_flag", ShaderParameterType::Bool);
-pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_GAMMA_PARAMETER_SLOT: (&str, ShaderParameterType) = ("gamma", ShaderParameterType::Scalar);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("opacity", ShaderValueParameterType::Float);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_EXPOSURE_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("exposure", ShaderValueParameterType::Float);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_TINT_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("tint", ShaderValueParameterType::Color);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_WHITE_BALANCE_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("white_balance", ShaderValueParameterType::Float);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_HUE_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("hue", ShaderValueParameterType::Float);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_SATURATION_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("saturation", ShaderValueParameterType::Float);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_CONTRAST_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("contrast", ShaderValueParameterType::Float);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_BRIGHTNESS_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("brightness", ShaderValueParameterType::Float);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_INVERT_FLAG_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("invert_flag", ShaderValueParameterType::Bool);
+pub const COLOR_ADJUSTMENTS_POSTPROCESSING_SHADER_GAMMA_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("gamma", ShaderValueParameterType::Float);
 pub const COLOR_ADJUSTMENTS_POSTPROCESSING_MATERIAL_NAME: &str = "pill_engine_color_adjustments_postprocessing_material";
 
 // Vignette postprocessing effect
 pub const VIGNETTE_POSTPROCESSING_SHADER_NAME: &str = "pill_engine_vignette_postprocessing_shader";
 pub const VIGNETTE_POSTPROCESSING_SHADER_SCENE_TEXTURE_SLOT: (&str, TextureType, (u32, u32)) = ("scene", TextureType::Color, (0, 1));
-pub const VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT: (&str, ShaderParameterType) = ("opacity", ShaderParameterType::Scalar);
-pub const VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT: (&str, ShaderParameterType) = ("smoothness", ShaderParameterType::Scalar);
-pub const VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT: (&str, ShaderParameterType) = ("roundness", ShaderParameterType::Scalar);
-pub const VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT: (&str, ShaderParameterType) = ("center", ShaderParameterType::Vector2);
+pub const VIGNETTE_POSTPROCESSING_SHADER_OPACITY_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("opacity", ShaderValueParameterType::Float);
+pub const VIGNETTE_POSTPROCESSING_SHADER_SMOOTHNESS_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("smoothness", ShaderValueParameterType::Float);
+pub const VIGNETTE_POSTPROCESSING_SHADER_ROUNDNESS_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("roundness", ShaderValueParameterType::Float);
+pub const VIGNETTE_POSTPROCESSING_SHADER_CENTER_PARAMETER_SLOT: (&str, ShaderValueParameterType) = ("center", ShaderValueParameterType::Vector2);
 pub const VIGNETTE_POSTPROCESSING_MATERIAL_NAME: &str = "pill_engine_vignette_postprocessing_material";
 
 // Render queue key
@@ -195,7 +193,7 @@ lazy_static! {
         TypeId::of::<InputComponent>(),
         TypeId::of::<TimeComponent>(),
         TypeId::of::<AudioManagerComponent>(),
-        TypeId::of::<DeferredUpdateComponent>(),
+        TypeId::of::<DeferredOperationComponent>(),
         TypeId::of::<EguiManagerComponent>()
     );
 }

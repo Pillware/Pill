@@ -2,7 +2,7 @@ use crate::{
     engine::Engine,
     graphics::{ RendererTextureHandle },
     resources::{ ResourceStorage, Resource, ResourceLoader, Material },
-    ecs::{ DeferredUpdateManagerPointer, AudioSourceComponent, SoundType, AudioManagerComponent },
+    ecs::{ DeferredOperationManagerPointer, AudioSourceComponent, SoundType, AudioManagerComponent },
     config::*,
 };
 
@@ -28,7 +28,9 @@ pub struct Sound {
     pub name: String,
     #[readonly]
     pub path: PathBuf,
-    pub(crate) sound_data: Option<SoundData>
+    pub(crate) sound_data: Option<SoundData>,
+
+    handle: Option<SoundHandle>,
 }
 
 impl Sound {
@@ -36,7 +38,8 @@ impl Sound {
         Self {
             name: name.to_string(),
             path,
-            sound_data: None
+            sound_data: None,
+            handle: None
         }
     }
 }
@@ -47,6 +50,18 @@ impl PillTypeMapKey for Sound {
 
 impl Resource for Sound {
     type Handle = SoundHandle;
+
+    fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn set_handle(&mut self, handle: Self::Handle) {
+        self.handle = Some(handle);
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.handle.is_some()
+    }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
@@ -62,10 +77,6 @@ impl Resource for Sound {
         Ok(())
     }
 
-    fn get_name(&self) -> String {
-        self.name.clone()
-    }
-
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Find audio source components that use this sound and update them
         for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
@@ -73,7 +84,7 @@ impl Resource for Sound {
                 if let Some(sound_handle) = audio_source_component.sound_handle {
                     // If audio source component has handle to this sound
                     if sound_handle.data() == self_handle.data() {
-                        audio_source_component.remove_sound();
+                        audio_source_component.reset_sound();
                     }
                 }
             }

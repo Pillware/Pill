@@ -2,7 +2,7 @@ use crate::{
     engine::Engine,
     graphics::{ RendererMeshHandle },
     resources::{ ResourceStorage, Resource },
-    ecs::{ DeferredUpdateManagerPointer, MeshRenderingComponent },
+    ecs::{ DeferredOperationManagerPointer, MeshRenderingComponent },
     config::*,
 };
 
@@ -31,6 +31,8 @@ pub struct Mesh {
     // When exporting from Blender, V coordinate is flipped, so we need to flip it back
     // Should be set to false when importing a mesh exported as obj from Blender
     flip_uv_y: bool,
+
+    handle: Option<MeshHandle>,
 }
 
 // TODO: Add posibility to load from bytes using ResourceLoader 
@@ -41,7 +43,8 @@ impl Mesh {
             path,
             renderer_resource_handle: None,
             mesh_data: None,
-            flip_uv_y: false
+            flip_uv_y: false,
+            handle: None
         }
     }
 
@@ -60,6 +63,14 @@ impl Resource for Mesh {
 
     fn get_name(&self) -> String {
         self.name.clone()
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.handle.is_some()
+    }
+
+    fn set_handle(&mut self, self_handle: MeshHandle) {
+        self.handle = Some(self_handle);
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
@@ -96,7 +107,7 @@ impl Resource for Mesh {
                 if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
                     // If mesh rendering component has handle to this mesh
                     if mesh_handle.data() == self_handle.data() {
-                        mesh_rendering_component.set_mesh_handle(Option::<MeshHandle>::None);
+                        mesh_rendering_component.reset_mesh();
                         mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
                     }
                 }

@@ -17,6 +17,7 @@ pub use components:: {
     ConcreteComponentDestroyer,
     ComponentStorage,
     GlobalComponentStorage,
+    ComponentDeferredOperation
 };
 
 pub use components::camera_component::{
@@ -41,13 +42,10 @@ pub use components::egui_manager_component::{
     EguiManagerComponent,
 };
 
-pub use components::deferred_update_component::{
-    DeferredUpdateComponent,
-    DeferredUpdateManager,
-    DeferredUpdateManagerPointer,
-    DeferredUpdateRequest,
-    DeferredUpdateComponentRequest,
-    DeferredUpdateResourceRequest
+pub use components::deferred_operation_component::{
+    DeferredOperation,
+    DeferredOperationManagerPointer,
+    DeferredOperationComponent
 };
 
 pub use components::postprocessing_volume_component::{
@@ -86,8 +84,8 @@ pub use systems::rendering_system::{
     rendering_system,
 };
 
-pub use systems::deferred_update_system::{
-    deferred_update_system,
+pub use systems::deferred_operation_system::{
+    deferred_operation_system,
 };
 
 pub use systems::input_system::{

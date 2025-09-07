@@ -93,9 +93,9 @@ pub mod game {
             ResourceLoader,
             Sound,
             Shader,
-            ShaderParameterSlot,
-            ShaderTextureSlot,
-            ShaderParameterType,
+            ShaderValueParameterSlot,
+            ShaderTextureParameterSlot,
+            ShaderValueParameterType,
             ShaderType
         },
         graphics::{
@@ -169,9 +169,9 @@ pub mod internal {
 
             Material,
             MaterialHandle,
-            ShaderParameterSlot,
-            ShaderTextureSlot,
-            ShaderParameterType,
+            ShaderValueParameterSlot,
+            ShaderTextureParameterSlot,
+            ShaderValueParameterType,
 
             Mesh,
             MeshHandle,
@@ -181,9 +181,11 @@ pub mod internal {
             ResourceLoader,
             ResourceManager,
 
-            MaterialTexture,
+            ValueParameter,
+            TextureParameter,
             MaterialParameter,
-            get_renderer_texture_handle_from_material_texture,
+            MaterialParametersStore,
+            get_renderer_texture_handle_from_texture_parameter,
         },
     };
 }

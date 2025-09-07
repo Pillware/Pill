@@ -52,8 +52,8 @@ impl PillRenderer for Renderer {
         shader_type: ShaderType,
         vertex_shader_bytes: &[u8], 
         fragment_shader_bytes: &[u8], 
-        texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        value_parameters_slots: &HashMap<String, ShaderValueParameterSlot>,
+        texture_parameters_slots: &HashMap<String, ShaderTextureParameterSlot>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -66,8 +66,8 @@ impl PillRenderer for Renderer {
             &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
             vertex_shader_bytes,
             fragment_shader_bytes,
-            parameter_slots,
-            texture_slots,
+            value_parameters_slots,
+            texture_parameters_slots,
             &self.state.renderer_resource_storage.engine_parameters.bind_group_layout,
             &self.state.camera_bind_group_layout,
             pass_engine_parameters,
@@ -82,8 +82,7 @@ impl PillRenderer for Renderer {
         &mut self, 
         name: &str, 
         renderer_shader_handle: RendererShaderHandle, 
-        textures: &IndexMap<String, MaterialTexture>, 
-        parameters: &HashMap<String, MaterialParameter>
+        parameters: &IndexMap<String, MaterialParameter>
     ) -> Result<RendererMaterialHandle> {
         let material = RendererMaterial::new(
             &self.state.device,
@@ -91,7 +90,6 @@ impl PillRenderer for Renderer {
             &self.state.renderer_resource_storage,
             name,
             renderer_shader_handle,
-            textures,
             parameters,
         )?;
         let handle = self.state.renderer_resource_storage.materials.insert(material);
@@ -118,16 +116,7 @@ impl PillRenderer for Renderer {
 
     // --- Update ---
 
-    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &IndexMap<String, MaterialTexture>) -> Result<()> {
-        RendererMaterial::update_textures(
-            &self.state.device, 
-            renderer_material_handle, 
-            &mut self.state.renderer_resource_storage, 
-            textures
-        )
-    }
-
-    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &HashMap<String, MaterialParameter>) -> Result<()> {
+    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &IndexMap<String, MaterialParameter>) -> Result<()> {
         RendererMaterial::update_parameters(
             &self.state.device, 
             &self.state.queue, 

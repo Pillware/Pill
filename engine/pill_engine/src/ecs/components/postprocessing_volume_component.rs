@@ -1,6 +1,6 @@
 use crate::{
     config::DEFAULT_MATERIAL_HANDLE, 
-    ecs::{ components::volume::Volume3D, Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle }, 
+    ecs::{ components::volume::Volume3D, Component, ComponentStorage, DeferredOperationManagerPointer, EntityHandle, SceneHandle }, 
     engine::Engine, 
     graphics::{ compose_render_queue_key, PostprocessingEffect, RenderQueueKey }, 
     internal::MaterialParameter, 
@@ -178,7 +178,7 @@ pub struct PostprocessingVolumeComponent {
 
     entity_handle: Option<EntityHandle>,
     scene_handle: Option<SceneHandle>,
-    deferred_update_manager: Option<DeferredUpdateManagerPointer>,
+    deferred_operation_manager: Option<DeferredOperationManagerPointer>,
 }
 
 impl PostprocessingVolumeComponent {
@@ -195,7 +195,7 @@ impl PostprocessingVolumeComponent {
             effects: PillTraitTypeMap::new(),
             entity_handle: None,
             scene_handle: None,
-            deferred_update_manager: None,
+            deferred_operation_manager: None,
         }
     }
 
@@ -307,9 +307,9 @@ impl PillTypeMapKey for PostprocessingVolumeComponent {
 
 impl Component for PostprocessingVolumeComponent {
 //     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-//         // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
-//         let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
-//         self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
+//         // This component is using DeferredOperationSystem so keep DeferredOperationManager
+//         let deferred_operation_component = engine.get_global_component_mut::<DeferredOperationComponent>().expect("Critical: No DeferredOperationComponent");
+//         self.deferred_operation_manager = Some(deferred_operation_component.borrow_deferred_operation_manager());
 
 //         // Check if material handle is valid
 //         // if self.material_handle.is_some() {
@@ -351,7 +351,7 @@ impl Component for PostprocessingVolumeComponent {
 //         self.entity_handle = Some(self_entity_handle);
 //     }
 
-//     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
+//     fn deferred_operation(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
 //         // match request {
 //         //     DEFERRED_REQUEST_VARIANT_SET_MATERIAL => 
 //         //     {

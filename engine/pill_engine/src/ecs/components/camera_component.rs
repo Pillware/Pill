@@ -2,7 +2,7 @@ use crate::{
     engine::Engine, 
     graphics::{ RenderQueueKey, compose_render_queue_key, RendererCameraHandle }, 
     resources::{ Material, MaterialHandle, Mesh, MeshHandle },
-    ecs::{ Component, ComponentStorage, EntityHandle, SceneHandle, DeferredUpdateManagerPointer, DeferredUpdateComponentRequest },
+    ecs::{ Component, ComponentStorage, EntityHandle, SceneHandle, DeferredOperationManagerPointer },
 };
 
 use pill_core::{ PillSlotMapKey, Color, PillStyle, get_type_name };

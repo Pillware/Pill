@@ -8,6 +8,7 @@ mod material;
 mod resource;
 mod sound;
 mod shader;
+mod material_parameter_store;
 
 // --- Use ---
 
@@ -38,19 +39,24 @@ pub use texture::{
     TextureHandle 
 };
 
+pub use material_parameter_store::{
+    MaterialParametersStore,
+    ValueParameter,
+    TextureParameter,
+    MaterialParameter,
+    get_renderer_texture_handle_from_texture_parameter
+};
+
 pub use material::{ 
     Material, 
-    MaterialParameter, 
-    MaterialTexture, 
     MaterialHandle,
-    get_renderer_texture_handle_from_material_texture,
 };
 
 pub use shader::{ 
     Shader, 
     ShaderHandle, 
-    ShaderTextureSlot,
-    ShaderParameterSlot,
-    ShaderParameterType,
+    ShaderTextureParameterSlot,
+    ShaderValueParameterSlot,
+    ShaderValueParameterType,
     ShaderType,
 };
