@@ -151,6 +151,11 @@ pub fn server_update(net: &mut NetworkServer, dt: Duration) -> Result<()> {
     Ok(())
 }
 
+pub fn server_disconnect_client(net: &mut NetworkServer, client_id: u64) -> Result<()> {
+    net.server.disconnect(client_id);
+    Ok(())
+}
+
 pub fn server_get_events(net: &mut NetworkServer) -> Result<Vec<(u64, NetworkPacket)>> {
     let mut inbox = Vec::new();
     // handle connect/disconnect

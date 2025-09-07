@@ -89,6 +89,7 @@ pub use networking::{
     server_flush,
     server_update,
     server_get_events,
+    server_disconnect_client,
     client_connect,
     client_disconnect,
     client_send,

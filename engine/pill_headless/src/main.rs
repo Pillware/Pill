@@ -15,8 +15,6 @@ fn spawn_player(engine: &mut Engine, network_state_component: &NetworkStateCompo
     let scene = engine.get_active_scene_handle()?;
     println!("[SERVER] Spawning PLAYER with nid{ } for cid {} with transform {:?}", network_state_component.network_entity_id, my_id, transform);
 
-    let network_entity_id = network_state_component.network_entity_id;
-
     let entity = engine.create_entity(scene)?;
 
 	let mut network_state = network_state_component.clone();
@@ -79,7 +77,7 @@ fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let mut config = config::Config::default();
+    let config = config::Config::default();
 
     let game: Box<dyn PillGame> = Box::new(HeadlessGame);
     let mut engine = Engine::new(game, config);
@@ -99,7 +97,7 @@ fn main() -> Result<()> {
         // graceful shutdown on Ctrl-C
         if rx.try_recv().is_ok() {
             info!("Shutdown requested, broadcasting Exit");
-            if let Ok(mut network_manager) = engine.get_global_component_mut::<NetworkManagerComponent>() {
+            if let Ok(network_manager) = engine.get_global_component_mut::<NetworkManagerComponent>() {
                 if let NetworkSide::Server(state) = &mut network_manager.side {
                     let _ = server_broacast_exit(&mut state.net, "Server shutting down");
                     let _ = server_dying_grasp(&mut state.net, std::time::Duration::from_millis(500));

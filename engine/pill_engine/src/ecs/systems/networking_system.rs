@@ -1,8 +1,8 @@
 use anyhow::Result;
 use log::debug;
 use pill_core::{NetworkClient, client_connect, client_disconnect, client_update, client_get_events, server_update,
-    server_get_events, client_send, server_broadcast, server_broadcast_except, server_send_one, client_flush,
-    server_flush, NetworkPacket, NetworkAction, ExitNotice, is_not_ready};
+    server_get_events, client_send, server_broadcast, server_broadcast_except, server_send_one, server_disconnect_client,
+    client_flush, server_flush, NetworkPacket, NetworkAction, ExitNotice, is_not_ready};
 
 use crate::ecs::components::network_manager_component::OfflinePolicy;
 use crate::ecs::components::transform_component;
@@ -288,12 +288,19 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
             NetworkSide::Server(state) => {
                 for (cid, msg) in server_get_events(&mut state.net)? {
                     println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
-
                     if msg.tag == NetworkAction::Update {
                         let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
                         println!(
                             "[Server] ◂ received pkt from cid={cid} at time {}", pkt.timestamp
                         );
+
+                        // Drop the client's connection if caught cheating
+                        if pkt.client_id != cid {
+                            println!("[Server] Client {cid} sent a message with mismatched client_id {}, dropping connection", pkt .client_id);
+                            server_disconnect_client(&mut state.net, cid)?;
+                            continue;
+                        }
+
                         updates.push(pkt);
                     } else if msg.tag == NetworkAction::Join {
                         println!("[Server] Client {cid} JOIN with cid={cid}");
