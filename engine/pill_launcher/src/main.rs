@@ -15,6 +15,7 @@ enum Location {
     EngineProjectRoot, // Main engine project directory (containing creates, examples, etc)
     EngineCrates,
     PillEngineCrate,
+    PillCoreCrate,
     PillStandaloneCrate,
     PillLauncherCrate,
 }
@@ -66,6 +67,7 @@ fn get_path(location: Location) -> PathBuf {
         Location::EngineProjectRoot => main_engine_directory,
         Location::EngineCrates => main_engine_directory.join("engine"),
         Location::PillEngineCrate => main_engine_directory.join("engine").join("pill_engine"),
+        Location::PillCoreCrate => main_engine_directory.join("engine").join("pill_core"),
         Location::PillStandaloneCrate => main_engine_directory.join("engine").join("pill_standalone"),
         Location::PillLauncherCrate => main_engine_directory.join("engine").join("pill_launcher"),
     }
@@ -493,6 +495,19 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     }
 
     // Engine dev docs
+    // Generate pill_core before pill_engine and don't generate other dependencies
+    let core_crate_manifest_path = get_path(Location::PillCoreCrate).join("Cargo.toml");
+    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--manifest-path", core_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
+    let status = Command::new("cargo")
+        .args(arguments)
+        .status()
+        .context("Failed to execute command for generating core dev docs")?;
+
+    // Success
+	if status.success() {
+        println!("Core dev docs generated successfully!");
+    }
+
     let arguments = vec!["doc", "--no-deps", "--document-private-items", "--features", "all", "--manifest-path", engine_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
     let status = Command::new("cargo")
         .args(arguments)
