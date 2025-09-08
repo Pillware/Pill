@@ -1,0 +1,41 @@
+
+                                   ┌──────┐                            ┌────────┐                                  ┌────────┐
+                                   │Server│                            │Client_1│                                  │Client_2│
+                                   └──┬───┘                            └───┬────┘                                  └───┬────┘
+ Starts up and listens for connections│                                    │                                           │
+ ─────────────────────────────────────>                                    │                                           │
+                                      │                                    │                                           │
+                                      │ Connects with player spawn location│                                           │
+                                      │ <───────────────────────────────────                                           │
+                                      │                                    │                                           │
+                                      │      Sends state of the world      │                                           │
+                                      │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ >                                           │
+                                      │                                    │                                           │
+                                      │                                    │────┐
+                                      │                                    │    │ Spawns entities not yet in their world
+                                      │                                    │<───┘
+                                      │                                    │                                           │
+                                      │                       Connects with player spawn location                      │
+                                      │ <───────────────────────────────────────────────────────────────────────────────
+                                      │                                    │                                           │
+                                      │                            Sends state of the world                            │
+                                      │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ >
+                                   ┌──┴───┐                            ┌───┴────┐                                  ┌───┴────┐
+                                   │Server│                            │Client_1│                                  │Client_2│
+                                   └──────┘                            └────────┘                                  └────────┘
+
+@startuml
+participant Server
+participant Client_1
+participant Client_2
+
+-> Server: Starts up and listens for connections
+Client_1 -> Server: Connects with player spawn location
+Client_1 <-- Server: Sends state of the world
+Client_1 -> Client_1: Spawns entities not yet in their world
+Client_2 -> Server: Connects with player spawn location
+Client_2 <-- Server: Sends state of the world
+
+
+
+@enduml

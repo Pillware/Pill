@@ -1,7 +1,7 @@
 #![allow(non_snake_case, dead_code)]
 
 use std::{
-    env, fs::{self, File}, io::{ BufRead, BufReader, Write }, path::{ PathBuf }, process::Command
+    env, fs::{self, File}, io::{ BufRead, BufReader, Write }, path::{ PathBuf }, process::{Command, Stdio}, ffi::OsStr, result::Result::Ok
 };
 use config::Config;
 use fs_extra::dir::CopyOptions;
@@ -165,6 +165,67 @@ fn remove_files_starting_with(directory_path: &PathBuf, file_name_prefix: &str) 
         }
     }
 
+    Ok(())
+}
+
+// Render all *.puml under <crate>/docs/uml into <crate>/docs/uml_out as SVGs
+fn render_puml_for_crate(crate_dir: &PathBuf) -> Result<()> {
+    let in_dir = crate_dir.join("docs").join("uml");
+    let out_dir = crate_dir.join("docs").join("uml_out");
+
+    if !in_dir.exists() {
+        return Ok(()); // Skip non-existent
+    }
+    fs::create_dir_all(&out_dir)?;
+
+    // Collect input files
+    let mut inputs = Vec::new();
+    for entry in fs::read_dir(&in_dir).with_context(|| format!("Failed to read directory: {}", in_dir.display()))? {
+        let path = entry?.path();
+        println!("Checking file: {}", path.display());
+        if path.extension() == Some(OsStr::new("puml")) {
+            inputs.push(path);
+        }
+    }
+
+    println!("Found {} PlantUML files to render in {}", inputs.len(), in_dir.display());
+
+    if inputs.is_empty() {
+        return Ok(());
+    }
+
+    let have_cli = Command::new("plantuml").arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok();
+
+    // Prefer "plantuml" CLI tool if available
+    if have_cli {
+        for puml in &inputs {
+            let svg_path = out_dir.join(puml.file_stem().unwrap()).with_extension("svg");
+
+            let mut child = Command::new("plantuml")
+                .arg("-tsvg")
+                .arg("-pipe")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .context("Spawn plantuml -pipe")?;
+
+            {
+                let mut stdin = child.stdin.take().unwrap();
+                let bytes = fs::read(puml).with_context(|| format!("Read PUML file {}", puml.display()))?;
+                stdin.write_all(&bytes)?;
+            }
+
+            let out = child.wait_with_output().context("Wait plantuml")?;
+            if !out.status.success() {
+                bail!("plantuml failed with code {}", out.status);
+            }
+            fs::write(&svg_path, &out.stdout).with_context(|| format!("Write SVG file {}", svg_path.display()))?;
+
+        }
+        return Ok(());
+    }
+
+    // TODO: either distribute plantuml or download it automatically
     Ok(())
 }
 
@@ -416,20 +477,23 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     let engine_crate_manifest_path = get_path(Location::PillEngineCrate).join("Cargo.toml");
     let full_engine_manifest_path = empty_example_game_path.join("Cargo.toml");
 
+    // Pre-render all PUML in the engine crate
+    let pill_engine_dir = get_path(Location::PillEngineCrate);
+    render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
+
     // Game dev docs
-    let arguments = vec!["doc", "--no-deps", "--features", "game", "--manifest-path", engine_crate_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
+    let arguments = vec!["doc", "--no-deps", "--features", "game", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
         .context("Failed to execute command for generating game dev docs")?;
 
 	if status.success() {
-        println!("Engine dev docs generated successfully!");
+        println!("Game dev docs generated successfully!");
     }
 
     // Engine dev docs
-    // TODO: Remove game from workspace cargo.toml
-    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--features", "internal game", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
+    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--features", "all", "--manifest-path", engine_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
@@ -437,7 +501,7 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Success
 	if status.success() {
-        println!("Game dev docs generated successfully!");
+        println!("Engine dev docs generated successfully!");
     }
 
     Ok(())

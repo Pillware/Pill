@@ -1,3 +1,9 @@
+//! # Networking System
+//!
+//! This module handles replication, connection lifecycle, and conflict arbitration.
+//! The diagrams below are rendered from `docs/uml/*.puml` during the docs build.
+
+#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/connection.svg"))]
 use anyhow::Result;
 use log::debug;
 use pill_core::{NetworkClient, client_connect, client_disconnect, client_update, client_get_events, server_update,
