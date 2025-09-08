@@ -1,7 +1,7 @@
 
 use anyhow::Result;
 use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, NetworkSide, NetworkEntityState, networking_system_server};
-use pill_core::{server_broacast_exit, server_dying_grasp};
+use pill_core::{server_broadcast_exit, server_dying_grasp};
 use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
@@ -99,7 +99,7 @@ fn main() -> Result<()> {
             info!("Shutdown requested, broadcasting Exit");
             if let Ok(network_manager) = engine.get_global_component_mut::<NetworkManagerComponent>() {
                 if let NetworkSide::Server(state) = &mut network_manager.side {
-                    let _ = server_broacast_exit(&mut state.net, "Server shutting down");
+                    let _ = server_broadcast_exit(&mut state.net, "Server shutting down");
                     let _ = server_dying_grasp(&mut state.net, std::time::Duration::from_millis(500));
                 }
             }

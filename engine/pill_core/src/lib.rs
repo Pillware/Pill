@@ -84,7 +84,7 @@ pub use networking::{
     server_send_one,
     server_broadcast,
     server_broadcast_except,
-    server_broacast_exit,
+    server_broadcast_exit,
     server_dying_grasp,
     server_flush,
     server_update,
