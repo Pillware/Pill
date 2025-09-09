@@ -1,21 +1,63 @@
-//! # Networking System
+//! # Networking System (engine runtime)
 //!
-//! This module handles replication, connection lifecycle, and conflict arbitration.
-//! The diagrams below are rendered from `docs/uml/*.puml` during the docs build.
-
+//! This module drives PillEngine’s **replication loop**, **connection lifecycle**,
+//! and basic **conflict handling** on both server and client. It glues the
+//! engine’s ECS world to the thin networking façade in `pill_core::networking`.
+//!
+//! ## Responsibilities
+//! - Pump the underlying transports every frame (client/server).
+//! - Gate network work to a fixed cadence (tick) independent of frame rate.
+//! - Encode/decode **entity updates** (spawn/despawn/transform).
+//! - Broadcast server updates; apply local/world changes; run spawn/despawn hooks.
+//! - Handle **connection state**, graceful exit, and **reconnect backoff**.
+//!
+//! ## Data Model
+//! - **Wire:** [`pill_core::NetworkPacket`] with 1-byte [`pill_core::NetworkAction`]
+//!   tag: `Update`, `Join`, `Exit`.
+//! - **Payload:** [`NetworkUpdatePayload`] → a batch of [`EntityUpdate`] entries.
+//! - **EntityUpdate:** action + latest [`NetworkStateComponent`] + optional
+//!   authoritative [`TransformComponent`] (extend this as needed with components to replicate).
+//!
+//! ## Diagrams
+//! Connection / message flow:
+//!
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/connection.svg"))]
+//!
+//! Disconnect / reconnect flow:
+//!
+#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/connection.svg"))]
+//! <!-- Add more when available, e.g. -->
+//! // #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/replication.svg"))]
+//! // #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/arbitration.svg"))]
+//!
+//! ## Usage (high level)
+//! - **Server loop:** call [`networking_system_server`] once per frame.
+//! - **Client loop:** call [`networking_system_client`] once per frame.
+//! Both pump the transport every frame, but only perform update work when a
+//! fixed timeout elapses (see [`timeout_elapsed`]).
+//!
+//! See also:
+//! - [`crate::ecs::components::network_manager_component::NetworkManagerComponent`]
+//!   for global networking state and hooks.
+//! - [`crate::ecs::components::network_state_component::NetworkStateComponent`] for entity
+//! replication metadata.
+//! - `pill_core::networking` for transports and wire helpers.
+
 use anyhow::Result;
 use log::debug;
-use pill_core::{NetworkClient, client_connect, client_disconnect, client_update, client_get_events, server_update,
+use pill_core::{
+    NetworkClient, client_connect, client_disconnect, client_update, client_get_events, server_update,
     server_get_events, client_send, server_broadcast, server_broadcast_except, server_send_one, server_disconnect_client,
-    client_flush, server_flush, NetworkPacket, NetworkAction, ExitNotice, is_not_ready};
+    client_flush, server_flush, NetworkPacket, NetworkAction, ExitNotice, is_not_ready, Vector3f
+};
 
 use crate::ecs::components::network_manager_component::OfflinePolicy;
 use crate::ecs::components::transform_component;
 use crate::engine::Engine;
-use crate::ecs::{EntityHandle, TransformComponent, TimeComponent, NetworkStateComponent, NetworkEntityState,
-    NetworkSide, NetworkManagerComponent, ConnectionState, ClientState};
-use pill_core::{Vector3f};
+use crate::ecs::{
+    EntityHandle, TransformComponent, TimeComponent, NetworkStateComponent, NetworkEntityState,
+    NetworkSide, NetworkManagerComponent, ConnectionState, ClientState
+};
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -24,63 +66,85 @@ use bincode;
 use rand::{rng, Rng, SeedableRng};
 use cgmath::InnerSpace;
 
-
+/// High-level action for an entity update.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NetworkEntityAction {
+    /// Create the entity on the receiver if missing; initialize state.
     Spawn,
+    /// Remove the entity on the receiver.
     Despawn,
+    /// Update existing entity state (e.g. transform).
     Update,
 }
 
+/// One entity change bundled into a network payload.
+///
+/// The **authoritative** transform is included on server → client updates and
+/// on client → server updates for client-owned entities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityUpdate {
+    /// Which kind of change this is.
     pub action: NetworkEntityAction,
+    /// Latest replication metadata.
     pub net_state: NetworkStateComponent,
-    // TODO: maybe need net_scene_id to identify the scene
-    // TODO: update this as a Vec of Nettable components after Hist0r merge, inject the
-    // arbiter/conflict resolver function
+    /// Optional snapshot (position/rotation, etc.).
+    ///
+    /// TODO: after Hist0r merge, convert to a vector of nettable components and
+    /// inject conflict resolution/arbiter.
     pub transform: Option<TransformComponent>,
 }
 
+/// Batch of updates exchanged as the body of `NetworkAction::Update`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkUpdatePayload {
+    /// Origin client ID (`0` means server).
     pub client_id: u64,
+    /// All entity changes bundled into this tick’s message.
     pub updates: Vec<EntityUpdate>,
+    /// Sender’s time (seconds); used for logging/ordering only.
     pub timestamp: f32,
 }
 
 // ------------- CLIENT HOOKS -------------
+//
+/// Base smoothing rate used by [`exp_blend`].
+const LERP_RATE: f32 = 0.001;
 
+/// Exponential smoothing toward target, parameterized by [`LERP_RATE`].
+///
+/// For small `delta_time`, behaves ~ `LERP_RATE * delta_time`.
 #[inline(always)]
 fn exp_blend(delta_time: f32) -> f32 {
-        1.0 - (-LERP_RATE * delta_time).exp()           // ≈ LERP_RATE * delta_time for small delta_time
+    1.0 - (-LERP_RATE * delta_time).exp()
 }
 
+/// Linear interpolation for `Vector3f`.
 fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
     from + (to - from) * t.clamp(0.0, 1.0)
 }
 
+/// Heuristic: did the transform change enough to warrant sending an update?
+///
+/// Uses squared thresholds (≈ 0.1 units) on position/rotation.
 fn changed_enough(current: &TransformComponent, previous: &TransformComponent) -> bool {
-    // Use squared thresholds (0.1 units in postion)
     let pos_diff = (current.position - previous.position).magnitude2();
     let rot_diff = (current.rotation - previous.rotation).magnitude2();
     pos_diff > 0.01 || rot_diff > 0.01
 }
 
-const LERP_RATE: f32 = 0.001;
-
+/// Default client-side interpolation for **non-owned** entities.
+///
+/// Reads authoritative snapshots in [`NetworkStateComponent::transform`] and
+/// eases the local `TransformComponent` toward them.
 fn run_client_interpolation(engine: &mut Engine) -> Result<()> {
-    // Run the client-side interpolation for non-owned entities
     let my_id = engine.get_global_component::<NetworkManagerComponent>()?.my_id;
     let delta_time = engine.frame_delta_time;
-    // Peform interpolation for the components that have a transform and are not owned by the
-    // client
-    for (_, transform, net_state) in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
+
+    for (_, transform, net_state)
+        in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
+    {
         if let Some(tr) = &net_state.transform  {
             if net_state.owner_id != my_id {
-                //println!("interpolating: source {:?} dest {:?} delta_time={}", transform.position, tr.position, delta_time);
-                // Interpolate the transform based on the current time and the last known state
-                                   //let t         = blend(delta_time, LERP_HALFLIFE);
                 let t = exp_blend(delta_time);
                 transform.set_position(lerp_vec3(transform.position, tr.position, t));
                 transform.set_rotation(lerp_vec3(transform.rotation, tr.rotation, t));
@@ -91,8 +155,9 @@ fn run_client_interpolation(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+/// Run a custom interpolation hook if registered; otherwise fallback to
+/// [`run_client_interpolation`].
 fn run_client_interpolation_hook(engine: &mut Engine) -> Result<()> {
-    // Run the client-side interpolation for non-owned entities
     let transform_interpolation_hook = {
         let global_net_state = engine.get_global_component::<NetworkManagerComponent>()?;
         global_net_state.client_interpolation_hook
@@ -105,31 +170,34 @@ fn run_client_interpolation_hook(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+/// Default despawn behavior when no entity-specific handler is registered.
+///
+/// Removes any entity whose `NetworkStateComponent.network_entity_id` matches.
 fn default_despawn_hook(engine: &mut Engine, net_state: &NetworkStateComponent) -> Result<()> {
-    // Default despawn hook - simply remove the entity with the given network_entity_id
     let mut to_despawn: Vec<EntityHandle> = Vec::new();
-    for (handle, net_state_comp) in engine.iterate_one_component_mut::<NetworkStateComponent>()? {
+    for (handle, net_state_comp)
+        in engine.iterate_one_component_mut::<NetworkStateComponent>()?
+    {
         if net_state_comp.network_entity_id == net_state.network_entity_id {
             to_despawn.push(handle);
         }
     }
     for handle in to_despawn {
-        engine.remove_entity_default_scene(handle)?; // TODO: maybe we want to just ghost-posess the
-                                               // entity with AI?
+        engine.remove_entity_default_scene(handle)?;
     }
     Ok(())
 }
 
 // ------------- NETWORKING HELPERS -------------
 
+/// Mark client as disconnected and schedule a reconnect with exponential backoff.
 fn mark_disconnected(engine: &mut Engine, reason: &str) -> Result<()> {
     let time = engine.get_global_component::<TimeComponent>()?.time;
     let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
     if network_manager.is_client() {
         if let Some(client) = network_manager.client_mut() {
             if client.connection_state == ConnectionState::Disconnected {
-                // already disconnected
-                return Ok(());
+                return Ok(()); // already disconnected
             }
             println!("[Client] Disconnected: {reason}");
             client.connection_state = ConnectionState::Disconnected;
@@ -141,12 +209,12 @@ fn mark_disconnected(engine: &mut Engine, reason: &str) -> Result<()> {
     Ok(())
 }
 
+/// Mark client as connected and clear backoff/reconnect intent.
 fn mark_connected(engine: &mut Engine) -> Result<()> {
     let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
     if network_manager.is_client() {
         if let Some(client) = network_manager.client_mut() {
             if client.connection_state == ConnectionState::Connected {
-                // already connected
                 return Ok(());
             }
             println!("[Client] Connected to server at {}", client.server_address);
@@ -159,14 +227,13 @@ fn mark_connected(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-
+/// Attempt a reconnect if backoff permits; re-announce owned entities as `Spawn`.
 fn client_try_reconnect(engine: &mut Engine) -> Result<()> {
     let time = engine.get_global_component::<TimeComponent>()?.time;
     let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
     let my_id = network_manager.my_id;
 
     if let Some(client) = network_manager.client_mut() {
-        //println!("[Client] connection_state={:?} want_reconnect={} next_try_s={} time={}", client.connection_state, client.want_reconnect, client.next_try_s, time);
         if !(client.connection_state == ConnectionState::Disconnected && client.want_reconnect) { return Ok(()); }
         if time < client.next_try_s { return Ok(()); }
 
@@ -188,7 +255,7 @@ fn client_try_reconnect(engine: &mut Engine) -> Result<()> {
         }
     }
 
-    // Re-announce entities if server despawned them during our absence
+    // Re-announce locally owned entities
     for (_, net_state) in engine.iterate_one_component_mut::<NetworkStateComponent>()? {
         if net_state.owner_id == my_id {
             net_state.state = NetworkEntityState::Spawn;
@@ -198,10 +265,13 @@ fn client_try_reconnect(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-/// Call this when the client wants to go offline (e.g. on user request)
+/// Client-initiated graceful disconnect (sends `Exit`, updates state, closes).
+///
+/// Safe to call from UI or game logic wanting to go offline.
 pub fn client_go_offline(engine: &mut Engine, reason: &str) -> Result<()> {
     let time = engine.get_global_component::<TimeComponent>()?.time;
 
+    // Notify the server
     {
         let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
         if let Some(client) = network_manager.client_mut() {
@@ -218,7 +288,7 @@ pub fn client_go_offline(engine: &mut Engine, reason: &str) -> Result<()> {
 
     mark_disconnected(engine, reason)?;
 
-    // close the underlying connection
+    // Close the underlying connection
     {
         let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
         if let Some(client) = network_manager.client_mut() {
@@ -229,6 +299,10 @@ pub fn client_go_offline(engine: &mut Engine, reason: &str) -> Result<()> {
     Ok(())
 }
 
+/// Pump the transport every frame (client or server), flush, and map transient
+/// errors to a disconnect mark instead of failing hard.
+///
+/// Always call this once per frame to avoid timeouts even when no work is due.
 fn pump_transport(engine: &mut Engine) -> Result<()> {
     let delta_time = {
         let frame_delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
@@ -242,11 +316,11 @@ fn pump_transport(engine: &mut Engine) -> Result<()> {
         match &mut network_manager.side {
             NetworkSide::Client(ref mut state) => {
                 if let Err(e) = client_update(&mut state.net, delta_time) { if is_not_ready(&e) { disconnect_reason = Some(e.to_string()); } else { return Err(e); }}
-                if let Err(e) = client_flush(&mut state.net)     { if is_not_ready(&e) { disconnect_reason.get_or_insert(e.to_string()); } else { return Err(e); }}
+                if let Err(e) = client_flush(&mut state.net)             { if is_not_ready(&e) { disconnect_reason.get_or_insert(e.to_string()); } else { return Err(e); }}
             }
             NetworkSide::Server(ref mut state) => {
                 if let Err(e) = server_update(&mut state.net, delta_time) { if !is_not_ready(&e) { return Err(e); } }
-                if let Err(e) = server_flush(&mut state.net) { if !is_not_ready(&e) { return Err(e); } }
+                if let Err(e) = server_flush(&mut state.net)               { if !is_not_ready(&e) { return Err(e); } }
             }
         }
     }
@@ -257,10 +331,18 @@ fn pump_transport(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+/// Drain network events/messages and return decoded **Update** payloads.
+///
+/// Also handles `Join`/`Exit` book-keeping:
+/// - Server: sends existing entities to newcomers, applies exit policy.
+/// - Client: marks server exit and transitions to disconnected.
+///
+/// Returns **only** `Update` batches; side effects handle other tags.
 fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
-    let mut updates:    Vec<NetworkUpdatePayload> = Vec::new();
-    let mut join_cids:  Vec<u64>                  = Vec::new();
+    let mut updates:   Vec<NetworkUpdatePayload> = Vec::new();
+    let mut join_cids: Vec<u64>                  = Vec::new();
     let mut exit_cids: Vec<u64>                  = Vec::new();
+
     {
         let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
 
@@ -271,13 +353,11 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                         for msg in &msgs {
                             if msg.tag == NetworkAction::Update {
                                 let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                                debug!(
-                                    "[Client] ◂ received pkt from srv at time {}", pkt.timestamp
-                                );
+                                debug!("[Client] ◂ received pkt from srv at time {}", pkt.timestamp);
                                 updates.push(pkt);
                             } else if msg.tag == NetworkAction::Exit {
                                 let notice: ExitNotice = bincode::deserialize(&msg.data)
-                                  .unwrap_or(ExitNotice { reason: "Server exit".into(), when_ms: 0 });
+                                    .unwrap_or(ExitNotice { reason: "Server exit".into(), when_ms: 0 });
                                 println!("[Client] Server Exit: {} (t={})", notice.reason, notice.when_ms);
                                 mark_disconnected(engine, &notice.reason)?;
                             }
@@ -296,20 +376,18 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
                     println!("[Server] ◂ received msg from cid={cid} with tag {:?}", msg.tag);
                     if msg.tag == NetworkAction::Update {
                         let pkt: NetworkUpdatePayload = bincode::deserialize(&msg.data)?;
-                        println!(
-                            "[Server] ◂ received pkt from cid={cid} at time {}", pkt.timestamp
-                        );
+                        println!("[Server] ◂ received pkt from cid={cid} at time {}", pkt.timestamp);
 
-                        // Drop the client's connection if caught cheating
+                        // Drop the client's connection if caught cheating (ID spoofing)
                         if pkt.client_id != cid {
-                            println!("[Server] Client {cid} sent a message with mismatched client_id {}, dropping connection", pkt .client_id);
+                            println!("[Server] Client {cid} sent mismatched client_id {}, dropping", pkt.client_id);
                             server_disconnect_client(&mut state.net, cid)?;
                             continue;
                         }
 
                         updates.push(pkt);
                     } else if msg.tag == NetworkAction::Join {
-                        println!("[Server] Client {cid} JOIN with cid={cid}");
+                        println!("[Server] Client {cid} JOIN");
                         join_cids.push(cid);
                     } else if msg.tag == NetworkAction::Exit {
                         println!("[Server] Client {cid} EXIT");
@@ -320,20 +398,22 @@ fn receive_updates(engine: &mut Engine) -> Result<Vec<NetworkUpdatePayload>> {
         }
     }
 
-    // Server only functionality
+    // Server-side post-processing
     if !join_cids.is_empty() {
         send_existing_entities(engine, join_cids)?;
     }
-
     if !exit_cids.is_empty() {
         handle_exit_policy(engine, exit_cids)?;
     }
 
-	Ok(updates)
+    Ok(updates)
 }
 
+/// For each newly joined client, send a snapshot of **all existing entities**.
+///
+/// Skips entities owned by the joining client (no echo).
 fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()> {
-    // Send it only if we are fully connected
+    // Only if a client is fully connected (server path always true)
     let connected = {
         let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
         network_manager.client_mut().map(|c| c.connection_state == ConnectionState::Connected).unwrap_or(true)
@@ -341,16 +421,14 @@ fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()
     if !connected {
         return Ok(());
     }
-    // Inform every new client about all existing entities on the server
+
     for cid in join_cids {
         let mut entity_updates: Vec<EntityUpdate> = Vec::new();
-        for (_, transform, net_state) in
-            engine.iterate_two_components_mut::<TransformComponent,
-                                                NetworkStateComponent>()?
+        for (_, transform, net_state)
+            in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
         {
             if net_state.owner_id == cid {
-                // don't reannounce entities owned by the client itself
-                continue;
+                continue; // do not reannounce entities owned by the client itself
             }
             entity_updates.push(EntityUpdate {
                 action:    NetworkEntityAction::Spawn,
@@ -369,7 +447,7 @@ fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()
         if let NetworkSide::Server(state) = &mut network_manager.side {
             server_send_one(
                 &mut state.net,
-                cid,   // **only** the newcomer
+                cid,
                 &NetworkPacket {
                     tag:  NetworkAction::Update,
                     data: bincode::serialize(&snapshot)?,
@@ -377,39 +455,32 @@ fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()
             )?;
         }
 
-        println!(
-            "[Server] → sent {} existing entities to cid={cid}",
-            snapshot.updates.len()
-        );
+        println!("[Server] → sent {} existing entities to cid={cid}", snapshot.updates.len());
     }
     Ok(())
 }
 
+/// Apply the configured offline policy for disconnected clients.
 fn handle_exit_policy(engine: &mut Engine, exit_cids: Vec<u64>) -> Result<()> {
     let state = engine.get_global_component_mut::<NetworkManagerComponent>()?;
     let policy = state.server_mut().map(|s| s.offline_policy).unwrap_or(OfflinePolicy::Despawn);
     match policy {
-        OfflinePolicy::Despawn => {
-            despawn_entities(engine, exit_cids)?;
-        },
-        OfflinePolicy::Freeze => {
-            println!("Freezing entities from disconnected clients is not implemented yet");
-        },
-        OfflinePolicy::AI => {
-            println!("AI takeover for entities from disconnected clients is not implemented yet");
-        }
+        OfflinePolicy::Despawn => despawn_entities(engine, exit_cids)?,
+        OfflinePolicy::Freeze  => println!("Freezing entities from disconnected clients is not implemented yet"),
+        OfflinePolicy::AI      => println!("AI takeover for entities from disconnected clients is not implemented yet"),
     }
     Ok(())
 }
 
+/// Despawn all entities owned by `despawn_cids` and broadcast that to clients.
 fn despawn_entities(engine: &mut Engine, despawn_cids: Vec<u64>) -> Result<()> {
     let set: HashSet<u64> = despawn_cids.iter().copied().collect();
 
-    // Despawn all entities owned by the clients that disconnected
+    // Build the update batch
     let entity_updates: Vec<EntityUpdate> = {
         let mut entity_updates: Vec<EntityUpdate> = Vec::new();
-        for (_, net_state) in
-            engine.iterate_one_component_mut::<NetworkStateComponent>()?
+        for (_, net_state)
+            in engine.iterate_one_component_mut::<NetworkStateComponent>()?
         {
             if set.contains(&net_state.owner_id) {
                 entity_updates.push(EntityUpdate {
@@ -441,31 +512,28 @@ fn despawn_entities(engine: &mut Engine, despawn_cids: Vec<u64>) -> Result<()> {
         }
     }
 
-    // Server needs to despawn them locally as well
+    // Apply locally too
     for entity_update in &entity_updates {
         run_despawn_hooks(engine, entity_update)?;
     }
 
-    println!(
-        "[Server] → despawned {} entities from disconnected clients",
-        entity_updates.len()
-    );
+    println!("[Server] → despawned {} entities from disconnected clients", entity_updates.len());
     Ok(())
 }
 
+/// If the entity exists locally, apply the update and return `true`.
+///
+/// On server, also writes the authoritative transform into the scene.
 fn run_update_for_existing_entity(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<bool> {
     let nid = entity_update.net_state.network_entity_id;
-    // Check if the entity with the given network_entity_id already exists
     for (_, transform, net_state)
-        in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
+        in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
+    {
         if nid == net_state.network_entity_id {
             net_state.transform = entity_update.transform.clone();
-            // authoritative change on the server
             if let Some(tr) = &entity_update.transform {
-                *transform = *tr;
+                *transform = *tr; // authoritative change
             }
-
-            // refresh net state
             *net_state = entity_update.net_state.clone();
             return Ok(true);
         }
@@ -473,10 +541,9 @@ fn run_update_for_existing_entity(engine: &mut Engine, entity_update: &EntityUpd
     Ok(false)
 }
 
+/// Look up and run the **spawn handler** for this entity type (if present).
 fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<()> {
-    let tr = entity_update.transform
-                          .clone()
-                          .unwrap_or_else(TransformComponent::default);
+    let tr = entity_update.transform.clone().unwrap_or_else(TransformComponent::default);
     let spawn_fn = {
         let network_manager = engine.get_global_component::<NetworkManagerComponent>()?;
         network_manager.spawn_handlers.get(&entity_update.net_state.entity_type).copied()
@@ -485,11 +552,13 @@ fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<
     if let Some(spawn_fn) = spawn_fn {
         spawn_fn(engine, &entity_update.net_state, &tr)?;
     } else {
-        println!("No spawn handler for entity entity_type '{}'", entity_update.net_state.entity_type);
+        println!("No spawn handler for entity_type '{}'", entity_update.net_state.entity_type);
     }
     Ok(())
 }
 
+/// Look up and run the **despawn handler** for this entity type (if present);
+/// otherwise fallback to [`default_despawn_hook`].
 fn run_despawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<()> {
     let despawn_fn = {
         let network_manager = engine.get_global_component::<NetworkManagerComponent>()?;
@@ -499,82 +568,86 @@ fn run_despawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Resul
     if let Some(despawn_fn) = despawn_fn {
         despawn_fn(engine, &entity_update.net_state)?;
     } else {
-        println!("No despawn handler for entity entity_type '{}' Running the default despawn hook", entity_update.net_state.entity_type);
+        println!("No despawn handler for entity_type '{}'; running default", entity_update.net_state.entity_type);
         default_despawn_hook(engine, &entity_update.net_state)?;
     }
     Ok(())
 }
 
+/// Gather client-owned entity changes and send an `Update` payload to the server.
+///
+/// - Sends `Spawn` once per entity when it first appears locally, then `Alive`.
+/// - Sends `Update` when transform changed sufficiently since the last send.
+/// - Skips work if not connected (transient errors are ignored).
 fn send_client_updates(engine: &mut Engine) -> Result<()> {
-    // Iterate over all entities living on the client that have Networking component and send them to the server
+    let mut updates: Vec<EntityUpdate> = Vec::new();
+    let my_id = engine.get_global_component::<NetworkManagerComponent>()?.my_id;
+
+    for (_, transform, net_state)
+        in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
     {
-        let mut updates: Vec<EntityUpdate> = Vec::new();
-        let my_id = engine.get_global_component::<NetworkManagerComponent>()?.my_id;
-        for (_, transform, net_state)
-            in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()? {
-            if net_state.state == NetworkEntityState::Spawn {
-                // send the entity's state to the server only if this client is the owner of the
-                // entity
-                if net_state.owner_id != my_id {
-                    continue; // skip entities not owned by this client
-                }
-               println!("▸ Queuing for spawn: new entity for nid={:?} from cid={my_id}", net_state.network_entity_id);
-                updates.push(EntityUpdate {
-                    action: NetworkEntityAction::Spawn,
-                    net_state: net_state.clone(),
-                    transform: Some(transform.clone()),
-                });
-                net_state.state = NetworkEntityState::Alive; // mark the entity as alive
-                net_state.last_transform = Some(transform.clone());
-                continue;
+        if net_state.state == NetworkEntityState::Spawn {
+            if net_state.owner_id != my_id {
+                continue; // only announce entities we own
             }
-
-            // Update transform only if it has changed since the last update
-            let need_send = match &net_state.last_transform {
-                Some(previous) => changed_enough(&transform, previous),
-                None => true,
-            };
-
-            if need_send {
-                if need_send {
-                    updates.push(EntityUpdate {
-                        action: NetworkEntityAction::Update,
-                        net_state: net_state.clone(),
-                        transform: Some(transform.clone()),
-                    });
-                    net_state.last_transform = Some(transform.clone());
-                }
-            }
+            println!("▸ Queuing for spawn: nid={:?} from cid={my_id}", net_state.network_entity_id);
+            updates.push(EntityUpdate {
+                action: NetworkEntityAction::Spawn,
+                net_state: net_state.clone(),
+                transform: Some(transform.clone()),
+            });
+            net_state.state = NetworkEntityState::Alive;
+            net_state.last_transform = Some(transform.clone());
+            continue;
         }
 
-        if updates.is_empty() {
-            // Nothing to send
-            return Ok(());
-        }
-
-        let payload = NetworkUpdatePayload {
-            client_id: my_id,
-            updates,
-            timestamp: engine.get_global_component::<TimeComponent>()?.time,
+        let need_send = match &net_state.last_transform {
+            Some(previous) => changed_enough(&transform, previous),
+            None => true,
         };
-        if let NetworkSide::Client(state) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
-            let msg = NetworkPacket {
-                tag: NetworkAction::Update,
-                data: bincode::serialize(&payload)?,
-            };
-			match client_send(&mut state.net, &msg) {
-				Ok(_) => {}
-				Err(e) if is_not_ready(&e) => {
-					println!("[Client] ▸ not connected yet – send skipped");
-					return Ok(());
-				}
-				Err(e) => return Err(e),
-			}
+
+        if need_send {
+            updates.push(EntityUpdate {
+                action: NetworkEntityAction::Update,
+                net_state: net_state.clone(),
+                transform: Some(transform.clone()),
+            });
+            net_state.last_transform = Some(transform.clone());
         }
     }
+
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    let payload = NetworkUpdatePayload {
+        client_id: my_id,
+        updates,
+        timestamp: engine.get_global_component::<TimeComponent>()?.time,
+    };
+
+    if let NetworkSide::Client(state) = &mut engine.get_global_component_mut::<NetworkManagerComponent>()?.side {
+        let msg = NetworkPacket {
+            tag: NetworkAction::Update,
+            data: bincode::serialize(&payload)?,
+        };
+        match client_send(&mut state.net, &msg) {
+            Ok(_) => {}
+            Err(e) if is_not_ready(&e) => {
+                println!("[Client] ▸ not connected yet – send skipped");
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
     Ok(())
 }
 
+/// Fixed-rate gate for network work (independent of frame rate).
+///
+/// Accumulates frame time and returns `true` when at least one **network step**
+/// interval has elapsed (resets the accumulator).
 fn timeout_elapsed(engine: &mut Engine) -> bool {
     let delta_time = engine.get_global_component::<TimeComponent>().map(|c| c.delta_time).unwrap_or(0.0);
     let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>().unwrap();
@@ -588,12 +661,20 @@ fn timeout_elapsed(engine: &mut Engine) -> bool {
 
 // ------------- NETWORKING PUBLIC SYSTEMS -------------
 
+/// **Server-side** networking system; call once per frame.
+///
+/// Steps:
+/// 1. Always pump transports (avoid timeouts).
+/// 2. If not time for a network tick yet → return.
+/// 3. Read client updates, apply to server world, **broadcast** to other clients.
+///
+/// # Errors
+/// Propagates transport/serialization errors that aren’t transient.
 pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
     // Run transport pump every tick to avoid timeouts
     pump_transport(engine)?;
 
     if !timeout_elapsed(engine) {
-        // Not enough time has passed to process the next network update
         return Ok(());
     }
 
@@ -601,33 +682,26 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
     match receive_updates(engine) {
         Ok(updates) => {
             println!("Got {} updates from clients", updates.len());
-            // Step 2: Process the updates and apply them to the entities in the server's world immediately
+            // Step 2: Apply to authoritative world and rebroadcast
             for update in &updates {
-                // handle each NetworkUpdatePayload from a client
                 for entity_update in &update.updates {
                     match entity_update.action {
                         NetworkEntityAction::Spawn => {
                             println!("Spawn ◂ from cid={}  nid={:?}", update.client_id, entity_update.net_state.network_entity_id);
-                            // TODO: to verify if we need to verify if we are not spawning a
-                            // duplicate entity on the server
+                            // TODO: optional duplicate suppression on server
                             run_spawn_hooks(engine, entity_update)?;
                         },
                         NetworkEntityAction::Despawn => {
                             run_despawn_hooks(engine, entity_update)?;
                         },
                         NetworkEntityAction::Update => {
-                            // Handle updating the entity's transform
-                            // TODO: we will handle multiple entities/components - allow for
-                            // injection?
                             if let Some(tr) = &entity_update.transform {
                                 for (_, transform, net_state)
-                                    in engine.iterate_two_components_mut::<TransformComponent,
-                                                                           NetworkStateComponent>()? {
+                                    in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
+                                {
                                     if entity_update.net_state.network_entity_id == net_state.network_entity_id {
                                         net_state.transform = Some(tr.clone());
-
-                                        // authoritative change on the server
-                                        *transform = *tr;
+                                        *transform = *tr; // authoritative
                                         break;
                                     }
                                 }
@@ -638,9 +712,9 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
 
                 let network_manager = engine.get_global_component_mut::<NetworkManagerComponent>()?;
                 if let NetworkSide::Server(state) = &mut network_manager.side {
-                    // Broadcast the update to everyone except the sender
+                    // Broadcast to everyone except the sender
                     server_broadcast_except(&mut state.net, update.client_id, &NetworkPacket {
-                        tag: NetworkAction::Update,
+                        tag:  NetworkAction::Update,
                         data: bincode::serialize(&update)?,
                     })?;
                 };
@@ -654,16 +728,23 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+/// **Client-side** networking system; call once per frame.
+///
+/// Steps:
+/// 1. Attempt reconnects if needed.
+/// 2. Always pump transports; run interpolation hook.
+/// 3. Gate on fixed network cadence; then send local updates.
+/// 4. Read server updates and apply locally; mark connected when any update arrives.
+///
+/// # Errors
+/// Propagates non-transient transport/serialization errors.
 pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
-
     client_try_reconnect(engine)?;
-    // Run transport pump every tick to avoid timeouts
     pump_transport(engine)?;
 
     run_client_interpolation_hook(engine)?;
 
     if !timeout_elapsed(engine) {
-        // Not enough time has passed to process the next network update
         return Ok(());
     }
 
@@ -673,7 +754,6 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
         Ok(updates) => {
             let got_updates = !updates.is_empty();
 
-            // there is just one Update in the vector
             for update in &updates {
                 for entity_update in &update.updates {
                     match entity_update.action {
@@ -687,15 +767,16 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                             run_despawn_hooks(engine, entity_update)?;
                         },
                         NetworkEntityAction::Update => {
-                            // Handle updating the entity's transform
                             if let Some(tr) = &entity_update.transform {
                                 for (_, transform, net_state)
-                                    in engine.iterate_two_components_mut::<TransformComponent,
-                                                                           NetworkStateComponent>()? {
+                                    in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
+                                {
                                     if entity_update.net_state.network_entity_id == net_state.network_entity_id {
                                         net_state.transform = Some(tr.clone());
-                                        debug!("▸ Updating entity with nid={:?} for cid={} net_state={:?} with transform {:?}",
-                                                 net_state.network_entity_id, update.client_id, net_state, tr);
+                                        debug!(
+                                            "▸ Updating nid={:?} for cid={} net_state={:?} tr={:?}",
+                                            net_state.network_entity_id, update.client_id, net_state, tr
+                                        );
                                         break;
                                     }
                                 }
@@ -717,3 +798,4 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
 
     Ok(())
 }
+

@@ -194,6 +194,22 @@ pub fn server_start(bind: &str, max_clients: usize) -> Result<NetworkServer> {
 /// - Invalid server address,
 /// - Local socket bind failure,
 /// - Netcode transport initialization errors.
+/// # Example
+/// ```no_run
+/// # use pill_core::networking::*;
+/// let client_id = 12345; // Unique per client_id
+/// let mut client = client_connect("192.168.1.0:9000", client_id)?;
+/// loop {
+///    client_update(&mut client, std::time::Duration::from_millis(16))?;
+///    // send own updates to the server
+///    // client_send(&mut client, &my_packet)?;
+///    for pkt in client_get_events(&mut client)? {
+    ///    // handle server updates...
+///    }
+///    client_flush(&mut client)?;
+/// }
+/// # Ok::<_, anyhow::Error>(())
+/// ```
 pub fn client_connect(bind: &str, client_id: u64) -> Result<NetworkClient> {
     let server_addr: SocketAddr = bind.parse()?;
 
