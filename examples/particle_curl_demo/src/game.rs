@@ -2,7 +2,7 @@ use pill_engine::game::*;
 use noise::{NoiseFn, OpenSimplex};
 use rand::Rng;
 
-const PARTICLE_COUNT: usize = 200;
+const PARTICLE_COUNT: usize = 1000;
 
 // Define custom component
 pub struct PillComponent { }
@@ -40,7 +40,7 @@ impl PillTypeMapKey for Velocity {
 #[derive(Clone)]
 pub struct SimulationParameters {
     pub acceleration: f32, // K - how fast particles chase the flow
-    pub damping: f32,      // per-step multiplicative damping
+    pub linear_drag: f32,
     pub amplitude: f32,    // amplitude of the curl field
     pub frequency: f32,    // spatial frequency (cycles/world unit)
     pub time_scale: f32,   // how fast field morphs
@@ -50,12 +50,12 @@ pub struct SimulationParameters {
 impl Default for SimulationParameters {
     fn default() -> Self {
         Self {
-            acceleration: 4.0,
-            damping: 0.995,
-            amplitude: 2.0,
+            acceleration: 10.0,
+            linear_drag: 1.0,
+            amplitude: 30.0,
             frequency: 0.02,// to try 0.01..0.05
             time_scale: 0.2,
-            eps: 0.01, // 1e-3..1e-2
+            eps: 0.1, // 1e-3..1e-2
         }
     }
 }
@@ -220,21 +220,27 @@ pub fn particle_spawn_oneshot(engine: &mut Engine) -> Result<()> {
 }
 
 pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
-    let (curl_field, sim, dt, t) = {
+    let (curl_field, sim, mut dt, t) = {
         let cf = engine.get_global_component::<CurlField>()?.clone();
         let sp = engine.get_global_component::<SimulationParameters>()?.clone();
         let time = engine.get_global_component::<TimeComponent>()?;
         (cf, sp, time.delta_time, time.time)
     };
 
+    if dt > 1.0/30.0 { dt = 1.0/30.0; } // avoid large steps
+
     for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
         // flow velocity from curl(F)
         let p = transform.position;
         let u = curl_field.curl_at(p, t, &sim);
 
-        // chase flow with damping
-        velocity.0 += sim.acceleration * (u - velocity.0) * dt;
-        velocity.0 *= sim.damping;
+        // frame-rate independent blend towards u
+        let alpha = 1.0 - (-sim.acceleration * dt).exp(); // in [0,1)
+        velocity.0 = velocity.0 + (u - velocity.0) * alpha;
+
+        // frame-rate independent linear drag
+        let drag = (-sim.linear_drag * dt).exp();
+        velocity.0 *= drag;
 
         transform.set_position(p + velocity.0 * dt);
     }
