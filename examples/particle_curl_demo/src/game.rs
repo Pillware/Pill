@@ -157,7 +157,7 @@ impl CurlField {
     }
 
     /// Compute curl(F) at world position p and time t.
-    /// Uses finite differences with step eps in sample space.
+    /// Uses forward differences with step eps in sample space.
     /// Chain rule multiplies by frequency.
     /// Finally scale by amplitude.
     #[inline]
@@ -169,25 +169,18 @@ impl CurlField {
         let e = parameters.eps;
 
         // F at +/- sample steps
-        let f_xp = self.f_sample(sx + e, sy, sz, st);
-        let f_xm = self.f_sample(sx - e, sy, sz, st);
-        let f_yp = self.f_sample(sx, sy + e, sz, st);
-        let f_ym = self.f_sample(sx, sy - e, sz, st);
-        let f_zp = self.f_sample(sx, sy, sz + e, st);
-        let f_zm = self.f_sample(sx, sy, sz - e, st);
+        let f0 = self.f_sample(sx, sy, sz, st);
+        let fx1 = self.f_sample(sx + e, sy, sz, st);
+        let fy1 = self.f_sample(sx, sy + e, sz, st);
+        let fz1 = self.f_sample(sx, sy, sz + e, st);
 
         // sample-space partial dF/ds*
-        let dF_dsx = (f_xp - f_xm) * (0.5 / e);
-        let dF_dsy = (f_yp - f_ym) * (0.5 / e);
-        let dF_dsz = (f_zp - f_zm) * (0.5 / e);
-
-        // chain rule to world derivatives: dF/dx = freq * dF/dsx, etc
-        let dFdx = dF_dsx * parameters.frequency;
-        let dFdy = dF_dsy * parameters.frequency;
-        let dFdz = dF_dsz * parameters.frequency;
+        let dFdx = (fx1 - f0) * (1.0 / e) * parameters.frequency;
+        let dFdy = (fy1 - f0) * (1.0 / e) * parameters.frequency;
+        let dFdz = (fz1 - f0) * (1.0 / e) * parameters.frequency;
 
         // curl(F) = (d/dy Fz - d/dz Fy, d/dz Fx - d/dx Fz, d/dx Fy - d/dy Fx)
-        // Note: dFdx, dFdy, dFdz are vectors holdingp partials of all components
+        // Note: dFdx, dFdy, dFdz are vectors holding partials of all components
         let curl = Vector3f::new(
             dFdy.z - dFdz.y,
             dFdz.x - dFdx.z,
@@ -243,17 +236,18 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
 
     if dt > 1.0/30.0 { dt = 1.0/30.0; } // avoid large steps
 
+    let alpha = 1.0 - (-sim.acceleration * dt).exp(); // in [0,1)
+    let drag = (-sim.linear_drag * dt).exp();
+                                                      //
     for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
         // flow velocity from curl(F)
         let p = transform.position;
         let u = curl_field.curl_at(p, t, &sim);
 
         // frame-rate independent blend towards u
-        let alpha = 1.0 - (-sim.acceleration * dt).exp(); // in [0,1)
-        velocity.0 = velocity.0 + (u - velocity.0) * alpha;
+        velocity.0 += (u - velocity.0) * alpha;
 
         // frame-rate independent linear drag
-        let drag = (-sim.linear_drag * dt).exp();
         velocity.0 *= drag;
 
         transform.set_position(p + velocity.0 * dt);
