@@ -2,7 +2,7 @@ use pill_engine::game::*;
 use noise::{NoiseFn, OpenSimplex};
 use rand::Rng;
 
-const PARTICLE_COUNT: usize = 1000;
+const PARTICLE_COUNT: usize = 500;
 
 // Define custom component
 pub struct PillComponent { }
@@ -45,6 +45,13 @@ pub struct SimulationParameters {
     pub frequency: f32,    // spatial frequency (cycles/world unit)
     pub time_scale: f32,   // how fast field morphs
     pub eps: f32,          // finite difference step in sample space
+    // for fBm noise
+    pub octaves: u32,     // number of curl octaves
+    pub lacunarity: f32,  // frequency multiplier per octave
+    pub gain: f32,        // amplitude multiplier per octave
+    pub turb_mult: f32, //  extra-high freq multiplier for turbulence
+    pub turb_amp: f32,  // small extra amplitude for turbulence band
+    pub wrap_bounds: bool // switch to wrapping vs reflection
 }
 
 impl Default for SimulationParameters {
@@ -52,10 +59,17 @@ impl Default for SimulationParameters {
         Self {
             acceleration: 10.0,
             linear_drag: 1.0,
-            amplitude: 30.0,
-            frequency: 0.02,// to try 0.01..0.05
+            amplitude: 8.0,
+            frequency: 0.4, // 0.4 cycles/unit =>  ~8 cycles across a 20-unit box
             time_scale: 0.2,
-            eps: 0.1, // 1e-3..1e-2
+            eps: 0.12, // 1e-3..1e-2
+            // fBm:
+            octaves: 3,
+            lacunarity: 2.0,
+            gain: 0.5,
+            turb_mult: 8.0,
+            turb_amp: 2.0,
+            wrap_bounds: false,
         }
     }
 }
@@ -335,7 +349,7 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("curl_integration", curl_integration_system)?;
         engine.add_system("respect_aabb_bounds", respect_aabb_bounds_system)?;
-        //engine.add_system("pill_rotation", pill_rotation_system)?;
+        engine.add_system("camera_rotation", camera_rotation_system)?;
 
         // Add meshes
         let pill_mesh = Mesh::new("pill", "models/pill.obj".into());
@@ -359,7 +373,7 @@ impl PillGame for Game {
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
             .position(Vector3f::new(0.0,0.0,-20.0))
-            .rotation(Vector3f::new(0.0,0.0,-20.0))
+            .rotation(Vector3f::new(0.0,0.0,0.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
         let camera_component = CameraComponent::builder().enabled(true).build();
@@ -368,15 +382,16 @@ impl PillGame for Game {
         // Create pill entity
         let pill = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .rotation(Vector3f::new(-210.0,0.0,0.0))
+            .position(Vector3f::new(0.0,-5.0,-5.0))
+            .rotation(Vector3f::new(0.0,0.0,0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component)?;
         let mesh_rendering_component = MeshRenderingComponent::builder()
             .mesh(&pill_mesh_handle)
             .material(&pill_material_handle)
             .build();
-        engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
-        engine.add_component_to_entity(active_scene, pill, PillComponent {})?;
+        //engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
+        //engine.add_component_to_entity(active_scene, pill, PillComponent {})?;
 
         particle_spawn_oneshot(engine)?;
 
@@ -384,14 +399,19 @@ impl PillGame for Game {
     }
 }
 
-fn pill_rotation_system(engine: &mut Engine) -> Result<()> {
+fn camera_rotation_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let input_component = engine.get_global_component_mut::<InputComponent>()?;
+    let input_component = engine.get_global_component::<InputComponent>()?;
 
-    // Rotate pill if spacebar is not pressed
-    if !input_component.get_key_pressed(KeyboardKey::Space) {
-        for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
-            transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
+    // Rotate camera around centre if spacebar is pressed
+    if input_component.get_key(KeyboardKey::Space) {
+        let angle = 90.0 * delta_time;
+        let center = Vector3f::zero();
+        let up = Vector3fExt::Y;
+
+        for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, CameraComponent>()? {
+            transform_component.orbit_around_point(center, up, angle);
+            transform_component.look_at(center);
         }
     }
 
