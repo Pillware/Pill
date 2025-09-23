@@ -1,8 +1,9 @@
 use pill_engine::game::*;
 use noise::{NoiseFn, OpenSimplex};
 use rand::Rng;
+use std::sync::Arc;
 
-const PARTICLE_COUNT: usize = 500;
+const PARTICLE_COUNT: usize = 2000;
 
 // Define custom component
 pub struct PillComponent { }
@@ -61,7 +62,7 @@ impl Default for SimulationParameters {
             linear_drag: 1.0,
             amplitude: 8.0,
             frequency: 0.4, // 0.4 cycles/unit =>  ~8 cycles across a 20-unit box
-            time_scale: 0.2,
+            time_scale: 0.0,
             eps: 0.12, // 1e-3..1e-2
             // fBm:
             //octaves: 3,
@@ -108,7 +109,7 @@ pub struct VelocityGrid {
     pub origin: Vector3f,
     pub cell: f32,
     pub size: [u32; 3],
-    pub data: Vec<Vector3f>,
+    pub data: Arc<[Vector3f]>,
 }
 
 impl GlobalComponent for VelocityGrid {}
@@ -125,22 +126,24 @@ fn make_velocity_grid(aabb: AABB, nx: u32, ny: u32, nz: u32) -> VelocityGrid {
     // uniform cell - cubic
     let cell = cell_x.min(cell_y).min(cell_z);
     let len = (nx * ny * nz) as usize;
+    let vec = vec![Vector3f::zero(); len];
 
     VelocityGrid {
         origin: aabb.min,
         cell,
         size: [nx, ny, nz],
-        data: vec![Vector3f::zero(); len],
+        data: Arc::<[Vector3f]>::from(vec.into_boxed_slice()),
     }
 }
 
 fn grid_rebuild(g: &mut VelocityGrid, curl: &CurlField, sp: &SimulationParameters, t: f32) -> Result<()> {
+    let data: &mut [Vector3f] = Arc::make_mut(&mut g.data);
     let [nx, ny, nz] = g.size;
     for z in 0..nz {
         for y in 0..ny {
             for x in 0..nx {
                 let p = g.origin + Vector3f::new(x as f32, y as f32, z as f32) * g.cell;
-                g.data[(z * ny * nx + y * nx + x) as usize] = curl.curl_at(p, t, &sp);
+                data[(z * ny * nx + y * nx + x) as usize] = curl.curl_at(p, t, &sp);
             }
         }
     }
@@ -148,7 +151,7 @@ fn grid_rebuild(g: &mut VelocityGrid, curl: &CurlField, sp: &SimulationParameter
 }
 
 #[inline]
-fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Result<Vector3f> {
+fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Vector3f {
     // remap from world to grid cell space
     let rel = (p - g.origin) / g.cell;
     // split into integer and fractional parts
@@ -187,7 +190,7 @@ fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Result<Vector3f> {
     let vxy0 = lerp(vx00, vx10, fy);
     let vxy1 = lerp(vx01, vx11, fy);
 
-    Ok(lerp(vxy0, vxy1, fz))
+    lerp(vxy0, vxy1, fz)
 }
 // ---- Curl field implementation ----
 #[derive(Clone)]
@@ -325,16 +328,18 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
     let alpha = 1.0 - (-sp.acceleration * dt).exp(); // in [0,1)
     let drag = (-sp.linear_drag * dt).exp();
 
-    {
+    // Don' rebuild if time_scale is zero
+    if sp.time_scale != 0.0 {
         let g = engine.get_global_component_mut::<VelocityGrid>()?;
         grid_rebuild(g, &curl, &sp, t)?; // update velocity grid
     }
 
+    // Arc Clone
     let grid = engine.get_global_component::<VelocityGrid>()?.clone();
     for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
         // flow velocity from curl(F)
         let p = transform.position;
-        let u: Vector3f = grid_sample(&grid, p)?;
+        let u: Vector3f = grid_sample(&grid, p);
 
         // frame-rate independent blend towards u
         velocity.0 += (u - velocity.0) * alpha;
@@ -433,7 +438,14 @@ impl PillGame for Game {
         engine.add_global_component::<CurlField>(CurlField::new(0x1234567))?;
 
         let aabb = engine.get_global_component::<AABB>()?.clone();
-        engine.add_global_component::<VelocityGrid>(make_velocity_grid(aabb, 32, 32, 32))?;
+        engine.add_global_component::<VelocityGrid>(make_velocity_grid(aabb, 16, 16, 16))?;
+        // build the grid
+        {
+            let curl = engine.get_global_component::<CurlField>()?.clone();
+            let sp = engine.get_global_component::<SimulationParameters>()?.clone();
+            let mut g = engine.get_global_component_mut::<VelocityGrid>()?;
+            grid_rebuild(&mut g, &curl, &sp, 0.0)?;
+        }
 
         // Add systems
         engine.add_system("curl_integration", curl_integration_system)?;
