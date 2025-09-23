@@ -46,12 +46,12 @@ pub struct SimulationParameters {
     pub time_scale: f32,   // how fast field morphs
     pub eps: f32,          // finite difference step in sample space
     // for fBm noise
-    pub octaves: u32,     // number of curl octaves
-    pub lacunarity: f32,  // frequency multiplier per octave
-    pub gain: f32,        // amplitude multiplier per octave
-    pub turb_mult: f32, //  extra-high freq multiplier for turbulence
-    pub turb_amp: f32,  // small extra amplitude for turbulence band
-    pub wrap_bounds: bool // switch to wrapping vs reflection
+    //pub octaves: u32,     // number of curl octaves
+    //pub lacunarity: f32,  // frequency multiplier per octave
+    //pub gain: f32,        // amplitude multiplier per octave
+    //pub turb_mult: f32, //  extra-high freq multiplier for turbulence
+    //pub turb_amp: f32,  // small extra amplitude for turbulence band
+    //pub wrap_bounds: bool // switch to wrapping vs reflection
 }
 
 impl Default for SimulationParameters {
@@ -64,12 +64,12 @@ impl Default for SimulationParameters {
             time_scale: 0.2,
             eps: 0.12, // 1e-3..1e-2
             // fBm:
-            octaves: 3,
-            lacunarity: 2.0,
-            gain: 0.5,
-            turb_mult: 8.0,
-            turb_amp: 2.0,
-            wrap_bounds: false,
+            //octaves: 3,
+            //lacunarity: 2.0,
+            //gain: 0.5,
+            //turb_mult: 8.0,
+            //turb_amp: 2.0,
+            //wrap_bounds: false,
         }
     }
 }
@@ -103,6 +103,92 @@ impl PillTypeMapKey for AABB {
     type Storage = GlobalComponentStorage<Self>;
 }
 
+#[derive(Clone)]
+pub struct VelocityGrid {
+    pub origin: Vector3f,
+    pub cell: f32,
+    pub size: [u32; 3],
+    pub data: Vec<Vector3f>,
+}
+
+impl GlobalComponent for VelocityGrid {}
+impl PillTypeMapKey for VelocityGrid {
+    type Storage = GlobalComponentStorage<Self>;
+}
+
+fn make_velocity_grid(aabb: AABB, nx: u32, ny: u32, nz: u32) -> VelocityGrid {
+    let extent = aabb.max - aabb.min;
+    let cell_x = extent.x / nx as f32;
+    let cell_y = extent.y / ny as f32;
+    let cell_z = extent.z / nz as f32;
+
+    // uniform cell - cubic
+    let cell = cell_x.min(cell_y).min(cell_z);
+    let len = (nx * ny * nz) as usize;
+
+    VelocityGrid {
+        origin: aabb.min,
+        cell,
+        size: [nx, ny, nz],
+        data: vec![Vector3f::zero(); len],
+    }
+}
+
+fn grid_rebuild(g: &mut VelocityGrid, curl: &CurlField, sp: &SimulationParameters, t: f32) -> Result<()> {
+    let [nx, ny, nz] = g.size;
+    for z in 0..nz {
+        for y in 0..ny {
+            for x in 0..nx {
+                let p = g.origin + Vector3f::new(x as f32, y as f32, z as f32) * g.cell;
+                g.data[(z * ny * nx + y * nx + x) as usize] = curl.curl_at(p, t, &sp);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[inline]
+fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Result<Vector3f> {
+    // remap from world to grid cell space
+    let rel = (p - g.origin) / g.cell;
+    // split into integer and fractional parts
+    let [nx, ny, nz] = g.size;
+    let ix = rel.x.floor() as i32; let fx = (rel.x - ix as f32).clamp(0.0, 1.0);
+    let iy = rel.y.floor() as i32; let fy = (rel.y - iy as f32).clamp(0.0, 1.0);
+    let iz = rel.z.floor() as i32; let fz = (rel.z - iz as f32).clamp(0.0, 1.0);
+
+    // wrap indices so sampling is periodic (toroidal)
+    let wrap = |i, n| ((i % n as i32) + n as i32) as u32 % n;
+    let x0 = wrap(ix, nx); let x1 = wrap(ix + 1, nx);
+    let y0 = wrap(iy, ny); let y1 = wrap(iy + 1, ny);
+    let z0 = wrap(iz, nz); let z1 = wrap(iz + 1, nz);
+
+    // convert (x,y,z) to a linear array index
+    let idx = |x: u32, y: u32, z: u32| (z * ny * nx + y * nx + x) as usize;
+
+    // read the indices
+    let v000 = g.data[idx(x0, y0, z0)];
+    let v100 = g.data[idx(x1, y0, z0)];
+    let v010 = g.data[idx(x0, y1, z0)];
+    let v110 = g.data[idx(x1, y1, z0)];
+    let v001 = g.data[idx(x0, y0, z1)];
+    let v101 = g.data[idx(x1, y0, z1)];
+    let v011 = g.data[idx(x0, y1, z1)];
+    let v111 = g.data[idx(x1, y1, z1)];
+
+    // trilinear interpolation
+    // lerp along x at z0 and z1 planes
+    let lerp = |a: Vector3f, b: Vector3f, t: f32| a + (b - a) * t;
+    let vx00 = lerp(v000, v100, fx);
+    let vx10 = lerp(v010, v110, fx);
+    let vx01 = lerp(v001, v101, fx);
+    let vx11 = lerp(v011, v111, fx);
+
+    let vxy0 = lerp(vx00, vx10, fy);
+    let vxy1 = lerp(vx01, vx11, fy);
+
+    Ok(lerp(vxy0, vxy1, fz))
+}
 // ---- Curl field implementation ----
 #[derive(Clone)]
 pub struct CurlField {
@@ -227,22 +313,28 @@ pub fn particle_spawn_oneshot(engine: &mut Engine) -> Result<()> {
 }
 
 pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
-    let (curl_field, sim, mut dt, t) = {
-        let cf = engine.get_global_component::<CurlField>()?.clone();
+    let (curl, sp, mut dt, t) = {
+        let curl = engine.get_global_component::<CurlField>()?.clone();
         let sp = engine.get_global_component::<SimulationParameters>()?.clone();
         let time = engine.get_global_component::<TimeComponent>()?;
-        (cf, sp, time.delta_time, time.time)
+        (curl, sp, time.delta_time, time.time)
     };
 
     if dt > 1.0/30.0 { dt = 1.0/30.0; } // avoid large steps
 
-    let alpha = 1.0 - (-sim.acceleration * dt).exp(); // in [0,1)
-    let drag = (-sim.linear_drag * dt).exp();
-                                                      //
+    let alpha = 1.0 - (-sp.acceleration * dt).exp(); // in [0,1)
+    let drag = (-sp.linear_drag * dt).exp();
+
+    {
+        let g = engine.get_global_component_mut::<VelocityGrid>()?;
+        grid_rebuild(g, &curl, &sp, t)?; // update velocity grid
+    }
+
+    let grid = engine.get_global_component::<VelocityGrid>()?.clone();
     for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
         // flow velocity from curl(F)
         let p = transform.position;
-        let u = curl_field.curl_at(p, t, &sim);
+        let u: Vector3f = grid_sample(&grid, p)?;
 
         // frame-rate independent blend towards u
         velocity.0 += (u - velocity.0) * alpha;
@@ -339,6 +431,9 @@ impl PillGame for Game {
         engine.add_global_component::<SimulationParameters>(SimulationParameters::default())?;
         engine.add_global_component::<AABB>(AABB::default())?;
         engine.add_global_component::<CurlField>(CurlField::new(0x1234567))?;
+
+        let aabb = engine.get_global_component::<AABB>()?.clone();
+        engine.add_global_component::<VelocityGrid>(make_velocity_grid(aabb, 32, 32, 32))?;
 
         // Add systems
         engine.add_system("curl_integration", curl_integration_system)?;
