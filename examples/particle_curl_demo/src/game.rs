@@ -62,7 +62,7 @@ impl Default for SimulationParameters {
             linear_drag: 1.0,
             amplitude: 8.0,
             frequency: 0.4, // 0.4 cycles/unit =>  ~8 cycles across a 20-unit box
-            time_scale: 0.0,
+            time_scale: 0.2,
             eps: 0.12, // 1e-3..1e-2
             // fBm:
             //octaves: 3,
@@ -114,6 +114,20 @@ pub struct VelocityGrid {
 
 impl GlobalComponent for VelocityGrid {}
 impl PillTypeMapKey for VelocityGrid {
+    type Storage = GlobalComponentStorage<Self>;
+}
+
+#[derive(Clone)]
+pub struct GridState {
+    pub a: VelocityGrid,
+    pub b: VelocityGrid,
+    pub last_rebuild_time: f32,
+    pub period: f32,
+    pub t_mix: f32,
+}
+
+impl GlobalComponent for GridState {}
+impl PillTypeMapKey for GridState {
     type Storage = GlobalComponentStorage<Self>;
 }
 
@@ -192,6 +206,14 @@ fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Vector3f {
 
     lerp(vxy0, vxy1, fz)
 }
+
+#[inline]
+fn grid_sample_lerped(g: &GridState, p: Vector3f) -> Vector3f {
+    let va = grid_sample(&g.a, p);
+    let vb = grid_sample(&g.b, p);
+    va + (vb - va) * g.t_mix
+}
+
 // ---- Curl field implementation ----
 #[derive(Clone)]
 pub struct CurlField {
@@ -316,11 +338,11 @@ pub fn particle_spawn_oneshot(engine: &mut Engine) -> Result<()> {
 }
 
 pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
-    let (curl, sp, mut dt, t) = {
-        let curl = engine.get_global_component::<CurlField>()?.clone();
+    let (sp, mut dt, gs) = {
         let sp = engine.get_global_component::<SimulationParameters>()?.clone();
         let time = engine.get_global_component::<TimeComponent>()?;
-        (curl, sp, time.delta_time, time.time)
+        let gs = engine.get_global_component::<GridState>()?.clone();
+        (sp, time.delta_time, gs)
     };
 
     if dt > 1.0/30.0 { dt = 1.0/30.0; } // avoid large steps
@@ -328,18 +350,10 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
     let alpha = 1.0 - (-sp.acceleration * dt).exp(); // in [0,1)
     let drag = (-sp.linear_drag * dt).exp();
 
-    // Don' rebuild if time_scale is zero
-    if sp.time_scale != 0.0 {
-        let g = engine.get_global_component_mut::<VelocityGrid>()?;
-        grid_rebuild(g, &curl, &sp, t)?; // update velocity grid
-    }
-
-    // Arc Clone
-    let grid = engine.get_global_component::<VelocityGrid>()?.clone();
     for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
         // flow velocity from curl(F)
         let p = transform.position;
-        let u: Vector3f = grid_sample(&grid, p);
+        let u: Vector3f = grid_sample_lerped(&gs, p);
 
         // frame-rate independent blend towards u
         velocity.0 += (u - velocity.0) * alpha;
@@ -349,6 +363,33 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
 
         transform.set_position(p + velocity.0 * dt);
     }
+    Ok(())
+}
+
+pub fn grid_update_system(engine: &mut Engine) -> Result<()> {
+    let curl = engine.get_global_component::<CurlField>()?.clone();
+    let sp = engine.get_global_component::<SimulationParameters>()?.clone();
+    let time = engine.get_global_component::<TimeComponent>()?.time;
+
+    // check if it's time to rebuild
+    {
+        let gs = engine.get_global_component_mut::<GridState>()?;
+
+        let elapsed = time - gs.last_rebuild_time;
+        if elapsed >= gs.period {
+            // swap grids
+            std::mem::swap(&mut gs.a, &mut gs.b);
+            // rebuild the new "b" grid
+            grid_rebuild(&mut gs.b, &curl, &sp, time)?;
+
+            gs.last_rebuild_time = time;
+            gs.t_mix = 0.0;
+        } else {
+            // otherwise just update interpolation parameter
+            gs.t_mix = (elapsed / gs.period).clamp(0.0, 1.0);
+        }
+    }
+
     Ok(())
 }
 
@@ -438,16 +479,25 @@ impl PillGame for Game {
         engine.add_global_component::<CurlField>(CurlField::new(0x1234567))?;
 
         let aabb = engine.get_global_component::<AABB>()?.clone();
-        engine.add_global_component::<VelocityGrid>(make_velocity_grid(aabb, 16, 16, 16))?;
-        // build the grid
+        let mut g0 = make_velocity_grid(aabb, 16, 16, 16);
+        let mut g1 = make_velocity_grid(aabb, 16, 16, 16);
+        // build the grids
         {
             let curl = engine.get_global_component::<CurlField>()?.clone();
             let sp = engine.get_global_component::<SimulationParameters>()?.clone();
-            let mut g = engine.get_global_component_mut::<VelocityGrid>()?;
-            grid_rebuild(&mut g, &curl, &sp, 0.0)?;
+            grid_rebuild(&mut g0, &curl, &sp, 0.0)?;
+            grid_rebuild(&mut g1, &curl, &sp, 0.0)?;
+            engine.add_global_component::<GridState>(GridState {
+                a: g0,
+                b: g1,
+                last_rebuild_time: 0.0,
+                period: 2.0, // time between grid rebuilds in seconds
+                t_mix: 0.0,  // in [0,1], interpolation parameter between a and b
+            })?;
         }
 
         // Add systems
+        engine.add_system("grid_update", grid_update_system)?;
         engine.add_system("curl_integration", curl_integration_system)?;
         engine.add_system("respect_aabb_bounds", respect_aabb_bounds_system)?;
         engine.add_system("camera_rotation", camera_rotation_system)?;
