@@ -1,12 +1,19 @@
 use crate::{
-    config::*, ecs::{
+    config::*, 
+    ecs::{
         DeferredOperationComponent, DeferredOperationManagerPointer, MeshRenderingComponent 
-    }, engine::{self, Engine}, game::ShaderValueParameterType, graphics::{ 
+    }, 
+    engine::{self, Engine}, 
+    game::ShaderValueParameterType, 
+    graphics::{ 
         RendererMaterialHandle, 
         RendererTextureHandle, 
         RENDER_QUEUE_KEY_ORDER 
-    }, internal::{MaterialParameter, ValueParameter}, resources::{ 
-        resource::ResourceDeferredOperation, MaterialParametersStore, Resource, ResourceStorage, Shader, ShaderHandle, Texture, TextureHandle, TextureParameter, TextureType }
+    }, 
+    internal::{MaterialParameter, ValueParameter}, 
+    resources::{ 
+        resource::ResourceDeferredOperation, MaterialParametersStore, Resource, ResourceStorage, Shader, ShaderHandle, Texture, TextureHandle, TextureParameter, TextureType
+     }
 };
 
 use pill_core::{ 
@@ -90,9 +97,34 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct MaterialHandle;
 }
 
-// Material is always created in context of the shader it uses
-// This means that all parameters slots are created by the shader
-
+/// A `Material` is always created in the context of a specific `Shader`.
+///
+/// This means that all parameter slots of the material must match the slots
+/// defined in its shader.
+///
+/// # Initialization
+///
+/// When a material is initialized (i.e. added to the engine using
+/// [`Engine::add_resource()`]), all of its parameter slots are created
+/// based on the associated shader.
+///
+/// # Pre-initialization Parameters
+///
+/// It is possible to create a material instance and begin setting parameters
+/// *before* the material has been initialized. In this state:
+///
+/// - Parameter slots are not yet created.
+/// - Parameters can be assigned freely, without validation.
+///
+/// # Validation
+///
+/// Validation occurs during material initialization:
+///
+/// - Parameters that match slots defined in the shader are kept.
+/// - Parameters that do not match any slot will cause material creation to fail.
+///
+/// This ensures that materials are always consistent with the shaders they are
+/// based on.
 #[readonly::make]
 pub struct Material {
     #[readonly]
@@ -177,21 +209,30 @@ impl Material {
     }
 
     pub fn get_float_parameter(&self, parameter_name: &str) -> Result<f32> {
-        self.parameters_store.get_float_parameter(parameter_name).context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Float".to_string(), self.name.to_string()))
+        self.parameters_store.get_float_parameter(parameter_name)
+            .context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Float".to_string(), self.name.to_string()))
     }
+
+    // Set shader -> clear
+    // Set parameter -> store not initialized -> allow
+
+
+    // Next frame:
+    // Validate shader change -> success -> clear parameters -> create new ones based on shader
+    //                        -> failure -> bring back old shader and old parameters
 
     pub fn set_float_parameter(&mut self, parameter_name: &str, value: f32) -> Result<()> {
 
         // Before initialization, parameter slots are not yet created, so we need to allow setting values without any validation
-        if !self.is_initialized() {
-            if self.parameters_store.does_float_parameter_exist(parameter_name) {
-                self.parameters_store.set_float_parameter(parameter_name, value)?;
-            } else {
-                self.parameters_store.add_float_parameter(parameter_name, value)?;
-            }
+        if self.parameters_store.does_float_parameter_exist(parameter_name) {
+            self.parameters_store.set_float_parameter(parameter_name, value)?;
+        } else {
+            self.parameters_store.add_float_parameter(parameter_name, value)?;
         }
-        else {
-            self.parameters_store.set_float_parameter(parameter_name, value).context(EngineError::FailedToSetMaterialParameter(parameter_name.to_string(), "Float".to_string(), self.name.to_string()));
+
+        if self.is_initialized() {
+            self.parameters_store.set_float_parameter(parameter_name, value)
+                .context(EngineError::FailedToSetMaterialParameter(parameter_name.to_string(), "Float".to_string(), self.name.to_string()));
             self.schedule_deferred_post_parameter_set_update_operation();
         }
 
@@ -199,7 +240,13 @@ impl Material {
     }
 
     pub fn get_bool_parameter(&self, parameter_name: &str) -> Result<bool> {
-        self.parameters_store.get_bool_parameter(parameter_name).context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Bool".to_string(), self.name.to_string()))
+        self.parameters_store.get_bool_parameter(parameter_name)
+            .context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Bool".to_string(), self.name.to_string()))
+    }
+
+    pub fn sss(&mut self, engine: &mut Engine) -> Result<()> {
+       
+        Ok(())
     }
 
     pub fn set_bool_parameter(&mut self, parameter_name: &str, value: bool) -> Result<()> {
@@ -213,7 +260,8 @@ impl Material {
             }
         }
         else {
-            self.parameters_store.set_bool_parameter(parameter_name, value).context(EngineError::FailedToSetMaterialParameter(parameter_name.to_string(), "Bool".to_string(), self.name.to_string()));
+            self.parameters_store.set_bool_parameter(parameter_name, value)
+                .context(EngineError::FailedToSetMaterialParameter(parameter_name.to_string(), "Bool".to_string(), self.name.to_string()));
             self.schedule_deferred_post_parameter_set_update_operation();
         }
 
@@ -221,7 +269,8 @@ impl Material {
     }
 
     pub fn get_color_parameter(&self, parameter_name: &str) -> Result<Color> {
-        self.parameters_store.get_color_parameter(parameter_name).context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Color".to_string(), self.name.to_string()))
+        self.parameters_store.get_color_parameter(parameter_name)
+            .context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Color".to_string(), self.name.to_string()))
     }
 
     pub fn set_color_parameter(&mut self, parameter_name: &str, value: Color) -> Result<()> {
@@ -235,7 +284,8 @@ impl Material {
             }
         }
         else {
-            self.parameters_store.set_color_parameter(parameter_name, value).context(EngineError::FailedToSetMaterialParameter(parameter_name.to_string(), "Color".to_string(), self.name.to_string()));
+            self.parameters_store.set_color_parameter(parameter_name, value)
+                .context(EngineError::FailedToSetMaterialParameter(parameter_name.to_string(), "Color".to_string(), self.name.to_string()));
             self.schedule_deferred_post_parameter_set_update_operation();
         }
 
@@ -243,7 +293,8 @@ impl Material {
     }
 
     pub fn get_vector2_parameter(&self, parameter_name: &str) -> Result<Vector2f> {
-        self.parameters_store.get_vector2_parameter(parameter_name).context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Vector2".to_string(), self.name.to_string()))
+        self.parameters_store.get_vector2_parameter(parameter_name)
+            .context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Vector2".to_string(), self.name.to_string()))
     }
 
     pub fn set_vector2_parameter(&mut self, parameter_name: &str, value: Vector2f) -> Result<()> {
@@ -257,7 +308,8 @@ impl Material {
             }
         }
         else {
-            self.parameters_store.set_vector2_parameter(parameter_name, value).context(EngineError::FailedToSetMaterialParameter(parameter_name.to_string(), "Vector2".to_string(), self.name.to_string()));
+            self.parameters_store.set_vector2_parameter(parameter_name, value)
+                .context(EngineError::FailedToSetMaterialParameter(parameter_name.to_string(), "Vector2".to_string(), self.name.to_string()));
             self.schedule_deferred_post_parameter_set_update_operation();
         }
 
@@ -265,7 +317,8 @@ impl Material {
     }
 
     pub fn get_texture_parameter(&self, parameter_name: &str) -> Result<&TextureParameter> {
-        self.parameters_store.get_texture_parameter(parameter_name).context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Texture".to_string(), self.name.to_string()))
+        self.parameters_store.get_texture_parameter(parameter_name)
+            .context(EngineError::FailedToGetMaterialParameter(parameter_name.to_string(), "Texture".to_string(), self.name.to_string()))
     }
 
     pub fn set_texture_parameter(&mut self, parameter_name: &str, texture_handle: TextureHandle) -> Result<()> {
