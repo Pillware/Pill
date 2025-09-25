@@ -2,8 +2,21 @@ use pill_engine::game::*;
 use noise::{NoiseFn, OpenSimplex};
 use rand::Rng;
 use std::sync::Arc;
+use rayon::prelude::*;
 
 const PARTICLE_COUNT: usize = 2000;
+
+// / Helper functions
+#[inline]
+fn idx(nx: usize, ny: usize, x: usize, y: usize, z: usize) -> usize {
+    z * ny * nx + y * nx + x
+}
+
+#[inline]
+fn wrap(i: i32, n: usize) -> usize {
+    let n_i = n as i32;
+    ((i % n_i) + n_i) as usize % n
+}
 
 // Define custom component
 pub struct PillComponent { }
@@ -164,6 +177,68 @@ fn grid_rebuild(g: &mut VelocityGrid, curl: &CurlField, sp: &SimulationParameter
     Ok(())
 }
 
+fn grid_rebuild_fast_par(g: &mut VelocityGrid, curl: &CurlField, sp: &SimulationParameters, t: f32) ->  Result<()> {
+    let [nxu, nyu, nzu] = g.size;
+    let nx = nxu as usize;
+    let ny = nyu as usize;
+    let nz = nzu as usize;
+
+    let cell = g.cell;
+    let inv2h = 1.0 / (2.0 * cell);
+    let plane = nx * ny;
+
+    let out: &mut [Vector3f] = Arc::make_mut(&mut g.data);
+    let mut fvals = vec![Vector3f::zero(); nx * ny * nz];
+
+    let st = t * sp.time_scale;
+    let sxs: Vec<f32> = (0..nx).map(|x| (g.origin.x + x as f32 * cell) * sp.frequency).collect();
+    let sys: Vec<f32> = (0..ny).map(|y| (g.origin.y + y as f32 * cell) * sp.frequency).collect();
+    let szs: Vec<f32> = (0..nz).map(|z| (g.origin.z + z as f32 * cell) * sp.frequency).collect();
+
+    // Compute F at all grid points
+    fvals.par_chunks_mut(plane).enumerate().for_each(|(z, slab)| {
+        let sz = szs[z];
+        for y in 0..ny {
+            let sy = sys[y];
+            let row = &mut slab[y * nx..(y + 1) * nx];
+            for x in 0..nx {
+                let sx = sxs[x];
+                row[x] = curl.f_sample(sx, sy, sz, st);
+            }
+        }
+    });
+
+    // Immmutable view for curl computation
+    let fvals_ref = &fvals;
+
+    // Curl via finite differences
+    // TODO: refactor so we have clear responsibilities once it work fast
+    out.par_chunks_mut(plane).enumerate().for_each(|(z, slab_out)| {
+        let zm = wrap(z as i32 - 1, nz);
+        let zp = wrap(z as i32 + 1, nz);
+        for y in 0..ny {
+            let ym = wrap(y as i32 - 1, ny);
+            let yp = wrap(y as i32 + 1, ny);
+            for x in 0..nx {
+                let xm = wrap(x as i32 - 1, nx);
+                let xp = wrap(x as i32 + 1, nx);
+
+                let dfdx = (fvals_ref[idx(nx, ny, xp, y, z)] - fvals_ref[idx(nx, ny, xm, y, z)]) * inv2h;
+                let dfdy = (fvals_ref[idx(nx, ny, x, yp, z)] - fvals_ref[idx(nx, ny, x, ym, z)]) * inv2h;
+                let dfdz = (fvals_ref[idx(nx, ny, x, y, zp)] - fvals_ref[idx(nx, ny, x, y, zm)]) * inv2h;
+
+                slab_out[y * nx + 1] = Vector3f::new(
+                    dfdy.z - dfdz.y,
+                    dfdz.x - dfdx.z,
+                    dfdx.y - dfdy.x,
+                ) * sp.amplitude;
+            }
+        }
+    });
+
+    Ok(())
+}
+
 #[inline]
 fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Vector3f {
     // remap from world to grid cell space
@@ -306,6 +381,10 @@ pub fn particle_spawn_oneshot(engine: &mut Engine) -> Result<()> {
     let mut rng = rand::rng();
     let scene = engine.get_active_scene_handle()?;
     let aabb = engine.get_global_component::<AABB>()?.clone();
+    // Add a MeshRenderingComponent to visualize the Particle
+    // TODO: change it to a different mesh/material
+    let particle_mesh_handle = engine.get_resource_handle::<Mesh>("pill")?;
+    let particle_material_handle = engine.get_resource_handle::<Material>("pill")?;
 
     for _ in 0..PARTICLE_COUNT{
         let particle = engine.create_entity(scene)?;
@@ -322,15 +401,11 @@ pub fn particle_spawn_oneshot(engine: &mut Engine) -> Result<()> {
         engine.add_component_to_entity(scene, particle, Particle {})?;
         engine.add_component_to_entity(scene, particle, Velocity::default())?;
 
-        // Add a MeshRenderingComponent to visualize the Particle
-        // TODO: change it to a different mesh/material
-        let particle_mesh_handle = engine.get_resource_handle::<Mesh>("pill")?;
-        let particle_material_handle = engine.get_resource_handle::<Material>("pill")?;
-
         let mesh_rendering_component = MeshRenderingComponent::builder()
             .mesh(&particle_mesh_handle)
             .material(&particle_material_handle)
             .build();
+
         engine.add_component_to_entity(scene, particle, mesh_rendering_component)?;
     }
 
@@ -380,7 +455,8 @@ pub fn grid_update_system(engine: &mut Engine) -> Result<()> {
             // swap grids
             std::mem::swap(&mut gs.a, &mut gs.b);
             // rebuild the new "b" grid
-            grid_rebuild(&mut gs.b, &curl, &sp, time)?;
+            //grid_rebuild(&mut gs.b, &curl, &sp, time)?;
+            grid_rebuild_fast_par(&mut gs.b, &curl, &sp, time)?;
 
             gs.last_rebuild_time = time;
             gs.t_mix = 0.0;
