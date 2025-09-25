@@ -121,7 +121,11 @@ impl PillTypeMapKey for AABB {
 pub struct VelocityGrid {
     pub origin: Vector3f,
     pub cell: f32,
+    pub inv_cell: f32,
     pub size: [u32; 3],
+    pub sx: i32,  // 1
+    pub sy: i32, // nx
+    pub sz: i32, // nx * ny
     pub data: Arc<[Vector3f]>,
 }
 
@@ -159,7 +163,11 @@ fn make_velocity_grid(aabb: AABB, nx: u32, ny: u32, nz: u32) -> VelocityGrid {
     VelocityGrid {
         origin: aabb.min,
         cell,
+        inv_cell: 1.0 / cell,
         size: [nx, ny, nz],
+        sx: 1,
+        sy: nx as i32,
+        sz: (nx * ny) as i32,
         data: Arc::<[Vector3f]>::from(vec.into_boxed_slice()),
     }
 }
@@ -243,44 +251,63 @@ fn grid_rebuild_fast_par(g: &mut VelocityGrid, curl: &CurlField, sp: &Simulation
 #[inline]
 fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Vector3f {
     // remap from world to grid cell space
-    let rel = (p - g.origin) / g.cell;
+    let rel = (p - g.origin) * g.inv_cell;
     // split into integer and fractional parts
-    let [nx, ny, nz] = g.size;
-    let ix = rel.x.floor() as i32; let fx = (rel.x - ix as f32).clamp(0.0, 1.0);
-    let iy = rel.y.floor() as i32; let fy = (rel.y - iy as f32).clamp(0.0, 1.0);
-    let iz = rel.z.floor() as i32; let fz = (rel.z - iz as f32).clamp(0.0, 1.0);
+    let ix = rel.x.floor() as i32; let fx = rel.x - ix as f32;
+    let iy = rel.y.floor() as i32; let fy = rel.y - iy as f32;
+    let iz = rel.z.floor() as i32; let fz = rel.z - iz as f32;
 
-    // wrap indices so sampling is periodic (toroidal)
-    let wrap = |i, n| ((i % n as i32) + n as i32) as u32 % n;
-    let x0 = wrap(ix, nx); let x1 = wrap(ix + 1, nx);
-    let y0 = wrap(iy, ny); let y1 = wrap(iy + 1, ny);
-    let z0 = wrap(iz, nz); let z1 = wrap(iz + 1, nz);
+    let nx = g.size[0] as i32; let ny = g.size[1] as i32; let nz = g.size[2] as i32;
 
-    // convert (x,y,z) to a linear array index
-    let idx = |x: u32, y: u32, z: u32| (z * ny * nx + y * nx + x) as usize;
+    // Fast in-bound path (common case)
+        if ix >= 0 && iy >= 0 && iz >= 0 && ix + 1 < nx && iy + 1 < ny && iz + 1 < nz {
+        let base = (iz * g.sz + iy * g.sy + ix) as usize;
 
-    // read the indices
-    let v000 = g.data[idx(x0, y0, z0)];
-    let v100 = g.data[idx(x1, y0, z0)];
-    let v010 = g.data[idx(x0, y1, z0)];
-    let v110 = g.data[idx(x1, y1, z0)];
-    let v001 = g.data[idx(x0, y0, z1)];
-    let v101 = g.data[idx(x1, y0, z1)];
-    let v011 = g.data[idx(x0, y1, z1)];
-    let v111 = g.data[idx(x1, y1, z1)];
+        // load 8 neighbors via strides
+        let v000 = g.data[base];
+        let v100 = g.data[(base + g.sx as usize)];
+        let v010 = g.data[(base + g.sy as usize)];
+        let v110 = g.data[(base + g.sy as usize + g.sx as usize)];
+        let v001 = g.data[(base + g.sz as usize)];
+        let v101 = g.data[(base + g.sz as usize + g.sx as usize)];
+        let v011 = g.data[(base + g.sz as usize + g.sy as usize)];
+        let v111 = g.data[(base + g.sz as usize + g.sy as usize + g.sx as usize)];
 
-    // trilinear interpolation
-    // lerp along x at z0 and z1 planes
-    let lerp = |a: Vector3f, b: Vector3f, t: f32| a + (b - a) * t;
-    let vx00 = lerp(v000, v100, fx);
-    let vx10 = lerp(v010, v110, fx);
-    let vx01 = lerp(v001, v101, fx);
-    let vx11 = lerp(v011, v111, fx);
+        // trilinear (no closures; use mul_add where your Vector3f supports it)
+        let vx00 = v000 + (v100 - v000) * fx;
+        let vx10 = v010 + (v110 - v010) * fx;
+        let vx01 = v001 + (v101 - v001) * fx;
+        let vx11 = v011 + (v111 - v011) * fx;
 
-    let vxy0 = lerp(vx00, vx10, fy);
-    let vxy1 = lerp(vx01, vx11, fy);
+        let vxy0 = vx00 + (vx10 - vx00) * fy;
+        let vxy1 = vx01 + (vx11 - vx01) * fy;
 
-    lerp(vxy0, vxy1, fz)
+        return vxy0 + (vxy1 - vxy0) * fz;
+    }
+
+    // Slow wrap path (rare)
+    let x0 = wrap(ix, nx as usize) as usize; let x1 = wrap(ix + 1, nx as usize) as usize;
+    let y0 = wrap(iy, ny as usize) as usize; let y1 = wrap(iy + 1, ny as usize) as usize;
+    let z0 = wrap(iz, nz as usize) as usize; let z1 = wrap(iz + 1, nz as usize) as usize;
+
+    let v000 = g.data[idx(nx as usize, ny as usize, x0,y0,z0)];
+    let v100 = g.data[idx(nx as usize, ny as usize, x1,y0,z0)];
+    let v010 = g.data[idx(nx as usize, ny as usize, x0,y1,z0)];
+    let v110 = g.data[idx(nx as usize, ny as usize, x1,y1,z0)];
+    let v001 = g.data[idx(nx as usize, ny as usize, x0,y0,z1)];
+    let v101 = g.data[idx(nx as usize, ny as usize, x1,y0,z1)];
+    let v011 = g.data[idx(nx as usize, ny as usize, x0,y1,z1)];
+    let v111 = g.data[idx(nx as usize, ny as usize, x1,y1,z1)];
+
+    let vx00 = v000 + (v100 - v000) * fx;
+    let vx10 = v010 + (v110 - v010) * fx;
+    let vx01 = v001 + (v101 - v001) * fx;
+    let vx11 = v011 + (v111 - v011) * fx;
+
+    let vxy0 = vx00 + (vx10 - vx00) * fy;
+    let vxy1 = vx01 + (vx11 - vx01) * fy;
+
+    vxy0 + (vxy1 - vxy0) * fz
 }
 
 #[inline]
@@ -416,12 +443,12 @@ pub fn particle_spawn_oneshot(engine: &mut Engine) -> Result<()> {
 }
 
 pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
-    let (sp, mut dt, gs, aabb) = {
+    let (sp, mut dt, blended_grid, aabb) = {
         let sp = engine.get_global_component::<SimulationParameters>()?.clone();
         let time = engine.get_global_component::<TimeComponent>()?;
-        let gs = engine.get_global_component::<GridState>()?.clone();
+        let blended_grid = engine.get_global_component::<GridState>()?.blended.clone();
         let aabb = engine.get_global_component::<AABB>()?.clone();
-        (sp, time.delta_time, gs, aabb)
+        (sp, time.delta_time, blended_grid, aabb)
     };
 
     if dt > 1.0/30.0 { dt = 1.0/30.0; } // avoid large steps
@@ -432,7 +459,7 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
     for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
         // flow velocity from curl(F)
         let p = transform.position;
-        let u: Vector3f = grid_sample(&gs.blended, p);
+        let u: Vector3f = grid_sample(&blended_grid, p);
 
         // frame-rate independent blend towards u
         velocity.0 += (u - velocity.0) * alpha;
