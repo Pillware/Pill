@@ -134,6 +134,7 @@ impl PillTypeMapKey for VelocityGrid {
 pub struct GridState {
     pub a: VelocityGrid,
     pub b: VelocityGrid,
+    pub blended: VelocityGrid,
     pub last_rebuild_time: f32,
     pub period: f32,
     pub t_mix: f32,
@@ -184,7 +185,7 @@ fn grid_rebuild_fast_par(g: &mut VelocityGrid, curl: &CurlField, sp: &Simulation
     let nz = nzu as usize;
 
     let cell = g.cell;
-    let inv2h = 1.0 / (2.0 * cell);
+    let inv2h_s = 1.0 / (2.0 * cell * sp.frequency);
     let plane = nx * ny;
 
     let out: &mut [Vector3f] = Arc::make_mut(&mut g.data);
@@ -223,11 +224,11 @@ fn grid_rebuild_fast_par(g: &mut VelocityGrid, curl: &CurlField, sp: &Simulation
                 let xm = wrap(x as i32 - 1, nx);
                 let xp = wrap(x as i32 + 1, nx);
 
-                let dfdx = (fvals_ref[idx(nx, ny, xp, y, z)] - fvals_ref[idx(nx, ny, xm, y, z)]) * inv2h;
-                let dfdy = (fvals_ref[idx(nx, ny, x, yp, z)] - fvals_ref[idx(nx, ny, x, ym, z)]) * inv2h;
-                let dfdz = (fvals_ref[idx(nx, ny, x, y, zp)] - fvals_ref[idx(nx, ny, x, y, zm)]) * inv2h;
+                let dfdx = (fvals_ref[idx(nx, ny, xp, y, z)] - fvals_ref[idx(nx, ny, xm, y, z)]) * inv2h_s;
+                let dfdy = (fvals_ref[idx(nx, ny, x, yp, z)] - fvals_ref[idx(nx, ny, x, ym, z)]) * inv2h_s;
+                let dfdz = (fvals_ref[idx(nx, ny, x, y, zp)] - fvals_ref[idx(nx, ny, x, y, zm)]) * inv2h_s;
 
-                slab_out[y * nx + 1] = Vector3f::new(
+                slab_out[y * nx + x] = Vector3f::new(
                     dfdy.z - dfdz.y,
                     dfdz.x - dfdx.z,
                     dfdx.y - dfdy.x,
@@ -283,10 +284,12 @@ fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Vector3f {
 }
 
 #[inline]
-fn grid_sample_lerped(g: &GridState, p: Vector3f) -> Vector3f {
-    let va = grid_sample(&g.a, p);
-    let vb = grid_sample(&g.b, p);
-    va + (vb - va) * g.t_mix
+fn pre_blend_grids(g: &mut GridState) {
+    let len = g.blended.data.len();
+    let out: &mut [Vector3f] = Arc::make_mut(&mut g.blended.data);
+    for i in 0..len {
+        out[i] = g.a.data[i] * (1.0 - g.t_mix) + g.b.data[i] * g.t_mix;
+    }
 }
 
 // ---- Curl field implementation ----
@@ -429,7 +432,7 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
     for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
         // flow velocity from curl(F)
         let p = transform.position;
-        let u: Vector3f = grid_sample_lerped(&gs, p);
+        let u: Vector3f = grid_sample(&gs.blended, p);
 
         // frame-rate independent blend towards u
         velocity.0 += (u - velocity.0) * alpha;
@@ -458,8 +461,8 @@ pub fn grid_update_system(engine: &mut Engine) -> Result<()> {
             // swap grids
             std::mem::swap(&mut gs.a, &mut gs.b);
             // rebuild the new "b" grid
-            //grid_rebuild(&mut gs.b, &curl, &sp, time)?;
             grid_rebuild_fast_par(&mut gs.b, &curl, &sp, time)?;
+            pre_blend_grids(gs);
 
             gs.last_rebuild_time = time;
             gs.t_mix = 0.0;
@@ -556,6 +559,8 @@ impl PillGame for Game {
         let aabb = engine.get_global_component::<AABB>()?.clone();
         let mut g0 = make_velocity_grid(aabb, 16, 16, 16);
         let mut g1 = make_velocity_grid(aabb, 16, 16, 16);
+        // TODO: we don't really need to have it initializes like that
+        let blended = make_velocity_grid(aabb, 16, 16, 16);
         // build the grids
         {
             let curl = engine.get_global_component::<CurlField>()?.clone();
@@ -565,10 +570,15 @@ impl PillGame for Game {
             engine.add_global_component::<GridState>(GridState {
                 a: g0,
                 b: g1,
+                blended,
                 last_rebuild_time: 0.0,
                 period: 2.0, // time between grid rebuilds in seconds
                 t_mix: 0.0,  // in [0,1], interpolation parameter between a and b
             })?;
+            // TODO: observation: we should allow for chaining - add_global_component should return
+            // a handle - we might want to immediately use this copmonent
+            let gs = engine.get_global_component_mut::<GridState>()?;
+            pre_blend_grids(gs);
         }
 
         // Add systems
