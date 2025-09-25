@@ -285,11 +285,11 @@ fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Vector3f {
 
 #[inline]
 fn pre_blend_grids(g: &mut GridState) {
-    let len = g.blended.data.len();
     let out: &mut [Vector3f] = Arc::make_mut(&mut g.blended.data);
-    for i in 0..len {
-        out[i] = g.a.data[i] * (1.0 - g.t_mix) + g.b.data[i] * g.t_mix;
-    }
+    let a =  &g.a.data;
+    let b = &g.b.data;
+    let tm = g.t_mix;
+    out.par_iter_mut().zip(a.par_iter().zip(b.par_iter())).for_each(|(o, (va, vb))| *o = *va * (1.0 - tm) + *vb * tm);
 }
 
 // ---- Curl field implementation ----
@@ -462,10 +462,10 @@ pub fn grid_update_system(engine: &mut Engine) -> Result<()> {
             std::mem::swap(&mut gs.a, &mut gs.b);
             // rebuild the new "b" grid
             grid_rebuild_fast_par(&mut gs.b, &curl, &sp, time)?;
-            pre_blend_grids(gs);
 
             gs.last_rebuild_time = time;
             gs.t_mix = 0.0;
+            pre_blend_grids(gs);
         } else {
             // otherwise just update interpolation parameter
             gs.t_mix = (elapsed / gs.period).clamp(0.0, 1.0);
