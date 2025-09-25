@@ -413,11 +413,12 @@ pub fn particle_spawn_oneshot(engine: &mut Engine) -> Result<()> {
 }
 
 pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
-    let (sp, mut dt, gs) = {
+    let (sp, mut dt, gs, aabb) = {
         let sp = engine.get_global_component::<SimulationParameters>()?.clone();
         let time = engine.get_global_component::<TimeComponent>()?;
         let gs = engine.get_global_component::<GridState>()?.clone();
-        (sp, time.delta_time, gs)
+        let aabb = engine.get_global_component::<AABB>()?.clone();
+        (sp, time.delta_time, gs, aabb)
     };
 
     if dt > 1.0/30.0 { dt = 1.0/30.0; } // avoid large steps
@@ -437,6 +438,8 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
         velocity.0 *= drag;
 
         transform.set_position(p + velocity.0 * dt);
+
+        respect_aabb_bounds(transform, velocity, &aabb);
     }
     Ok(())
 }
@@ -469,66 +472,62 @@ pub fn grid_update_system(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-pub fn respect_aabb_bounds_system(engine: &mut Engine) -> Result<()> {
-    let aabb = engine.get_global_component::<AABB>()?.clone();
-    for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
-        let mut p = transform.position;
-        let mut v = velocity.0;
+pub fn respect_aabb_bounds(transform: &mut TransformComponent, velocity: &mut Velocity, aabb: &AABB) {
+    let mut p = transform.position;
+    let mut v = velocity.0;
 
-        // X
-        if p.x < aabb.min.x {
-            p.x = aabb.min.x;
-            if v.x < 0.0 {
-                v.x = -v.x * aabb.restitution;
-                v.y *= aabb.friction;
-                v.z *= aabb.friction;
-            }
-        } else if p.x > aabb.max.x {
-            p.x = aabb.max.x;
-            if v.x > 0.0 {
-                v.x = -v.x * aabb.restitution;
-                v.y *= aabb.friction;
-                v.z *= aabb.friction;
-            }
+    // X
+    if p.x < aabb.min.x {
+        p.x = aabb.min.x;
+        if v.x < 0.0 {
+            v.x = -v.x * aabb.restitution;
+            v.y *= aabb.friction;
+            v.z *= aabb.friction;
         }
-
-        // Y
-        if p.y < aabb.min.y {
-            p.y = aabb.min.y;
-            if v.y < 0.0 {
-                v.y = -v.y * aabb.restitution;
-                v.x *= aabb.friction;
-                v.z *= aabb.friction;
-            }
-        } else if p.y > aabb.max.y {
-            p.y = aabb.max.y;
-            if v.y > 0.0 {
-                v.y = -v.y * aabb.restitution;
-                v.x *= aabb.friction;
-                v.z *= aabb.friction;
-            }
+    } else if p.x > aabb.max.x {
+        p.x = aabb.max.x;
+        if v.x > 0.0 {
+            v.x = -v.x * aabb.restitution;
+            v.y *= aabb.friction;
+            v.z *= aabb.friction;
         }
-
-        // Z
-        if p.z < aabb.min.z {
-            p.z = aabb.min.z;
-            if v.z < 0.0 {
-                v.z = -v.z * aabb.restitution;
-                v.x *= aabb.friction;
-                v.y *= aabb.friction;
-            }
-        } else if p.z > aabb.max.z {
-            p.z = aabb.max.z;
-            if v.z > 0.0 {
-                v.z = -v.z * aabb.restitution;
-                v.x *= aabb.friction;
-                v.y *= aabb.friction;
-            }
-        }
-        transform.set_position(p);
-        velocity.0 = v
     }
-    Ok(())
+
+    // Y
+    if p.y < aabb.min.y {
+        p.y = aabb.min.y;
+        if v.y < 0.0 {
+            v.y = -v.y * aabb.restitution;
+            v.x *= aabb.friction;
+            v.z *= aabb.friction;
+        }
+    } else if p.y > aabb.max.y {
+        p.y = aabb.max.y;
+        if v.y > 0.0 {
+            v.y = -v.y * aabb.restitution;
+            v.x *= aabb.friction;
+            v.z *= aabb.friction;
+        }
+    }
+
+    // Z
+    if p.z < aabb.min.z {
+        p.z = aabb.min.z;
+        if v.z < 0.0 {
+            v.z = -v.z * aabb.restitution;
+            v.x *= aabb.friction;
+            v.y *= aabb.friction;
+        }
+    } else if p.z > aabb.max.z {
+        p.z = aabb.max.z;
+        if v.z > 0.0 {
+            v.z = -v.z * aabb.restitution;
+            v.x *= aabb.friction;
+            v.y *= aabb.friction;
+        }
+    }
+    transform.set_position(p);
+    velocity.0 = v
 }
 
 // Game
@@ -575,7 +574,6 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("grid_update", grid_update_system)?;
         engine.add_system("curl_integration", curl_integration_system)?;
-        engine.add_system("respect_aabb_bounds", respect_aabb_bounds_system)?;
         engine.add_system("camera_rotation", camera_rotation_system)?;
 
         // Add meshes
