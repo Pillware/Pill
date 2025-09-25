@@ -1,7 +1,7 @@
 use pill_engine::game::*;
 use noise::{NoiseFn, OpenSimplex};
 use rand::Rng;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use rayon::prelude::*;
 
 const PARTICLE_COUNT: usize = 2000;
@@ -48,6 +48,13 @@ impl Default for Velocity {
 impl Component for Velocity { }
 impl PillTypeMapKey for Velocity {
     type Storage = ComponentStorage<Self>;
+}
+
+// Utility struct for iterating particles
+#[derive(Clone, Copy)]
+pub struct Pv {
+    p: Vector3f,
+    v: Vector3f,
 }
 
 // ---- Simulation ----
@@ -260,7 +267,7 @@ fn grid_sample(g: &VelocityGrid, p: Vector3f) -> Vector3f {
     let nx = g.size[0] as i32; let ny = g.size[1] as i32; let nz = g.size[2] as i32;
 
     // Fast in-bound path (common case)
-        if ix >= 0 && iy >= 0 && iz >= 0 && ix + 1 < nx && iy + 1 < ny && iz + 1 < nz {
+    if ix >= 0 && iy >= 0 && iz >= 0 && ix + 1 < nx && iy + 1 < ny && iz + 1 < nz {
         let base = (iz * g.sz + iy * g.sy + ix) as usize;
 
         // load 8 neighbors via strides
@@ -456,21 +463,31 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
     let alpha = 1.0 - (-sp.acceleration * dt).exp(); // in [0,1)
     let drag = (-sp.linear_drag * dt).exp();
 
-    for (_, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
-        // flow velocity from curl(F)
-        let p = transform.position;
-        let u: Vector3f = grid_sample(&blended_grid, p);
-
-        // frame-rate independent blend towards u
-        velocity.0 += (u - velocity.0) * alpha;
-
-        // frame-rate independent linear drag
-        velocity.0 *= drag;
-
-        transform.set_position(p + velocity.0 * dt);
-
-        respect_aabb_bounds(transform, velocity, &aabb);
+    // Stage the wanted data
+    let mut buf: HashMap<EntityHandle, Pv> = HashMap::with_capacity(PARTICLE_COUNT);
+    for (id, transform, velocity, _) in engine.iterate_three_components::<TransformComponent, Velocity, Particle>()? {
+        buf.insert(id, Pv { p: transform.position, v: velocity.0 });
     }
+
+    buf.par_iter_mut().for_each(|(_, pv)| {
+        // flow velocity from curl(F)
+        let u: Vector3f = grid_sample(&blended_grid, pv.p);
+        // frame-rate independent blend towards u
+        pv.v += (u - pv.v) * alpha;
+        // frame-rate independent linear drag
+        pv.v *= drag;
+        pv.p += pv.v * dt;
+        respect_aabb_bounds(&mut pv.p, &mut pv.v, &aabb);
+    });
+
+    // Commit back to components
+    for (id, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
+        if let Some(pv) = buf.get(&id) {
+            transform.set_position(pv.p);
+            velocity.0 = pv.v;
+        }
+    }
+
     Ok(())
 }
 
@@ -502,10 +519,7 @@ pub fn grid_update_system(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-pub fn respect_aabb_bounds(transform: &mut TransformComponent, velocity: &mut Velocity, aabb: &AABB) {
-    let mut p = transform.position;
-    let mut v = velocity.0;
-
+pub fn respect_aabb_bounds(p: &mut Vector3f, v: &mut Vector3f, aabb: &AABB) {
     // X
     if p.x < aabb.min.x {
         p.x = aabb.min.x;
@@ -556,8 +570,6 @@ pub fn respect_aabb_bounds(transform: &mut TransformComponent, velocity: &mut Ve
             v.y *= aabb.friction;
         }
     }
-    transform.set_position(p);
-    velocity.0 = v
 }
 
 // Game
