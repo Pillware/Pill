@@ -5,7 +5,7 @@ pub struct ComponentStorage<T> {
 }
 
 impl<T> ComponentStorage<T> {
-    pub fn new(max_entity_count: usize) -> Self {  
+    pub fn new(max_entity_count: usize) -> Self {
         // Create vector
         let mut data = Vec::<Option<T>>::with_capacity(max_entity_count);
 
@@ -14,9 +14,19 @@ impl<T> ComponentStorage<T> {
             data.push(None);
         }
 
-        Self { 
+        Self {
             data,
         }
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[Option<T>] {
+        &self.data
+    }
+
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [Option<T>] {
+        &mut self.data
     }
 }
 
@@ -27,8 +37,8 @@ pub struct GlobalComponentStorage<T> {
 }
 
 impl<T> GlobalComponentStorage<T> {
-    pub fn new(data: T) -> Self {  
-        Self { 
+    pub fn new(data: T) -> Self {
+        Self {
             data: Some(data),
         }
     }

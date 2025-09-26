@@ -463,30 +463,19 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
     let alpha = 1.0 - (-sp.acceleration * dt).exp(); // in [0,1)
     let drag = (-sp.linear_drag * dt).exp();
 
-    // Stage the wanted data
-    let mut buf: HashMap<EntityHandle, Pv> = HashMap::with_capacity(PARTICLE_COUNT);
-    for (id, transform, velocity, _) in engine.iterate_three_components::<TransformComponent, Velocity, Particle>()? {
-        buf.insert(id, Pv { p: transform.position, v: velocity.0 });
-    }
-
-    buf.par_iter_mut().for_each(|(_, pv)| {
+    let scene = engine.get_active_scene_handle()?;
+    scene.par_for_each2_with::<TransformComponent, Velocity, Particle, _>(512, |t, v| {
+        let mut p = t.position;
         // flow velocity from curl(F)
-        let u: Vector3f = grid_sample(&blended_grid, pv.p);
+        let u: Vector3f = grid_sample(&blended_grid, p);
         // frame-rate independent blend towards u
-        pv.v += (u - pv.v) * alpha;
+        v.0 += (u - v.0) * alpha;
         // frame-rate independent linear drag
-        pv.v *= drag;
-        pv.p += pv.v * dt;
-        respect_aabb_bounds(&mut pv.p, &mut pv.v, &aabb);
+        v.0 *= drag;
+        p += v.0 * dt;
+        respect_aabb_bounds(&mut p, &mut v.0, &aabb);
+        t.set_position(p);
     });
-
-    // Commit back to components
-    for (id, transform, velocity, _) in engine.iterate_three_components_mut::<TransformComponent, Velocity, Particle>()? {
-        if let Some(pv) = buf.get(&id) {
-            transform.set_position(pv.p);
-            velocity.0 = pv.v;
-        }
-    }
 
     Ok(())
 }
