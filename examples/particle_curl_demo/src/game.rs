@@ -4,7 +4,7 @@ use rand::Rng;
 use std::{collections::HashMap, sync::Arc};
 use rayon::prelude::*;
 
-const PARTICLE_COUNT: usize = 2000;
+const PARTICLE_COUNT: usize = 8000;
 
 // / Helper functions
 #[inline]
@@ -463,8 +463,7 @@ pub fn curl_integration_system(engine: &mut Engine) -> Result<()> {
     let alpha = 1.0 - (-sp.acceleration * dt).exp(); // in [0,1)
     let drag = (-sp.linear_drag * dt).exp();
 
-    let scene = engine.get_active_scene_handle()?;
-    scene.par_for_each2_with::<TransformComponent, Velocity, Particle, _>(512, |t, v| {
+    engine.par_for_each2_with::<TransformComponent, Velocity, Particle, _>(512, |t, v| {
         let mut p = t.position;
         // flow velocity from curl(F)
         let u: Vector3f = grid_sample(&blended_grid, p);
