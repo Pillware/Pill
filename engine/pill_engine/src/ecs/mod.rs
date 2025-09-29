@@ -53,6 +53,8 @@ pub use components::deferred_update_component::{
 
 pub use components::input_component::{
     InputComponent,
+    GamepadAxis,
+    GamepadButton,
     InputEvent,
 };
 
