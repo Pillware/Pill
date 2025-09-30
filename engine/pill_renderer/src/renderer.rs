@@ -14,27 +14,27 @@ use crate::{
 };
 
 use pill_engine::internal::{
-    PillRenderer, 
-    EntityHandle, 
-    RenderQueueItem, 
+    PillRenderer,
+    EntityHandle,
+    RenderQueueItem,
     TextureType,
-    MeshData, 
+    MeshData,
     MaterialTextureMap,
     TransformComponent,
-    ComponentStorage, 
+    ComponentStorage,
     CameraComponent,
     MaterialParameterMap,
     RendererCameraHandle,
     RendererMaterialHandle,
     RendererMeshHandle,
     RendererPipelineHandle,
-    RendererTextureHandle, 
+    RendererTextureHandle,
     RENDER_QUEUE_KEY_ORDER,
     get_renderer_resource_handle_from_camera_component,
 };
 
-use pill_core::{ 
-    PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer 
+use pill_core::{
+    PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer
 };
 
 use std::{
@@ -53,8 +53,8 @@ pub const MAX_INSTANCE_BATCH_SIZE: usize = 10000; // Maximum number of instances
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
 
 // Default resource handle - Master pipeline
-pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
 pub struct Renderer {
@@ -65,30 +65,30 @@ fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String
     let mut frontend = glsl::Frontend::default();
     let options = glsl::Options::from(stage);
     let module = frontend.parse(&options, source).unwrap();
-    
+
     let mut validator = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::empty(),
     );
-    
+
     let info = validator.validate(&module)?;
-    
+
     let mut output = String::new();
     let mut writer = wgsl::Writer::new(&mut output, wgsl::WriterFlags::empty());
     writer.write(&module, &info)?;
-    
+
     Ok(output)
 }
 
 impl PillRenderer for Renderer {
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self { 
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self {
         info!("Initializing {}", "Renderer".mobj_style());
         let state: State = pollster::block_on(State::new(window, config));
 
         Self {
             state,
         }
-    }   
+    }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         info!("Resizing {} resources", "Renderer".mobj_style());
@@ -97,7 +97,7 @@ impl PillRenderer for Renderer {
 
 
     fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8]) -> Result<()> {
-        
+
         // Create shaders
         // Convert bytes to string
         let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes)
@@ -213,14 +213,14 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
         self.state.renderer_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
-        
+
         Ok(())
     }
 
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
+        render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn Fn(&egui::Context)>,
@@ -235,7 +235,7 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
             timer
         )
     }
-    
+
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
         self.state.egui_renderer.handle_input(event);
         Ok(())
@@ -251,7 +251,7 @@ pub struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
-    window_size: winit::dpi::PhysicalSize<u32>, 
+    window_size: winit::dpi::PhysicalSize<u32>,
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
@@ -280,9 +280,9 @@ impl State {
             gles_minor_version,
         });
         let surface = instance.create_surface(window).unwrap();
-        
+
         // Specify adapter options (Options passed here are not guaranteed to work for all devices)
-        let request_adapter_options = wgpu::RequestAdapterOptions { 
+        let request_adapter_options = wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
@@ -292,7 +292,7 @@ impl State {
         let adapter = instance.request_adapter(&request_adapter_options).await.unwrap();
         let adapter_info = adapter.get_info();
         info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
-        
+
         let features = wgpu::Features::DEPTH_CLIP_CONTROL;
 
         // Create device descriptor
@@ -300,11 +300,14 @@ impl State {
             label: None,
             required_features: features, // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
             required_limits: wgpu::Limits::default(), // Allows to specify the limit of certain types of resources that will be used (e.g. max samplers, uniform buffers, etc)
-            //memory_hints: wgpu::MemoryHints::MemoryUsage, 
+            //memory_hints: wgpu::MemoryHints::MemoryUsage,
         };
 
         // Create device and queue
         let (device, queue) = adapter.request_device(&device_descriptor,None).await.unwrap();
+
+        // fallback modes for display
+        let present_mode = wgpu::PresentMode::AutoNoVsync;
 
         // Specify surface configuration
         let format = wgpu::TextureFormat::Rgba8UnormSrgb;
@@ -314,7 +317,7 @@ impl State {
             width: window_size.width,
             height: window_size.height,
             desired_maximum_frame_latency: 2,
-            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
+            present_mode, // Defines how to sync the surface with the display
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![format],
         };
@@ -327,8 +330,8 @@ impl State {
 
         // Create depth and color texture
         let depth_texture = RendererTexture::new_depth_texture(
-            &device, 
-            &surface_configuration, 
+            &device,
+            &surface_configuration,
             "depth_texture"
         ).unwrap();
 
@@ -340,12 +343,12 @@ impl State {
 
         let egui_renderer = EguiRenderer::new(
             &device,
-            surface_configuration.format, 
-            None, 
-            1,            
+            surface_configuration.format,
+            None,
+            1,
             window_ref,
         );
-        
+
         // Create state
         Self {
             // Resources
@@ -379,18 +382,18 @@ impl State {
             ).unwrap();
         }
     }
-  
+
     fn render(
-        &mut self, 
+        &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
+        render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer
-    ) -> Result<()> { 
+    ) -> Result<()> {
         timer.record("Get frame");
-    
+
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
 
@@ -423,7 +426,7 @@ impl State {
         });
 
         { // Additional scope to release mutable borrow of encoder done by begin_render_pass
-            
+
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
                 view: &view, // Specifies what texture to save the colors to
@@ -447,19 +450,19 @@ impl State {
             timer.begin_context("Mesh Drawer");
 
             self.mesh_drawer.record_draw_commands(
-                &self.queue, 
+                &self.queue,
                 &self.device,
-                &self.renderer_resource_storage, 
-                color_attachment, 
-                depth_stencil_attachment, 
+                &self.renderer_resource_storage,
+                color_attachment,
+                depth_stencil_attachment,
                 &renderer_camera,
-                &render_queue, 
+                &render_queue,
                 &transform_component_storage,
                 timer
             )?;
 
             timer.end_context()?;
-        }  
+        }
 
         timer.begin_context("Egui Draw");
 
