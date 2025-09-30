@@ -65,6 +65,7 @@ pub mod game {
             MeshRenderingComponent,
             TransformComponent,
             InputComponent,
+            PlayerId,
             GamepadAxis,
             GamepadButton,
             CameraComponent,

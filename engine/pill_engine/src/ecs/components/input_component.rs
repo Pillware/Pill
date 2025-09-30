@@ -15,6 +15,30 @@ use winit::dpi::PhysicalPosition;
 use winit::event::{ ElementState, MouseScrollDelta };
 use anyhow::{ Result, Context, Error };
 
+#[repr(u8)]
+#[derive(Copy, Clone, Debug)]
+pub enum PlayerId {
+    Player1 = 0,
+    Player2,
+    Player3,
+    Player4,
+}
+
+impl TryFrom<u8> for PlayerId {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(PlayerId::Player1),
+            1 => Ok(PlayerId::Player2),
+            2 => Ok(PlayerId::Player3),
+            3 => Ok(PlayerId::Player4),
+            _ => Err(anyhow::anyhow!("Invalid PlayerId value: {}", value)),
+        }
+    }
+}
+
+pub const SUPPORTED_GAMEPADS: usize = PlayerId::Player4 as usize + 1; // Maximum number of supported gamepads
 pub const GAMEPAD_DEADZONE: f32 = 0.05; // Deadzone for gamepad axes
 
 pub const KEYBOARD_KEY_COUNT: usize = KeyboardKey::F35 as usize + 1; // Total number of keys in KeyboardKey enum
@@ -48,12 +72,14 @@ pub enum InputEvent {
     MouseWheel { delta: MouseScrollDelta },
     MouseDelta { delta: Vector2f },
     MousePosition { position: Vector2f },
-    GamepadButton { button: GamepadButton, state: ElementState },
-    GamepadAxis { axis: GamepadAxis, value: f32 },
+    GamepadButton { id: usize, button: GamepadButton, state: ElementState },
+    GamepadAxis { id: usize, axis: GamepadAxis, value: f32 },
+    GamepadConnected { id: usize },
+    GamepadDisconnected { id: usize },
 }
 
 pub type KeyState = BitArray<[u64; 4]>; // actually we have less but this is fine
-pub type GamepadButtonState = BitArray<[u32; 1]>; // we have 17 buttons
+pub type GamepadButtonState = BitArray<[u32; SUPPORTED_GAMEPADS]>; // we have 17 buttons
 
 pub struct InputComponent {
     // Keyboard arrays
@@ -78,7 +104,11 @@ pub struct InputComponent {
     pub(crate) pressed_gamepad_buttons: GamepadButtonState,
     pub(crate) released_gamepad_buttons: GamepadButtonState,
     pub(crate) gamepad_buttons: GamepadButtonState,
-    pub(crate) gamepad_axes: [f32; GAMEPAD_AXIS_COUNT],
+    pub(crate) gamepad_axes: [f32; GAMEPAD_AXIS_COUNT * SUPPORTED_GAMEPADS],
+
+    // Is gamepad Connected
+    pub(crate) gamepad_ids: [usize; SUPPORTED_GAMEPADS],
+    pub(crate) gamepad_id_to_player: HashMap<usize, PlayerId>,
 }
 
 impl InputComponent {
@@ -101,7 +131,10 @@ impl InputComponent {
             pressed_gamepad_buttons: GamepadButtonState::ZERO,
             released_gamepad_buttons: GamepadButtonState::ZERO,
             gamepad_buttons: GamepadButtonState::ZERO,
-            gamepad_axes: [0.0; GAMEPAD_AXIS_COUNT],
+            gamepad_axes: [0.0; GAMEPAD_AXIS_COUNT * SUPPORTED_GAMEPADS],
+
+            gamepad_ids: [0; SUPPORTED_GAMEPADS],
+            gamepad_id_to_player: HashMap::new(),
         }
     }
 
@@ -254,9 +287,13 @@ impl InputComponent {
         self.current_mouse_position = position;
     }
 
-    // Gamepad buttons
-    pub fn set_gamepad_button(&mut self, button: GamepadButton, state: ElementState) {
-        let i = button as usize;
+    // Gamepad buttons (get by PlayerId, set by Gamepad's Id)
+    pub fn set_gamepad_button(&mut self, gamepad_id: usize, button: GamepadButton, state: ElementState) {
+        let player_id = match self.gamepad_id_to_player.get(&gamepad_id) {
+            Some(&pid) => pid,
+            None => return, // gamepad not recognized
+        };
+        let i = button as usize + (player_id as usize * u32::BITS as usize);
         match state {
             ElementState::Pressed => {
                 if self.gamepad_buttons[i] {
@@ -274,25 +311,77 @@ impl InputComponent {
         }
     }
 
-    pub fn get_gamepad_button(&self, button: GamepadButton) -> bool {
-        self.gamepad_buttons[button as usize]
+    pub fn get_gamepad_button(&self, player_id: PlayerId, button: GamepadButton) -> bool {
+        let i = button as usize + (player_id as usize * u32::BITS as usize);
+        self.gamepad_buttons[i]
     }
 
-    pub fn get_gamepad_button_pressed(&self, button: GamepadButton) -> bool {
-        self.pressed_gamepad_buttons[button as usize]
+    pub fn get_gamepad_button_pressed(&self, player_id: PlayerId, button: GamepadButton) -> bool {
+        let i = button as usize + (player_id as usize * u32::BITS as usize);
+        self.pressed_gamepad_buttons[i]
     }
 
-    pub fn get_gamepad_button_released(&self, button: GamepadButton) -> bool {
-        self.released_gamepad_buttons[button as usize]
+    pub fn get_gamepad_button_released(&self, player_id: PlayerId, button: GamepadButton) -> bool {
+        let i = button as usize + (player_id as usize * u32::BITS as usize);
+        self.released_gamepad_buttons[i]
     }
 
-    pub fn set_gamepad_axis(&mut self, axis: GamepadAxis, raw: f32) {
+    pub fn set_gamepad_axis(&mut self, gamepad_id: usize, axis: GamepadAxis, raw: f32) {
+        let player_id = match self.gamepad_id_to_player.get(&gamepad_id) {
+            Some(&pid) => pid,
+            None => return, // gamepad not recognized
+        };
+
         let v = if raw.abs() < GAMEPAD_DEADZONE { 0.0 } else { raw };
-        self.gamepad_axes[axis as usize] = raw;
+        let i = axis as usize + (player_id as usize * GAMEPAD_AXIS_COUNT);
+        self.gamepad_axes[i] = v;
     }
 
-    pub fn get_gamepad_axis(&self, axis: GamepadAxis) -> f32 {
-        self.gamepad_axes[axis as usize]
+    pub fn get_gamepad_axis(&self, player_id: PlayerId, axis: GamepadAxis) -> f32 {
+        let i = axis as usize + (player_id as usize * GAMEPAD_AXIS_COUNT);
+        self.gamepad_axes[i]
+    }
+
+    pub fn connect_gamepad(&mut self, gamepad_id: usize) {
+        if self.gamepad_id_to_player.contains_key(&gamepad_id) {
+            return; // already connected
+        }
+
+        for i in 0..SUPPORTED_GAMEPADS {
+            if self.gamepad_ids[i as usize] == 0 {
+                self.gamepad_ids[i as usize] = gamepad_id;
+                // Player Ids are assigned in order of connection
+                let pid = PlayerId::try_from(i as u8).unwrap();
+                self.gamepad_id_to_player.insert(gamepad_id, pid);
+                println!("Gamepad connected: id {}, assigned to player {:?}", gamepad_id, pid);
+                return;
+            }
+        }
+
+        println!("Gamepad connected: id {}, but no free slots available", gamepad_id);
+    }
+
+    pub fn disconnect_gamepad(&mut self, gamepad_id: usize) {
+        if let Some(player_id) = self.gamepad_id_to_player.remove(&gamepad_id) {
+            let index = player_id as usize;
+            self.gamepad_ids[index] = 0;
+
+            // Reset buttons and axes for this gamepad
+            let base = index * u32::BITS as usize;
+            for j in 0..GAMEPAD_BUTTON_COUNT {
+                let k = base + j;
+                self.gamepad_buttons.set(k, false);
+                self.pressed_gamepad_buttons.set(k, false);
+                self.released_gamepad_buttons.set(k, false);
+            }
+            let base_ax = index * GAMEPAD_AXIS_COUNT;
+            for j in 0..GAMEPAD_AXIS_COUNT {
+                self.gamepad_axes[base_ax + j] = 0.0;
+            }
+            println!("Gamepad disconnected: id {}, was player {:?}", gamepad_id, player_id);
+        } else {
+            println!("Gamepad disconnected: id {}, but was not recognized", gamepad_id);
+        }
     }
 }
 

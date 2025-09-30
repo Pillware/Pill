@@ -318,7 +318,7 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let mouse_delta = input_component.get_mouse_delta();
 
     // Get gamepad input
-    let gamepad_left_stick = input_component.get_gamepad_axis(GamepadAxis::LeftStickX);
+    let gamepad_left_stick = input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::LeftStickX);
 
     for (_, transform_transform, camera_movement_component) in engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
     {
@@ -330,7 +330,7 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         let mut change_value: f32 = 0.0;
         // TODO: make it progressive for gamepad
         if d_key { change_value -= 1.0; } else if gamepad_left_stick < -0.1 { change_value += 1.0; }
-        if a_key { change_value += 1.0; } else if gamepad_left_stick > 0.1 { change_value -= 1.0; }
+        //if a_key { change_value += 1.0; } else if gamepad_left_stick > 0.1 { change_value -= 1.0; }
         let orbit_speed = camera_movement_component.orbit_speed;
         camera_movement_component.angle += change_value * orbit_speed * delta_time;
         let angle = camera_movement_component.angle;
@@ -375,7 +375,7 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
     let g_key = input_component.get_key(DECREASE_CAMERA_FOV_BUTTON);
 
     // Get gamepad input
-    let gamepad_right_stick = input_component.get_gamepad_axis(GamepadAxis::RightStickY);
+    let gamepad_right_stick = input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::RightStickY);
 
     for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()?
     {

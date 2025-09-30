@@ -6,7 +6,7 @@ use crate::{
 use pill_core::{ Vector2f };
 
 use anyhow::{ Result, Context, Error };
-use winit::event::{ ElementState, MouseButton, MouseScrollDelta };
+use winit::event::{ ElementState, MouseScrollDelta };
 
 // use a lazy static GILRS instance
 use gilrs::{ Gilrs, EventType, Axis, Button };
@@ -21,9 +21,13 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
         let mut gilrs = GILRS.lock().unwrap();
         while let Some(ev) = gilrs.next_event() {
             match ev.event {
-                EventType::ButtonPressed(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { button: b.into(), state: ElementState::Pressed }),
-                EventType::ButtonReleased(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { button: b.into(), state: ElementState::Released }),
-                EventType::AxisChanged(a, v, _) => engine.input_queue.push_back(InputEvent::GamepadAxis { axis: a.into(), value: v }),
+                EventType::ButtonPressed(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: usize::from(ev.id), button: b.into(), state: ElementState::Pressed }),
+                EventType::ButtonRepeated(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: usize::from(ev.id), button: b.into(), state: ElementState::Pressed }), // TODO: this should be handled differently?
+                EventType::ButtonReleased(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: usize::from(ev.id), button: b.into(), state: ElementState::Released }),
+                EventType::AxisChanged(a, v, _) => engine.input_queue.push_back(InputEvent::GamepadAxis { id: usize::from(ev.id), axis: a.into(), value: v }),
+                EventType::Connected => engine.input_queue.push_back(InputEvent::GamepadConnected { id: usize::from(ev.id) }),
+                EventType::Disconnected => engine.input_queue.push_back(InputEvent::GamepadDisconnected { id: usize::from(ev.id) }),
+                EventType::ForceFeedbackEffectCompleted => {}, // ignore // TODO: what to do?
                 _ => {},
             }
         }
@@ -72,13 +76,22 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
             },
 
             // Gamepad buttons
-            InputEvent::GamepadButton { button, state } => {
-                input_component.set_gamepad_button(button, state);
+            InputEvent::GamepadButton { id, button, state } => {
+                input_component.set_gamepad_button(id, button, state);
             },
 
             // Gamepad axes
-            InputEvent::GamepadAxis { axis, value } => {
-                input_component.set_gamepad_axis(axis, value);
+            InputEvent::GamepadAxis { id, axis, value } => {
+                input_component.set_gamepad_axis(id, axis, value);
+            },
+
+            // Gamepad connection events
+            InputEvent::GamepadConnected { id } => {
+                input_component.connect_gamepad(id);
+            },
+
+            InputEvent::GamepadDisconnected { id } => {
+                input_component.disconnect_gamepad(id);
             },
         }
     }
