@@ -308,7 +308,7 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
 
 fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let input_component = engine.get_global_component::<InputComponent>()?;
+    let input_component = engine.get_global_component_mut::<InputComponent>()?;
 
     // Get input
     let a_key = input_component.get_key(KeyboardKey::KeyA);
@@ -319,6 +319,12 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
 
     // Get gamepad input
     let gamepad_left_stick = input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::LeftStickX);
+
+    // Pressing left bumper causes rumble (Example of haptics usage)
+    let left_bumper = input_component.get_gamepad_button(PlayerId::Player1, GamepadButton::LeftBumper);
+    if left_bumper {
+        input_component.enqueue_rumble(PlayerId::Player1, 1.0, 1.0, 500);
+    }
 
     for (_, transform_transform, camera_movement_component) in engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
     {

@@ -1,20 +1,20 @@
-use crate::{ 
+use crate::{
     resources::*,
     ecs::*,
     graphics::*,
     config::*,
 };
 
-use pill_core::{ 
-    EngineError, 
-    PillSlotMapKey, 
-    PillStyle, 
+use pill_core::{
+    EngineError,
+    PillSlotMapKey,
+    PillStyle,
     PillTypeMap,
-    get_type_name, 
-    get_value_type_name, 
-    get_enum_variant_type_name, 
-    get_game_error_message, 
-    Vector2f, 
+    get_type_name,
+    get_value_type_name,
+    get_enum_variant_type_name,
+    get_game_error_message,
+    Vector2f,
     Timer
 };
 
@@ -31,14 +31,14 @@ pub type KeyboardKey = winit::keyboard::KeyCode;
 pub type MouseButton = winit::event::MouseButton;
 
 /// Engine <-> Game interface
-/// 
+///
 /// Entry point of the game project. Mandatory to implement.
-pub trait PillGame { 
+pub trait PillGame {
     fn start(&self, engine: &mut Engine) -> Result<()>;
 }
 
 /// Heart of Pill Engine
-pub struct Engine { 
+pub struct Engine {
     pub(crate) config: config::Config,
     pub(crate) game: Option<Game>,
     pub(crate) renderer: Renderer,
@@ -78,12 +78,12 @@ impl Engine {
     pub fn new(
         game: Box<dyn PillGame>,
         game_resources_directory_path: std::path::PathBuf,
-        renderer: Box<dyn PillRenderer>, 
+        renderer: Box<dyn PillRenderer>,
         config: config::Config
     ) -> Self {
         let max_entity_count = config.get_int("MAX_ENTITIES").unwrap_or(MAX_ENTITIES as i64) as usize;
 
-        Self { 
+        Self {
             config,
             game: Some(game),
             renderer,
@@ -151,19 +151,19 @@ impl Engine {
         let result = game.start(self);
         match stop_on_game_errors {
             true => result.context(format!("{} error", "Game".mobj_style()))?,
-            false => { 
+            false => {
                 if let Some(message) = get_game_error_message(result) {
                     error!("{}", message);
-                } 
+                }
             },
         }
         self.game = Some(game);
 
         Ok(())
     }
-   
+
     /// Initializes Pill Engine
-    /// 
+    ///
     /// Creates default global components, adds default systems, creates default resources, initializes game
     pub fn initialize(&mut self, window_size: winit::dpi::PhysicalSize<u32>) -> Result<()> {
         info!("Initializing {}", "Engine".mobj_style());
@@ -187,6 +187,7 @@ impl Engine {
         self.system_manager.add_system(AUDIO_SYSTEM.name, AUDIO_SYSTEM.system_function, AUDIO_SYSTEM.update_phase)?;
         self.system_manager.add_system(DEFERRED_UPDATE_SYSTEM.name, DEFERRED_UPDATE_SYSTEM.system_function, DEFERRED_UPDATE_SYSTEM.update_phase)?;
         self.system_manager.add_system(RENDERING_SYSTEM.name, RENDERING_SYSTEM.system_function, RENDERING_SYSTEM.update_phase)?;
+        self.system_manager.add_system(HAPTICS_SYSTEM.name, HAPTICS_SYSTEM.system_function, HAPTICS_SYSTEM.update_phase)?;
 
         // Create default resources
         self.create_default_resources().context("Failed to create default resources")?;
@@ -199,8 +200,8 @@ impl Engine {
     }
 
     /// Main engine update function
-    /// 
-    /// Runs all systems in order: PreGame -> Game -> PostGame 
+    ///
+    /// Runs all systems in order: PreGame -> Game -> PostGame
     pub fn update(&mut self, delta_time: std::time::Duration) {
         let stop_on_game_errors = self.config.get_bool("PANIC_ON_GAME_ERRORS").unwrap_or(PANIC_ON_GAME_ERRORS);
 
@@ -218,11 +219,11 @@ impl Engine {
                 }
 
                 // Create new time and asign it to system so it can be accessed inside the system function
-                // For rendering system we can't clean its timer here, 
-                // because it has to render its own timer data in the UI 
+                // For rendering system we can't clean its timer here,
+                // because it has to render its own timer data in the UI
                 // (and since the frame in which it renders is not yet finished when it renders UI, it has to use previous frame timer data)
                 if system_name != RENDERING_SYSTEM.name {
-                    
+
                     let mut timer = Timer::new();
                     timer.begin_context(&format!("{} system update", system_name));
                     self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
@@ -257,9 +258,9 @@ impl Engine {
                 self.system_manager.update_system_timer(system_name.as_str(), update_phase.clone(), timer).unwrap();
             }
         }
-        
+
         // Update FPS counter
-        let new_frame_time = delta_time.as_secs_f32() * 1000.0; 
+        let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps = 1000.0 / new_frame_time;
         self.frame_delta_time = new_frame_time.into();
         println!("Frame finished (Time: {:.3}ms, FPS {:.0})", new_frame_time, fps);
@@ -306,7 +307,7 @@ impl Engine {
         self.input_queue.push_back(input_event);
         debug!("Got new mouse motion input");
     }
- 
+
     pub fn pass_mouse_position_input(&mut self, position: &PhysicalPosition<f64>) {
         let input_event = InputEvent::MousePosition { position: Vector2f::new(position.x as f32, position.y as f32) };
         self.input_queue.push_back(input_event);
@@ -325,7 +326,7 @@ impl Engine {
 // --- API ------------------------------------------------------------------
 
 /// Pill Engine game API
-impl Engine { 
+impl Engine {
 
     // --- System API ---
 
@@ -356,7 +357,7 @@ impl Engine {
 
         self.system_manager.get_system_timer(name, UpdatePhase::Game).unwrap().unwrap()
     }
-    
+
     // --- Entity API ---
 
     /// Returns EntityBuilder, allowing for handy entity creation
@@ -393,7 +394,7 @@ impl Engine {
     // --- Component API ---
 
     /// Registers new component type in scene specified with scene handle
-    pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()> 
+    pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()>
         where T: Component<Storage = ComponentStorage::<T>>
     {
         debug!("Registering {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Scene".sobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
@@ -402,11 +403,11 @@ impl Engine {
     }
 
     /// Adds new component to the entity specified with scene and entity handle
-    pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, mut component: T) -> Result<()> 
+    pub fn add_component_to_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle, mut component: T) -> Result<()>
         where T : Component<Storage = ComponentStorage::<T>>
     {
         debug!("Adding {} {} to {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-        
+
         // Check if already added
         let target_scene = self.scene_manager.get_scene(scene_handle)?;
 
@@ -416,7 +417,7 @@ impl Engine {
 
         // Initialize component
         component.initialize(self).context(format!("Adding {} {} failed", "Component".gobj_style(), get_type_name::<T>().sobj_style()))?;
-        
+
         // Add component
         self.scene_manager.add_component_to_entity::<T>(scene_handle, entity_handle, component).context(format!("Adding {} to {} failed", "Component".gobj_style(), "Entity".gobj_style()))?;
         let component = self.scene_manager.get_entity_component::<T>(entity_handle, scene_handle)?;
@@ -428,11 +429,11 @@ impl Engine {
     }
 
     /// Removes component from the entity specified with scene and entity handle
-    pub fn remove_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> 
+    pub fn remove_component_from_entity<T>(&mut self, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()>
         where T : Component<Storage = ComponentStorage::<T>>
     {
         debug!("Removing {} {} from {} {} in {} {}", "Component".gobj_style(), get_type_name::<T>().sobj_style(), "Entity".gobj_style(), entity_handle.data().index, "Scene".gobj_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-        
+
         let mut component = self.scene_manager.remove_component_from_entity::<T>(scene_handle, entity_handle).context("Removing component from entity failed").unwrap();
 
         // Destroy component
@@ -444,7 +445,7 @@ impl Engine {
     // --- Global Component API ---
 
     /// Adds global component to engine
-    pub fn add_global_component<T>(&mut self, mut component: T) -> Result<()> 
+    pub fn add_global_component<T>(&mut self, mut component: T) -> Result<()>
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Check if component of this type is not already added
@@ -462,17 +463,17 @@ impl Engine {
     }
 
     /// Returns global component
-    pub fn get_global_component<T>(&self) -> Result<&T> 
+    pub fn get_global_component<T>(&self) -> Result<&T>
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Get component
         let component = self.global_components.get::<T>().ok_or(Error::new(EngineError::GlobalComponentNotFound(get_type_name::<T>())))?.data.as_ref().unwrap();
-        
+
         Ok(component)
     }
 
-    /// Returns global mutable component 
-    pub fn get_global_component_mut<T>(&mut self) -> Result<&mut T> 
+    /// Returns global mutable component
+    pub fn get_global_component_mut<T>(&mut self) -> Result<&mut T>
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Get component
@@ -482,7 +483,7 @@ impl Engine {
     }
 
     /// Removes global component from the engine
-    pub fn remove_global_component<T>(&mut self) -> Result<()> 
+    pub fn remove_global_component<T>(&mut self) -> Result<()>
         where T: GlobalComponent<Storage = GlobalComponentStorage::<T>>
     {
         // Check if the type of the component is the same as of the ones, which cannot be removed
@@ -494,16 +495,16 @@ impl Engine {
         let global_component_storage = self.global_components.remove::<T>().ok_or(EngineError::GlobalComponentNotFound(get_type_name::<T>()))?;
         let mut global_component = global_component_storage.data.unwrap();
         global_component.destroy(self)?;
-        
+
         Ok(())
     }
 
     // --- Iterator API ---
-    
+
     /// Returns iterator for specified component
-    /// 
+    ///
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_one_component<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A)>> 
+    pub fn iterate_one_component<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A)>>
         where A: Component<Storage = ComponentStorage<A>>
     {
         // Get scene handle and iterator
@@ -512,22 +513,22 @@ impl Engine {
     }
 
     /// Returns iterator for specified component mutable
-    /// 
+    ///
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_one_component_mut<A>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A)>> 
+    pub fn iterate_one_component_mut<A>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A)>>
         where A: Component<Storage = ComponentStorage<A>>
     {
         // Get scene handle and iterator
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
         self.scene_manager.get_one_component_iterator_mut::<A>(scene_handle)
     }
-    
+
     /// Returns iterator for specified component pair
-    /// 
+    ///
     /// Iterator fetches specified components only for those entities which have them all
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_two_components<A, B>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A, &B)>> 
-        where 
+    pub fn iterate_two_components<A, B>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A, &B)>>
+        where
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>
     {
@@ -537,11 +538,11 @@ impl Engine {
     }
 
     /// Returns iterator for specified component pair mutable
-    /// 
+    ///
     /// Iterator fetches specified components only for those entities which have them all
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_two_components_mut<A, B>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B)>> 
-        where 
+    pub fn iterate_two_components_mut<A, B>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B)>>
+        where
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>
     {
@@ -550,12 +551,12 @@ impl Engine {
         self.scene_manager.get_two_component_iterator_mut::<A, B>(scene_handle)
     }
 
-    /// Returns iterator for specified component triple 
-    /// 
+    /// Returns iterator for specified component triple
+    ///
     /// Iterator fetches specified components only for those entities which have them all
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_three_components<A, B, C>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A, &B, &C)>> 
-        where 
+    pub fn iterate_three_components<A, B, C>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A, &B, &C)>>
+        where
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>,
         C: Component<Storage = ComponentStorage<C>>
@@ -564,13 +565,13 @@ impl Engine {
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
         self.scene_manager.get_three_component_iterator::<A, B, C>(scene_handle)
     }
-  
+
     /// Returns iterator for specified component triple mutable
-    /// 
+    ///
     /// Iterator fetches specified components only for those entities which have them all
     /// Additionally returns entity handle to matching entities
-    pub fn iterate_three_components_mut<A, B, C>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B, &mut C)>> 
-        where 
+    pub fn iterate_three_components_mut<A, B, C>(&mut self) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B, &mut C)>>
+        where
         A: Component<Storage = ComponentStorage<A>>,
         B: Component<Storage = ComponentStorage<B>>,
         C: Component<Storage = ComponentStorage<C>>
@@ -627,14 +628,14 @@ impl Engine {
     // --- Resource API ---
 
     // Registers new resource type in the engine
-    pub fn register_resource_type<T>(&mut self, max_resource_count: usize) -> Result<()> 
+    pub fn register_resource_type<T>(&mut self, max_resource_count: usize) -> Result<()>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         self.resource_manager.register_resource_type::<T>(max_resource_count)
     }
 
     // Adds resource to the engine
-    pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle> 
+    pub fn add_resource<T>(&mut self, mut resource: T) -> Result<T::Handle>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         debug!("Adding {} {} {}", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style());
@@ -647,10 +648,10 @@ impl Engine {
 
         // Initialize resource
         resource.initialize(self).context(format!("Adding {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style()))?;
-        
+
         // Add resource and get it back
         let add_result = self.resource_manager.add_resource(resource)?;
-        let resource_handle = add_result.0; 
+        let resource_handle = add_result.0;
         let resource = add_result.1;
 
         // Pass handle to this resource so it can store it if needed
@@ -660,46 +661,46 @@ impl Engine {
     }
 
     // Returns resource associated with resource handle
-    pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T> 
+    pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource::<T>(resource_handle)?)
     }
 
     /// Returns resource specified by its name
-    pub fn get_resource_by_name<T>(&self, name: &str) -> Result<&T> 
+    pub fn get_resource_by_name<T>(&self, name: &str) -> Result<&T>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_by_name::<T>(name)?)
     }
 
     /// Returns handle to resource specified by the name of this resource
-    pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle> 
+    pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_handle::<T>(name)?)
     }
 
     // Returns mutable resource associated with resource handle
-    pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T> 
+    pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_mut::<T>(resource_handle)?)
     }
 
     /// Returns mutable resource specified by its name
-    pub fn get_resource_by_name_mut<T>(&mut self, name: &str) -> Result<&mut T> 
+    pub fn get_resource_by_name_mut<T>(&mut self, name: &str) -> Result<&mut T>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         Ok(self.resource_manager.get_resource_by_name_mut::<T>(name)?)
     }
 
-    // Removes resource associated with resource handle from the engine 
-    pub fn remove_resource<T>(&mut self, resource_handle: &T::Handle) -> Result<()> 
+    // Removes resource associated with resource handle from the engine
+    pub fn remove_resource<T>(&mut self, resource_handle: &T::Handle) -> Result<()>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         let error_message = format!("Removing {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style());
-      
+
         // Check if resource is not default
         let resource_name = self.resource_manager.get_resource::<T>(resource_handle).context(error_message.to_string())?.get_name();
         if resource_name.starts_with(DEFAULT_RESOURCE_PREFIX) {
@@ -713,8 +714,8 @@ impl Engine {
         Ok(())
     }
 
-    // Removes resource specified with its name from the engine 
-    pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<()> 
+    // Removes resource specified with its name from the engine
+    pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<()>
         where T: Resource<Storage = ResourceStorage::<T>>
     {
         let error_message = format!("Removing {} {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), name.to_string().name_style());

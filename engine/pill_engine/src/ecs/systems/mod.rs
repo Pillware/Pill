@@ -4,6 +4,7 @@ mod system_manager;
 pub(crate) mod rendering_system;
 pub(crate) mod deferred_update_system;
 pub(crate) mod input_system;
+pub(crate) mod haptics_system;
 pub(crate) mod time_system;
 pub(crate) mod audio_system;
 

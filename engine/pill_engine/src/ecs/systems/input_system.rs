@@ -13,7 +13,7 @@ use gilrs::{ Gilrs, EventType, Axis, Button };
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
-static GILRS: Lazy<Mutex<Gilrs>> = Lazy::new(|| Mutex::new(Gilrs::new().expect("Failed to initialize Gilrs")));
+pub(crate) static GILRS: Lazy<Mutex<Gilrs>> = Lazy::new(|| Mutex::new(Gilrs::new().expect("Failed to initialize Gilrs")));
 
 pub fn input_system(engine: &mut Engine) -> Result<()> {
     // Poll GILRS first
@@ -21,13 +21,13 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
         let mut gilrs = GILRS.lock().unwrap();
         while let Some(ev) = gilrs.next_event() {
             match ev.event {
-                EventType::ButtonPressed(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: usize::from(ev.id), button: b.into(), state: ElementState::Pressed }),
-                EventType::ButtonRepeated(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: usize::from(ev.id), button: b.into(), state: ElementState::Pressed }), // TODO: this should be handled differently?
-                EventType::ButtonReleased(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: usize::from(ev.id), button: b.into(), state: ElementState::Released }),
-                EventType::AxisChanged(a, v, _) => engine.input_queue.push_back(InputEvent::GamepadAxis { id: usize::from(ev.id), axis: a.into(), value: v }),
-                EventType::Connected => engine.input_queue.push_back(InputEvent::GamepadConnected { id: usize::from(ev.id) }),
-                EventType::Disconnected => engine.input_queue.push_back(InputEvent::GamepadDisconnected { id: usize::from(ev.id) }),
-                EventType::ForceFeedbackEffectCompleted => {}, // ignore // TODO: what to do?
+                EventType::ButtonPressed(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: ev.id, button: b.into(), state: ElementState::Pressed }),
+                EventType::ButtonRepeated(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: ev.id, button: b.into(), state: ElementState::Pressed }), // TODO: do we want to treat repeated press differently?
+                EventType::ButtonReleased(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: ev.id, button: b.into(), state: ElementState::Released }),
+                EventType::AxisChanged(a, v, _) => engine.input_queue.push_back(InputEvent::GamepadAxis { id: ev.id, axis: a.into(), value: v }),
+                EventType::Connected => engine.input_queue.push_back(InputEvent::GamepadConnected { id: ev.id }),
+                EventType::Disconnected => engine.input_queue.push_back(InputEvent::GamepadDisconnected { id: ev.id }),
+                EventType::ForceFeedbackEffectCompleted => engine.input_queue.push_back(InputEvent::GamepadForceFeedbackEffectCompleted { id: ev.id }),
                 _ => {},
             }
         }
@@ -36,6 +36,14 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
     {
         let input_component = engine.get_global_component_mut::<InputComponent>()?;
         input_component.clear_transient_states();
+
+        // If the input component has just been created, initialize the gamepad states
+        if input_component.gamepad_id_to_player.is_empty() {
+            let gilrs = GILRS.lock().unwrap();
+            for (id, gamepad) in gilrs.gamepads() {
+                input_component.connect_gamepad(id);
+            }
+        }
     }
 
     while let Some(event) = engine.input_queue.pop_front() {
@@ -93,6 +101,11 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
             InputEvent::GamepadDisconnected { id } => {
                 input_component.disconnect_gamepad(id);
             },
+
+            // Gamepad force feedback completion
+            InputEvent::GamepadForceFeedbackEffectCompleted { id } => {
+                input_component.complete_force_feedback_effect(id);
+            },
         }
     }
 
@@ -139,6 +152,8 @@ impl From<Axis> for GamepadAxis {
             Axis::RightStickY => GamepadAxis::RightStickY,
             Axis::LeftZ => GamepadAxis::LeftTrigger,
             Axis::RightZ => GamepadAxis::RightTrigger,
+            Axis::DPadX => GamepadAxis::DPadX,
+            Axis::DPadY => GamepadAxis::DPadY,
             _ => GamepadAxis::LeftStickX, // Handle other axes as LeftStickX
         }
     }

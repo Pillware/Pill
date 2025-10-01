@@ -1,6 +1,6 @@
 use crate::{
-    ecs::{ audio_system, deferred_update_system, input_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase }, 
-    graphics::{ RendererMaterialHandle, RendererTextureHandle }, 
+    ecs::{ audio_system, deferred_update_system, input_system, haptics_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase },
+    graphics::{ RendererMaterialHandle, RendererTextureHandle },
     resources::{ MaterialHandle, TextureHandle, TextureType },
 };
 
@@ -30,6 +30,12 @@ pub const INPUT_SYSTEM: SystemConfig = SystemConfig {
     name: "input_system",
     system_function: input_system,
     update_phase: UpdatePhase::PreGame,
+};
+
+pub const HAPTICS_SYSTEM: SystemConfig = SystemConfig {
+    name: "haptics_system",
+    system_function: haptics_system,
+    update_phase: UpdatePhase::PostGame,
 };
 
 pub const TIME_SYSTEM: SystemConfig = SystemConfig {
@@ -91,19 +97,19 @@ pub const RENDER_QUEUE_KEY_MESH_INDEX_IDX: u8 = 3;
 pub const RENDER_QUEUE_KEY_MESH_VERSION_IDX: u8 = 4;
 
 // Default resource handle - Color texture
-pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
 // Default resource handle - Normal texture
-pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle { 
-    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle {
+    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle { 
-    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
+    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
 pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle, RendererTextureHandle) {
@@ -114,11 +120,11 @@ pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle,
 }
 
 // Default resource handle - Material
-pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
-pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
 pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle) {
