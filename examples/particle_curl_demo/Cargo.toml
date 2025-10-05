@@ -1,5 +1,5 @@
 [package]
-name = "particle_curl"
+name = "pill_game"
 version = "0.1.0"
 edition = "2021"
 workspace = "NO_PATH"
