@@ -625,10 +625,10 @@ impl PillGame for Game {
 
         // Add materials
         let mut pill_material = Material::new("pill");
-        pill_material.set_texture("color", pill_color_texture_handle)?;
-        pill_material.set_texture("normal", pill_normal_texture_handle)?;
-        pill_material.set_color("tint", Color::new( 1.0, 1.0, 1.0))?;
-        pill_material.set_scalar("specularity", 0.5)?;
+        pill_material.set_texture("Color", pill_color_texture_handle)?;
+        pill_material.set_texture("Normal", pill_normal_texture_handle)?;
+        pill_material.set_color("Tint", Color::new( 1.0, 1.0, 1.0))?;
+        pill_material.set_scalar("Specularity", 0.5)?; // TODO: names are already corrected upstream
         let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
 
         // Create camera entity

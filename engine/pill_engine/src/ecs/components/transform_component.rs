@@ -6,7 +6,7 @@ use crate::{
 use pill_core::{
     get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f
 };
-use cgmath::{Deg, Matrix3, SquareMatrix, Zero};
+use cgmath::{Deg, Matrix3, SquareMatrix, Zero, InnerSpace};
 use anyhow::{ Result, Context, Error };
 use serde::{ Serialize, Deserialize };
 
@@ -177,6 +177,20 @@ impl TransformComponent {
         self.matrix_update_required = true;
     }
 
+    /// Look at with assumption we want to keep the up direction as +Y (roll = 0)
+    pub fn look_at(&mut self, target: Vector3f) {
+        let mut dir = target - self.position;
+        if dir.magnitude2() < 1e-12 {
+            return;
+        }
+        dir = dir.normalize();
+
+        let yaw = dir.x.atan2(dir.z).to_degrees();
+        let pitch = (-dir.y).atan2((dir.x * dir.x + dir.z * dir.z).sqrt()).to_degrees();
+
+        self.set_rotation(Vector3f::new(pitch, yaw, 0.0));
+    }
+
     // --- Scale ---
 
     pub fn set_scale(&mut self, scale: Vector3f) {
@@ -184,6 +198,14 @@ impl TransformComponent {
         self.matrix_update_required = true;
     }
 
+        // --- Utility ---
+    pub fn orbit_around_point(&mut self, center: Vector3f, axis: Vector3f, angle: f32) {
+        let k = axis.normalize();
+        let rotation: Matrix3<f32> = Matrix3::from_axis_angle(k, cgmath::Deg(angle));
+        let offset = self.position - center;
+        let new_offset = rotation * offset;
+        self.set_position(center + new_offset);
+    }
 }
 
 pub fn update_transform_matrices(transform_component: &mut TransformComponent) {

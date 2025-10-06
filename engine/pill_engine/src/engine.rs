@@ -186,7 +186,7 @@ impl Engine {
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
         self.add_global_component(EguiManagerComponent::new())?;
-        self.add_global_component(PhysicsWorldComponent::new())?;
+        //self.add_global_component(PhysicsWorldComponent::new())?;
 
         let max_ambient = self
             .config
@@ -203,7 +203,7 @@ impl Engine {
         // --- Built-in systems ----------------------------------------------
         self.system_manager.add_system("InputSystem", input_system, UpdatePhase::PreGame)?;
         self.system_manager.add_system("TimeSystem",  time_system,  UpdatePhase::PostGame)?;
-        self.system_manager.add_system("PhysicsSystem", physics_system, UpdatePhase::PostGame)?;
+        //self.system_manager.add_system("PhysicsSystem", physics_system, UpdatePhase::PostGame)?;
         self.system_manager.add_system("AudioSystem", audio_system, UpdatePhase::PostGame)?;
         self.system_manager.add_system("DeferredUpdateSystem", deferred_update_system, UpdatePhase::PostGame)?;
         self.system_manager.add_system("RenderingSystem", rendering_system, UpdatePhase::PostGame)?;
@@ -630,6 +630,17 @@ impl Engine {
         // Get scene handle and iterator
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
         self.scene_manager.get_three_component_iterator_mut::<A, B, C>(scene_handle)
+    }
+
+    pub fn par_for_each2_with<A, B, C, F>(&mut self, chunk: usize, f: F) -> Result<()>
+        where
+        A: Component<Storage = ComponentStorage<A>> + Send,
+        B: Component<Storage = ComponentStorage<B>> + Send,
+        C: Component<Storage = ComponentStorage<C>> + Send + Sync,
+        F: Fn(&mut A, &mut B) + Send + Sync
+    {
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+        self.scene_manager.par_for_each2_with::<A, B, C, F>(scene_handle, chunk, f)
     }
 
     /// Returns iterator for specified component triple

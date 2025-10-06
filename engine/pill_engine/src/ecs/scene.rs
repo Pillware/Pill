@@ -16,6 +16,7 @@ use pill_core::{
 use anyhow::{Result, Context, Error};
 use std::{ cell::RefCell, any::TypeId, slice::Iter, iter::Zip, collections::HashMap };
 use log::{debug, info};
+use rayon::prelude::*;
 
 pub const NEW_COMPONENT_BIT: u16 = 0b0000_0000_0000_0001;
 
@@ -365,5 +366,72 @@ impl Scene {
             )});
 
         Ok(iterator)
+    }
+
+    fn par_zip_mut_filtered<A, B, C, F>(a: &mut [Option<A>], b: &mut [Option<B>], c: &[Option<C>], cutoff: usize, f: &F)
+        where
+            A: Send,
+            B: Send,
+            C: Sync,
+            F: Fn(&mut A, &mut B) + Sync,
+    {
+        // keep the three slices aligned
+        let n = a.len().min(b.len()).min(c.len());
+        let (a, b, c) = (&mut a[..n], &mut b[..n], &c[..n]);
+
+        if n <= cutoff {
+            // sequential leaf
+            for i in 0..n {
+                if let (Some(ra), Some(rb), Some(_)) = (a[i].as_mut(), b[i].as_mut(), c[i].as_ref()) {
+                    f(ra, rb);
+                }
+            }
+            return;
+        }
+
+        // split into two disjoint haelves and run in parallel
+        let mid = n / 2;
+        let (a1, a2) = a.split_at_mut(mid);
+        let (b1, b2) = b.split_at_mut(mid);
+        let (c1, c2) = c.split_at(mid);
+
+        rayon::join(
+            || Self::par_zip_mut_filtered(a1, b1, c1, cutoff, f),
+            || Self::par_zip_mut_filtered(a2, b2, c2, cutoff, f),
+        );
+    }
+
+    /// Parallel iterate (&mut A, &mut B) filtered by presence of C at same index.
+    pub fn par_for_each2_with<A, B, C, F>(&mut self, chunk: usize, f: F) -> Result<()>
+        where
+            A: Component<Storage = ComponentStorage<A>> + Send,
+            B: Component<Storage = ComponentStorage<B>> + Send,
+            C: Component<Storage = ComponentStorage<C>> + Send + Sync,
+            F: Fn(&mut A, &mut B) + Send + Sync,
+    {
+       // 1) Take each storage briefly, immediately convert to raw ptr so
+        //    the &mut borrow ends before the next call.
+        let a_ptr: *mut [Option<A>] = {
+            let a = self.get_component_storage_mut::<A>()?;
+            a.as_mut_slice() as *mut [Option<A>]
+        };
+        let b_ptr: *mut [Option<B>] = {
+            let b = self.get_component_storage_mut::<B>()?;
+            b.as_mut_slice() as *mut [Option<B>]
+        };
+        let c_slice: &[Option<C>] = {
+            let c = self.get_component_storage::<C>()?;
+            c.as_slice()
+        };
+
+        // 2) Recreate the two mutable slices once, then parallelize safely.
+        //    (A and B are different component types -> different allocations -> no alias.)
+        let (a_slice, b_slice): (&mut [Option<A>], &mut [Option<B>]) = unsafe {
+            (&mut *a_ptr, &mut *b_ptr)
+        };
+
+        Self::par_zip_mut_filtered(a_slice, b_slice, c_slice, chunk, &f);
+
+        Ok(())
     }
 }

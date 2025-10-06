@@ -28,11 +28,17 @@ pub trait Vector3fExt {
     const X: Self;
     const Y: Self;
     const Z: Self;
+
+    fn zero() -> Vector3f;
 }
 
 impl Vector3fExt for cgmath::Vector3<f32> {
     const X: Self = Vector3f::new(1.0, 0.0, 0.0);
     const Y: Self = Vector3f::new(0.0, 1.0, 0.0);
     const Z: Self = Vector3f::new(0.0, 0.0, 1.0);
+
+    fn zero () -> Vector3f {
+        Vector3f::new(0.0, 0.0, 0.0)
+    }
 }
 

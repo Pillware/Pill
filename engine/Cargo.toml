@@ -7,7 +7,7 @@ members = [
     "pill_standalone",
     "pill_headless",
     "pill_net",
-    "/home/jduchniewicz/Projects/Sticky-Piston-Studios/Pill-Engine/examples/Trucks", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
+    "NO_PATH", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
 ]
 
 exclude = [

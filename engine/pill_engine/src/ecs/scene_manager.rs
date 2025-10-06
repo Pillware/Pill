@@ -409,4 +409,17 @@ impl SceneManager {
         let target_scene = self.get_scene_mut(scene_handle)?;
         target_scene.get_four_component_iterator_mut::<A, B, C, D>()
     }
+
+	pub fn par_for_each2_with<A, B, C, F>(&mut self, scene_handle: SceneHandle, chunk: usize, f: F) -> Result<()>
+        where
+        A: Component<Storage = ComponentStorage::<A>> + Send,
+        B: Component<Storage = ComponentStorage::<B>> + Send,
+        C: Component<Storage = ComponentStorage::<C>> + Send + Sync,
+        F: Fn(&mut A, &mut B) + Send + Sync,
+    {
+        // Get scene
+        let target_scene = self.get_scene_mut(scene_handle)?;
+
+        target_scene.par_for_each2_with::<A, B, C, F>(chunk, f)
+    }
 }

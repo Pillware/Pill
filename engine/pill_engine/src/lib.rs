@@ -114,7 +114,7 @@ pub mod game {
     extern crate pill_core;
     pub use pill_core::{
         PillTypeMapKey,
-        Vector2f, Vector3f, Color,
+        Vector2f, Vector3f, Color, Vector3fExt,
         Direction,
         Vector2i, Vector3i,
         define_new_pill_slotmap_key,
