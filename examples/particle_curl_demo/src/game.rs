@@ -634,7 +634,7 @@ impl PillGame for Game {
         // Create camera entity
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .position(Vector3f::new(0.0,0.0,-20.0))
+            .position(Vector3f::new(0.0,0.0,20.0))
             .rotation(Vector3f::new(0.0,0.0,0.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;

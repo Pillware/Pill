@@ -185,8 +185,9 @@ impl TransformComponent {
         }
         dir = dir.normalize();
 
-        let yaw = dir.x.atan2(dir.z).to_degrees();
-        let pitch = (-dir.y).atan2((dir.x * dir.x + dir.z * dir.z).sqrt()).to_degrees();
+        let yaw = (-dir.x).atan2(-dir.z).to_degrees(); // TODO: this is already fixed on curl_demo
+                                                       // branch
+        let pitch = (dir.y).atan2((dir.x * dir.x + dir.z * dir.z).sqrt()).to_degrees();
 
         self.set_rotation(Vector3f::new(pitch, yaw, 0.0));
     }
