@@ -3,49 +3,31 @@
 // https://github.com/emilk/egui/discussions/3067
 
 use crate::{
-    instance::Instance, mesh_drawer::MeshDrawer, renderer_resource_storage::RendererResourceStorage, resources::{
-        RendererCamera,
-        RendererMaterial,
-        RendererMesh,
-        RendererPipeline,
-        RendererTexture,
-        Vertex
-    }
+    instance::Instance,
+    mesh_drawer::MeshDrawer,
+    renderer_resource_storage::RendererResourceStorage,
+    resources::{
+        RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture, Vertex,
+    },
 };
 
 use pill_engine::internal::{
-    PillRenderer, 
-    EntityHandle, 
-    RenderQueueItem, 
-    TextureType,
-    MeshData, 
-    MaterialTextureMap,
-    TransformComponent,
-    ComponentStorage, 
-    CameraComponent,
-    MaterialParameterMap,
-    RendererCameraHandle,
-    RendererMaterialHandle,
-    RendererMeshHandle,
-    RendererPipelineHandle,
-    RendererTextureHandle, 
+    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage,
+    EntityHandle, MaterialParameterMap, MaterialTextureMap, MeshData, PillRenderer,
+    RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+    RendererPipelineHandle, RendererTextureHandle, TextureType, TransformComponent,
     RENDER_QUEUE_KEY_ORDER,
-    get_renderer_resource_handle_from_camera_component,
 };
 
-use pill_core::{ 
-    PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer 
-};
+use pill_core::{PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer};
 
-use std::{
-    iter, mem::size_of, num::NonZeroU32, ops::Range, sync::Arc
-};
+use std::{iter, mem::size_of, num::NonZeroU32, ops::Range, sync::Arc};
 
-use naga::front::glsl;
 use naga::back::wgsl;
+use naga::front::glsl;
 
 use anyhow::{Error, Result};
-use log::{ info };
+use log::info;
 
 use crate::egui::EguiRenderer;
 
@@ -53,8 +35,11 @@ pub const MAX_INSTANCE_BATCH_SIZE: usize = 10000; // Maximum number of instances
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
 
 // Default resource handle - Master pipeline
-pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle {
+    0: PillSlotMapKeyData {
+        index: 1,
+        version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
+    },
 };
 
 pub struct Renderer {
@@ -65,39 +50,39 @@ fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String
     let mut frontend = glsl::Frontend::default();
     let options = glsl::Options::from(stage);
     let module = frontend.parse(&options, source).unwrap();
-    
+
     let mut validator = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::empty(),
     );
-    
+
     let info = validator.validate(&module)?;
-    
+
     let mut output = String::new();
     let mut writer = wgsl::Writer::new(&mut output, wgsl::WriterFlags::empty());
     writer.write(&module, &info)?;
-    
+
     Ok(output)
 }
 
 impl PillRenderer for Renderer {
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self { 
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self {
         info!("Initializing {}", "Renderer".mobj_style());
         let state: State = pollster::block_on(State::new(window, config));
 
-        Self {
-            state,
-        }
-    }   
+        Self { state }
+    }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         info!("Resizing {} resources", "Renderer".mobj_style());
         self.state.resize(new_window_size)
     }
 
-
-    fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8]) -> Result<()> {
-        
+    fn set_master_pipeline(
+        &mut self,
+        vertex_shader_bytes: &[u8],
+        fragment_shader_bytes: &[u8],
+    ) -> Result<()> {
         // Create shaders
         // Convert bytes to string
         let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes)
@@ -105,25 +90,28 @@ impl PillRenderer for Renderer {
         let fragment_shader_source = std::str::from_utf8(fragment_shader_bytes)
             .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in fragment shader: {}", e))?;
 
+        // Convert GLSL to WGSL
+        let vertex_wgsl =
+            compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
+        let fragment_wgsl =
+            compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
 
-// Convert GLSL to WGSL
-let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
-let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
+        // Create shader modules with WGSL
+        let vertex_shader = self
+            .state
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("master_vertex_shader"),
+                source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+            });
 
-// Create shader modules with WGSL
-let vertex_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-    label: Some("master_vertex_shader"),
-    source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
-});
-
-let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-    label: Some("master_fragment_shader"),
-    source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
-});
-
-
-
-
+        let fragment_shader =
+            self.state
+                .device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("master_fragment_shader"),
+                    source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+                });
 
         // Create master pipeline
         let master_pipeline = RendererPipeline::new(
@@ -132,10 +120,17 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
             fragment_shader,
             self.state.color_format,
             Some(self.state.depth_format),
-            &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
-        ).unwrap();
+            &[
+                RendererMesh::data_layout_descriptor(),
+                Instance::data_layout_descriptor(),
+            ],
+        )
+        .unwrap();
 
-        self.state.renderer_resource_storage.pipelines.insert(master_pipeline);
+        self.state
+            .renderer_resource_storage
+            .pipelines
+            .insert(master_pipeline);
 
         Ok(())
     }
@@ -147,16 +142,41 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
         Ok(handle)
     }
 
-    fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle> {
-        let texture = RendererTexture::new_texture(&self.state.device, &self.state.queue, Some(name), image_data, texture_type)?;
-        let handle = self.state.renderer_resource_storage.textures.insert(texture);
+    fn create_texture(
+        &mut self,
+        name: &str,
+        image_data: &image::DynamicImage,
+        texture_type: TextureType,
+    ) -> Result<RendererTextureHandle> {
+        let texture = RendererTexture::new_texture(
+            &self.state.device,
+            &self.state.queue,
+            Some(name),
+            image_data,
+            texture_type,
+        )?;
+        let handle = self
+            .state
+            .renderer_resource_storage
+            .textures
+            .insert(texture);
 
         Ok(handle)
     }
 
-    fn create_material(&mut self, name: &str, textures: &MaterialTextureMap, parameters: &MaterialParameterMap) -> Result<RendererMaterialHandle> {
+    fn create_material(
+        &mut self,
+        name: &str,
+        textures: &MaterialTextureMap,
+        parameters: &MaterialParameterMap,
+    ) -> Result<RendererMaterialHandle> {
         let pipeline_handle = MASTER_PIPELINE_HANDLE;
-        let pipeline = self.state.renderer_resource_storage.pipelines.get(pipeline_handle).unwrap();
+        let pipeline = self
+            .state
+            .renderer_resource_storage
+            .pipelines
+            .get(pipeline_handle)
+            .unwrap();
 
         let material = RendererMaterial::new(
             &self.state.device,
@@ -168,16 +188,26 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
             textures,
             &pipeline.material_parameter_bind_group_layout,
             parameters,
-        ).unwrap();
+        )
+        .unwrap();
 
-        let handle = self.state.renderer_resource_storage.materials.insert(material);
+        let handle = self
+            .state
+            .renderer_resource_storage
+            .materials
+            .insert(material);
 
         Ok(handle)
     }
 
     fn create_camera(&mut self) -> Result<RendererCameraHandle> {
         let pipeline_handle = MASTER_PIPELINE_HANDLE;
-        let pipeline = self.state.renderer_resource_storage.pipelines.get(pipeline_handle).unwrap();
+        let pipeline = self
+            .state
+            .renderer_resource_storage
+            .pipelines
+            .get(pipeline_handle)
+            .unwrap();
         let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
         let camera = RendererCamera::new(&self.state.device, camera_bind_group_layout)?;
         let handle = self.state.renderer_resource_storage.cameras.insert(camera);
@@ -185,46 +215,81 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
         Ok(handle)
     }
 
-    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &MaterialTextureMap) -> Result<()> {
-        RendererMaterial::update_textures(&self.state.device, renderer_material_handle, &mut self.state.renderer_resource_storage, textures)
+    fn update_material_textures(
+        &mut self,
+        renderer_material_handle: RendererMaterialHandle,
+        textures: &MaterialTextureMap,
+    ) -> Result<()> {
+        RendererMaterial::update_textures(
+            &self.state.device,
+            renderer_material_handle,
+            &mut self.state.renderer_resource_storage,
+            textures,
+        )
     }
 
-    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &MaterialParameterMap) -> Result<()> {
-        RendererMaterial::update_parameters(&self.state.device, &self.state.queue, renderer_material_handle, &mut self.state.renderer_resource_storage, parameters)
+    fn update_material_parameters(
+        &mut self,
+        renderer_material_handle: RendererMaterialHandle,
+        parameters: &MaterialParameterMap,
+    ) -> Result<()> {
+        RendererMaterial::update_parameters(
+            &self.state.device,
+            &self.state.queue,
+            renderer_material_handle,
+            &mut self.state.renderer_resource_storage,
+            parameters,
+        )
     }
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
-        self.state.renderer_resource_storage.meshes.remove(renderer_mesh_handle).unwrap();
+        self.state
+            .renderer_resource_storage
+            .meshes
+            .remove(renderer_mesh_handle)
+            .unwrap();
 
         Ok(())
     }
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
-        self.state.renderer_resource_storage.textures.remove(renderer_texture_handle).unwrap();
+        self.state
+            .renderer_resource_storage
+            .textures
+            .remove(renderer_texture_handle)
+            .unwrap();
 
         Ok(())
     }
 
     fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
-        self.state.renderer_resource_storage.materials.remove(renderer_material_handle).unwrap();
+        self.state
+            .renderer_resource_storage
+            .materials
+            .remove(renderer_material_handle)
+            .unwrap();
 
         Ok(())
     }
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
-        self.state.renderer_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
-        
+        self.state
+            .renderer_resource_storage
+            .cameras
+            .remove(renderer_camera_handle)
+            .unwrap();
+
         Ok(())
     }
 
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
+        render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn Fn(&egui::Context)>,
-        timer: &mut Timer
+        timer: &mut Timer,
     ) -> Result<()> {
         self.state.render(
             active_camera_entity_handle,
@@ -232,15 +297,14 @@ let fragment_shader = self.state.device.create_shader_module(wgpu::ShaderModuleD
             camera_component_storage,
             transform_component_storage,
             egui_ui,
-            timer
+            timer,
         )
     }
-    
+
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
         self.state.egui_renderer.handle_input(event);
         Ok(())
     }
-
 }
 
 pub struct State {
@@ -251,7 +315,7 @@ pub struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
-    window_size: winit::dpi::PhysicalSize<u32>, 
+    window_size: winit::dpi::PhysicalSize<u32>,
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
@@ -260,7 +324,6 @@ pub struct State {
     config: config::Config,
     egui_renderer: crate::egui::EguiRenderer,
 }
-
 
 impl State {
     // Creating some of the wgpu types requires async code
@@ -280,19 +343,25 @@ impl State {
             gles_minor_version,
         });
         let surface = instance.create_surface(window).unwrap();
-        
+
         // Specify adapter options (Options passed here are not guaranteed to work for all devices)
-        let request_adapter_options = wgpu::RequestAdapterOptions { 
+        let request_adapter_options = wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         };
 
         // Create adapter
-        let adapter = instance.request_adapter(&request_adapter_options).await.unwrap();
+        let adapter = instance
+            .request_adapter(&request_adapter_options)
+            .await
+            .unwrap();
         let adapter_info = adapter.get_info();
-        info!("Using GPU: {} ({:?})", adapter_info.name, adapter_info.backend);
-        
+        info!(
+            "Using GPU: {} ({:?})",
+            adapter_info.name, adapter_info.backend
+        );
+
         let features = wgpu::Features::DEPTH_CLIP_CONTROL;
 
         // Create device descriptor
@@ -300,36 +369,51 @@ impl State {
             label: None,
             required_features: features, // Allows to specify what extra features of GPU that needs to be included (e.g. depth clamping, push constants, texture compression, etc)
             required_limits: wgpu::Limits::default(), // Allows to specify the limit of certain types of resources that will be used (e.g. max samplers, uniform buffers, etc)
-            //memory_hints: wgpu::MemoryHints::MemoryUsage, 
+                                                      //memory_hints: wgpu::MemoryHints::MemoryUsage,
         };
 
         // Create device and queue
-        let (device, queue) = adapter.request_device(&device_descriptor,None).await.unwrap();
+        let (device, queue) = adapter
+            .request_device(&device_descriptor, None)
+            .await
+            .unwrap();
 
         // Specify surface configuration
         let preferred_format = wgpu::TextureFormat::Rgba8UnormSrgb;
-        
+
         // Get supported present modes and choose the best one
         let surface_caps = surface.get_capabilities(&adapter);
-        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+        let present_mode = if surface_caps
+            .present_modes
+            .contains(&wgpu::PresentMode::Mailbox)
+        {
             wgpu::PresentMode::Mailbox
-        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+        } else if surface_caps
+            .present_modes
+            .contains(&wgpu::PresentMode::Immediate)
+        {
             wgpu::PresentMode::Immediate
         } else {
             wgpu::PresentMode::Fifo
         };
-        
+
         // Choose the best supported format
         let format = if surface_caps.formats.contains(&preferred_format) {
             preferred_format
-        } else if surface_caps.formats.contains(&wgpu::TextureFormat::Bgra8UnormSrgb) {
+        } else if surface_caps
+            .formats
+            .contains(&wgpu::TextureFormat::Bgra8UnormSrgb)
+        {
             wgpu::TextureFormat::Bgra8UnormSrgb
-        } else if surface_caps.formats.contains(&wgpu::TextureFormat::Bgra8Unorm) {
+        } else if surface_caps
+            .formats
+            .contains(&wgpu::TextureFormat::Bgra8Unorm)
+        {
             wgpu::TextureFormat::Bgra8Unorm
         } else {
             surface_caps.formats[0] // Use first available format
         };
-        
+
         let surface_configuration = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Defines how the swap_chain's underlying textures will be used
             format: format, // Defines how the swap_chain's textures will be stored on the gpu
@@ -348,11 +432,9 @@ impl State {
         let renderer_resource_storage = RendererResourceStorage::new(&config);
 
         // Create depth and color texture
-        let depth_texture = RendererTexture::new_depth_texture(
-            &device, 
-            &surface_configuration, 
-            "depth_texture"
-        ).unwrap();
+        let depth_texture =
+            RendererTexture::new_depth_texture(&device, &surface_configuration, "depth_texture")
+                .unwrap();
 
         let color_format = surface_configuration.format;
         let depth_format = wgpu::TextureFormat::Depth32Float;
@@ -360,14 +442,9 @@ impl State {
         // Create drawing state
         let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_BATCH_SIZE as u32);
 
-        let egui_renderer = EguiRenderer::new(
-            &device,
-            surface_configuration.format, 
-            None, 
-            1,            
-            window_ref,
-        );
-        
+        let egui_renderer =
+            EguiRenderer::new(&device, surface_configuration.format, None, 1, window_ref);
+
         // Create state
         Self {
             // Resources
@@ -384,7 +461,7 @@ impl State {
             mesh_drawer,
             // Other
             config,
-            egui_renderer
+            egui_renderer,
         }
     }
 
@@ -393,26 +470,26 @@ impl State {
             self.window_size = new_window_size;
             self.surface_configuration.width = new_window_size.width;
             self.surface_configuration.height = new_window_size.height;
-            self.surface.configure(&self.device, &self.surface_configuration);
+            self.surface
+                .configure(&self.device, &self.surface_configuration);
             self.depth_texture = RendererTexture::new_depth_texture(
                 &self.device,
                 &self.surface_configuration,
                 "depth_texture",
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
-  
+
     fn render(
-        &mut self, 
+        &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
+        render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn Fn(&egui::Context)>,
-        timer: &mut Timer
-    ) -> Result<()> { 
-        timer.record("Get frame");
-    
+        timer: &mut Timer,
+    ) -> Result<()> {
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
 
@@ -420,38 +497,135 @@ impl State {
             std::result::Result::Ok(frame) => frame,
             std::result::Result::Err(error) => match error {
                 wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
-                wgpu::SurfaceError::OutOfMemory => return Err(RendererError::SurfaceOutOfMemory.into()),
+                wgpu::SurfaceError::OutOfMemory => {
+                    return Err(RendererError::SurfaceOutOfMemory.into())
+                }
                 _ => return Err(RendererError::SurfaceOther.into()),
             },
         };
 
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("m1_encoder"),
+            });
+        {
+            let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("m1_clear_black"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+        }
+        self.queue.submit([encoder.finish()]);
+        frame.present();
+
+        Ok(())
+    }
+
+    fn render_old(
+        &mut self,
+        active_camera_entity_handle: EntityHandle,
+        render_queue: &Vec<RenderQueueItem>,
+        camera_component_storage: &ComponentStorage<CameraComponent>,
+        transform_component_storage: &ComponentStorage<TransformComponent>,
+        egui_ui: Box<dyn Fn(&egui::Context)>,
+        timer: &mut Timer,
+    ) -> Result<()> {
+        timer.record("Get frame");
+
+        // Get frame or return mapped error if failed
+        let frame = self.surface.get_current_texture();
+
+        let frame = match frame {
+            std::result::Result::Ok(frame) => frame,
+            std::result::Result::Err(error) => match error {
+                wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
+                wgpu::SurfaceError::OutOfMemory => {
+                    return Err(RendererError::SurfaceOutOfMemory.into())
+                }
+                _ => return Err(RendererError::SurfaceOther.into()),
+            },
+        };
+
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         timer.record("Get clear color and create render pass attachments");
 
         // Get active camera and update it
-        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
+        let camera_storage = camera_component_storage
+            .data
+            .get(active_camera_entity_handle.data().index as usize)
+            .unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = self.renderer_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
-        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
+        let renderer_camera = self
+            .renderer_resource_storage
+            .cameras
+            .get_mut(get_renderer_resource_handle_from_camera_component(
+                active_camera_component,
+            ))
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        let camera_transform_storage = transform_component_storage
+            .data
+            .get(active_camera_entity_handle.data().index as usize)
+            .unwrap();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
-        renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
-        let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
+        renderer_camera.update(
+            &self.queue,
+            active_camera_component,
+            active_camera_transform_component,
+        );
+        let renderer_camera = self
+            .renderer_resource_storage
+            .cameras
+            .get(get_renderer_resource_handle_from_camera_component(
+                active_camera_component,
+            ))
+            .unwrap();
         let clear_color = active_camera_component.clear_color;
 
         // Build a command buffer that can be sent to the GPU
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("render_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("render_encoder"),
+            });
 
-        { // Additional scope to release mutable borrow of encoder done by begin_render_pass
-            
+        {
+            // Additional scope to release mutable borrow of encoder done by begin_render_pass
+
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view, // Specifies what texture to save the colors to
+                view: &view,          // Specifies what texture to save the colors to
                 resolve_target: None, // Specifies what texture will receive the resolved output
-                ops: wgpu::Operations { // Specifies what to do with the colors on the screen
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
+                ops: wgpu::Operations {
+                    // Specifies what to do with the colors on the screen
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: clear_color.x as f64,
+                        g: clear_color.y as f64,
+                        b: clear_color.z as f64,
+                        a: 1.0,
+                    }), // Specifies how to handle colors stored from the previous frame
                     store: wgpu::StoreOp::Store,
                 },
             };
@@ -469,19 +643,19 @@ impl State {
             timer.begin_context("Mesh Drawer");
 
             self.mesh_drawer.record_draw_commands(
-                &self.queue, 
+                &self.queue,
                 &self.device,
-                &self.renderer_resource_storage, 
-                color_attachment, 
-                depth_stencil_attachment, 
+                &self.renderer_resource_storage,
+                color_attachment,
+                depth_stencil_attachment,
                 &renderer_camera,
-                &render_queue, 
+                &render_queue,
                 &transform_component_storage,
-                timer
+                timer,
             )?;
 
             timer.end_context()?;
-        }  
+        }
 
         timer.begin_context("Egui Draw");
 
