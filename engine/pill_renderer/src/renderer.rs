@@ -307,14 +307,36 @@ impl State {
         let (device, queue) = adapter.request_device(&device_descriptor,None).await.unwrap();
 
         // Specify surface configuration
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let preferred_format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        
+        // Get supported present modes and choose the best one
+        let surface_caps = surface.get_capabilities(&adapter);
+        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+            wgpu::PresentMode::Mailbox
+        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+            wgpu::PresentMode::Immediate
+        } else {
+            wgpu::PresentMode::Fifo
+        };
+        
+        // Choose the best supported format
+        let format = if surface_caps.formats.contains(&preferred_format) {
+            preferred_format
+        } else if surface_caps.formats.contains(&wgpu::TextureFormat::Bgra8UnormSrgb) {
+            wgpu::TextureFormat::Bgra8UnormSrgb
+        } else if surface_caps.formats.contains(&wgpu::TextureFormat::Bgra8Unorm) {
+            wgpu::TextureFormat::Bgra8Unorm
+        } else {
+            surface_caps.formats[0] // Use first available format
+        };
+        
         let surface_configuration = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Defines how the swap_chain's underlying textures will be used
             format: format, // Defines how the swap_chain's textures will be stored on the gpu
             width: window_size.width,
             height: window_size.height,
             desired_maximum_frame_latency: 2,
-            present_mode: wgpu::PresentMode::Mailbox, // Defines how to sync the surface with the display
+            present_mode: present_mode, // Defines how to sync the surface with the display
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![format],
         };
