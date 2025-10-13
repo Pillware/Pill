@@ -133,7 +133,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>; };
 
 ### Milestones (incremental, debuggable) with API-correctness notes
 
-1) Bootstrap: Black Window
+1) [Done] Bootstrap: Black Window
 
 - Expected result: Black frame; vsync honored; resizes OK.
 - Client API: `Renderer::new_from_window_component(&wc)?;` run loop; no passes.
@@ -145,7 +145,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>; };
   - Use `surface.get_capabilities(&adapter)` for format/present mode.
   - Set `usage: RENDER_ATTACHMENT` and correct `alpha_mode`.
 
-2) Hello Mesh: Single Pass, Inline Draw
+2) [Done] Hello Mesh: Single Pass, Inline Draw
 
 - Expected result: Pill mesh or fallback triangle; fixed MVP (identity or simple ortho) hardcoded; depth test on.
 - Client API: Create mesh + pipeline; `Inline` pass records one draw.
@@ -158,7 +158,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>; };
   - Pipeline layout: explicit `BindGroupLayout` for globals even if empty; avoid implicit layout.
   - Clear ops via `RenderPassColorAttachment` and depth attachment.
 
-3) Camera + FromView Culling
+3) [Done] Camera + FromView Culling
 
 - Expected result: Camera matrices applied; frustum culling removes offscreen entities.
 - Client API: Build `CameraView`; `get_view_from_entities`; pass uses `FromView`.
@@ -169,7 +169,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>; };
   - Uniform buffer alignment (offset multiple of 256); `BindGroupLayoutEntry` for uniform with `has_dynamic_offset: true`.
   - Call `set_bind_group(group_index, &bg, &[offset])` matching the layout.
 
-4) Materials + Textures (set 1)
+4) [Done] Materials + Textures (set 1)
 
 - Expected result: Textured mesh with material BG; per-entity tint supported from UBO.
 - Client API: `create_texture`, `create_bind_group(material_desc)`; assign material handle.
@@ -209,8 +209,9 @@ struct VSOut { @builtin(position) pos: vec4<f32>; };
 - wgpu correctness:
   - Keep GPU handles alive until all pass encoders referencing them are submitted.
 
-8) Draw List Optimization
-
+8) [Basic] Draw List Optimization
+  Done: sort by PSo/material/mesh
+  Remaining: optional client sort keys, per-pipeline bind group layout identity safety, and a minor mesh buffer rebind micro-optimization.
 - Expected result: Fewer state changes; sorted by PSO/material.
 - Client API: Optional sort keys; otherwise internal.
 - Implementables:

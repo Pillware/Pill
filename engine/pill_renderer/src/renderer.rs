@@ -88,22 +88,50 @@ impl PillRenderer for Renderer {
 struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
 @group(2) @binding(0) var<uniform> GCamera: Camera;
 
-struct PerDraw { mvp: mat4x4<f32> };
+struct PerDraw {
+  mvp: mat4x4<f32>,
+  model: mat4x4<f32>,
+  tint: vec4<f32>,
+};
 @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
 
-struct VSIn { @location(0) pos: vec3<f32>, };
-struct VSOut { @builtin(position) pos: vec4<f32>, };
+struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
+struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
 
 @vertex fn main(input: VSIn) -> VSOut {
   var out: VSOut;
   out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
+  out.uv = input.uv;
   return out;
 }
 "#;
 
         let fragment_wgsl = r#"
-@fragment fn main() -> @location(0) vec4<f32> {
-  return vec4<f32>(1.0, 0.7, 0.3, 1.0);
+// Material set(0):
+@group(0) @binding(0) var tex_diffuse: texture_2d<f32>;
+@group(0) @binding(1) var smp_diffuse: sampler;
+@group(0) @binding(2) var tex_normal: texture_2d<f32>;
+@group(0) @binding(3) var smp_normal: sampler;
+
+// Material parameters set(1) – pack tint.rgb + specularity in a single vec4
+struct MaterialParams { tint_spec: vec4<f32>, }
+@group(1) @binding(0) var<uniform> UMaterial: MaterialParams;
+
+// Per-draw (set 3): supports per-entity tint for M4
+struct PerDraw {
+  mvp: mat4x4<f32>,
+  model: mat4x4<f32>,
+  tint: vec4<f32>,
+};
+@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
+
+@fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+  let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
+  // Combine material tint and per-entity tint; modulate brightness by specularity for demo
+  let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0) * UPerDraw.tint;
+  let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
+  let color = albedo * tinted * spec_boost;
+  return vec4<f32>(color.rgb, 1.0);
 }
 "#;
 
@@ -742,11 +770,25 @@ impl State {
         });
         for (i, v) in visible.iter().enumerate() {
             let offset_bytes = (i as u64) * per_draw_stride;
-            self.queue.write_buffer(
-                &per_draw_buffer,
-                offset_bytes,
-                bytemuck::cast_slice(&[v.mvp]),
-            );
+            // Pack { mvp, model(=identity for now), tint(=1,1,1,1) }
+            let model: [[f32; 4]; 4] = cgmath::Matrix4::<f32>::from_scale(1.0).into();
+            let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+            #[repr(C)]
+            #[derive(Copy, Clone)]
+            struct PerDrawStd140 {
+                mvp: [[f32; 4]; 4],
+                model: [[f32; 4]; 4],
+                tint: [f32; 4],
+            }
+            unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
+            unsafe impl bytemuck::Pod for PerDrawStd140 {}
+            let pd = PerDrawStd140 {
+                mvp: v.mvp,
+                model,
+                tint,
+            };
+            self.queue
+                .write_buffer(&per_draw_buffer, offset_bytes, bytemuck::bytes_of(&pd));
         }
         let pipeline = self
             .renderer_resource_storage
@@ -761,7 +803,7 @@ impl State {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &per_draw_buffer,
                     offset: 0,
-                    size: Some(std::num::NonZeroU64::new(64).unwrap()),
+                    size: Some(std::num::NonZeroU64::new(144).unwrap()),
                 }),
             }],
         });
