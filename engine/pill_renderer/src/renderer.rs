@@ -521,8 +521,8 @@ impl State {
         egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()> {
-        // M3: Hello Mesh + per-draw MVP (dynamic offsets);
-        timer.record("Get frame");
+        // M3: Hello Mesh + per-draw MVP (dynamic offsets)
+        timer.record("Frame: acquire");
 
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
@@ -542,7 +542,7 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        timer.record("Get clear color and create render pass attachments");
+        timer.record("Frame: setup view & camera");
 
         // Get active camera and update it
         let camera_storage = camera_component_storage
@@ -612,6 +612,7 @@ impl State {
             mesh_handle: RendererMeshHandle,
             mvp: [[f32; 4]; 4],
         }
+        timer.record("Culling & MVP build");
         let mut visible: Vec<VisiblePreDraw> = Vec::with_capacity(render_queue.len());
 
         for render_queue_item in render_queue.iter() {
@@ -729,6 +730,7 @@ impl State {
             mesh_handle: RendererMeshHandle,
             offset_u32: u32,
         }
+        timer.record("Sort & group draws");
         struct GroupCmd {
             pipeline_handle: RendererPipelineHandle,
             material_handle: RendererMaterialHandle,
@@ -782,7 +784,7 @@ impl State {
             }
             unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
             unsafe impl bytemuck::Pod for PerDrawStd140 {}
-            let pd = PerDrawStd140 {
+            let pd: PerDrawStd140 = PerDrawStd140 {
                 mvp: v.mvp,
                 model,
                 tint,
@@ -790,6 +792,7 @@ impl State {
             self.queue
                 .write_buffer(&per_draw_buffer, offset_bytes, bytemuck::bytes_of(&pd));
         }
+        timer.record("Per-draw UBO writes");
         let pipeline = self
             .renderer_resource_storage
             .pipelines
@@ -865,9 +868,11 @@ impl State {
                     rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
             }
+            timer.record("Encode render pass");
         }
 
         self.queue.submit([encoder.finish()]);
+        timer.record("Submit main pass");
 
         // Egui overlay (load over the rendered frame)
         let mut encoder = self
@@ -889,9 +894,11 @@ impl State {
             timer,
         )?;
         self.queue.submit([encoder.finish()]);
+        timer.record("UI draw & submit");
 
         // Present frame
         frame.present();
+        timer.record("Present");
 
         Ok(())
     }
