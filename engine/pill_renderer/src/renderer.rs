@@ -579,8 +579,9 @@ impl State {
         ];
 
         struct VisiblePreDraw {
-            mesh_handle: RendererMeshHandle,
+            pipeline_handle: RendererPipelineHandle,
             material_handle: RendererMaterialHandle,
+            mesh_handle: RendererMeshHandle,
             mvp: [[f32; 4]; 4],
         }
         let mut visible: Vec<VisiblePreDraw> = Vec::with_capacity(render_queue.len());
@@ -595,6 +596,12 @@ impl State {
                 key.material_index.into(),
                 NonZeroU32::new(key.material_version.into()).unwrap(),
             );
+            let material_for_pipeline = self
+                .renderer_resource_storage
+                .materials
+                .get(material_handle)
+                .unwrap();
+            let pipeline_handle = material_for_pipeline.pipeline_handle;
 
             // Transform and model
             let entity_index = render_queue_item.entity_index as usize;
@@ -673,10 +680,54 @@ impl State {
                 renderer_camera.uniform.view_projection_matrix.into();
             let mvp: [[f32; 4]; 4] = (view_proj * model).into();
             visible.push(VisiblePreDraw {
-                mesh_handle,
+                pipeline_handle,
                 material_handle,
+                mesh_handle,
                 mvp,
             });
+        }
+
+        // Sort by pipeline -> material -> mesh to minimize state changes
+        visible.sort_by_key(|v| {
+            (
+                v.pipeline_handle.data().index,
+                v.material_handle.data().index,
+                v.mesh_handle.data().index,
+            )
+        });
+
+        // Build grouped command list by (pipeline, material)
+        struct DrawCmd {
+            mesh_handle: RendererMeshHandle,
+            offset_u32: u32,
+        }
+        struct GroupCmd {
+            pipeline_handle: RendererPipelineHandle,
+            material_handle: RendererMaterialHandle,
+            draws: Vec<DrawCmd>,
+        }
+        let mut groups: Vec<GroupCmd> = Vec::new();
+        let mut next_offset_u32: u32 = 0;
+        for v in &visible {
+            if groups
+                .last()
+                .map(|g| {
+                    g.pipeline_handle != v.pipeline_handle || g.material_handle != v.material_handle
+                })
+                .unwrap_or(true)
+            {
+                groups.push(GroupCmd {
+                    pipeline_handle: v.pipeline_handle,
+                    material_handle: v.material_handle,
+                    draws: Vec::new(),
+                });
+            }
+            let g = groups.last_mut().unwrap();
+            g.draws.push(DrawCmd {
+                mesh_handle: v.mesh_handle,
+                offset_u32: next_offset_u32,
+            });
+            next_offset_u32 = next_offset_u32.wrapping_add(256);
         }
 
         // Prepare per-draw dynamic uniform buffer and bind group sized to visible set
@@ -742,62 +793,35 @@ impl State {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            // Iterate groups: bind pipeline/material once per group; mesh + offset per draw
+            for group in &groups {
+                let pipeline = self
+                    .renderer_resource_storage
+                    .pipelines
+                    .get(group.pipeline_handle)
+                    .unwrap();
+                rpass.set_pipeline(&pipeline.render_pipeline);
 
-            // Inline draw: iterate visible, set state, draw
-            let mut current_pipeline: Option<RendererPipelineHandle> = None;
-            let mut current_material: Option<RendererMaterialHandle> = None;
-            let mut current_mesh: Option<RendererMeshHandle> = None;
-            let mut draw_index: u64 = 0;
+                let material = self
+                    .renderer_resource_storage
+                    .materials
+                    .get(group.material_handle)
+                    .unwrap();
+                rpass.set_bind_group(0, &material.texture_bind_group, &[]);
+                rpass.set_bind_group(1, &material.parameter_bind_group, &[]);
+                rpass.set_bind_group(2, &renderer_camera.bind_group, &[]);
 
-            for v in visible.iter() {
-                let mesh_handle = v.mesh_handle;
-                let material_handle = v.material_handle;
-
-                if current_material != Some(material_handle) {
-                    current_material = Some(material_handle);
-                    let material = self
-                        .renderer_resource_storage
-                        .materials
-                        .get(material_handle)
-                        .unwrap();
-
-                    if current_pipeline != Some(material.pipeline_handle) {
-                        current_pipeline = Some(material.pipeline_handle);
-                        let pipeline = self
-                            .renderer_resource_storage
-                            .pipelines
-                            .get(material.pipeline_handle)
-                            .unwrap();
-                        rpass.set_pipeline(&pipeline.render_pipeline);
-                    }
-
-                    rpass.set_bind_group(0, &material.texture_bind_group, &[]);
-                    rpass.set_bind_group(1, &material.parameter_bind_group, &[]);
-                    rpass.set_bind_group(2, &renderer_camera.bind_group, &[]);
-                }
-
-                if current_mesh != Some(mesh_handle) {
-                    current_mesh = Some(mesh_handle);
+                for draw in &group.draws {
                     let mesh = self
                         .renderer_resource_storage
                         .meshes
-                        .get(mesh_handle)
+                        .get(draw.mesh_handle)
                         .unwrap();
                     rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    rpass.set_bind_group(3, &per_draw_bind_group, &[draw.offset_u32]);
+                    rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
-
-                let offset_bytes = draw_index * per_draw_stride;
-                let offset_aligned_u32 = offset_bytes as u32; // guaranteed < 4GiB in this simple path
-
-                rpass.set_bind_group(3, &per_draw_bind_group, &[offset_aligned_u32]);
-                let mesh = self
-                    .renderer_resource_storage
-                    .meshes
-                    .get(current_mesh.unwrap())
-                    .unwrap();
-                rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                draw_index += 1;
             }
         }
 
