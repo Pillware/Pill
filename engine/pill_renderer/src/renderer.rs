@@ -555,16 +555,148 @@ impl State {
                 label: Some("m2_inline_encoder"),
             });
 
-        // Prepare per-draw dynamic uniform buffer and bind group BEFORE render pass (lifetime requirement)
+        // Build view before pass: cull and prepare per-draw MVPs
+        let vp_mat: cgmath::Matrix4<f32> = renderer_camera.uniform.view_projection_matrix.into();
+        let m = vp_mat;
+        let row = |i: usize| -> cgmath::Vector4<f32> {
+            // cgmath is column-major; construct row i
+            cgmath::Vector4::new(m.x[i], m.y[i], m.z[i], m.w[i])
+        };
+        let make_plane = |v: cgmath::Vector4<f32>| -> (cgmath::Vector3<f32>, f32) {
+            let n = cgmath::Vector3::new(v.x, v.y, v.z);
+            let len = n.magnitude();
+            let normal = if len > 0.0 { n / len } else { n };
+            let d = v.w / if len > 0.0 { len } else { 1.0 };
+            (normal, d)
+        };
+        let planes = [
+            make_plane(row(3) + row(0)), // left
+            make_plane(row(3) - row(0)), // right
+            make_plane(row(3) + row(1)), // bottom
+            make_plane(row(3) - row(1)), // top
+            make_plane(row(3) + row(2)), // near
+            make_plane(row(3) - row(2)), // far
+        ];
+
+        struct VisiblePreDraw {
+            mesh_handle: RendererMeshHandle,
+            material_handle: RendererMaterialHandle,
+            mvp: [[f32; 4]; 4],
+        }
+        let mut visible: Vec<VisiblePreDraw> = Vec::with_capacity(render_queue.len());
+
+        for render_queue_item in render_queue.iter() {
+            let key = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
+            let mesh_handle = RendererMeshHandle::new(
+                key.mesh_index.into(),
+                NonZeroU32::new(key.mesh_version.into()).unwrap(),
+            );
+            let material_handle = RendererMaterialHandle::new(
+                key.material_index.into(),
+                NonZeroU32::new(key.material_version.into()).unwrap(),
+            );
+
+            // Transform and model
+            let entity_index = render_queue_item.entity_index as usize;
+            let transform = transform_component_storage
+                .data
+                .get(entity_index)
+                .unwrap()
+                .as_ref()
+                .unwrap();
+            let model_arr = pill_engine::internal::get_model_matrix(transform);
+            let model: cgmath::Matrix4<f32> = model_arr.into();
+
+            // World AABB from mesh local AABB
+            let mesh = self
+                .renderer_resource_storage
+                .meshes
+                .get(mesh_handle)
+                .unwrap();
+            let local_min =
+                cgmath::Vector3::new(mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2]);
+            let local_max =
+                cgmath::Vector3::new(mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2]);
+            let corners = [
+                cgmath::Vector3::new(local_min.x, local_min.y, local_min.z),
+                cgmath::Vector3::new(local_max.x, local_min.y, local_min.z),
+                cgmath::Vector3::new(local_min.x, local_max.y, local_min.z),
+                cgmath::Vector3::new(local_max.x, local_max.y, local_min.z),
+                cgmath::Vector3::new(local_min.x, local_min.y, local_max.z),
+                cgmath::Vector3::new(local_max.x, local_min.y, local_max.z),
+                cgmath::Vector3::new(local_min.x, local_max.y, local_max.z),
+                cgmath::Vector3::new(local_max.x, local_max.y, local_max.z),
+            ];
+            let mut world_min = cgmath::Vector3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
+            let mut world_max =
+                cgmath::Vector3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+            for c in &corners {
+                let p4 = model * cgmath::Vector4::new(c.x, c.y, c.z, 1.0);
+                let p = cgmath::Vector3::new(p4.x, p4.y, p4.z);
+                world_min.x = world_min.x.min(p.x);
+                world_min.y = world_min.y.min(p.y);
+                world_min.z = world_min.z.min(p.z);
+                world_max.x = world_max.x.max(p.x);
+                world_max.y = world_max.y.max(p.y);
+                world_max.z = world_max.z.max(p.z);
+            }
+            let mut outside = false;
+            for (normal, d) in &planes {
+                let p = cgmath::Vector3::new(
+                    if normal.x >= 0.0 {
+                        world_max.x
+                    } else {
+                        world_min.x
+                    },
+                    if normal.y >= 0.0 {
+                        world_max.y
+                    } else {
+                        world_min.y
+                    },
+                    if normal.z >= 0.0 {
+                        world_max.z
+                    } else {
+                        world_min.z
+                    },
+                );
+                let dist = normal.dot(p) + *d;
+                if dist < 0.0 {
+                    outside = true;
+                    break;
+                }
+            }
+            if outside {
+                continue;
+            }
+
+            let view_proj: cgmath::Matrix4<f32> =
+                renderer_camera.uniform.view_projection_matrix.into();
+            let mvp: [[f32; 4]; 4] = (view_proj * model).into();
+            visible.push(VisiblePreDraw {
+                mesh_handle,
+                material_handle,
+                mvp,
+            });
+        }
+
+        // Prepare per-draw dynamic uniform buffer and bind group sized to visible set
         let per_draw_stride: u64 = 256; // alignment
-        let per_draw_capacity = render_queue.len() as u64 + 1;
-        let per_draw_buffer_size = per_draw_stride * per_draw_capacity;
+        let per_draw_capacity = visible.len() as u64;
+        let per_draw_buffer_size = per_draw_stride * per_draw_capacity.max(1);
         let per_draw_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("per_draw_dynamic_ubo"),
             size: per_draw_buffer_size,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        for (i, v) in visible.iter().enumerate() {
+            let offset_bytes = (i as u64) * per_draw_stride;
+            self.queue.write_buffer(
+                &per_draw_buffer,
+                offset_bytes,
+                bytemuck::cast_slice(&[v.mvp]),
+            );
+        }
         let pipeline = self
             .renderer_resource_storage
             .pipelines
@@ -611,48 +743,15 @@ impl State {
                 occlusion_query_set: None,
             });
 
-            // Inline draw: iterate render_queue, set state, draw
+            // Inline draw: iterate visible, set state, draw
             let mut current_pipeline: Option<RendererPipelineHandle> = None;
             let mut current_material: Option<RendererMaterialHandle> = None;
             let mut current_mesh: Option<RendererMeshHandle> = None;
-
             let mut draw_index: u64 = 0;
 
-            // Extract frustum planes from camera view-projection for CPU culling
-            let vp_mat: cgmath::Matrix4<f32> =
-                renderer_camera.uniform.view_projection_matrix.into();
-            let m = vp_mat;
-            let row = |i: usize| -> cgmath::Vector4<f32> {
-                // cgmath is column-major; construct row i
-                cgmath::Vector4::new(m.x[i], m.y[i], m.z[i], m.w[i])
-            };
-            let make_plane = |v: cgmath::Vector4<f32>| -> (cgmath::Vector3<f32>, f32) {
-                let n = cgmath::Vector3::new(v.x, v.y, v.z);
-                let len = n.magnitude();
-                let normal = if len > 0.0 { n / len } else { n };
-                let d = v.w / if len > 0.0 { len } else { 1.0 };
-                (normal, d)
-            };
-            let planes = [
-                make_plane(row(3) + row(0)), // left
-                make_plane(row(3) - row(0)), // right
-                make_plane(row(3) + row(1)), // bottom
-                make_plane(row(3) - row(1)), // top
-                make_plane(row(3) + row(2)), // near
-                make_plane(row(3) - row(2)), // far
-            ];
-
-            for render_queue_item in render_queue.iter() {
-                let key = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
-
-                let mesh_handle = RendererMeshHandle::new(
-                    key.mesh_index.into(),
-                    NonZeroU32::new(key.mesh_version.into()).unwrap(),
-                );
-                let material_handle = RendererMaterialHandle::new(
-                    key.material_index.into(),
-                    NonZeroU32::new(key.material_version.into()).unwrap(),
-                );
+            for v in visible.iter() {
+                let mesh_handle = v.mesh_handle;
+                let material_handle = v.material_handle;
 
                 if current_material != Some(material_handle) {
                     current_material = Some(material_handle);
@@ -688,100 +787,15 @@ impl State {
                     rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 }
 
-                // Compute model matrix and MVP, upload at aligned offset, bind with dynamic offset
-                let entity_index = render_queue_item.entity_index as usize;
-                let transform = transform_component_storage
-                    .data
-                    .get(entity_index)
-                    .unwrap()
-                    .as_ref()
-                    .unwrap();
+                let offset_bytes = draw_index * per_draw_stride;
+                let offset_aligned_u32 = offset_bytes as u32; // guaranteed < 4GiB in this simple path
 
-                // Model matrix updated in system, fetch and convert
-                let model_arr = pill_engine::internal::get_model_matrix(transform);
-                let model: cgmath::Matrix4<f32> = model_arr.into();
-
-                // Frustum culling against mesh world-space AABB
+                rpass.set_bind_group(3, &per_draw_bind_group, &[offset_aligned_u32]);
                 let mesh = self
                     .renderer_resource_storage
                     .meshes
                     .get(current_mesh.unwrap())
                     .unwrap();
-
-                let local_min =
-                    cgmath::Vector3::new(mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2]);
-                let local_max =
-                    cgmath::Vector3::new(mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2]);
-                let corners = [
-                    cgmath::Vector3::new(local_min.x, local_min.y, local_min.z),
-                    cgmath::Vector3::new(local_max.x, local_min.y, local_min.z),
-                    cgmath::Vector3::new(local_min.x, local_max.y, local_min.z),
-                    cgmath::Vector3::new(local_max.x, local_max.y, local_min.z),
-                    cgmath::Vector3::new(local_min.x, local_min.y, local_max.z),
-                    cgmath::Vector3::new(local_max.x, local_min.y, local_max.z),
-                    cgmath::Vector3::new(local_min.x, local_max.y, local_max.z),
-                    cgmath::Vector3::new(local_max.x, local_max.y, local_max.z),
-                ];
-                let mut world_min =
-                    cgmath::Vector3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
-                let mut world_max =
-                    cgmath::Vector3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-                for c in &corners {
-                    let p4 = model * cgmath::Vector4::new(c.x, c.y, c.z, 1.0);
-                    let p = cgmath::Vector3::new(p4.x, p4.y, p4.z);
-                    world_min.x = world_min.x.min(p.x);
-                    world_min.y = world_min.y.min(p.y);
-                    world_min.z = world_min.z.min(p.z);
-                    world_max.x = world_max.x.max(p.x);
-                    world_max.y = world_max.y.max(p.y);
-                    world_max.z = world_max.z.max(p.z);
-                }
-
-                // Plane-AABB test; skip draw if outside any plane
-                let mut outside = false;
-                for (normal, d) in &planes {
-                    let p = cgmath::Vector3::new(
-                        if normal.x >= 0.0 {
-                            world_max.x
-                        } else {
-                            world_min.x
-                        },
-                        if normal.y >= 0.0 {
-                            world_max.y
-                        } else {
-                            world_min.y
-                        },
-                        if normal.z >= 0.0 {
-                            world_max.z
-                        } else {
-                            world_min.z
-                        },
-                    );
-                    let dist = normal.dot(p) + *d;
-                    if dist < 0.0 {
-                        outside = true;
-                        break;
-                    }
-                }
-                if outside {
-                    continue;
-                }
-
-                // Use camera view-projection from renderer_camera.uniform
-                let view_proj: cgmath::Matrix4<f32> =
-                    renderer_camera.uniform.view_projection_matrix.into();
-                let mvp = view_proj * model;
-
-                let offset_bytes = draw_index * per_draw_stride;
-                let offset_aligned_u32 = offset_bytes as u32; // guaranteed < 4GiB in this simple path
-                let mvp_arr: [[f32; 4]; 4] = mvp.into();
-                self.queue.write_buffer(
-                    &per_draw_buffer,
-                    offset_bytes,
-                    bytemuck::cast_slice(&[mvp_arr]),
-                );
-
-                rpass.set_bind_group(3, &per_draw_bind_group, &[offset_aligned_u32]);
                 rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 draw_index += 1;
             }
