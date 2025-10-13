@@ -1,19 +1,20 @@
 use crate::{
-    engine::Engine,
-    graphics::{ RendererMeshHandle },
-    resources::{ ResourceStorage, Resource },
-    ecs::{ DeferredUpdateManagerPointer, MeshRenderingComponent },
     config::*,
+    ecs::{DeferredUpdateManagerPointer, MeshRenderingComponent},
+    engine::Engine,
+    graphics::RendererMeshHandle,
+    resources::{Resource, ResourceStorage},
 };
 
-use pill_core::{ EngineError, PillSlotMapKey, PillTypeMap, PillTypeMapKey, Vector3f, PillStyle, get_type_name };
+use pill_core::{
+    get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f,
+};
 
-use std::path::{ Path, PathBuf };
+use anyhow::{Context, Error, Result};
 use boolinator::Boolinator;
 use cgmath::InnerSpace;
+use std::path::{Path, PathBuf};
 use tobj::LoadOptions;
-use anyhow::{Result, Context, Error};
-
 
 pill_core::define_new_pill_slotmap_key! {
     pub struct MeshHandle;
@@ -40,13 +41,17 @@ impl Mesh {
             path,
             renderer_resource_handle: None,
             mesh_data: None,
-            flip_uv_y: false
+            flip_uv_y: false,
         }
     }
 
     pub fn with_uv_flip(mut self, flip: bool) -> Self {
         self.flip_uv_y = flip;
         self
+    }
+
+    pub fn get_aabb(&self) -> Option<([f32; 3], [f32; 3])> {
+        self.mesh_data.as_ref().map(|d| (d.aabb_min, d.aabb_max))
     }
 }
 
@@ -62,26 +67,37 @@ impl Resource for Mesh {
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+        let error_message = format!(
+            "Initializing {} {} failed",
+            "Resource".gobj_style(),
+            get_type_name::<Self>().sobj_style()
+        );
 
         // Check if path to asset is correct
         let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-        pill_core::validate_asset_path(&resource_file_path, &["obj"]).context(error_message.clone())?;
+        pill_core::validate_asset_path(&resource_file_path, &["obj"])
+            .context(error_message.clone())?;
 
         // Create mesh data
-        let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y).context(error_message.clone())
-            .context(format!("Failed to create mesh data from {} file", resource_file_path.file_name().unwrap().to_string_lossy()))?;
+        let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
+            .context(error_message.clone())
+            .context(format!(
+                "Failed to create mesh data from {} file",
+                resource_file_path.file_name().unwrap().to_string_lossy()
+            ))?;
         self.mesh_data = Some(mesh_data);
 
         // Create new renderer mesh resource
-        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
+        let renderer_resource_handle = engine
+            .renderer
+            .create_mesh(&self.name, &self.mesh_data.as_ref().unwrap())
+            .context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
-
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_mesh(v).unwrap();
@@ -89,12 +105,16 @@ impl Resource for Mesh {
 
         // Find mesh rendering components that use this mesh and update them
         for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            for (entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
+            for (entity_handle, mesh_rendering_component) in
+                scene.get_one_component_iterator_mut::<MeshRenderingComponent>()?
+            {
                 if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
                     // If mesh rendering component has handle to this mesh
                     if mesh_handle.data() == self_handle.data() {
                         mesh_rendering_component.set_mesh_handle(Option::<MeshHandle>::None);
-                        mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                        mesh_rendering_component
+                            .update_render_queue_key(&engine.resource_manager)
+                            .unwrap();
                     }
                 }
             }
@@ -119,6 +139,8 @@ pub struct MeshVertex {
 pub struct MeshData {
     pub vertices: Vec<MeshVertex>,
     pub indices: Vec<u32>,
+    pub aabb_min: [f32; 3],
+    pub aabb_max: [f32; 3],
 }
 
 impl MeshData {
@@ -135,11 +157,15 @@ impl MeshData {
 
         // Check data validity
         if models.len() > 1 {
-            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(path.clone().into_os_string().into_string().unwrap())));
+            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(
+                path.clone().into_os_string().into_string().unwrap(),
+            )));
         }
 
         if models.len() < 1 {
-            return Err(Error::new(EngineError::InvalidModelFile(path.clone().into_os_string().into_string().unwrap())));
+            return Err(Error::new(EngineError::InvalidModelFile(
+                path.clone().into_os_string().into_string().unwrap(),
+            )));
         }
 
         // Load vertex data from model
@@ -147,19 +173,28 @@ impl MeshData {
 
         // Read vertices
         let mut vertices = Vec::new();
+        let mut min_v = cgmath::Vector3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
+        let mut max_v =
+            cgmath::Vector3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
         for i in 0..mesh.positions.len() / 3 {
             let uv_y = *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0);
             let final_uv_y = if flip_uv_y { uv_y } else { 1.0 - uv_y };
 
+            let pos = [
+                mesh.positions[i * 3],
+                mesh.positions[i * 3 + 1],
+                mesh.positions[i * 3 + 2],
+            ];
+            let p = cgmath::Vector3::new(pos[0], pos[1], pos[2]);
+            min_v = cgmath::Vector3::new(min_v.x.min(p.x), min_v.y.min(p.y), min_v.z.min(p.z));
+            max_v = cgmath::Vector3::new(max_v.x.max(p.x), max_v.y.max(p.y), max_v.z.max(p.z));
+
             vertices.push(MeshVertex {
-                position: [
-                    mesh.positions[i * 3],
-                    mesh.positions[i * 3 + 1],
-                    mesh.positions[i * 3 + 2],
-                ],
-                texture_coordinates: [ // Blender uses V coordinate flipped
+                position: pos,
+                texture_coordinates: [
+                    // Blender uses V coordinate flipped
                     *mesh.texcoords.get(i * 2).unwrap_or(&0.0),
-                    final_uv_y
+                    final_uv_y,
                 ],
                 normal: [
                     mesh.normals[i * 3],
@@ -203,12 +238,18 @@ impl MeshData {
             let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
 
             // Assign same tangent/bitangent to each vertex in the triangle
-            vertices[c[0] as usize].tangent = (tangent + cgmath::Vector3::from(vertices[c[0] as usize].tangent)).into();
-            vertices[c[1] as usize].tangent = (tangent + cgmath::Vector3::from(vertices[c[1] as usize].tangent)).into();
-            vertices[c[2] as usize].tangent = (tangent + cgmath::Vector3::from(vertices[c[2] as usize].tangent)).into();
-            vertices[c[0] as usize].bitangent = (bitangent + cgmath::Vector3::from(vertices[c[0] as usize].bitangent)).into();
-            vertices[c[1] as usize].bitangent = (bitangent + cgmath::Vector3::from(vertices[c[1] as usize].bitangent)).into();
-            vertices[c[2] as usize].bitangent = (bitangent + cgmath::Vector3::from(vertices[c[2] as usize].bitangent)).into();
+            vertices[c[0] as usize].tangent =
+                (tangent + cgmath::Vector3::from(vertices[c[0] as usize].tangent)).into();
+            vertices[c[1] as usize].tangent =
+                (tangent + cgmath::Vector3::from(vertices[c[1] as usize].tangent)).into();
+            vertices[c[2] as usize].tangent =
+                (tangent + cgmath::Vector3::from(vertices[c[2] as usize].tangent)).into();
+            vertices[c[0] as usize].bitangent =
+                (bitangent + cgmath::Vector3::from(vertices[c[0] as usize].bitangent)).into();
+            vertices[c[1] as usize].bitangent =
+                (bitangent + cgmath::Vector3::from(vertices[c[1] as usize].bitangent)).into();
+            vertices[c[2] as usize].bitangent =
+                (bitangent + cgmath::Vector3::from(vertices[c[2] as usize].bitangent)).into();
 
             // Prepare data for averaging tangents and bitangents
             triangles_included[c[0] as usize] += 1;
@@ -221,12 +262,16 @@ impl MeshData {
             let denom = 1.0 / n as f32;
             let vertex = &mut vertices[i];
             vertex.tangent = (Vector3f::from(vertex.tangent) * denom).normalize().into();
-            vertex.bitangent = (Vector3f::from(vertex.bitangent) * denom).normalize().into();
+            vertex.bitangent = (Vector3f::from(vertex.bitangent) * denom)
+                .normalize()
+                .into();
         }
 
         let mesh_data = MeshData {
             vertices: vertices,
             indices: mesh.indices.clone(),
+            aabb_min: [min_v.x, min_v.y, min_v.z],
+            aabb_max: [max_v.x, max_v.y, max_v.z],
         };
 
         Ok(mesh_data)

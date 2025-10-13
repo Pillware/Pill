@@ -3,8 +3,6 @@
 // https://github.com/emilk/egui/discussions/3067
 
 use crate::{
-    instance::Instance,
-    mesh_drawer::MeshDrawer,
     renderer_resource_storage::RendererResourceStorage,
     resources::{
         RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture, Vertex,
@@ -21,8 +19,9 @@ use pill_engine::internal::{
 
 use pill_core::{PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer};
 
-use std::{iter, mem::size_of, num::NonZeroU32, ops::Range, sync::Arc};
+use std::{num::NonZeroU32, sync::Arc};
 
+use cgmath::{Deg, InnerSpace};
 use naga::back::wgsl;
 use naga::front::glsl;
 
@@ -33,6 +32,7 @@ use crate::egui::EguiRenderer;
 
 pub const MAX_INSTANCE_BATCH_SIZE: usize = 10000; // Maximum number of instances that can be drawn in a single draw call
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
+// M2 inline draw: no MeshDrawer/instance batching
 
 // Default resource handle - Master pipeline
 pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle {
@@ -80,28 +80,39 @@ impl PillRenderer for Renderer {
 
     fn set_master_pipeline(
         &mut self,
-        vertex_shader_bytes: &[u8],
-        fragment_shader_bytes: &[u8],
+        _vertex_shader_bytes: &[u8],
+        _fragment_shader_bytes: &[u8],
     ) -> Result<()> {
-        // Create shaders
-        // Convert bytes to string
-        let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes)
-            .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in vertex shader: {}", e))?;
-        let fragment_shader_source = std::str::from_utf8(fragment_shader_bytes)
-            .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in fragment shader: {}", e))?;
+        // M3: WGSL pipeline with per-draw MVP via dynamic offsets (set 3)
+        let vertex_wgsl = r#"
+struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
+@group(2) @binding(0) var<uniform> GCamera: Camera;
 
-        // Convert GLSL to WGSL
-        let vertex_wgsl =
-            compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex).unwrap();
-        let fragment_wgsl =
-            compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).unwrap();
+struct PerDraw { mvp: mat4x4<f32> };
+@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
+
+struct VSIn { @location(0) pos: vec3<f32>, };
+struct VSOut { @builtin(position) pos: vec4<f32>, };
+
+@vertex fn main(input: VSIn) -> VSOut {
+  var out: VSOut;
+  out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
+  return out;
+}
+"#;
+
+        let fragment_wgsl = r#"
+@fragment fn main() -> @location(0) vec4<f32> {
+  return vec4<f32>(1.0, 0.7, 0.3, 1.0);
+}
+"#;
 
         // Create shader modules with WGSL
         let vertex_shader = self
             .state
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("master_vertex_shader"),
+                label: Some("m2_vertex_shader"),
                 source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
             });
 
@@ -109,7 +120,7 @@ impl PillRenderer for Renderer {
             self.state
                 .device
                 .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("master_fragment_shader"),
+                    label: Some("m2_fragment_shader"),
                     source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
                 });
 
@@ -120,10 +131,7 @@ impl PillRenderer for Renderer {
             fragment_shader,
             self.state.color_format,
             Some(self.state.depth_format),
-            &[
-                RendererMesh::data_layout_descriptor(),
-                Instance::data_layout_descriptor(),
-            ],
+            &[RendererMesh::data_layout_descriptor()],
         )
         .unwrap();
 
@@ -319,7 +327,6 @@ pub struct State {
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
-    mesh_drawer: MeshDrawer,
     // Other
     config: config::Config,
     egui_renderer: crate::egui::EguiRenderer,
@@ -439,9 +446,6 @@ impl State {
         let color_format = surface_configuration.format;
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
-        // Create drawing state
-        let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_BATCH_SIZE as u32);
-
         let egui_renderer =
             EguiRenderer::new(&device, surface_configuration.format, None, 1, window_ref);
 
@@ -458,7 +462,6 @@ impl State {
             color_format,
             depth_format,
             depth_texture,
-            mesh_drawer,
             // Other
             config,
             egui_renderer,
@@ -490,66 +493,7 @@ impl State {
         egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()> {
-        // Get frame or return mapped error if failed
-        let frame = self.surface.get_current_texture();
-
-        let frame = match frame {
-            std::result::Result::Ok(frame) => frame,
-            std::result::Result::Err(error) => match error {
-                wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
-                wgpu::SurfaceError::OutOfMemory => {
-                    return Err(RendererError::SurfaceOutOfMemory.into())
-                }
-                _ => return Err(RendererError::SurfaceOther.into()),
-            },
-        };
-
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("m1_encoder"),
-            });
-        {
-            let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("m1_clear_black"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-        }
-        self.queue.submit([encoder.finish()]);
-        frame.present();
-
-        Ok(())
-    }
-
-    fn render_old(
-        &mut self,
-        active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>,
-        camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
-        timer: &mut Timer,
-    ) -> Result<()> {
+        // M3: Hello Mesh + per-draw MVP (dynamic offsets);
         timer.record("Get frame");
 
         // Get frame or return mapped error if failed
@@ -604,67 +548,273 @@ impl State {
             .unwrap();
         let clear_color = active_camera_component.clear_color;
 
-        // Build a command buffer that can be sent to the GPU
+        // Record inline draw pass (M2)
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("render_encoder"),
+                label: Some("m2_inline_encoder"),
             });
 
-        {
-            // Additional scope to release mutable borrow of encoder done by begin_render_pass
-
-            // Create color attachment
-            let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view,          // Specifies what texture to save the colors to
-                resolve_target: None, // Specifies what texture will receive the resolved output
-                ops: wgpu::Operations {
-                    // Specifies what to do with the colors on the screen
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: clear_color.x as f64,
-                        g: clear_color.y as f64,
-                        b: clear_color.z as f64,
-                        a: 1.0,
-                    }), // Specifies how to handle colors stored from the previous frame
-                    store: wgpu::StoreOp::Store,
-                },
-            };
-
-            // Create depth attachment
-            let depth_stencil_attachment = wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_texture.texture_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
+        // Prepare per-draw dynamic uniform buffer and bind group BEFORE render pass (lifetime requirement)
+        let per_draw_stride: u64 = 256; // alignment
+        let per_draw_capacity = render_queue.len() as u64 + 1;
+        let per_draw_buffer_size = per_draw_stride * per_draw_capacity;
+        let per_draw_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("per_draw_dynamic_ubo"),
+            size: per_draw_buffer_size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let pipeline = self
+            .renderer_resource_storage
+            .pipelines
+            .get(MASTER_PIPELINE_HANDLE)
+            .unwrap();
+        let per_draw_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("per_draw_bind_group"),
+            layout: &pipeline.per_draw_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &per_draw_buffer,
+                    offset: 0,
+                    size: Some(std::num::NonZeroU64::new(64).unwrap()),
                 }),
-                stencil_ops: None,
+            }],
+        });
+
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("m2_inline_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: clear_color.x as f64,
+                            g: clear_color.y as f64,
+                            b: clear_color.z as f64,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            // Inline draw: iterate render_queue, set state, draw
+            let mut current_pipeline: Option<RendererPipelineHandle> = None;
+            let mut current_material: Option<RendererMaterialHandle> = None;
+            let mut current_mesh: Option<RendererMeshHandle> = None;
+
+            let mut draw_index: u64 = 0;
+
+            // Extract frustum planes from camera view-projection for CPU culling
+            let vp_mat: cgmath::Matrix4<f32> =
+                renderer_camera.uniform.view_projection_matrix.into();
+            let m = vp_mat;
+            let row = |i: usize| -> cgmath::Vector4<f32> {
+                // cgmath is column-major; construct row i
+                cgmath::Vector4::new(m.x[i], m.y[i], m.z[i], m.w[i])
             };
+            let make_plane = |v: cgmath::Vector4<f32>| -> (cgmath::Vector3<f32>, f32) {
+                let n = cgmath::Vector3::new(v.x, v.y, v.z);
+                let len = n.magnitude();
+                let normal = if len > 0.0 { n / len } else { n };
+                let d = v.w / if len > 0.0 { len } else { 1.0 };
+                (normal, d)
+            };
+            let planes = [
+                make_plane(row(3) + row(0)), // left
+                make_plane(row(3) - row(0)), // right
+                make_plane(row(3) + row(1)), // bottom
+                make_plane(row(3) - row(1)), // top
+                make_plane(row(3) + row(2)), // near
+                make_plane(row(3) - row(2)), // far
+            ];
 
-            timer.begin_context("Mesh Drawer");
+            for render_queue_item in render_queue.iter() {
+                let key = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
 
-            self.mesh_drawer.record_draw_commands(
-                &self.queue,
-                &self.device,
-                &self.renderer_resource_storage,
-                color_attachment,
-                depth_stencil_attachment,
-                &renderer_camera,
-                &render_queue,
-                &transform_component_storage,
-                timer,
-            )?;
+                let mesh_handle = RendererMeshHandle::new(
+                    key.mesh_index.into(),
+                    NonZeroU32::new(key.mesh_version.into()).unwrap(),
+                );
+                let material_handle = RendererMaterialHandle::new(
+                    key.material_index.into(),
+                    NonZeroU32::new(key.material_version.into()).unwrap(),
+                );
 
-            timer.end_context()?;
+                if current_material != Some(material_handle) {
+                    current_material = Some(material_handle);
+                    let material = self
+                        .renderer_resource_storage
+                        .materials
+                        .get(material_handle)
+                        .unwrap();
+
+                    if current_pipeline != Some(material.pipeline_handle) {
+                        current_pipeline = Some(material.pipeline_handle);
+                        let pipeline = self
+                            .renderer_resource_storage
+                            .pipelines
+                            .get(material.pipeline_handle)
+                            .unwrap();
+                        rpass.set_pipeline(&pipeline.render_pipeline);
+                    }
+
+                    rpass.set_bind_group(0, &material.texture_bind_group, &[]);
+                    rpass.set_bind_group(1, &material.parameter_bind_group, &[]);
+                    rpass.set_bind_group(2, &renderer_camera.bind_group, &[]);
+                }
+
+                if current_mesh != Some(mesh_handle) {
+                    current_mesh = Some(mesh_handle);
+                    let mesh = self
+                        .renderer_resource_storage
+                        .meshes
+                        .get(mesh_handle)
+                        .unwrap();
+                    rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                    rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                }
+
+                // Compute model matrix and MVP, upload at aligned offset, bind with dynamic offset
+                let entity_index = render_queue_item.entity_index as usize;
+                let transform = transform_component_storage
+                    .data
+                    .get(entity_index)
+                    .unwrap()
+                    .as_ref()
+                    .unwrap();
+
+                // Model matrix updated in system, fetch and convert
+                let model_arr = pill_engine::internal::get_model_matrix(transform);
+                let model: cgmath::Matrix4<f32> = model_arr.into();
+
+                // Frustum culling against mesh world-space AABB
+                let mesh = self
+                    .renderer_resource_storage
+                    .meshes
+                    .get(current_mesh.unwrap())
+                    .unwrap();
+
+                let local_min =
+                    cgmath::Vector3::new(mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2]);
+                let local_max =
+                    cgmath::Vector3::new(mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2]);
+                let corners = [
+                    cgmath::Vector3::new(local_min.x, local_min.y, local_min.z),
+                    cgmath::Vector3::new(local_max.x, local_min.y, local_min.z),
+                    cgmath::Vector3::new(local_min.x, local_max.y, local_min.z),
+                    cgmath::Vector3::new(local_max.x, local_max.y, local_min.z),
+                    cgmath::Vector3::new(local_min.x, local_min.y, local_max.z),
+                    cgmath::Vector3::new(local_max.x, local_min.y, local_max.z),
+                    cgmath::Vector3::new(local_min.x, local_max.y, local_max.z),
+                    cgmath::Vector3::new(local_max.x, local_max.y, local_max.z),
+                ];
+                let mut world_min =
+                    cgmath::Vector3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
+                let mut world_max =
+                    cgmath::Vector3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+                for c in &corners {
+                    let p4 = model * cgmath::Vector4::new(c.x, c.y, c.z, 1.0);
+                    let p = cgmath::Vector3::new(p4.x, p4.y, p4.z);
+                    world_min.x = world_min.x.min(p.x);
+                    world_min.y = world_min.y.min(p.y);
+                    world_min.z = world_min.z.min(p.z);
+                    world_max.x = world_max.x.max(p.x);
+                    world_max.y = world_max.y.max(p.y);
+                    world_max.z = world_max.z.max(p.z);
+                }
+
+                // Plane-AABB test; skip draw if outside any plane
+                let mut outside = false;
+                for (normal, d) in &planes {
+                    let p = cgmath::Vector3::new(
+                        if normal.x >= 0.0 {
+                            world_max.x
+                        } else {
+                            world_min.x
+                        },
+                        if normal.y >= 0.0 {
+                            world_max.y
+                        } else {
+                            world_min.y
+                        },
+                        if normal.z >= 0.0 {
+                            world_max.z
+                        } else {
+                            world_min.z
+                        },
+                    );
+                    let dist = normal.dot(p) + *d;
+                    if dist < 0.0 {
+                        outside = true;
+                        break;
+                    }
+                }
+                if outside {
+                    continue;
+                }
+
+                // Use camera view-projection from renderer_camera.uniform
+                let view_proj: cgmath::Matrix4<f32> =
+                    renderer_camera.uniform.view_projection_matrix.into();
+                let mvp = view_proj * model;
+
+                let offset_bytes = draw_index * per_draw_stride;
+                let offset_aligned_u32 = offset_bytes as u32; // guaranteed < 4GiB in this simple path
+                let mvp_arr: [[f32; 4]; 4] = mvp.into();
+                self.queue.write_buffer(
+                    &per_draw_buffer,
+                    offset_bytes,
+                    bytemuck::cast_slice(&[mvp_arr]),
+                );
+
+                rpass.set_bind_group(3, &per_draw_bind_group, &[offset_aligned_u32]);
+                rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                draw_index += 1;
+            }
         }
 
-        timer.begin_context("Egui Draw");
+        self.queue.submit([encoder.finish()]);
 
-        timer.end_context()?; // End Egui Draw context
+        // Egui overlay (load over the rendered frame)
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("egui_encoder"),
+            });
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.window_size.width, self.window_size.height],
+            pixels_per_point: self.egui_renderer.window_scale_factor,
+        };
+        self.egui_renderer.draw(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &view,
+            screen_descriptor,
+            |ctx| egui_ui(ctx),
+            timer,
+        )?;
+        self.queue.submit([encoder.finish()]);
 
-        timer.record("Submit commands and present frame");
-
+        // Present frame
         frame.present();
 
         Ok(())
     }
+
+    // old render path removed (M2 uses inline draws)
 }
