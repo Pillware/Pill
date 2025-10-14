@@ -29,6 +29,7 @@ use anyhow::{Error, Result};
 use log::info;
 
 use crate::egui::EguiRenderer;
+use wgpu::util::DeviceExt;
 
 pub const MAX_INSTANCE_BATCH_SIZE: usize = 10000; // Maximum number of instances that can be drawn in a single draw call
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
@@ -385,6 +386,11 @@ pub struct State {
     composite_bind_group_layout: wgpu::BindGroupLayout,
     composite_pipeline: wgpu::RenderPipeline,
     composite_bind_group: wgpu::BindGroup,
+    // Overlay (UV gradient quad in top-right)
+    overlay_pipeline: wgpu::RenderPipeline,
+    overlay_rect_bind_group_layout: wgpu::BindGroupLayout,
+    overlay_rect_bind_group: wgpu::BindGroup,
+    overlay_rect_buffer: wgpu::Buffer,
     // Other
     config: config::Config,
     egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
@@ -705,6 +711,120 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
             ],
         });
 
+        // Overlay UV gradient pipeline (small quad in top-right corner)
+        let overlay_vs_wgsl = r#"
+@group(0) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
+
+struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+@vertex fn main(@builtin(vertex_index) vi: u32) -> VSOut {
+  var unit = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, -1.0), vec2<f32>( 1.0, -1.0), vec2<f32>( 1.0,  1.0),
+    vec2<f32>( 1.0,  1.0), vec2<f32>(-1.0,  1.0), vec2<f32>(-1.0, -1.0)
+  );
+  
+  // let temp = vec4<f32>(0.25, 0.25, 0.75, 0.75);
+
+  let p = unit[vi];  // [-1,1] NDC space
+  let s = p*0.5+0.5; // [0,1] screen space
+  let r = URect.xy + s * (URect.zw - URect.xy); // move by rect [0,1]
+  // let r = temp.xy + s * (temp.zw - temp.xy); // move by rect [0,1]
+  let ndc = r*2.0-1.0; // [-1,1] NDC space
+
+  var out: VSOut;
+  out.pos = vec4<f32>(ndc.x, ndc.y, 0.0, 1.0);
+  // out.pos = vec4<f32>(p.x, p.y, 0.0, 1.0);
+  out.uv = s;
+  return out;
+}
+"#;
+        let overlay_fs_wgsl = r#"
+@fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+  return vec4<f32>(uv, 0.0, 0.5);
+}
+"#;
+        let overlay_vs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("overlay_vs"),
+            source: wgpu::ShaderSource::Wgsl(overlay_vs_wgsl.into()),
+        });
+        let overlay_fs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("overlay_fs"),
+            source: wgpu::ShaderSource::Wgsl(overlay_fs_wgsl.into()),
+        });
+        let overlay_rect_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("overlay_rect_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
+                    },
+                    count: None,
+                }],
+            });
+        let overlay_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("overlay_pl"),
+                bind_group_layouts: &[&overlay_rect_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        // No vertex buffer layout needed; vertices are generated procedurally in the vertex shader
+        let overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("overlay_pipeline"),
+            layout: Some(&overlay_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &overlay_vs,
+                entry_point: "main",
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &overlay_fs,
+                entry_point: "main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: surface_configuration.format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                cull_mode: None, // avoid winding flip from Y-flip causing cull
+                ..wgpu::PrimitiveState::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+        // No vertex buffer needed; vertices generated procedurally in VS
+        let rect: [f32; 4] = [0.75, 0.75, 0.95, 0.95]; // top-right relative to screen
+
+        // Apple Metal buffer alignment rules for constant/uniform buffers (256-byte).
+        // See Uniform Buffers and Alignment in wgpu’s docs:
+        //   https://docs.rs/wgpu/latest/wgpu/struct.Device.html#method.create_buffer
+        // and Apple Metal feature set tables (256-byte constant buffer alignment requirement).
+        let overlay_rect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("overlay_rect_ubo"),
+            size: 256,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&overlay_rect_buffer, 0, bytemuck::bytes_of(&rect));
+        let overlay_rect_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay_rect_bg"),
+            layout: &overlay_rect_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &overlay_rect_buffer,
+                    offset: 0,
+                    size: Some(std::num::NonZeroU64::new(16).unwrap()),
+                }),
+            }],
+        });
+
         // Create state
         let per_draw_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -746,6 +866,11 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
             composite_bind_group_layout,
             composite_pipeline,
             composite_bind_group,
+            // Overlay
+            overlay_pipeline,
+            overlay_rect_bind_group_layout,
+            overlay_rect_bind_group,
+            overlay_rect_buffer,
             // Other
             config,
             egui_renderer,
@@ -1218,7 +1343,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
         }
         timer.end_context()?; // End "Offscreen pass"
 
-        // Composition pass: sample T0 and draw to swapchain view
+        // Composition pass: sample T0 and draw to swapchain view, then overlay UV quad
         {
             timer.begin_context("Fullscreen resolve pass");
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1238,6 +1363,12 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
             rpass.set_pipeline(&self.composite_pipeline);
             rpass.set_bind_group(0, &self.composite_bind_group, &[]);
             rpass.draw(0..3, 0..1);
+
+            // Draw small overlay UV quad in normalized rect via UBO
+            rpass.set_pipeline(&self.overlay_pipeline);
+            rpass.set_bind_group(0, &self.overlay_rect_bind_group, &[]);
+            rpass.draw(0..6, 0..1);
+
             timer.record("Encode compose pass");
         }
         timer.end_context()?; // End "Compose pass"
