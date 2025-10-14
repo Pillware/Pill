@@ -329,6 +329,12 @@ pub struct State {
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
+    // Per-frame dynamic UBO ring (Milestone 5)
+    per_draw_stride: u64,
+    per_draw_capacity: u64, // in elements
+    per_draw_buffer: Option<wgpu::Buffer>,
+    per_draw_bind_group_layout: wgpu::BindGroupLayout,
+    per_draw_bind_group: Option<wgpu::BindGroup>,
     // Prebuilt PSO (static pipeline)
     default_pipeline: RendererPipeline,
     // Other
@@ -521,6 +527,20 @@ struct PerDraw {
         .unwrap();
 
         // Create state
+        let per_draw_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("per_draw_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: Some(std::num::NonZeroU64::new(144).unwrap()),
+                    },
+                    count: None,
+                }],
+            });
         Self {
             // Resources
             renderer_resource_storage,
@@ -533,6 +553,13 @@ struct PerDraw {
             color_format,
             depth_format,
             depth_texture,
+            // Per-frame UBO ring init
+            per_draw_stride: 256,
+            per_draw_capacity: 0,
+            per_draw_buffer: None,
+            // [SIMILAR] Per-draw dynamic UBO layout with has_dynamic_offset=true per TALK (Milestone 5)
+            per_draw_bind_group_layout,
+            per_draw_bind_group: None,
             // Prebuilt PSO
             default_pipeline,
             // Other
@@ -815,72 +842,59 @@ struct PerDraw {
             next_offset_u32 = next_offset_u32.wrapping_add(256);
         }
 
-        // [SIMILAR] Per-pass batch upload of dynamic UBOs with dynamic offsets; avoids per-draw map/unmap
-        // [DIFF] Recreates buffer and issues one write per visible; TALK prefers a reusable temp bump allocator/ring buffer
-        // [API->CLIENT] Data layout/packing and offset management are client-owned; low-level only binds buffer+offsets
+        // Milestone 5: Per-frame ring buffer
         timer.begin_context("Per-draw UBO setup");
-        // Prepare per-draw dynamic uniform buffer and bind group sized to visible set
-        let per_draw_stride: u64 = 256; // alignment
-        let per_draw_capacity = visible.len() as u64;
-        let per_draw_buffer_size = per_draw_stride * per_draw_capacity.max(1);
-        let per_draw_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("per_draw_dynamic_ubo"),
-            size: per_draw_buffer_size,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        for (i, v) in visible.iter().enumerate() {
-            let offset_bytes = (i as u64) * per_draw_stride;
-            // Pack { mvp, model(=identity for now), tint(=1,1,1,1) }
-            let model: [[f32; 4]; 4] = cgmath::Matrix4::<f32>::from_scale(1.0).into();
-            let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-            #[repr(C)]
-            #[derive(Copy, Clone)]
-            struct PerDrawStd140 {
-                mvp: [[f32; 4]; 4],
-                model: [[f32; 4]; 4],
-                tint: [f32; 4],
-            }
-            unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
-            unsafe impl bytemuck::Pod for PerDrawStd140 {}
-            let pd: PerDrawStd140 = PerDrawStd140 {
+        let needed = visible.len() as u64;
+        if self.per_draw_capacity < needed {
+            self.per_draw_capacity = needed.next_power_of_two().max(1);
+            let size = self.per_draw_stride * self.per_draw_capacity;
+            self.per_draw_buffer = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("per_draw_dynamic_ubo_ring"),
+                size,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+            self.per_draw_bind_group =
+                Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("per_draw_bind_group"),
+                    layout: &self.per_draw_bind_group_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: self.per_draw_buffer.as_ref().unwrap(),
+                            offset: 0,
+                            size: Some(std::num::NonZeroU64::new(144).unwrap()),
+                        }),
+                    }],
+                }));
+        }
+        #[repr(C)]
+        #[derive(Copy, Clone)]
+        struct PerDrawStd140 {
+            mvp: [[f32; 4]; 4],
+            model: [[f32; 4]; 4],
+            tint: [f32; 4],
+        }
+        unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
+        unsafe impl bytemuck::Pod for PerDrawStd140 {}
+        let model: [[f32; 4]; 4] = cgmath::Matrix4::<f32>::from_scale(1.0).into();
+        let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+        let mut staging: Vec<u8> = Vec::with_capacity((self.per_draw_stride * needed) as usize);
+        for v in &visible {
+            let pd = PerDrawStd140 {
                 mvp: v.mvp,
                 model,
                 tint,
             };
-            self.queue
-                .write_buffer(&per_draw_buffer, offset_bytes, bytemuck::bytes_of(&pd));
+            staging.extend_from_slice(bytemuck::bytes_of(&pd));
+            let pad = (self.per_draw_stride as usize) - std::mem::size_of::<PerDrawStd140>();
+            staging.extend(std::iter::repeat(0u8).take(pad));
         }
-        timer.record("Per-draw UBO writes");
-        // Create per-draw bind group layout raw (avoid pipeline storage)
-        let per_draw_bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("per_draw_bind_group_layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: true,
-                            min_binding_size: Some(std::num::NonZeroU64::new(144).unwrap()),
-                        },
-                        count: None,
-                    }],
-                });
-        let per_draw_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("per_draw_bind_group"),
-            layout: &per_draw_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &per_draw_buffer,
-                    offset: 0,
-                    size: Some(std::num::NonZeroU64::new(144).unwrap()),
-                }),
-            }],
-        });
-        timer.end_context()?; // End "Per-draw UBO setup"
+        if let Some(buf) = &self.per_draw_buffer {
+            self.queue.write_buffer(buf, 0, &staging);
+        }
+        timer.record("Per-draw UBO write (ring)");
+        timer.end_context()?;
 
         {
             timer.begin_context("Main pass");
@@ -940,7 +954,11 @@ struct PerDraw {
                     // [API->CLIENT] Provide packed mesh atlas + per-draw base offsets so low-level can draw without re-binding buffers
                     rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    rpass.set_bind_group(3, &per_draw_bind_group, &[draw.offset_u32]);
+                    rpass.set_bind_group(
+                        3,
+                        self.per_draw_bind_group.as_ref().unwrap(),
+                        &[draw.offset_u32],
+                    );
                     rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
                 timer.end_context()?; // End pipeline/material group

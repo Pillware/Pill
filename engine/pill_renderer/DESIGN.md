@@ -180,7 +180,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>; };
 - wgpu correctness:
   - Use sRGB surface format and sRGB textures for correct gamma; or convert in shader.
 
-5) Per-frame Ring Buffer + Dynamic Offsets
+5) [Done] Per-frame Ring Buffer + Dynamic Offsets
 
 - Expected result: No per-draw map/unmap; dynamic uniform offsets.
 - Client API: `push_per_draw` returns aligned offset; pass offsets via `set_bind_groups_with_offsets`.
