@@ -70,6 +70,17 @@ impl EguiManagerComponent {
         let window_w = engine.window_size.width;
         let window_h = engine.window_size.height;
 
+        // Snapshot draw call counter from last frame
+        let total_draw_calls: Option<u64> = engine
+            .system_manager
+            .peek_system_timer(
+                crate::config::RENDERING_SYSTEM.name,
+                crate::config::RENDERING_SYSTEM.update_phase,
+            )
+            .ok()
+            .and_then(|t| t)
+            .and_then(|t| t.get_counter("draw_calls"));
+
         let ui = Box::new(move |ui: &egui::Context| {
             egui::Window::new("PillEngine")
                 .default_open(true)
@@ -91,6 +102,9 @@ impl EguiManagerComponent {
                                 frame_delta_time
                             )));
                             ui.add(egui::Label::new(format!("Entities: {}", entity_count)));
+                            if let Some(dc) = total_draw_calls {
+                                ui.add(egui::Label::new(format!("Draw calls: {}", dc)));
+                            }
                             ui.separator();
                             ui.add(egui::Label::new(format!(
                                 "Systems: {}, Total delta time: {:.3} ms",

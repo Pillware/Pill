@@ -862,7 +862,9 @@ struct PerDraw {
                 });
             }
         }
-        let _draw_call_count_unused: usize = groups.iter().map(|g| g.batches.len()).sum();
+        let draw_call_count: usize = groups.iter().map(|g| g.batches.len()).sum();
+        // Expose draw call count via per-frame timer counters for UI/metrics
+        timer.set_counter("draw_calls", draw_call_count as u64);
 
         // Milestone 5: Per-frame ring buffer
         // [SIMILAR] Batch write dynamic per-draw data once; bind with dynamic offsets

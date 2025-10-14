@@ -1,9 +1,7 @@
 use std::time::Instant;
 
-use anyhow::{Context, Result, Error};
+use anyhow::{Context, Error, Result};
 use indexmap::IndexMap;
-
-
 
 #[derive(Debug, Clone)]
 pub struct TimerRecord {
@@ -26,6 +24,8 @@ pub struct Timer {
     pub records: Vec<TimerRecord>,
     current_label: Option<String>,
     current_label_start: Option<Instant>,
+    // Simple per-frame counters keyed by label
+    counters: IndexMap<String, u64>,
 }
 
 impl Timer {
@@ -35,6 +35,7 @@ impl Timer {
             records: Vec::new(),
             current_label: None,
             current_label_start: None,
+            counters: IndexMap::new(),
         }
     }
 
@@ -79,9 +80,11 @@ impl Timer {
     }
 
     fn flush_record(&mut self) {
-        if let (Some(label), Some(start), Some(current)) =
-            (&self.current_label, self.current_label_start, self.stack.last_mut())
-        {
+        if let (Some(label), Some(start), Some(current)) = (
+            &self.current_label,
+            self.current_label_start,
+            self.stack.last_mut(),
+        ) {
             let duration = start.elapsed().as_secs_f32() * 1000.0;
             current.subrecords.push(TimerRecord {
                 label: label.clone(),
@@ -98,6 +101,25 @@ impl Timer {
         self.records.iter().map(|r| r.duration).sum()
     }
 
+    // --- Counters ---
+    pub fn set_counter(&mut self, label: impl Into<String>, value: u64) {
+        self.counters.insert(label.into(), value);
+    }
+
+    // pub fn increment_counter(&mut self, label: impl Into<String>, delta: u64) {
+    //     let key = label.into();
+    //     let entry = self.counters.entry(key).or_insert(0);
+    //     *entry = entry.saturating_add(delta);
+    // }
+
+    pub fn get_counter(&self, label: &str) -> Option<u64> {
+        self.counters.get(label).copied()
+    }
+
+    pub fn counters(&self) -> &IndexMap<String, u64> {
+        &self.counters
+    }
+
     pub fn print(&self, indent: usize) {
         for record in &self.records {
             Self::print_record(record, indent);
@@ -105,7 +127,13 @@ impl Timer {
     }
 
     fn print_record(record: &TimerRecord, indent: usize) {
-        println!("{:indent$}- {}: {:.3}ms", "", record.label, record.duration, indent = indent);
+        println!(
+            "{:indent$}- {}: {:.3}ms",
+            "",
+            record.label,
+            record.duration,
+            indent = indent
+        );
         for sub in &record.subrecords {
             Self::print_record(sub, indent + 2);
         }
