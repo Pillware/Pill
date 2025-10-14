@@ -482,7 +482,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
 @group(0) @binding(2) var tex_normal: texture_2d<f32>;
 @group(0) @binding(3) var smp_normal: sampler;
 
-// Material parameters set(1) – pack tint.rgb + specularity in a single vec4
+// Material parameters set(1) - pack tint.rgb + specularity in a single vec4
 struct MaterialParams { tint_spec: vec4<f32>, }
 @group(1) @binding(0) var<uniform> UMaterial: MaterialParams;
 
@@ -818,6 +818,7 @@ struct PerDraw {
         // [SIMILAR] Per-pass batch upload of dynamic UBOs with dynamic offsets; avoids per-draw map/unmap
         // [DIFF] Recreates buffer and issues one write per visible; TALK prefers a reusable temp bump allocator/ring buffer
         // [API->CLIENT] Data layout/packing and offset management are client-owned; low-level only binds buffer+offsets
+        timer.begin_context("Per-draw UBO setup");
         // Prepare per-draw dynamic uniform buffer and bind group sized to visible set
         let per_draw_stride: u64 = 256; // alignment
         let per_draw_capacity = visible.len() as u64;
@@ -879,8 +880,10 @@ struct PerDraw {
                 }),
             }],
         });
+        timer.end_context()?; // End "Per-draw UBO setup"
 
         {
+            timer.begin_context("Main pass");
             // [DIFF] TALK advocates explicit per-pass transitions; wgpu hides resource states implicitly here
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("m2_inline_pass"),
@@ -911,6 +914,11 @@ struct PerDraw {
             // [SIMILAR] Bind pipeline/material once per group; change only minimal per-draw state (offsets)
             // Iterate groups: bind pipeline/material once per group; mesh + offset per draw
             for group in &groups {
+                timer.begin_context(&format!(
+                    "Pipeline {} / Material {}",
+                    group.pipeline_handle.data().index,
+                    group.material_handle.data().index
+                ));
                 rpass.set_pipeline(&self.default_pipeline.render_pipeline);
 
                 let material = self
@@ -935,14 +943,17 @@ struct PerDraw {
                     rpass.set_bind_group(3, &per_draw_bind_group, &[draw.offset_u32]);
                     rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
+                timer.end_context()?; // End pipeline/material group
             }
             timer.record("Encode render pass");
         }
+        timer.end_context()?; // End "Main pass"
 
         self.queue.submit([encoder.finish()]);
         timer.record("Submit main pass");
 
         // Egui overlay (load over the rendered frame)
+        timer.begin_context("UI pass");
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -963,6 +974,7 @@ struct PerDraw {
         )?;
         self.queue.submit([encoder.finish()]);
         timer.record("UI draw & submit");
+        timer.end_context()?; // End "UI pass"
 
         // Present frame
         frame.present();
