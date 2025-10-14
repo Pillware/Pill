@@ -190,7 +190,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>; };
 - wgpu correctness:
   - Avoid mapping GPU-only buffers; prefer `write_buffer` for simplicity.
 
-6) Multi-pass + Offscreen Targets + Quad Composition
+6) [Done] Multi-pass + Offscreen Targets + Quad Composition
 
 - Expected result: Offscreen render (T0) → FSQ/quads composite to swapchain; quads can place T0 anywhere in the framebuffer.
 - Client API: Add two passes: `Texture` then `Swapchain`; post uses `Inline` to draw a quad (or fullscreen triangle) sampling T0 with UVs that map to desired target rect.
