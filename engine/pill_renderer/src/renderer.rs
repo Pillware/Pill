@@ -511,7 +511,12 @@ impl State {
             RendererTexture::new_depth_texture(&device, &surface_configuration, "depth_texture")
                 .unwrap();
 
-        let color_format = surface_configuration.format;
+        // Use Rgba16Float for HDR color buffers; it’s the common, well-supported,
+        // performant choice. Reserve Rgba32Float for niche cases needing extreme
+        // precision and accept the 2× bandwidth/memory hit. If alpha isn’t needed,
+        // Rg11b10Float/R11G11B10_FLOAT is a fast alternative.
+        // Tone-map to the sRGB swapchain in the composite pass.
+        let color_format = wgpu::TextureFormat::Rgba16Float;
         let depth_format = wgpu::TextureFormat::Depth32Float;
 
         // Milestone 6: Create offscreen color target (RENDER_ATTACHMENT | TEXTURE_BINDING)
@@ -617,7 +622,10 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
 @group(0) @binding(0) var t_src: texture_2d<f32>;
 @group(0) @binding(1) var s_src: sampler;
 @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-  return textureSample(t_src, s_src, uv);
+  let hdr = textureSample(t_src, s_src, uv).rgb;
+  // Reinhard tone mapping; output remains in linear space. The sRGB swapchain will encode.
+  let ldr = hdr / (1.0 + hdr);
+  return vec4<f32>(ldr, 1.0);
 }
 "#;
         let comp_vs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -668,7 +676,8 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
                 module: &comp_fs,
                 entry_point: "main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
+                    // Composition writes to the swapchain view; target must match surface format
+                    format: surface_configuration.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
