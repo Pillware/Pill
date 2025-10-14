@@ -1,6 +1,9 @@
 use pill_engine::game::*;
 use rand::Rng;
 
+// Draft import for renderer vNext API (as per DESIGN.md)
+// use pill_engine::pill_renderer as pr;
+
 // Define custom component
 pub struct PillComponent {}
 
@@ -46,17 +49,18 @@ impl PillGame for Game {
             ResourceLoadType::Path("textures/pill_normal.png".into()),
         );
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
+
         // Material properties showcase: create a small set of materials to reuse
         let mut rng = rand::thread_rng();
         let mut materials = Vec::new();
-        for j in 0..8 {
+        for j in 0..10 {
             let mut mat = Material::new(&format!("PillMat{}", j));
             mat.set_texture("color", pill_color_texture_handle.clone())?;
             mat.set_texture("normal", pill_normal_texture_handle.clone())?;
             let tint = Color::new(
-                rng.gen_range(0.3..=1.0),
-                rng.gen_range(0.3..=1.0),
-                rng.gen_range(0.3..=1.0),
+                rng.gen_range(0.2..=0.8),
+                rng.gen_range(0.2..=0.8),
+                rng.gen_range(0.2..=0.8),
             );
             let spec = rng.gen_range(0.0..=1.0);
             mat.set_color("tint", tint)?;
@@ -76,7 +80,7 @@ impl PillGame for Game {
         engine.add_component_to_entity(active_scene, camera, camera_component)?;
 
         // Create pill entity
-        for i in 0..50000 {
+        for i in 0..60000 {
             let pill = engine.create_entity(active_scene)?;
             let posx = rng.gen_range(-10.0..=20.0);
             let posy = rng.gen_range(-10.0..=10.0);
@@ -94,6 +98,94 @@ impl PillGame for Game {
             engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
             engine.add_component_to_entity(active_scene, pill, PillComponent {})?;
         }
+
+        /* --- Overlay Logo Pass (userland draft using pill_renderer vNext API) ---
+        {
+            // Acquire renderer and its resource manager
+            let renderer = engine.renderer_mut()?; // Draft API accessor
+            let mut rm = renderer.resources();
+
+            // Create logo texture + sampler → material bind group (set 1)
+            let logo_tex =
+                rm.create_texture(pr::TextureDesc::from_path("textures/pill_logo.png").srgb(true));
+            let logo_smp = rm.create_sampler(pr::SamplerDesc::linear_clamp());
+
+            // Overlay pipeline (fixed-function screen space quad shader)
+            let overlay_pso = rm.create_pipeline(pr::GraphicsPipelineDesc::overlay_logo(
+                renderer.surface_format(),
+            ));
+
+            // Material BG uses @group(1): texture_2d + sampler
+            let overlay_material_bg = rm.create_bind_group(pr::BindGroupDesc {
+                debug_name: Some("overlay_logo_material"),
+                layout: overlay_pso.material_layout(),
+                textures: vec![logo_tex],
+                samplers: vec![logo_smp],
+                ..Default::default()
+            });
+
+            // Per-pass globals (@group(0)) with screen-space rect in pixels and tint
+            #[repr(C)]
+            #[derive(Copy, Clone)]
+            struct OverlayGlobals {
+                rect_px: [f32; 4],
+                tint: [f32; 4],
+            }
+            let globals = OverlayGlobals {
+                rect_px: [16.0, 16.0, 160.0, 64.0],
+                tint: [1.0, 1.0, 1.0, 1.0],
+            };
+            let globals_bg = {
+                // 256B-aligned uniform buffer with initial data
+                let globals_buf = rm.create_buffer(pr::BufferDesc::uniform_init_aligned(
+                    "overlay_logo_globals",
+                    pr::bytes_of(&globals),
+                ));
+                rm.create_bind_group(pr::BindGroupDesc {
+                    debug_name: Some("overlay_logo_globals"),
+                    layout: overlay_pso.globals_layout(),
+                    buffers: vec![pr::BufferBinding {
+                        buffer: globals_buf,
+                        byte_offset: 0,
+                    }],
+                    ..Default::default()
+                })
+            };
+
+            // Tiny quad mesh (two triangles in NDC via VS or a unit quad mesh)
+            let quad_mesh = rm.upload_mesh(pr::CpuMesh::unit_quad());
+
+            // Add pass to master pipeline that draws the logo over the swapchain
+            let pass = pr::RenderPassDesc {
+                name: "overlay_logo",
+                target: pr::TargetDesc::Swapchain,
+                clear: pr::ClearDesc {
+                    color: None,
+                    depth: None,
+                    stencil: None,
+                },
+                subpipeline: pr::Subpipeline {
+                    pipeline: overlay_pso,
+                    globals: globals_bg,
+                    draws: pr::DrawRecipe::Inline(Box::new(
+                        move |dlb: &mut pr::DrawListBuilder| {
+                            dlb.set_pipeline(overlay_pso);
+                            dlb.set_bind_groups_with_offsets(
+                                globals_bg,
+                                Some(overlay_material_bg),
+                                None,
+                                None,
+                                None,
+                                None,
+                            );
+                            dlb.set_mesh(quad_mesh, 0, 0);
+                            dlb.draw_indexed(6, 0);
+                        },
+                    )),
+                },
+            };
+            renderer.master().add_pass(pass);
+        } */
 
         Ok(())
     }
