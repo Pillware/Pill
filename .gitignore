@@ -6,3 +6,5 @@ build/
 
 crates/pill_standalone/Cargo.toml
 examples/*/Cargo.toml
+
+engine/Cargo.toml
