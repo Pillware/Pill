@@ -329,6 +329,8 @@ pub struct State {
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
+    // Prebuilt PSO (static pipeline)
+    default_pipeline: RendererPipeline,
     // Other
     config: config::Config,
     egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
@@ -451,6 +453,73 @@ impl State {
         let egui_renderer =
             EguiRenderer::new(&device, surface_configuration.format, None, 1, window_ref);
 
+        // Build static shader modules and pipeline once ([SIMILAR] prebuilt PSO per TALK)
+        let vertex_wgsl = r#"
+struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
+@group(2) @binding(0) var<uniform> GCamera: Camera;
+
+struct PerDraw {
+  mvp: mat4x4<f32>,
+  model: mat4x4<f32>,
+  tint: vec4<f32>,
+};
+@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
+
+struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
+struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
+
+@vertex fn main(input: VSIn) -> VSOut {
+  var out: VSOut;
+  out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
+  out.uv = input.uv;
+  return out;
+}
+"#;
+        let fragment_wgsl = r#"
+// Material set(0):
+@group(0) @binding(0) var tex_diffuse: texture_2d<f32>;
+@group(0) @binding(1) var smp_diffuse: sampler;
+@group(0) @binding(2) var tex_normal: texture_2d<f32>;
+@group(0) @binding(3) var smp_normal: sampler;
+
+// Material parameters set(1) – pack tint.rgb + specularity in a single vec4
+struct MaterialParams { tint_spec: vec4<f32>, }
+@group(1) @binding(0) var<uniform> UMaterial: MaterialParams;
+
+// Per-draw (set 3): supports per-entity tint for M4
+struct PerDraw {
+  mvp: mat4x4<f32>,
+  model: mat4x4<f32>,
+  tint: vec4<f32>,
+};
+@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
+
+@fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+  let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
+  let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0) * UPerDraw.tint;
+  let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
+  let color = albedo * tinted * spec_boost;
+  return vec4<f32>(color.rgb, 1.0);
+}
+"#;
+        let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("m2_vertex_shader"),
+            source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+        });
+        let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("m2_fragment_shader"),
+            source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+        });
+        let default_pipeline = RendererPipeline::new(
+            &device,
+            vertex_shader,
+            fragment_shader,
+            color_format,
+            Some(depth_format),
+            &[RendererMesh::data_layout_descriptor()],
+        )
+        .unwrap();
+
         // Create state
         Self {
             // Resources
@@ -464,6 +533,8 @@ impl State {
             color_format,
             depth_format,
             depth_texture,
+            // Prebuilt PSO
+            default_pipeline,
             // Other
             config,
             egui_renderer,
@@ -495,81 +566,9 @@ impl State {
         egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()> {
-        // Build default pipeline inline (no storage)
-        let vertex_wgsl = r#"
-struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
-@group(2) @binding(0) var<uniform> GCamera: Camera;
-
-struct PerDraw {
-  mvp: mat4x4<f32>,
-  model: mat4x4<f32>,
-  tint: vec4<f32>,
-};
-@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
-
-struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
-struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
-
-@vertex fn main(input: VSIn) -> VSOut {
-  var out: VSOut;
-  out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
-  out.uv = input.uv;
-  return out;
-}
-"#;
-
-        let fragment_wgsl = r#"
-// Material set(0):
-@group(0) @binding(0) var tex_diffuse: texture_2d<f32>;
-@group(0) @binding(1) var smp_diffuse: sampler;
-@group(0) @binding(2) var tex_normal: texture_2d<f32>;
-@group(0) @binding(3) var smp_normal: sampler;
-
-// Material parameters set(1) – pack tint.rgb + specularity in a single vec4
-struct MaterialParams { tint_spec: vec4<f32>, }
-@group(1) @binding(0) var<uniform> UMaterial: MaterialParams;
-
-// Per-draw (set 3): supports per-entity tint for M4
-struct PerDraw {
-  mvp: mat4x4<f32>,
-  model: mat4x4<f32>,
-  tint: vec4<f32>,
-};
-@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
-
-@fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-  let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
-  let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0) * UPerDraw.tint;
-  let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
-  let color = albedo * tinted * spec_boost;
-  return vec4<f32>(color.rgb, 1.0);
-}
-"#;
-
-        let vertex_shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("m2_vertex_shader"),
-                source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
-            });
-        let fragment_shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("m2_fragment_shader"),
-                source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
-            });
-
-        let default_pipeline = RendererPipeline::new(
-            &self.device,
-            vertex_shader,
-            fragment_shader,
-            self.color_format,
-            Some(self.depth_format),
-            &[RendererMesh::data_layout_descriptor()],
-        )
-        .unwrap();
-        // Use default_pipeline directly below for bind group layouts and pipeline
-        let _per_draw_bind_group_layout = &default_pipeline.per_draw_bind_group_layout;
+        // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
+        // Use prebuilt default_pipeline for bind group layouts and pipeline
+        let _per_draw_bind_group_layout = &self.default_pipeline.per_draw_bind_group_layout;
         // M3: Hello Mesh + per-draw MVP (dynamic offsets)
         timer.record("Frame: acquire");
 
@@ -593,6 +592,8 @@ struct PerDraw {
 
         timer.record("Frame: setup view & camera");
 
+        // [SIMILAR] Modify resources (camera UBO) before draw; separates data mods from drawing as per TALK
+        // [DIFF] Bind group slot indices differ from TALK’s convention (0=globals,1=material,2=shader,3=dynamic); here camera is @group(2)
         // Get active camera and update it
         let camera_storage = camera_component_storage
             .data
@@ -632,6 +633,9 @@ struct PerDraw {
                 label: Some("m2_inline_encoder"),
             });
 
+        // [SIMILAR] CPU frustum culling and precomputing per-draw transforms before starting the pass matches TALK’s advice
+        // [DIFF] Only frustum culling here; TALK discusses 2-pass occlusion and broader CPU-driven pipelines
+        // [API->CLIENT] Culling, model matrix building, and visible set construction should live in client/high-level renderer
         // Build view before pass: cull and prepare per-draw MVPs
         let vp_mat: cgmath::Matrix4<f32> = renderer_camera.uniform.view_projection_matrix.into();
         let m = vp_mat;
@@ -765,6 +769,8 @@ struct PerDraw {
             });
         }
 
+        // [SIMILAR] Sort by pipeline/material/mesh to minimize state changes as in TALK
+        // [API->CLIENT] Sorting/grouping is client responsibility; low-level should accept an already ordered draw stream
         // Sort by pipeline -> material -> mesh to minimize state changes
         visible.sort_by_key(|v| {
             (
@@ -809,6 +815,9 @@ struct PerDraw {
             next_offset_u32 = next_offset_u32.wrapping_add(256);
         }
 
+        // [SIMILAR] Per-pass batch upload of dynamic UBOs with dynamic offsets; avoids per-draw map/unmap
+        // [DIFF] Recreates buffer and issues one write per visible; TALK prefers a reusable temp bump allocator/ring buffer
+        // [API->CLIENT] Data layout/packing and offset management are client-owned; low-level only binds buffer+offsets
         // Prepare per-draw dynamic uniform buffer and bind group sized to visible set
         let per_draw_stride: u64 = 256; // alignment
         let per_draw_capacity = visible.len() as u64;
@@ -872,6 +881,7 @@ struct PerDraw {
         });
 
         {
+            // [DIFF] TALK advocates explicit per-pass transitions; wgpu hides resource states implicitly here
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("m2_inline_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -898,9 +908,10 @@ struct PerDraw {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            // [SIMILAR] Bind pipeline/material once per group; change only minimal per-draw state (offsets)
             // Iterate groups: bind pipeline/material once per group; mesh + offset per draw
             for group in &groups {
-                rpass.set_pipeline(&default_pipeline.render_pipeline);
+                rpass.set_pipeline(&self.default_pipeline.render_pipeline);
 
                 let material = self
                     .renderer_resource_storage
@@ -917,6 +928,8 @@ struct PerDraw {
                         .meshes
                         .get(draw.mesh_handle)
                         .unwrap();
+                    // [DIFF] VB/IB are rebound each draw; TALK suggests packing meshes in large buffers and using base vertex/index to avoid rebinding
+                    // [API->CLIENT] Provide packed mesh atlas + per-draw base offsets so low-level can draw without re-binding buffers
                     rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                     rpass.set_bind_group(3, &per_draw_bind_group, &[draw.offset_u32]);
