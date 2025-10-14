@@ -60,48 +60,63 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     timer.record("Prepare render queue");
 
-    let matrix_calculation_duration: f32 = 0.0;
-    let mut add_to_render_queue_duration: f32 = 0.0;
+    let mut dirty_entities: Vec<EntityHandle> = Vec::new();
 
-    // Iterate mesh rendering components
+    // Phase 1: Sweep components; route transforms needing matrix update to a batch, push clean directly
     for (entity_handle, transform_component, mesh_rendering_component) in engine
         .scene_manager
         .get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(
         active_scene_handle,
     )? {
-        // Update transform matrices if required
-
-        // let update_transform_matrices_start_time = Instant::now();
         if transform_component.matrix_update_required {
-            update_transform_matrices(transform_component);
-            transform_component.matrix_update_required = false;
+            // defer update to batch
+            dirty_entities.push(entity_handle);
+            continue;
         }
-        // matrix_calculation_duration += update_transform_matrices_start_time.elapsed().as_secs_f32() * 1000.0;
 
-        // Add valid mesh rendering components to render queue
-        let add_to_render_queue_start_time = Instant::now();
+        // Push clean (non-dirty) items directly into the render queue
         if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
             let render_queue_item = RenderQueueItem {
                 key: render_queue_key,
                 entity_index: entity_handle.data().index as u32,
             };
             engine.render_queue.push(render_queue_item);
-        } else {
-            debug!("Invalid render queue key");
-            continue;
         }
-        add_to_render_queue_duration +=
-            add_to_render_queue_start_time.elapsed().as_secs_f32() * 1000.0;
     }
 
-    timer.record(&format!(
-        "Matrix calculation {} ms",
-        matrix_calculation_duration
-    ));
-    timer.record(&format!(
-        "Add to render queue {} ms",
-        add_to_render_queue_duration
-    ));
+    // Phase 2: Batch update transforms with matrix_update_required
+    if !dirty_entities.is_empty() {
+        timer.begin_context(&format!("Batch update {} transforms", dirty_entities.len()));
+        for entity_handle in &dirty_entities {
+            // Pull the transform component mutably and update matrices
+            if let Ok(transform_component) = engine
+                .scene_manager
+                .get_entity_component::<TransformComponent>(*entity_handle, active_scene_handle)
+            {
+                if transform_component.matrix_update_required {
+                    update_transform_matrices(transform_component);
+                    transform_component.matrix_update_required = false;
+                }
+            }
+        }
+        timer.end_context()?;
+    }
+
+    // Phase 3: Add updated (previously dirty) items to the render queue
+    for entity_handle in dirty_entities {
+        if let Ok(mesh_rendering_component) = engine
+            .scene_manager
+            .get_entity_component::<MeshRenderingComponent>(entity_handle, active_scene_handle)
+        {
+            if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
+                let render_queue_item = RenderQueueItem {
+                    key: render_queue_key,
+                    entity_index: entity_handle.data().index as u32,
+                };
+                engine.render_queue.push(render_queue_item);
+            }
+        }
+    }
 
     timer.record("Sort render queue");
 

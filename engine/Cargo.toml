@@ -11,3 +11,12 @@ members = [
 exclude = [
     "pill_launcher",
 ]
+
+[profile.dev]
+opt-level = 3
+incremental = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

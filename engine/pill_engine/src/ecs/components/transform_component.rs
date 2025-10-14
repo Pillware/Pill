@@ -1,14 +1,15 @@
 use crate::{
     ecs::{
-        Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle
-    }, engine::Engine
+        Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest,
+        DeferredUpdateManagerPointer, EntityHandle, SceneHandle,
+    },
+    engine::Engine,
 };
-use pill_core::{
-    get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f
-};
+use anyhow::{Context, Error, Result};
 use cgmath::{Deg, Matrix3, SquareMatrix, Zero};
-use anyhow::{ Result, Context, Error };
-use serde::{ Serialize, Deserialize };
+use glam::{Mat3, Mat4, Quat, Vec3};
+use pill_core::{get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f};
+use serde::{Deserialize, Serialize};
 
 // Coordinate system:
 //
@@ -114,7 +115,7 @@ impl TransformComponent {
             Direction::WorldRight => self.position.x += delta,
             Direction::WorldLeft => self.position.x -= delta,
             Direction::WorldUp => self.position.y += delta,
-            Direction::WorldDown => self.position.y -= delta
+            Direction::WorldDown => self.position.y -= delta,
         }
         self.matrix_update_required = true;
     }
@@ -125,9 +126,9 @@ impl TransformComponent {
     }
 
     pub fn translate_local(&mut self, delta: Vector3f) {
-        self.position += self.get_forward_direction() * delta.z +
-                        self.get_right_direction() * delta.x +
-                        self.get_up_direction() * delta.y;
+        self.position += self.get_forward_direction() * delta.z
+            + self.get_right_direction() * delta.x
+            + self.get_up_direction() * delta.y;
         self.matrix_update_required = true;
     }
 
@@ -158,10 +159,21 @@ impl TransformComponent {
     }
 
     fn get_rotation_matrix(&self) -> Matrix3<f32> {
-        let roll = Matrix3::from_angle_z(Deg(self.rotation.z));
-        let yaw = Matrix3::from_angle_y(Deg(self.rotation.y));
-        let pitch = Matrix3::from_angle_x(Deg(self.rotation.x));
-        yaw * pitch * roll
+        // SIMD via glam: build quaternion then extract 3x3
+        let rot = Vec3::new(
+            self.rotation.x.to_radians(),
+            self.rotation.y.to_radians(),
+            self.rotation.z.to_radians(),
+        );
+        let qx = Quat::from_rotation_x(rot.x);
+        let qy = Quat::from_rotation_y(rot.y);
+        let qz = Quat::from_rotation_z(rot.z);
+        let q = qz * qy * qx; // Rz * Ry * Rx
+        let m = Mat3::from_quat(q);
+        let c = m.to_cols_array_2d();
+        Matrix3::new(
+            c[0][0], c[0][1], c[0][2], c[1][0], c[1][1], c[1][2], c[2][0], c[2][1], c[2][2],
+        )
     }
 
     // --- Rotation ---
@@ -183,12 +195,39 @@ impl TransformComponent {
         self.scale = scale;
         self.matrix_update_required = true;
     }
-
 }
 
 pub fn update_transform_matrices(transform_component: &mut TransformComponent) {
-    transform_component.model_matrix = cgmath::Matrix4::model(transform_component.position, transform_component.rotation, transform_component.scale).into();
-    transform_component.normal_matrix = cgmath::Matrix3::from_euler_angles(transform_component.rotation).into();
+    // SIMD path via glam: quat + SRT
+    let pos = Vec3::new(
+        transform_component.position.x,
+        transform_component.position.y,
+        transform_component.position.z,
+    );
+    let rot = Vec3::new(
+        transform_component.rotation.x.to_radians(),
+        transform_component.rotation.y.to_radians(),
+        transform_component.rotation.z.to_radians(),
+    );
+    let scl = Vec3::new(
+        transform_component.scale.x,
+        transform_component.scale.y,
+        transform_component.scale.z,
+    );
+
+    // Convert Euler XYZ -> quat (pitch X, yaw Y, roll Z)
+    let qx = Quat::from_rotation_x(rot.x);
+    let qy = Quat::from_rotation_y(rot.y);
+    let qz = Quat::from_rotation_z(rot.z);
+    let q = qz * qy * qx; // Match Rz * Ry * Rx ordering
+
+    let m = Mat4::from_scale_rotation_translation(scl, q, pos);
+    // Convert to cgmath array layout via to_cols_array_2d (column-major 4x4)
+    transform_component.model_matrix = m.to_cols_array_2d();
+
+    // Normal matrix: rotation only
+    let n = Mat3::from_quat(q);
+    transform_component.normal_matrix = n.to_cols_array_2d();
 }
 
 pub fn get_model_matrix(transform_component: &TransformComponent) -> [[f32; 4]; 4] {
@@ -203,14 +242,12 @@ impl PillTypeMapKey for TransformComponent {
     type Storage = ComponentStorage<TransformComponent>;
 }
 
-impl Component for TransformComponent {
-
-}
+impl Component for TransformComponent {}
 
 impl Default for TransformComponent {
-        fn default() -> Self {
-                    Self::new()
-                            }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub trait MatrixAngleExt<S: cgmath::BaseFloat> {
@@ -218,7 +255,11 @@ pub trait MatrixAngleExt<S: cgmath::BaseFloat> {
 }
 
 pub trait MatrixModelExt<S: cgmath::BaseFloat> {
-    fn model(position: cgmath::Vector3<S>, rotation: cgmath::Vector3<S>, scale: cgmath::Vector3<S>) -> Self;
+    fn model(
+        position: cgmath::Vector3<S>,
+        rotation: cgmath::Vector3<S>,
+        scale: cgmath::Vector3<S>,
+    ) -> Self;
 }
 
 impl<S: cgmath::BaseFloat> MatrixAngleExt<S> for cgmath::Matrix4<S> {
@@ -232,17 +273,21 @@ impl<S: cgmath::BaseFloat> MatrixAngleExt<S> for cgmath::Matrix4<S> {
 }
 
 impl<S: cgmath::BaseFloat> MatrixModelExt<S> for cgmath::Matrix4<S> {
-    fn model(position: cgmath::Vector3<S>, rotation: cgmath::Vector3<S>, scale: cgmath::Vector3<S>) -> Self {
-        cgmath::Matrix4::from_translation(position) *
-        cgmath::Matrix4::from_euler_angles(rotation) *
-        cgmath::Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
+    fn model(
+        position: cgmath::Vector3<S>,
+        rotation: cgmath::Vector3<S>,
+        scale: cgmath::Vector3<S>,
+    ) -> Self {
+        cgmath::Matrix4::from_translation(position)
+            * cgmath::Matrix4::from_euler_angles(rotation)
+            * cgmath::Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z)
     }
 }
 
 impl<S: cgmath::BaseFloat> MatrixAngleExt<S> for cgmath::Matrix3<S> {
     fn from_euler_angles(v: cgmath::Vector3<S>) -> Self {
-        cgmath::Matrix3::from_angle_z(cgmath::Deg(v.z)) *
-        cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y)) *
-        cgmath::Matrix3::from_angle_x(cgmath::Deg(v.x))
+        cgmath::Matrix3::from_angle_z(cgmath::Deg(v.z))
+            * cgmath::Matrix3::from_angle_y(cgmath::Deg(v.y))
+            * cgmath::Matrix3::from_angle_x(cgmath::Deg(v.x))
     }
 }
