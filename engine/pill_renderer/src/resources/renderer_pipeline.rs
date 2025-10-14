@@ -20,6 +20,7 @@ impl RendererPipeline {
         vertex_layouts: &[wgpu::VertexBufferLayout],
     ) -> Result<Self> {
         // Define material bind group layout (Describes a set of resources and how they can be accessed by a shader)
+        // [SIMILAR] Predefined bind group layouts matching shader sets; created once, reused per TALK
         let material_texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("material_texture_bind_group_layout"),
@@ -78,6 +79,7 @@ impl RendererPipeline {
             });
 
         // Define camera bind group layout
+        // [SIMILAR] Camera UBO in a dedicated layout; updated before pass, not per-draw
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("camera_bind_group_layout"),
@@ -94,6 +96,7 @@ impl RendererPipeline {
             });
 
         // Define per-draw bind group layout (dynamic uniform buffer)
+        // [SIMILAR] Dynamic offset UBO for per-draw data; avoids map/unmap per draw per TALK
         let per_draw_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("per_draw_bind_group_layout"),
@@ -111,6 +114,7 @@ impl RendererPipeline {
             });
 
         // Create pipeline layout descriptor
+        // [SIMILAR] Fixed PSO layout: globals(material textures), material params, camera, per-draw
         let pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor {
             label: Some("render_pipeline_layout"),
             bind_group_layouts: &[

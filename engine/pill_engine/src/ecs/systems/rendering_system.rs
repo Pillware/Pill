@@ -55,6 +55,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     timer.record("Clear render queue");
 
     // Clear the render queue
+    // [SIMILAR] Build and sort a render queue ahead of draw; separates data prep from draw per TALK
     engine.render_queue.clear();
     engine.render_queue.reserve(200000); // Reserve space for 1000 items
 
@@ -63,6 +64,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let mut dirty_entities: Vec<EntityHandle> = Vec::new();
 
     // Phase 1: Sweep components; route transforms needing matrix update to a batch, push clean directly
+    // [SIMILAR] Batch transform updates; avoid per-draw matrix work
     for (entity_handle, transform_component, mesh_rendering_component) in engine
         .scene_manager
         .get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(
@@ -75,6 +77,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
 
         // Push clean (non-dirty) items directly into the render queue
+        // [SIMILAR] Use precomputed render_queue_key (pipeline/material/mesh sorting key)
         if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
             let render_queue_item = RenderQueueItem {
                 key: render_queue_key,
@@ -85,6 +88,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     }
 
     // Phase 2: Batch update transforms with matrix_update_required
+    // [RECOMMENDED] Consolidate transform matrix updates in one batch outside of pass
     if !dirty_entities.is_empty() {
         timer.begin_context(&format!("Batch update {} transforms", dirty_entities.len()));
         for entity_handle in &dirty_entities {
@@ -143,6 +147,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     timer.begin_context("Render");
 
     // Render
+    // [API->CLIENT] Low-level renderer expects ordered render_queue and stable storages; scene graph culling/binning lives in client/high-level
     match engine.renderer.render(
         active_camera_entity_handle,
         &engine.render_queue,

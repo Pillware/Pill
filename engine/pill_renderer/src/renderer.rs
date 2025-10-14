@@ -83,7 +83,7 @@ impl PillRenderer for Renderer {
         _vertex_shader_bytes: &[u8],
         _fragment_shader_bytes: &[u8],
     ) -> Result<()> {
-        // No-op: pipeline created lazily in render
+        // [DIFFERENT] TALK recommends building PSOs upfront; here pipeline is created in State::new (good), and this setter is a no-op
         Ok(())
     }
 
@@ -336,6 +336,7 @@ pub struct State {
     per_draw_bind_group_layout: wgpu::BindGroupLayout,
     per_draw_bind_group: Option<wgpu::BindGroup>,
     // Prebuilt PSO (static pipeline)
+    // [SIMILAR] Prebuilt once; no per-draw pipeline churn per TALK
     default_pipeline: RendererPipeline,
     // Other
     config: config::Config,
@@ -817,8 +818,8 @@ struct PerDraw {
             )
         });
 
-        // Build grouped command list by (pipeline, material)
         struct DrawCmd {
+        // Build grouped instancing batches by (pipeline, material, mesh)
             mesh_handle: RendererMeshHandle,
             offset_u32: u32,
         }
@@ -853,6 +854,7 @@ struct PerDraw {
         }
 
         // Milestone 5: Per-frame ring buffer
+        // [SIMILAR] Batch write dynamic per-draw data once; bind with dynamic offsets
         timer.begin_context("Per-draw UBO setup");
         let needed = visible.len() as u64;
         if self.per_draw_capacity < needed {
