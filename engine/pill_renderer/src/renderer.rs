@@ -469,15 +469,6 @@ impl PillRenderer for Renderer {
         self.state.resize(new_window_size)
     }
 
-    fn set_master_pipeline(
-        &mut self,
-        _vertex_shader_bytes: &[u8],
-        _fragment_shader_bytes: &[u8],
-    ) -> Result<()> {
-        // [DIFFERENT] TALK recommends building PSOs upfront; here pipeline is created in State::new (good), and this setter is a no-op
-        Ok(())
-    }
-
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.state.device, name, mesh_data)?;
         let handle = self.state.renderer_resource_storage.meshes.insert(mesh);
@@ -1078,7 +1069,7 @@ impl State {
         // Build static shader modules and pipeline once ([SIMILAR] prebuilt PSO per TALK)
         let vertex_wgsl = r#"
 struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
-@group(2) @binding(0) var<uniform> GCamera: Camera;
+@group(0) @binding(0) var<uniform> GCamera: Camera;
 
 struct PerDraw {
   mvp: mat4x4<f32>,
@@ -1098,15 +1089,15 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
 }
 "#;
         let fragment_wgsl = r#"
-// Material set(0):
-@group(0) @binding(0) var tex_diffuse: texture_2d<f32>;
-@group(0) @binding(1) var smp_diffuse: sampler;
-@group(0) @binding(2) var tex_normal: texture_2d<f32>;
-@group(0) @binding(3) var smp_normal: sampler;
+// Material set(1):
+@group(1) @binding(0) var tex_diffuse: texture_2d<f32>;
+@group(1) @binding(1) var smp_diffuse: sampler;
+@group(1) @binding(2) var tex_normal: texture_2d<f32>;
+@group(1) @binding(3) var smp_normal: sampler;
 
-// Material parameters set(1) - pack tint.rgb + specularity in a single vec4
+// Material parameters set(2) - pack tint.rgb + specularity in a single vec4
 struct MaterialParams { tint_spec: vec4<f32>, }
-@group(1) @binding(0) var<uniform> UMaterial: MaterialParams;
+@group(2) @binding(0) var<uniform> UMaterial: MaterialParams;
 
 // Per-draw (set 3): supports per-entity tint for M4
 struct PerDraw {
@@ -1259,7 +1250,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
 
         // Ideally Client submitted pass via API
         // Create logo texture via renderer API and pass handle into overlay factory
-        let mut logo_image = image::open(
+        let logo_image = image::open(
             "/Users/mk/dev/demo/Pill-Engine/engine/pill_renderer/res/pill_logo_horizontal_white.png",
         )
         .expect("failed to load overlay logo image");
@@ -1450,7 +1441,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
         timer.record("Frame: setup view & camera");
 
         // [SIMILAR] Modify resources (camera UBO) before draw; separates data mods from drawing as per TALK
-        // [DIFF] Bind group slot indices differ from TALK's convention (0=globals,1=material,2=shader,3=dynamic); here camera is @group(2)
+        // [SIMILAR] Bind group slot indices same as in TALK's convention (0=globals,1=material,2=shader,3=dynamic);
         // Get active camera and update it
         let camera_storage = camera_component_storage
             .data
@@ -1710,7 +1701,7 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
             self.per_draw_bind_group =
                 Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("per_draw_bind_group"),
-                    layout: &self.per_draw_bind_group_layout,
+                    layout: &self.default_pipeline.per_draw_bind_group_layout,
                     entries: &[wgpu::BindGroupEntry {
                         binding: 0,
                         resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -1796,14 +1787,20 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
                 ));
                 rpass.set_pipeline(&self.default_pipeline.render_pipeline);
 
+                // HOT SoA (per-frame hot path):
+                // - RendererMaterial: texture_bind_group, parameter_bind_group
+                // - RendererCamera  : bind_group
+                // - RendererMesh    : vertex_buffer, index_buffer, index_count
+                // COLD metadata (names/descs) lives in *_cold arrays and is not read in the draw loop.
+
                 let material = self
                     .renderer_resource_storage
                     .materials
                     .get(group.material_handle)
                     .unwrap();
-                rpass.set_bind_group(0, &material.texture_bind_group, &[]);
-                rpass.set_bind_group(1, &material.parameter_bind_group, &[]);
-                rpass.set_bind_group(2, &renderer_camera.bind_group, &[]);
+                rpass.set_bind_group(0, &renderer_camera.bind_group, &[]);
+                rpass.set_bind_group(1, &material.texture_bind_group, &[]);
+                rpass.set_bind_group(2, &material.parameter_bind_group, &[]);
 
                 for batch in &group.batches {
                     let mesh = self
@@ -1950,6 +1947,10 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
         // Present frame
         frame.present();
         timer.record("Present");
+
+        // Allow wgpu to process pending work and retire resources referenced by submitted encoders
+        // without blocking the CPU. See Device::poll docs.
+        self.device.poll(wgpu::Maintain::Poll);
 
         Ok(())
     }

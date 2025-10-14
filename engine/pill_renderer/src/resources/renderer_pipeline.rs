@@ -114,13 +114,13 @@ impl RendererPipeline {
             });
 
         // Create pipeline layout descriptor
-        // [SIMILAR] Fixed PSO layout: globals(material textures), material params, camera, per-draw
+        // [SIMILAR] Fixed PSO layout per TALK: globals(camera), material textures, material params, dynamic per-draw
         let pipeline_layout_descriptor = wgpu::PipelineLayoutDescriptor {
             label: Some("render_pipeline_layout"),
             bind_group_layouts: &[
+                &camera_bind_group_layout,
                 &material_texture_bind_group_layout,
                 &material_parameter_bind_group_layout,
-                &camera_bind_group_layout,
                 &per_draw_bind_group_layout,
             ],
             push_constant_ranges: &[],

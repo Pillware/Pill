@@ -116,10 +116,7 @@ impl Engine {
         self.register_resource_type::<Sound>(max_sound_count)?;
 
         // master shader & defaults -------------------------------------------
-        let master_vert = include_bytes!("../res/shaders/master.vert.glsl");
-        let master_frag = include_bytes!("../res/shaders/master.frag.glsl");
-        self.renderer
-            .set_master_pipeline(master_vert, master_frag)?;
+        // Legacy master pipeline removed; PSOs are created upfront by renderer
 
         let default_color = Box::new(*include_bytes!("../res/textures/default_color.png"));
         let default_normal = Box::new(*include_bytes!("../res/textures/default_normal.png"));
