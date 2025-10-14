@@ -83,91 +83,7 @@ impl PillRenderer for Renderer {
         _vertex_shader_bytes: &[u8],
         _fragment_shader_bytes: &[u8],
     ) -> Result<()> {
-        // M3: WGSL pipeline with per-draw MVP via dynamic offsets (set 3)
-        let vertex_wgsl = r#"
-struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
-@group(2) @binding(0) var<uniform> GCamera: Camera;
-
-struct PerDraw {
-  mvp: mat4x4<f32>,
-  model: mat4x4<f32>,
-  tint: vec4<f32>,
-};
-@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
-
-struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
-struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
-
-@vertex fn main(input: VSIn) -> VSOut {
-  var out: VSOut;
-  out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
-  out.uv = input.uv;
-  return out;
-}
-"#;
-
-        let fragment_wgsl = r#"
-// Material set(0):
-@group(0) @binding(0) var tex_diffuse: texture_2d<f32>;
-@group(0) @binding(1) var smp_diffuse: sampler;
-@group(0) @binding(2) var tex_normal: texture_2d<f32>;
-@group(0) @binding(3) var smp_normal: sampler;
-
-// Material parameters set(1) – pack tint.rgb + specularity in a single vec4
-struct MaterialParams { tint_spec: vec4<f32>, }
-@group(1) @binding(0) var<uniform> UMaterial: MaterialParams;
-
-// Per-draw (set 3): supports per-entity tint for M4
-struct PerDraw {
-  mvp: mat4x4<f32>,
-  model: mat4x4<f32>,
-  tint: vec4<f32>,
-};
-@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
-
-@fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-  let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
-  // Combine material tint and per-entity tint; modulate brightness by specularity for demo
-  let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0) * UPerDraw.tint;
-  let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
-  let color = albedo * tinted * spec_boost;
-  return vec4<f32>(color.rgb, 1.0);
-}
-"#;
-
-        // Create shader modules with WGSL
-        let vertex_shader = self
-            .state
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("m2_vertex_shader"),
-                source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
-            });
-
-        let fragment_shader =
-            self.state
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("m2_fragment_shader"),
-                    source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
-                });
-
-        // Create master pipeline
-        let master_pipeline = RendererPipeline::new(
-            &self.state.device,
-            vertex_shader,
-            fragment_shader,
-            self.state.color_format,
-            Some(self.state.depth_format),
-            &[RendererMesh::data_layout_descriptor()],
-        )
-        .unwrap();
-
-        self.state
-            .renderer_resource_storage
-            .pipelines
-            .insert(master_pipeline);
-
+        // No-op: pipeline created lazily in render
         Ok(())
     }
 
@@ -206,23 +122,73 @@ struct PerDraw {
         textures: &MaterialTextureMap,
         parameters: &MaterialParameterMap,
     ) -> Result<RendererMaterialHandle> {
-        let pipeline_handle = MASTER_PIPELINE_HANDLE;
-        let pipeline = self
-            .state
-            .renderer_resource_storage
-            .pipelines
-            .get(pipeline_handle)
-            .unwrap();
+        // Create bind group layouts inline (avoid pipeline storage dependency)
+        let material_texture_bind_group_layout =
+            self.state
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("material_texture_bind_group_layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 3,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                });
+        let material_parameter_bind_group_layout =
+            self.state
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("material_parameter_bind_group_layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                });
 
         let material = RendererMaterial::new(
             &self.state.device,
             &self.state.queue,
             &self.state.renderer_resource_storage,
             name,
-            pipeline_handle,
-            &pipeline.material_texture_bind_group_layout,
+            MASTER_PIPELINE_HANDLE,
+            &material_texture_bind_group_layout,
             textures,
-            &pipeline.material_parameter_bind_group_layout,
+            &material_parameter_bind_group_layout,
             parameters,
         )
         .unwrap();
@@ -237,15 +203,23 @@ struct PerDraw {
     }
 
     fn create_camera(&mut self) -> Result<RendererCameraHandle> {
-        let pipeline_handle = MASTER_PIPELINE_HANDLE;
-        let pipeline = self
-            .state
-            .renderer_resource_storage
-            .pipelines
-            .get(pipeline_handle)
-            .unwrap();
-        let camera_bind_group_layout = &pipeline.camera_bind_group_layout;
-        let camera = RendererCamera::new(&self.state.device, camera_bind_group_layout)?;
+        let camera_bind_group_layout =
+            self.state
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("camera_bind_group_layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                });
+        let camera = RendererCamera::new(&self.state.device, &camera_bind_group_layout)?;
         let handle = self.state.renderer_resource_storage.cameras.insert(camera);
 
         Ok(handle)
@@ -357,7 +331,7 @@ pub struct State {
     depth_texture: RendererTexture,
     // Other
     config: config::Config,
-    egui_renderer: crate::egui::EguiRenderer,
+    egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
 }
 
 impl State {
@@ -521,6 +495,81 @@ impl State {
         egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()> {
+        // Build default pipeline inline (no storage)
+        let vertex_wgsl = r#"
+struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
+@group(2) @binding(0) var<uniform> GCamera: Camera;
+
+struct PerDraw {
+  mvp: mat4x4<f32>,
+  model: mat4x4<f32>,
+  tint: vec4<f32>,
+};
+@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
+
+struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
+struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
+
+@vertex fn main(input: VSIn) -> VSOut {
+  var out: VSOut;
+  out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
+  out.uv = input.uv;
+  return out;
+}
+"#;
+
+        let fragment_wgsl = r#"
+// Material set(0):
+@group(0) @binding(0) var tex_diffuse: texture_2d<f32>;
+@group(0) @binding(1) var smp_diffuse: sampler;
+@group(0) @binding(2) var tex_normal: texture_2d<f32>;
+@group(0) @binding(3) var smp_normal: sampler;
+
+// Material parameters set(1) – pack tint.rgb + specularity in a single vec4
+struct MaterialParams { tint_spec: vec4<f32>, }
+@group(1) @binding(0) var<uniform> UMaterial: MaterialParams;
+
+// Per-draw (set 3): supports per-entity tint for M4
+struct PerDraw {
+  mvp: mat4x4<f32>,
+  model: mat4x4<f32>,
+  tint: vec4<f32>,
+};
+@group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
+
+@fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+  let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
+  let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0) * UPerDraw.tint;
+  let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
+  let color = albedo * tinted * spec_boost;
+  return vec4<f32>(color.rgb, 1.0);
+}
+"#;
+
+        let vertex_shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("m2_vertex_shader"),
+                source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+            });
+        let fragment_shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("m2_fragment_shader"),
+                source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+            });
+
+        let default_pipeline = RendererPipeline::new(
+            &self.device,
+            vertex_shader,
+            fragment_shader,
+            self.color_format,
+            Some(self.depth_format),
+            &[RendererMesh::data_layout_descriptor()],
+        )
+        .unwrap();
+        // Use default_pipeline directly below for bind group layouts and pipeline
+        let _per_draw_bind_group_layout = &default_pipeline.per_draw_bind_group_layout;
         // M3: Hello Mesh + per-draw MVP (dynamic offsets)
         timer.record("Frame: acquire");
 
@@ -793,14 +842,25 @@ impl State {
                 .write_buffer(&per_draw_buffer, offset_bytes, bytemuck::bytes_of(&pd));
         }
         timer.record("Per-draw UBO writes");
-        let pipeline = self
-            .renderer_resource_storage
-            .pipelines
-            .get(MASTER_PIPELINE_HANDLE)
-            .unwrap();
+        // Create per-draw bind group layout raw (avoid pipeline storage)
+        let per_draw_bind_group_layout =
+            self.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("per_draw_bind_group_layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: true,
+                            min_binding_size: Some(std::num::NonZeroU64::new(144).unwrap()),
+                        },
+                        count: None,
+                    }],
+                });
         let per_draw_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("per_draw_bind_group"),
-            layout: &pipeline.per_draw_bind_group_layout,
+            layout: &per_draw_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -840,12 +900,7 @@ impl State {
             });
             // Iterate groups: bind pipeline/material once per group; mesh + offset per draw
             for group in &groups {
-                let pipeline = self
-                    .renderer_resource_storage
-                    .pipelines
-                    .get(group.pipeline_handle)
-                    .unwrap();
-                rpass.set_pipeline(&pipeline.render_pipeline);
+                rpass.set_pipeline(&default_pipeline.render_pipeline);
 
                 let material = self
                     .renderer_resource_storage
