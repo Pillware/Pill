@@ -118,11 +118,6 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
     }
 
-    timer.record("Sort render queue");
-
-    // Sort render queue
-    engine.render_queue.sort();
-
     timer.record("Get component storages");
 
     let egui_ui = EguiManagerComponent::get_ui(engine); // egui_manager_component.get_ui(engine);
