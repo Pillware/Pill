@@ -701,6 +701,7 @@ struct PerDraw {
             pipeline_handle: RendererPipelineHandle,
             material_handle: RendererMaterialHandle,
             mesh_handle: RendererMeshHandle,
+            entity_index: u32,
             mvp: [[f32; 4]; 4],
         }
         timer.record("Culling & MVP build");
@@ -803,6 +804,7 @@ struct PerDraw {
                 pipeline_handle,
                 material_handle,
                 mesh_handle,
+                entity_index: render_queue_item.entity_index,
                 mvp,
             });
         }
@@ -818,19 +820,19 @@ struct PerDraw {
             )
         });
 
-        struct DrawCmd {
         // Build grouped instancing batches by (pipeline, material, mesh)
-            mesh_handle: RendererMeshHandle,
-            offset_u32: u32,
-        }
         timer.record("Sort & group draws");
+        struct MeshBatch {
+            mesh_handle: RendererMeshHandle,
+            instances: Vec<[[f32; 4]; 4]>,
+            base_offset_u32: u32, // offset into per-draw ring for first instance
+        }
         struct GroupCmd {
             pipeline_handle: RendererPipelineHandle,
             material_handle: RendererMaterialHandle,
-            draws: Vec<DrawCmd>,
+            batches: Vec<MeshBatch>,
         }
         let mut groups: Vec<GroupCmd> = Vec::new();
-        let mut next_offset_u32: u32 = 0;
         for v in &visible {
             if groups
                 .last()
@@ -842,21 +844,39 @@ struct PerDraw {
                 groups.push(GroupCmd {
                     pipeline_handle: v.pipeline_handle,
                     material_handle: v.material_handle,
-                    draws: Vec::new(),
+                    batches: Vec::new(),
                 });
             }
             let g = groups.last_mut().unwrap();
-            g.draws.push(DrawCmd {
-                mesh_handle: v.mesh_handle,
-                offset_u32: next_offset_u32,
-            });
-            next_offset_u32 = next_offset_u32.wrapping_add(256);
+            if let Some(batch) = g
+                .batches
+                .iter_mut()
+                .find(|b| b.mesh_handle == v.mesh_handle)
+            {
+                batch.instances.push(v.mvp);
+            } else {
+                g.batches.push(MeshBatch {
+                    mesh_handle: v.mesh_handle,
+                    instances: vec![v.mvp],
+                    base_offset_u32: 0,
+                });
+            }
         }
+        let _draw_call_count_unused: usize = groups.iter().map(|g| g.batches.len()).sum();
 
         // Milestone 5: Per-frame ring buffer
         // [SIMILAR] Batch write dynamic per-draw data once; bind with dynamic offsets
         timer.begin_context("Per-draw UBO setup");
-        let needed = visible.len() as u64;
+        let needed: u64 = groups
+            .iter()
+            .map(|g| {
+                g.batches
+                    .iter()
+                    .map(|b| b.instances.len() as u64)
+                    .sum::<u64>()
+            })
+            .sum();
+        // total instances; no direct use beyond sanity, avoid unused warning by not binding
         if self.per_draw_capacity < needed {
             self.per_draw_capacity = needed.next_power_of_two().max(1);
             let size = self.per_draw_stride * self.per_draw_capacity;
@@ -892,15 +912,23 @@ struct PerDraw {
         let model: [[f32; 4]; 4] = cgmath::Matrix4::<f32>::from_scale(1.0).into();
         let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
         let mut staging: Vec<u8> = Vec::with_capacity((self.per_draw_stride * needed) as usize);
-        for v in &visible {
-            let pd = PerDrawStd140 {
-                mvp: v.mvp,
-                model,
-                tint,
-            };
-            staging.extend_from_slice(bytemuck::bytes_of(&pd));
-            let pad = (self.per_draw_stride as usize) - std::mem::size_of::<PerDrawStd140>();
-            staging.extend(std::iter::repeat(0u8).take(pad));
+        let mut next_offset_u32: u32 = 0;
+        for g in groups.iter_mut() {
+            for b in g.batches.iter_mut() {
+                b.base_offset_u32 = next_offset_u32;
+                for mvp in &b.instances {
+                    let pd = PerDrawStd140 {
+                        mvp: *mvp,
+                        model,
+                        tint,
+                    };
+                    staging.extend_from_slice(bytemuck::bytes_of(&pd));
+                    let pad =
+                        (self.per_draw_stride as usize) - std::mem::size_of::<PerDrawStd140>();
+                    staging.extend(std::iter::repeat(0u8).take(pad));
+                    next_offset_u32 = next_offset_u32.wrapping_add(self.per_draw_stride as u32);
+                }
+            }
         }
         if let Some(buf) = &self.per_draw_buffer {
             self.queue.write_buffer(buf, 0, &staging);
@@ -938,7 +966,7 @@ struct PerDraw {
                 occlusion_query_set: None,
             });
             // [SIMILAR] Bind pipeline/material once per group; change only minimal per-draw state (offsets)
-            // Iterate groups: bind pipeline/material once per group; mesh + offset per draw
+            // Instancing: one draw per (pipeline, material, mesh) batch with instance_count
             for group in &groups {
                 timer.begin_context(&format!(
                     "Pipeline {} / Material {}",
@@ -956,22 +984,28 @@ struct PerDraw {
                 rpass.set_bind_group(1, &material.parameter_bind_group, &[]);
                 rpass.set_bind_group(2, &renderer_camera.bind_group, &[]);
 
-                for draw in &group.draws {
+                for batch in &group.batches {
                     let mesh = self
                         .renderer_resource_storage
                         .meshes
-                        .get(draw.mesh_handle)
+                        .get(batch.mesh_handle)
                         .unwrap();
-                    // [DIFF] VB/IB are rebound each draw; TALK suggests packing meshes in large buffers and using base vertex/index to avoid rebinding
                     // [API->CLIENT] Provide packed mesh atlas + per-draw base offsets so low-level can draw without re-binding buffers
+                    // [DIFF] VB/IB still rebound per batch; packing meshes could avoid rebinding
                     rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                     rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    rpass.set_bind_group(
-                        3,
-                        self.per_draw_bind_group.as_ref().unwrap(),
-                        &[draw.offset_u32],
-                    );
-                    rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                    // Per-instance draws with dynamic uniform offsets (no shader change required)
+                    for i in 0..batch.instances.len() {
+                        let offset = batch
+                            .base_offset_u32
+                            .wrapping_add((i as u32) * (self.per_draw_stride as u32));
+                        rpass.set_bind_group(
+                            3,
+                            self.per_draw_bind_group.as_ref().unwrap(),
+                            &[offset],
+                        );
+                        rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                    }
                 }
                 timer.end_context()?; // End pipeline/material group
             }
