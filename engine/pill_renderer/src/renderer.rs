@@ -431,6 +431,16 @@ impl State {
             surface_caps.formats[0] // Use first available format
         };
 
+        // macOS (Retina) note: use physical size (inner_size) and prefer premultiplied alpha if supported
+        let alpha_mode = if surface_caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PreMultiplied
+        } else {
+            wgpu::CompositeAlphaMode::Auto
+        };
+
         let surface_configuration = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Defines how the swap_chain's underlying textures will be used
             format: format, // Defines how the swap_chain's textures will be stored on the gpu
@@ -438,7 +448,7 @@ impl State {
             height: window_size.height,
             desired_maximum_frame_latency: 2,
             present_mode: present_mode, // Defines how to sync the surface with the display
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            alpha_mode,
             view_formats: vec![format],
         };
 
