@@ -20,7 +20,6 @@
 
 //  3. This notice may not be removed or altered from any source distribution.
 
-
 // --- PillSlotMap
 // This is slotmap crate modified by changing names of types, adding public key variables, removing iterators and adding possibility to restrict version limit
 // Original crate: https://crates.io/crates/SlotMap
@@ -30,14 +29,14 @@
 
 //! Contains the slot map implementation.
 use core::fmt;
+use core::fmt::Debug;
 use core::marker::PhantomData;
 #[allow(unused_imports)] // MaybeUninit is only used on nightly at the moment.
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Index, IndexMut};
 use std::fmt::Formatter;
-use core::fmt::Debug;
 use std::iter::Enumerate;
-use std::num::{ NonZeroU32};
+use std::num::NonZeroU32;
 
 // Storage inside a slot or metadata for the freelist when vacant.
 union SlotUnion<T> {
@@ -73,7 +72,7 @@ impl<T> Slot<T> {
         self.version % 2 > 0
     }
 
-    pub fn get(&self) -> SlotContent<T> {
+    pub fn get(&self) -> SlotContent<'_, T> {
         unsafe {
             if self.occupied() {
                 Occupied(&*self.u.value)
@@ -83,7 +82,7 @@ impl<T> Slot<T> {
         }
     }
 
-    pub fn get_mut(&mut self) -> SlotContentMut<T> {
+    pub fn get_mut(&mut self) -> SlotContentMut<'_, T> {
         unsafe {
             if self.occupied() {
                 OccupiedMut(&mut *self.u.value)
@@ -142,7 +141,6 @@ pub struct PillSlotMap<K: PillSlotMapKey, V> {
 }
 
 impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
-
     pub fn with_key() -> Self {
         Self::with_capacity_and_key(0)
     }
@@ -152,11 +150,14 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     }
 
     // Warning: Version limit has to be odd value
-    pub fn with_capacity_and_key_and_version_limit(capacity: usize, version_limit: u32) -> Result<Self, ()> {
+    pub fn with_capacity_and_key_and_version_limit(
+        capacity: usize,
+        version_limit: u32,
+    ) -> Result<Self, ()> {
         if version_limit % 2 == 0 {
-            return Err(())
+            return Err(());
         }
-        
+
         let mut slots = Vec::with_capacity(capacity + 1);
         slots.push(Slot {
             u: SlotUnion { next_free: 0 },
@@ -170,7 +171,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             version_limit,
             _k: PhantomData,
         };
-        
+
         Ok(slotmap)
     }
 
@@ -201,7 +202,6 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     }
 
     pub fn get_next_free_slot_handle(&self) -> K {
-
         let new_num_elems = self.num_elems + 1;
         if new_num_elems == core::u32::MAX {
             panic!("PillSlotMap number of elements overflow");
@@ -290,8 +290,11 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         self.free_head = index as u32;
         self.num_elems -= 1;
 
-
-        slot.version = if slot.version >= self.version_limit { 0 } else { slot.version + 1 };
+        slot.version = if slot.version >= self.version_limit {
+            0
+        } else {
+            slot.version + 1
+        };
 
         value
     }
@@ -366,7 +369,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .value
     }
 
-    pub fn iter(&self) -> Iter<K, V> {
+    pub fn iter(&self) -> Iter<'_, K, V> {
         let mut it = self.slots.iter().enumerate();
         it.next(); // Skip sentinel.
         Iter {
@@ -376,7 +379,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         }
     }
 
-    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
         let len = self.len();
         let mut it = self.slots.iter_mut().enumerate();
         it.next(); // Skip sentinel.
@@ -528,8 +531,18 @@ impl Default for PillSlotMapKeyData {
     }
 }
 
-pub unsafe trait PillSlotMapKey: 
-    From<PillSlotMapKeyData> + Copy + Clone + Default + Eq + PartialEq + Ord + PartialOrd + core::hash::Hash + core::fmt::Debug {
+pub unsafe trait PillSlotMapKey:
+    From<PillSlotMapKeyData>
+    + Copy
+    + Clone
+    + Default
+    + Eq
+    + PartialEq
+    + Ord
+    + PartialOrd
+    + core::hash::Hash
+    + core::fmt::Debug
+{
     fn null() -> Self {
         PillSlotMapKeyData::null().into()
     }

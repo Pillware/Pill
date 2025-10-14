@@ -1,10 +1,9 @@
-use crate::{EngineError, define_new_pill_slotmap_key};
+use crate::{define_new_pill_slotmap_key, EngineError};
 
-use anyhow::{ Context, Result, Error };
-use boolinator::Boolinator;
+use anyhow::{Context, Error, Result};
 use colored::{ColoredString, Colorize};
-use std::{ any::type_name, collections::HashMap, hash::Hash, path::PathBuf };
 use log::debug;
+use std::{any::type_name, collections::HashMap, hash::Hash, path::PathBuf};
 
 // --- Type to string utils ---
 
@@ -52,7 +51,12 @@ impl PillStyle for &str {
     // To be used with large module objects (Engine, Renderer, Window, etc) - changes color and adds bold
     #[inline]
     fn mobj_style(self) -> ColoredString {
-        self.color(colored::Color::TrueColor { r: 180, g: 25, b: 100 }).bold()
+        self.color(colored::Color::TrueColor {
+            r: 180,
+            g: 25,
+            b: 100,
+        })
+        .bold()
     }
 
     // To be used with general objects (Scene, Component, System, Resource, etc) - changes color and adds bold
@@ -64,13 +68,21 @@ impl PillStyle for &str {
     // To be used with specific objects (CameraComponent, Texture, Mesh, etc) - changes color
     #[inline]
     fn sobj_style(self) -> ColoredString {
-        self.color(colored::Color::TrueColor { r: 95, g: 210, b: 90 })
+        self.color(colored::Color::TrueColor {
+            r: 95,
+            g: 210,
+            b: 90,
+        })
     }
 
     // To be used with names - changes color adds quotation marks
     #[inline]
     fn name_style(self) -> ColoredString {
-        format!("\"{}\"", self).color(colored::Color::TrueColor { r: 190, g: 220, b: 160 })
+        format!("\"{}\"", self).color(colored::Color::TrueColor {
+            r: 190,
+            g: 220,
+            b: 160,
+        })
     }
 
     // To be used with names - changes color adds bold
@@ -93,30 +105,45 @@ pub trait MeshXImpl {
 // Check if path to asset is correct (exists and has supported format)
 pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static str]) -> Result<()> // Vec<String>
 {
-    path.exists().ok_or(Error::new(EngineError::InvalidAssetPath(path.display().to_string())))?;
+    if !path.exists() {
+        return Err(Error::new(EngineError::InvalidAssetPath(
+            path.display().to_string(),
+        )));
+    }
 
     match path.extension() {
-        Some(v) => match allowed_formats.contains(&v.to_str().unwrap()) { //} v.eq(allowed_format) {
+        Some(v) => match allowed_formats.contains(&v.to_str().unwrap()) {
+            //} v.eq(allowed_format) {
             true => return Ok(()),
-            false => return Err(Error::new(EngineError::InvalidAssetFormat(allowed_formats, v.to_str().unwrap().to_string()))),
+            false => {
+                return Err(Error::new(EngineError::InvalidAssetFormat(
+                    allowed_formats,
+                    v.to_str().unwrap().to_string(),
+                )))
+            }
         },
-        None => return Err(Error::new(EngineError::InvalidAssetPath(path.display().to_string()))),
+        None => {
+            return Err(Error::new(EngineError::InvalidAssetPath(
+                path.display().to_string(),
+            )))
+        }
     }
 }
 
 // --- PillSlotMap utils ---
 
-#[macro_export] macro_rules! define_component_handle { 
+#[macro_export]
+macro_rules! define_component_handle {
     ( $(#[$outer:meta])* $vis:vis struct $name:ident; $($rest:tt)* ) => {
-        pill_core::define_new_pill_slotmap_key! { }
-    }; 
+        pill_core::define_new_pill_slotmap_key! {}
+    };
 }
 
 // --- Other ---
 
 #[inline]
 pub fn get_game_error_message(result: Result<()>) -> Option<String> {
-    if result.is_err() { 
+    if result.is_err() {
         let mut message = String::new();
         for (i, error) in result.err().unwrap().chain().enumerate() {
             let message_part = match i == 0 {
@@ -126,8 +153,7 @@ pub fn get_game_error_message(result: Result<()>) -> Option<String> {
             message.push_str(message_part.as_str());
         }
         Some(message)
-    }
-    else {
+    } else {
         None
     }
 }

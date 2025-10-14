@@ -58,15 +58,15 @@ impl MeshDrawer {
             label: Some("mesh_drawer_encoder"),
         });
 
-        let mut instance_batch_number = 0;
-        let mut rendering_context_change_number = 0;
+        let mut _instance_batch_number = 0;
+        let mut _rendering_context_change_number = 0;
 
         for (i, instance_batch) in render_queue
             .chunks(self.max_instance_batch_size as usize)
             .enumerate()
         {
             let batch_size = instance_batch.len();
-            instance_batch_number += 1;
+            _instance_batch_number += 1;
 
             timer.begin_context(&format!("Prepare draw instance batch {}", i));
 
@@ -157,7 +157,7 @@ impl MeshDrawer {
 
                     // Set new order
                     current_rendering_order = render_queue_key_fields.order;
-                    rendering_context_change_number += 1;
+                    _rendering_context_change_number += 1;
                 }
 
                 // Check material
@@ -193,7 +193,7 @@ impl MeshDrawer {
                     render_pass.set_bind_group(1, &material.parameter_bind_group, &[]);
                     render_pass.set_bind_group(2, &camera.bind_group, &[]);
 
-                    rendering_context_change_number += 1;
+                    _rendering_context_change_number += 1;
                 }
 
                 // Check mesh
@@ -219,7 +219,7 @@ impl MeshDrawer {
                     render_pass
                         .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
-                    rendering_context_change_number += 1;
+                    _rendering_context_change_number += 1;
                 }
 
                 // Add new instance
