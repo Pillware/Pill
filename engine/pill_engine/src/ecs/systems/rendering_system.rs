@@ -17,7 +17,31 @@ use boolinator::Boolinator;
 use log::debug;
 use std::{ops::Range, time::Instant};
 
+use crate::config::{
+    DEFAULT_COLOR_TEXTURE_NAME, DEFAULT_MATERIAL_NAME, DEFAULT_NORMAL_TEXTURE_NAME, MAX_MATERIALS,
+    MAX_MESHES, MAX_SOUNDS, MAX_TEXTURES,
+};
+use crate::ecs::components::render_state_component::RenderStateComponent;
+use crate::resources::{Resource, ResourceLoadType, Texture, TextureType};
+
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
+    // One-time bootstrap: register resource types and create default resources
+    // Require RenderStateComponent; if missing, panic via unwrap
+    let need_bootstrap = !engine
+        .get_global_component::<RenderStateComponent>()
+        .unwrap()
+        .boot_done;
+    if need_bootstrap {
+        init_default_resources(engine)?;
+
+        if let Ok(rs) = engine.get_global_component_mut::<RenderStateComponent>() {
+            rs.boot_done = true;
+        }
+
+        // Skip the rest of the frame; camera may not exist yet during bootstrap
+        return Ok(());
+    }
+
     let mut timer = Timer::new();
     timer.begin_context("rendering_system update");
     timer.record("Get active camera");
@@ -184,4 +208,52 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             }
         }
     }
+}
+
+fn init_default_resources(engine: &mut Engine) -> Result<(), Error> {
+    let max_texture_count = engine
+        .config
+        .get_int("MAX_TEXTURES")
+        .unwrap_or(MAX_TEXTURES as i64) as usize;
+    let max_mesh_count = engine
+        .config
+        .get_int("MAX_MESHES")
+        .unwrap_or(MAX_MESHES as i64) as usize;
+    let max_material_count = engine
+        .config
+        .get_int("MAX_MATERIALS")
+        .unwrap_or(MAX_MATERIALS as i64) as usize;
+    // TODO: Move to SoundSystem init
+    let max_sound_count = engine
+        .config
+        .get_int("MAX_SOUNDS")
+        .unwrap_or(MAX_SOUNDS as i64) as usize;
+
+    engine.register_resource_type::<Texture>(max_texture_count)?;
+    engine.register_resource_type::<Mesh>(max_mesh_count)?;
+    engine.register_resource_type::<Material>(max_material_count)?;
+    engine.register_resource_type::<crate::resources::Sound>(max_sound_count)?;
+
+    let default_color = Box::new(*include_bytes!("../../../res/textures/default_color.png"));
+    let default_normal = Box::new(*include_bytes!("../../../res/textures/default_normal.png"));
+    let mut color = Texture::new(
+        DEFAULT_COLOR_TEXTURE_NAME,
+        TextureType::Color,
+        ResourceLoadType::Bytes(default_color),
+    );
+    color.initialize(engine)?;
+    engine.resource_manager.add_resource(color)?;
+    let mut normal = Texture::new(
+        DEFAULT_NORMAL_TEXTURE_NAME,
+        TextureType::Normal,
+        ResourceLoadType::Bytes(default_normal),
+    );
+    normal.initialize(engine)?;
+    engine.resource_manager.add_resource(normal)?;
+
+    let mut mat = Material::new(DEFAULT_MATERIAL_NAME);
+    mat.initialize(engine)?;
+    engine.resource_manager.add_resource(mat)?;
+
+    Ok(())
 }

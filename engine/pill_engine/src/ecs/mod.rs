@@ -42,6 +42,8 @@ pub use components::mesh_rendering_component::MeshRenderingComponent;
 
 pub use components::time_component::TimeComponent;
 
+pub use components::render_state_component::RenderStateComponent;
+
 // - Systems
 
 pub use systems::{SystemFunction, SystemManager, UpdatePhase};

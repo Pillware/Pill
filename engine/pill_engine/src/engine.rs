@@ -90,60 +90,6 @@ impl Engine {
         }
     }
 
-    fn create_default_resources(&mut self) -> Result<()> {
-        // limits ---------------------------------------------------------------
-        let max_texture_count = self
-            .config
-            .get_int("MAX_TEXTURES")
-            .unwrap_or(MAX_TEXTURES as i64) as usize;
-        let max_mesh_count = self
-            .config
-            .get_int("MAX_MESHES")
-            .unwrap_or(MAX_MESHES as i64) as usize;
-        let max_material_count = self
-            .config
-            .get_int("MAX_MATERIALS")
-            .unwrap_or(MAX_MATERIALS as i64) as usize;
-        let max_sound_count = self
-            .config
-            .get_int("MAX_SOUNDS")
-            .unwrap_or(MAX_SOUNDS as i64) as usize;
-
-        // register resource types --------------------------------------------
-        self.register_resource_type::<Texture>(max_texture_count)?;
-        self.register_resource_type::<Mesh>(max_mesh_count)?;
-        self.register_resource_type::<Material>(max_material_count)?;
-        self.register_resource_type::<Sound>(max_sound_count)?;
-
-        // master shader & defaults -------------------------------------------
-        // Legacy master pipeline removed; PSOs are created upfront by renderer
-
-        let default_color = Box::new(*include_bytes!("../res/textures/default_color.png"));
-        let default_normal = Box::new(*include_bytes!("../res/textures/default_normal.png"));
-
-        let mut color = Texture::new(
-            DEFAULT_COLOR_TEXTURE_NAME,
-            TextureType::Color,
-            ResourceLoadType::Bytes(default_color),
-        );
-        color.initialize(self)?;
-        self.resource_manager.add_resource(color)?;
-
-        let mut normal = Texture::new(
-            DEFAULT_NORMAL_TEXTURE_NAME,
-            TextureType::Normal,
-            ResourceLoadType::Bytes(default_normal),
-        );
-        normal.initialize(self)?;
-        self.resource_manager.add_resource(normal)?;
-
-        let mut mat = Material::new(DEFAULT_MATERIAL_NAME);
-        mat.initialize(self)?;
-        self.resource_manager.add_resource(mat)?;
-
-        Ok(())
-    }
-
     fn start_game(&mut self) -> Result<()> {
         info!("Starting {}", "Game".mobj_style());
 
@@ -183,6 +129,7 @@ impl Engine {
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
         self.add_global_component(EguiManagerComponent::new())?;
+        self.add_global_component(RenderStateComponent::new())?;
 
         let max_ambient_sink_count =
             self.config
@@ -224,14 +171,42 @@ impl Engine {
             RENDERING_SYSTEM.update_phase,
         )?;
 
-        // Create default resources
-        self.create_default_resources()
-            .context("Failed to create default resources")?;
+        self.init_renderer();
 
         // Start game
         self.start_game()?;
 
         Ok(())
+    }
+
+    fn init_renderer(&mut self) {
+        // KISS: Run only rendering system once for bootstrap (no active scene yet)
+        // TODO: Loop over PostGame systems to give them a change to init before game starts
+        {
+            let update_phase = UpdatePhase::PostGame;
+            let (system_name, system_function) = {
+                let sys = self
+                    .system_manager
+                    .get_system(RENDERING_SYSTEM.name, update_phase.clone())
+                    .unwrap();
+                (sys.name.clone(), sys.system_function)
+            };
+            let mut timer = Timer::new();
+            timer.begin_context(&format!("{} system bootstrap", system_name));
+            self.system_manager
+                .update_system_timer(system_name.as_str(), update_phase.clone(), timer)
+                .unwrap();
+            (system_function)(self).unwrap();
+            let mut timer = self
+                .system_manager
+                .get_system_timer(system_name.as_str(), update_phase.clone())
+                .unwrap()
+                .unwrap();
+            timer.end_context().unwrap();
+            self.system_manager
+                .update_system_timer(system_name.as_str(), update_phase.clone(), timer)
+                .unwrap();
+        }
     }
 
     /// Main engine update function
