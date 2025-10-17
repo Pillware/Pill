@@ -37,6 +37,41 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
 }
 
+pill_core::define_new_pill_slotmap_key! {
+    pub struct RendererBufferHandle;
+}
+
+pill_core::define_new_pill_slotmap_key! {
+    pub struct RendererPipelineV2Handle;
+}
+
+// --- Descriptors ---
+
+// Minimal buffer creation helper mirroring the planned ResourceManager API
+#[derive(Clone, Copy)]
+pub struct BufferDesc<'a> {
+    pub label: Option<&'a str>,
+    pub byte_size: u64,
+    pub usage: wgpu::BufferUsages,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ShaderDesc<'a> {
+    pub source: &'a str,
+    pub entry_func: &'a str,
+}
+
+#[derive(Clone, Debug)]
+pub struct PipelineV2Desc<'a> {
+    pub label: Option<&'a str>,
+    pub vs: ShaderDesc<'a>,
+    pub ps: ShaderDesc<'a>,
+    pub bindings: Vec<wgpu::BindGroupLayoutEntry>,
+    pub targets: &'a [Option<wgpu::ColorTargetState>],
+    pub depth_stencil: Option<wgpu::DepthStencilState>,
+    pub multisample: wgpu::MultisampleState,
+}
+
 // --- Renderer trait definition ---
 
 pub trait PillRenderer {
@@ -44,8 +79,12 @@ pub trait PillRenderer {
     where
         Self: Sized;
 
+    fn init(&mut self) -> Result<()>;
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
+    // Creates a 256B-aligned uniform buffer (COPY_DST) and returns its handle
+    fn create_buffer(&mut self, desc: BufferDesc) -> Result<RendererBufferHandle>;
+    fn create_pipeline_v2(&mut self, desc: PipelineV2Desc) -> Result<RendererPipelineV2Handle>;
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
     fn create_texture(
         &mut self,

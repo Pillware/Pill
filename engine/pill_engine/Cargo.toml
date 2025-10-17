@@ -24,6 +24,9 @@ tobj = "3.0"
 # Audio
 rodio = { version = "0.20", features = ["wav", "mp3"] }
 
+# Rendering
+wgpu = { version = "0.20.1", features = [ "spirv" ] }
+
 # Other
 readonly = "0.2"
 cgmath = "0.18"
