@@ -3,11 +3,15 @@
 // https://github.com/emilk/egui/discussions/3067
 
 use crate::{
+    passes::PassOverlayUV,
     renderer_resource_storage::RendererResourceStorage,
     resources::{
         RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture, Vertex,
     },
 };
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, BufferDesc, CameraComponent,
@@ -649,8 +653,8 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
 
 pub trait Pass {
     fn get_label(&self) -> &str;
-    fn init(&mut self, queue: &wgpu::Queue, pill_renderer: &mut Renderer);
-    fn render(&self, encoder: &mut wgpu::CommandEncoder) -> Result<(), Box<dyn std::error::Error>>;
+    fn init(&mut self, queue: &wgpu::Queue, renderer: &Renderer) -> Result<()>;
+    fn draw(&self, encoder: &mut wgpu::CommandEncoder, renderer: &Renderer) -> Result<()>;
 }
 
 pub struct DeviceContext {
@@ -670,7 +674,7 @@ pub struct State {
     passes: Vec<Box<dyn Pass>>,
     egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
     // Resources and GPU objects moved from ctor into here explicitly
-    renderer_resource_storage: RendererResourceStorage,
+    renderer_resource_storage: Rc<RefCell<RendererResourceStorage>>,
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
@@ -1236,7 +1240,7 @@ impl PillRenderer for Renderer {
                 // Other
                 egui_renderer,
                 // Resources
-                renderer_resource_storage,
+                renderer_resource_storage: Rc::new(RefCell::new(renderer_resource_storage)),
                 // Renderer variables
                 color_format,
                 depth_format,
@@ -1266,83 +1270,23 @@ impl PillRenderer for Renderer {
     }
 
     fn init(&mut self) -> Result<()> {
-        // TODO: create whole overlay_uv pass using factory methods from PillRenderer
-        let rect = [0.75, 0.75, 0.95, 0.95];
-        let overlay_rect_buffer = self.create_buffer(BufferDesc {
-            label: Some("overlay_rect_ubo"),
-            byte_size: 256,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let buffer = self
-            .state
-            .renderer_resource_storage
-            .buffers
-            .get(overlay_rect_buffer.unwrap())
-            .unwrap();
+        self.state
+            .passes
+            .push(Box::new(PassOverlayUV::new("overlay_uv")));
 
-        let vs_wgsl = r#"
-        @group(0) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
-
-        struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
-        @vertex fn main(@builtin(vertex_index) vi: u32) -> VSOut {
-          var unit = array<vec2<f32>, 6>(
-            vec2<f32>(-1.0, -1.0), vec2<f32>( 1.0, -1.0), vec2<f32>( 1.0,  1.0),
-            vec2<f32>( 1.0,  1.0), vec2<f32>(-1.0,  1.0), vec2<f32>(-1.0, -1.0)
-          );
-          let p = unit[vi];  // [-1,1] NDC space
-          let s = p*0.5+0.5; // [0,1] screen space
-          let r = URect.xy + s * (URect.zw - URect.xy); // move by rect [0,1]
-          let ndc = r*2.0-1.0; // [-1,1] NDC space
-          var out: VSOut;
-          out.pos = vec4<f32>(ndc.x, ndc.y, 0.0, 1.0);
-          out.uv = s;
-          return out;
+        // Initialize passes - call init on each pass
+        let queue = &self.ctx.queue;
+        // Temporarily move passes out to avoid borrowing conflicts
+        let mut passes = std::mem::take(&mut self.state.passes);
+        for pass in passes.iter_mut() {
+            let _ = pass.init(queue, self);
         }
-        "#;
-
-        let fs_wgsl = r#"
-        @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-          return vec4<f32>(uv, 0.0, 0.5);
-        }
-        "#;
-
-        self.ctx
-            .queue
-            .write_buffer(&buffer, 0, bytemuck::bytes_of(&rect));
-
-        let _pipeline_handle = self.create_pipeline_v2(PipelineV2Desc {
-            label: Some("overlay_uv"),
-            vs: ShaderDesc {
-                source: vs_wgsl,
-                entry_func: "main",
-            },
-            ps: ShaderDesc {
-                source: fs_wgsl,
-                entry_func: "main",
-            },
-            bindings: vec![wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                },
-                count: None,
-            }],
-            targets: &[Some(wgpu::ColorTargetState {
-                format: self.ctx.surface_configuration.format,
-                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-        });
+        self.state.passes = passes;
 
         Ok(())
     }
 
-    fn create_buffer(&mut self, desc: BufferDesc) -> Result<RendererBufferHandle> {
+    fn create_buffer(&self, desc: BufferDesc) -> Result<RendererBufferHandle> {
         let aligned_size = ((desc.byte_size + 255) / 256) * 256; // 256B for Metal UBOs
         let buffer = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
             label: desc.label,
@@ -1350,11 +1294,14 @@ impl PillRenderer for Renderer {
             usage: desc.usage,
             mapped_at_creation: false,
         });
-        let handle = self.state.renderer_resource_storage.buffers.insert(buffer);
+        let handle = unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.buffers.insert(buffer)
+        };
         Ok(handle)
     }
 
-    fn create_pipeline_v2(&mut self, desc: PipelineV2Desc) -> Result<RendererPipelineV2Handle> {
+    fn create_pipeline_v2(&self, desc: PipelineV2Desc) -> Result<RendererPipelineV2Handle> {
         /*
         // Example shader pipeline descriptor for factory method
         n_shader = rm->createShader（｛
@@ -1455,23 +1402,25 @@ impl PillRenderer for Renderer {
                 multiview: None,
             });
 
-        let handle: RendererPipelineV2Handle = self
-            .state
-            .renderer_resource_storage
-            .pipelines_v2
-            .insert(pipeline);
+        let handle: RendererPipelineV2Handle = unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.pipelines_v2.insert(pipeline)
+        };
         Ok(handle)
     }
 
-    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
+    fn create_mesh(&self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.ctx.device, name, mesh_data)?;
-        let handle = self.state.renderer_resource_storage.meshes.insert(mesh);
+        let handle = unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.meshes.insert(mesh)
+        };
 
         Ok(handle)
     }
 
     fn create_texture(
-        &mut self,
+        &self,
         name: &str,
         image_data: &image::DynamicImage,
         texture_type: TextureType,
@@ -1483,17 +1432,16 @@ impl PillRenderer for Renderer {
             image_data,
             texture_type,
         )?;
-        let handle = self
-            .state
-            .renderer_resource_storage
-            .textures
-            .insert(texture);
+        let handle = unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.textures.insert(texture)
+        };
 
         Ok(handle)
     }
 
     fn create_material(
-        &mut self,
+        &self,
         name: &str,
         textures: &MaterialTextureMap,
         parameters: &MaterialParameterMap,
@@ -1556,10 +1504,11 @@ impl PillRenderer for Renderer {
                     }],
                 });
 
+        let storage = self.state.renderer_resource_storage.borrow();
         let material = RendererMaterial::new(
             &self.ctx.device,
             &self.ctx.queue,
-            &self.state.renderer_resource_storage,
+            &storage,
             name,
             MASTER_PIPELINE_HANDLE,
             &material_texture_bind_group_layout,
@@ -1569,11 +1518,10 @@ impl PillRenderer for Renderer {
         )
         .unwrap();
 
-        let handle = self
-            .state
-            .renderer_resource_storage
-            .materials
-            .insert(material);
+        let handle = unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.materials.insert(material)
+        };
 
         Ok(handle)
     }
@@ -1596,7 +1544,10 @@ impl PillRenderer for Renderer {
                     }],
                 });
         let camera = RendererCamera::new(&self.ctx.device, &camera_bind_group_layout)?;
-        let handle = self.state.renderer_resource_storage.cameras.insert(camera);
+        let handle = unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.cameras.insert(camera)
+        };
 
         Ok(handle)
     }
@@ -1606,12 +1557,15 @@ impl PillRenderer for Renderer {
         renderer_material_handle: RendererMaterialHandle,
         textures: &MaterialTextureMap,
     ) -> Result<()> {
-        RendererMaterial::update_textures(
-            &self.ctx.device,
-            renderer_material_handle,
-            &mut self.state.renderer_resource_storage,
-            textures,
-        )
+        unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            RendererMaterial::update_textures(
+                &self.ctx.device,
+                renderer_material_handle,
+                storage,
+                textures,
+            )
+        }
     }
 
     fn update_material_parameters(
@@ -1619,51 +1573,50 @@ impl PillRenderer for Renderer {
         renderer_material_handle: RendererMaterialHandle,
         parameters: &MaterialParameterMap,
     ) -> Result<()> {
-        RendererMaterial::update_parameters(
-            &self.ctx.device,
-            &self.ctx.queue,
-            renderer_material_handle,
-            &mut self.state.renderer_resource_storage,
-            parameters,
-        )
+        unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            RendererMaterial::update_parameters(
+                &self.ctx.device,
+                &self.ctx.queue,
+                renderer_material_handle,
+                storage,
+                parameters,
+            )
+        }
     }
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
-        self.state
-            .renderer_resource_storage
-            .meshes
-            .remove(renderer_mesh_handle)
-            .unwrap();
+        unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.meshes.remove(renderer_mesh_handle).unwrap();
+        }
 
         Ok(())
     }
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
-        self.state
-            .renderer_resource_storage
-            .textures
-            .remove(renderer_texture_handle)
-            .unwrap();
+        unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.textures.remove(renderer_texture_handle).unwrap();
+        }
 
         Ok(())
     }
 
     fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
-        self.state
-            .renderer_resource_storage
-            .materials
-            .remove(renderer_material_handle)
-            .unwrap();
+        unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.materials.remove(renderer_material_handle).unwrap();
+        }
 
         Ok(())
     }
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
-        self.state
-            .renderer_resource_storage
-            .cameras
-            .remove(renderer_camera_handle)
-            .unwrap();
+        unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage.cameras.remove(renderer_camera_handle).unwrap();
+        }
 
         Ok(())
     }
@@ -1787,14 +1740,15 @@ impl PillRenderer for Renderer {
             .get(active_camera_entity_handle.data().index as usize)
             .unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = self
-            .state
-            .renderer_resource_storage
-            .cameras
-            .get_mut(get_renderer_resource_handle_from_camera_component(
-                active_camera_component,
-            ))
-            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        let renderer_camera = unsafe {
+            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+            storage
+                .cameras
+                .get_mut(get_renderer_resource_handle_from_camera_component(
+                    active_camera_component,
+                ))
+                .ok_or(Error::new(RendererError::RendererResourceNotFound))?
+        };
         let camera_transform_storage = transform_component_storage
             .data
             .get(active_camera_entity_handle.data().index as usize)
@@ -1805,9 +1759,8 @@ impl PillRenderer for Renderer {
             active_camera_component,
             active_camera_transform_component,
         );
-        let renderer_camera = self
-            .state
-            .renderer_resource_storage
+        let storage = self.state.renderer_resource_storage.borrow();
+        let renderer_camera = storage
             .cameras
             .get(get_renderer_resource_handle_from_camera_component(
                 active_camera_component,
@@ -1869,12 +1822,8 @@ impl PillRenderer for Renderer {
                 key.material_index.into(),
                 NonZeroU32::new(key.material_version.into()).unwrap(),
             );
-            let material_for_pipeline = self
-                .state
-                .renderer_resource_storage
-                .materials
-                .get(material_handle)
-                .unwrap();
+            let storage = self.state.renderer_resource_storage.borrow();
+            let material_for_pipeline = storage.materials.get(material_handle).unwrap();
             let pipeline_handle = material_for_pipeline.pipeline_handle;
 
             // Transform and model
@@ -1889,12 +1838,8 @@ impl PillRenderer for Renderer {
             let model: cgmath::Matrix4<f32> = model_arr.into();
 
             // World AABB from mesh local AABB
-            let mesh = self
-                .state
-                .renderer_resource_storage
-                .meshes
-                .get(mesh_handle)
-                .unwrap();
+            let storage = self.state.renderer_resource_storage.borrow();
+            let mesh = storage.meshes.get(mesh_handle).unwrap();
             let local_min =
                 cgmath::Vector3::new(mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2]);
             let local_max =
@@ -2141,23 +2086,21 @@ impl PillRenderer for Renderer {
                 // - RendererMesh    : vertex_buffer, index_buffer, index_count
                 // COLD metadata (names/descs) lives in *_cold arrays and is not read in the draw loop.
 
-                let material = self
-                    .state
-                    .renderer_resource_storage
-                    .materials
-                    .get(group.material_handle)
-                    .unwrap();
+                // Get material and set bind groups
+                let material = unsafe {
+                    let storage = &*self.state.renderer_resource_storage.as_ptr();
+                    storage.materials.get(group.material_handle).unwrap()
+                };
                 rpass.set_bind_group(0, &renderer_camera.bind_group, &[]);
                 rpass.set_bind_group(1, &material.texture_bind_group, &[]);
                 rpass.set_bind_group(2, &material.parameter_bind_group, &[]);
 
+                // Process batches with separate storage borrows to avoid lifetime issues
                 for batch in &group.batches {
-                    let mesh = self
-                        .state
-                        .renderer_resource_storage
-                        .meshes
-                        .get(batch.mesh_handle)
-                        .unwrap();
+                    let mesh = unsafe {
+                        let storage = &*self.state.renderer_resource_storage.as_ptr();
+                        storage.meshes.get(batch.mesh_handle).unwrap()
+                    };
                     // [API->CLIENT] Provide packed mesh atlas + per-draw base offsets so low-level can draw without re-binding buffers
                     // [DIFF] VB/IB still rebound per batch; packing meshes could avoid rebinding
                     rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
@@ -2272,6 +2215,26 @@ impl PillRenderer for Renderer {
         self.ctx.queue.submit([encoder.finish()]);
         timer.record("Submit scene+compose passes");
 
+        {
+            // Egui overlay (load over the rendered frame)
+            timer.begin_context("User passes");
+            let encoder = self
+                .ctx
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("user_passes"),
+                });
+
+            // Loop over state.passes, for each
+            //  get label
+            //  call render with encoder
+            //  call timer.record with label
+
+            self.ctx.queue.submit([encoder.finish()]);
+            timer.record("User passes submit");
+            timer.end_context()?; // End "User passes"
+        }
+
         // Egui overlay (load over the rendered frame)
         timer.begin_context("UI pass");
         let mut encoder = self
@@ -2311,5 +2274,21 @@ impl PillRenderer for Renderer {
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
         self.state.egui_renderer.handle_input(event);
         Ok(())
+    }
+}
+
+impl Renderer {
+    pub fn get_buffer(&self, _handle: RendererBufferHandle) -> Option<&wgpu::Buffer> {
+        // This is a temporary workaround - we'll need to restructure this
+        // For now, we'll return None to avoid the borrowing issue
+        None
+    }
+
+    pub fn get_surface_format(&self) -> wgpu::TextureFormat {
+        self.ctx.surface_configuration.format
+    }
+
+    pub fn get_resource_storage(&self) -> &RefCell<RendererResourceStorage> {
+        &self.state.renderer_resource_storage
     }
 }

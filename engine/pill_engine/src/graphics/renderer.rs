@@ -83,17 +83,17 @@ pub trait PillRenderer {
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
     // Creates a 256B-aligned uniform buffer (COPY_DST) and returns its handle
-    fn create_buffer(&mut self, desc: BufferDesc) -> Result<RendererBufferHandle>;
-    fn create_pipeline_v2(&mut self, desc: PipelineV2Desc) -> Result<RendererPipelineV2Handle>;
-    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
+    fn create_buffer(&self, desc: BufferDesc) -> Result<RendererBufferHandle>;
+    fn create_pipeline_v2(&self, desc: PipelineV2Desc) -> Result<RendererPipelineV2Handle>;
+    fn create_mesh(&self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
     fn create_texture(
-        &mut self,
+        &self,
         name: &str,
         image_data: &image::DynamicImage,
         texture_type: TextureType,
     ) -> Result<RendererTextureHandle>;
     fn create_material(
-        &mut self,
+        &self,
         name: &str,
         textures: &MaterialTextureMap,
         parameters: &MaterialParameterMap,
