@@ -6,9 +6,9 @@ mod renderer;
 // --- Use ---
 
 pub use renderer::{
-    BufferDesc, PillRenderer, PipelineV2Desc, Renderer, RendererBufferHandle, RendererCameraHandle,
-    RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererPipelineV2Handle,
-    RendererTextureHandle, ShaderDesc,
+    BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, Renderer, RendererBufferHandle,
+    RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle,
+    RendererPipelineV2Handle, RendererTextureHandle, ShaderDesc,
 };
 
 pub use render_queue::{

@@ -16,9 +16,10 @@ use std::rc::Rc;
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, BufferDesc, CameraComponent,
     ComponentStorage, EntityHandle, MaterialParameterMap, MaterialTextureMap, MeshData,
-    PillRenderer, PipelineV2Desc, RenderQueueItem, RendererBufferHandle, RendererCameraHandle,
-    RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererPipelineV2Handle,
-    RendererTextureHandle, ShaderDesc, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER,
+    PillRenderer, PipelineV2, PipelineV2Desc, RenderQueueItem, RendererBufferHandle,
+    RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle,
+    RendererPipelineV2Handle, RendererTextureHandle, ShaderDesc, TextureType, TransformComponent,
+    RENDER_QUEUE_KEY_ORDER,
 };
 
 use pill_core::{PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer};
@@ -659,6 +660,7 @@ pub trait Pass {
         encoder: &mut wgpu::CommandEncoder,
         renderer: &Renderer,
         frame: &wgpu::SurfaceTexture,
+        view: &wgpu::TextureView,
     ) -> Result<()>;
 }
 
@@ -1201,7 +1203,7 @@ impl PillRenderer for Renderer {
         Ok(())
     }
 
-    fn create_buffer(&self, desc: BufferDesc) -> Result<RendererBufferHandle> {
+    fn create_buffer(&self, desc: BufferDesc) -> Result<wgpu::Buffer> {
         let aligned_size = ((desc.byte_size + 255) / 256) * 256; // 256B for Metal UBOs
         let buffer = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
             label: desc.label,
@@ -1209,17 +1211,14 @@ impl PillRenderer for Renderer {
             usage: desc.usage,
             mapped_at_creation: false,
         });
-        let handle = unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.buffers.insert(buffer)
-        };
-        Ok(handle)
+        // let handle = unsafe {
+        //     let storage = &mut *self.state.renderer_resource_storage.as_ptr();
+        //     storage.buffers.insert(buffer)
+        // };
+        Ok(buffer)
     }
 
-    fn create_pipeline_v2(
-        &self,
-        desc: PipelineV2Desc,
-    ) -> Result<(RendererPipelineV2Handle, &wgpu::RenderPipeline)> {
+    fn create_pipeline_v2(&self, desc: PipelineV2Desc) -> Result<PipelineV2> {
         /*
         // Example shader pipeline descriptor for factory method
         n_shader = rm->createShader（｛
@@ -1320,25 +1319,10 @@ impl PillRenderer for Renderer {
                 multiview: None,
             });
 
-        let handle: RendererPipelineV2Handle = unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.pipelines_v2.insert(pipeline)
-        };
-
-        // Get a reference to the pipeline from storage
-        let pipeline_ref = unsafe {
-            let storage = &*self.state.renderer_resource_storage.as_ptr();
-            storage.pipelines_v2.get(handle).unwrap()
-        };
-
-        Ok((handle, pipeline_ref))
-    }
-
-    fn get_pipeline_v2(&self, handle: RendererPipelineV2Handle) -> &wgpu::RenderPipeline {
-        unsafe {
-            let storage = &*self.state.renderer_resource_storage.as_ptr();
-            storage.pipelines_v2.get(handle).unwrap()
-        }
+        Ok(PipelineV2 {
+            pipeline,
+            bind_group_layout,
+        })
     }
 
     fn create_mesh(&self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
@@ -1658,7 +1642,7 @@ impl PillRenderer for Renderer {
             },
         };
 
-        let view = frame
+        let view: wgpu::TextureView = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -2161,7 +2145,7 @@ impl PillRenderer for Renderer {
             for pass in &self.state.passes {
                 let label = pass.get_label();
                 timer.begin_context(label);
-                let _ = pass.draw(&mut encoder, self, &frame);
+                let _ = pass.draw(&mut encoder, self, &frame, &view);
                 timer.record(label);
                 timer.end_context()?;
             }
@@ -2224,6 +2208,10 @@ impl Renderer {
 
     pub fn get_surface(&self) -> &wgpu::Surface<'_> {
         &self.ctx.surface
+    }
+
+    pub fn get_surface_view(&self) -> &wgpu::TextureView {
+        &self.state.offscreen_color_texture.texture_view
     }
 
     pub fn get_resource_storage(&self) -> &Rc<RefCell<RendererResourceStorage>> {

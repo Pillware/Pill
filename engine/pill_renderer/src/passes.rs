@@ -1,14 +1,13 @@
 use crate::renderer::{Pass, Renderer};
 use anyhow::Result;
-use pill_engine::internal::{BufferDesc, PillRenderer, PipelineV2Desc, ShaderDesc};
+use pill_engine::internal::{BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc};
 use wgpu::CommandEncoder;
 use wgpu::Queue;
 
 pub struct PassOverlayUV {
     label: String,
-    buffer_handle: Option<pill_engine::internal::RendererBufferHandle>,
-    pipeline_handle: Option<pill_engine::internal::RendererPipelineV2Handle>,
-    bind_group_layout: Option<wgpu::BindGroupLayout>,
+    buffer: Option<wgpu::Buffer>,
+    pipeline: Option<PipelineV2>,
     bind_group: Option<wgpu::BindGroup>,
     rect: [f32; 4],
 }
@@ -17,9 +16,8 @@ impl PassOverlayUV {
     pub fn new(label: &str) -> Self {
         Self {
             label: label.to_string(),
-            buffer_handle: None,
-            pipeline_handle: None,
-            bind_group_layout: None,
+            buffer: None,
+            pipeline: None,
             bind_group: None,
             rect: [0.75, 0.75, 0.95, 0.95],
         }
@@ -35,19 +33,13 @@ impl Pass for PassOverlayUV {
         println!("Initializing pass: {}", self.label);
 
         // Create buffer for overlay rect UBO
-        self.buffer_handle = Some(renderer.create_buffer(BufferDesc {
+        let buffer = renderer.create_buffer(BufferDesc {
             label: Some("overlay_rect_ubo"),
-            byte_size: 256,
+            byte_size: 4 * 32, // 4 floats * 32 bytes per float = 128 bytes, will be aligned to 256 bytes for Metal UBOs
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        })?);
+        })?;
 
-        // Get buffer from RefCell storage and write data
-        let buffer = unsafe {
-            let storage = &*renderer.get_resource_storage().as_ptr();
-            storage.buffers.get(self.buffer_handle.unwrap()).unwrap()
-        };
-
-        let vs_wgsl = r#"
+        let vs = r#"
           @group(0) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
   
           struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -67,51 +59,22 @@ impl Pass for PassOverlayUV {
           }
           "#;
 
-        let fs_wgsl = r#"
+        let fs = r#"
           @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
             return vec4<f32>(uv, 0.0, 0.5);
           }
           "#;
 
-        queue.write_buffer(buffer, 0, bytemuck::bytes_of(&self.rect));
+        queue.write_buffer(&buffer, 0, bytemuck::bytes_of(&self.rect));
 
-        // Create bind group layout and bind group
-        let bind_group_layout =
-            renderer
-                .get_device()
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("overlay_rect_bind_group_layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                        },
-                        count: None,
-                    }],
-                });
-
-        let bind_group = renderer
-            .get_device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("overlay_rect_bind_group"),
-                layout: &bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-            });
-
-        let (pipeline_handle, _pipeline_ref) = renderer.create_pipeline_v2(PipelineV2Desc {
+        let pipeline = renderer.create_pipeline_v2(PipelineV2Desc {
             label: Some("overlay_uv"),
             vs: ShaderDesc {
-                source: vs_wgsl,
+                source: vs,
                 entry_func: "main",
             },
             ps: ShaderDesc {
-                source: fs_wgsl,
+                source: fs,
                 entry_func: "main",
             },
             bindings: vec![wgpu::BindGroupLayoutEntry {
@@ -133,11 +96,19 @@ impl Pass for PassOverlayUV {
             multisample: wgpu::MultisampleState::default(),
         })?;
 
-        // Store pipeline handle
-        self.pipeline_handle = Some(pipeline_handle);
+        let bind_group = renderer
+            .get_device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("overlay_rect_bind_group"),
+                layout: &pipeline.bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
 
-        // Store the bind group layout and bind group
-        self.bind_group_layout = Some(bind_group_layout);
+        // Store pipeline handle
+        self.pipeline = Some(pipeline);
         self.bind_group = Some(bind_group);
 
         Ok(())
@@ -146,14 +117,11 @@ impl Pass for PassOverlayUV {
     fn draw(
         &self,
         encoder: &mut CommandEncoder,
-        renderer: &Renderer,
+        _renderer: &Renderer,
         frame: &wgpu::SurfaceTexture,
+        view: &wgpu::TextureView,
     ) -> Result<()> {
         // Create render pass for this pass using the provided frame
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some(&self.label),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -170,9 +138,7 @@ impl Pass for PassOverlayUV {
         });
 
         // Draw small overlay UV quad in normalized rect via UBO
-        let pipeline_handle = self.pipeline_handle.as_ref().unwrap();
-        let pipeline = renderer.get_pipeline_v2(*pipeline_handle);
-        pass.set_pipeline(pipeline);
+        pass.set_pipeline(&self.pipeline.as_ref().unwrap().pipeline);
         pass.set_bind_group(0, self.bind_group.as_ref().unwrap(), &[]);
         pass.draw(0..6, 0..1);
 

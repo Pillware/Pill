@@ -74,6 +74,11 @@ pub struct PipelineV2Desc<'a> {
 
 // --- Renderer trait definition ---
 
+pub struct PipelineV2 {
+    pub pipeline: wgpu::RenderPipeline,
+    pub bind_group_layout: wgpu::BindGroupLayout,
+}
+
 pub trait PillRenderer {
     fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self
     where
@@ -83,12 +88,8 @@ pub trait PillRenderer {
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
     // Creates a 256B-aligned uniform buffer (COPY_DST) and returns its handle
-    fn create_buffer(&self, desc: BufferDesc) -> Result<RendererBufferHandle>;
-    fn create_pipeline_v2(
-        &self,
-        desc: PipelineV2Desc,
-    ) -> Result<(RendererPipelineV2Handle, &wgpu::RenderPipeline)>;
-    fn get_pipeline_v2(&self, handle: RendererPipelineV2Handle) -> &wgpu::RenderPipeline;
+    fn create_buffer(&self, desc: BufferDesc) -> Result<wgpu::Buffer>;
+    fn create_pipeline_v2(&self, desc: PipelineV2Desc) -> Result<PipelineV2>;
     fn create_mesh(&self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
     fn create_texture(
         &self,
