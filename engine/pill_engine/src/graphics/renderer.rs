@@ -84,7 +84,11 @@ pub trait PillRenderer {
 
     // Creates a 256B-aligned uniform buffer (COPY_DST) and returns its handle
     fn create_buffer(&self, desc: BufferDesc) -> Result<RendererBufferHandle>;
-    fn create_pipeline_v2(&self, desc: PipelineV2Desc) -> Result<RendererPipelineV2Handle>;
+    fn create_pipeline_v2(
+        &self,
+        desc: PipelineV2Desc,
+    ) -> Result<(RendererPipelineV2Handle, &wgpu::RenderPipeline)>;
+    fn get_pipeline_v2(&self, handle: RendererPipelineV2Handle) -> &wgpu::RenderPipeline;
     fn create_mesh(&self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
     fn create_texture(
         &self,

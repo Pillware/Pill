@@ -4,15 +4,24 @@ use pill_engine::internal::{BufferDesc, PillRenderer, PipelineV2Desc, ShaderDesc
 use wgpu::CommandEncoder;
 use wgpu::Queue;
 
-/// A dummy pass implementation for testing and development
 pub struct PassOverlayUV {
     label: String,
+    buffer_handle: Option<pill_engine::internal::RendererBufferHandle>,
+    pipeline_handle: Option<pill_engine::internal::RendererPipelineV2Handle>,
+    bind_group_layout: Option<wgpu::BindGroupLayout>,
+    bind_group: Option<wgpu::BindGroup>,
+    rect: [f32; 4],
 }
 
 impl PassOverlayUV {
     pub fn new(label: &str) -> Self {
         Self {
             label: label.to_string(),
+            buffer_handle: None,
+            pipeline_handle: None,
+            bind_group_layout: None,
+            bind_group: None,
+            rect: [0.75, 0.75, 0.95, 0.95],
         }
     }
 }
@@ -25,17 +34,18 @@ impl Pass for PassOverlayUV {
     fn init(&mut self, queue: &wgpu::Queue, renderer: &Renderer) -> Result<()> {
         println!("Initializing pass: {}", self.label);
 
-        // TODO: create whole overlay_uv pass using factory methods from PillRenderer
-        let rect = [0.75, 0.75, 0.95, 0.95];
-        let buffer_handle = renderer.create_buffer(BufferDesc {
+        // Create buffer for overlay rect UBO
+        self.buffer_handle = Some(renderer.create_buffer(BufferDesc {
             label: Some("overlay_rect_ubo"),
             byte_size: 256,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        })?;
+        })?);
 
-        // Get buffer from RefCell storage
-        let storage = renderer.get_resource_storage().borrow();
-        let buffer = storage.buffers.get(buffer_handle).unwrap();
+        // Get buffer from RefCell storage and write data
+        let buffer = unsafe {
+            let storage = &*renderer.get_resource_storage().as_ptr();
+            storage.buffers.get(self.buffer_handle.unwrap()).unwrap()
+        };
 
         let vs_wgsl = r#"
           @group(0) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
@@ -63,9 +73,38 @@ impl Pass for PassOverlayUV {
           }
           "#;
 
-        queue.write_buffer(&buffer, 0, bytemuck::bytes_of(&rect));
+        queue.write_buffer(buffer, 0, bytemuck::bytes_of(&self.rect));
 
-        let _pipeline_handle = renderer.create_pipeline_v2(PipelineV2Desc {
+        // Create bind group layout and bind group
+        let bind_group_layout =
+            renderer
+                .get_device()
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("overlay_rect_bind_group_layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
+                        },
+                        count: None,
+                    }],
+                });
+
+        let bind_group = renderer
+            .get_device()
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("overlay_rect_bind_group"),
+                layout: &bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
+
+        let (pipeline_handle, _pipeline_ref) = renderer.create_pipeline_v2(PipelineV2Desc {
             label: Some("overlay_uv"),
             vs: ShaderDesc {
                 source: vs_wgsl,
@@ -94,11 +133,48 @@ impl Pass for PassOverlayUV {
             multisample: wgpu::MultisampleState::default(),
         })?;
 
+        // Store pipeline handle
+        self.pipeline_handle = Some(pipeline_handle);
+
+        // Store the bind group layout and bind group
+        self.bind_group_layout = Some(bind_group_layout);
+        self.bind_group = Some(bind_group);
+
         Ok(())
     }
 
-    fn draw(&self, encoder: &mut CommandEncoder, renderer: &Renderer) -> Result<()> {
-        // println!("Rendering dummy pass: {}", self.label);
+    fn draw(
+        &self,
+        encoder: &mut CommandEncoder,
+        renderer: &Renderer,
+        frame: &wgpu::SurfaceTexture,
+    ) -> Result<()> {
+        // Create render pass for this pass using the provided frame
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(&self.label),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        // Draw small overlay UV quad in normalized rect via UBO
+        let pipeline_handle = self.pipeline_handle.as_ref().unwrap();
+        let pipeline = renderer.get_pipeline_v2(*pipeline_handle);
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, self.bind_group.as_ref().unwrap(), &[]);
+        pass.draw(0..6, 0..1);
 
         Ok(())
     }
