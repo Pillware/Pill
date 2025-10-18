@@ -647,6 +647,12 @@ struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
     }
 }
 
+pub trait Pass {
+    fn get_label(&self) -> &str;
+    fn init(&mut self, queue: &wgpu::Queue, pill_renderer: &mut Renderer);
+    fn render(&self, encoder: &mut wgpu::CommandEncoder) -> Result<(), Box<dyn std::error::Error>>;
+}
+
 pub struct DeviceContext {
     config: config::Config,
     // Window
@@ -661,6 +667,7 @@ pub struct DeviceContext {
 }
 
 pub struct State {
+    passes: Vec<Box<dyn Pass>>,
     egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
     // Resources and GPU objects moved from ctor into here explicitly
     renderer_resource_storage: RendererResourceStorage,
@@ -1225,6 +1232,7 @@ impl PillRenderer for Renderer {
                     });
 
             State {
+                passes: vec![],
                 // Other
                 egui_renderer,
                 // Resources
