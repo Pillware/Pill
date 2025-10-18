@@ -3,7 +3,8 @@
 // https://github.com/emilk/egui/discussions/3067
 
 use crate::{
-    passes::PassOverlayUV,
+    pass_overlay_logo::PassOverlayLogo,
+    pass_overlay_uv::PassOverlayUV,
     renderer_resource_storage::RendererResourceStorage,
     resources::{
         RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture, Vertex,
@@ -109,144 +110,14 @@ fn create_render_target(
         sampler,
     }
 }
-// Overlay (UV gradient quad) resources grouped for clarity
+// Overlay quad resources grouped for clarity
 struct OverlayResources {
     pipeline: wgpu::RenderPipeline,
     rect_bind_group_layout: wgpu::BindGroupLayout,
     rect_bind_group: wgpu::BindGroup,
     rect_buffer: wgpu::Buffer,
 }
-
-// KISS helper: build overlay pipeline, UBO layout/buffer, and bind group
-fn create_overlay_uv(
-    ctx: &DeviceContext,
-    surface_format: wgpu::TextureFormat,
-    rect: [f32; 4],
-) -> OverlayResources {
-    let overlay_vs_wgsl = r#"
-@group(0) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
-
-struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
-@vertex fn main(@builtin(vertex_index) vi: u32) -> VSOut {
-  var unit = array<vec2<f32>, 6>(
-    vec2<f32>(-1.0, -1.0), vec2<f32>( 1.0, -1.0), vec2<f32>( 1.0,  1.0),
-    vec2<f32>( 1.0,  1.0), vec2<f32>(-1.0,  1.0), vec2<f32>(-1.0, -1.0)
-  );
-  let p = unit[vi];  // [-1,1] NDC space
-  let s = p*0.5+0.5; // [0,1] screen space
-  let r = URect.xy + s * (URect.zw - URect.xy); // move by rect [0,1]
-  let ndc = r*2.0-1.0; // [-1,1] NDC space
-  var out: VSOut;
-  out.pos = vec4<f32>(ndc.x, ndc.y, 0.0, 1.0);
-  out.uv = s;
-  return out;
-}
-"#;
-    let overlay_fs_wgsl = r#"
-@fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-  return vec4<f32>(uv, 0.0, 0.5);
-}
-"#;
-
-    let overlay_vs = ctx
-        .device
-        .create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("overlay_vs"),
-            source: wgpu::ShaderSource::Wgsl(overlay_vs_wgsl.into()),
-        });
-    let overlay_fs = ctx
-        .device
-        .create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("overlay_fs"),
-            source: wgpu::ShaderSource::Wgsl(overlay_fs_wgsl.into()),
-        });
-
-    let overlay_rect_bind_group_layout =
-        ctx.device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("overlay_rect_bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                    },
-                    count: None,
-                }],
-            });
-    let overlay_pipeline_layout =
-        ctx.device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("overlay_pl"),
-                bind_group_layouts: &[&overlay_rect_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-    // No vertex buffer layout needed; vertices are generated procedurally in the vertex shader
-    let overlay_pipeline = ctx
-        .device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("overlay_pipeline"),
-            layout: Some(&overlay_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &overlay_vs,
-                entry_point: "main",
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &overlay_fs,
-                entry_point: "main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: None,
-                ..wgpu::PrimitiveState::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
-    // Apple Metal constant buffer alignment (256 bytes)
-    let overlay_rect_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("overlay_rect_ubo"),
-        size: 256,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    ctx.queue
-        .write_buffer(&overlay_rect_buffer, 0, bytemuck::bytes_of(&rect));
-
-    let overlay_rect_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("overlay_rect_bg"),
-        layout: &overlay_rect_bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &overlay_rect_buffer,
-                offset: 0,
-                size: Some(std::num::NonZeroU64::new(16).unwrap()),
-            }),
-        }],
-    });
-
-    OverlayResources {
-        pipeline: overlay_pipeline,
-        rect_bind_group_layout: overlay_rect_bind_group_layout,
-        rect_bind_group: overlay_rect_bind_group,
-        rect_buffer: overlay_rect_buffer,
-    }
-}
-
-// Overlay (UV gradient quad) resources grouped for clarity
+// Overlay quad resources grouped for clarity
 struct TextureOverlayResources {
     pipeline: wgpu::RenderPipeline,
     rect_bind_group_layout: wgpu::BindGroupLayout,
@@ -256,210 +127,6 @@ struct TextureOverlayResources {
     material_bind_group_layout: wgpu::BindGroupLayout,
     material_bind_group: wgpu::BindGroup,
     material_tint_buffer: wgpu::Buffer,
-}
-// KISS helper: build overlay pipeline, UBO layout/buffer, and bind group
-fn create_overlay_logo(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    surface_format: wgpu::TextureFormat,
-    texture_handle: RendererTextureHandle,
-    storage: &RendererResourceStorage,
-    rect: [f32; 4],
-) -> TextureOverlayResources {
-    let overlay_vs_wgsl = r#"
-@group(1) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
-
-struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
-@vertex fn main(@builtin(vertex_index) vi: u32) -> VSOut {
-    var unit = array<vec2<f32>, 6>(
-        vec2<f32>(-1.0, -1.0), vec2<f32>( 1.0, -1.0), vec2<f32>( 1.0,  1.0),
-        vec2<f32>( 1.0,  1.0), vec2<f32>(-1.0,  1.0), vec2<f32>(-1.0, -1.0)
-        );
-        let p = unit[vi];  // [-1,1] NDC space
-        let s = p*0.5+0.5; // [0,1] screen space
-        let r = URect.xy + s * (URect.zw - URect.xy); // move by rect [0,1]
-        let ndc = r*2.0-1.0; // [-1,1] NDC space
-        var out: VSOut;
-        out.pos = vec4<f32>(ndc.x, ndc.y, 0.0, 1.0);
-        out.uv = vec2<f32>(s.x, 1.0 - s.y);
-        return out;
-        }
-        "#;
-
-    let overlay_fs_wgsl = r#"
-@group(0) @binding(0) var tex: texture_2d<f32>;
-@group(0) @binding(1) var smp: sampler;
-@group(0) @binding(2) var<uniform> UTint: vec4<f32>;
-@fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-    let c = textureSample(tex, smp, uv);
-    return c * UTint;
-}
-"#;
-
-    let overlay_vs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("overlay_vs"),
-        source: wgpu::ShaderSource::Wgsl(overlay_vs_wgsl.into()),
-    });
-    let overlay_fs = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("overlay_fs"),
-        source: wgpu::ShaderSource::Wgsl(overlay_fs_wgsl.into()),
-    });
-
-    // Group 0: material (texture + sampler + tint)
-    let overlay_material_bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("overlay_logo_material_bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                    },
-                    count: None,
-                },
-            ],
-        });
-    // Group 1: rect UBO
-    let overlay_rect_bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("overlay_rect_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                },
-                count: None,
-            }],
-        });
-    let overlay_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("overlay_pl"),
-        bind_group_layouts: &[
-            &overlay_material_bind_group_layout,
-            &overlay_rect_bind_group_layout,
-        ],
-        push_constant_ranges: &[],
-    });
-
-    // No vertex buffer layout needed; vertices are generated procedurally in the vertex shader
-    let overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("overlay_pipeline"),
-        layout: Some(&overlay_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &overlay_vs,
-            entry_point: "main",
-            buffers: &[],
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &overlay_fs,
-            entry_point: "main",
-            targets: &[Some(wgpu::ColorTargetState {
-                format: surface_format,
-                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            cull_mode: None,
-            ..wgpu::PrimitiveState::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-    });
-
-    // Apple Metal constant buffer alignment (256 bytes)
-    let overlay_rect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("overlay_rect_ubo"),
-        size: 256,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    queue.write_buffer(&overlay_rect_buffer, 0, bytemuck::bytes_of(&rect));
-
-    let overlay_rect_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("overlay_rect_bg"),
-        layout: &overlay_rect_bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &overlay_rect_buffer,
-                offset: 0,
-                size: Some(std::num::NonZeroU64::new(16).unwrap()),
-            }),
-        }],
-    });
-
-    let tex = storage
-        .textures
-        .get(texture_handle)
-        .expect("logo texture handle invalid");
-    let logo_texture_view = &tex.texture_view;
-    let logo_sampler = &tex.sampler;
-    let tint_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("overlay_logo_tint"),
-        size: 256,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-    queue.write_buffer(&tint_buffer, 0, bytemuck::bytes_of(&tint));
-
-    let overlay_material_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("overlay_logo_material_bg"),
-        layout: &overlay_material_bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(logo_texture_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(logo_sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &tint_buffer,
-                    offset: 0,
-                    size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                }),
-            },
-        ],
-    });
-
-    TextureOverlayResources {
-        pipeline: overlay_pipeline,
-        rect_bind_group_layout: overlay_rect_bind_group_layout,
-        rect_bind_group: overlay_rect_bind_group,
-        rect_buffer: overlay_rect_buffer,
-        material_bind_group_layout: overlay_material_bind_group_layout,
-        material_bind_group: overlay_material_bind_group,
-        material_tint_buffer: tint_buffer,
-    }
 }
 
 // KISS helper: build overlay pipeline, UBO layout/buffer, and bind group
@@ -701,9 +368,10 @@ pub struct State {
     composite_bind_group: wgpu::BindGroup,
 
     // These look like could be combined into OverlayRenderer, but also good case for user submiter pass API
-    overlay_uv: OverlayResources, // Overlay (UV gradient quad in top-right)
-    overlay_logo: TextureOverlayResources, // Overlay (Logo in bot-right)
+    // overlay_uv: OverlayResources, // Overlay (UV gradient quad in top-right)
+    // overlay_logo: OverlayLogoResources, // Overlay (Logo in bot-right)
     overlay_depth: TextureOverlayResources, // Overlay (Depth in top-right)
+    tex_logo: RendererTextureHandle,
 }
 
 pub struct Renderer {
@@ -1062,41 +730,6 @@ impl PillRenderer for Renderer {
                 ],
             });
 
-            let (rect, overlay_rect_bind_group_layout, overlay_pipeline) =
-                create_overlay_uv_pass_inline(&ctx);
-
-            // Apple Metal constant buffer alignment (256 bytes)
-            let overlay_rect_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("overlay_rect_ubo"),
-                size: 256,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            ctx.queue
-                .write_buffer(&overlay_rect_buffer, 0, bytemuck::bytes_of(&rect));
-
-            let overlay_rect_bind_group =
-                ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("overlay_rect_bg"),
-                    layout: &overlay_rect_bind_group_layout,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: &overlay_rect_buffer,
-                            offset: 0,
-                            size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                        }),
-                    }],
-                });
-
-            let overlay_uv = OverlayResources {
-                pipeline: overlay_pipeline,
-                rect_bind_group_layout: overlay_rect_bind_group_layout,
-                rect_bind_group: overlay_rect_bind_group,
-                rect_buffer: overlay_rect_buffer,
-            };
-            // OVERLAY UV END
-
             // Ideally Client submitted pass via API
             // Create logo texture via renderer API and pass handle into overlay factory
             let logo_image = image::open(
@@ -1104,7 +737,7 @@ impl PillRenderer for Renderer {
                         )
                         .expect("failed to load overlay logo image");
 
-            let logo_handle = {
+            let tex_logo = {
                 let tex = RendererTexture::new_texture(
                     &ctx.device,
                     &ctx.queue,
@@ -1117,15 +750,15 @@ impl PillRenderer for Renderer {
             };
             // Overlay logo pipeline (small quad)
             // res: 1024 × 320, 1.0 x 0.3
-            let h: f32 = 0.04;
-            let overlay_logo = create_overlay_logo(
-                &ctx.device,
-                &ctx.queue,
-                ctx.surface_configuration.format,
-                logo_handle,
-                &renderer_resource_storage,
-                [0.98 - 3. * h, 0.02, 0.98, 0.02 + h], // bottom right
-            );
+            // let h: f32 = 0.04;
+            // let overlay_logo = create_overlay_logo(
+            //     &ctx.device,
+            //     &ctx.queue,
+            //     ctx.surface_configuration.format,
+            //     tex_logo,
+            //     &renderer_resource_storage,
+            //     [0.98 - 3. * h, 0.02, 0.98, 0.02 + h], // bottom right
+            // );
 
             let overlay_depth = create_overlay_depth(
                 &ctx.device,
@@ -1177,9 +810,10 @@ impl PillRenderer for Renderer {
                 composite_pipeline,
                 composite_bind_group,
                 // Overlays
-                overlay_uv,
-                overlay_logo,
+                // overlay_uv,
+                // overlay_logo,
                 overlay_depth,
+                tex_logo,
             }
         };
 
@@ -1190,6 +824,11 @@ impl PillRenderer for Renderer {
         self.state
             .passes
             .push(Box::new(PassOverlayUV::new("overlay_uv")));
+
+        self.state.passes.push(Box::new(PassOverlayLogo::new(
+            "overlay_logo",
+            self.state.tex_logo,
+        )));
 
         // Initialize passes - call init on each pass
         let queue = &self.ctx.queue;
@@ -1273,20 +912,29 @@ impl PillRenderer for Renderer {
                 source: wgpu::ShaderSource::Wgsl(desc.ps.source.into()),
             });
 
-        let bind_group_layout =
-            self.ctx
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some(format!("{}{}", desc.label.unwrap_or("program"), "_bgl").as_str()),
-                    entries: &desc.bindings,
-                });
+        // Create multiple bind group layouts
+        let mut bind_group_layouts = Vec::new();
+        for (i, bindings) in desc.bind_groups.iter().enumerate() {
+            let layout =
+                self.ctx
+                    .device
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some(
+                            format!("{}{}_bgl_{}", desc.label.unwrap_or("program"), "_bgl", i)
+                                .as_str(),
+                        ),
+                        entries: bindings,
+                    });
+            bind_group_layouts.push(layout);
+        }
 
+        // Create pipeline layout with all bind groups
         let pipeline_layout =
             self.ctx
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("overlay_pl"),
-                    bind_group_layouts: &[&bind_group_layout],
+                    bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(),
                     push_constant_ranges: &[],
                 });
 
@@ -1321,7 +969,7 @@ impl PillRenderer for Renderer {
 
         Ok(PipelineV2 {
             pipeline,
-            bind_group_layout,
+            bind_group_layouts,
         })
     }
 
@@ -2119,10 +1767,10 @@ impl PillRenderer for Renderer {
             rpass.draw(0..6, 0..1);
 
             // Draw logo overlay (bind material at group 0 and rect at group 1)
-            rpass.set_pipeline(&self.state.overlay_logo.pipeline);
-            rpass.set_bind_group(0, &self.state.overlay_logo.material_bind_group, &[]);
-            rpass.set_bind_group(1, &self.state.overlay_logo.rect_bind_group, &[]);
-            rpass.draw(0..6, 0..1);
+            // rpass.set_pipeline(&self.state.overlay_logo.pipeline);
+            // rpass.set_bind_group(0, &self.state.overlay_logo.material_bind_group, &[]);
+            // rpass.set_bind_group(1, &self.state.overlay_logo.rect_bind_group, &[]);
+            // rpass.draw(0..6, 0..1);
 
             timer.record("Encode overlay passes");
         }

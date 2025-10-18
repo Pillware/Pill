@@ -38,6 +38,7 @@ impl Pass for PassOverlayUV {
             byte_size: 4 * 32, // 4 floats * 32 bytes per float = 128 bytes, will be aligned to 256 bytes for Metal UBOs
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         })?;
+        queue.write_buffer(&buffer, 0, bytemuck::bytes_of(&self.rect));
 
         let vs = r#"
           @group(0) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
@@ -65,8 +66,6 @@ impl Pass for PassOverlayUV {
           }
           "#;
 
-        queue.write_buffer(&buffer, 0, bytemuck::bytes_of(&self.rect));
-
         let pipeline = renderer.create_pipeline_v2(PipelineV2Desc {
             label: Some("overlay_uv"),
             vs: ShaderDesc {
@@ -77,7 +76,7 @@ impl Pass for PassOverlayUV {
                 source: fs,
                 entry_func: "main",
             },
-            bindings: vec![wgpu::BindGroupLayoutEntry {
+            bind_groups: vec![vec![wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
@@ -86,7 +85,7 @@ impl Pass for PassOverlayUV {
                     min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
                 },
                 count: None,
-            }],
+            }]],
             targets: &[Some(wgpu::ColorTargetState {
                 format: renderer.get_surface_format(),
                 blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
@@ -100,7 +99,7 @@ impl Pass for PassOverlayUV {
             .get_device()
             .create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("overlay_rect_bind_group"),
-                layout: &pipeline.bind_group_layout,
+                layout: &pipeline.bind_group_layouts[0],
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
                     resource: buffer.as_entire_binding(),
@@ -118,7 +117,7 @@ impl Pass for PassOverlayUV {
         &self,
         encoder: &mut CommandEncoder,
         _renderer: &Renderer,
-        frame: &wgpu::SurfaceTexture,
+        _frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
     ) -> Result<()> {
         // Create render pass for this pass using the provided frame

@@ -66,7 +66,7 @@ pub struct PipelineV2Desc<'a> {
     pub label: Option<&'a str>,
     pub vs: ShaderDesc<'a>,
     pub ps: ShaderDesc<'a>,
-    pub bindings: Vec<wgpu::BindGroupLayoutEntry>,
+    pub bind_groups: Vec<Vec<wgpu::BindGroupLayoutEntry>>,
     pub targets: &'a [Option<wgpu::ColorTargetState>],
     pub depth_stencil: Option<wgpu::DepthStencilState>,
     pub multisample: wgpu::MultisampleState,
@@ -76,7 +76,7 @@ pub struct PipelineV2Desc<'a> {
 
 pub struct PipelineV2 {
     pub pipeline: wgpu::RenderPipeline,
-    pub bind_group_layout: wgpu::BindGroupLayout,
+    pub bind_group_layouts: Vec<wgpu::BindGroupLayout>,
 }
 
 pub trait PillRenderer {
