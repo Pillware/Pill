@@ -13,13 +13,13 @@ pub struct PassOverlayUV {
 }
 
 impl PassOverlayUV {
-    pub fn new(label: &str) -> Self {
+    pub fn new(label: &str, rect: [f32; 4]) -> Self {
         Self {
             label: label.to_string(),
             buffer: None,
             pipeline: None,
             bind_group: None,
-            rect: [0.75, 0.75, 0.95, 0.95],
+            rect: rect,
         }
     }
 }

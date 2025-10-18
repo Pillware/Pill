@@ -18,7 +18,12 @@ pub struct PassOverlayLogo {
 }
 
 impl PassOverlayLogo {
-    pub fn new(label: &str, tex_logo: RendererTextureHandle) -> Self {
+    pub fn new(
+        label: &str,
+        rect: [f32; 4],
+        tint: [f32; 4],
+        tex_logo: RendererTextureHandle,
+    ) -> Self {
         Self {
             label: label.to_string(),
             tex_logo,
@@ -26,8 +31,8 @@ impl PassOverlayLogo {
             pipeline: None,
             bind_group_rect: None,
             bind_group_material: None,
-            rect: [0.25, 0.25, 0.75, 0.75],
-            tint: [1.0, 1.0, 1.0, 1.0],
+            rect: rect,
+            tint: tint,
         }
     }
 }
@@ -39,9 +44,6 @@ impl Pass for PassOverlayLogo {
 
     fn init(&mut self, queue: &wgpu::Queue, renderer: &Renderer) -> Result<()> {
         println!("Initializing pass: {}", self.label);
-
-        let h: f32 = 0.04;
-        self.rect = [0.98 - 3. * h, 0.02, 0.98, 0.02 + h]; // bottom right
 
         // Create buffer for overlay rect UBO
         let buffer = renderer.create_buffer(BufferDesc {

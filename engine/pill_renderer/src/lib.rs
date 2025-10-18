@@ -3,6 +3,7 @@
 pub mod egui;
 pub mod instance;
 pub mod mesh_drawer;
+pub mod pass_overlay_depth;
 pub mod pass_overlay_logo;
 pub mod pass_overlay_uv;
 pub mod renderer;
