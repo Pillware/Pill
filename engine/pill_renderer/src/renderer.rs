@@ -3,6 +3,7 @@
 // https://github.com/emilk/egui/discussions/3067
 
 use crate::{
+    pass_compose::PassCompose,
     pass_overlay_depth::PassOverlayDepth,
     pass_overlay_logo::PassOverlayLogo,
     pass_overlay_uv::PassOverlayUV,
@@ -34,7 +35,7 @@ use naga::back::wgsl;
 use naga::front::glsl;
 
 use anyhow::{Error, Result};
-use log::info;
+use log::{error, info};
 
 use crate::egui::EguiRenderer;
 use image::GenericImageView;
@@ -146,7 +147,7 @@ pub struct State {
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: Arc<RendererTexture>,
-    offscreen_color_texture: RendererTexture,
+    offscreen_color_texture: Arc<RendererTexture>,
     // Per-frame dynamic UBO ring (Milestone 5)
     per_draw_stride: u64,
     per_draw_capacity: u64, // in elements
@@ -156,10 +157,6 @@ pub struct State {
     // Prebuilt PSO (static pipeline)
     // [SIMILAR] Prebuilt once; no per-draw pipeline churn per TALK
     default_pipeline: RendererPipeline,
-    // Composition (Milestone 6)
-    composite_bind_group_layout: wgpu::BindGroupLayout,
-    composite_pipeline: wgpu::RenderPipeline,
-    composite_bind_group: wgpu::BindGroup,
     // resources
     tex_logo: RendererTextureHandle,
 }
@@ -315,13 +312,13 @@ impl PillRenderer for Renderer {
             let depth_format = wgpu::TextureFormat::Depth32Float;
 
             // Milestone 6: Create offscreen color target (RENDER_ATTACHMENT | TEXTURE_BINDING)
-            let offscreen_color_texture = create_render_target(
+            let offscreen_color_texture = Arc::new(create_render_target(
                 &ctx.device,
                 color_format,
                 ctx.surface_configuration.width,
                 ctx.surface_configuration.height,
                 "offscreen_color",
-            );
+            ));
 
             let egui_renderer = EguiRenderer::new(
                 &ctx.device,
@@ -419,124 +416,6 @@ impl PillRenderer for Renderer {
                         }],
                     });
 
-            // Milestone 6: Composition pipeline (fullscreen triangle sampling offscreen texture)
-            let comp_vs_wgsl = r#"
-            struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
-            @vertex fn main(@builtin(vertex_index) vi: u32) -> VSOut {
-              var pos = array<vec2<f32>, 3>(
-                vec2<f32>(-1.0, -3.0),
-                vec2<f32>( 3.0,  1.0),
-                vec2<f32>(-1.0,  1.0)
-              );
-              var tuv = array<vec2<f32>, 3>(
-                vec2<f32>(0.0, 2.0),
-                vec2<f32>(2.0, 0.0),
-                vec2<f32>(0.0, 0.0)
-              );
-              var o: VSOut;
-              o.pos = vec4<f32>(pos[vi], 0.0, 1.0);
-              o.uv = tuv[vi];
-              return o;
-            }
-            "#;
-            let comp_fs_wgsl = r#"
-            @group(0) @binding(0) var t_src: texture_2d<f32>;
-            @group(0) @binding(1) var s_src: sampler;
-            @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-              let hdr = textureSample(t_src, s_src, uv).rgb;
-              // Reinhard tone mapping; output remains in linear space. The sRGB swapchain will encode.
-              let ldr = hdr / (1.0 + hdr);
-              return vec4<f32>(ldr, 1.0);
-            }
-            "#;
-            let comp_vs = ctx
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("compose_vs"),
-                    source: wgpu::ShaderSource::Wgsl(comp_vs_wgsl.into()),
-                });
-            let comp_fs = ctx
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("compose_fs"),
-                    source: wgpu::ShaderSource::Wgsl(comp_fs_wgsl.into()),
-                });
-            let composite_bind_group_layout =
-                ctx.device
-                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("compose_bgl"),
-                        entries: &[
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 0,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Texture {
-                                    multisampled: false,
-                                    view_dimension: wgpu::TextureViewDimension::D2,
-                                    sample_type: wgpu::TextureSampleType::Float {
-                                        filterable: true,
-                                    },
-                                },
-                                count: None,
-                            },
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 1,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                                count: None,
-                            },
-                        ],
-                    });
-            let comp_pipeline_layout =
-                ctx.device
-                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("compose_pl"),
-                        bind_group_layouts: &[&composite_bind_group_layout],
-                        push_constant_ranges: &[],
-                    });
-            let composite_pipeline =
-                ctx.device
-                    .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some("compose_pipeline"),
-                        layout: Some(&comp_pipeline_layout),
-                        vertex: wgpu::VertexState {
-                            module: &comp_vs,
-                            entry_point: "main",
-                            buffers: &[],
-                            compilation_options: Default::default(),
-                        },
-                        fragment: Some(wgpu::FragmentState {
-                            module: &comp_fs,
-                            entry_point: "main",
-                            targets: &[Some(wgpu::ColorTargetState {
-                                // Composition writes to the swapchain view; target must match surface format
-                                format: ctx.surface_configuration.format,
-                                blend: Some(wgpu::BlendState::REPLACE),
-                                write_mask: wgpu::ColorWrites::ALL,
-                            })],
-                            compilation_options: Default::default(),
-                        }),
-                        primitive: wgpu::PrimitiveState::default(),
-                        depth_stencil: None,
-                        multisample: wgpu::MultisampleState::default(),
-                        multiview: None,
-                    });
-            let composite_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("compose_bg"),
-                layout: &composite_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &offscreen_color_texture.texture_view,
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&offscreen_color_texture.sampler),
-                    },
-                ],
-            });
-
             // Ideally Client submitted pass via API
             // Create logo texture via renderer API and pass handle into overlay factory
             let logo_image = image::open(
@@ -576,10 +455,6 @@ impl PillRenderer for Renderer {
                 per_draw_bind_group: None,
                 // Prebuilt PSO
                 default_pipeline,
-                // Composition
-                composite_bind_group_layout,
-                composite_pipeline,
-                composite_bind_group,
                 // Overlays
                 tex_logo,
             }
@@ -590,6 +465,11 @@ impl PillRenderer for Renderer {
 
     fn init(&mut self) -> Result<()> {
         self.state.passes.clear();
+
+        self.state.passes.push(Box::new(PassCompose::new(
+            "compose",
+            self.state.offscreen_color_texture.clone(),
+        )));
 
         self.state.passes.push(Box::new(PassOverlayUV::new(
             "overlay_uv",
@@ -986,39 +866,16 @@ impl PillRenderer for Renderer {
             );
 
             // ================================
-            // Clear and re-initialize resizable passes
-            let _ = self.init();
-
-            // ================================
-            // Recreate offscreen color target and its bind group
-            self.state.offscreen_color_texture = create_render_target(
+            // Recreate offscreen color target and reinitialize passes
+            self.state.offscreen_color_texture = Arc::new(create_render_target(
                 &self.ctx.device,
                 self.state.color_format,
                 self.ctx.surface_configuration.width,
                 self.ctx.surface_configuration.height,
                 "offscreen_color",
-            );
-            self.state.composite_bind_group =
-                self.ctx
-                    .device
-                    .create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("compose_bg"),
-                        layout: &self.state.composite_bind_group_layout,
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(
-                                    &self.state.offscreen_color_texture.texture_view,
-                                ),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 1,
-                                resource: wgpu::BindingResource::Sampler(
-                                    &self.state.offscreen_color_texture.sampler,
-                                ),
-                            },
-                        ],
-                    });
+            ));
+            // Reinitialize all passes (including compose pass)
+            let _ = self.init();
             // Old offscreen texture/view/sampler are dropped when replaced; wgpu defers actual GPU resource
             // destruction until safe. See optional early reclamation via device.poll:
             // https://docs.rs/wgpu/latest/wgpu/struct.Device.html#method.poll
@@ -1452,31 +1309,6 @@ impl PillRenderer for Renderer {
             timer.record("Encode offscreen pass");
         }
         timer.end_context()?; // End "Offscreen pass"
-
-        // Composition pass: sample T0 and draw to swapchain view, then overlay UV quad
-        {
-            timer.begin_context("Fullscreen resolve pass");
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("m6_compose_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            rpass.set_pipeline(&self.state.composite_pipeline);
-            rpass.set_bind_group(0, &self.state.composite_bind_group, &[]);
-            rpass.draw(0..3, 0..1);
-
-            timer.record("Encode compose pass");
-        }
-        timer.end_context()?; // End "Compose pass"
 
         self.ctx.queue.submit([encoder.finish()]);
         timer.record("Submit scene+compose passes");

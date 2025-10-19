@@ -3,6 +3,7 @@
 pub mod egui;
 pub mod instance;
 pub mod mesh_drawer;
+pub mod pass_compose;
 pub mod pass_overlay_depth;
 pub mod pass_overlay_logo;
 pub mod pass_overlay_uv;
@@ -15,6 +16,7 @@ pub mod resources;
 pub use renderer::*;
 
 pub use instance::Instance;
+pub use pass_compose::PassCompose;
 pub use pass_overlay_uv::PassOverlayUV;
 
 pub use renderer_resource_storage::RendererResourceStorage;
