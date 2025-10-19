@@ -335,7 +335,6 @@ impl PillRenderer for Renderer {
 
             struct PerDraw {
               mvp: mat4x4<f32>,
-              model: mat4x4<f32>,
               tint: vec4<f32>,
             };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
@@ -364,7 +363,6 @@ impl PillRenderer for Renderer {
             // Per-draw (set 3): supports per-entity tint for M4
             struct PerDraw {
               mvp: mat4x4<f32>,
-              model: mat4x4<f32>,
               tint: vec4<f32>,
             };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
@@ -410,7 +408,7 @@ impl PillRenderer for Renderer {
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Uniform,
                                 has_dynamic_offset: true,
-                                min_binding_size: Some(std::num::NonZeroU64::new(144).unwrap()),
+                                min_binding_size: Some(std::num::NonZeroU64::new(80).unwrap()),
                             },
                             count: None,
                         }],
@@ -447,7 +445,7 @@ impl PillRenderer for Renderer {
                 depth_texture: Arc::new(depth_texture),
                 offscreen_color_texture,
                 // Per-frame UBO ring init
-                per_draw_stride: 256,
+                per_draw_stride: 256, // 80 bytes + 256 byte alignment requirement
                 per_draw_capacity: 0,
                 per_draw_buffer: None,
                 // [SIMILAR] Per-draw dynamic UBO layout with has_dynamic_offset=true per TALK (Milestone 5)
@@ -1192,13 +1190,11 @@ impl PillRenderer for Renderer {
         #[repr(C)]
         #[derive(Copy, Clone)]
         struct PerDrawStd140 {
-            mvp: [[f32; 4]; 4],
-            model: [[f32; 4]; 4],
-            tint: [f32; 4],
+            mvp: [[f32; 4]; 4], // 4x4 MVP matrix (16 floats)
+            tint: [f32; 4],     // RGBA color (4 floats)
         }
         unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
         unsafe impl bytemuck::Pod for PerDrawStd140 {}
-        let model: [[f32; 4]; 4] = cgmath::Matrix4::<f32>::from_scale(1.0).into();
         let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
         let mut staging: Vec<u8> =
             Vec::with_capacity((self.state.per_draw_stride * needed) as usize);
@@ -1207,11 +1203,7 @@ impl PillRenderer for Renderer {
             for b in g.batches.iter_mut() {
                 b.base_offset_u32 = next_offset_u32;
                 for mvp in &b.instances {
-                    let pd = PerDrawStd140 {
-                        mvp: *mvp,
-                        model,
-                        tint,
-                    };
+                    let pd = PerDrawStd140 { mvp: *mvp, tint };
                     staging.extend_from_slice(bytemuck::bytes_of(&pd));
                     let pad = (self.state.per_draw_stride as usize)
                         - std::mem::size_of::<PerDrawStd140>();
