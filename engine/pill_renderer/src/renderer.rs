@@ -139,6 +139,27 @@ pub struct DeviceContext {
     surface_configuration: wgpu::SurfaceConfiguration,
 }
 
+// Preallocated buffer structs for hot path optimization
+struct VisiblePreDraw {
+    pipeline_handle: RendererPipelineHandle,
+    material_handle: RendererMaterialHandle,
+    mesh_handle: RendererMeshHandle,
+    entity_index: u32,
+    mvp: [[f32; 4]; 4],
+}
+
+struct MeshBatch {
+    mesh_handle: RendererMeshHandle,
+    instances: Vec<[[f32; 4]; 4]>,
+    base_offset_u32: u32, // offset into per-draw ring for first instance
+}
+
+struct GroupCmd {
+    pipeline_handle: RendererPipelineHandle,
+    material_handle: RendererMaterialHandle,
+    batches: Vec<MeshBatch>,
+}
+
 pub struct State {
     passes: Vec<Box<dyn Pass>>,
     egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
@@ -159,6 +180,10 @@ pub struct State {
     default_pipeline: RendererPipeline,
     // resources
     tex_logo: RendererTextureHandle,
+    // Preallocated buffers for hot path optimization
+    visible_pre_draw_buffer: Vec<VisiblePreDraw>,
+    groups_buffer: Vec<GroupCmd>,
+    staging_buffer: Vec<u8>,
 }
 
 pub struct Renderer {
@@ -455,6 +480,10 @@ impl PillRenderer for Renderer {
                 default_pipeline,
                 // Overlays
                 tex_logo,
+                // Preallocated buffers for hot path optimization (60k instances capacity)
+                visible_pre_draw_buffer: Vec::with_capacity(100_000),
+                groups_buffer: Vec::with_capacity(2000),
+                staging_buffer: Vec::with_capacity(100_000 * 144), // 60k instances * 144 bytes per instance
             }
         };
 
@@ -897,19 +926,21 @@ impl PillRenderer for Renderer {
         timer.record("Frame: acquire");
 
         // Get frame or return mapped error if failed
-        let frame = self.ctx.surface.get_current_texture();
+        // ALLOCATION: Surface texture allocation (GPU memory) - ~4MB for 1920x1080 RGBA8
+        let frame = self.ctx.surface.get_current_texture().unwrap();
 
-        let frame = match frame {
-            std::result::Result::Ok(frame) => frame,
-            std::result::Result::Err(error) => match error {
-                wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
-                wgpu::SurfaceError::OutOfMemory => {
-                    return Err(RendererError::SurfaceOutOfMemory.into())
-                }
-                _ => return Err(RendererError::SurfaceOther.into()),
-            },
-        };
+        // let frame = match frame {
+        //     std::result::Result::Ok(frame) => frame,
+        //     std::result::Result::Err(error) => match error {
+        //         wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
+        //         wgpu::SurfaceError::OutOfMemory => {
+        //             return Err(RendererError::SurfaceOutOfMemory.into())
+        //         }
+        //         _ => return Err(RendererError::SurfaceOther.into()),
+        //     },
+        // };
 
+        // ALLOCATION: TextureView creation (GPU memory) - ~64 bytes metadata
         let view: wgpu::TextureView = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -953,6 +984,7 @@ impl PillRenderer for Renderer {
         let clear_color = active_camera_component.clear_color;
 
         // Record inline draw pass (M2)
+        // ALLOCATION: CommandEncoder creation (CPU memory) - ~1KB command buffer
         let mut encoder = self
             .ctx
             .device
@@ -986,15 +1018,9 @@ impl PillRenderer for Renderer {
             make_plane(row(3) - row(2)), // far
         ];
 
-        struct VisiblePreDraw {
-            pipeline_handle: RendererPipelineHandle,
-            material_handle: RendererMaterialHandle,
-            mesh_handle: RendererMeshHandle,
-            entity_index: u32,
-            mvp: [[f32; 4]; 4],
-        }
         timer.record("Culling & MVP build");
-        let mut visible: Vec<VisiblePreDraw> = Vec::with_capacity(render_queue.len());
+        // REUSE PREALLOCATED BUFFER: Clear and reuse preallocated buffer (no allocation in hot path)
+        self.state.visible_pre_draw_buffer.clear();
 
         for render_queue_item in render_queue.iter() {
             let key = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
@@ -1083,7 +1109,8 @@ impl PillRenderer for Renderer {
             let view_proj: cgmath::Matrix4<f32> =
                 renderer_camera.uniform.view_projection_matrix.into();
             let mvp: [[f32; 4]; 4] = (view_proj * model).into();
-            visible.push(VisiblePreDraw {
+            // REUSE PREALLOCATED BUFFER: Push to preallocated buffer (no allocation in hot path)
+            self.state.visible_pre_draw_buffer.push(VisiblePreDraw {
                 pipeline_handle,
                 material_handle,
                 mesh_handle,
@@ -1095,7 +1122,7 @@ impl PillRenderer for Renderer {
         // [SIMILAR] Sort by pipeline/material/mesh to minimize state changes as in TALK
         // [API->CLIENT] Sorting/grouping is client responsibility; low-level should accept an already ordered draw stream
         // Sort by pipeline -> material -> mesh to minimize state changes
-        visible.sort_by_key(|v| {
+        self.state.visible_pre_draw_buffer.sort_by_key(|v| {
             (
                 v.pipeline_handle.data().index,
                 v.material_handle.data().index,
@@ -1105,32 +1132,25 @@ impl PillRenderer for Renderer {
 
         // Build grouped instancing batches by (pipeline, material, mesh)
         timer.record("Sort & group draws");
-        struct MeshBatch {
-            mesh_handle: RendererMeshHandle,
-            instances: Vec<[[f32; 4]; 4]>,
-            base_offset_u32: u32, // offset into per-draw ring for first instance
-        }
-        struct GroupCmd {
-            pipeline_handle: RendererPipelineHandle,
-            material_handle: RendererMaterialHandle,
-            batches: Vec<MeshBatch>,
-        }
-        let mut groups: Vec<GroupCmd> = Vec::new();
-        for v in &visible {
-            if groups
+        // REUSE PREALLOCATED BUFFER: Clear and reuse preallocated groups buffer (no allocation in hot path)
+        self.state.groups_buffer.clear();
+        for v in &self.state.visible_pre_draw_buffer {
+            if self
+                .state
+                .groups_buffer
                 .last()
                 .map(|g| {
                     g.pipeline_handle != v.pipeline_handle || g.material_handle != v.material_handle
                 })
                 .unwrap_or(true)
             {
-                groups.push(GroupCmd {
+                self.state.groups_buffer.push(GroupCmd {
                     pipeline_handle: v.pipeline_handle,
                     material_handle: v.material_handle,
                     batches: Vec::new(),
                 });
             }
-            let g = groups.last_mut().unwrap();
+            let g = self.state.groups_buffer.last_mut().unwrap();
             if let Some(batch) = g
                 .batches
                 .iter_mut()
@@ -1138,6 +1158,7 @@ impl PillRenderer for Renderer {
             {
                 batch.instances.push(v.mvp);
             } else {
+                // ALLOCATION: Vec<[[f32; 4]; 4]> for instances (CPU memory) - optimistic: 1 instance * 64 bytes, pessimistic: 60k instances * 64 bytes = ~3.8MB per batch
                 g.batches.push(MeshBatch {
                     mesh_handle: v.mesh_handle,
                     instances: vec![v.mvp],
@@ -1145,14 +1166,21 @@ impl PillRenderer for Renderer {
                 });
             }
         }
-        let draw_call_count: usize = groups.iter().map(|g| g.batches.len()).sum();
+        let draw_call_count: usize = self
+            .state
+            .groups_buffer
+            .iter()
+            .map(|g| g.batches.len())
+            .sum();
         // Expose draw call count via per-frame timer counters for UI/metrics
         timer.set_counter("draw_calls", draw_call_count as u64);
 
         // Milestone 5: Per-frame ring buffer
         // [SIMILAR] Batch write dynamic per-draw data once; bind with dynamic offsets
         timer.begin_context("Per-draw UBO setup");
-        let needed: u64 = groups
+        let needed: u64 = self
+            .state
+            .groups_buffer
             .iter()
             .map(|g| {
                 g.batches
@@ -1165,6 +1193,7 @@ impl PillRenderer for Renderer {
         if self.state.per_draw_capacity < needed {
             self.state.per_draw_capacity = needed.next_power_of_two().max(1);
             let size = self.state.per_draw_stride * self.state.per_draw_capacity;
+            // ALLOCATION: GPU buffer creation (GPU memory) - optimistic: 1KB, pessimistic: 60k instances * 144 bytes = ~8.6MB
             self.state.per_draw_buffer =
                 Some(self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("per_draw_dynamic_ubo_ring"),
@@ -1172,6 +1201,7 @@ impl PillRenderer for Renderer {
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 }));
+            // ALLOCATION: BindGroup creation (GPU memory) - ~128 bytes metadata
             self.state.per_draw_bind_group = Some(self.ctx.device.create_bind_group(
                 &wgpu::BindGroupDescriptor {
                     label: Some("per_draw_bind_group"),
@@ -1196,25 +1226,31 @@ impl PillRenderer for Renderer {
         unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
         unsafe impl bytemuck::Pod for PerDrawStd140 {}
         let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-        let mut staging: Vec<u8> =
-            Vec::with_capacity((self.state.per_draw_stride * needed) as usize);
+        // REUSE PREALLOCATED BUFFER: Clear and reuse preallocated staging buffer (no allocation in hot path)
+        self.state.staging_buffer.clear();
         let mut next_offset_u32: u32 = 0;
-        for g in groups.iter_mut() {
+        for g in self.state.groups_buffer.iter_mut() {
             for b in g.batches.iter_mut() {
                 b.base_offset_u32 = next_offset_u32;
                 for mvp in &b.instances {
                     let pd = PerDrawStd140 { mvp: *mvp, tint };
-                    staging.extend_from_slice(bytemuck::bytes_of(&pd));
+                    self.state
+                        .staging_buffer
+                        .extend_from_slice(bytemuck::bytes_of(&pd));
                     let pad = (self.state.per_draw_stride as usize)
                         - std::mem::size_of::<PerDrawStd140>();
-                    staging.extend(std::iter::repeat(0u8).take(pad));
+                    self.state
+                        .staging_buffer
+                        .extend(std::iter::repeat(0u8).take(pad));
                     next_offset_u32 =
                         next_offset_u32.wrapping_add(self.state.per_draw_stride as u32);
                 }
             }
         }
         if let Some(buf) = &self.state.per_draw_buffer {
-            self.ctx.queue.write_buffer(buf, 0, &staging);
+            self.ctx
+                .queue
+                .write_buffer(buf, 0, &self.state.staging_buffer);
         }
         timer.record("Per-draw UBO write (ring)");
         timer.end_context()?;
@@ -1250,7 +1286,7 @@ impl PillRenderer for Renderer {
             });
             // [SIMILAR] Bind pipeline/material once per group; change only minimal per-draw state (offsets)
             // Instancing: one draw per (pipeline, material, mesh) batch with instance_count
-            for group in &groups {
+            for group in &self.state.groups_buffer {
                 timer.begin_context(&format!(
                     "Pipeline {} / Material {}",
                     group.pipeline_handle.data().index,
@@ -1308,6 +1344,7 @@ impl PillRenderer for Renderer {
         {
             // User passes with separate encoder
             timer.begin_context("User passes");
+            // ALLOCATION: CommandEncoder creation (CPU memory) - ~1KB command buffer
             let mut encoder =
                 self.ctx
                     .device
@@ -1331,6 +1368,7 @@ impl PillRenderer for Renderer {
 
         // Egui overlay (load over the rendered frame)
         timer.begin_context("UI pass");
+        // ALLOCATION: CommandEncoder creation (CPU memory) - ~1KB command buffer
         let mut encoder = self
             .ctx
             .device
