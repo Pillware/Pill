@@ -31,6 +31,7 @@ use pill_core::{PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Ti
 use std::num::NonZeroU32;
 
 use cgmath::{Deg, InnerSpace};
+use glam::{Mat4, Vec3, Vec4};
 use naga::back::wgsl;
 use naga::front::glsl;
 
@@ -929,17 +930,6 @@ impl PillRenderer for Renderer {
         // ALLOCATION: Surface texture allocation (GPU memory) - ~4MB for 1920x1080 RGBA8
         let frame = self.ctx.surface.get_current_texture().unwrap();
 
-        // let frame = match frame {
-        //     std::result::Result::Ok(frame) => frame,
-        //     std::result::Result::Err(error) => match error {
-        //         wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
-        //         wgpu::SurfaceError::OutOfMemory => {
-        //             return Err(RendererError::SurfaceOutOfMemory.into())
-        //         }
-        //         _ => return Err(RendererError::SurfaceOther.into()),
-        //     },
-        // };
-
         // ALLOCATION: TextureView creation (GPU memory) - ~64 bytes metadata
         let view: wgpu::TextureView = frame
             .texture
@@ -996,26 +986,36 @@ impl PillRenderer for Renderer {
         // [DIFF] Only frustum culling here; TALK discusses 2-pass occlusion and broader CPU-driven pipelines
         // [API->CLIENT] Culling, model matrix building, and visible set construction should live in client/high-level renderer
         // Build view before pass: cull and prepare per-draw MVPs
-        let vp_mat: cgmath::Matrix4<f32> = renderer_camera.uniform.view_projection_matrix.into();
-        let m = vp_mat;
-        let row = |i: usize| -> cgmath::Vector4<f32> {
-            // cgmath is column-major; construct row i
-            cgmath::Vector4::new(m.x[i], m.y[i], m.z[i], m.w[i])
+        // SIMD OPTIMIZATION: Use glam for SIMD-accelerated frustum culling
+        let vp_mat: Mat4 =
+            Mat4::from_cols_array_2d(&renderer_camera.uniform.view_projection_matrix);
+
+        // Extract frustum planes using SIMD operations
+        let row3 = vp_mat.row(3); // w row
+        let row0 = vp_mat.row(0); // x row
+        let row1 = vp_mat.row(1); // y row
+        let row2 = vp_mat.row(2); // z row
+
+        // SIMD plane construction: normalize plane equations
+        let make_plane = |plane_vec: Vec4| -> (Vec3, f32) {
+            let normal = Vec3::new(plane_vec.x, plane_vec.y, plane_vec.z);
+            let len = normal.length();
+            if len > 0.0 {
+                let normalized = normal / len;
+                (normalized, plane_vec.w / len)
+            } else {
+                (normal, plane_vec.w)
+            }
         };
-        let make_plane = |v: cgmath::Vector4<f32>| -> (cgmath::Vector3<f32>, f32) {
-            let n = cgmath::Vector3::new(v.x, v.y, v.z);
-            let len = n.magnitude();
-            let normal = if len > 0.0 { n / len } else { n };
-            let d = v.w / if len > 0.0 { len } else { 1.0 };
-            (normal, d)
-        };
+
+        // Frustum planes using SIMD operations
         let planes = [
-            make_plane(row(3) + row(0)), // left
-            make_plane(row(3) - row(0)), // right
-            make_plane(row(3) + row(1)), // bottom
-            make_plane(row(3) - row(1)), // top
-            make_plane(row(3) + row(2)), // near
-            make_plane(row(3) - row(2)), // far
+            make_plane(row3 + row0), // left
+            make_plane(row3 - row0), // right
+            make_plane(row3 + row1), // bottom
+            make_plane(row3 - row1), // top
+            make_plane(row3 + row2), // near
+            make_plane(row3 - row2), // far
         ];
 
         timer.record("Culling & MVP build");
@@ -1045,41 +1045,42 @@ impl PillRenderer for Renderer {
                 .as_ref()
                 .unwrap();
             let model_arr = pill_engine::internal::get_model_matrix(transform);
-            let model: cgmath::Matrix4<f32> = model_arr.into();
+            let model: Mat4 = Mat4::from_cols_array_2d(&model_arr);
 
-            // World AABB from mesh local AABB
+            // World AABB from mesh local AABB using SIMD operations
             let storage = self.state.renderer_resource_storage.borrow();
             let mesh = storage.meshes.get(mesh_handle).unwrap();
-            let local_min =
-                cgmath::Vector3::new(mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2]);
-            let local_max =
-                cgmath::Vector3::new(mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2]);
+            let local_min = Vec3::new(mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2]);
+            let local_max = Vec3::new(mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2]);
+
+            // SIMD AABB corner transformation
             let corners = [
-                cgmath::Vector3::new(local_min.x, local_min.y, local_min.z),
-                cgmath::Vector3::new(local_max.x, local_min.y, local_min.z),
-                cgmath::Vector3::new(local_min.x, local_max.y, local_min.z),
-                cgmath::Vector3::new(local_max.x, local_max.y, local_min.z),
-                cgmath::Vector3::new(local_min.x, local_min.y, local_max.z),
-                cgmath::Vector3::new(local_max.x, local_min.y, local_max.z),
-                cgmath::Vector3::new(local_min.x, local_max.y, local_max.z),
-                cgmath::Vector3::new(local_max.x, local_max.y, local_max.z),
+                Vec3::new(local_min.x, local_min.y, local_min.z),
+                Vec3::new(local_max.x, local_min.y, local_min.z),
+                Vec3::new(local_min.x, local_max.y, local_min.z),
+                Vec3::new(local_max.x, local_max.y, local_min.z),
+                Vec3::new(local_min.x, local_min.y, local_max.z),
+                Vec3::new(local_max.x, local_min.y, local_max.z),
+                Vec3::new(local_min.x, local_max.y, local_max.z),
+                Vec3::new(local_max.x, local_max.y, local_max.z),
             ];
-            let mut world_min = cgmath::Vector3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
-            let mut world_max =
-                cgmath::Vector3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+
+            let mut world_min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
+            let mut world_max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+
+            // SIMD matrix-vector multiplication for corner transformation
             for c in &corners {
-                let p4 = model * cgmath::Vector4::new(c.x, c.y, c.z, 1.0);
-                let p = cgmath::Vector3::new(p4.x, p4.y, p4.z);
-                world_min.x = world_min.x.min(p.x);
-                world_min.y = world_min.y.min(p.y);
-                world_min.z = world_min.z.min(p.z);
-                world_max.x = world_max.x.max(p.x);
-                world_max.y = world_max.y.max(p.y);
-                world_max.z = world_max.z.max(p.z);
+                let p4 = model * Vec4::new(c.x, c.y, c.z, 1.0);
+                let p = Vec3::new(p4.x, p4.y, p4.z);
+                world_min = world_min.min(p);
+                world_max = world_max.max(p);
             }
+
+            // SIMD frustum culling test
             let mut outside = false;
             for (normal, d) in &planes {
-                let p = cgmath::Vector3::new(
+                // SIMD select operation for AABB corner selection
+                let p = Vec3::new(
                     if normal.x >= 0.0 {
                         world_max.x
                     } else {
@@ -1096,6 +1097,7 @@ impl PillRenderer for Renderer {
                         world_min.z
                     },
                 );
+                // SIMD dot product
                 let dist = normal.dot(p) + *d;
                 if dist < 0.0 {
                     outside = true;
@@ -1106,9 +1108,9 @@ impl PillRenderer for Renderer {
                 continue;
             }
 
-            let view_proj: cgmath::Matrix4<f32> =
-                renderer_camera.uniform.view_projection_matrix.into();
-            let mvp: [[f32; 4]; 4] = (view_proj * model).into();
+            let view_proj: Mat4 =
+                Mat4::from_cols_array_2d(&renderer_camera.uniform.view_projection_matrix);
+            let mvp: [[f32; 4]; 4] = (view_proj * model).to_cols_array_2d();
             // REUSE PREALLOCATED BUFFER: Push to preallocated buffer (no allocation in hot path)
             self.state.visible_pre_draw_buffer.push(VisiblePreDraw {
                 pipeline_handle,

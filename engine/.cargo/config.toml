@@ -1,0 +1,16 @@
+[build]
+# Enable SIMD optimizations for math operations
+# This will auto-vectorize cgmath operations when possible
+rustflags = ["-C", "target-cpu=native"]
+
+# Alternative: More conservative SIMD flags
+# rustflags = ["-C", "target-feature=+avx2,+fma"]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-cpu=native"]
