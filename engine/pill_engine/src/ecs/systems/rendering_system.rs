@@ -24,6 +24,13 @@ use crate::config::{
 use crate::ecs::components::render_state_component::RenderStateComponent;
 use crate::resources::{Resource, ResourceLoadType, Texture, TextureType};
 
+// Constants for hot path optimization
+const MAX_RENDERABLES_CAPACITY: usize = 100000; // Maximum expected renderables per frame
+
+// Static preallocated Vec for dirty entities to avoid per-frame allocation
+// SAFETY: Single-threaded rendering system - no concurrency issues
+static mut DIRTY_ENTITIES: Vec<EntityHandle> = Vec::new();
+
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     // One-time bootstrap: register resource types and create default resources
     // Require RenderStateComponent; if missing, panic via unwrap
@@ -33,6 +40,14 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         .boot_done;
     if need_bootstrap {
         init_default_resources(engine)?;
+
+        // Preallocate render queue capacity for hot path optimization
+        engine.render_queue.reserve(MAX_RENDERABLES_CAPACITY); // Reserve space for up to 100k renderables
+
+        // Preallocate static dirty_entities Vec capacity
+        unsafe {
+            DIRTY_ENTITIES.reserve(MAX_RENDERABLES_CAPACITY); // Reserve space for up to 100k entities
+        }
 
         if let Ok(rs) = engine.get_global_component_mut::<RenderStateComponent>() {
             rs.boot_done = true;
@@ -81,67 +96,71 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     // Clear the render queue
     // [SIMILAR] Build and sort a render queue ahead of draw; separates data prep from draw per TALK
     engine.render_queue.clear();
-    engine.render_queue.reserve(200000); // Reserve space for 1000 items
 
     timer.record("Prepare render queue");
 
-    let mut dirty_entities: Vec<EntityHandle> = Vec::new();
+    // Use static preallocated dirty_entities Vec
+    unsafe {
+        DIRTY_ENTITIES.clear(); // Clear and reuse preallocated Vec
 
-    // Phase 1: Sweep components; route transforms needing matrix update to a batch, push clean directly
-    // [SIMILAR] Batch transform updates; avoid per-draw matrix work
-    for (entity_handle, transform_component, mesh_rendering_component) in engine
-        .scene_manager
-        .get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(
-        active_scene_handle,
-    )? {
-        if transform_component.matrix_update_required {
-            // defer update to batch
-            dirty_entities.push(entity_handle);
-            continue;
-        }
-
-        // Push clean (non-dirty) items directly into the render queue
-        // [SIMILAR] Use precomputed render_queue_key (pipeline/material/mesh sorting key)
-        if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
-            let render_queue_item = RenderQueueItem {
-                key: render_queue_key,
-                entity_index: entity_handle.data().index as u32,
-            };
-            engine.render_queue.push(render_queue_item);
-        }
-    }
-
-    // Phase 2: Batch update transforms with matrix_update_required
-    // [RECOMMENDED] Consolidate transform matrix updates in one batch outside of pass
-    if !dirty_entities.is_empty() {
-        timer.begin_context(&format!("Batch update {} transforms", dirty_entities.len()));
-        for entity_handle in &dirty_entities {
-            // Pull the transform component mutably and update matrices
-            if let Ok(transform_component) = engine
+        // Phase 1: Sweep components; route transforms needing matrix update to a batch, push clean directly
+        // [SIMILAR] Batch transform updates; avoid per-draw matrix work
+        for (entity_handle, transform_component, mesh_rendering_component) in
+            engine
                 .scene_manager
-                .get_entity_component::<TransformComponent>(*entity_handle, active_scene_handle)
-            {
-                if transform_component.matrix_update_required {
-                    update_transform_matrices(transform_component);
-                    transform_component.matrix_update_required = false;
-                }
-            }
-        }
-        timer.end_context()?;
-    }
-
-    // Phase 3: Add updated (previously dirty) items to the render queue
-    for entity_handle in dirty_entities {
-        if let Ok(mesh_rendering_component) = engine
-            .scene_manager
-            .get_entity_component::<MeshRenderingComponent>(entity_handle, active_scene_handle)
+                .get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(
+                    active_scene_handle,
+                )?
         {
+            if transform_component.matrix_update_required {
+                // defer update to batch
+                DIRTY_ENTITIES.push(entity_handle);
+                continue;
+            }
+
+            // Push clean (non-dirty) items directly into the render queue
+            // [SIMILAR] Use precomputed render_queue_key (pipeline/material/mesh sorting key)
             if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
                 let render_queue_item = RenderQueueItem {
                     key: render_queue_key,
                     entity_index: entity_handle.data().index as u32,
                 };
                 engine.render_queue.push(render_queue_item);
+            }
+        }
+
+        // Phase 2: Batch update transforms with matrix_update_required
+        // [RECOMMENDED] Consolidate transform matrix updates in one batch outside of pass
+        if !DIRTY_ENTITIES.is_empty() {
+            timer.begin_context(&format!("Batch update {} transforms", DIRTY_ENTITIES.len()));
+            for entity_handle in DIRTY_ENTITIES.iter() {
+                // Pull the transform component mutably and update matrices
+                if let Ok(transform_component) = engine
+                    .scene_manager
+                    .get_entity_component::<TransformComponent>(*entity_handle, active_scene_handle)
+                {
+                    if transform_component.matrix_update_required {
+                        update_transform_matrices(transform_component);
+                        transform_component.matrix_update_required = false;
+                    }
+                }
+            }
+            timer.end_context()?;
+        }
+
+        // Phase 3: Add updated (previously dirty) items to the render queue
+        for entity_handle in DIRTY_ENTITIES.iter() {
+            if let Ok(mesh_rendering_component) = engine
+                .scene_manager
+                .get_entity_component::<MeshRenderingComponent>(*entity_handle, active_scene_handle)
+            {
+                if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
+                    let render_queue_item = RenderQueueItem {
+                        key: render_queue_key,
+                        entity_index: entity_handle.data().index as u32,
+                    };
+                    engine.render_queue.push(render_queue_item);
+                }
             }
         }
     }
