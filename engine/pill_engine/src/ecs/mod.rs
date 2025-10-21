@@ -115,3 +115,8 @@ pub use scene_manager::{
     SceneManager,
     SceneHandle,
 };
+
+pub use systems::mlua::{
+    setup,
+    lua_system,
+};
