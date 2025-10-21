@@ -66,7 +66,7 @@ impl PillGame for Game {
         engine.register_component::<FloatingObjectComponent>(active_scene)?;
 
         // Add systems
-        engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
+        //engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
         engine.add_system("delete_floating_objects", floating_objects_remove_system)?;
         engine.add_system("objects_movement", floating_objects_movement_system)?;
         //engine.add_system("camera_movement", camera_movement_system)?;
@@ -200,7 +200,7 @@ impl PillGame for Game {
         engine.add_global_component(demo_state)?;
 
         // Spawn certain number of floating objects
-        spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
+        //spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
 
         Ok(())
     }
