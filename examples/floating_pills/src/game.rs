@@ -1,7 +1,8 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
+use std::time::Instant;
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100000;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 1000;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyO;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyL;
@@ -42,6 +43,17 @@ define_component!(CameraMovementComponent {
     delta_z: f32,
 });
 
+#[cfg(feature = "benchmark")]
+define_global_component!(BenchComponent {
+    frames: u64,
+    acc_math_ns: u128,
+    acc_frame_ms: f64,
+    worst_frame_ms: f32,
+    moved_acc: u64,
+    last_report: Instant,
+    report_every_frames: u32,
+});
+
 pub struct Game { }
 
 impl PillGame for Game {
@@ -73,6 +85,8 @@ impl PillGame for Game {
         //engine.add_system("camera_fov", camera_fov_changing_system)?;
         //engine.add_system("mesh_changing", object_appearance_changing_system)?;
         engine.add_system("demo_control", demo_control_system)?;
+        #[cfg(feature = "benchmark")]
+        engine.add_system("bench_report", bench_report_system)?;
 
         // --- Create resources ---
 
@@ -187,6 +201,16 @@ impl PillGame for Game {
                 .build())
             .build();
 
+        #[cfg(feature = "benchmark")]
+        engine.add_global_component(BenchComponent {
+            frames: 0,
+            acc_math_ns: 0,
+            acc_frame_ms: 0.0,
+            worst_frame_ms: 0.0,
+            moved_acc: 0,
+            last_report: Instant::now(),
+            report_every_frames: 120,
+        })?;
 
         // Setup demo state component
         let demo_state = DemoStateComponent {
@@ -225,7 +249,18 @@ fn demo_control_system(engine: &mut Engine) -> Result<()> {
 fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
 
+    #[cfg(feature = "benchmark")]
+    let frame_t0 = Instant::now();
+    #[cfg(feature = "benchmark")]
+    let math_t0 = Instant::now();
+    #[cfg(feature = "benchmark")]
+    let mut moved_this_frame: u64 = 0;
+
     for (_, floating_object_transform, floating_object_component) in engine.iterate_two_components_mut::<TransformComponent, FloatingObjectComponent>()? {
+        #[cfg(feature = "benchmark")]
+        {
+            moved_this_frame += 1;
+        }
 
         // Local rotation
         let rotation_speed = floating_object_component.rotation_speed.clone();
@@ -265,6 +300,22 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
             y_axis_factor.sin() * 0.8 * radius,
             angle.to_radians().sin() * radius
         ));
+    }
+
+    #[cfg(feature = "benchmark")]
+    {
+        let math_ns = math_t0.elapsed().as_nanos();
+        let frame_ms = frame_t0.elapsed().as_secs_f64() * 1_000.0;
+
+        let mut s = engine.get_global_component_mut::<BenchComponent>()?;
+        s.frames += 1;
+        s.acc_math_ns += math_ns;
+        s.acc_frame_ms += frame_ms;
+        if frame_ms as f32 > s.worst_frame_ms {
+            s.worst_frame_ms = frame_ms as f32;
+        }
+
+        s.moved_acc += moved_this_frame;
     }
 
     Ok(())
@@ -480,3 +531,45 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
 
     Ok(())
 }
+
+#[cfg(feature = "benchmark")]
+fn bench_report_system(engine: &mut Engine) -> Result<()> {
+    let mut s = engine.get_global_component_mut::<BenchComponent>()?;
+
+    if s.frames >= s.report_every_frames as u64 {
+        let f = s.frames as f64;
+        let avg_math_ms  = (s.acc_math_ns as f64 / 1_000_000.0) / f;
+        let avg_frame_ms = s.acc_frame_ms / f;
+        let moved_per_frame = (s.moved_acc as f64 / f).round() as u64;
+
+        // One-line, spreadsheet-friendly
+        println!(
+            "BENCH vec3 | frames={} | moved/frame={} | avg_math_ms={:.3} | avg_frame_ms={:.3} | worst_ms={:.3}",
+            s.frames, moved_per_frame, avg_math_ms, avg_frame_ms, s.worst_frame_ms
+        );
+
+        // optional CSV drop (comment out if you don’t want file I/O)
+        {
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            if let Ok(mut fh) = OpenOptions::new().create(true).append(true).open("vec3_bench.csv") {
+                let _ = writeln!(
+                    fh,
+                    "{},{},{:.3},{:.3},{:.3}",
+                    s.frames, moved_per_frame, avg_math_ms, avg_frame_ms, s.worst_frame_ms
+                );
+            }
+        }
+
+        // reset rolling window
+        s.frames = 0;
+        s.acc_math_ns = 0;
+        s.acc_frame_ms = 0.0;
+        s.worst_frame_ms = 0.0;
+        s.moved_acc = 0;
+        s.last_report = Instant::now();
+    }
+
+    Ok(())
+}
+
