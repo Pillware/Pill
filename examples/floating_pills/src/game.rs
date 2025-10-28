@@ -1,6 +1,8 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 use std::time::Instant;
+use std::fs::OpenOptions;
+use std::io::Write;
 
 pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 1000;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
@@ -225,6 +227,15 @@ impl PillGame for Game {
 
         // Spawn certain number of floating objects
         spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
+
+        #[cfg(feature = "benchmark")]
+        if let Ok(mut fh) = OpenOptions::new().write(true).truncate(true).create(true).open("vec3_bench.csv") {
+            let _ = writeln!(
+                fh,
+                "LOG BEGIN",
+            );
+            writeln!(fh, "fps | avg_math_ms | avg_frame_ms | worst_frame_ms");
+        }
 
         Ok(())
     }
@@ -534,6 +545,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
 
 #[cfg(feature = "benchmark")]
 fn bench_report_system(engine: &mut Engine) -> Result<()> {
+    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
     let mut s = engine.get_global_component_mut::<BenchComponent>()?;
 
     if s.frames >= s.report_every_frames as u64 {
@@ -541,24 +553,21 @@ fn bench_report_system(engine: &mut Engine) -> Result<()> {
         let avg_math_ms  = (s.acc_math_ns as f64 / 1_000_000.0) / f;
         let avg_frame_ms = s.acc_frame_ms / f;
         let moved_per_frame = (s.moved_acc as f64 / f).round() as u64;
+        let new_frame_time = delta_time * 1000.0;
+        let fps = 1000.0 / new_frame_time;
 
         // One-line, spreadsheet-friendly
         println!(
-            "BENCH vec3 | frames={} | moved/frame={} | avg_math_ms={:.3} | avg_frame_ms={:.3} | worst_ms={:.3}",
-            s.frames, moved_per_frame, avg_math_ms, avg_frame_ms, s.worst_frame_ms
+            "BENCH vec3 | fps={} | moved/frame={} | avg_math_ms={:.3} | avg_frame_ms={:.3} | worst_ms={:.3}",
+            fps, moved_per_frame, avg_math_ms, avg_frame_ms, s.worst_frame_ms
         );
 
-        // optional CSV drop (comment out if you don’t want file I/O)
-        {
-            use std::fs::OpenOptions;
-            use std::io::Write;
-            if let Ok(mut fh) = OpenOptions::new().create(true).append(true).open("vec3_bench.csv") {
-                let _ = writeln!(
-                    fh,
-                    "{},{},{:.3},{:.3},{:.3}",
-                    s.frames, moved_per_frame, avg_math_ms, avg_frame_ms, s.worst_frame_ms
-                );
-            }
+        if let Ok(mut fh) = OpenOptions::new().append(true).create(true).open("vec3_bench.csv") {
+            let _ = writeln!(
+                fh,
+                "{},{:.3},{:.3},{:.3}",
+                fps, avg_math_ms, avg_frame_ms, s.worst_frame_ms
+            );
         }
 
         // reset rolling window
