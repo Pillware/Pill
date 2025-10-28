@@ -24,10 +24,10 @@ log = "0.4"
 
 # Other
 winit = "0.29"
-cgmath = "0.18"
 wgpu = { version = "0.20.1", features = [ "spirv" ] }
 futures = "0.3"
 pollster = "0.2"
+glam = "0.30.8"
 bytemuck = { version = "1.4", features = [ "derive" ] }
 config = "0.11"
 naga = { version = "0.19", features = ["glsl-in", "wgsl-out"] }

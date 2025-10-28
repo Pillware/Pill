@@ -8,6 +8,7 @@ use pill_engine::{ internal::{ TransformComponent, get_model_matrix, get_normal_
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Instance {
     pub(crate) model_matrix: [[f32; 4]; 4], // It is not possible to use cgmath with bytemuck directly. Conversion from Quaternion into a 4x4 f32 array (matrix) needed
+    // TODO: double check if we can use glam types directly right now?
     pub(crate) normal_matrix: [[f32; 3]; 3], // It is matrix3 because we only need the rotation componen
 }
 

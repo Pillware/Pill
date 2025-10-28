@@ -1,4 +1,3 @@
-use cgmath::{EuclideanSpace, SquareMatrix, Zero};
 use pill_engine::internal::{
     TransformComponent,
     CameraComponent
@@ -6,15 +5,15 @@ use pill_engine::internal::{
 
 use anyhow::{ Result };
 use wgpu::util::DeviceExt;
-use std::f32::consts::FRAC_PI_2;
+use glam::{Mat3, Mat4, Vec3, Vec4};
 
 #[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
-    1.0, 0.0, 0.0, 0.0,
-    0.0, 1.0, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.0,
-    0.0, 0.0, 0.5, 1.0,
-);
+pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols_array(&[
+    1.0, 0.0, 0.0, 0.0, // column 1
+    0.0, 1.0, 0.0, 0.0, // column 2
+    0.0, 0.0, 0.5, 0.5, // column 3
+    0.0, 0.0, 0.0, 1.0, // column 4
+]);
 
 // --- Camera Uniform ---
 
@@ -28,44 +27,42 @@ pub(crate) struct CameraUniform {
 impl CameraUniform {
     pub fn new() -> Self {
         Self {
-            position: cgmath::Vector4::zero().into(),
-            view_projection_matrix: cgmath::Matrix4::identity().into(),
+            position: Vec4::ZERO.to_array(),
+            view_projection_matrix: Mat4::IDENTITY.to_cols_array_2d(),
         }
     }
 
     pub fn update_data(&mut self, camera_component: &CameraComponent, transform_component: &TransformComponent) {
         // Update position
-        self.position = cgmath::Vector4::<f32> { 
-            x: transform_component.position.x, 
-            y: transform_component.position.y, 
-            z: transform_component.position.z, 
-            w: 0.0
-        }.into();
+        self.position = Vec4::new(
+            transform_component.position.x,
+            transform_component.position.y,
+            transform_component.position.z,
+            0.0
+        ).to_array();
 
         // Update view-projection
-        self.view_projection_matrix = (CameraUniform::calculate_projection_matrix(camera_component) * CameraUniform::calculate_view_matrix(transform_component)).into();
+        self.view_projection_matrix = (CameraUniform::calculate_projection_matrix(camera_component) * CameraUniform::calculate_view_matrix(transform_component)).to_cols_array_2d();
     }
 
-    fn calculate_view_matrix(transform_component: &TransformComponent) -> cgmath::Matrix4::<f32> {
-        let position = cgmath::Point3::from_vec(transform_component.position);
-
-        let roll_matrix  = cgmath::Matrix3::from_angle_z(cgmath::Deg(transform_component.rotation.z));
-        let yaw_matrix  = cgmath::Matrix3::from_angle_y(cgmath::Deg(transform_component.rotation.y));
-        let pitch_matrix  = cgmath::Matrix3::from_angle_x(cgmath::Deg(transform_component.rotation.x));
+    fn calculate_view_matrix(transform_component: &TransformComponent) -> Mat4 {
+        let roll_matrix  = Mat3::from_rotation_z(transform_component.rotation.z.to_radians());
+        let yaw_matrix  = Mat3::from_rotation_y(transform_component.rotation.y.to_radians());
+        let pitch_matrix  = Mat3::from_rotation_x(transform_component.rotation.x.to_radians());
         let rotation_matrix = yaw_matrix * pitch_matrix * roll_matrix;
-        let direction  = rotation_matrix * cgmath::Vector3::<f32>::unit_z();
+        let direction  = rotation_matrix * Vec3::Z;
 
-        cgmath::Matrix4::look_to_rh(
-            position,
+        Mat4::look_to_rh(
+            transform_component.position,
             direction,
-            cgmath::Vector3::unit_y()
+            Vec3::Y
         )
     }
 
-    fn calculate_projection_matrix(camera_component: &CameraComponent) -> cgmath::Matrix4::<f32> {
-        OPENGL_TO_WGPU_MATRIX * cgmath::perspective(
-            cgmath::Deg(camera_component.fov), 
-            camera_component.aspect.get_value(), 
+    fn calculate_projection_matrix(camera_component: &CameraComponent) -> Mat4 {
+        OPENGL_TO_WGPU_MATRIX * Mat4::perspective_rh(
+            camera_component.fov.to_radians(),
+            camera_component.aspect.get_value(),
             camera_component.range.start,
             camera_component.range.end
         )
