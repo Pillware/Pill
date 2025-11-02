@@ -11,6 +11,7 @@ pub use renderer_mesh::{RendererMesh, Vertex};
 pub use renderer_texture::RendererTexture;
 
 pub use renderer_camera::RendererCamera;
+pub use renderer_camera::CameraUniform;
 
 pub use renderer_material::RendererMaterial;
 

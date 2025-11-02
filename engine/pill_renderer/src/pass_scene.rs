@@ -1,5 +1,6 @@
 use crate::renderer::{Pass, Renderer, WorldQuery};
 use crate::resource_manager::ResourceManager;
+use crate::resources::CameraUniform;
 use anyhow::{Error, Result};
 use glam::{Mat4, Vec3, Vec4};
 use pill_core::{PillSlotMapKey, RendererError};
@@ -21,6 +22,15 @@ pub struct PassScene {
     visible_pre_draw_buffer: Vec<crate::renderer::VisiblePreDraw>,
     groups_buffer: Vec<crate::renderer::GroupCmd>,
     staging_buffer: Vec<u8>,
+    // Pass-local state initialized in init(), read every draw
+    state: Option<PassSceneState>,
+}
+
+struct PassSceneState {
+    camera_uniform: CameraUniform,
+    camera_bgl: wgpu::BindGroupLayout,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
 }
 
 impl PassScene {
@@ -34,8 +44,15 @@ impl PassScene {
             visible_pre_draw_buffer: Vec::with_capacity(100_000),
             groups_buffer: Vec::with_capacity(2000),
             staging_buffer: Vec::with_capacity(100_000 * 144),
+            state: None,
         }
     }
+}
+
+fn get_state(pass: &mut PassScene) -> &mut PassSceneState {
+    debug_assert!(pass.state.is_some());
+    // SAFETY: initialized once in init(), read every draw
+    unsafe { pass.state.as_mut().unwrap_unchecked() }
 }
 
 impl Pass for PassScene {
@@ -44,6 +61,46 @@ impl Pass for PassScene {
     }
 
     fn init(&mut self, _device: &wgpu::Device, _res: &mut ResourceManager) -> Result<()> {
+        // Pre-create camera bind group layout, buffer and bind group
+        let device = _device;
+
+        let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("camera_bind_group_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("camera_buffer"),
+            size: std::mem::size_of::<CameraUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera_bind_group"),
+            layout: &camera_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
+        self.state = Some(PassSceneState {
+            camera_uniform: CameraUniform::new(),
+            camera_bgl,
+            camera_buffer,
+            camera_bind_group,
+        });
+
         Ok(())
     }
 
@@ -59,7 +116,7 @@ impl Pass for PassScene {
         let camera_component_storage = world.camera_components;
         let transform_component_storage = world.transform_components;
 
-        // Update renderer camera UBO from engine camera + transform
+        // Read active camera + transform
         let camera_storage = camera_component_storage
             .data
             .get(active_camera_entity_handle.data().index as usize)
@@ -70,34 +127,28 @@ impl Pass for PassScene {
             .get(active_camera_entity_handle.data().index as usize)
             .unwrap();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
-        {
-            let renderer_camera = renderer
-                .state
-                .resource_manager
-                .cameras
-                .get_mut(get_renderer_resource_handle_from_camera_component(
-                    active_camera_component,
-                ))
-                .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
-            renderer_camera.update(
-                &renderer.ctx.queue,
-                active_camera_component,
-                active_camera_transform_component,
+
+        // Update camera uniform and write to GPU buffer (no allocations),
+        // then release the mutable borrow and keep only cheap copies/ptrs.
+        let (vp_mat_arr, camera_bg_ptr): ([[f32; 4]; 4], *const wgpu::BindGroup) = {
+            let state = get_state(self);
+            state
+                .camera_uniform
+                .update_data(active_camera_component, active_camera_transform_component);
+            renderer.ctx.queue.write_buffer(
+                &state.camera_buffer,
+                0,
+                bytemuck::bytes_of(&state.camera_uniform),
             );
-        }
-        let renderer_camera = renderer
-            .state
-            .resource_manager
-            .cameras
-            .get(get_renderer_resource_handle_from_camera_component(
-                active_camera_component,
-            ))
-            .unwrap();
+            (
+                state.camera_uniform.view_projection_matrix,
+                &state.camera_bind_group as *const _,
+            )
+        };
         let clear_color = active_camera_component.clear_color;
 
         // View-projection matrix
-        let vp_mat: Mat4 =
-            Mat4::from_cols_array_2d(&renderer_camera.uniform.view_projection_matrix);
+        let vp_mat: Mat4 = Mat4::from_cols_array_2d(&vp_mat_arr);
 
         // Extract frustum planes
         let row3 = vp_mat.row(3);
@@ -209,8 +260,7 @@ impl Pass for PassScene {
                 continue;
             }
 
-            let view_proj: Mat4 =
-                Mat4::from_cols_array_2d(&renderer_camera.uniform.view_projection_matrix);
+            let view_proj: Mat4 = vp_mat;
             let mvp: [[f32; 4]; 4] = (view_proj * model).to_cols_array_2d();
             self.visible_pre_draw_buffer
                 .push(crate::renderer::VisiblePreDraw {
@@ -378,7 +428,8 @@ impl Pass for PassScene {
                 .materials
                 .get(group.material_handle)
                 .unwrap();
-            rpass.set_bind_group(0, &renderer_camera.bind_group, &[]);
+            // SAFETY: camera_bg_ptr points to self.state.camera_bind_group, valid for the duration of draw
+            rpass.set_bind_group(0, unsafe { &*camera_bg_ptr }, &[]);
             rpass.set_bind_group(1, &material.texture_bind_group, &[]);
             rpass.set_bind_group(2, &material.parameter_bind_group, &[]);
             for batch in &group.batches {

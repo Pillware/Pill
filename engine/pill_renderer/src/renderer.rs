@@ -161,6 +161,7 @@ pub(crate) struct GroupCmd {
 }
 
 // Local world query for passes (avoids depending on pill_engine::graphics visibility)
+// TODO: Rename to WorldView, SceneView, ...
 pub struct WorldQuery<'a> {
     pub active_camera: EntityHandle,
     pub render_queue: &'a Vec<RenderQueueItem>,
