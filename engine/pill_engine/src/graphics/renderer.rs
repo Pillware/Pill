@@ -9,41 +9,29 @@ use crate::{
 };
 
 use pill_core::PillStyle;
-use pill_core::{PillSlotMapKey, Timer};
+use pill_core::{
+    Handle, RendererBufferTag, RendererCameraTag, RendererMaterialTag, RendererMeshTag,
+    RendererPipelineTag, RendererPipelineV2Tag, RendererTextureTag, Timer,
+};
 
 use anyhow::{Context, Error, Result};
 use std::{path::PathBuf, sync::Arc};
 use thiserror::Error;
 
-// --- Renderer resource handles ---
+// --- Renderer resource handles (typed generational handles) ---
+pub type RendererMaterialHandle = Handle<RendererMaterialTag>;
 
-pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererMaterialHandle;
-}
+pub type RendererMeshHandle = Handle<RendererMeshTag>;
 
-pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererMeshHandle;
-}
+pub type RendererPipelineHandle = Handle<RendererPipelineTag>;
 
-pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererPipelineHandle;
-}
+pub type RendererCameraHandle = Handle<RendererCameraTag>;
 
-pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererCameraHandle;
-}
+pub type RendererTextureHandle = Handle<RendererTextureTag>;
 
-pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererTextureHandle;
-}
+pub type RendererBufferHandle = Handle<RendererBufferTag>;
 
-pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererBufferHandle;
-}
-
-pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererPipelineV2Handle;
-}
+pub type RendererPipelineV2Handle = Handle<RendererPipelineV2Tag>;
 
 // --- Descriptors ---
 
@@ -88,17 +76,17 @@ pub trait PillRenderer {
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
     // Creates a 256B-aligned uniform buffer (COPY_DST) and returns its handle
-    fn create_buffer(&self, desc: BufferDesc) -> Result<wgpu::Buffer>;
-    fn create_pipeline_v2(&self, desc: PipelineV2Desc) -> Result<PipelineV2>;
-    fn create_mesh(&self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
+    fn create_buffer(&mut self, desc: BufferDesc) -> Result<wgpu::Buffer>;
+    fn create_pipeline_v2(&mut self, desc: PipelineV2Desc) -> Result<PipelineV2>;
+    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
     fn create_texture(
-        &self,
+        &mut self,
         name: &str,
         image_data: &image::DynamicImage,
         texture_type: TextureType,
     ) -> Result<RendererTextureHandle>;
     fn create_material(
-        &self,
+        &mut self,
         name: &str,
         textures: &MaterialTextureMap,
         parameters: &MaterialParameterMap,

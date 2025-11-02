@@ -1,18 +1,15 @@
-use crate::RendererResourceStorage;
+use crate::resource_manager::ResourceManager;
 
 use pill_core::RendererError;
 use pill_engine::internal::{
-    MaterialParameterMap,
-    MaterialTextureMap,
-    RendererMaterialHandle,
-    RendererPipelineHandle, 
-    MASTER_SHADER_COLOR_TEXTURE_SLOT,    
-    MASTER_SHADER_NORMAL_TEXTURE_SLOT,
-    MASTER_SHADER_TINT_PARAMETER_SLOT, get_default_texture_handles, get_renderer_texture_handle_from_material_texture, MASTER_SHADER_SPECULARITY_PARAMETER_SLOT,
+    get_default_texture_handles, get_renderer_texture_handle_from_material_texture,
+    MaterialParameterMap, MaterialTextureMap, RendererMaterialHandle, RendererPipelineHandle,
+    MASTER_SHADER_COLOR_TEXTURE_SLOT, MASTER_SHADER_NORMAL_TEXTURE_SLOT,
+    MASTER_SHADER_SPECULARITY_PARAMETER_SLOT, MASTER_SHADER_TINT_PARAMETER_SLOT,
 };
 
+use anyhow::{Error, Result};
 use wgpu::util::DeviceExt;
-use anyhow::{ Result, Error};
 
 // --- Material Uniform ---
 
@@ -26,7 +23,7 @@ pub(crate) struct MaterialUniform {
 impl MaterialUniform {
     pub fn new() -> Self {
         Self {
-            tint: cgmath::Vector3::<f32>::new(0.0,0.0,0.0).into(),
+            tint: cgmath::Vector3::<f32>::new(0.0, 0.0, 0.0).into(),
             specularity: 0.0,
         }
     }
@@ -46,8 +43,8 @@ pub struct RendererMaterial {
 impl RendererMaterial {
     pub fn new(
         device: &wgpu::Device,
-        queue: &wgpu::Queue, 
-        rendering_resource_storage: &RendererResourceStorage,
+        queue: &wgpu::Queue,
+        resources: &ResourceManager,
         name: &str,
         pipeline_handle: RendererPipelineHandle,
         texture_bind_group_layout: &wgpu::BindGroupLayout,
@@ -55,7 +52,6 @@ impl RendererMaterial {
         parameter_bind_group_layout: &wgpu::BindGroupLayout,
         parameters: &MaterialParameterMap,
     ) -> Result<Self> {
-
         // Create parameter buffer and write data to it
         let mut uniform = MaterialUniform::new();
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -63,14 +59,20 @@ impl RendererMaterial {
             contents: bytemuck::cast_slice(&[uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        uniform.tint = parameters.get_color(MASTER_SHADER_TINT_PARAMETER_SLOT).unwrap().into();
-        uniform.specularity = parameters.get_scalar(MASTER_SHADER_SPECULARITY_PARAMETER_SLOT).unwrap().into();
+        uniform.tint = parameters
+            .get_color(MASTER_SHADER_TINT_PARAMETER_SLOT)
+            .unwrap()
+            .into();
+        uniform.specularity = parameters
+            .get_scalar(MASTER_SHADER_SPECULARITY_PARAMETER_SLOT)
+            .unwrap()
+            .into();
         queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&[uniform]));
 
         // Create texture binding group
         let texture_bind_group = Self::create_texture_bind_group(
             device,
-            rendering_resource_storage,
+            resources,
             &texture_bind_group_layout,
             &(name.to_owned() + "_textures"),
             textures,
@@ -97,49 +99,74 @@ impl RendererMaterial {
     }
 
     pub fn update_textures(
-        device: &wgpu::Device, 
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         material_renderer_handle: RendererMaterialHandle,
-        rendering_resource_storage: &mut RendererResourceStorage, 
-        textures: &MaterialTextureMap
+        resources: &mut ResourceManager,
+        textures: &MaterialTextureMap,
     ) -> Result<()> {
-        let material = rendering_resource_storage.materials.get(material_renderer_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        // Ensure defaults are available for fallback
+        let _ = resources.ensure_default_textures(device, queue);
+        let material = resources
+            .materials
+            .get(material_renderer_handle)
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
         let material_name = material.name.clone();
-        let pipeline = rendering_resource_storage.pipelines.get(material.pipeline_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        let texture_bind_group = {
+            let pipeline = resources
+                .pipelines
+                .get(material.pipeline_handle)
+                .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+            RendererMaterial::create_texture_bind_group(
+                &device,
+                resources,
+                &pipeline.material_texture_bind_group_layout,
+                &(material_name.to_owned() + "_textures"),
+                textures,
+            )?
+        };
 
-        let texture_bind_group = RendererMaterial::create_texture_bind_group(
-            &device, 
-            &rendering_resource_storage, 
-            &pipeline.material_texture_bind_group_layout, 
-            &(material_name.to_owned() + "_textures"), 
-            textures
-        )?;
-
-        let material = rendering_resource_storage.materials.get_mut(material_renderer_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        let material = resources
+            .materials
+            .get_mut(material_renderer_handle)
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
         material.texture_bind_group = texture_bind_group;
         Ok(())
     }
 
     pub fn create_texture_bind_group(
-        device: &wgpu::Device, 
-        rendering_resource_storage: &RendererResourceStorage, 
+        device: &wgpu::Device,
+        resources: &ResourceManager,
         texture_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
-        textures: &MaterialTextureMap
+        textures: &MaterialTextureMap,
     ) -> Result<wgpu::BindGroup> {
-
         // Get texture renderer handles, if is it None use default texture for this type of slot
         let color_texture = textures.data.get(MASTER_SHADER_COLOR_TEXTURE_SLOT).unwrap();
-        let color_renderer_texture_handle = 
-            get_renderer_texture_handle_from_material_texture(color_texture)
-            .unwrap_or_else(|| get_default_texture_handles(color_texture.texture_type).1);
+        let def_color = resources
+            .default_color_tex
+            .expect("default color tex must exist");
+        let def_normal = resources
+            .default_normal_tex
+            .expect("default normal tex must exist");
+        let color_renderer_texture_handle =
+            get_renderer_texture_handle_from_material_texture(color_texture).unwrap_or(def_color);
 
-        let normal_texture = textures.data.get(MASTER_SHADER_NORMAL_TEXTURE_SLOT).unwrap();
-        let normal_renderer_textur_handle = 
-            get_renderer_texture_handle_from_material_texture(normal_texture)
-            .unwrap_or_else(|| get_default_texture_handles(normal_texture.texture_type).1);
+        let normal_texture = textures
+            .data
+            .get(MASTER_SHADER_NORMAL_TEXTURE_SLOT)
+            .unwrap();
+        let normal_renderer_textur_handle =
+            get_renderer_texture_handle_from_material_texture(normal_texture).unwrap_or(def_normal);
 
-        let color_texture = rendering_resource_storage.textures.get(color_renderer_texture_handle).unwrap();
-        let normal_texture = rendering_resource_storage.textures.get(normal_renderer_textur_handle).unwrap(); 
+        let color_texture = resources
+            .textures
+            .get(color_renderer_texture_handle)
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        let normal_texture = resources
+            .textures
+            .get(normal_renderer_textur_handle)
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
         // Set texture resources to the bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -169,43 +196,57 @@ impl RendererMaterial {
     }
 
     pub fn update_parameters(
-        device: &wgpu::Device, 
-        queue: &wgpu::Queue, 
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         material_renderer_handle: RendererMaterialHandle,
-        rendering_resource_storage: &mut RendererResourceStorage, 
-        parameters: &MaterialParameterMap
+        resources: &mut ResourceManager,
+        parameters: &MaterialParameterMap,
     ) -> Result<()> {
-        let material = rendering_resource_storage.materials.get_mut(material_renderer_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
-        let pipeline = rendering_resource_storage.pipelines.get(material.pipeline_handle).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        let material = resources
+            .materials
+            .get_mut(material_renderer_handle)
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        let pipeline = resources
+            .pipelines
+            .get(material.pipeline_handle)
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
-        material.uniform.tint = parameters.get_color(MASTER_SHADER_TINT_PARAMETER_SLOT).unwrap().into();
-        material.uniform.specularity = parameters.get_scalar(MASTER_SHADER_SPECULARITY_PARAMETER_SLOT).unwrap().into();
-        queue.write_buffer(&material.buffer, 0, bytemuck::cast_slice(&[material.uniform]));
+        material.uniform.tint = parameters
+            .get_color(MASTER_SHADER_TINT_PARAMETER_SLOT)
+            .unwrap()
+            .into();
+        material.uniform.specularity = parameters
+            .get_scalar(MASTER_SHADER_SPECULARITY_PARAMETER_SLOT)
+            .unwrap()
+            .into();
+        queue.write_buffer(
+            &material.buffer,
+            0,
+            bytemuck::cast_slice(&[material.uniform]),
+        );
 
         material.parameter_bind_group = RendererMaterial::create_parameter_bind_group(
-            device, 
-            &pipeline.material_parameter_bind_group_layout, 
-            &(material.name.to_owned() + "_parameter"), 
-            &material.buffer
+            device,
+            &pipeline.material_parameter_bind_group_layout,
+            &(material.name.to_owned() + "_parameter"),
+            &material.buffer,
         )?;
 
         Ok(())
     }
 
     fn create_parameter_bind_group(
-        device: &wgpu::Device, 
+        device: &wgpu::Device,
         parameter_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
         buffer: &wgpu::Buffer,
     ) -> Result<wgpu::BindGroup> {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &parameter_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
             label: Some(name),
         });
 

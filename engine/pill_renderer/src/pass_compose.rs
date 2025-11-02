@@ -1,4 +1,5 @@
 use crate::renderer::{Pass, Renderer};
+use crate::resource_manager::ResourceManager;
 use crate::resources::RendererTexture;
 use anyhow::Result;
 use pill_engine::internal::{PillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc};
@@ -9,15 +10,21 @@ use wgpu::Queue;
 pub struct PassCompose {
     label: String,
     offscreen_texture: Arc<RendererTexture>,
+    target_format: wgpu::TextureFormat,
     pipeline: Option<PipelineV2>,
     bind_group: Option<wgpu::BindGroup>,
 }
 
 impl PassCompose {
-    pub fn new(label: &str, offscreen_texture: Arc<RendererTexture>) -> Self {
+    pub fn new(
+        label: &str,
+        offscreen_texture: Arc<RendererTexture>,
+        target_format: wgpu::TextureFormat,
+    ) -> Self {
         Self {
             label: label.to_string(),
             offscreen_texture,
+            target_format,
             pipeline: None,
             bind_group: None,
         }
@@ -29,7 +36,7 @@ impl Pass for PassCompose {
         &self.label
     }
 
-    fn init(&mut self, _queue: &wgpu::Queue, renderer: &Renderer) -> Result<()> {
+    fn init(&mut self, device: &wgpu::Device, _res: &mut ResourceManager) -> Result<()> {
         println!("Initializing pass: {}", self.label);
 
         let vs = r#"
@@ -63,19 +70,11 @@ impl Pass for PassCompose {
         }
         "#;
 
-        let pipeline = renderer.create_pipeline_v2(PipelineV2Desc {
-            label: Some("compose"),
-            vs: ShaderDesc {
-                source: vs,
-                entry_func: "main",
-            },
-            ps: ShaderDesc {
-                source: fs,
-                entry_func: "main",
-            },
-            bind_groups: vec![
-                // Group 0: Texture and sampler bindings
-                vec![
+        let pipeline = {
+            // Build bind group layout
+            let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("compose_bgl"),
+                entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -93,37 +92,73 @@ impl Pass for PassCompose {
                         count: None,
                     },
                 ],
-            ],
-            targets: &[Some(wgpu::ColorTargetState {
-                format: renderer.get_surface_format(),
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-        })?;
-
-        let bind_group = renderer
-            .get_device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("compose_bind_group"),
-                layout: &pipeline.bind_group_layouts[0], // Group 0: Texture and sampler bindings
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &self.offscreen_texture.texture_view,
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.offscreen_texture.sampler),
-                    },
-                ],
             });
 
+            let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("compose_pl"),
+                bind_group_layouts: &[&bgl],
+                push_constant_ranges: &[],
+            });
+
+            let vs_mod = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("compose_vs"),
+                source: wgpu::ShaderSource::Wgsl(vs.into()),
+            });
+            let fs_mod = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("compose_fs"),
+                source: wgpu::ShaderSource::Wgsl(fs.into()),
+            });
+
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("compose_pipeline"),
+                layout: Some(&pl),
+                vertex: wgpu::VertexState {
+                    module: &vs_mod,
+                    entry_point: "main",
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &fs_mod,
+                    entry_point: "main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.target_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+            });
+
+            (pipeline, bgl)
+        };
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("compose_bind_group"),
+            layout: &pipeline.1, // Group 0: Texture and sampler bindings
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self.offscreen_texture.texture_view,
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.offscreen_texture.sampler),
+                },
+            ],
+        });
+
         // Store pipeline handle
-        self.pipeline = Some(pipeline);
+        self.pipeline = Some(PipelineV2 {
+            pipeline: pipeline.0,
+            bind_group_layouts: vec![pipeline.1],
+        });
         self.bind_group = Some(bind_group);
 
         Ok(())

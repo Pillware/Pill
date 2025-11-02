@@ -1,4 +1,5 @@
 use crate::renderer::{Pass, Renderer};
+use crate::resource_manager::ResourceManager;
 use anyhow::Result;
 use pill_engine::internal::{BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc};
 use wgpu::CommandEncoder;
@@ -10,16 +11,18 @@ pub struct PassOverlayUV {
     pipeline: Option<PipelineV2>,
     bind_group: Option<wgpu::BindGroup>,
     rect: [f32; 4],
+    target_format: wgpu::TextureFormat,
 }
 
 impl PassOverlayUV {
-    pub fn new(label: &str, rect: [f32; 4]) -> Self {
+    pub fn new(label: &str, rect: [f32; 4], target_format: wgpu::TextureFormat) -> Self {
         Self {
             label: label.to_string(),
             buffer: None,
             pipeline: None,
             bind_group: None,
             rect: rect,
+            target_format,
         }
     }
 }
@@ -29,16 +32,23 @@ impl Pass for PassOverlayUV {
         &self.label
     }
 
-    fn init(&mut self, queue: &wgpu::Queue, renderer: &Renderer) -> Result<()> {
+    fn init(&mut self, device: &wgpu::Device, _res: &mut ResourceManager) -> Result<()> {
         println!("Initializing pass: {}", self.label);
 
         // Create buffer for overlay rect UBO
-        let buffer = renderer.create_buffer(BufferDesc {
+        let aligned_size = 256u64;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("overlay_rect_ubo"),
-            byte_size: 4 * 32, // 4 floats * 32 bytes per float = 128 bytes, will be aligned to 256 bytes for Metal UBOs
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        })?;
-        queue.write_buffer(&buffer, 0, bytemuck::bytes_of(&self.rect));
+            size: aligned_size,
+            usage: wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: true,
+        });
+        {
+            let mut view = buffer.slice(..).get_mapped_range_mut();
+            let src = bytemuck::bytes_of(&self.rect);
+            view[..src.len()].copy_from_slice(src);
+        }
+        buffer.unmap();
 
         let vs = r#"
           @group(0) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
@@ -66,17 +76,10 @@ impl Pass for PassOverlayUV {
           }
           "#;
 
-        let pipeline = renderer.create_pipeline_v2(PipelineV2Desc {
-            label: Some("overlay_uv"),
-            vs: ShaderDesc {
-                source: vs,
-                entry_func: "main",
-            },
-            ps: ShaderDesc {
-                source: fs,
-                entry_func: "main",
-            },
-            bind_groups: vec![vec![wgpu::BindGroupLayoutEntry {
+        // Build bind group layout and pipeline
+        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("overlay_uv_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
@@ -85,21 +88,49 @@ impl Pass for PassOverlayUV {
                     min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
                 },
                 count: None,
-            }]],
-            targets: &[Some(wgpu::ColorTargetState {
-                format: renderer.get_surface_format(),
-                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
+            }],
+        });
+        let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("overlay_uv_pl"),
+            bind_group_layouts: &[&bgl],
+            push_constant_ranges: &[],
+        });
+        let vs_mod = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("overlay_uv_vs"),
+            source: wgpu::ShaderSource::Wgsl(vs.into()),
+        });
+        let fs_mod = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("overlay_uv_fs"),
+            source: wgpu::ShaderSource::Wgsl(fs.into()),
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("overlay_uv_pipeline"),
+            layout: Some(&pl),
+            vertex: wgpu::VertexState {
+                module: &vs_mod,
+                entry_point: "main",
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &fs_mod,
+                entry_point: "main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: self.target_format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-        })?;
+            multiview: None,
+        });
 
-        let bind_group = renderer
-            .get_device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("overlay_rect_bind_group"),
-                layout: &pipeline.bind_group_layouts[0],
+            layout: &bgl,
                 entries: &[wgpu::BindGroupEntry {
                     binding: 0,
                     resource: buffer.as_entire_binding(),
@@ -107,7 +138,7 @@ impl Pass for PassOverlayUV {
             });
 
         // Store pipeline handle
-        self.pipeline = Some(pipeline);
+        self.pipeline = Some(PipelineV2 { pipeline, bind_group_layouts: vec![bgl] });
         self.bind_group = Some(bind_group);
 
         Ok(())

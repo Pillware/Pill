@@ -10,7 +10,7 @@ use crate::{
     config::*,
 };
 
-use pill_core::PillSlotMapKey;
+use pill_core::Handle;
 
 use std::{
     cmp::Ordering,
@@ -108,12 +108,14 @@ pub fn compose_render_queue_key(resource_manager: &ResourceManager, material_han
     let material = resource_manager.get_resource::<Material>(material_handle)?;
     let mesh = resource_manager.get_resource::<Mesh>(mesh_handle)?;
 
-    let render_queue_key: RenderQueueKey = 
-        ((RENDER_QUEUE_KEY_ORDER.max - material.rendering_order as RenderQueueKey) << RENDER_QUEUE_KEY_ORDER.mask_shift) | // Order has to be inverted for proper sorting
-        ((material.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift) | 
-        ((material.renderer_resource_handle.unwrap().data().version.get() as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift) | 
-        ((mesh.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_INDEX.mask_shift ) | 
-        ((mesh.renderer_resource_handle.unwrap().data().version.get() as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_VERSION.mask_shift);
+    let h_mat = material.renderer_resource_handle.unwrap();
+    let h_mesh = mesh.renderer_resource_handle.unwrap();
+    let render_queue_key: RenderQueueKey =
+        ((RENDER_QUEUE_KEY_ORDER.max - material.rendering_order as RenderQueueKey) << RENDER_QUEUE_KEY_ORDER.mask_shift)
+            | ((h_mat.index() as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift)
+            | ((h_mat.generation() as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift)
+            | ((h_mesh.index() as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_INDEX.mask_shift)
+            | ((h_mesh.generation() as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_VERSION.mask_shift);
 
     Ok(render_queue_key)
 }

@@ -1,4 +1,5 @@
 use crate::renderer::{Pass, Renderer};
+use crate::resource_manager::ResourceManager;
 use crate::resources::RendererTexture;
 use anyhow::Result;
 use pill_engine::internal::{BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc};
@@ -15,6 +16,7 @@ pub struct PassOverlayDepth {
     tint_buffer: Option<wgpu::Buffer>,
     rect: [f32; 4],
     tint: [f32; 4],
+    target_format: wgpu::TextureFormat,
 }
 
 impl PassOverlayDepth {
@@ -23,6 +25,7 @@ impl PassOverlayDepth {
         rect: [f32; 4],
         tint: [f32; 4],
         depth_texture: Arc<RendererTexture>,
+        target_format: wgpu::TextureFormat,
     ) -> Self {
         Self {
             label: label.to_string(),
@@ -33,6 +36,7 @@ impl PassOverlayDepth {
             tint_buffer: None,
             rect: rect,
             tint: tint,
+            target_format,
         }
     }
 }
@@ -42,16 +46,22 @@ impl Pass for PassOverlayDepth {
         &self.label
     }
 
-    fn init(&mut self, queue: &wgpu::Queue, renderer: &Renderer) -> Result<()> {
+    fn init(&mut self, device: &wgpu::Device, _res: &mut ResourceManager) -> Result<()> {
         println!("Initializing pass: {}", self.label);
 
         // Create buffer for overlay rect UBO
-        let buffer = renderer.create_buffer(BufferDesc {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("overlay_rect_ubo"),
-            byte_size: 4 * 32, // 4 floats * 32 bytes per float = 128 bytes, will be aligned to 256 bytes for Metal UBOs
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        })?;
-        queue.write_buffer(&buffer, 0, bytemuck::bytes_of(&self.rect));
+            size: 256,
+            usage: wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: true,
+        });
+        {
+            let mut view = buffer.slice(..).get_mapped_range_mut();
+            let src = bytemuck::bytes_of(&self.rect);
+            view[..src.len()].copy_from_slice(src);
+        }
+        buffer.unmap();
 
         let vs = r#"
           @group(1) @binding(0) var<uniform> URect: vec4<f32>; // bottom-left, top-right in [0,1]
@@ -85,110 +95,131 @@ impl Pass for PassOverlayDepth {
           }
           "#;
 
-        let pipeline = renderer.create_pipeline_v2(PipelineV2Desc {
-            label: Some("overlay_depth"),
-            vs: ShaderDesc {
-                source: vs,
-                entry_func: "main",
-            },
-            ps: ShaderDesc {
-                source: fs,
-                entry_func: "main",
-            },
-            bind_groups: vec![
-                // Group 0: Material bindings (texture, tint buffer)
-                vec![
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Depth,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                        },
-                        count: None,
-                    },
-                ],
-                // Group 1: Rect UBO
-                vec![wgpu::BindGroupLayoutEntry {
+        // Build bind group layouts
+        let bgl_material = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("overlay_depth_material_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Depth,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
                     },
                     count: None,
-                }],
+                },
             ],
-            targets: &[Some(wgpu::ColorTargetState {
-                format: renderer.get_surface_format(),
-                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
+        });
+        let bgl_rect = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("overlay_depth_rect_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
+                },
+                count: None,
+            }],
+        });
+        let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("overlay_depth_pl"),
+            bind_group_layouts: &[&bgl_material, &bgl_rect],
+            push_constant_ranges: &[],
+        });
+        let vs_mod = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("overlay_depth_vs"),
+            source: wgpu::ShaderSource::Wgsl(vs.into()),
+        });
+        let fs_mod = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("overlay_depth_fs"),
+            source: wgpu::ShaderSource::Wgsl(fs.into()),
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("overlay_depth_pipeline"),
+            layout: Some(&pl),
+            vertex: wgpu::VertexState {
+                module: &vs_mod,
+                entry_point: "main",
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &fs_mod,
+                entry_point: "main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: self.target_format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-        })?;
+            multiview: None,
+        });
 
-        let bind_group_rect = renderer
-            .get_device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("overlay_rect_bind_group"),
-                layout: &pipeline.bind_group_layouts[1], // Group 1: Rect UBO
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-            });
+        let bind_group_rect = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay_rect_bind_group"),
+            layout: &bgl_rect, // Group 1: Rect UBO
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
 
         // Create tint buffer
-        let tint_buffer = renderer
-            .get_device()
-            .create_buffer(&wgpu::BufferDescriptor {
-                label: Some("overlay_depth_tint"),
-                size: 256,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-        queue.write_buffer(&tint_buffer, 0, bytemuck::bytes_of(&self.tint));
+        let tint_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("overlay_depth_tint"),
+            size: 256,
+            usage: wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: true,
+        });
+        {
+            let mut view = tint_buffer.slice(..).get_mapped_range_mut();
+            let src = bytemuck::bytes_of(&self.tint);
+            view[..src.len()].copy_from_slice(src);
+        }
+        tint_buffer.unmap();
 
         // Create material bind group
-        let bind_group_material =
-            renderer
-                .get_device()
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("overlay_depth_material_bg"),
-                    layout: &pipeline.bind_group_layouts[0], // Group 0: Material bindings
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(
-                                &self.depth_texture.texture_view,
-                            ),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                                buffer: &tint_buffer,
-                                offset: 0,
-                                size: Some(std::num::NonZeroU64::new(16).unwrap()),
-                            }),
-                        },
-                    ],
-                });
+        let bind_group_material = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay_depth_material_bg"),
+            layout: &bgl_material, // Group 0: Material bindings
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.depth_texture.texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &tint_buffer,
+                        offset: 0,
+                        size: Some(std::num::NonZeroU64::new(16).unwrap()),
+                    }),
+                },
+            ],
+        });
 
         // Store pipeline handle
-        self.pipeline = Some(pipeline);
+        self.pipeline = Some(PipelineV2 {
+            pipeline,
+            bind_group_layouts: vec![bgl_material, bgl_rect],
+        });
         self.bind_group_rect = Some(bind_group_rect);
         self.bind_group_material = Some(bind_group_material);
         self.tint_buffer = Some(tint_buffer);

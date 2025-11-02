@@ -5,6 +5,10 @@ mod renderer;
 
 // --- Use ---
 
+pub use pill_core::{
+    RendererBufferTag, RendererCameraTag, RendererMaterialTag, RendererMeshTag,
+    RendererPipelineTag, RendererPipelineV2Tag, RendererTextureTag,
+};
 pub use renderer::{
     BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, Renderer, RendererBufferHandle,
     RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle,

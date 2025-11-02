@@ -8,7 +8,7 @@ use crate::{
     resources::{MaterialHandle, TextureHandle, TextureType},
 };
 
-use pill_core::PillSlotMapKeyData;
+use pill_core::{Handle, PillSlotMapKeyData};
 
 use lazy_static::lazy_static;
 use std::{any::TypeId, num::NonZeroU32};
@@ -101,12 +101,7 @@ pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle {
         version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
     },
 };
-pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
-    0: PillSlotMapKeyData {
-        index: 1,
-        version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
-    },
-};
+pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = Handle::from_parts(1, 1);
 
 // Default resource handle - Normal texture
 pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle {
@@ -115,12 +110,7 @@ pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle {
         version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
     },
 };
-pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
-    0: PillSlotMapKeyData {
-        index: 2,
-        version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
-    },
-};
+pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = Handle::from_parts(2, 1);
 
 pub fn get_default_texture_handles(
     texture_type: TextureType,
@@ -144,12 +134,7 @@ pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle {
         version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
     },
 };
-pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle {
-    0: PillSlotMapKeyData {
-        index: 1,
-        version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
-    },
-};
+pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = Handle::from_parts(1, 1);
 
 pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle) {
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)

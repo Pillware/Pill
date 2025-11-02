@@ -7,14 +7,12 @@ use crate::{
     pass_overlay_depth::PassOverlayDepth,
     pass_overlay_logo::PassOverlayLogo,
     pass_overlay_uv::PassOverlayUV,
-    renderer_resource_storage::RendererResourceStorage,
+    resource_manager::ResourceManager,
     resources::{
         RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture, Vertex,
     },
 };
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use pill_engine::internal::{
@@ -26,7 +24,7 @@ use pill_engine::internal::{
     RENDER_QUEUE_KEY_ORDER,
 };
 
-use pill_core::{PillSlotMapKey, PillSlotMapKeyData, PillStyle, RendererError, Timer};
+use pill_core::{Handle, PillSlotMapKey, PillStyle, RendererError, Timer};
 
 use std::num::NonZeroU32;
 
@@ -47,12 +45,7 @@ pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
 // M2 inline draw: no MeshDrawer/instance batching
 
 // Default resource handle - Master pipeline
-pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = RendererPipelineHandle {
-    0: PillSlotMapKeyData {
-        index: 1,
-        version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
-    },
-};
+pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = Handle::INVALID;
 
 fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String> {
     let mut frontend = glsl::Frontend::default();
@@ -117,7 +110,11 @@ fn create_render_target(
 
 pub trait Pass {
     fn get_label(&self) -> &str;
-    fn init(&mut self, queue: &wgpu::Queue, renderer: &Renderer) -> Result<()>;
+    fn init(
+        &mut self,
+        device: &wgpu::Device,
+        res: &mut crate::resource_manager::ResourceManager,
+    ) -> Result<()>;
     fn draw(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -165,7 +162,7 @@ pub struct State {
     passes: Vec<Box<dyn Pass>>,
     egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
     // Resources and GPU objects moved from ctor into here explicitly
-    renderer_resource_storage: Rc<RefCell<RendererResourceStorage>>,
+    resource_manager: ResourceManager,
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: Arc<RendererTexture>,
@@ -176,9 +173,9 @@ pub struct State {
     per_draw_buffer: Option<wgpu::Buffer>,
     per_draw_bind_group_layout: wgpu::BindGroupLayout,
     per_draw_bind_group: Option<wgpu::BindGroup>,
-    // Prebuilt PSO (static pipeline)
+    // Prebuilt PSO handle
     // [SIMILAR] Prebuilt once; no per-draw pipeline churn per TALK
-    default_pipeline: RendererPipeline,
+    master_pipeline_handle: RendererPipelineHandle,
     // resources
     tex_logo: RendererTextureHandle,
     // Preallocated buffers for hot path optimization
@@ -319,7 +316,7 @@ impl PillRenderer for Renderer {
 
         let state: State = {
             // Configure collections
-            let mut renderer_resource_storage = RendererResourceStorage::new(&ctx.config);
+            let mut resource_manager = ResourceManager::new();
 
             // Create depth and color texture
             let depth_texture = RendererTexture::new_depth_texture(
@@ -422,6 +419,7 @@ impl PillRenderer for Renderer {
                 &[RendererMesh::data_layout_descriptor()],
             )
             .unwrap();
+            let master_handle = resource_manager.pipelines.insert(default_pipeline);
 
             // Create state
             let per_draw_bind_group_layout =
@@ -456,7 +454,7 @@ impl PillRenderer for Renderer {
                     TextureType::Color,
                 )
                 .expect("failed to create overlay logo texture");
-                renderer_resource_storage.textures.insert(tex)
+                resource_manager.textures.insert(tex)
             };
 
             State {
@@ -464,7 +462,7 @@ impl PillRenderer for Renderer {
                 // Other
                 egui_renderer,
                 // Resources
-                renderer_resource_storage: Rc::new(RefCell::new(renderer_resource_storage)),
+                resource_manager,
                 // Renderer variables
                 color_format,
                 depth_format,
@@ -477,8 +475,8 @@ impl PillRenderer for Renderer {
                 // [SIMILAR] Per-draw dynamic UBO layout with has_dynamic_offset=true per TALK (Milestone 5)
                 per_draw_bind_group_layout,
                 per_draw_bind_group: None,
-                // Prebuilt PSO
-                default_pipeline,
+                // Prebuilt PSO handle
+                master_pipeline_handle: master_handle,
                 // Overlays
                 tex_logo,
                 // Preallocated buffers for hot path optimization (60k instances capacity)
@@ -487,7 +485,6 @@ impl PillRenderer for Renderer {
                 staging_buffer: Vec::with_capacity(100_000 * 144), // 60k instances * 144 bytes per instance
             }
         };
-
         Self { state, ctx }
     }
 
@@ -497,11 +494,13 @@ impl PillRenderer for Renderer {
         self.state.passes.push(Box::new(PassCompose::new(
             "compose",
             self.state.offscreen_color_texture.clone(),
+            self.ctx.surface_configuration.format,
         )));
 
         self.state.passes.push(Box::new(PassOverlayUV::new(
             "overlay_uv",
             [0.75, 0.75, 0.95, 0.95],
+            self.ctx.surface_configuration.format,
         )));
 
         let h: f32 = 0.04; // Logo height
@@ -510,6 +509,7 @@ impl PillRenderer for Renderer {
             [0.98 - 3. * h, 0.02, 0.98, 0.02 + h], // bottom right
             [1.0, 1.0, 1.0, 1.0],
             self.state.tex_logo,
+            self.ctx.surface_configuration.format,
         )));
 
         self.state.passes.push(Box::new(PassOverlayDepth::new(
@@ -517,21 +517,21 @@ impl PillRenderer for Renderer {
             [0.75, 0.50, 0.95, 0.70],
             [1.0, 1.0, 1.0, 1.0],
             self.state.depth_texture.clone(),
+            self.ctx.surface_configuration.format,
         )));
 
         // Initialize passes - call init on each pass
-        let queue = &self.ctx.queue;
         // Temporarily move passes out to avoid borrowing conflicts
         let mut passes = std::mem::take(&mut self.state.passes);
         for pass in passes.iter_mut() {
-            let _ = pass.init(queue, self);
+            let _ = pass.init(&self.ctx.device, &mut self.state.resource_manager);
         }
         self.state.passes = passes;
 
         Ok(())
     }
 
-    fn create_buffer(&self, desc: BufferDesc) -> Result<wgpu::Buffer> {
+    fn create_buffer(&mut self, desc: BufferDesc) -> Result<wgpu::Buffer> {
         let aligned_size = ((desc.byte_size + 255) / 256) * 256; // 256B for Metal UBOs
         let buffer = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
             label: desc.label,
@@ -546,7 +546,7 @@ impl PillRenderer for Renderer {
         Ok(buffer)
     }
 
-    fn create_pipeline_v2(&self, desc: PipelineV2Desc) -> Result<PipelineV2> {
+    fn create_pipeline_v2(&mut self, desc: PipelineV2Desc) -> Result<PipelineV2> {
         /*
         // Example shader pipeline descriptor for factory method
         n_shader = rm->createShader（｛
@@ -609,8 +609,7 @@ impl PillRenderer for Renderer {
                     .device
                     .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                         label: Some(
-                            format!("{}{}_bgl_{}", desc.label.unwrap_or("program"), "_bgl", i)
-                                .as_str(),
+                            format!("{}{}{}", desc.label.unwrap_or("program"), "_bgl_", i).as_str(),
                         ),
                         entries: bindings,
                     });
@@ -662,18 +661,15 @@ impl PillRenderer for Renderer {
         })
     }
 
-    fn create_mesh(&self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
+    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.ctx.device, name, mesh_data)?;
-        let handle = unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.meshes.insert(mesh)
-        };
+        let handle = self.state.resource_manager.meshes.insert(mesh);
 
         Ok(handle)
     }
 
     fn create_texture(
-        &self,
+        &mut self,
         name: &str,
         image_data: &image::DynamicImage,
         texture_type: TextureType,
@@ -685,16 +681,13 @@ impl PillRenderer for Renderer {
             image_data,
             texture_type,
         )?;
-        let handle = unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.textures.insert(texture)
-        };
+        let handle = self.state.resource_manager.textures.insert(texture);
 
         Ok(handle)
     }
 
     fn create_material(
-        &self,
+        &mut self,
         name: &str,
         textures: &MaterialTextureMap,
         parameters: &MaterialParameterMap,
@@ -757,13 +750,17 @@ impl PillRenderer for Renderer {
                     }],
                 });
 
-        let storage = self.state.renderer_resource_storage.borrow();
+        // ensure default textures exist for material fallback
+        self.state
+            .resource_manager
+            .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
+
         let material = RendererMaterial::new(
             &self.ctx.device,
             &self.ctx.queue,
-            &storage,
+            &self.state.resource_manager,
             name,
-            MASTER_PIPELINE_HANDLE,
+            self.state.master_pipeline_handle,
             &material_texture_bind_group_layout,
             textures,
             &material_parameter_bind_group_layout,
@@ -771,10 +768,7 @@ impl PillRenderer for Renderer {
         )
         .unwrap();
 
-        let handle = unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.materials.insert(material)
-        };
+        let handle = self.state.resource_manager.materials.insert(material);
 
         Ok(handle)
     }
@@ -797,10 +791,7 @@ impl PillRenderer for Renderer {
                     }],
                 });
         let camera = RendererCamera::new(&self.ctx.device, &camera_bind_group_layout)?;
-        let handle = unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.cameras.insert(camera)
-        };
+        let handle = self.state.resource_manager.cameras.insert(camera);
 
         Ok(handle)
     }
@@ -810,15 +801,13 @@ impl PillRenderer for Renderer {
         renderer_material_handle: RendererMaterialHandle,
         textures: &MaterialTextureMap,
     ) -> Result<()> {
-        unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            RendererMaterial::update_textures(
-                &self.ctx.device,
-                renderer_material_handle,
-                storage,
-                textures,
-            )
-        }
+        RendererMaterial::update_textures(
+            &self.ctx.device,
+            &self.ctx.queue,
+            renderer_material_handle,
+            &mut self.state.resource_manager,
+            textures,
+        )
     }
 
     fn update_material_parameters(
@@ -826,50 +815,51 @@ impl PillRenderer for Renderer {
         renderer_material_handle: RendererMaterialHandle,
         parameters: &MaterialParameterMap,
     ) -> Result<()> {
-        unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            RendererMaterial::update_parameters(
-                &self.ctx.device,
-                &self.ctx.queue,
-                renderer_material_handle,
-                storage,
-                parameters,
-            )
-        }
+        RendererMaterial::update_parameters(
+            &self.ctx.device,
+            &self.ctx.queue,
+            renderer_material_handle,
+            &mut self.state.resource_manager,
+            parameters,
+        )
     }
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
-        unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.meshes.remove(renderer_mesh_handle).unwrap();
-        }
+        self.state
+            .resource_manager
+            .meshes
+            .remove(renderer_mesh_handle)
+            .unwrap();
 
         Ok(())
     }
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
-        unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.textures.remove(renderer_texture_handle).unwrap();
-        }
+        self.state
+            .resource_manager
+            .textures
+            .remove(renderer_texture_handle)
+            .unwrap();
 
         Ok(())
     }
 
     fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
-        unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.materials.remove(renderer_material_handle).unwrap();
-        }
+        self.state
+            .resource_manager
+            .materials
+            .remove(renderer_material_handle)
+            .unwrap();
 
         Ok(())
     }
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
-        unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage.cameras.remove(renderer_camera_handle).unwrap();
-        }
+        self.state
+            .resource_manager
+            .cameras
+            .remove(renderer_camera_handle)
+            .unwrap();
 
         Ok(())
     }
@@ -921,8 +911,11 @@ impl PillRenderer for Renderer {
         timer: &mut Timer,
     ) -> Result<()> {
         // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
-        // Use prebuilt default_pipeline for bind group layouts and pipeline
-        let _per_draw_bind_group_layout = &self.state.default_pipeline.per_draw_bind_group_layout;
+        let _per_draw_bind_group_layout = &self
+            .state
+            .resource_manager
+            .pipeline(self.state.master_pipeline_handle)
+            .per_draw_bind_group_layout;
         // M3: Hello Mesh + per-draw MVP (dynamic offsets)
         timer.record("Frame: acquire");
 
@@ -945,15 +938,14 @@ impl PillRenderer for Renderer {
             .get(active_camera_entity_handle.data().index as usize)
             .unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = unsafe {
-            let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-            storage
-                .cameras
-                .get_mut(get_renderer_resource_handle_from_camera_component(
-                    active_camera_component,
-                ))
-                .ok_or(Error::new(RendererError::RendererResourceNotFound))?
-        };
+        let renderer_camera = self
+            .state
+            .resource_manager
+            .cameras
+            .get_mut(get_renderer_resource_handle_from_camera_component(
+                active_camera_component,
+            ))
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
         let camera_transform_storage = transform_component_storage
             .data
             .get(active_camera_entity_handle.data().index as usize)
@@ -964,8 +956,9 @@ impl PillRenderer for Renderer {
             active_camera_component,
             active_camera_transform_component,
         );
-        let storage = self.state.renderer_resource_storage.borrow();
-        let renderer_camera = storage
+        let renderer_camera = self
+            .state
+            .resource_manager
             .cameras
             .get(get_renderer_resource_handle_from_camera_component(
                 active_camera_component,
@@ -1024,16 +1017,18 @@ impl PillRenderer for Renderer {
 
         for render_queue_item in render_queue.iter() {
             let key = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
-            let mesh_handle = RendererMeshHandle::new(
-                key.mesh_index.into(),
-                NonZeroU32::new(key.mesh_version.into()).unwrap(),
+            let mesh_handle =
+                RendererMeshHandle::from_parts(key.mesh_index as u32, key.mesh_version as u32);
+            let material_handle = RendererMaterialHandle::from_parts(
+                key.material_index as u32,
+                key.material_version as u32,
             );
-            let material_handle = RendererMaterialHandle::new(
-                key.material_index.into(),
-                NonZeroU32::new(key.material_version.into()).unwrap(),
-            );
-            let storage = self.state.renderer_resource_storage.borrow();
-            let material_for_pipeline = storage.materials.get(material_handle).unwrap();
+            let material_for_pipeline = self
+                .state
+                .resource_manager
+                .materials
+                .get(material_handle)
+                .unwrap();
             let pipeline_handle = material_for_pipeline.pipeline_handle;
 
             // Transform and model
@@ -1048,8 +1043,7 @@ impl PillRenderer for Renderer {
             let model: Mat4 = Mat4::from_cols_array_2d(&model_arr);
 
             // World AABB from mesh local AABB using SIMD operations
-            let storage = self.state.renderer_resource_storage.borrow();
-            let mesh = storage.meshes.get(mesh_handle).unwrap();
+            let mesh = self.state.resource_manager.meshes.get(mesh_handle).unwrap();
             let local_min = Vec3::new(mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2]);
             let local_max = Vec3::new(mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2]);
 
@@ -1126,9 +1120,9 @@ impl PillRenderer for Renderer {
         // Sort by pipeline -> material -> mesh to minimize state changes
         self.state.visible_pre_draw_buffer.sort_by_key(|v| {
             (
-                v.pipeline_handle.data().index,
-                v.material_handle.data().index,
-                v.mesh_handle.data().index,
+                v.pipeline_handle.index(),
+                v.material_handle.index(),
+                v.mesh_handle.index(),
             )
         });
 
@@ -1204,20 +1198,26 @@ impl PillRenderer for Renderer {
                     mapped_at_creation: false,
                 }));
             // ALLOCATION: BindGroup creation (GPU memory) - ~128 bytes metadata
-            self.state.per_draw_bind_group = Some(self.ctx.device.create_bind_group(
-                &wgpu::BindGroupDescriptor {
-                    label: Some("per_draw_bind_group"),
-                    layout: &self.state.default_pipeline.per_draw_bind_group_layout,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: self.state.per_draw_buffer.as_ref().unwrap(),
-                            offset: 0,
-                            size: Some(std::num::NonZeroU64::new(144).unwrap()),
-                        }),
-                    }],
-                },
-            ));
+            self.state.per_draw_bind_group = Some(
+                self.ctx
+                    .device
+                    .create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("per_draw_bind_group"),
+                        layout: &self
+                            .state
+                            .resource_manager
+                            .pipeline(self.state.master_pipeline_handle)
+                            .per_draw_bind_group_layout,
+                        entries: &[wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: self.state.per_draw_buffer.as_ref().unwrap(),
+                                offset: 0,
+                                size: Some(std::num::NonZeroU64::new(144).unwrap()),
+                            }),
+                        }],
+                    }),
+            );
         }
         #[repr(C)]
         #[derive(Copy, Clone)]
@@ -1291,10 +1291,16 @@ impl PillRenderer for Renderer {
             for group in &self.state.groups_buffer {
                 timer.begin_context(&format!(
                     "Pipeline {} / Material {}",
-                    group.pipeline_handle.data().index,
-                    group.material_handle.data().index
+                    group.pipeline_handle.index(),
+                    group.material_handle.index()
                 ));
-                rpass.set_pipeline(&self.state.default_pipeline.render_pipeline);
+                rpass.set_pipeline(
+                    &self
+                        .state
+                        .resource_manager
+                        .pipeline(self.state.master_pipeline_handle)
+                        .render_pipeline,
+                );
 
                 // HOT SoA (per-frame hot path):
                 // - RendererMaterial: texture_bind_group, parameter_bind_group
@@ -1303,20 +1309,24 @@ impl PillRenderer for Renderer {
                 // COLD metadata (names/descs) lives in *_cold arrays and is not read in the draw loop.
 
                 // Get material and set bind groups
-                let material = unsafe {
-                    let storage = &*self.state.renderer_resource_storage.as_ptr();
-                    storage.materials.get(group.material_handle).unwrap()
-                };
+                let material = self
+                    .state
+                    .resource_manager
+                    .materials
+                    .get(group.material_handle)
+                    .unwrap();
                 rpass.set_bind_group(0, &renderer_camera.bind_group, &[]);
                 rpass.set_bind_group(1, &material.texture_bind_group, &[]);
                 rpass.set_bind_group(2, &material.parameter_bind_group, &[]);
 
                 // Process batches with separate storage borrows to avoid lifetime issues
                 for batch in &group.batches {
-                    let mesh = unsafe {
-                        let storage = &*self.state.renderer_resource_storage.as_ptr();
-                        storage.meshes.get(batch.mesh_handle).unwrap()
-                    };
+                    let mesh = self
+                        .state
+                        .resource_manager
+                        .meshes
+                        .get(batch.mesh_handle)
+                        .unwrap();
                     // [API->CLIENT] Provide packed mesh atlas + per-draw base offsets so low-level can draw without re-binding buffers
                     // [DIFF] VB/IB still rebound per batch; packing meshes could avoid rebinding
                     rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
@@ -1426,9 +1436,5 @@ impl Renderer {
 
     pub fn get_surface_view(&self) -> &wgpu::TextureView {
         &self.state.offscreen_color_texture.texture_view
-    }
-
-    pub fn get_resource_storage(&self) -> &Rc<RefCell<RendererResourceStorage>> {
-        &self.state.renderer_resource_storage
     }
 }

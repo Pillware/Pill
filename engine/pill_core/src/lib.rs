@@ -9,6 +9,8 @@ mod pill_twinmap;
 mod pill_typemap;
 mod bitmask_utils;
 mod timer;
+mod handle;
+mod tags;
 
 // --- Use ---
 
@@ -62,4 +64,19 @@ pub use utils::{
 pub use timer::{
     Timer,
     TimerRecord
+};
+
+pub use handle::{
+    Handle,
+    ResourcePool,
+};
+
+pub use tags::{
+    RendererBufferTag,
+    RendererCameraTag,
+    RendererMaterialTag,
+    RendererMeshTag,
+    RendererPipelineTag,
+    RendererPipelineV2Tag,
+    RendererTextureTag,
 };
