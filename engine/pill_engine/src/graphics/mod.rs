@@ -9,6 +9,7 @@ pub use pill_core::{
     RendererBufferTag, RendererCameraTag, RendererMaterialTag, RendererMeshTag,
     RendererPipelineTag, RendererPipelineV2Tag, RendererTextureTag,
 };
+pub use renderer::{render_with_factory, WorldView, WorldViewFactory};
 pub use renderer::{
     BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, Renderer, RendererBufferHandle,
     RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle,
@@ -19,3 +20,4 @@ pub use render_queue::{
     compose_render_queue_key, decompose_render_queue_key, RenderQueueItem, RenderQueueKey,
     RenderQueueKeyFields, RENDER_QUEUE_KEY_ORDER,
 };
+pub use render_queue::{RenderQuery, RenderQueueFactory};

@@ -6,6 +6,7 @@ pub mod pass_compose;
 pub mod pass_overlay_depth;
 pub mod pass_overlay_logo;
 pub mod pass_overlay_uv;
+pub mod pass_scene;
 pub mod renderer;
 pub mod resource_manager;
 pub mod resource_snapshot;

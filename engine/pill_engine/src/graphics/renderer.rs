@@ -1,7 +1,7 @@
 use crate::{
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     engine::Engine,
-    graphics::RenderQueueItem,
+    graphics::{RenderQuery, RenderQueueFactory, RenderQueueItem},
     resources::{
         MaterialHandle, MaterialParameterMap, MaterialTextureMap, MeshData, MeshHandle,
         TextureHandle, TextureType,
@@ -123,3 +123,54 @@ pub trait PillRenderer {
 }
 
 pub type Renderer = Box<dyn PillRenderer>;
+
+// --- Zero-cost factory helper --------------------------------------------------
+
+/// Renders using a zero-cost factory that provides borrowed references.
+/// Keeps the PillRenderer trait object-safe while allowing call sites to be generic and inlined.
+#[inline(always)]
+pub fn render_with_factory<R, F>(
+    renderer: &mut R,
+    factory: &F,
+    egui_ui: Box<dyn Fn(&egui::Context)>,
+    timer: &mut Timer,
+) -> Result<()>
+where
+    R: PillRenderer + ?Sized,
+    F: RenderQueueFactory,
+{
+    let q = factory.get();
+    renderer.render(
+        q.active_camera,
+        q.render_queue,
+        q.camera_components,
+        q.transform_components,
+        egui_ui,
+        timer,
+    )
+}
+
+// WorldView raw-pointer based view to avoid borrow conflicts at call site
+pub struct WorldView {
+    pub active_camera: crate::ecs::EntityHandle,
+    pub render_queue_ptr: *const Vec<RenderQueueItem>,
+    pub camera_components_ptr: *const ComponentStorage<CameraComponent>,
+    pub transform_components_ptr: *const ComponentStorage<TransformComponent>,
+}
+
+pub struct WorldViewFactory {
+    pub world: WorldView,
+}
+
+impl RenderQueueFactory for WorldViewFactory {
+    fn get<'b>(&'b self) -> RenderQuery<'b> {
+        unsafe {
+            RenderQuery {
+                active_camera: self.world.active_camera,
+                render_queue: &*self.world.render_queue_ptr,
+                camera_components: &*self.world.camera_components_ptr,
+                transform_components: &*self.world.transform_components_ptr,
+            }
+        }
+    }
+}

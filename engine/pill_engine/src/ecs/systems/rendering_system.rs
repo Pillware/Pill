@@ -6,7 +6,9 @@ use crate::{
         TransformComponent, UpdatePhase,
     },
     engine::Engine,
-    graphics::{compose_render_queue_key, RenderQueueItem, RenderQueueKey},
+    graphics::{
+        compose_render_queue_key, RenderQuery, RenderQueueFactory, RenderQueueItem, RenderQueueKey,
+    },
     resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
 };
 
@@ -169,33 +171,29 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     let egui_ui = EguiManagerComponent::get_ui(engine); // egui_manager_component.get_ui(engine);
 
-    let active_scene = engine.scene_manager.get_active_scene_mut()?;
-    // Get storages
-    let camera_component_storage = active_scene
-        .get_component_storage::<CameraComponent>()
-        .context(format!(
-            "{}: Cannot get active {}",
-            "rendering_system".sobj_style(),
-            "Camera".gobj_style()
-        ))?;
-    let transform_component_storage = active_scene
-        .get_component_storage::<TransformComponent>()
-        .context(format!(
-            "{}: Cannot get {}",
-            "rendering_system".sobj_style(),
-            "TransformComponents".sobj_style()
-        ))
-        .unwrap();
+    // Storages fetched inside renderer via immutable Engine
 
     timer.begin_context("Render");
 
-    // Render
-    // [API->CLIENT] Low-level renderer expects ordered render_queue and stable storages; scene graph culling/binning lives in client/high-level
-    match engine.renderer.render(
-        active_camera_entity_handle,
-        &engine.render_queue,
-        camera_component_storage,
-        transform_component_storage,
+    // Build WorldView with raw pointers to avoid borrow conflicts
+    let world_view = {
+        let active_scene = engine.scene_manager.get_active_scene()?;
+        let camera_components =
+            active_scene.get_component_storage::<CameraComponent>()? as *const _;
+        let transform_components =
+            active_scene.get_component_storage::<TransformComponent>()? as *const _;
+        let render_queue_ptr = &engine.render_queue as *const _;
+        crate::graphics::WorldView {
+            active_camera: active_camera_entity_handle,
+            render_queue_ptr,
+            camera_components_ptr: camera_components,
+            transform_components_ptr: transform_components,
+        }
+    };
+    let factory = crate::graphics::WorldViewFactory { world: world_view };
+    match crate::graphics::render_with_factory(
+        engine.renderer.as_mut(),
+        &factory,
         egui_ui,
         &mut timer,
     ) {

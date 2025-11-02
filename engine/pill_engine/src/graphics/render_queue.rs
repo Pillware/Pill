@@ -175,3 +175,24 @@ lazy_static! { // This will be initialized in runtime instead of compile-time (t
     pub static ref RENDER_QUEUE_KEY_MESH_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MESH_INDEX_IDX));
     pub static ref RENDER_QUEUE_KEY_MESH_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MESH_VERSION_IDX));
 }
+
+// --- Borrow-only render query bundle and alias ---
+
+use crate::ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent};
+
+/// Borrow-only bundle of references used by the renderer hot path.
+/// Zero-cost: constructed by the caller and passed by value; no allocations/copies.
+pub struct RenderQueueRefs<'a> {
+    pub active_camera: EntityHandle,
+    pub render_queue: &'a Vec<RenderQueueItem>,
+    pub camera_components: &'a ComponentStorage<CameraComponent>,
+    pub transform_components: &'a ComponentStorage<TransformComponent>,
+}
+
+/// Back-compat alias to match existing plan/task wording.
+pub type RenderQuery<'a> = RenderQueueRefs<'a>;
+
+/// Zero-cost factory trait producing borrowed render query refs.
+pub trait RenderQueueFactory {
+    fn get<'a>(&'a self) -> RenderQuery<'a>;
+}

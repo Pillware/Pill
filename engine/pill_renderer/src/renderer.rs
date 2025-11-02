@@ -7,6 +7,7 @@ use crate::{
     pass_overlay_depth::PassOverlayDepth,
     pass_overlay_logo::PassOverlayLogo,
     pass_overlay_uv::PassOverlayUV,
+    pass_scene::PassScene,
     resource_manager::ResourceManager,
     resources::{
         RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture, Vertex,
@@ -116,72 +117,71 @@ pub trait Pass {
         res: &mut crate::resource_manager::ResourceManager,
     ) -> Result<()>;
     fn draw(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
-        renderer: &Renderer,
+        renderer: &mut Renderer,
         frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
+        world: &WorldQuery,
     ) -> Result<()>;
 }
 
 pub struct DeviceContext {
-    config: config::Config,
+    pub(crate) config: config::Config,
     // Window
-    window_ref: Arc<winit::window::Window>,
-    window_size: winit::dpi::PhysicalSize<u32>,
+    pub(crate) window_ref: Arc<winit::window::Window>,
+    pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
     // GPU API
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    surface: wgpu::Surface<'static>,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) surface: wgpu::Surface<'static>,
     // Framebuffer variables
-    surface_configuration: wgpu::SurfaceConfiguration,
+    pub(crate) surface_configuration: wgpu::SurfaceConfiguration,
 }
 
 // Preallocated buffer structs for hot path optimization
-struct VisiblePreDraw {
-    pipeline_handle: RendererPipelineHandle,
-    material_handle: RendererMaterialHandle,
-    mesh_handle: RendererMeshHandle,
-    entity_index: u32,
-    mvp: [[f32; 4]; 4],
+pub(crate) struct VisiblePreDraw {
+    pub(crate) pipeline_handle: RendererPipelineHandle,
+    pub(crate) material_handle: RendererMaterialHandle,
+    pub(crate) mesh_handle: RendererMeshHandle,
+    pub(crate) entity_index: u32,
+    pub(crate) mvp: [[f32; 4]; 4],
 }
 
-struct MeshBatch {
-    mesh_handle: RendererMeshHandle,
-    instances: Vec<[[f32; 4]; 4]>,
-    base_offset_u32: u32, // offset into per-draw ring for first instance
+pub(crate) struct MeshBatch {
+    pub(crate) mesh_handle: RendererMeshHandle,
+    pub(crate) instances: Vec<[[f32; 4]; 4]>,
+    pub(crate) base_offset_u32: u32, // offset into per-draw ring for first instance
 }
 
-struct GroupCmd {
-    pipeline_handle: RendererPipelineHandle,
-    material_handle: RendererMaterialHandle,
-    batches: Vec<MeshBatch>,
+pub(crate) struct GroupCmd {
+    pub(crate) pipeline_handle: RendererPipelineHandle,
+    pub(crate) material_handle: RendererMaterialHandle,
+    pub(crate) batches: Vec<MeshBatch>,
+}
+
+// Local world query for passes (avoids depending on pill_engine::graphics visibility)
+pub struct WorldQuery<'a> {
+    pub active_camera: EntityHandle,
+    pub render_queue: &'a Vec<RenderQueueItem>,
+    pub camera_components: &'a ComponentStorage<CameraComponent>,
+    pub transform_components: &'a ComponentStorage<TransformComponent>,
 }
 
 pub struct State {
     passes: Vec<Box<dyn Pass>>,
     egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
     // Resources and GPU objects moved from ctor into here explicitly
-    resource_manager: ResourceManager,
-    color_format: wgpu::TextureFormat,
-    depth_format: wgpu::TextureFormat,
-    depth_texture: Arc<RendererTexture>,
-    offscreen_color_texture: Arc<RendererTexture>,
-    // Per-frame dynamic UBO ring (Milestone 5)
-    per_draw_stride: u64,
-    per_draw_capacity: u64, // in elements
-    per_draw_buffer: Option<wgpu::Buffer>,
-    per_draw_bind_group_layout: wgpu::BindGroupLayout,
-    per_draw_bind_group: Option<wgpu::BindGroup>,
+    pub(crate) resource_manager: ResourceManager,
+    pub(crate) color_format: wgpu::TextureFormat,
+    pub(crate) depth_format: wgpu::TextureFormat,
+    pub(crate) depth_texture: Arc<RendererTexture>,
+    pub(crate) offscreen_color_texture: Arc<RendererTexture>,
     // Prebuilt PSO handle
     // [SIMILAR] Prebuilt once; no per-draw pipeline churn per TALK
-    master_pipeline_handle: RendererPipelineHandle,
+    pub(crate) master_pipeline_handle: RendererPipelineHandle,
     // resources
-    tex_logo: RendererTextureHandle,
-    // Preallocated buffers for hot path optimization
-    visible_pre_draw_buffer: Vec<VisiblePreDraw>,
-    groups_buffer: Vec<GroupCmd>,
-    staging_buffer: Vec<u8>,
+    pub(crate) tex_logo: RendererTextureHandle,
 }
 
 pub struct Renderer {
@@ -422,10 +422,10 @@ impl PillRenderer for Renderer {
             let master_handle = resource_manager.pipelines.insert(default_pipeline);
 
             // Create state
-            let per_draw_bind_group_layout =
+            let _per_draw_bind_group_layout =
                 ctx.device
                     .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("per_draw_bind_group_layout"),
+                        label: Some("per_draw_bind_group_layout_unused"),
                         entries: &[wgpu::BindGroupLayoutEntry {
                             binding: 0,
                             visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
@@ -468,21 +468,11 @@ impl PillRenderer for Renderer {
                 depth_format,
                 depth_texture: Arc::new(depth_texture),
                 offscreen_color_texture,
-                // Per-frame UBO ring init
-                per_draw_stride: 256, // 80 bytes + 256 byte alignment requirement
-                per_draw_capacity: 0,
-                per_draw_buffer: None,
-                // [SIMILAR] Per-draw dynamic UBO layout with has_dynamic_offset=true per TALK (Milestone 5)
-                per_draw_bind_group_layout,
-                per_draw_bind_group: None,
+                // Scene pass owns per-draw ring and working buffers now
                 // Prebuilt PSO handle
                 master_pipeline_handle: master_handle,
                 // Overlays
                 tex_logo,
-                // Preallocated buffers for hot path optimization (60k instances capacity)
-                visible_pre_draw_buffer: Vec::with_capacity(100_000),
-                groups_buffer: Vec::with_capacity(2000),
-                staging_buffer: Vec::with_capacity(100_000 * 144), // 60k instances * 144 bytes per instance
             }
         };
         Self { state, ctx }
@@ -490,6 +480,9 @@ impl PillRenderer for Renderer {
 
     fn init(&mut self) -> Result<()> {
         self.state.passes.clear();
+
+        // Scene pass first: renders into offscreen targets
+        self.state.passes.push(Box::new(PassScene::new("scene")));
 
         self.state.passes.push(Box::new(PassCompose::new(
             "compose",
@@ -928,430 +921,9 @@ impl PillRenderer for Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        timer.record("Frame: setup view & camera");
+        timer.record("Frame: setup view");
 
-        // [SIMILAR] Modify resources (camera UBO) before draw; separates data mods from drawing as per TALK
-        // [SIMILAR] Bind group slot indices same as in TALK's convention (0=globals,1=material,2=shader,3=dynamic);
-        // Get active camera and update it
-        let camera_storage = camera_component_storage
-            .data
-            .get(active_camera_entity_handle.data().index as usize)
-            .unwrap();
-        let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = self
-            .state
-            .resource_manager
-            .cameras
-            .get_mut(get_renderer_resource_handle_from_camera_component(
-                active_camera_component,
-            ))
-            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
-        let camera_transform_storage = transform_component_storage
-            .data
-            .get(active_camera_entity_handle.data().index as usize)
-            .unwrap();
-        let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
-        renderer_camera.update(
-            &self.ctx.queue,
-            active_camera_component,
-            active_camera_transform_component,
-        );
-        let renderer_camera = self
-            .state
-            .resource_manager
-            .cameras
-            .get(get_renderer_resource_handle_from_camera_component(
-                active_camera_component,
-            ))
-            .unwrap();
-        let clear_color = active_camera_component.clear_color;
-
-        // Record inline draw pass (M2)
-        // ALLOCATION: CommandEncoder creation (CPU memory) - ~1KB command buffer
-        let mut encoder = self
-            .ctx
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("m2_inline_encoder"),
-            });
-
-        // [SIMILAR] CPU frustum culling and precomputing per-draw transforms before starting the pass matches TALK's advice
-        // [DIFF] Only frustum culling here; TALK discusses 2-pass occlusion and broader CPU-driven pipelines
-        // [API->CLIENT] Culling, model matrix building, and visible set construction should live in client/high-level renderer
-        // Build view before pass: cull and prepare per-draw MVPs
-        // SIMD OPTIMIZATION: Use glam for SIMD-accelerated frustum culling
-        let vp_mat: Mat4 =
-            Mat4::from_cols_array_2d(&renderer_camera.uniform.view_projection_matrix);
-
-        // Extract frustum planes using SIMD operations
-        let row3 = vp_mat.row(3); // w row
-        let row0 = vp_mat.row(0); // x row
-        let row1 = vp_mat.row(1); // y row
-        let row2 = vp_mat.row(2); // z row
-
-        // SIMD plane construction: normalize plane equations
-        let make_plane = |plane_vec: Vec4| -> (Vec3, f32) {
-            let normal = Vec3::new(plane_vec.x, plane_vec.y, plane_vec.z);
-            let len = normal.length();
-            if len > 0.0 {
-                let normalized = normal / len;
-                (normalized, plane_vec.w / len)
-            } else {
-                (normal, plane_vec.w)
-            }
-        };
-
-        // Frustum planes using SIMD operations
-        let planes = [
-            make_plane(row3 + row0), // left
-            make_plane(row3 - row0), // right
-            make_plane(row3 + row1), // bottom
-            make_plane(row3 - row1), // top
-            make_plane(row3 + row2), // near
-            make_plane(row3 - row2), // far
-        ];
-
-        timer.record("Culling & MVP build");
-        // REUSE PREALLOCATED BUFFER: Clear and reuse preallocated buffer (no allocation in hot path)
-        self.state.visible_pre_draw_buffer.clear();
-
-        for render_queue_item in render_queue.iter() {
-            let key = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
-            let mesh_handle =
-                RendererMeshHandle::from_parts(key.mesh_index as u32, key.mesh_version as u32);
-            let material_handle = RendererMaterialHandle::from_parts(
-                key.material_index as u32,
-                key.material_version as u32,
-            );
-            let material_for_pipeline = self
-                .state
-                .resource_manager
-                .materials
-                .get(material_handle)
-                .unwrap();
-            let pipeline_handle = material_for_pipeline.pipeline_handle;
-
-            // Transform and model
-            let entity_index = render_queue_item.entity_index as usize;
-            let transform = transform_component_storage
-                .data
-                .get(entity_index)
-                .unwrap()
-                .as_ref()
-                .unwrap();
-            let model_arr = pill_engine::internal::get_model_matrix(transform);
-            let model: Mat4 = Mat4::from_cols_array_2d(&model_arr);
-
-            // World AABB from mesh local AABB using SIMD operations
-            let mesh = self.state.resource_manager.meshes.get(mesh_handle).unwrap();
-            let local_min = Vec3::new(mesh.aabb_min[0], mesh.aabb_min[1], mesh.aabb_min[2]);
-            let local_max = Vec3::new(mesh.aabb_max[0], mesh.aabb_max[1], mesh.aabb_max[2]);
-
-            // SIMD AABB corner transformation
-            let corners = [
-                Vec3::new(local_min.x, local_min.y, local_min.z),
-                Vec3::new(local_max.x, local_min.y, local_min.z),
-                Vec3::new(local_min.x, local_max.y, local_min.z),
-                Vec3::new(local_max.x, local_max.y, local_min.z),
-                Vec3::new(local_min.x, local_min.y, local_max.z),
-                Vec3::new(local_max.x, local_min.y, local_max.z),
-                Vec3::new(local_min.x, local_max.y, local_max.z),
-                Vec3::new(local_max.x, local_max.y, local_max.z),
-            ];
-
-            let mut world_min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
-            let mut world_max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-
-            // SIMD matrix-vector multiplication for corner transformation
-            for c in &corners {
-                let p4 = model * Vec4::new(c.x, c.y, c.z, 1.0);
-                let p = Vec3::new(p4.x, p4.y, p4.z);
-                world_min = world_min.min(p);
-                world_max = world_max.max(p);
-            }
-
-            // SIMD frustum culling test
-            let mut outside = false;
-            for (normal, d) in &planes {
-                // SIMD select operation for AABB corner selection
-                let p = Vec3::new(
-                    if normal.x >= 0.0 {
-                        world_max.x
-                    } else {
-                        world_min.x
-                    },
-                    if normal.y >= 0.0 {
-                        world_max.y
-                    } else {
-                        world_min.y
-                    },
-                    if normal.z >= 0.0 {
-                        world_max.z
-                    } else {
-                        world_min.z
-                    },
-                );
-                // SIMD dot product
-                let dist = normal.dot(p) + *d;
-                if dist < 0.0 {
-                    outside = true;
-                    break;
-                }
-            }
-            if outside {
-                continue;
-            }
-
-            let view_proj: Mat4 =
-                Mat4::from_cols_array_2d(&renderer_camera.uniform.view_projection_matrix);
-            let mvp: [[f32; 4]; 4] = (view_proj * model).to_cols_array_2d();
-            // REUSE PREALLOCATED BUFFER: Push to preallocated buffer (no allocation in hot path)
-            self.state.visible_pre_draw_buffer.push(VisiblePreDraw {
-                pipeline_handle,
-                material_handle,
-                mesh_handle,
-                entity_index: render_queue_item.entity_index,
-                mvp,
-            });
-        }
-
-        // [SIMILAR] Sort by pipeline/material/mesh to minimize state changes as in TALK
-        // [API->CLIENT] Sorting/grouping is client responsibility; low-level should accept an already ordered draw stream
-        // Sort by pipeline -> material -> mesh to minimize state changes
-        self.state.visible_pre_draw_buffer.sort_by_key(|v| {
-            (
-                v.pipeline_handle.index(),
-                v.material_handle.index(),
-                v.mesh_handle.index(),
-            )
-        });
-
-        // Build grouped instancing batches by (pipeline, material, mesh)
-        timer.record("Sort & group draws");
-        // REUSE PREALLOCATED BUFFER: Clear and reuse preallocated groups buffer (no allocation in hot path)
-        self.state.groups_buffer.clear();
-        for v in &self.state.visible_pre_draw_buffer {
-            if self
-                .state
-                .groups_buffer
-                .last()
-                .map(|g| {
-                    g.pipeline_handle != v.pipeline_handle || g.material_handle != v.material_handle
-                })
-                .unwrap_or(true)
-            {
-                self.state.groups_buffer.push(GroupCmd {
-                    pipeline_handle: v.pipeline_handle,
-                    material_handle: v.material_handle,
-                    batches: Vec::new(),
-                });
-            }
-            let g = self.state.groups_buffer.last_mut().unwrap();
-            if let Some(batch) = g
-                .batches
-                .iter_mut()
-                .find(|b| b.mesh_handle == v.mesh_handle)
-            {
-                batch.instances.push(v.mvp);
-            } else {
-                // ALLOCATION: Vec<[[f32; 4]; 4]> for instances (CPU memory) - optimistic: 1 instance * 64 bytes, pessimistic: 60k instances * 64 bytes = ~3.8MB per batch
-                g.batches.push(MeshBatch {
-                    mesh_handle: v.mesh_handle,
-                    instances: vec![v.mvp],
-                    base_offset_u32: 0,
-                });
-            }
-        }
-        let draw_call_count: usize = self
-            .state
-            .groups_buffer
-            .iter()
-            .map(|g| g.batches.len())
-            .sum();
-        // Expose draw call count via per-frame timer counters for UI/metrics
-        timer.set_counter("draw_calls", draw_call_count as u64);
-
-        // Milestone 5: Per-frame ring buffer
-        // [SIMILAR] Batch write dynamic per-draw data once; bind with dynamic offsets
-        timer.begin_context("Per-draw UBO setup");
-        let needed: u64 = self
-            .state
-            .groups_buffer
-            .iter()
-            .map(|g| {
-                g.batches
-                    .iter()
-                    .map(|b| b.instances.len() as u64)
-                    .sum::<u64>()
-            })
-            .sum();
-        // total instances; no direct use beyond sanity, avoid unused warning by not binding
-        if self.state.per_draw_capacity < needed {
-            self.state.per_draw_capacity = needed.next_power_of_two().max(1);
-            let size = self.state.per_draw_stride * self.state.per_draw_capacity;
-            // ALLOCATION: GPU buffer creation (GPU memory) - optimistic: 1KB, pessimistic: 60k instances * 144 bytes = ~8.6MB
-            self.state.per_draw_buffer =
-                Some(self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("per_draw_dynamic_ubo_ring"),
-                    size,
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                }));
-            // ALLOCATION: BindGroup creation (GPU memory) - ~128 bytes metadata
-            self.state.per_draw_bind_group = Some(
-                self.ctx
-                    .device
-                    .create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("per_draw_bind_group"),
-                        layout: &self
-                            .state
-                            .resource_manager
-                            .pipeline(self.state.master_pipeline_handle)
-                            .per_draw_bind_group_layout,
-                        entries: &[wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                                buffer: self.state.per_draw_buffer.as_ref().unwrap(),
-                                offset: 0,
-                                size: Some(std::num::NonZeroU64::new(144).unwrap()),
-                            }),
-                        }],
-                    }),
-            );
-        }
-        #[repr(C)]
-        #[derive(Copy, Clone)]
-        struct PerDrawStd140 {
-            mvp: [[f32; 4]; 4], // 4x4 MVP matrix (16 floats)
-            tint: [f32; 4],     // RGBA color (4 floats)
-        }
-        unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
-        unsafe impl bytemuck::Pod for PerDrawStd140 {}
-        let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-        // REUSE PREALLOCATED BUFFER: Clear and reuse preallocated staging buffer (no allocation in hot path)
-        self.state.staging_buffer.clear();
-        let mut next_offset_u32: u32 = 0;
-        for g in self.state.groups_buffer.iter_mut() {
-            for b in g.batches.iter_mut() {
-                b.base_offset_u32 = next_offset_u32;
-                for mvp in &b.instances {
-                    let pd = PerDrawStd140 { mvp: *mvp, tint };
-                    self.state
-                        .staging_buffer
-                        .extend_from_slice(bytemuck::bytes_of(&pd));
-                    let pad = (self.state.per_draw_stride as usize)
-                        - std::mem::size_of::<PerDrawStd140>();
-                    self.state
-                        .staging_buffer
-                        .extend(std::iter::repeat(0u8).take(pad));
-                    next_offset_u32 =
-                        next_offset_u32.wrapping_add(self.state.per_draw_stride as u32);
-                }
-            }
-        }
-        if let Some(buf) = &self.state.per_draw_buffer {
-            self.ctx
-                .queue
-                .write_buffer(buf, 0, &self.state.staging_buffer);
-        }
-        timer.record("Per-draw UBO write (ring)");
-        timer.end_context()?;
-
-        {
-            timer.begin_context("Offscreen pass");
-            // Render scene into offscreen color target (T0)
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("m6_offscreen_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.state.offscreen_color_texture.texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear_color.x as f64,
-                            g: clear_color.y as f64,
-                            b: clear_color.z as f64,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.state.depth_texture.texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            // [SIMILAR] Bind pipeline/material once per group; change only minimal per-draw state (offsets)
-            // Instancing: one draw per (pipeline, material, mesh) batch with instance_count
-            for group in &self.state.groups_buffer {
-                timer.begin_context(&format!(
-                    "Pipeline {} / Material {}",
-                    group.pipeline_handle.index(),
-                    group.material_handle.index()
-                ));
-                rpass.set_pipeline(
-                    &self
-                        .state
-                        .resource_manager
-                        .pipeline(self.state.master_pipeline_handle)
-                        .render_pipeline,
-                );
-
-                // HOT SoA (per-frame hot path):
-                // - RendererMaterial: texture_bind_group, parameter_bind_group
-                // - RendererCamera  : bind_group
-                // - RendererMesh    : vertex_buffer, index_buffer, index_count
-                // COLD metadata (names/descs) lives in *_cold arrays and is not read in the draw loop.
-
-                // Get material and set bind groups
-                let material = self
-                    .state
-                    .resource_manager
-                    .materials
-                    .get(group.material_handle)
-                    .unwrap();
-                rpass.set_bind_group(0, &renderer_camera.bind_group, &[]);
-                rpass.set_bind_group(1, &material.texture_bind_group, &[]);
-                rpass.set_bind_group(2, &material.parameter_bind_group, &[]);
-
-                // Process batches with separate storage borrows to avoid lifetime issues
-                for batch in &group.batches {
-                    let mesh = self
-                        .state
-                        .resource_manager
-                        .meshes
-                        .get(batch.mesh_handle)
-                        .unwrap();
-                    // [API->CLIENT] Provide packed mesh atlas + per-draw base offsets so low-level can draw without re-binding buffers
-                    // [DIFF] VB/IB still rebound per batch; packing meshes could avoid rebinding
-                    rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    // Per-instance draws with dynamic uniform offsets (no shader change required)
-                    for i in 0..batch.instances.len() {
-                        let offset = batch
-                            .base_offset_u32
-                            .wrapping_add((i as u32) * (self.state.per_draw_stride as u32));
-                        rpass.set_bind_group(
-                            3,
-                            self.state.per_draw_bind_group.as_ref().unwrap(),
-                            &[offset],
-                        );
-                        rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                    }
-                }
-                timer.end_context()?; // End pipeline/material group
-            }
-            timer.record("Encode offscreen pass");
-        }
-        timer.end_context()?; // End "Offscreen pass"
-
-        self.ctx.queue.submit([encoder.finish()]);
-        timer.record("Submit scene+compose passes");
+        // Scene draw is now a Pass; remaining work is handled in user passes encoder below
 
         {
             // User passes with separate encoder
@@ -1365,13 +937,22 @@ impl PillRenderer for Renderer {
                     });
 
             // Loop over state.passes, for each
-            for pass in &self.state.passes {
-                let label = pass.get_label();
-                timer.begin_context(label);
-                let _ = pass.draw(&mut encoder, self, &frame, &view);
-                timer.record(label);
+            // Construct world query bundle for passes
+            let world_q = WorldQuery {
+                active_camera: active_camera_entity_handle,
+                render_queue,
+                camera_components: camera_component_storage,
+                transform_components: transform_component_storage,
+            };
+            let mut passes = std::mem::take(&mut self.state.passes);
+            for pass in passes.iter_mut() {
+                let label_owned = pass.get_label().to_string();
+                timer.begin_context(&label_owned);
+                let _ = pass.draw(&mut encoder, self, &frame, &view, &world_q);
+                timer.record(&label_owned);
                 timer.end_context()?;
             }
+            self.state.passes = passes;
 
             self.ctx.queue.submit([encoder.finish()]);
             timer.record("User passes submit");

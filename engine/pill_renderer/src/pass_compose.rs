@@ -1,4 +1,4 @@
-use crate::renderer::{Pass, Renderer};
+use crate::renderer::{Pass, Renderer, WorldQuery};
 use crate::resource_manager::ResourceManager;
 use crate::resources::RendererTexture;
 use anyhow::Result;
@@ -165,11 +165,12 @@ impl Pass for PassCompose {
     }
 
     fn draw(
-        &self,
+        &mut self,
         encoder: &mut CommandEncoder,
-        _renderer: &Renderer,
+        _renderer: &mut Renderer,
         _frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
+        _world: &WorldQuery,
     ) -> Result<()> {
         // Create render pass for this pass using the provided frame
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

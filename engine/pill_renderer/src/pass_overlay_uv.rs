@@ -1,4 +1,4 @@
-use crate::renderer::{Pass, Renderer};
+use crate::renderer::{Pass, Renderer, WorldQuery};
 use crate::resource_manager::ResourceManager;
 use anyhow::Result;
 use pill_engine::internal::{BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc};
@@ -129,27 +129,31 @@ impl Pass for PassOverlayUV {
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("overlay_rect_bind_group"),
+            label: Some("overlay_rect_bind_group"),
             layout: &bgl,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-            });
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
 
         // Store pipeline handle
-        self.pipeline = Some(PipelineV2 { pipeline, bind_group_layouts: vec![bgl] });
+        self.pipeline = Some(PipelineV2 {
+            pipeline,
+            bind_group_layouts: vec![bgl],
+        });
         self.bind_group = Some(bind_group);
 
         Ok(())
     }
 
     fn draw(
-        &self,
+        &mut self,
         encoder: &mut CommandEncoder,
-        _renderer: &Renderer,
+        _renderer: &mut Renderer,
         _frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
+        _world: &WorldQuery,
     ) -> Result<()> {
         // Create render pass for this pass using the provided frame
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
