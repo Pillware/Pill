@@ -32,8 +32,9 @@ impl Pass for PassOverlayUV {
         &self.label
     }
 
-    fn init(&mut self, device: &wgpu::Device, _res: &mut ResourceManager) -> Result<()> {
+    fn init(&mut self, renderer: &mut Renderer) -> Result<()> {
         println!("Initializing pass: {}", self.label);
+        let device = &renderer.ctx.device;
 
         // Create buffer for overlay rect UBO
         let aligned_size = 256u64;

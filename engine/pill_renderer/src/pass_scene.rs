@@ -9,7 +9,30 @@ use pill_engine::internal::{
     EntityHandle, RenderQueueItem, RendererMaterialHandle, RendererMeshHandle,
     RendererPipelineHandle, TransformComponent,
 };
+use pill_engine::internal::{PillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc};
 use wgpu::CommandEncoder;
+
+// Preallocated buffer structs for hot path optimization
+pub(crate) struct VisiblePreDraw {
+    pub(crate) pipeline_handle: RendererPipelineHandle,
+    pub(crate) material_handle: RendererMaterialHandle,
+    pub(crate) mesh_handle: RendererMeshHandle,
+    pub(crate) entity_index: u32,
+    pub(crate) mvp: [[f32; 4]; 4],
+}
+
+// M3: Hello Mesh + per-draw MVP (dynamic offsets)
+pub(crate) struct MeshBatch {
+    pub(crate) mesh_handle: RendererMeshHandle,
+    pub(crate) instances: Vec<[[f32; 4]; 4]>,
+    pub(crate) base_offset_u32: u32, // offset into per-draw ring for first instance
+}
+
+pub(crate) struct GroupCmd {
+    pub(crate) pipeline_handle: RendererPipelineHandle,
+    pub(crate) material_handle: RendererMaterialHandle,
+    pub(crate) batches: Vec<MeshBatch>,
+}
 
 pub struct PassScene {
     label: String,
@@ -19,8 +42,8 @@ pub struct PassScene {
     per_draw_buffer: Option<wgpu::Buffer>,
     per_draw_bind_group: Option<wgpu::BindGroup>,
     // Working buffers
-    visible_pre_draw_buffer: Vec<crate::renderer::VisiblePreDraw>,
-    groups_buffer: Vec<crate::renderer::GroupCmd>,
+    visible_pre_draw_buffer: Vec<VisiblePreDraw>,
+    groups_buffer: Vec<GroupCmd>,
     staging_buffer: Vec<u8>,
     // Pass-local state initialized in init(), read every draw
     state: Option<PassSceneState>,
@@ -28,9 +51,9 @@ pub struct PassScene {
 
 struct PassSceneState {
     camera_uniform: CameraUniform,
-    camera_bgl: wgpu::BindGroupLayout,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    pipeline: PipelineV2,
 }
 
 impl PassScene {
@@ -60,13 +83,55 @@ impl Pass for PassScene {
         &self.label
     }
 
-    fn init(&mut self, _device: &wgpu::Device, _res: &mut ResourceManager) -> Result<()> {
-        // Pre-create camera bind group layout, buffer and bind group
-        let device = _device;
+    fn init(&mut self, renderer: &mut Renderer) -> Result<()> {
+        // TODO:
+        //  Problem:
+        //      Material is coupled with Pipeline binds, now has handle to update i.e. texture via bind
+        //      User creates Material and sets the params (floats, textures, etc.) that trigger update via Pipeline bind
+        //      User can access Resources only via ResourcePool handles
+        //      Material has to stay in sync with Pipeline and Shader
+        //  Solution?:
+        //      User can access via ResourcesPool only Material or MaterialInstance handles.
+        //      Move PassScene to Engine. Pipeline can be local, Material too? Expose Material by Enum?
+        //      User can create MaterialInstance and select Material/Pipeline via enum? i.e. PBR, UNLIT etc.
+        //      Decouple Material params data from Implementation
+        // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
+        // Shaders: must match bind group layout indices: 0(camera),1(material textures),2(material params),3(per-draw)
+        let vertex_wgsl = r#"
+            @group(0) @binding(0) var<uniform> UCamera: mat4x4<f32>;
+            struct PerDraw { mvp: mat4x4<f32>, tint: vec4<f32>, };
+            @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
+            struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
+            struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
+            @vertex fn main(input: VSIn) -> VSOut {
+              var out: VSOut;
+              out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
+              out.uv = input.uv;
+              return out;
+            }
+        "#;
+        let fragment_wgsl = r#"
+            @group(1) @binding(0) var tex_diffuse: texture_2d<f32>;
+            @group(1) @binding(1) var smp_diffuse: sampler;
+            @group(1) @binding(2) var tex_normal: texture_2d<f32>;
+            @group(1) @binding(3) var smp_normal: sampler;
+            struct MaterialParams { tint_spec: vec4<f32>, }
+            @group(2) @binding(0) var<uniform> UMaterial: MaterialParams;
+            struct PerDraw { mvp: mat4x4<f32>, tint: vec4<f32>, };
+            @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
+            @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+              let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
+              let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0) * UPerDraw.tint;
+              let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
+              let color = albedo * tinted * spec_boost;
+              return vec4<f32>(color.rgb, 1.0);
+            }
+        "#;
 
-        let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("camera_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
+        // Describe bind group layouts for pipeline creation
+        let bind_groups: Vec<Vec<wgpu::BindGroupLayoutEntry>> = vec![
+            // 0: camera
+            vec![wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
@@ -76,18 +141,107 @@ impl Pass for PassScene {
                 },
                 count: None,
             }],
+            // 1: material textures
+            vec![
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+            // 2: material params
+            vec![wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            // 3: per-draw dynamic UBO
+            vec![wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: Some(std::num::NonZeroU64::new(144).unwrap()),
+                },
+                count: None,
+            }],
+        ];
+
+        let color_target = wgpu::ColorTargetState {
+            format: renderer.state.color_format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::ALL,
+        };
+        let depth_stencil = Some(wgpu::DepthStencilState {
+            format: renderer.state.depth_format,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
         });
 
+        let desc = PipelineV2Desc {
+            label: Some("scene_pipeline_v2"),
+            vs: ShaderDesc {
+                source: vertex_wgsl,
+                entry_func: "main",
+            },
+            ps: ShaderDesc {
+                source: fragment_wgsl,
+                entry_func: "main",
+            },
+            bind_groups,
+            targets: &[Some(color_target)],
+            depth_stencil,
+            multisample: wgpu::MultisampleState::default(),
+        };
+
+        let pipeline = renderer.create_pipeline_v2(desc)?;
+
+        // Camera buffer and bind group using pipeline's camera layout (group 0)
+        let device = &renderer.ctx.device;
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("camera_buffer"),
             size: std::mem::size_of::<CameraUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("camera_bind_group"),
-            layout: &camera_bgl,
+            layout: &pipeline.bind_group_layouts[0],
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: camera_buffer.as_entire_binding(),
@@ -96,9 +250,9 @@ impl Pass for PassScene {
 
         self.state = Some(PassSceneState {
             camera_uniform: CameraUniform::new(),
-            camera_bgl,
             camera_buffer,
             camera_bind_group,
+            pipeline,
         });
 
         Ok(())
@@ -262,14 +416,13 @@ impl Pass for PassScene {
 
             let view_proj: Mat4 = vp_mat;
             let mvp: [[f32; 4]; 4] = (view_proj * model).to_cols_array_2d();
-            self.visible_pre_draw_buffer
-                .push(crate::renderer::VisiblePreDraw {
-                    pipeline_handle,
-                    material_handle,
-                    mesh_handle,
-                    entity_index: render_queue_item.entity_index,
-                    mvp,
-                });
+            self.visible_pre_draw_buffer.push(VisiblePreDraw {
+                pipeline_handle,
+                material_handle,
+                mesh_handle,
+                entity_index: render_queue_item.entity_index,
+                mvp,
+            });
         }
 
         // Sort and group
@@ -290,7 +443,7 @@ impl Pass for PassScene {
                 })
                 .unwrap_or(true)
             {
-                self.groups_buffer.push(crate::renderer::GroupCmd {
+                self.groups_buffer.push(GroupCmd {
                     pipeline_handle: v.pipeline_handle,
                     material_handle: v.material_handle,
                     batches: Vec::new(),
@@ -304,7 +457,7 @@ impl Pass for PassScene {
             {
                 batch.instances.push(v.mvp);
             } else {
-                g.batches.push(crate::renderer::MeshBatch {
+                g.batches.push(MeshBatch {
                     mesh_handle: v.mesh_handle,
                     instances: vec![v.mvp],
                     base_offset_u32: 0,
@@ -333,27 +486,27 @@ impl Pass for PassScene {
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 }));
-            self.per_draw_bind_group = Some(
-                renderer
-                    .ctx
-                    .device
-                    .create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("per_draw_bind_group"),
-                        layout: &renderer
-                            .state
-                            .resource_manager
-                            .pipeline(renderer.state.master_pipeline_handle)
-                            .per_draw_bind_group_layout,
-                        entries: &[wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                                buffer: self.per_draw_buffer.as_ref().unwrap(),
-                                offset: 0,
-                                size: Some(std::num::NonZeroU64::new(144).unwrap()),
-                            }),
-                        }],
-                    }),
-            );
+            let layout_ptr: *const wgpu::BindGroupLayout = {
+                let state = get_state(self);
+                &state.pipeline.bind_group_layouts[3] as *const _
+            };
+            let buf_ptr: *const wgpu::Buffer = self.per_draw_buffer.as_ref().unwrap();
+            let new_bg = renderer
+                .ctx
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("per_draw_bind_group"),
+                    layout: unsafe { &*layout_ptr },
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: unsafe { &*buf_ptr },
+                            offset: 0,
+                            size: Some(std::num::NonZeroU64::new(144).unwrap()),
+                        }),
+                    }],
+                });
+            self.per_draw_bind_group = Some(new_bg);
         }
         #[repr(C)]
         #[derive(Copy, Clone)]
@@ -414,14 +567,12 @@ impl Pass for PassScene {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
+        let pipeline_ptr: *const wgpu::RenderPipeline = {
+            let state = get_state(self);
+            &state.pipeline.pipeline as *const _
+        };
         for group in &self.groups_buffer {
-            rpass.set_pipeline(
-                &renderer
-                    .state
-                    .resource_manager
-                    .pipeline(renderer.state.master_pipeline_handle)
-                    .render_pipeline,
-            );
+            rpass.set_pipeline(unsafe { &*pipeline_ptr });
             let material = renderer
                 .state
                 .resource_manager

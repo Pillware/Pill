@@ -111,11 +111,7 @@ fn create_render_target(
 
 pub trait Pass {
     fn get_label(&self) -> &str;
-    fn init(
-        &mut self,
-        device: &wgpu::Device,
-        res: &mut crate::resource_manager::ResourceManager,
-    ) -> Result<()>;
+    fn init(&mut self, renderer: &mut Renderer) -> Result<()>;
     fn draw(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -137,27 +133,6 @@ pub struct DeviceContext {
     pub(crate) surface: wgpu::Surface<'static>,
     // Framebuffer variables
     pub(crate) surface_configuration: wgpu::SurfaceConfiguration,
-}
-
-// Preallocated buffer structs for hot path optimization
-pub(crate) struct VisiblePreDraw {
-    pub(crate) pipeline_handle: RendererPipelineHandle,
-    pub(crate) material_handle: RendererMaterialHandle,
-    pub(crate) mesh_handle: RendererMeshHandle,
-    pub(crate) entity_index: u32,
-    pub(crate) mvp: [[f32; 4]; 4],
-}
-
-pub(crate) struct MeshBatch {
-    pub(crate) mesh_handle: RendererMeshHandle,
-    pub(crate) instances: Vec<[[f32; 4]; 4]>,
-    pub(crate) base_offset_u32: u32, // offset into per-draw ring for first instance
-}
-
-pub(crate) struct GroupCmd {
-    pub(crate) pipeline_handle: RendererPipelineHandle,
-    pub(crate) material_handle: RendererMaterialHandle,
-    pub(crate) batches: Vec<MeshBatch>,
 }
 
 // Local world query for passes (avoids depending on pill_engine::graphics visibility)
@@ -518,7 +493,7 @@ impl PillRenderer for Renderer {
         // Temporarily move passes out to avoid borrowing conflicts
         let mut passes = std::mem::take(&mut self.state.passes);
         for pass in passes.iter_mut() {
-            let _ = pass.init(&self.ctx.device, &mut self.state.resource_manager);
+            let _ = pass.init(self);
         }
         self.state.passes = passes;
 
@@ -631,7 +606,7 @@ impl PillRenderer for Renderer {
                 vertex: wgpu::VertexState {
                     module: &vs,
                     entry_point: desc.vs.entry_func,
-                    buffers: &[],
+                    buffers: &[crate::resources::RendererMesh::data_layout_descriptor()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -641,7 +616,7 @@ impl PillRenderer for Renderer {
                     compilation_options: Default::default(),
                 }),
                 primitive: wgpu::PrimitiveState {
-                    cull_mode: None,
+                    cull_mode: Some(wgpu::Face::Back),
                     ..wgpu::PrimitiveState::default()
                 },
                 depth_stencil: desc.depth_stencil,
@@ -904,13 +879,6 @@ impl PillRenderer for Renderer {
         egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()> {
-        // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
-        let _per_draw_bind_group_layout = &self
-            .state
-            .resource_manager
-            .pipeline(self.state.master_pipeline_handle)
-            .per_draw_bind_group_layout;
-        // M3: Hello Mesh + per-draw MVP (dynamic offsets)
         timer.record("Frame: acquire");
 
         // Get frame or return mapped error if failed
@@ -951,7 +919,6 @@ impl PillRenderer for Renderer {
                 timer.begin_context(&label_owned);
                 let _ = pass.draw(&mut encoder, self, &frame, &view, &world_q);
                 timer.record(&label_owned);
-                timer.end_context()?;
             }
             self.state.passes = passes;
 

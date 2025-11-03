@@ -36,8 +36,9 @@ impl Pass for PassCompose {
         &self.label
     }
 
-    fn init(&mut self, device: &wgpu::Device, _res: &mut ResourceManager) -> Result<()> {
+    fn init(&mut self, renderer: &mut Renderer) -> Result<()> {
         println!("Initializing pass: {}", self.label);
+        let device = &renderer.ctx.device;
 
         let vs = r#"
         struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
