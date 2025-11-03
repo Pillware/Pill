@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 pill_engine = {path = "../../engine/pill_engine", features = ["game"]}
 
 rand = "0.8.4"
-cgmath = "0.18.0"
+glam = { version = "0.30.8", features = ["serde"] }
 
 [features]
 benchmark = []

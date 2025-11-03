@@ -83,7 +83,7 @@ pub mod game {
         resources::{
             Resource,
             ResourceStorage,
-            Texture, 
+            Texture,
             TextureHandle,
             TextureType,
             Material,
@@ -94,20 +94,14 @@ pub mod game {
             Sound
         },
     };
-    
+
     extern crate pill_core;
-    pub use pill_core::{ 
-        PillTypeMapKey, 
-        Vector2f, 
-        Vector3f, 
-        Color, 
-        Vector2i, 
-        Vector3i,
-        Vector3fExt,
+    pub use pill_core::{
+        PillTypeMapKey,
         create_game,
         define_new_pill_slotmap_key,
     };
-  
+
     extern crate anyhow;
     pub use anyhow::{ Context, Result, Error };
 }
@@ -154,7 +148,7 @@ pub mod internal {
             get_normal_matrix,
         },
         resources::{
-            Texture, 
+            Texture,
             TextureHandle,
             TextureType,
 
@@ -164,7 +158,7 @@ pub mod internal {
             Mesh,
             MeshHandle,
             MeshData,
-            MeshVertex,    
+            MeshVertex,
 
             ResourceLoadType,
             ResourceManager,

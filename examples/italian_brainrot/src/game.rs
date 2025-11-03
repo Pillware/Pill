@@ -53,7 +53,7 @@ impl PillGame for Game {
 		// Create camera entity
 		engine.build_entity(active_scene)
 			.with_component(TransformComponent::builder()
-				.position(Vector3f::new(0.0, 0.0, -3.0))
+				.position(Vec3::new(0.0, 0.0, -3.0))
 				.build())
 			.with_component(CameraComponent::builder()
 				.enabled(true)
@@ -83,7 +83,7 @@ fn rotation_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
 
 	for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, TagAlphaComponent>()? {
-		transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
+		transform_component.rotate_around_axis(90.0 * delta_time, Vec3::new(0.0, 1.0, 0.0));
 	}
 
 	Ok(())

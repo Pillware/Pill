@@ -1,11 +1,12 @@
 use crate::{
-    engine::Engine, 
-    graphics::{ RenderQueueKey, compose_render_queue_key, RendererCameraHandle }, 
+    engine::Engine,
+    graphics::{ RenderQueueKey, compose_render_queue_key, RendererCameraHandle },
     resources::{ Material, MaterialHandle, Mesh, MeshHandle },
     ecs::{ Component, ComponentStorage, EntityHandle, SceneHandle, DeferredUpdateManagerPointer, DeferredUpdateComponentRequest },
 };
 
-use pill_core::{ PillSlotMapKey, Color, PillStyle, get_type_name };
+use pill_core::{ PillSlotMapKey, PillStyle, get_type_name };
+use glam::Vec3;
 
 use anyhow::{Result, Context, Error};
 use pill_core::{ PillTypeMap, PillTypeMapKey };
@@ -38,7 +39,7 @@ impl CameraComponentBuilder {
             component: CameraComponent::new(),
         }
     }
-    
+
     pub fn aspect(mut self, aspect: CameraAspectRatio) -> Self {
         self.component.aspect = aspect;
         self
@@ -54,7 +55,7 @@ impl CameraComponentBuilder {
         self
     }
 
-    pub fn clear_color(mut self, clear_color: Color) -> Self {
+    pub fn clear_color(mut self, clear_color: Vec3) -> Self {
         self.component.clear_color = clear_color;
         self
     }
@@ -75,7 +76,7 @@ pub struct CameraComponent {
     pub aspect: CameraAspectRatio,
     pub fov: f32,
     pub range: Range<f32>,
-    pub clear_color: Color,
+    pub clear_color: Vec3,
     pub enabled: bool,
     pub(crate) renderer_resource_handle: Option<RendererCameraHandle>,
 }
@@ -86,11 +87,11 @@ impl CameraComponent {
     }
 
     pub fn new() -> Self {
-        Self { 
+        Self {
             aspect: CameraAspectRatio::Automatic(1.0),
             fov: 60.0,
             range: 0.1..100.0,
-            clear_color: Color::new(0.15, 0.15, 0.15),
+            clear_color: Vec3::new(0.15, 0.15, 0.15),
             renderer_resource_handle: None,
             enabled: false,
         }
@@ -103,7 +104,7 @@ pub fn get_renderer_resource_handle_from_camera_component(camera_component: &Cam
 }
 
 impl PillTypeMapKey for CameraComponent {
-    type Storage = ComponentStorage<CameraComponent>; 
+    type Storage = ComponentStorage<CameraComponent>;
 }
 
 impl Component for CameraComponent {

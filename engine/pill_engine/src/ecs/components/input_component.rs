@@ -3,9 +3,10 @@ use crate::{
     ecs::{ GlobalComponent, GlobalComponentStorage },
 };
 
-use pill_core::{ PillTypeMapKey, Vector2f };
+use pill_core::PillTypeMapKey;
+use glam::Vec2;
 
-use std::{ 
+use std::{
     any::Any,
     cell::RefCell,
     collections::HashMap,
@@ -18,8 +19,8 @@ pub enum InputEvent {
     KeyboardKey { key: KeyboardKey, state: ElementState },
     MouseButton { key: MouseButton, state: ElementState },
     MouseWheel { delta: MouseScrollDelta },
-    MouseDelta { delta: Vector2f },
-    MousePosition { position: Vector2f }
+    MouseDelta { delta: Vec2 },
+    MousePosition { position: Vec2 }
 }
 
 pub struct InputComponent {
@@ -34,17 +35,17 @@ pub struct InputComponent {
     pub(crate) mouse_buttons: [bool; 3],
 
     // Mouse motion
-    pub(crate) current_mouse_delta: Vector2f,
-    pub(crate) current_mouse_position: Vector2f,
+    pub(crate) current_mouse_delta: Vec2,
+    pub(crate) current_mouse_position: Vec2,
 
     // Mouse scroll wheels delta
-    pub(crate) current_mouse_scroll_delta: Vector2f,
-    pub(crate) current_mouse_scroll_pixel_delta: Vector2f,
+    pub(crate) current_mouse_scroll_delta: Vec2,
+    pub(crate) current_mouse_scroll_pixel_delta: Vec2,
 }
 
 impl InputComponent {
     pub(crate) fn new() -> Self {
-        Self { 
+        Self {
             pressed_keyboard_keys: [false; 163],
             released_keyboard_keys: [false; 163],
             keyboard_keys: [false; 163],
@@ -52,12 +53,12 @@ impl InputComponent {
             pressed_mouse_buttons: [false; 3],
             released_mouse_buttons: [false; 3],
             mouse_buttons: [false; 3],
-    
-            current_mouse_delta: Vector2f::new(0.0, 0.0),
-            current_mouse_position: Vector2f::new(0.0, 0.0),
 
-            current_mouse_scroll_delta: Vector2f::new(0.0, 0.0),
-            current_mouse_scroll_pixel_delta: Vector2f::new(0.0, 0.0),
+            current_mouse_delta: Vec2::new(0.0, 0.0),
+            current_mouse_position: Vec2::new(0.0, 0.0),
+
+            current_mouse_scroll_delta: Vec2::new(0.0, 0.0),
+            current_mouse_scroll_pixel_delta: Vec2::new(0.0, 0.0),
         }
     }
 
@@ -84,9 +85,9 @@ impl InputComponent {
     }
 
     pub(crate) fn set_mouse_motion(&mut self) {
-        self.current_mouse_delta = Vector2f::new(0.0,0.0);
-        self.current_mouse_scroll_delta = Vector2f::new(0.0, 0.0);
-        self.current_mouse_scroll_pixel_delta = Vector2f::new(0.0, 0.0);
+        self.current_mouse_delta = Vec2::new(0.0,0.0);
+        self.current_mouse_scroll_delta = Vec2::new(0.0, 0.0);
+        self.current_mouse_scroll_pixel_delta = Vec2::new(0.0, 0.0);
     }
 
     // Keyboard keys
@@ -128,7 +129,7 @@ impl InputComponent {
             MouseButton::Right => 2,
             _ => return
         };
-        
+
         match state {
             ElementState::Pressed => {
                 if self.mouse_buttons[index] {
@@ -145,7 +146,7 @@ impl InputComponent {
             }
         }
     }
-    
+
     pub fn get_mouse_button_pressed(&self, button: MouseButton) -> bool {
         match button {
             MouseButton::Left => self.pressed_mouse_buttons[0],
@@ -174,43 +175,43 @@ impl InputComponent {
     }
 
     // Mouse scroll
-    pub fn get_mouse_scroll_delta(&self) -> Vector2f {
+    pub fn get_mouse_scroll_delta(&self) -> Vec2 {
         self.current_mouse_scroll_delta
     }
 
-    pub(crate) fn set_mouse_scroll_delta(&mut self, delta: Vector2f) {
+    pub(crate) fn set_mouse_scroll_delta(&mut self, delta: Vec2) {
         self.current_mouse_scroll_delta = delta;
     }
 
-    pub fn get_mouse_scroll_pixel_delta(&self) -> Vector2f {
+    pub fn get_mouse_scroll_pixel_delta(&self) -> Vec2 {
         self.current_mouse_scroll_pixel_delta
     }
 
-    pub(crate) fn set_mouse_scroll_pixel_delta(&mut self, delta: Vector2f) {
+    pub(crate) fn set_mouse_scroll_pixel_delta(&mut self, delta: Vec2) {
         self.current_mouse_scroll_pixel_delta = delta;
     }
 
     // - Mouse motion
-      
-    pub fn get_mouse_delta(&self) -> Vector2f {
+
+    pub fn get_mouse_delta(&self) -> Vec2 {
         self.current_mouse_delta
     }
 
-    pub(crate) fn set_mouse_delta(&mut self, delta: Vector2f) {
+    pub(crate) fn set_mouse_delta(&mut self, delta: Vec2) {
         self.current_mouse_delta = delta;
     }
 
-    pub fn get_mouse_position(&self) -> Vector2f {
+    pub fn get_mouse_position(&self) -> Vec2 {
         self.current_mouse_position
     }
 
-    pub(crate) fn set_mouse_position(&mut self, position: Vector2f) {
+    pub(crate) fn set_mouse_position(&mut self, position: Vec2) {
         self.current_mouse_position = position;
     }
 }
 
 impl PillTypeMapKey for InputComponent {
-    type Storage = GlobalComponentStorage<InputComponent>; 
+    type Storage = GlobalComponentStorage<InputComponent>;
 }
 
-impl GlobalComponent for InputComponent { } 
+impl GlobalComponent for InputComponent { }

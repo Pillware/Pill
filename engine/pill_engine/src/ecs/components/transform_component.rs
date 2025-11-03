@@ -4,7 +4,7 @@ use crate::{
     }, engine::Engine
 };
 use pill_core::{
-    get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f
+    get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey
 };
 use glam::{Vec3, Mat3, Mat4};
 use anyhow::{ Result, Context, Error };
@@ -34,17 +34,17 @@ impl TransformComponentBuilder {
         }
     }
 
-    pub fn position(mut self, position: Vector3f) -> Self {
+    pub fn position(mut self, position: Vec3) -> Self {
         self.component.position = position;
         self
     }
 
-    pub fn rotation(mut self, rotation: Vector3f) -> Self {
+    pub fn rotation(mut self, rotation: Vec3) -> Self {
         self.component.rotation = rotation;
         self
     }
 
-    pub fn scale(mut self, scale: Vector3f) -> Self {
+    pub fn scale(mut self, scale: Vec3) -> Self {
         self.component.scale = scale;
         self
     }
@@ -61,11 +61,11 @@ impl TransformComponentBuilder {
 #[readonly::make]
 pub struct TransformComponent {
     #[readonly]
-    pub position: Vector3f,
+    pub position: Vec3,
     #[readonly]
-    pub rotation: Vector3f,
+    pub rotation: Vec3,
     #[readonly]
-    pub scale: Vector3f,
+    pub scale: Vec3,
 
     model_matrix: [[f32; 4]; 4],
     normal_matrix: [[f32; 3]; 3],
@@ -86,7 +86,7 @@ impl TransformComponent {
         Self {
             position: Vec3::ZERO,
             rotation: Vec3::ZERO,
-            scale: Vector3f::new(1.0, 1.0, 1.0),
+            scale: Vec3::new(1.0, 1.0, 1.0),
             model_matrix: Mat4::IDENTITY.to_cols_array_2d(),
             normal_matrix: Mat3::IDENTITY.to_cols_array_2d(),
             matrix_update_required: true,
@@ -96,7 +96,7 @@ impl TransformComponent {
 
     // --- Position ---
 
-    pub fn set_position(&mut self, position: Vector3f) {
+    pub fn set_position(&mut self, position: Vec3) {
         self.position = position;
         self.matrix_update_required = true;
     }
@@ -119,12 +119,12 @@ impl TransformComponent {
         self.matrix_update_required = true;
     }
 
-    pub fn translate_world(&mut self, delta: Vector3f) {
+    pub fn translate_world(&mut self, delta: Vec3) {
         self.position += delta;
         self.matrix_update_required = true;
     }
 
-    pub fn translate_local(&mut self, delta: Vector3f) {
+    pub fn translate_local(&mut self, delta: Vec3) {
         self.position += self.get_forward_direction() * delta.z +
                         self.get_right_direction() * delta.x +
                         self.get_up_direction() * delta.y;
@@ -133,28 +133,28 @@ impl TransformComponent {
 
     // --- Directions ---
 
-    pub fn get_forward_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(0.0, 0.0, -1.0)
+    pub fn get_forward_direction(&self) -> Vec3 {
+        self.get_rotation_matrix() * Vec3::new(0.0, 0.0, -1.0)
     }
 
-    pub fn get_backward_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(0.0, 0.0, 1.0)
+    pub fn get_backward_direction(&self) -> Vec3 {
+        self.get_rotation_matrix() * Vec3::new(0.0, 0.0, 1.0)
     }
 
-    pub fn get_right_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(1.0, 0.0, 0.0)
+    pub fn get_right_direction(&self) -> Vec3 {
+        self.get_rotation_matrix() * Vec3::new(1.0, 0.0, 0.0)
     }
 
-    pub fn get_left_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(-1.0, 0.0, 0.0)
+    pub fn get_left_direction(&self) -> Vec3 {
+        self.get_rotation_matrix() * Vec3::new(-1.0, 0.0, 0.0)
     }
 
-    pub fn get_up_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(0.0, 1.0, 0.0)
+    pub fn get_up_direction(&self) -> Vec3 {
+        self.get_rotation_matrix() * Vec3::new(0.0, 1.0, 0.0)
     }
 
-    pub fn get_down_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(0.0, -1.0, 0.0)
+    pub fn get_down_direction(&self) -> Vec3 {
+        self.get_rotation_matrix() * Vec3::new(0.0, -1.0, 0.0)
     }
 
     fn get_rotation_matrix(&self) -> Mat3 {
@@ -166,20 +166,20 @@ impl TransformComponent {
 
     // --- Rotation ---
 
-    pub fn set_rotation(&mut self, rotation: Vector3f) {
+    pub fn set_rotation(&mut self, rotation: Vec3) {
         self.rotation = rotation;
         self.matrix_update_required = true;
     }
 
     // TODO: Implement quaternion rotation
-    pub fn rotate_around_axis(&mut self, angle: f32, axis: Vector3f) {
+    pub fn rotate_around_axis(&mut self, angle: f32, axis: Vec3) {
         self.rotation += angle * axis;
         self.matrix_update_required = true;
     }
 
     // --- Scale ---
 
-    pub fn set_scale(&mut self, scale: Vector3f) {
+    pub fn set_scale(&mut self, scale: Vec3) {
         self.scale = scale;
         self.matrix_update_required = true;
     }
