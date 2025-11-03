@@ -6,7 +6,7 @@ use crate::{
 use pill_core::{
     get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey
 };
-use glam::{Vec3, Mat3, Mat4};
+use glam::{Vec3, Mat3, Mat3A, Mat4};
 use anyhow::{ Result, Context, Error };
 use serde::{ Serialize, Deserialize };
 
@@ -67,8 +67,8 @@ pub struct TransformComponent {
     #[readonly]
     pub scale: Vec3,
 
-    model_matrix: [[f32; 4]; 4],
-    normal_matrix: [[f32; 3]; 3],
+    model_matrix: Mat4,
+    normal_matrix: Mat3A,
 
     // There may me multiple updates of the position/rotation/scale in the single frame.
     // Not to calculate matrices multiple times, we will update them only once per frame
@@ -87,8 +87,8 @@ impl TransformComponent {
             position: Vec3::ZERO,
             rotation: Vec3::ZERO,
             scale: Vec3::new(1.0, 1.0, 1.0),
-            model_matrix: Mat4::IDENTITY.to_cols_array_2d(),
-            normal_matrix: Mat3::IDENTITY.to_cols_array_2d(),
+            model_matrix: Mat4::IDENTITY,
+            normal_matrix: Mat3A::IDENTITY,
             matrix_update_required: true,
             net_dirty: false,
         }
@@ -190,15 +190,15 @@ pub fn update_transform_matrices(transform_component: &mut TransformComponent) {
     let model = Mat4::model(transform_component.position, transform_component.rotation, transform_component.scale);
     let normal = Mat3::from_euler_angles(transform_component.rotation);
 
-    transform_component.model_matrix = model.to_cols_array_2d();
-    transform_component.normal_matrix = normal.to_cols_array_2d();
+    transform_component.model_matrix = model;
+    transform_component.normal_matrix = normal.into();
 }
 
-pub fn get_model_matrix(transform_component: &TransformComponent) -> [[f32; 4]; 4] {
+pub fn get_model_matrix(transform_component: &TransformComponent) -> Mat4 {
     transform_component.model_matrix
 }
 
-pub fn get_normal_matrix(transform_component: &TransformComponent) -> [[f32; 3]; 3] {
+pub fn get_normal_matrix(transform_component: &TransformComponent) -> Mat3A {
     transform_component.normal_matrix
 }
 

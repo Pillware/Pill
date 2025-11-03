@@ -17,3 +17,6 @@ glam = { version = "0.30.8", features = ["serde"] }
 benchmark = []
 
 default = ["benchmark"]
+
+[profile.release]
+lto = "thin"

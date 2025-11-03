@@ -25,7 +25,7 @@ log = "0.4"
 # Other
 winit = "0.29"
 wgpu = { version = "0.20.1", features = [ "spirv" ] }
-glam = { version = "0.30.8", features = ["serde"] }
+glam = { version = "0.30.8", features = ["serde", "bytemuck"] }
 futures = "0.3"
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }

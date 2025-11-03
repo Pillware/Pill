@@ -1,5 +1,6 @@
 use crate::resources::Vertex;
 
+use glam::{Mat3A, Mat4};
 use pill_engine::{ internal::{ TransformComponent, get_model_matrix, get_normal_matrix, update_transform_matrices }};
 
 // --- Instance ---
@@ -7,9 +8,9 @@ use pill_engine::{ internal::{ TransformComponent, get_model_matrix, get_normal_
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Instance {
-    pub(crate) model_matrix: [[f32; 4]; 4], // It is not possible to use cgmath with bytemuck directly. Conversion from Quaternion into a 4x4 f32 array (matrix) needed
-    // TODO: double check if we can use glam types directly right now?
-    pub(crate) normal_matrix: [[f32; 3]; 3], // It is matrix3 because we only need the rotation componen
+    pub(crate) model_matrix: Mat4,
+    pub(crate) normal_matrix: Mat3A, // It is matrix3 because we only need the rotation component
+    // though we store it as SIMD-friendly type
 }
 
 impl Instance {
@@ -59,12 +60,12 @@ impl Vertex for Instance {
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
+                    offset: mem::size_of::<[f32; 20]>() as wgpu::BufferAddress,
                     shader_location: 10,
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
+                    offset: mem::size_of::<[f32; 24]>() as wgpu::BufferAddress,
                     shader_location: 11,
                     format: wgpu::VertexFormat::Float32x3,
                 },
