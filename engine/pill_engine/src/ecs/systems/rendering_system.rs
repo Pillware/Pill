@@ -9,7 +9,7 @@ use crate::{
     graphics::{
         compose_render_queue_key, RenderQuery, RenderQueueFactory, RenderQueueItem, RenderQueueKey,
     },
-    resources::{Mesh, MeshHandle, PBRMaterial, PBRMaterialHandle, ResourceManager},
+    resources::{Mesh, MeshHandle, Model, PBRMaterial, PBRMaterialHandle, ResourceManager},
 };
 
 use pill_core::{EngineError, PillSlotMapKey, PillStyle, RendererError, Timer};
@@ -21,7 +21,7 @@ use std::{ops::Range, time::Instant};
 
 use crate::config::{
     DEFAULT_COLOR_TEXTURE_NAME, DEFAULT_MATERIAL_NAME, DEFAULT_NORMAL_TEXTURE_NAME, MAX_MATERIALS,
-    MAX_MESHES, MAX_SOUNDS, MAX_TEXTURES,
+    MAX_MESHES, MAX_MODELS, MAX_SOUNDS, MAX_TEXTURES,
 };
 use crate::ecs::components::render_state_component::RenderStateComponent;
 use crate::resources::{Resource, ResourceLoadType, Texture, TextureHandle, TextureType};
@@ -291,6 +291,10 @@ fn init_default_resources(engine: &mut Engine) -> Result<(), Error> {
         .config
         .get_int("MAX_MATERIALS")
         .unwrap_or(MAX_MATERIALS as i64) as usize;
+    let max_model_count = engine
+        .config
+        .get_int("MAX_MODELS")
+        .unwrap_or(MAX_MODELS as i64) as usize;
     // TODO: Move to SoundSystem init
     let max_sound_count = engine
         .config
@@ -300,6 +304,7 @@ fn init_default_resources(engine: &mut Engine) -> Result<(), Error> {
     engine.register_resource_type::<Texture>(max_texture_count)?;
     engine.register_resource_type::<Mesh>(max_mesh_count)?;
     engine.register_resource_type::<PBRMaterial>(max_material_count)?;
+    engine.register_resource_type::<Model>(max_model_count)?;
     engine.register_resource_type::<crate::resources::Sound>(max_sound_count)?;
 
     let default_color = Box::new(*include_bytes!("../../../res/textures/default_color.png"));

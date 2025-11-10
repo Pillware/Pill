@@ -61,14 +61,21 @@ pub const RENDERING_SYSTEM: SystemConfig = SystemConfig {
 };
 
 // --- Resources ---
-
+//
+// Diagnostics (glTF import):
+// - Set `LOG_GLTF_IMPORT = true` in runtime config to log imported meshes/materials/texture bindings.
+// - Run with `RUST_LOG=info RUST_BACKTRACE=1` to see logs.
+// - If materials show no textures bound, the asset may use KTX2/Basis images; use PNG/JPG variants
+//   (e.g., glTF-Sample-Models “glTF-Binary”) or add Basis/KTX2 transcode support.
+//
 pub const RESOURCE_VERSION_LIMIT: usize = 255;
 
 pub const MAX_PIPELINES: usize = 10;
-pub const MAX_TEXTURES: usize = 10;
-pub const MAX_MATERIALS: usize = 10;
-pub const MAX_MESHES: usize = 10;
+pub const MAX_TEXTURES: usize = 1000;
+pub const MAX_MATERIALS: usize = 1000;
+pub const MAX_MESHES: usize = 1000;
 pub const MAX_SOUNDS: usize = 10;
+pub const MAX_MODELS: usize = 1000;
 
 // Convention: All resource names starting with "pill_default" are restricted, cannot be added and removed from game
 pub const DEFAULT_RESOURCE_PREFIX: &str = "pill_default";

@@ -46,6 +46,16 @@ impl Mesh {
         }
     }
 
+    pub fn from_mesh_data(name: &str, data: MeshData) -> Self {
+        Self {
+            name: name.to_string(),
+            path: PathBuf::new(),
+            renderer_resource_handle: None,
+            mesh_data: Some(data),
+            flip_uv_y: false,
+        }
+    }
+
     pub fn with_uv_flip(mut self, flip: bool) -> Self {
         self.flip_uv_y = flip;
         self
@@ -74,48 +84,51 @@ impl Resource for Mesh {
             get_type_name::<Self>().sobj_style()
         );
 
-        // Resolve absolute path
-        let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-        let ext = resource_file_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        // If mesh data is not pre-populated, load from path
+        if self.mesh_data.is_none() {
+            // Resolve absolute path
+            let resource_file_path = engine.game_resources_directory_path.join(&self.path);
+            let ext = resource_file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
 
-        // Route by extension
-        match ext.as_str() {
-            "obj" => {
-                // Validate and load OBJ
-                pill_core::validate_asset_path(&resource_file_path, &["obj"])
-                    .context(error_message.clone())?;
-                let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
-                    .context(error_message.clone())
-                    .context(format!(
-                        "Failed to create mesh data from {} file",
-                        resource_file_path.file_name().unwrap().to_string_lossy()
-                    ))?;
-                self.mesh_data = Some(mesh_data);
-            }
-            "gltf" | "glb" => {
-                // Validate and load glTF/GLB
-                pill_core::validate_asset_path(&resource_file_path, &["gltf", "glb"])
-                    .context(error_message.clone())?;
-                let mesh_data = load_meshdata_from_gltf(&resource_file_path)
-                    .context(error_message.clone())
-                    .context(format!(
-                        "Failed to create mesh data from {} file",
-                        resource_file_path.file_name().unwrap().to_string_lossy()
-                    ))?;
-                self.mesh_data = Some(mesh_data);
-            }
-            _ => {
-                return Err(Error::new(EngineError::InvalidModelFile(
-                    resource_file_path
-                        .clone()
-                        .into_os_string()
-                        .into_string()
-                        .unwrap_or_else(|_| "unknown".to_string()),
-                )));
+            // Route by extension
+            match ext.as_str() {
+                "obj" => {
+                    // Validate and load OBJ
+                    pill_core::validate_asset_path(&resource_file_path, &["obj"])
+                        .context(error_message.clone())?;
+                    let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
+                        .context(error_message.clone())
+                        .context(format!(
+                            "Failed to create mesh data from {} file",
+                            resource_file_path.file_name().unwrap().to_string_lossy()
+                        ))?;
+                    self.mesh_data = Some(mesh_data);
+                }
+                "gltf" | "glb" => {
+                    // Validate and load glTF/GLB
+                    pill_core::validate_asset_path(&resource_file_path, &["gltf", "glb"])
+                        .context(error_message.clone())?;
+                    let mesh_data = load_meshdata_from_gltf(&resource_file_path)
+                        .context(error_message.clone())
+                        .context(format!(
+                            "Failed to create mesh data from {} file",
+                            resource_file_path.file_name().unwrap().to_string_lossy()
+                        ))?;
+                    self.mesh_data = Some(mesh_data);
+                }
+                _ => {
+                    return Err(Error::new(EngineError::InvalidModelFile(
+                        resource_file_path
+                            .clone()
+                            .into_os_string()
+                            .into_string()
+                            .unwrap_or_else(|_| "unknown".to_string()),
+                    )));
+                }
             }
         }
 
@@ -173,6 +186,24 @@ pub struct MeshData {
     pub indices: Vec<u32>,
     pub aabb_min: [f32; 3],
     pub aabb_max: [f32; 3],
+}
+
+impl MeshVertex {
+    pub fn new(
+        position: [f32; 3],
+        texture_coordinates: [f32; 2],
+        normal: [f32; 3],
+        tangent: [f32; 3],
+        bitangent: [f32; 3],
+    ) -> Self {
+        Self {
+            position,
+            texture_coordinates,
+            normal,
+            tangent,
+            bitangent,
+        }
+    }
 }
 
 impl MeshData {

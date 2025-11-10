@@ -195,15 +195,14 @@ impl Pass for PassScene {
 
             const PI: f32 = 3.14159265359;
 
-            // TODO: Move lights to engine-provided uniforms; support directional/spot/area lights.
-            const LIGHT_POS0: vec3<f32> = vec3<f32>(-10.0,  10.0, 10.0);
-            const LIGHT_POS1: vec3<f32> = vec3<f32>( 10.0,  10.0, 10.0);
-            const LIGHT_POS2: vec3<f32> = vec3<f32>(-10.0, -10.0, 10.0);
-            const LIGHT_POS3: vec3<f32> = vec3<f32>( 10.0, -10.0, 10.0);
-            const LIGHT_COL0: vec3<f32> = vec3<f32>(300.0, 300.0, 300.0);
-            const LIGHT_COL1: vec3<f32> = vec3<f32>(300.0, 300.0, 300.0);
-            const LIGHT_COL2: vec3<f32> = vec3<f32>(300.0, 300.0, 300.0);
-            const LIGHT_COL3: vec3<f32> = vec3<f32>(300.0, 300.0, 300.0);
+            // Directional lights: vec4(direction.xyz, intensity)
+            // Direction points toward the surface (light-to-surface).
+            const LIGHT_DIR0: vec3<f32> = vec3<f32>(-0.5, -1.0, -0.2);
+            const LIGHT_DIR1: vec3<f32> = vec3<f32>( 0.5, -0.5,  0.2);
+            const LIGHT_DIR2: vec3<f32> = vec3<f32>( 0.0,  1.0,  0.0);
+            const LIGHT_COL0: vec4<f32> = vec4<f32>( 1.0,  0.5,  0.5, 10.0); // Key
+            const LIGHT_COL1: vec4<f32> = vec4<f32>( 0.5,  0.5,  1.0, 3.0); // Fill
+            const LIGHT_COL2: vec4<f32> = vec4<f32>( 0.1,  0.1,  1.0, 0.2); // Rim
 
             fn DistributionGGX(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
               // Add epsilon to avoid singularities at very low roughness.
@@ -235,16 +234,16 @@ impl Pass for PassScene {
               return F0 + (vec3<f32>(1.0, 1.0, 1.0) - F0) * pow(1.0 - cosTheta, 5.0);
             }
 
-            fn accumulateLight(
-              WorldPos: vec3<f32>, N: vec3<f32>, V: vec3<f32>, F0: vec3<f32>,
+            // Directional light accumulator (white light scaled by intensity).
+            fn accumulateDirLight(
+              N: vec3<f32>, V: vec3<f32>, F0: vec3<f32>,
               albedo: vec3<f32>, roughness: f32, metallic: f32,
-              lightPos: vec3<f32>, lightColor: vec3<f32>
+              lightDir: vec3<f32>, lightColor: vec4<f32>
             ) -> vec3<f32> {
-              let L = normalize(lightPos - WorldPos);
+              // lightDir is direction from light to surface; incoming L is opposite
+              let L = normalize(-lightDir.xyz);
               let H = normalize(V + L);
-              let distance = length(lightPos - WorldPos);
-              let attenuation = 1.0 / (distance * distance);
-              let radiance = lightColor * attenuation;
+              let radiance = lightColor.w * lightColor.xyz;
 
               let NDF = DistributionGGX(N, H, roughness);
               let G   = GeometrySmith(N, V, L, roughness);
@@ -275,7 +274,6 @@ impl Pass for PassScene {
               roughness = clamp(roughness, 0.045, 0.99);
               let metallic = clamp(mr.y * UMaterial.metallicFactor, 0.0, 1.0);
               // TODO: Support normal mapping (tangent space) and AO texture.
-              let ao: f32 = 1.0;
               let N = normalize(NormalIn);
               let V = normalize(UCamera.position.xyz - WorldPos);
 
@@ -283,12 +281,15 @@ impl Pass for PassScene {
               F0 = mix(F0, albedo, vec3<f32>(metallic, metallic, metallic));
 
               var Lo = vec3<f32>(0.0, 0.0, 0.0);
-              Lo = Lo + accumulateLight(WorldPos, N, V, F0, albedo, roughness, metallic, LIGHT_POS0, LIGHT_COL0);
-              Lo = Lo + accumulateLight(WorldPos, N, V, F0, albedo, roughness, metallic, LIGHT_POS1, LIGHT_COL1);
-              Lo = Lo + accumulateLight(WorldPos, N, V, F0, albedo, roughness, metallic, LIGHT_POS2, LIGHT_COL2);
-              Lo = Lo + accumulateLight(WorldPos, N, V, F0, albedo, roughness, metallic, LIGHT_POS3, LIGHT_COL3);
+              Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR0, LIGHT_COL0);
+              Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR1, LIGHT_COL1);
+              Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR2, LIGHT_COL2);
 
               var color = Lo;
+              // color = vec3<f32>(uv, 0.0); // DBG uv
+              // color = vec3<f32>(N*0.5+0.5); // DBG Normal
+              // color = vec3<f32>(WorldPos); // DBG WorldPos
+              // color = vec3<f32>(roughness); // DBG roughness
               return vec4<f32>(color, 1.0);
             }
         "#;

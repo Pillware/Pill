@@ -2,6 +2,7 @@
 
 mod material;
 mod mesh;
+mod model;
 mod resource;
 mod resource_manager;
 mod resource_storage;
@@ -23,3 +24,5 @@ pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};
 pub use texture::{Texture, TextureHandle, TextureType};
 
 pub use material::{PBRMaterial, PBRMaterialHandle};
+
+pub use model::{Model, ModelHandle, ModelMaterialSlot};

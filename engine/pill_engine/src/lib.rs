@@ -62,8 +62,8 @@ pub mod game {
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
         resources::{
-            Mesh, MeshHandle, PBRMaterial, PBRMaterialHandle, Resource, ResourceLoadType,
-            ResourceStorage, Sound, Texture, TextureHandle, TextureType,
+            Mesh, MeshHandle, Model, ModelHandle, PBRMaterial, PBRMaterialHandle, Resource,
+            ResourceLoadType, ResourceStorage, Sound, Texture, TextureHandle, TextureType,
         },
     };
 
