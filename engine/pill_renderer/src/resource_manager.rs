@@ -5,8 +5,8 @@ use pill_core::{
     RendererPipelineTag, RendererTextureTag, ResourcePool,
 };
 use pill_engine::internal::{
-    RendererBufferHandle, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
-    RendererPipelineHandle, RendererTextureHandle,
+    RendererBufferHandle, RendererCameraHandle, RendererMeshHandle, RendererPipelineHandle,
+    RendererTextureHandle,
 };
 
 use crate::resources::{
@@ -89,7 +89,7 @@ impl ResourceManager {
                 queue,
                 Some("default_color"),
                 &dyn_img,
-                pill_engine::internal::TextureType::Color,
+                pill_engine::internal::TextureType::Gamma,
             )
             .expect("create default color tex");
             let h = self.textures.insert(tex);
@@ -105,7 +105,7 @@ impl ResourceManager {
                 queue,
                 Some("default_normal"),
                 &dyn_img,
-                pill_engine::internal::TextureType::Normal,
+                pill_engine::internal::TextureType::Linear,
             )
             .expect("create default normal tex");
             let h = self.textures.insert(tex);

@@ -2,7 +2,7 @@
 
 use crate::{
     engine::Engine,
-    resources::{ MeshHandle, Material, Resource, ResourceStorage }, 
+    resources::{ MeshHandle, PBRMaterial, Resource, ResourceStorage }, 
     ecs::{ Component, EntityHandle, ComponentStorage, SceneHandle, GlobalComponentStorage, GlobalComponent }
 };
 

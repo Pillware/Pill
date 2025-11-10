@@ -1,48 +1,25 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
 
-mod resource_manager;
-mod mesh;
-mod texture;
-mod resource_storage;
 mod material;
+mod mesh;
 mod resource;
+mod resource_manager;
+mod resource_storage;
 mod sound;
+mod texture;
 
 // --- Use ---
 
 pub use resource_manager::ResourceManager;
 
-pub use resource::{
-    Resource,
-    ResourceLoadType,
-};
+pub use resource::{Resource, ResourceLoadType};
 
 pub use resource_storage::ResourceStorage;
 
-pub use sound::{
-    Sound,
-    SoundHandle,
-};
+pub use sound::{Sound, SoundHandle};
 
-pub use mesh::{ 
-    Mesh, 
-    MeshData, 
-    MeshVertex, 
-    MeshHandle 
-};
+pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};
 
-pub use texture::{ 
-    Texture, 
-    TextureType, 
-    TextureHandle 
-};
+pub use texture::{Texture, TextureHandle, TextureType};
 
-pub use material::{ 
-    Material, 
-    MaterialTextureMap, 
-    MaterialParameter, 
-    MaterialTexture, 
-    MaterialParameterMap, 
-    MaterialHandle,
-    get_renderer_texture_handle_from_material_texture,
-};
+pub use material::{PBRMaterial, PBRMaterialHandle};

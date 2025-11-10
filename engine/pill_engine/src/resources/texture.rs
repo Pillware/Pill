@@ -1,26 +1,26 @@
 use crate::{
-    engine::Engine,
-    graphics::{ RendererTextureHandle },
-    resources::{ ResourceStorage, Resource, ResourceLoadType, Material },
-    ecs::{ DeferredUpdateManagerPointer },
     config::*,
+    ecs::DeferredUpdateManagerPointer,
+    engine::Engine,
+    graphics::RendererTextureHandle,
+    resources::{PBRMaterial, Resource, ResourceLoadType, ResourceStorage},
 };
 
-use pill_core::{ PillSlotMapKey, PillTypeMapKey, PillStyle, get_type_name };
+use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
-use std::collections::HashSet;
-use std::path::{ Path, PathBuf };
-use anyhow::{ Result, Context, Error };
+use anyhow::{Context, Error, Result};
 use bytemuck::{Pod, Zeroable}; // For derive macros to work
-use readonly::make;            // For #[readonly::make] to resolve
+use readonly::make;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf}; // For #[readonly::make] to resolve
 pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum TextureType {
-    Color,
-    Normal,
+    Gamma, // sRGB
+    Linear,
 }
 
 #[readonly::make]
@@ -35,7 +35,11 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub fn new(name: &str, texture_type: TextureType, resource_load_type: ResourceLoadType) -> Self {
+    pub fn new(
+        name: &str,
+        texture_type: TextureType,
+        resource_load_type: ResourceLoadType,
+    ) -> Self {
         Self {
             name: name.to_string(),
             load_type: resource_load_type,
@@ -57,7 +61,11 @@ impl Resource for Texture {
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+        let error_message = format!(
+            "Initializing {} {} failed",
+            "Resource".gobj_style(),
+            get_type_name::<Self>().sobj_style()
+        );
 
         // Create new renderer texture resource
         let image_data = match &self.load_type {
@@ -68,15 +76,18 @@ impl Resource for Texture {
 
                 // Load data
                 image::open(&resource_file_path)?
-            },
+            }
             ResourceLoadType::Bytes(bytes) => {
                 // Load data
                 image::load_from_memory(bytes)?
-            },
+            }
         };
 
         // Create renderer texture resource
-        let renderer_resource_handle = engine.renderer.create_texture(&self.name, &image_data, self.texture_type).context(error_message.clone())?;
+        let renderer_resource_handle = engine
+            .renderer
+            .create_texture(&self.name, &image_data, self.texture_type)
+            .context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -86,32 +97,6 @@ impl Resource for Texture {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_texture(v).unwrap();
-        }
-
-        // Take resource storage from engine
-        let resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>().expect("Critical: Resource not registered");
-        let materials = &mut resource_storage.data;
-
-        // Find materials that use this texture and update them
-        for material_slot in materials.iter_mut() {
-            let material = material_slot.1.as_mut().expect("Critical: Resource is None");
-
-            // Update texture slots
-            let mut material_updated = false;
-            for texture_slot in material.get_textures().data.iter_mut() {
-                if let Some(texture_handle) = texture_slot.1.texture_handle {
-                    // If material texture has handle to this texture
-                    if texture_handle.data() == self_handle.data() {
-                        texture_slot.1.texture_handle = None;
-                        texture_slot.1.renderer_texture_handle = None;
-                        material_updated = true;
-                    }
-                }
-            }
-
-            if material_updated {
-                engine.renderer.update_material_textures(material.renderer_resource_handle.unwrap(), &material.textures).unwrap();
-            }
         }
 
         Ok(())

@@ -55,16 +55,16 @@ impl PillGame for Game {
         let mut materials = Vec::new();
         for j in 0..10 {
             let mut mat = Material::new(&format!("PillMat{}", j));
-            mat.set_texture("color", pill_color_texture_handle.clone())?;
-            mat.set_texture("normal", pill_normal_texture_handle.clone())?;
+            mat.set_albedo_texture(pill_color_texture_handle.clone());
+            mat.set_normal_texture(pill_normal_texture_handle.clone());
             let tint = Color::new(
                 rng.gen_range(0.2..=0.8),
                 rng.gen_range(0.2..=0.8),
                 rng.gen_range(0.2..=0.8),
             );
             let spec = rng.gen_range(0.0..=1.0);
-            mat.set_color("tint", tint)?;
-            mat.set_scalar("specularity", spec)?;
+            mat.set_base_color_factor(tint);
+            mat.set_metallic_factor(spec);
             let handle = engine.add_resource::<Material>(mat)?;
             materials.push(handle);
         }

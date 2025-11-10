@@ -11,9 +11,9 @@ pub use pill_core::{
 };
 pub use renderer::{render_with_factory, WorldView, WorldViewFactory};
 pub use renderer::{
-    BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, Renderer, RendererBufferHandle,
-    RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle,
-    RendererPipelineV2Handle, RendererTextureHandle, ShaderDesc,
+    BufferDesc, MaterialDesc, PillRenderer, PipelineV2, PipelineV2Desc, Renderer,
+    RendererBufferHandle, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+    RendererPipelineHandle, RendererPipelineV2Handle, RendererTextureHandle, ShaderDesc,
 };
 
 pub use render_queue::{

@@ -62,7 +62,7 @@ pub mod game {
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
         resources::{
-            Material, MaterialHandle, Mesh, MeshHandle, Resource, ResourceLoadType,
+            Mesh, MeshHandle, PBRMaterial, PBRMaterialHandle, Resource, ResourceLoadType,
             ResourceStorage, Sound, Texture, TextureHandle, TextureType,
         },
     };
@@ -90,18 +90,17 @@ pub mod internal {
         },
         engine::{Engine, PillGame},
         graphics::{
-            decompose_render_queue_key, BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc,
-            RenderQueueItem, RenderQueueKey, RenderQueueKeyFields, RendererBufferHandle,
-            RendererBufferTag, RendererCameraHandle, RendererCameraTag, RendererMaterialHandle,
-            RendererMaterialTag, RendererMeshHandle, RendererMeshTag, RendererPipelineHandle,
-            RendererPipelineTag, RendererPipelineV2Handle, RendererPipelineV2Tag,
-            RendererTextureHandle, RendererTextureTag, ShaderDesc, RENDER_QUEUE_KEY_ORDER,
+            decompose_render_queue_key, BufferDesc, MaterialDesc, PillRenderer, PipelineV2,
+            PipelineV2Desc, RenderQueueItem, RenderQueueKey, RenderQueueKeyFields,
+            RendererBufferHandle, RendererBufferTag, RendererCameraHandle, RendererCameraTag,
+            RendererMaterialHandle, RendererMaterialTag, RendererMeshHandle, RendererMeshTag,
+            RendererPipelineHandle, RendererPipelineTag, RendererPipelineV2Handle,
+            RendererPipelineV2Tag, RendererTextureHandle, RendererTextureTag, ShaderDesc,
+            RENDER_QUEUE_KEY_ORDER,
         },
         resources::{
-            get_renderer_texture_handle_from_material_texture, Material, MaterialHandle,
-            MaterialParameter, MaterialParameterMap, MaterialTexture, MaterialTextureMap, Mesh,
-            MeshData, MeshHandle, MeshVertex, ResourceLoadType, ResourceManager, Texture,
-            TextureHandle, TextureType,
+            Mesh, MeshData, MeshHandle, MeshVertex, PBRMaterial, PBRMaterialHandle,
+            ResourceLoadType, ResourceManager, Texture, TextureHandle, TextureType,
         },
     };
 }

@@ -2,10 +2,7 @@ use crate::{
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     engine::Engine,
     graphics::{RenderQuery, RenderQueueFactory, RenderQueueItem},
-    resources::{
-        MaterialHandle, MaterialParameterMap, MaterialTextureMap, MeshData, MeshHandle,
-        TextureHandle, TextureType,
-    },
+    resources::{MeshData, MeshHandle, TextureHandle, TextureType},
 };
 
 use pill_core::PillStyle;
@@ -19,11 +16,11 @@ use std::{path::PathBuf, sync::Arc};
 use thiserror::Error;
 
 // --- Renderer resource handles (typed generational handles) ---
-pub type RendererMaterialHandle = Handle<RendererMaterialTag>;
-
 pub type RendererMeshHandle = Handle<RendererMeshTag>;
 
 pub type RendererPipelineHandle = Handle<RendererPipelineTag>;
+
+pub type RendererMaterialHandle = Handle<RendererMaterialTag>;
 
 pub type RendererCameraHandle = Handle<RendererCameraTag>;
 
@@ -60,6 +57,20 @@ pub struct PipelineV2Desc<'a> {
     pub multisample: wgpu::MultisampleState,
 }
 
+pub struct MaterialDesc<'a> {
+    pub label: &'a str,
+    // Factors
+    pub albedo: [f32; 3],
+    pub metallic: f32,
+    pub roughness: f32,
+    pub emissive: [f32; 3],
+    // Textures (optional; renderer will fallback to defaults if None)
+    pub albedo_tex: Option<RendererTextureHandle>,
+    pub normal_tex: Option<RendererTextureHandle>,
+    pub metallic_roughness_tex: Option<RendererTextureHandle>,
+    pub emissive_tex: Option<RendererTextureHandle>,
+}
+
 // --- Renderer trait definition ---
 
 pub struct PipelineV2 {
@@ -78,6 +89,12 @@ pub trait PillRenderer {
     // Creates a 256B-aligned uniform buffer (COPY_DST) and returns its handle
     fn create_buffer(&mut self, desc: BufferDesc) -> Result<wgpu::Buffer>;
     fn create_pipeline_v2(&mut self, desc: PipelineV2Desc) -> Result<PipelineV2>;
+    fn create_material(&mut self, desc: MaterialDesc) -> Result<RendererMaterialHandle>;
+    fn update_material(
+        &mut self,
+        renderer_material_handle: RendererMaterialHandle,
+        desc: MaterialDesc,
+    ) -> Result<RendererMaterialHandle>;
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
     fn create_texture(
         &mut self,
@@ -85,28 +102,10 @@ pub trait PillRenderer {
         image_data: &image::DynamicImage,
         texture_type: TextureType,
     ) -> Result<RendererTextureHandle>;
-    fn create_material(
-        &mut self,
-        name: &str,
-        textures: &MaterialTextureMap,
-        parameters: &MaterialParameterMap,
-    ) -> Result<RendererMaterialHandle>;
     fn create_camera(&mut self) -> Result<RendererCameraHandle>;
-
-    fn update_material_textures(
-        &mut self,
-        renderer_material_handle: RendererMaterialHandle,
-        textures: &MaterialTextureMap,
-    ) -> Result<()>;
-    fn update_material_parameters(
-        &mut self,
-        renderer_material_handle: RendererMaterialHandle,
-        parameters: &MaterialParameterMap,
-    ) -> Result<()>;
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()>;
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()>;
-    fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()>;
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()>;
 
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;

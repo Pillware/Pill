@@ -1,20 +1,58 @@
 use crate::renderer::{Pass, Renderer, WorldQuery};
 use crate::resource_manager::ResourceManager;
 use crate::resources::CameraUniform;
+use crate::resources::RendererTexture;
+use std::sync::Arc;
+
 use anyhow::{Error, Result};
 use glam::{Mat4, Vec3, Vec4};
 use pill_core::{PillSlotMapKey, RendererError};
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage,
-    EntityHandle, RenderQueueItem, RendererMaterialHandle, RendererMeshHandle,
-    RendererPipelineHandle, TransformComponent,
+    EntityHandle, MaterialDesc, RenderQueueItem, RendererMaterialHandle, RendererMeshHandle,
+    TransformComponent,
 };
-use pill_engine::internal::{PillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc};
+use pill_engine::internal::{BufferDesc, PillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc};
+use wgpu::util::DeviceExt;
 use wgpu::CommandEncoder;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct PerDrawStd140 {
+    mvp: [[f32; 4]; 4],
+}
+unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
+unsafe impl bytemuck::Pod for PerDrawStd140 {}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct MaterialParamsStd140 {
+    base_color_factor: [f32; 3],
+    _pad0: f32,
+    metallic: f32,
+    roughness: f32,
+    _pad1: [f32; 2],
+    emissive_factor: [f32; 3],
+    _pad2: f32,
+}
+unsafe impl bytemuck::Zeroable for MaterialParamsStd140 {}
+unsafe impl bytemuck::Pod for MaterialParamsStd140 {}
+
+// Static configuration for per-draw buffering (derive capacities, avoid magic numbers)
+const MAX_EXPECTED_PER_DRAW_INSTANCES: usize = 100_000;
+const UNIFORM_OFFSET_ALIGNMENT: usize = 256;
+const PER_DRAW_STRIDE_BYTES: usize = ((std::mem::size_of::<PerDrawStd140>()
+    + (UNIFORM_OFFSET_ALIGNMENT - 1))
+    / UNIFORM_OFFSET_ALIGNMENT)
+    * UNIFORM_OFFSET_ALIGNMENT;
+
+pub const MATERIAL_BIND_GROUP_GLOBALS: usize = 0;
+pub const MATERIAL_BIND_GROUP_TEXTURES: usize = 1;
+pub const MATERIAL_BIND_GROUP_PARAMS: usize = 2;
+pub const MATERIAL_BIND_GROUP_PERDRAW: usize = 3;
 
 // Preallocated buffer structs for hot path optimization
 pub(crate) struct VisiblePreDraw {
-    pub(crate) pipeline_handle: RendererPipelineHandle,
     pub(crate) material_handle: RendererMaterialHandle,
     pub(crate) mesh_handle: RendererMeshHandle,
     pub(crate) entity_index: u32,
@@ -29,18 +67,19 @@ pub(crate) struct MeshBatch {
 }
 
 pub(crate) struct GroupCmd {
-    pub(crate) pipeline_handle: RendererPipelineHandle,
+    pub(crate) pipeline: *const wgpu::RenderPipeline,
     pub(crate) material_handle: RendererMaterialHandle,
     pub(crate) batches: Vec<MeshBatch>,
 }
 
 pub struct PassScene {
     label: String,
+    // Resources
+    offscreen_color_texture: Arc<RendererTexture>,
+    depth_texture: Arc<RendererTexture>,
     // Per-frame dynamic UBO ring (Milestone 5)
     per_draw_stride: u64,
     per_draw_capacity: u64,
-    per_draw_buffer: Option<wgpu::Buffer>,
-    per_draw_bind_group: Option<wgpu::BindGroup>,
     // Working buffers
     visible_pre_draw_buffer: Vec<VisiblePreDraw>,
     groups_buffer: Vec<GroupCmd>,
@@ -54,19 +93,28 @@ struct PassSceneState {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     pipeline: PipelineV2,
+    // Per-draw resources
+    per_draw_buffer: wgpu::Buffer,
+    per_draw_bind_group: wgpu::BindGroup,
 }
 
 impl PassScene {
-    pub fn new(label: &str) -> Self {
+    pub fn new(
+        label: &str,
+        offscreen_color_texture: Arc<RendererTexture>,
+        depth_texture: Arc<RendererTexture>,
+    ) -> Self {
         Self {
             label: label.to_string(),
-            per_draw_stride: 256,
+            offscreen_color_texture: offscreen_color_texture,
+            depth_texture: depth_texture,
+            per_draw_stride: PER_DRAW_STRIDE_BYTES as u64,
             per_draw_capacity: 0,
-            per_draw_buffer: None,
-            per_draw_bind_group: None,
-            visible_pre_draw_buffer: Vec::with_capacity(100_000),
+            visible_pre_draw_buffer: Vec::with_capacity(MAX_EXPECTED_PER_DRAW_INSTANCES),
             groups_buffer: Vec::with_capacity(2000),
-            staging_buffer: Vec::with_capacity(100_000 * 144),
+            staging_buffer: Vec::with_capacity(
+                MAX_EXPECTED_PER_DRAW_INSTANCES * PER_DRAW_STRIDE_BYTES,
+            ),
             state: None,
         }
     }
@@ -84,22 +132,11 @@ impl Pass for PassScene {
     }
 
     fn init(&mut self, renderer: &mut Renderer) -> Result<()> {
-        // TODO:
-        //  Problem:
-        //      Material is coupled with Pipeline binds, now has handle to update i.e. texture via bind
-        //      User creates Material and sets the params (floats, textures, etc.) that trigger update via Pipeline bind
-        //      User can access Resources only via ResourcePool handles
-        //      Material has to stay in sync with Pipeline and Shader
-        //  Solution?:
-        //      User can access via ResourcesPool only Material or MaterialInstance handles.
-        //      Move PassScene to Engine. Pipeline can be local, Material too? Expose Material by Enum?
-        //      User can create MaterialInstance and select Material/Pipeline via enum? i.e. PBR, UNLIT etc.
-        //      Decouple Material params data from Implementation
         // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
         // Shaders: must match bind group layout indices: 0(camera),1(material textures),2(material params),3(per-draw)
         let vertex_wgsl = r#"
             @group(0) @binding(0) var<uniform> UCamera: mat4x4<f32>;
-            struct PerDraw { mvp: mat4x4<f32>, tint: vec4<f32>, };
+            struct PerDraw { mvp: mat4x4<f32>, };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
             struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
             struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
@@ -111,20 +148,35 @@ impl Pass for PassScene {
             }
         "#;
         let fragment_wgsl = r#"
-            @group(1) @binding(0) var tex_diffuse: texture_2d<f32>;
-            @group(1) @binding(1) var smp_diffuse: sampler;
-            @group(1) @binding(2) var tex_normal: texture_2d<f32>;
-            @group(1) @binding(3) var smp_normal: sampler;
-            struct MaterialParams { tint_spec: vec4<f32>, }
+            // PBR material textures (set 1)
+            @group(1) @binding(0) var texBaseColor: texture_2d<f32>;
+            @group(1) @binding(1) var smpBaseColor: sampler;
+            @group(1) @binding(2) var texNormal: texture_2d<f32>;
+            @group(1) @binding(3) var smpNormal: sampler;
+            @group(1) @binding(4) var texMetallicRoughness: texture_2d<f32>;
+            @group(1) @binding(5) var smpMetallicRoughness: sampler;
+            @group(1) @binding(6) var texEmissive: texture_2d<f32>;
+            @group(1) @binding(7) var smpEmissive: sampler;
+            // PBR params UBO (set 2)
+            struct MaterialParams {
+              baseColorFactor: vec3<f32>, _pad0: f32,
+              metallicFactor: f32, roughnessFactor: f32, _pad1: vec2<f32>,
+              emissiveFactor: vec3<f32>, _pad2: f32,
+            }
             @group(2) @binding(0) var<uniform> UMaterial: MaterialParams;
-            struct PerDraw { mvp: mat4x4<f32>, tint: vec4<f32>, };
+            // Per-draw
+            struct PerDraw { mvp: mat4x4<f32>, };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
             @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-              let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
-              let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0) * UPerDraw.tint;
-              let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
-              let color = albedo * tinted * spec_boost;
-              return vec4<f32>(color.rgb, 1.0);
+              let bc_tex = textureSample(texBaseColor, smpBaseColor, uv).rgb;
+              let mr = textureSample(texMetallicRoughness, smpMetallicRoughness, uv).gb;
+              let roughness = clamp(mr.x * UMaterial.roughnessFactor, 0.0, 1.0);
+              let metallic = clamp(mr.y * UMaterial.metallicFactor, 0.0, 1.0);
+              let base = bc_tex * UMaterial.baseColorFactor;
+              let emissive = textureSample(texEmissive, smpEmissive, uv).rgb * UMaterial.emissiveFactor;
+              // Simple unlit-ish output; lighting model TBD
+              let color = base + emissive;
+              return vec4<f32>(color, 1.0);
             }
         "#;
 
@@ -141,7 +193,7 @@ impl Pass for PassScene {
                 },
                 count: None,
             }],
-            // 1: material textures
+            // 1: material textures (PBR)
             vec![
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -175,8 +227,40 @@ impl Pass for PassScene {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
-            // 2: material params
+            // 2: material params (PBR)
             vec![wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
@@ -187,31 +271,18 @@ impl Pass for PassScene {
                 },
                 count: None,
             }],
-            // 3: per-draw dynamic UBO
+            // 3: per-draw dynamic UBO (MVP)
             vec![wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: true,
-                    min_binding_size: Some(std::num::NonZeroU64::new(144).unwrap()),
+                    min_binding_size: Some(std::num::NonZeroU64::new(64).unwrap()),
                 },
                 count: None,
             }],
         ];
-
-        let color_target = wgpu::ColorTargetState {
-            format: renderer.state.color_format,
-            blend: Some(wgpu::BlendState::REPLACE),
-            write_mask: wgpu::ColorWrites::ALL,
-        };
-        let depth_stencil = Some(wgpu::DepthStencilState {
-            format: renderer.state.depth_format,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        });
 
         let desc = PipelineV2Desc {
             label: Some("scene_pipeline_v2"),
@@ -224,8 +295,18 @@ impl Pass for PassScene {
                 entry_func: "main",
             },
             bind_groups,
-            targets: &[Some(color_target)],
-            depth_stencil,
+            targets: &[Some(wgpu::ColorTargetState {
+                format: self.offscreen_color_texture.texture.format(),
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: self.depth_texture.texture.format(),
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
         };
 
@@ -241,18 +322,48 @@ impl Pass for PassScene {
         });
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("camera_bind_group"),
-            layout: &pipeline.bind_group_layouts[0],
+            layout: &pipeline.bind_group_layouts[MATERIAL_BIND_GROUP_GLOBALS],
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: camera_buffer.as_entire_binding(),
             }],
         });
 
+        // Pre-create per-draw dynamic UBO ring and its bind group with large preallocation
+        // Creation happens in init; growth/recreation only when capacity is insufficient during draw
+        self.per_draw_capacity = MAX_EXPECTED_PER_DRAW_INSTANCES as u64;
+        let size = self.per_draw_stride * self.per_draw_capacity;
+        let per_draw_buffer = renderer.create_buffer(BufferDesc {
+            label: Some("per_draw_dynamic_ubo_ring"),
+            byte_size: size,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        })?;
+        let layout_ptr: *const wgpu::BindGroupLayout =
+            &pipeline.bind_group_layouts[MATERIAL_BIND_GROUP_PERDRAW as usize] as *const _;
+        let per_draw_bind_group =
+            renderer
+                .ctx
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("per_draw_bind_group"),
+                    layout: unsafe { &*layout_ptr },
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &per_draw_buffer,
+                            offset: 0,
+                            size: Some(std::num::NonZeroU64::new(64).unwrap()),
+                        }),
+                    }],
+                });
+
         self.state = Some(PassSceneState {
             camera_uniform: CameraUniform::new(),
             camera_buffer,
             camera_bind_group,
             pipeline,
+            per_draw_buffer,
+            per_draw_bind_group,
         });
 
         Ok(())
@@ -270,6 +381,10 @@ impl Pass for PassScene {
         let camera_component_storage = world.camera_components;
         let transform_component_storage = world.transform_components;
 
+        // TODO: Update all isDirty=true materials, for each:
+        //    - Color3f -> Update material uniform
+        //    - Texture2D -> Update material bind groups
+
         // Read active camera + transform
         let camera_storage = camera_component_storage
             .data
@@ -282,9 +397,8 @@ impl Pass for PassScene {
             .unwrap();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
 
-        // Update camera uniform and write to GPU buffer (no allocations),
-        // then release the mutable borrow and keep only cheap copies/ptrs.
-        let (vp_mat_arr, camera_bg_ptr): ([[f32; 4]; 4], *const wgpu::BindGroup) = {
+        // Update camera uniform and write to GPU buffer (no allocations)
+        let vp_mat_arr: [[f32; 4]; 4] = {
             let state = get_state(self);
             state
                 .camera_uniform
@@ -294,10 +408,7 @@ impl Pass for PassScene {
                 0,
                 bytemuck::bytes_of(&state.camera_uniform),
             );
-            (
-                state.camera_uniform.view_projection_matrix,
-                &state.camera_bind_group as *const _,
-            )
+            state.camera_uniform.view_projection_matrix
         };
         let clear_color = active_camera_component.clear_color;
 
@@ -338,13 +449,6 @@ impl Pass for PassScene {
                 key.material_index as u32,
                 key.material_version as u32,
             );
-            let material_for_pipeline = renderer
-                .state
-                .resource_manager
-                .materials
-                .get(material_handle)
-                .unwrap();
-            let pipeline_handle: RendererPipelineHandle = material_for_pipeline.pipeline_handle;
 
             // Transform
             let entity_index = render_queue_item.entity_index as usize;
@@ -417,7 +521,6 @@ impl Pass for PassScene {
             let view_proj: Mat4 = vp_mat;
             let mvp: [[f32; 4]; 4] = (view_proj * model).to_cols_array_2d();
             self.visible_pre_draw_buffer.push(VisiblePreDraw {
-                pipeline_handle,
                 material_handle,
                 mesh_handle,
                 entity_index: render_queue_item.entity_index,
@@ -425,26 +528,25 @@ impl Pass for PassScene {
             });
         }
 
-        // Sort and group
+        // Sort and group (Pipeline -> Material -> Mesh)
         self.visible_pre_draw_buffer.sort_by_key(|v| {
-            (
-                v.pipeline_handle.index(),
-                v.material_handle.index(),
-                v.mesh_handle.index(),
-            )
+            ((v.material_handle.generation() as u64) << 32) | (v.material_handle.index() as u64)
         });
         self.groups_buffer.clear();
+        // Resolve pipeline pointer for this frame (single pipeline for now)
+        let pipeline_ptr: *const wgpu::RenderPipeline = {
+            let state = get_state(self);
+            &state.pipeline.pipeline as *const _
+        };
         for v in &self.visible_pre_draw_buffer {
-            if self
+            let need_new_group = self
                 .groups_buffer
                 .last()
-                .map(|g| {
-                    g.pipeline_handle != v.pipeline_handle || g.material_handle != v.material_handle
-                })
-                .unwrap_or(true)
-            {
+                .map(|g| g.material_handle != v.material_handle)
+                .unwrap_or(true);
+            if need_new_group {
                 self.groups_buffer.push(GroupCmd {
-                    pipeline_handle: v.pipeline_handle,
+                    pipeline: pipeline_ptr,
                     material_handle: v.material_handle,
                     batches: Vec::new(),
                 });
@@ -477,53 +579,24 @@ impl Pass for PassScene {
             })
             .sum();
         if self.per_draw_capacity < needed {
-            self.per_draw_capacity = needed.next_power_of_two().max(1);
-            let size = self.per_draw_stride * self.per_draw_capacity;
-            self.per_draw_buffer =
-                Some(renderer.ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("per_draw_dynamic_ubo_ring"),
-                    size,
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                }));
-            let layout_ptr: *const wgpu::BindGroupLayout = {
-                let state = get_state(self);
-                &state.pipeline.bind_group_layouts[3] as *const _
-            };
-            let buf_ptr: *const wgpu::Buffer = self.per_draw_buffer.as_ref().unwrap();
-            let new_bg = renderer
-                .ctx
-                .device
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("per_draw_bind_group"),
-                    layout: unsafe { &*layout_ptr },
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: unsafe { &*buf_ptr },
-                            offset: 0,
-                            size: Some(std::num::NonZeroU64::new(144).unwrap()),
-                        }),
-                    }],
-                });
-            self.per_draw_bind_group = Some(new_bg);
+            #[cfg(debug_assertions)]
+            {
+                log::error!(
+                    "Per-draw capacity exceeded: needed={} capacity={}",
+                    needed,
+                    self.per_draw_capacity
+                );
+            }
+            // Release: proceed; only first (capacity) entries will be used by draws
         }
-        #[repr(C)]
-        #[derive(Copy, Clone)]
-        struct PerDrawStd140 {
-            mvp: [[f32; 4]; 4],
-            tint: [f32; 4],
-        }
-        unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
-        unsafe impl bytemuck::Pod for PerDrawStd140 {}
-        let tint: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+
         self.staging_buffer.clear();
         let mut next_offset_u32: u32 = 0;
         for g in self.groups_buffer.iter_mut() {
             for b in g.batches.iter_mut() {
                 b.base_offset_u32 = next_offset_u32;
                 for mvp in &b.instances {
-                    let pd = PerDrawStd140 { mvp: *mvp, tint };
+                    let pd = PerDrawStd140 { mvp: *mvp };
                     self.staging_buffer
                         .extend_from_slice(bytemuck::bytes_of(&pd));
                     let pad =
@@ -533,18 +606,19 @@ impl Pass for PassScene {
                 }
             }
         }
-        if let Some(buf) = &self.per_draw_buffer {
+        {
+            let state_ref: &PassSceneState = unsafe { self.state.as_ref().unwrap_unchecked() };
             renderer
                 .ctx
                 .queue
-                .write_buffer(buf, 0, &self.staging_buffer);
+                .write_buffer(&state_ref.per_draw_buffer, 0, &self.staging_buffer);
         }
 
         // Encode offscreen pass
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("m6_offscreen_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &renderer.state.offscreen_color_texture.texture_view,
+                view: &self.offscreen_color_texture.texture_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -557,7 +631,7 @@ impl Pass for PassScene {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &renderer.state.depth_texture.texture_view,
+                view: &self.depth_texture.texture_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
@@ -567,36 +641,66 @@ impl Pass for PassScene {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-        let pipeline_ptr: *const wgpu::RenderPipeline = {
-            let state = get_state(self);
-            &state.pipeline.pipeline as *const _
-        };
+        // Immutable view of pass state for binding (no aliasing with groups_buffer immutable borrow)
+        let state_ref: &PassSceneState = unsafe { self.state.as_ref().unwrap_unchecked() };
         for group in &self.groups_buffer {
-            rpass.set_pipeline(unsafe { &*pipeline_ptr });
-            let material = renderer
-                .state
-                .resource_manager
-                .materials
-                .get(group.material_handle)
-                .unwrap();
-            // SAFETY: camera_bg_ptr points to self.state.camera_bind_group, valid for the duration of draw
-            rpass.set_bind_group(0, unsafe { &*camera_bg_ptr }, &[]);
-            rpass.set_bind_group(1, &material.texture_bind_group, &[]);
-            rpass.set_bind_group(2, &material.parameter_bind_group, &[]);
-            for batch in &group.batches {
-                let mesh = renderer
+            rpass.set_pipeline(unsafe { &*group.pipeline });
+            rpass.set_bind_group(
+                MATERIAL_BIND_GROUP_GLOBALS as u32,
+                &state_ref.camera_bind_group,
+                &[],
+            );
+            // Bind group-specific material (HOT-ish path; debug-validated, unchecked in release)
+            let material = unsafe {
+                let m = renderer
                     .state
                     .resource_manager
-                    .meshes
-                    .get(batch.mesh_handle)
-                    .unwrap();
+                    .materials
+                    .get(group.material_handle);
+                debug_assert!(
+                    m.is_some(),
+                    "stale RendererMaterialHandle {:?} in render queue",
+                    group.material_handle
+                );
+                m.unwrap_unchecked()
+            };
+            rpass.set_bind_group(
+                MATERIAL_BIND_GROUP_TEXTURES as u32,
+                &material.texture_bind_group,
+                &[],
+            );
+            rpass.set_bind_group(
+                MATERIAL_BIND_GROUP_PARAMS as u32,
+                &material.param_bind_group,
+                &[],
+            );
+            for batch in &group.batches {
+                // Hot path: assume valid handles (render queue built from alive resources).
+                // Debug-only validation; no branches in release.
+                let mesh = unsafe {
+                    let m = renderer
+                        .state
+                        .resource_manager
+                        .meshes
+                        .get(batch.mesh_handle);
+                    debug_assert!(
+                        m.is_some(),
+                        "stale RendererMeshHandle {:?} in render queue",
+                        batch.mesh_handle
+                    );
+                    m.unwrap_unchecked()
+                };
                 rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 for i in 0..batch.instances.len() {
                     let offset = batch
                         .base_offset_u32
                         .wrapping_add((i as u32) * (self.per_draw_stride as u32));
-                    rpass.set_bind_group(3, self.per_draw_bind_group.as_ref().unwrap(), &[offset]);
+                    rpass.set_bind_group(
+                        MATERIAL_BIND_GROUP_PERDRAW as u32,
+                        &state_ref.per_draw_bind_group,
+                        &[offset],
+                    );
                     rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
             }

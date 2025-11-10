@@ -1,7 +1,7 @@
 use crate::{
     engine::Engine, 
     graphics::{ RenderQueueKey, compose_render_queue_key, RendererCameraHandle }, 
-    resources::{ Material, MaterialHandle, Mesh, MeshHandle },
+    resources::{ PBRMaterial, PBRMaterialHandle, Mesh, MeshHandle },
     ecs::{ Component, ComponentStorage, EntityHandle, SceneHandle, DeferredUpdateManagerPointer, DeferredUpdateComponentRequest },
 };
 

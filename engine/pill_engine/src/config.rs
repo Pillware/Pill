@@ -4,8 +4,8 @@ use crate::{
         AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent,
         RenderStateComponent, SystemFunction, TimeComponent, UpdatePhase,
     },
-    graphics::{RendererMaterialHandle, RendererTextureHandle},
-    resources::{MaterialHandle, TextureHandle, TextureType},
+    graphics::RendererTextureHandle,
+    resources::{TextureHandle, TextureType},
 };
 
 use pill_core::{Handle, PillSlotMapKeyData};
@@ -116,28 +116,15 @@ pub fn get_default_texture_handles(
     texture_type: TextureType,
 ) -> (TextureHandle, RendererTextureHandle) {
     match texture_type {
-        TextureType::Color => (
+        TextureType::Gamma => (
             DEFAULT_COLOR_TEXTURE_HANDLE,
             DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE,
         ),
-        TextureType::Normal => (
+        TextureType::Linear => (
             DEFAULT_NORMAL_TEXTURE_HANDLE,
             DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE,
         ),
     }
-}
-
-// Default resource handle - Material
-pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle {
-    0: PillSlotMapKeyData {
-        index: 1,
-        version: unsafe { std::num::NonZeroU32::new_unchecked(1) },
-    },
-};
-pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = Handle::from_parts(1, 1);
-
-pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle) {
-    (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
 
 lazy_static! {

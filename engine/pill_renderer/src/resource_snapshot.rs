@@ -1,7 +1,12 @@
-use pill_core::{ResourcePool, RendererBufferTag, RendererCameraTag, RendererMaterialTag, RendererMeshTag, RendererPipelineTag, RendererTextureTag};
+use pill_core::{
+    RendererBufferTag, RendererCameraTag, RendererMaterialTag, RendererMeshTag,
+    RendererPipelineTag, RendererTextureTag, ResourcePool,
+};
 
-use crate::resources::{RendererCamera, RendererMaterial, RendererMesh, RendererTexture, RendererPipeline};
 use crate::resource_manager::ResourceManager;
+use crate::resources::{
+    RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture,
+};
 
 pub struct ResourceSnapshot {
     pub buffers: ResourcePool<RendererBufferTag, wgpu::Buffer>,
@@ -24,5 +29,3 @@ impl From<ResourceManager> for ResourceSnapshot {
         }
     }
 }
-
-

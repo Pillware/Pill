@@ -1,12 +1,11 @@
 use crate::{
-    config::DEFAULT_MATERIAL_HANDLE,
     ecs::{
         Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest,
         DeferredUpdateManagerPointer, EntityHandle, SceneHandle,
     },
     engine::Engine,
     graphics::{compose_render_queue_key, RenderQueueKey},
-    resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
+    resources::{Mesh, MeshHandle, PBRMaterial, PBRMaterialHandle, ResourceManager},
 };
 
 use cgmath::num_traits::Float;
@@ -36,7 +35,7 @@ impl MeshRenderingComponentBuilder {
         self
     }
 
-    pub fn material(mut self, material_handle: &MaterialHandle) -> Self {
+    pub fn material(mut self, material_handle: &PBRMaterialHandle) -> Self {
         self.component.material_handle = Some(material_handle.clone());
         self
     }
@@ -53,7 +52,7 @@ pub struct MeshRenderingComponent {
     #[readonly]
     pub mesh_handle: Option<MeshHandle>,
     #[readonly]
-    pub material_handle: Option<MaterialHandle>,
+    pub material_handle: Option<PBRMaterialHandle>,
     // [SIMILAR] Precomputes/stores a key for sorting by pipeline/material/mesh outside hot draw loop (per TALK separation of data setup vs draw)
     // [API->CLIENT] Key encodes pipeline/material/mesh generational handles used by low-level to minimize state changes
     pub(crate) render_queue_key: Option<RenderQueueKey>,
@@ -79,7 +78,7 @@ impl MeshRenderingComponent {
         }
     }
 
-    pub fn set_material(&mut self, material_handle: &MaterialHandle) {
+    pub fn set_material(&mut self, material_handle: &PBRMaterialHandle) {
         self.material_handle = Some(material_handle.clone());
         // [SIMILAR] Mutations post a deferred update; avoids work in the hot path
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_MATERIAL);
@@ -101,7 +100,7 @@ impl MeshRenderingComponent {
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
     }
 
-    pub(crate) fn set_material_handle(&mut self, material_handle: Option<MaterialHandle>) {
+    pub(crate) fn set_material_handle(&mut self, material_handle: Option<PBRMaterialHandle>) {
         self.material_handle = material_handle;
     }
 
@@ -114,17 +113,11 @@ impl MeshRenderingComponent {
         resource_manager: &ResourceManager,
     ) -> Result<()> {
         if self.mesh_handle.is_some() {
-            // Use default material if no material is set
-            let material_handle = match self.material_handle {
-                Some(v) => v,
-                None => DEFAULT_MATERIAL_HANDLE,
-            };
-
             // Compose render queue key and set it
             if let Ok(render_queue_key) = compose_render_queue_key(
                 resource_manager,
-                &material_handle,
                 &self.mesh_handle.unwrap(),
+                &self.material_handle,
             ) {
                 // [SIMILAR] Precompute render binning key when data changes (not per draw)
                 // [RECOMMENDED] Keep key up-to-date on any mesh/material change
@@ -177,7 +170,7 @@ impl Component for MeshRenderingComponent {
         // Check if material handle is valid
         if self.material_handle.is_some() {
             engine
-                .get_resource::<Material>(&self.material_handle.unwrap())
+                .get_resource::<PBRMaterial>(&self.material_handle.unwrap())
                 .context(format!(
                     "Creating {} {} failed",
                     "Component".gobj_style(),
@@ -213,7 +206,7 @@ impl Component for MeshRenderingComponent {
             DEFERRED_REQUEST_VARIANT_SET_MATERIAL => {
                 // Check if material handle is valid
                 engine
-                    .get_resource::<Material>(&self.material_handle.unwrap())
+                    .get_resource::<PBRMaterial>(&self.material_handle.unwrap())
                     .context(format!(
                         "Setting {} {} failed",
                         "Resource".gobj_style(),

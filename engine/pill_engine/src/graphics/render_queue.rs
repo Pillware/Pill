@@ -1,6 +1,6 @@
 use crate::{
     config::*,
-    resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, TextureHandle},
+    resources::{Mesh, MeshHandle, PBRMaterial, PBRMaterialHandle, ResourceManager, TextureHandle},
 };
 
 use pill_core::Handle;
@@ -111,21 +111,35 @@ where
 // Creates pill engine render queue composed from order, material index, material version, mesh index, mesh version
 pub fn compose_render_queue_key(
     resource_manager: &ResourceManager,
-    material_handle: &MaterialHandle,
     mesh_handle: &MeshHandle,
+    material_handle: &Option<PBRMaterialHandle>,
 ) -> Result<RenderQueueKey> {
-    let material = resource_manager.get_resource::<Material>(material_handle)?;
     let mesh = resource_manager.get_resource::<Mesh>(mesh_handle)?;
 
-    let h_mat = material.renderer_resource_handle.unwrap();
     let h_mesh = mesh.renderer_resource_handle.unwrap();
-    let render_queue_key: RenderQueueKey = ((RENDER_QUEUE_KEY_ORDER.max
-        - material.rendering_order as RenderQueueKey)
-        << RENDER_QUEUE_KEY_ORDER.mask_shift)
-        | ((h_mat.index() as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift)
-        | ((h_mat.generation() as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift)
-        | ((h_mesh.index() as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_INDEX.mask_shift)
-        | ((h_mesh.generation() as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_VERSION.mask_shift);
+    // Material (optional)
+    let (mat_index, mat_gen) = if let Some(mh) = material_handle {
+        if let Ok(mat) = resource_manager.get_resource::<PBRMaterial>(mh) {
+            if let Some(rh) = mat.renderer_resource_handle {
+                (
+                    rh.index() as RenderQueueKey,
+                    rh.generation() as RenderQueueKey,
+                )
+            } else {
+                (0, 0)
+            }
+        } else {
+            (0, 0)
+        }
+    } else {
+        (0, 0)
+    };
+
+    let render_queue_key: RenderQueueKey = ((h_mesh.index() as RenderQueueKey)
+        << RENDER_QUEUE_KEY_MESH_INDEX.mask_shift)
+        | ((h_mesh.generation() as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_VERSION.mask_shift)
+        | (mat_index << RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift)
+        | (mat_gen << RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift);
 
     Ok(render_queue_key)
 }

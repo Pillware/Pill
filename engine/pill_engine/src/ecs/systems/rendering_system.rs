@@ -9,7 +9,7 @@ use crate::{
     graphics::{
         compose_render_queue_key, RenderQuery, RenderQueueFactory, RenderQueueItem, RenderQueueKey,
     },
-    resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
+    resources::{Mesh, MeshHandle, PBRMaterial, PBRMaterialHandle, ResourceManager},
 };
 
 use pill_core::{EngineError, PillSlotMapKey, PillStyle, RendererError, Timer};
@@ -24,7 +24,7 @@ use crate::config::{
     MAX_MESHES, MAX_SOUNDS, MAX_TEXTURES,
 };
 use crate::ecs::components::render_state_component::RenderStateComponent;
-use crate::resources::{Resource, ResourceLoadType, Texture, TextureType};
+use crate::resources::{Resource, ResourceLoadType, Texture, TextureHandle, TextureType};
 
 // Constants for hot path optimization
 const MAX_RENDERABLES_CAPACITY: usize = 100000; // Maximum expected renderables per frame
@@ -100,6 +100,57 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     engine.render_queue.clear();
 
     timer.record("Prepare render queue");
+
+    // Prepass: deferred material updates (CPU -> GPU) for dirty PBR materials
+    {
+        // Collect updates immutably to avoid borrow conflicts
+        let mut updates: Vec<(
+            PBRMaterialHandle,
+            crate::graphics::RendererMaterialHandle,
+            crate::graphics::MaterialDesc,
+        )> = Vec::new();
+        if let Ok(storage) = engine
+            .resource_manager
+            .get_resource_storage::<PBRMaterial>()
+        {
+            for (h, opt_mat) in storage.data.iter() {
+                if let Some(mat) = opt_mat {
+                    if mat.is_dirty {
+                        if let Some(rm_handle) = mat.renderer_resource_handle {
+                            let map_tex = |th: &Option<TextureHandle>| -> Option<crate::graphics::RendererTextureHandle> {
+                                th.as_ref().and_then(|hh| {
+                                    engine
+                                        .resource_manager
+                                        .get_resource::<Texture>(hh)
+                                        .ok()
+                                        .and_then(|t| t.renderer_resource_handle)
+                                })
+                            };
+                            let desc = crate::graphics::MaterialDesc {
+                                label: "upd",
+                                albedo: [mat.albedo.x, mat.albedo.y, mat.albedo.z],
+                                metallic: mat.metallic,
+                                roughness: mat.roughness,
+                                emissive: [mat.emissive.x, mat.emissive.y, mat.emissive.z],
+                                albedo_tex: map_tex(&mat.albedo_texture),
+                                normal_tex: map_tex(&mat.normal_texture),
+                                metallic_roughness_tex: map_tex(&mat.metallic_roughness_texture),
+                                emissive_tex: map_tex(&mat.emissive_texture),
+                            };
+                            updates.push((h, rm_handle, desc));
+                        }
+                    }
+                }
+            }
+        }
+        // Apply updates and clear dirty flags
+        for (ph, rmh, desc) in updates {
+            let _ = engine.renderer.update_material(rmh, desc);
+            if let Ok(m) = engine.resource_manager.get_resource_mut::<PBRMaterial>(&ph) {
+                m.is_dirty = false;
+            }
+        }
+    }
 
     // Use static preallocated dirty_entities Vec
     unsafe {
@@ -248,27 +299,27 @@ fn init_default_resources(engine: &mut Engine) -> Result<(), Error> {
 
     engine.register_resource_type::<Texture>(max_texture_count)?;
     engine.register_resource_type::<Mesh>(max_mesh_count)?;
-    engine.register_resource_type::<Material>(max_material_count)?;
+    engine.register_resource_type::<PBRMaterial>(max_material_count)?;
     engine.register_resource_type::<crate::resources::Sound>(max_sound_count)?;
 
     let default_color = Box::new(*include_bytes!("../../../res/textures/default_color.png"));
     let default_normal = Box::new(*include_bytes!("../../../res/textures/default_normal.png"));
     let mut color = Texture::new(
         DEFAULT_COLOR_TEXTURE_NAME,
-        TextureType::Color,
+        TextureType::Gamma,
         ResourceLoadType::Bytes(default_color),
     );
     color.initialize(engine)?;
     engine.resource_manager.add_resource(color)?;
     let mut normal = Texture::new(
         DEFAULT_NORMAL_TEXTURE_NAME,
-        TextureType::Normal,
+        TextureType::Linear,
         ResourceLoadType::Bytes(default_normal),
     );
     normal.initialize(engine)?;
     engine.resource_manager.add_resource(normal)?;
 
-    let mut mat = Material::new(DEFAULT_MATERIAL_NAME);
+    let mut mat = PBRMaterial::new(DEFAULT_MATERIAL_NAME);
     mat.initialize(engine)?;
     engine.resource_manager.add_resource(mat)?;
 

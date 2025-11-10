@@ -10,7 +10,8 @@ use crate::{
     pass_scene::PassScene,
     resource_manager::ResourceManager,
     resources::{
-        RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture, Vertex,
+        RendererCamera, RendererMaterial, RendererMaterialParamsStd140, RendererMaterialTextures,
+        RendererMesh, RendererPipeline, RendererTexture, Vertex,
     },
 };
 
@@ -18,11 +19,10 @@ use std::sync::Arc;
 
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, BufferDesc, CameraComponent,
-    ComponentStorage, EntityHandle, MaterialParameterMap, MaterialTextureMap, MeshData,
-    PillRenderer, PipelineV2, PipelineV2Desc, RenderQueueItem, RendererBufferHandle,
-    RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle,
-    RendererPipelineV2Handle, RendererTextureHandle, ShaderDesc, TextureType, TransformComponent,
-    RENDER_QUEUE_KEY_ORDER,
+    ComponentStorage, EntityHandle, MaterialDesc, MeshData, PillRenderer, PipelineV2,
+    PipelineV2Desc, RenderQueueItem, RendererBufferHandle, RendererCameraHandle,
+    RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererPipelineV2Handle,
+    RendererTextureHandle, ShaderDesc, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER,
 };
 
 use pill_core::{Handle, PillSlotMapKey, PillStyle, RendererError, Timer};
@@ -332,10 +332,7 @@ impl PillRenderer for Renderer {
             struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
             @group(0) @binding(0) var<uniform> GCamera: Camera;
 
-            struct PerDraw {
-              mvp: mat4x4<f32>,
-              tint: vec4<f32>,
-            };
+            struct PerDraw { mvp: mat4x4<f32>, };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
 
             struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
@@ -359,16 +356,13 @@ impl PillRenderer for Renderer {
             struct MaterialParams { tint_spec: vec4<f32>, }
             @group(2) @binding(0) var<uniform> UMaterial: MaterialParams;
 
-            // Per-draw (set 3): supports per-entity tint for M4
-            struct PerDraw {
-              mvp: mat4x4<f32>,
-              tint: vec4<f32>,
-            };
+            // Per-draw (set 3): MVP only
+            struct PerDraw { mvp: mat4x4<f32>, };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
 
             @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
               let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
-              let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0) * UPerDraw.tint;
+              let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0);
               let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
               let color = albedo * tinted * spec_boost;
               return vec4<f32>(color.rgb, 1.0);
@@ -427,7 +421,7 @@ impl PillRenderer for Renderer {
                     &ctx.queue,
                     Some("overlay_logo"),
                     &logo_image,
-                    TextureType::Color,
+                    TextureType::Gamma,
                 )
                 .expect("failed to create overlay logo texture");
                 resource_manager.textures.insert(tex)
@@ -457,8 +451,17 @@ impl PillRenderer for Renderer {
     fn init(&mut self) -> Result<()> {
         self.state.passes.clear();
 
+        // Ensure default textures are created before any pass init that may need them
+        self.state
+            .resource_manager
+            .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
+
         // Scene pass first: renders into offscreen targets
-        self.state.passes.push(Box::new(PassScene::new("scene")));
+        self.state.passes.push(Box::new(PassScene::new(
+            "scene",
+            self.state.offscreen_color_texture.clone(),
+            self.state.depth_texture.clone(),
+        )));
 
         self.state.passes.push(Box::new(PassCompose::new(
             "compose",
@@ -501,7 +504,7 @@ impl PillRenderer for Renderer {
     }
 
     fn create_buffer(&mut self, desc: BufferDesc) -> Result<wgpu::Buffer> {
-        let aligned_size = ((desc.byte_size + 255) / 256) * 256; // 256B for Metal UBOs
+        let aligned_size = ((desc.byte_size + 64) / 64) * 64; // 64B for Metal UBOs
         let buffer = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
             label: desc.label,
             size: aligned_size,
@@ -630,43 +633,31 @@ impl PillRenderer for Renderer {
         })
     }
 
-    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
-        let mesh = RendererMesh::new(&self.ctx.device, name, mesh_data)?;
-        let handle = self.state.resource_manager.meshes.insert(mesh);
+    fn create_material(&mut self, desc: MaterialDesc) -> Result<RendererMaterialHandle> {
+        // Ensure default textures exist
+        let (def_color_h, def_normal_h) = self
+            .state
+            .resource_manager
+            .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
+        let def_color = self
+            .state
+            .resource_manager
+            .textures
+            .get(def_color_h)
+            .expect("default color");
+        let def_normal = self
+            .state
+            .resource_manager
+            .textures
+            .get(def_normal_h)
+            .expect("default normal");
 
-        Ok(handle)
-    }
-
-    fn create_texture(
-        &mut self,
-        name: &str,
-        image_data: &image::DynamicImage,
-        texture_type: TextureType,
-    ) -> Result<RendererTextureHandle> {
-        let texture = RendererTexture::new_texture(
-            &self.ctx.device,
-            &self.ctx.queue,
-            Some(name),
-            image_data,
-            texture_type,
-        )?;
-        let handle = self.state.resource_manager.textures.insert(texture);
-
-        Ok(handle)
-    }
-
-    fn create_material(
-        &mut self,
-        name: &str,
-        textures: &MaterialTextureMap,
-        parameters: &MaterialParameterMap,
-    ) -> Result<RendererMaterialHandle> {
-        // Create bind group layouts inline (avoid pipeline storage dependency)
-        let material_texture_bind_group_layout =
+        // Create bind group layouts matching PassScene
+        let textures_bgl =
             self.ctx
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("material_texture_bind_group_layout"),
+                    label: Some("material_textures_bgl"),
                     entries: &[
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
@@ -700,13 +691,45 @@ impl PillRenderer for Renderer {
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                             count: None,
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 5,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 6,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 7,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
                     ],
                 });
-        let material_parameter_bind_group_layout =
+        let params_bgl =
             self.ctx
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("material_parameter_bind_group_layout"),
+                    label: Some("material_params_bgl"),
                     entries: &[wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -719,25 +742,308 @@ impl PillRenderer for Renderer {
                     }],
                 });
 
-        // ensure default textures exist for material fallback
-        self.state
+        // Build params from desc
+        let params = RendererMaterialParamsStd140 {
+            albedo: desc.albedo,
+            _pad0: 0.0,
+            metallic: desc.metallic,
+            roughness: desc.roughness,
+            _pad1: [0.0, 0.0],
+            emissive: desc.emissive,
+            _pad2: 0.0,
+        };
+
+        // Build params buffer + bind group
+        let param_buffer = self
+            .ctx
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("{}_material_params", desc.label)),
+                contents: bytemuck::bytes_of(&params),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        let param_bind_group = self
+            .ctx
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &params_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: param_buffer.as_entire_binding(),
+                }],
+                label: Some(&format!("{}_material_params_bg", desc.label)),
+            });
+        // Resolve textures (use defaults if None)
+        let albedo_tex = desc
+            .albedo_tex
+            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .unwrap_or(def_color);
+        let normal_tex = desc
+            .normal_tex
+            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .unwrap_or(def_normal);
+        let mr_tex = desc
+            .metallic_roughness_tex
+            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .unwrap_or(def_color);
+        let emissive_tex = desc
+            .emissive_tex
+            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .unwrap_or(def_color);
+
+        // Build texture bind group
+        let texture_bind_group = self
+            .ctx
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &textures_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&albedo_tex.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&albedo_tex.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&normal_tex.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&normal_tex.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&mr_tex.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&mr_tex.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::TextureView(&emissive_tex.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: wgpu::BindingResource::Sampler(&emissive_tex.sampler),
+                    },
+                ],
+                label: Some(&format!("{}_material_textures_bg", desc.label)),
+            });
+        let mat = RendererMaterial {
+            name: desc.label.to_string(),
+            texture_bind_group,
+            param_buffer,
+            param_bind_group,
+        };
+        let handle = self.state.resource_manager.materials.insert(mat);
+        Ok(handle)
+    }
+
+    fn update_material(
+        &mut self,
+        renderer_material_handle: RendererMaterialHandle,
+        desc: MaterialDesc,
+    ) -> Result<RendererMaterialHandle> {
+        // Prepare params struct
+        let params = RendererMaterialParamsStd140 {
+            albedo: desc.albedo,
+            _pad0: 0.0,
+            metallic: desc.metallic,
+            roughness: desc.roughness,
+            _pad1: [0.0, 0.0],
+            emissive: desc.emissive,
+            _pad2: 0.0,
+        };
+
+        // Resolve textures without holding a mutable borrow to materials
+        let (def_color_h, def_normal_h) = self
+            .state
             .resource_manager
             .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
+        let def_color = self
+            .state
+            .resource_manager
+            .textures
+            .get(def_color_h)
+            .unwrap();
+        let def_normal = self
+            .state
+            .resource_manager
+            .textures
+            .get(def_normal_h)
+            .unwrap();
+        let albedo_tex = desc
+            .albedo_tex
+            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .unwrap_or(def_color);
+        let normal_tex = desc
+            .normal_tex
+            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .unwrap_or(def_normal);
+        let mr_tex = desc
+            .metallic_roughness_tex
+            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .unwrap_or(def_color);
+        let emissive_tex = desc
+            .emissive_tex
+            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .unwrap_or(def_color);
 
-        let material = RendererMaterial::new(
+        // Create a compatible layout and new texture bind group
+        let textures_bgl =
+            self.ctx
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("material_textures_bgl_update"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 3,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 4,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 5,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 6,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                multisampled: false,
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 7,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                    ],
+                });
+        let new_texture_bg = self
+            .ctx
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &textures_bgl,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&albedo_tex.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&albedo_tex.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&normal_tex.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Sampler(&normal_tex.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&mr_tex.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::Sampler(&mr_tex.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::TextureView(&emissive_tex.texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: wgpu::BindingResource::Sampler(&emissive_tex.sampler),
+                    },
+                ],
+                label: Some(&format!("{}_material_textures_bg", desc.label)),
+            });
+
+        // Mutate material once
+        if let Some(mat) = self
+            .state
+            .resource_manager
+            .materials
+            .get_mut(renderer_material_handle)
+        {
+            self.ctx
+                .queue
+                .write_buffer(&mat.param_buffer, 0, bytemuck::bytes_of(&params));
+            mat.texture_bind_group = new_texture_bg;
+        }
+        Ok(renderer_material_handle)
+    }
+
+    fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
+        let mesh = RendererMesh::new(&self.ctx.device, name, mesh_data)?;
+        let handle = self.state.resource_manager.meshes.insert(mesh);
+
+        Ok(handle)
+    }
+
+    fn create_texture(
+        &mut self,
+        name: &str,
+        image_data: &image::DynamicImage,
+        texture_type: TextureType,
+    ) -> Result<RendererTextureHandle> {
+        let texture = RendererTexture::new_texture(
             &self.ctx.device,
             &self.ctx.queue,
-            &self.state.resource_manager,
-            name,
-            self.state.master_pipeline_handle,
-            &material_texture_bind_group_layout,
-            textures,
-            &material_parameter_bind_group_layout,
-            parameters,
-        )
-        .unwrap();
-
-        let handle = self.state.resource_manager.materials.insert(material);
+            Some(name),
+            image_data,
+            texture_type,
+        )?;
+        let handle = self.state.resource_manager.textures.insert(texture);
 
         Ok(handle)
     }
@@ -765,34 +1071,6 @@ impl PillRenderer for Renderer {
         Ok(handle)
     }
 
-    fn update_material_textures(
-        &mut self,
-        renderer_material_handle: RendererMaterialHandle,
-        textures: &MaterialTextureMap,
-    ) -> Result<()> {
-        RendererMaterial::update_textures(
-            &self.ctx.device,
-            &self.ctx.queue,
-            renderer_material_handle,
-            &mut self.state.resource_manager,
-            textures,
-        )
-    }
-
-    fn update_material_parameters(
-        &mut self,
-        renderer_material_handle: RendererMaterialHandle,
-        parameters: &MaterialParameterMap,
-    ) -> Result<()> {
-        RendererMaterial::update_parameters(
-            &self.ctx.device,
-            &self.ctx.queue,
-            renderer_material_handle,
-            &mut self.state.resource_manager,
-            parameters,
-        )
-    }
-
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
         self.state
             .resource_manager
@@ -808,16 +1086,6 @@ impl PillRenderer for Renderer {
             .resource_manager
             .textures
             .remove(renderer_texture_handle)
-            .unwrap();
-
-        Ok(())
-    }
-
-    fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
-        self.state
-            .resource_manager
-            .materials
-            .remove(renderer_material_handle)
             .unwrap();
 
         Ok(())
