@@ -18,8 +18,9 @@ use wgpu::CommandEncoder;
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-struct PerDrawStd140 {
+pub(crate) struct PerDrawStd140 {
     mvp: [[f32; 4]; 4],
+    model: [[f32; 4]; 4],
 }
 unsafe impl bytemuck::Zeroable for PerDrawStd140 {}
 unsafe impl bytemuck::Pod for PerDrawStd140 {}
@@ -57,12 +58,13 @@ pub(crate) struct VisiblePreDraw {
     pub(crate) mesh_handle: RendererMeshHandle,
     pub(crate) entity_index: u32,
     pub(crate) mvp: [[f32; 4]; 4],
+    pub(crate) model: [[f32; 4]; 4],
 }
 
 // M3: Hello Mesh + per-draw MVP (dynamic offsets)
 pub(crate) struct MeshBatch {
     pub(crate) mesh_handle: RendererMeshHandle,
-    pub(crate) instances: Vec<[[f32; 4]; 4]>,
+    pub(crate) instances: Vec<PerDrawStd140>,
     pub(crate) base_offset_u32: u32, // offset into per-draw ring for first instance
 }
 
@@ -135,15 +137,33 @@ impl Pass for PassScene {
         // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
         // Shaders: must match bind group layout indices: 0(camera),1(material textures),2(material params),3(per-draw)
         let vertex_wgsl = r#"
-            @group(0) @binding(0) var<uniform> UCamera: mat4x4<f32>;
-            struct PerDraw { mvp: mat4x4<f32>, };
+            struct Camera {
+              position: vec4<f32>,
+              viewProjection: mat4x4<f32>,
+            };
+            @group(0) @binding(0) var<uniform> UCamera: Camera;
+            struct PerDraw { mvp: mat4x4<f32>, model: mat4x4<f32>, };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
-            struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
-            struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
+            struct VSIn {
+              @location(0) pos: vec3<f32>,
+              @location(1) uv: vec2<f32>,
+              @location(2) normal: vec3<f32>,
+            };
+            struct VSOut {
+              @builtin(position) pos: vec4<f32>,
+              @location(0) uv: vec2<f32>,
+              @location(1) worldPos: vec3<f32>,
+              @location(2) worldNormal: vec3<f32>,
+            };
             @vertex fn main(input: VSIn) -> VSOut {
               var out: VSOut;
+              let worldPos4 = UPerDraw.model * vec4<f32>(input.pos, 1.0);
+              // TODO: Use a proper normal matrix (inverse-transpose of model) if non-uniform scaling is used.
+              let n = normalize((UPerDraw.model * vec4<f32>(input.normal, 0.0)).xyz);
               out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
               out.uv = input.uv;
+              out.worldPos = worldPos4.xyz;
+              out.worldNormal = n;
               return out;
             }
         "#;
@@ -165,17 +185,110 @@ impl Pass for PassScene {
             }
             @group(2) @binding(0) var<uniform> UMaterial: MaterialParams;
             // Per-draw
-            struct PerDraw { mvp: mat4x4<f32>, };
+            struct PerDraw { mvp: mat4x4<f32>, model: mat4x4<f32>, };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
-            @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-              let bc_tex = textureSample(texBaseColor, smpBaseColor, uv).rgb;
+            struct Camera {
+              position: vec4<f32>,
+              viewProjection: mat4x4<f32>,
+            };
+            @group(0) @binding(0) var<uniform> UCamera: Camera;
+
+            const PI: f32 = 3.14159265359;
+
+            // TODO: Move lights to engine-provided uniforms; support directional/spot/area lights.
+            const LIGHT_POS0: vec3<f32> = vec3<f32>(-10.0,  10.0, 10.0);
+            const LIGHT_POS1: vec3<f32> = vec3<f32>( 10.0,  10.0, 10.0);
+            const LIGHT_POS2: vec3<f32> = vec3<f32>(-10.0, -10.0, 10.0);
+            const LIGHT_POS3: vec3<f32> = vec3<f32>( 10.0, -10.0, 10.0);
+            const LIGHT_COL0: vec3<f32> = vec3<f32>(300.0, 300.0, 300.0);
+            const LIGHT_COL1: vec3<f32> = vec3<f32>(300.0, 300.0, 300.0);
+            const LIGHT_COL2: vec3<f32> = vec3<f32>(300.0, 300.0, 300.0);
+            const LIGHT_COL3: vec3<f32> = vec3<f32>(300.0, 300.0, 300.0);
+
+            fn DistributionGGX(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
+              // Add epsilon to avoid singularities at very low roughness.
+              let a = max(roughness * roughness, 0.0025);
+              let a2 = a * a;
+              let NdotH = max(dot(N, H), 0.0);
+              let NdotH2 = NdotH * NdotH;
+              let denom = (NdotH2 * (a2 - 1.0) + 1.0);
+              return a2 / (PI * denom * denom + 1e-7);
+            }
+
+            fn GeometrySchlickGGX(NdotV: f32, roughness: f32) -> f32 {
+              // Heitz's k for direct lighting approximation
+              let r = roughness + 1.0;
+              let k = (r * r) / 8.0;
+              let denom = NdotV * (1.0 - k) + k;
+              return NdotV / denom;
+            }
+
+            fn GeometrySmith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f32 {
+              let NdotV = max(dot(N, V), 0.0);
+              let NdotL = max(dot(N, L), 0.0);
+              let ggx2 = GeometrySchlickGGX(NdotV, roughness);
+              let ggx1 = GeometrySchlickGGX(NdotL, roughness);
+              return ggx1 * ggx2;
+            }
+
+            fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
+              return F0 + (vec3<f32>(1.0, 1.0, 1.0) - F0) * pow(1.0 - cosTheta, 5.0);
+            }
+
+            fn accumulateLight(
+              WorldPos: vec3<f32>, N: vec3<f32>, V: vec3<f32>, F0: vec3<f32>,
+              albedo: vec3<f32>, roughness: f32, metallic: f32,
+              lightPos: vec3<f32>, lightColor: vec3<f32>
+            ) -> vec3<f32> {
+              let L = normalize(lightPos - WorldPos);
+              let H = normalize(V + L);
+              let distance = length(lightPos - WorldPos);
+              let attenuation = 1.0 / (distance * distance);
+              let radiance = lightColor * attenuation;
+
+              let NDF = DistributionGGX(N, H, roughness);
+              let G   = GeometrySmith(N, V, L, roughness);
+              let F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+              let kS = F;
+              var kD = vec3<f32>(1.0, 1.0, 1.0) - kS;
+              kD = kD * (1.0 - metallic);
+
+              let numerator = NDF * G * F;
+              let denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+              let specular = numerator / vec3<f32>(denominator, denominator, denominator);
+
+              let NdotL = max(dot(N, L), 0.0);
+              return (kD * (albedo / PI) + specular) * radiance * NdotL;
+            }
+
+            @fragment fn main(
+              @location(0) uv: vec2<f32>,
+              @location(1) WorldPos: vec3<f32>,
+              @location(2) NormalIn: vec3<f32>
+            ) -> @location(0) vec4<f32> {
+              // Surface parameters
+              var albedo = textureSample(texBaseColor, smpBaseColor, uv).rgb * UMaterial.baseColorFactor;
               let mr = textureSample(texMetallicRoughness, smpMetallicRoughness, uv).gb;
-              let roughness = clamp(mr.x * UMaterial.roughnessFactor, 0.0, 1.0);
+              var roughness = clamp(mr.x * UMaterial.roughnessFactor, 0.0, 1.0);
+              // Robustness: keep roughness in a sane range to preserve highlight and stability.
+              roughness = clamp(roughness, 0.045, 0.99);
               let metallic = clamp(mr.y * UMaterial.metallicFactor, 0.0, 1.0);
-              let base = bc_tex * UMaterial.baseColorFactor;
-              let emissive = textureSample(texEmissive, smpEmissive, uv).rgb * UMaterial.emissiveFactor;
-              // Simple unlit-ish output; lighting model TBD
-              let color = base + emissive;
+              // TODO: Support normal mapping (tangent space) and AO texture.
+              let ao: f32 = 1.0;
+              let N = normalize(NormalIn);
+              let V = normalize(UCamera.position.xyz - WorldPos);
+
+              var F0 = vec3<f32>(0.04, 0.04, 0.04);
+              F0 = mix(F0, albedo, vec3<f32>(metallic, metallic, metallic));
+
+              var Lo = vec3<f32>(0.0, 0.0, 0.0);
+              Lo = Lo + accumulateLight(WorldPos, N, V, F0, albedo, roughness, metallic, LIGHT_POS0, LIGHT_COL0);
+              Lo = Lo + accumulateLight(WorldPos, N, V, F0, albedo, roughness, metallic, LIGHT_POS1, LIGHT_COL1);
+              Lo = Lo + accumulateLight(WorldPos, N, V, F0, albedo, roughness, metallic, LIGHT_POS2, LIGHT_COL2);
+              Lo = Lo + accumulateLight(WorldPos, N, V, F0, albedo, roughness, metallic, LIGHT_POS3, LIGHT_COL3);
+
+              var color = Lo;
               return vec4<f32>(color, 1.0);
             }
         "#;
@@ -278,7 +391,10 @@ impl Pass for PassScene {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: true,
-                    min_binding_size: Some(std::num::NonZeroU64::new(64).unwrap()),
+                    min_binding_size: Some(
+                        std::num::NonZeroU64::new(std::mem::size_of::<PerDrawStd140>() as u64)
+                            .unwrap(),
+                    ),
                 },
                 count: None,
             }],
@@ -352,7 +468,12 @@ impl Pass for PassScene {
                         resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                             buffer: &per_draw_buffer,
                             offset: 0,
-                            size: Some(std::num::NonZeroU64::new(64).unwrap()),
+                            size: Some(
+                                std::num::NonZeroU64::new(
+                                    std::mem::size_of::<PerDrawStd140>() as u64
+                                )
+                                .unwrap(),
+                            ),
                         }),
                     }],
                 });
@@ -525,6 +646,7 @@ impl Pass for PassScene {
                 mesh_handle,
                 entity_index: render_queue_item.entity_index,
                 mvp,
+                model: model.to_cols_array_2d(),
             });
         }
 
@@ -557,11 +679,17 @@ impl Pass for PassScene {
                 .iter_mut()
                 .find(|b| b.mesh_handle == v.mesh_handle)
             {
-                batch.instances.push(v.mvp);
+                batch.instances.push(PerDrawStd140 {
+                    mvp: v.mvp,
+                    model: v.model,
+                });
             } else {
                 g.batches.push(MeshBatch {
                     mesh_handle: v.mesh_handle,
-                    instances: vec![v.mvp],
+                    instances: vec![PerDrawStd140 {
+                        mvp: v.mvp,
+                        model: v.model,
+                    }],
                     base_offset_u32: 0,
                 });
             }
@@ -595,10 +723,9 @@ impl Pass for PassScene {
         for g in self.groups_buffer.iter_mut() {
             for b in g.batches.iter_mut() {
                 b.base_offset_u32 = next_offset_u32;
-                for mvp in &b.instances {
-                    let pd = PerDrawStd140 { mvp: *mvp };
+                for pd in &b.instances {
                     self.staging_buffer
-                        .extend_from_slice(bytemuck::bytes_of(&pd));
+                        .extend_from_slice(bytemuck::bytes_of(pd));
                     let pad =
                         (self.per_draw_stride as usize) - std::mem::size_of::<PerDrawStd140>();
                     self.staging_buffer.extend(std::iter::repeat(0u8).take(pad));

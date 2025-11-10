@@ -1,0 +1,10 @@
+Building game project from /Users/mk/dev/demo/Pill-Demo...
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.57s
+Game built successfully!
+Running game project from /Users/mk/dev/demo/Pill-Demo/build/dev...
+[INFO] 2025-10-17T01:19:27 pill_standalone/src/main.rs:439: Initializing Standalone
+[INFO] 2025-10-17T01:19:27 pill_renderer/src/renderer.rs:701: Initializing Renderer
+[INFO] 2025-10-17T01:19:27 pill_renderer/src/renderer.rs:732: Using GPU: Apple M1 Pro (Metal)
+[INFO] 2025-10-17T01:19:27 pill_engine/src/engine.rs:122: Initializing Engine
+[INFO] 2025-10-17T01:19:27 pill_engine/src/engine.rs:94: Starting Game
+[INFO] 2025-10-17T01:19:46 pill_renderer/src/renderer.rs:1493: Resizing Renderer resources
