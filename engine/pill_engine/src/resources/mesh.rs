@@ -13,6 +13,7 @@ use pill_core::{
 use anyhow::{Context, Error, Result};
 use boolinator::Boolinator;
 use cgmath::InnerSpace;
+use gltf::import as gltf_import;
 use std::path::{Path, PathBuf};
 use tobj::LoadOptions;
 
@@ -73,19 +74,50 @@ impl Resource for Mesh {
             get_type_name::<Self>().sobj_style()
         );
 
-        // Check if path to asset is correct
+        // Resolve absolute path
         let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-        pill_core::validate_asset_path(&resource_file_path, &["obj"])
-            .context(error_message.clone())?;
+        let ext = resource_file_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
 
-        // Create mesh data
-        let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
-            .context(error_message.clone())
-            .context(format!(
-                "Failed to create mesh data from {} file",
-                resource_file_path.file_name().unwrap().to_string_lossy()
-            ))?;
-        self.mesh_data = Some(mesh_data);
+        // Route by extension
+        match ext.as_str() {
+            "obj" => {
+                // Validate and load OBJ
+                pill_core::validate_asset_path(&resource_file_path, &["obj"])
+                    .context(error_message.clone())?;
+                let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
+                    .context(error_message.clone())
+                    .context(format!(
+                        "Failed to create mesh data from {} file",
+                        resource_file_path.file_name().unwrap().to_string_lossy()
+                    ))?;
+                self.mesh_data = Some(mesh_data);
+            }
+            "gltf" | "glb" => {
+                // Validate and load glTF/GLB
+                pill_core::validate_asset_path(&resource_file_path, &["gltf", "glb"])
+                    .context(error_message.clone())?;
+                let mesh_data = load_meshdata_from_gltf(&resource_file_path)
+                    .context(error_message.clone())
+                    .context(format!(
+                        "Failed to create mesh data from {} file",
+                        resource_file_path.file_name().unwrap().to_string_lossy()
+                    ))?;
+                self.mesh_data = Some(mesh_data);
+            }
+            _ => {
+                return Err(Error::new(EngineError::InvalidModelFile(
+                    resource_file_path
+                        .clone()
+                        .into_os_string()
+                        .into_string()
+                        .unwrap_or_else(|_| "unknown".to_string()),
+                )));
+            }
+        }
 
         // Create new renderer mesh resource
         let renderer_resource_handle = engine
@@ -276,4 +308,141 @@ impl MeshData {
 
         Ok(mesh_data)
     }
+}
+
+fn load_meshdata_from_gltf(path: &PathBuf) -> Result<MeshData> {
+    // Import glTF file (supports .gltf and .glb)
+    let (doc, buffers, _images) = gltf_import(path)?;
+
+    // Take the first mesh
+    let mesh = doc
+        .meshes()
+        .next()
+        .ok_or_else(|| Error::msg("glTF contains no meshes"))?;
+
+    // Accumulate primitives into a single vertex/index stream
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut normals: Vec<[f32; 3]> = Vec::new();
+    let mut texcoords: Vec<[f32; 2]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+
+    for primitive in mesh.primitives() {
+        let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+        let prim_positions: Vec<[f32; 3]> = reader
+            .read_positions()
+            .ok_or_else(|| Error::msg("Missing POSITION in glTF primitive"))?
+            .collect();
+        let prim_normals: Vec<[f32; 3]> = reader
+            .read_normals()
+            .ok_or_else(|| Error::msg("Missing NORMAL in glTF primitive"))?
+            .collect();
+        let prim_texcoords: Vec<[f32; 2]> = reader
+            .read_tex_coords(0)
+            .map(|tc| tc.into_f32().collect())
+            .unwrap_or_else(|| vec![[0.0, 0.0]; prim_positions.len()]);
+
+        let index_base = positions.len() as u32;
+        positions.extend_from_slice(&prim_positions);
+        normals.extend_from_slice(&prim_normals);
+        texcoords.extend_from_slice(&prim_texcoords);
+
+        if let Some(read_indices) = reader.read_indices() {
+            indices.extend(read_indices.into_u32().map(|i| i + index_base));
+        } else {
+            // Non-indexed: generate a sequential index buffer
+            indices.extend((0..prim_positions.len() as u32).map(|i| i + index_base));
+        }
+    }
+
+    if positions.is_empty() {
+        return Err(Error::msg("No vertex data found in glTF mesh"));
+    }
+
+    // Build vertices
+    let mut vertices: Vec<MeshVertex> = Vec::with_capacity(positions.len());
+    let mut min_v = cgmath::Vector3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
+    let mut max_v = cgmath::Vector3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
+
+    for i in 0..positions.len() {
+        let p = positions[i];
+        let n = normals[i];
+        let uv = texcoords.get(i).copied().unwrap_or([0.0, 0.0]); // glTF UVs are used as-is
+
+        let pp = cgmath::Vector3::new(p[0], p[1], p[2]);
+        min_v = cgmath::Vector3::new(min_v.x.min(pp.x), min_v.y.min(pp.y), min_v.z.min(pp.z));
+        max_v = cgmath::Vector3::new(max_v.x.max(pp.x), max_v.y.max(pp.y), max_v.z.max(pp.z));
+
+        vertices.push(MeshVertex {
+            position: p,
+            texture_coordinates: uv,
+            normal: n,
+            tangent: [0.0; 3].into(),
+            bitangent: [0.0; 3].into(),
+        });
+    }
+
+    // Compute tangents/bitangents (same approach as OBJ path)
+    let mut triangles_included = vec![0usize; vertices.len()];
+    for c in indices.chunks(3) {
+        if c.len() < 3 {
+            continue;
+        }
+        let v0 = vertices[c[0] as usize];
+        let v1 = vertices[c[1] as usize];
+        let v2 = vertices[c[2] as usize];
+
+        let pos0: cgmath::Vector3<_> = v0.position.into();
+        let pos1: cgmath::Vector3<_> = v1.position.into();
+        let pos2: cgmath::Vector3<_> = v2.position.into();
+
+        let uv0: cgmath::Vector2<_> = v0.texture_coordinates.into();
+        let uv1: cgmath::Vector2<_> = v1.texture_coordinates.into();
+        let uv2: cgmath::Vector2<_> = v2.texture_coordinates.into();
+
+        let delta_pos1 = pos1 - pos0;
+        let delta_pos2 = pos2 - pos0;
+        let delta_uv1 = uv1 - uv0;
+        let delta_uv2 = uv2 - uv0;
+
+        let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+        let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+        let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+
+        vertices[c[0] as usize].tangent =
+            (tangent + cgmath::Vector3::from(vertices[c[0] as usize].tangent)).into();
+        vertices[c[1] as usize].tangent =
+            (tangent + cgmath::Vector3::from(vertices[c[1] as usize].tangent)).into();
+        vertices[c[2] as usize].tangent =
+            (tangent + cgmath::Vector3::from(vertices[c[2] as usize].tangent)).into();
+        vertices[c[0] as usize].bitangent =
+            (bitangent + cgmath::Vector3::from(vertices[c[0] as usize].bitangent)).into();
+        vertices[c[1] as usize].bitangent =
+            (bitangent + cgmath::Vector3::from(vertices[c[1] as usize].bitangent)).into();
+        vertices[c[2] as usize].bitangent =
+            (bitangent + cgmath::Vector3::from(vertices[c[2] as usize].bitangent)).into();
+
+        triangles_included[c[0] as usize] += 1;
+        triangles_included[c[1] as usize] += 1;
+        triangles_included[c[2] as usize] += 1;
+    }
+
+    for (i, n) in triangles_included.into_iter().enumerate() {
+        if n == 0 {
+            continue;
+        }
+        let denom = 1.0 / n as f32;
+        let vertex = &mut vertices[i];
+        vertex.tangent = (Vector3f::from(vertex.tangent) * denom).normalize().into();
+        vertex.bitangent = (Vector3f::from(vertex.bitangent) * denom)
+            .normalize()
+            .into();
+    }
+
+    Ok(MeshData {
+        vertices,
+        indices,
+        aabb_min: [min_v.x, min_v.y, min_v.z],
+        aabb_max: [max_v.x, max_v.y, max_v.z],
+    })
 }

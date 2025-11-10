@@ -20,6 +20,7 @@ log = "0.4"
 # Loaders
 image = "0.23"
 tobj = "3.0"
+gltf = { version = "1.4", features = ["import", "names"] }
 
 # Audio
 rodio = { version = "0.20", features = ["wav", "mp3"] }
