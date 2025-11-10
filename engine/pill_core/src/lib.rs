@@ -9,6 +9,8 @@ mod pill_twinmap;
 mod pill_typemap;
 mod bitmask_utils;
 mod timer;
+mod log;
+mod style;
 
 // --- Use ---
 
@@ -50,7 +52,6 @@ pub use bitmask_utils::{
 };
 
 pub use utils::{ 
-    PillStyle,
     get_type_name, 
     get_value_type_name, 
     enum_variant_eq, 
@@ -62,4 +63,14 @@ pub use utils::{
 pub use timer::{
     Timer,
     TimerRecord
+};
+
+pub use style::{ 
+    PillStyle, 
+};
+
+pub use log::{
+    set_log_levels,
+    get_default_log_levels,
+    LogContext
 };

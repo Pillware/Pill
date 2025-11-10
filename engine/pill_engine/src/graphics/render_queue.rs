@@ -1,13 +1,7 @@
 use crate::{ 
-    resources::{
-        ResourceManager,
-        MaterialHandle, 
-        TextureHandle, 
-        Material,
-        MeshHandle,
-        Mesh,
-    }, 
-    config::*,
+    config::*, resources::{
+        Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, Shader, TextureHandle
+    }
 };
 
 use pill_core::PillSlotMapKey;
@@ -106,12 +100,21 @@ where
 // Creates pill engine render queue composed from order, material index, material version, mesh index, mesh version
 pub fn compose_render_queue_key(resource_manager: &ResourceManager, material_handle: &MaterialHandle, mesh_handle: &MeshHandle) -> Result<RenderQueueKey> { 
     let material = resource_manager.get_resource::<Material>(material_handle)?;
+    let shader = resource_manager.get_resource::<Shader>(&material.shader_handle)?;
     let mesh = resource_manager.get_resource::<Mesh>(mesh_handle)?;
 
     let render_queue_key: RenderQueueKey = 
         ((RENDER_QUEUE_KEY_ORDER.max - material.rendering_order as RenderQueueKey) << RENDER_QUEUE_KEY_ORDER.mask_shift) | // Order has to be inverted for proper sorting
+        
+        // 1. Shader - defining rendering pipeline
+        ((shader.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDER_QUEUE_KEY_SHADER_INDEX.mask_shift) | 
+        ((shader.renderer_resource_handle.unwrap().data().version.get() as RenderQueueKey) << RENDER_QUEUE_KEY_SHADER_VERSION.mask_shift) |
+
+        // 2. Material - defining material properties, same rendering pipeline
         ((material.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift) | 
         ((material.renderer_resource_handle.unwrap().data().version.get() as RenderQueueKey) << RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift) | 
+        
+        // 3. Mesh - defining mesh properties, same material thus same rendering pipeline
         ((mesh.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_INDEX.mask_shift ) | 
         ((mesh.renderer_resource_handle.unwrap().data().version.get() as RenderQueueKey) << RENDER_QUEUE_KEY_MESH_VERSION.mask_shift);
 
@@ -120,6 +123,8 @@ pub fn compose_render_queue_key(resource_manager: &ResourceManager, material_han
 
 pub struct RenderQueueKeyFields {
     pub order: u8,
+    pub shader_index: u8,
+    pub shader_version: u8,
     pub material_index: u8,
     pub material_version: u8,
     pub mesh_index: u8,
@@ -131,6 +136,8 @@ pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> RenderQue
 
     // [TODO] What if render queue key is not valid
     let order: u8 = ((render_queue_key & RENDER_QUEUE_KEY_ORDER.mask as RenderQueueKey) >> RENDER_QUEUE_KEY_ORDER.mask_shift as RenderQueueKey) as u8;
+    let shader_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_SHADER_INDEX.mask) >> RENDER_QUEUE_KEY_SHADER_INDEX.mask_shift) as u8;
+    let shader_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_SHADER_VERSION.mask) >> RENDER_QUEUE_KEY_SHADER_VERSION.mask_shift) as u8;
     let material_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MATERIAL_INDEX.mask) >> RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift) as u8;
     let material_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MATERIAL_VERSION.mask) >> RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift) as u8;
     let mesh_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MESH_INDEX.mask) >> RENDER_QUEUE_KEY_MESH_INDEX.mask_shift) as u8;
@@ -138,6 +145,8 @@ pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> RenderQue
 
     RenderQueueKeyFields {
         order,
+        shader_index,
+        shader_version,
         material_index,
         material_version,
         mesh_index,
@@ -167,7 +176,9 @@ fn get_render_queue_key_item_range(render_queue_item_index: u8) -> Range<RenderQ
 }
 
 lazy_static! { // This will be initialized in runtime instead of compile-time (this is the cost of not using const function, const functions do not allow for generic variables bound by traits different than Sized)
-    pub static ref RENDER_QUEUE_KEY_ORDER: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_ORDER_IDX));
+    pub static ref RENDER_QUEUE_KEY_ORDER: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_RENDERING_ORDER_IDX));
+    pub static ref RENDER_QUEUE_KEY_SHADER_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_SHADER_INDEX_IDX));
+    pub static ref RENDER_QUEUE_KEY_SHADER_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_SHADER_VERSION_IDX));
     pub static ref RENDER_QUEUE_KEY_MATERIAL_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MATERIAL_INDEX_IDX));
     pub static ref RENDER_QUEUE_KEY_MATERIAL_VERSION: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MATERIAL_VERSION_IDX));
     pub static ref RENDER_QUEUE_KEY_MESH_INDEX: RenderQueueField<RenderQueueKey> = RenderQueueField::<RenderQueueKey>::new(get_render_queue_key_item_range(RENDER_QUEUE_KEY_MESH_INDEX_IDX));

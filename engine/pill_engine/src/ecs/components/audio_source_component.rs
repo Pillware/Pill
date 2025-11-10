@@ -14,9 +14,7 @@ use crate::{
     },
 };
 
-use pill_core::{ PillTypeMapKey, get_type_name, PillStyle, Vector3f, get_enum_variant_type_name };
-
-use log::warn;
+use pill_core::{ get_enum_variant_type_name, get_type_name, warn, LogContext, PillStyle, PillTypeMapKey, Vector3f };
 use anyhow::{ Result, Context, Error };
 
 const DEFERRED_REQUEST_VARIANT_SET_SOUND: usize = 0;
@@ -190,7 +188,7 @@ impl Component for AudioSourceComponent {
         // Check if sound handle is valid
         if self.sound_handle.is_some() {
             engine.get_resource::<Sound>(&self.sound_handle.unwrap())
-                .context(format!("Creating {} {} failed", "Component".gobj_style(), get_type_name::<Self>().sobj_style()))?;
+                .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
         }
 
         Ok(())
@@ -212,7 +210,7 @@ impl Component for AudioSourceComponent {
             {
                 // Check if sound handle is valid  
                 engine.get_resource::<Sound>(&self.sound_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Component".gobj_style(), "Sound".sobj_style()))?;
+                    .context(format!("Setting {} {} failed", "Component".general_object_style(), "Sound".specific_object_style()))?;
 
                 // Stop playing
                 self.stop_playing(engine)?;
@@ -254,7 +252,7 @@ impl Component for AudioSourceComponent {
                     self.is_playing = true;
                 } 
                 else {
-                    warn!("Cannot play sound, max concurrent {} sound count reached", get_enum_variant_type_name(&self.sound_type));
+                    warn!(LogContext::ECS => "Cannot play sound, max concurrent {} sound count reached", get_enum_variant_type_name(&self.sound_type));
                 }
             },
             DEFERRED_REQUEST_VARIANT_PAUSE_SOUND  => 
@@ -271,7 +269,7 @@ impl Component for AudioSourceComponent {
             },
             _ => 
             {
-                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().sobj_style());
+                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
             }
         }
 
