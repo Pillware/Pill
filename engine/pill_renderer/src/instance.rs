@@ -16,8 +16,13 @@ pub struct Instance {
 impl Instance {
     pub fn new(transform_component: &TransformComponent) -> Instance {
         Instance {
-            model_matrix: get_model_matrix(transform_component),
-            normal_matrix: get_normal_matrix(transform_component),
+            transform: {
+                [
+                    [transform_component.position.x, transform_component.position.y, transform_component.position.z],
+                    [transform_component.rotation.x, transform_component.rotation.y, transform_component.rotation.z],
+                    [transform_component.scale.x, transform_component.scale.y, transform_component.scale.z],
+                ]
+            }
         }
     }
 }
@@ -31,27 +36,21 @@ impl Vertex for Instance {
             // This means that shaders will only change to use the next instance when the shader starts processing a new instance
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
-                // Model matrix (mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot for each vec4)
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // Instance transform position
                     offset: 0,
                     shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                wgpu::VertexAttribute { // Instance transform rotation
+                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                wgpu::VertexAttribute { // Instance transform scale
+                    offset: mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
                     shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
-                    shader_location: 8,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
+                    format: wgpu::VertexFormat::Float32x3,
+                }
 
                 // Normal matrix
                 wgpu::VertexAttribute {

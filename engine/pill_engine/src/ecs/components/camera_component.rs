@@ -109,7 +109,7 @@ impl PillTypeMapKey for CameraComponent {
 
 impl Component for CameraComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Component".gobj_style(), get_type_name::<Self>().sobj_style());
+        let error_message = format!("Initializing {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style());
 
         // Create new renderer camera resource
         let renderer_resource_handle = engine.renderer.create_camera().context(error_message)?;

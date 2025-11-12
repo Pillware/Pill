@@ -13,6 +13,7 @@ pub trait Vertex {
 // --- Mesh ---
 
 pub struct RendererMesh {
+    pub name: String,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
@@ -28,12 +29,13 @@ impl RendererMesh {
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(&format!("{:?}_vertex_buffer", name)),
+            label: Some(&format!("{:?}_index_buffer", name)),
             contents: bytemuck::cast_slice(&mesh_data.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
         let renderer_mesh = Self {
+            name: name.to_string(),
             vertex_buffer,
             index_buffer,
             index_count: mesh_data.indices.len() as u32,

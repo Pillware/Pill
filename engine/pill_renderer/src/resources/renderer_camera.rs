@@ -7,6 +7,11 @@ use anyhow::{ Result };
 use wgpu::util::DeviceExt;
 use glam::{Mat3, Mat4, Vec3, Vec4};
 
+use crate::config::{
+    CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, 
+    MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX
+};
+
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols_array(&[
     1.0, 0.0, 0.0, 0.0, // column 1
@@ -19,12 +24,12 @@ pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols_array(&[
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct CameraUniform {
-    pub(crate) position: [f32; 4], // Camera position
-    pub(crate) view_projection_matrix: [[f32; 4]; 4], // Perspective manipulation
+pub struct CameraParametersData {
+    pub position: [f32; 4], // Camera position
+    pub view_projection_matrix: [[f32; 4]; 4], // Perspective manipulation
 }
 
-impl CameraUniform {
+impl CameraParametersData {
     pub fn new() -> Self {
         Self {
             position: Vec4::ZERO.to_array(),
@@ -73,34 +78,36 @@ impl CameraUniform {
 
 #[derive(Debug)]
 pub struct RendererCamera {
-    pub(crate) uniform: CameraUniform,
-    buffer: wgpu::Buffer,
+    pub parameters_data: CameraParametersData,
+    pub parameters_uniform_buffer: wgpu::Buffer,
+    pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
 }
 
 impl RendererCamera {
-    pub fn new(device: &wgpu::Device, camera_bind_group_layout: &wgpu::BindGroupLayout) -> Result<Self> {
+    pub fn new(device: &wgpu::Device, camera_bind_group_layout: wgpu::BindGroupLayout) -> Result<Self> {
 
-        let uniform = CameraUniform::new();
+        let parameters_data = CameraParametersData::new();
 
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("camera_buffer"),
-            contents: bytemuck::cast_slice(&[uniform]),
+        let parameters_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("camera_parameters_buffer"),
+            contents: bytemuck::cast_slice(&[parameters_data]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
+                binding: 0, // (set = X, binding = 0)
+                resource: parameters_uniform_buffer.as_entire_binding(),
             }],
-            label: Some("camera_bind_group"),
+            label: Some("camera_parameters_bind_group"),
         });
 
         let camera = Self {
-            uniform,
-            buffer,
+            parameters_data,
+            parameters_uniform_buffer,
+            bind_group_layout: camera_bind_group_layout,
             bind_group,
         };
 
@@ -108,7 +115,8 @@ impl RendererCamera {
     }
 
     pub fn update(&mut self, queue: &wgpu::Queue, camera_component: &CameraComponent, transform_component: &TransformComponent) {
-        self.uniform.update_data(camera_component, transform_component);
-        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform]));
+        self.parameters_data.update_data(camera_component, transform_component);
+        queue.write_buffer(&self.parameters_uniform_buffer, 0, bytemuck::cast_slice(&[self.parameters_data]));
     }
 }
+

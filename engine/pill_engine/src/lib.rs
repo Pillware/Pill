@@ -1,5 +1,4 @@
-#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
-
+#![cfg_attr(debug_assertions, allow(dead_code, unused_imports, mismatched_lifetime_syntaxes))]
 mod engine;
 mod resources;
 mod graphics;
@@ -90,8 +89,12 @@ pub mod game {
             MaterialHandle,
             Mesh,
             MeshHandle,
-            ResourceLoadType,
-            Sound
+            ResourceLoader,
+            Sound,
+            Shader,
+            ShaderParameterSlot,
+            ShaderTextureSlot,
+            ShaderParameterType,
         },
     };
 
@@ -120,11 +123,10 @@ pub mod internal {
             RenderQueueItem,
             RenderQueueKeyFields,
             decompose_render_queue_key,
-
             RendererCameraHandle,
+            RendererShaderHandle,
             RendererMaterialHandle,
             RendererMeshHandle,
-            RendererPipelineHandle,
             RendererTextureHandle,
             RENDER_QUEUE_KEY_ORDER
         },
@@ -154,19 +156,20 @@ pub mod internal {
 
             Material,
             MaterialHandle,
+            ShaderParameterSlot,
+            ShaderTextureSlot,
+            ShaderParameterType,
 
             Mesh,
             MeshHandle,
             MeshData,
             MeshVertex,
 
-            ResourceLoadType,
+            ResourceLoader,
             ResourceManager,
 
             MaterialTexture,
-            MaterialTextureMap,
             MaterialParameter,
-            MaterialParameterMap,
             get_renderer_texture_handle_from_material_texture,
         },
     };

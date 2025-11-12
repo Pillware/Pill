@@ -57,7 +57,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateResourceRequest<T>
        
         // Process
         resource.deferred_update(engine, self.request_variant)
-            .context(format!("Deferred update of {} {} {} failed", "Resource".gobj_style(), get_type_name::<T>().sobj_style(), resource.get_name().name_style()))?;
+            .context(format!("Deferred update of {} {} {} failed", "Resource".general_object_style(), get_type_name::<T>().specific_object_style(), resource.get_name().name_style()))?;
         
         // Get resource slot
         let resource_slot = engine.resource_manager.get_resource_slot_mut::<T>(&self.resource_handle).expect("Critical: Resource not registered");
@@ -114,7 +114,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateComponentRequest<T>
         }
         
         // Process
-        component.as_mut().unwrap().deferred_update(engine, self.request_variant).context(format!("Deferred update of {} {} failed", "Component".gobj_style(), get_type_name::<T>().sobj_style()))?;
+        component.as_mut().unwrap().deferred_update(engine, self.request_variant).context(format!("Deferred update of {} {} failed", "Component".general_object_style(), get_type_name::<T>().specific_object_style()))?;
 
         {
             // Get scene 
@@ -172,7 +172,7 @@ impl<T> DeferredUpdateRequest for DeferredUpdateGlobalComponentRequest<T>
         }
         
         // Process
-        component.as_mut().unwrap().deferred_update(engine, self.request_variant).context(format!("Deferred update of {} {} failed", "GlobalComponent".gobj_style(), get_type_name::<T>().sobj_style()))?;
+        component.as_mut().unwrap().deferred_update(engine, self.request_variant).context(format!("Deferred update of {} {} failed", "GlobalComponent".general_object_style(), get_type_name::<T>().specific_object_style()))?;
 
         {
             // Get component storage

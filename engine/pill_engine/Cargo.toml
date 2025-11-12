@@ -28,13 +28,14 @@ rodio = { version = "0.20", features = ["wav", "mp3"] }
 readonly = "0.2"
 glam = { version = "0.30.8", features = ["serde"] }
 winit = "0.29"
+winit = "0.30.12"
 cfg-if = "1.0.0"
 boolinator = "2.4.0"
 bytemuck = { version = "1.4", features = [ "derive" ] }
 lazy_static = "1.4.0"
 config = "0.11"
 dyn-clone = "1.0.4"
-egui = "0.28.1"
+egui = "0.32.1"
 serde = { version = "1.0", features = ["derive"] }
 rand = "0.9.2"
 bincode = "1.0"

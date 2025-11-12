@@ -21,7 +21,7 @@ impl EguiManagerComponent {
         }
     }
 
-    pub fn get_ui(engine: &mut Engine) -> Box<dyn Fn(&egui::Context)> {
+    pub fn get_ui(engine: &mut Engine) -> Box<dyn FnMut(&egui::Context)> {
 
         let entity_count =  engine.scene_manager.get_active_scene().unwrap().entities.len();
         let system_count = engine.system_manager.update_phases.iter().map(|(_, systems)| systems.len()).sum::<usize>();
@@ -38,8 +38,8 @@ impl EguiManagerComponent {
         let frame_delta_time = engine.frame_delta_time;
 
         let ui = Box::new(move |ui: &egui::Context| {
-            egui::Window::new("PillEngine")
-                .default_open(true)
+            egui::Window::new("Pill Engine")
+                .default_open(false)
                 .resizable(true)
                 .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
                 .show(ui, |ui| {
@@ -68,7 +68,7 @@ impl EguiManagerComponent {
                                 "Update Phase: {} {:.4} ms",
                                 update_phase, phase_duration
                             ))
-                            .id_source(&phase_id)
+                            .id_salt(&phase_id)
                             .default_open(is_phase_open)
                             .show(ui, |ui| {
                                 for (system_name, timer) in system_timers {
@@ -100,7 +100,7 @@ impl EguiManagerComponent {
             let response = egui::CollapsingHeader::new(egui::RichText::new(summary)
                 .text_style(egui::TextStyle::Body)
                 .color(ui.visuals().text_color()))
-                .id_source(&id)
+                .id_salt(&id)
                 .default_open(is_open)
                 .show(ui, |ui| {
                     for sub in &record.subrecords {

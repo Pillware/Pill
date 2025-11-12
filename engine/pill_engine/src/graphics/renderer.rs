@@ -1,29 +1,22 @@
 use crate::{ 
-    engine::Engine, 
     ecs::{
-        EntityHandle,
-        ComponentStorage, 
-        TransformComponent, 
-        CameraComponent,   
-    }, 
-    resources::{
+        CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
+    }, engine::Engine, graphics::RenderQueueItem, internal::{MaterialParameter, MaterialTexture}, resources::{
         MaterialHandle, 
         MeshData, 
         MeshHandle, 
+        ShaderParameterSlot,
+        ShaderTextureSlot,
         TextureHandle, 
         TextureType, 
-        MaterialTextureMap, 
-        MaterialParameterMap
-    },
-    graphics::{
-        RenderQueueItem,
-    },
+    }
 };
 
+use indexmap::IndexMap;
 use pill_core::{PillSlotMapKey, Timer};
 use pill_core::PillStyle;
 
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use thiserror::Error;
 use anyhow::{Result, Context, Error};
 
@@ -39,10 +32,6 @@ pill_core::define_new_pill_slotmap_key! {
 }
 
 pill_core::define_new_pill_slotmap_key! { 
-    pub struct RendererPipelineHandle;
-}
-
-pill_core::define_new_pill_slotmap_key! { 
     pub struct RendererCameraHandle;
 }
 
@@ -50,26 +39,63 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
 }
 
+pill_core::define_new_pill_slotmap_key! { 
+    pub struct RendererShaderHandle;
+}
+
 // --- Renderer trait definition ---
 
 pub trait PillRenderer { 
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self where Self: Sized;
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> where Self: Sized;
 
-    fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
-    fn set_master_pipeline(&mut self, vertex_shader_bytes: &[u8], fragment_shader_bytes: &[u8],) -> Result<()>;
+    // --- Create ---
+
+    fn create_shader(
+        &mut self, 
+        name: &str, 
+        vertex_shader_bytes: &[u8], 
+        fragment_shader_bytes: &[u8], 
+        texture_slots: &HashMap<String, ShaderTextureSlot>,
+        parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        pass_engine_parameters: bool,
+        pass_camera_parameters: bool,
+    ) -> Result<RendererShaderHandle>;
+    
+    fn create_material(
+        &mut self, 
+        name: &str, 
+        renderer_shader_handle: RendererShaderHandle,
+        textures: &IndexMap<String, MaterialTexture>, 
+        parameters: &HashMap<String, MaterialParameter>
+    ) -> Result<RendererMaterialHandle>;
+
+    fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle>;
     
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
-    fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle>;
-    fn create_material(&mut self, name: &str, textures: &MaterialTextureMap, parameters: &MaterialParameterMap) -> Result<RendererMaterialHandle>;
+
     fn create_camera(&mut self) -> Result<RendererCameraHandle>;
 
-    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &MaterialTextureMap) -> Result<()>;
-    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &MaterialParameterMap) -> Result<()>;
+    // --- Update ---
+
+    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &IndexMap<String, MaterialTexture>) -> Result<()>;
+
+    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &HashMap<String, MaterialParameter>) -> Result<()>;
+
+    // --- Destroy ---
+
+    fn destroy_shader(&mut self, renderer_shader_handle: RendererShaderHandle) -> Result<()>;
+
+    fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()>;
+
+    fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()>;
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()>;
-    fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()>;
-    fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()>;
+
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()>;
+
+    // --- Other ---
+
+    fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;
 
@@ -78,7 +104,8 @@ pub trait PillRenderer {
         render_queue: &Vec::<RenderQueueItem>, 
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
+        egui_ui:  Box<dyn FnMut(&egui::Context)>,
+        delta_time: f32,
         timer: &mut Timer
     ) -> Result<()>;
 

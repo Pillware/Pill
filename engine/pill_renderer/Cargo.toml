@@ -10,6 +10,7 @@ pill_engine = {path = "../pill_engine", features = ["internal"]}
 # Data containers
 slotmap = "1.0.6"
 slab = "0.4.5"
+indexmap = "1.7.0"
 
 # Loaders
 image = "0.23"
@@ -24,8 +25,10 @@ log = "0.4"
 
 # Other
 winit = "0.29"
-wgpu = { version = "0.20.1", features = [ "spirv" ] }
+wgpu = { version = "25.0.0", features = [ "spirv" ] }
 glam = { version = "0.30.8", features = ["serde", "bytemuck"] }
+winit = "0.30.12"
+cgmath = "0.18"
 futures = "0.3"
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }
@@ -33,6 +36,6 @@ config = "0.11"
 naga = { version = "0.19", features = ["glsl-in", "wgsl-out"] }
 
 # egui
-egui = "0.28.1"
-egui-wgpu = { version = "0.28.1", features = ["winit"] }
-egui-winit = "0.28.1"
+egui = "0.32.1"
+egui-wgpu = { version = "0.32.1", features = ["winit"] }
+egui-winit = "0.32.1"

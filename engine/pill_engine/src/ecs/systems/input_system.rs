@@ -3,7 +3,7 @@ use crate::{
     ecs::{ InputComponent, InputEvent },
 };
 
-use glam::Vec2;
+use glam::Vector2f;
 use anyhow::{ Result, Context, Error };
 use winit::event::{ ElementState, MouseButton, MouseScrollDelta };
 
@@ -32,11 +32,11 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
             InputEvent::MouseWheel { delta } => {
                 match delta {
                     MouseScrollDelta::LineDelta(x, y) => {
-                        input_component.set_mouse_scroll_delta(Vec2::new(x, y));
+                        input_component.set_mouse_scroll_delta(Vector2f::new(x, y));
                     },
 
                     MouseScrollDelta::PixelDelta(delta) => {
-                        input_component.set_mouse_scroll_pixel_delta(Vec2::new(delta.x as f32, delta.y as f32));
+                        input_component.set_mouse_scroll_pixel_delta(Vector2f::new(delta.x as f32, delta.y as f32));
                     },
                 }
             },

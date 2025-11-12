@@ -15,7 +15,6 @@ use pill_core::{
 
 use anyhow::{Result, Context, Error};
 use std::{ cell::RefCell, any::TypeId, slice::Iter, iter::Zip, collections::HashMap };
-use log::{debug, info};
 
 pub const NEW_COMPONENT_BIT: u16 = 0b0000_0000_0000_0001;
 

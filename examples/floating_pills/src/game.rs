@@ -61,7 +61,6 @@ pub struct Game { }
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
-
         // --- Basic setup ---
 
         // Disable build-in audio system
@@ -108,89 +107,120 @@ impl PillGame for Game {
         let ambient_music_handle = engine.add_resource(ambient_music)?;
 
         // Add textures
-        let fabric_color_texture = Texture::new("fabric_color", TextureType::Color, ResourceLoadType::Path("textures/fabric_color.jpg".into()));
+        let fabric_color_texture = Texture::new(
+            "fabric_color",
+            TextureType::Color,
+            ResourceLoader::Path("textures/fabric_color.jpg".into()),
+        );
         let fabric_color_texture_handle = engine.add_resource::<Texture>(fabric_color_texture)?;
 
-        let fabric_normal_texture = Texture::new("fabric_normal", TextureType::Normal, ResourceLoadType::Path("textures/fabric_normal.jpg".into()));
+        let fabric_normal_texture = Texture::new(
+            "fabric_normal",
+            TextureType::Normal,
+            ResourceLoader::Path("textures/fabric_normal.jpg".into()),
+        );
         let fabric_normal_texture_handle = engine.add_resource::<Texture>(fabric_normal_texture)?;
 
-        let stones_color_texture = Texture::new("stones_color", TextureType::Color, ResourceLoadType::Path("textures/stones_color.jpg".into()));
+        let stones_color_texture = Texture::new(
+            "stones_color",
+            TextureType::Color,
+            ResourceLoader::Path("textures/stones_color.jpg".into()),
+        );
         let stones_color_texture_handle = engine.add_resource::<Texture>(stones_color_texture)?;
 
-        let stones_normal_texture = Texture::new("stones_normal", TextureType::Normal, ResourceLoadType::Path("textures/stones_normal.jpg".into()));
+        let stones_normal_texture = Texture::new(
+            "stones_normal",
+            TextureType::Normal,
+            ResourceLoader::Path("textures/stones_normal.jpg".into()),
+        );
         let stones_normal_texture_handle = engine.add_resource::<Texture>(stones_normal_texture)?;
 
-        let organic_color_texture = Texture::new("organic_color", TextureType::Color, ResourceLoadType::Path("textures/organic_color.jpg".into()));
+        let organic_color_texture = Texture::new(
+            "organic_color",
+            TextureType::Color,
+            ResourceLoader::Path("textures/organic_color.jpg".into()),
+        );
         let organic_color_texture_handle = engine.add_resource::<Texture>(organic_color_texture)?;
 
-        let organic_normal_texture = Texture::new("organic_normal", TextureType::Normal, ResourceLoadType::Path("textures/organic_normal.jpg".into()));
-        let organic_normal_texture_handle = engine.add_resource::<Texture>(organic_normal_texture)?;
+        let organic_normal_texture = Texture::new(
+            "organic_normal",
+            TextureType::Normal,
+            ResourceLoader::Path("textures/organic_normal.jpg".into()),
+        );
+        let organic_normal_texture_handle =
+            engine.add_resource::<Texture>(organic_normal_texture)?;
 
         // Add materials
         let fabric_material_handle = engine.add_resource::<Material>(
             Material::builder("fabric")
-            .texture("color", fabric_color_texture_handle)?
-            .texture("normal", fabric_normal_texture_handle)?
-            .color("tint", Vec3::new(1.0, 0.1, 0.1))?
-            .build()
+                .texture("color", fabric_color_texture_handle)?
+                .texture("normal", fabric_normal_texture_handle)?
+                .color_parameter("tint", Color::new(1.0, 0.1, 0.1))?
+                .build(),
         )?;
 
         let stones_material_handle = engine.add_resource::<Material>(
             Material::builder("stones")
-            .texture("color", stones_color_texture_handle)?
-            .texture("normal", stones_normal_texture_handle)?
-            .build()
+                .texture("color", stones_color_texture_handle)?
+                .texture("normal", stones_normal_texture_handle)?
+                .build(),
         )?;
 
         let organic_material_handle = engine.add_resource::<Material>(
             Material::builder("organic")
-            .texture("color", organic_color_texture_handle)?
-            .texture("normal", organic_normal_texture_handle)?
-            .color("tint", Vec3::new(0.26, 0.87, 0.9))?
-            .scalar("specularity", 3.0)?
-            .build()
+                .texture("color", organic_color_texture_handle)?
+                .texture("normal", organic_normal_texture_handle)?
+                .color_parameter("tint", Color::new(0.26, 0.87, 0.9))?
+                .scalar_parameter("specularity", 3.0)?
+                .build(),
         )?;
 
         let yellow_material_handle = engine.add_resource::<Material>(
             Material::builder("yellow")
-            .color("tint", Vec3::new(1.0, 0.88, 0.0))?
-            .build()
+                .color_parameter("tint", Color::new(1.0, 0.88, 0.0))?
+                .build(),
         )?;
 
         let blue_material_handle = engine.add_resource::<Material>(
             Material::builder("blue")
-            .color("tint", Vec3::new(0.26, 0.87, 0.9))?
-            .build()
+                .color_parameter("tint", Color::new(0.26, 0.87, 0.9))?
+                .build(),
         )?;
 
-        let white_material_handle = engine.add_resource::<Material>(
-            Material::builder("white")
-            .build()
-        )?;
+        let white_material_handle =
+            engine.add_resource::<Material>(Material::builder("white").build())?;
 
         // --- Create entities ---
 
         // Create ambient music player entity
-        engine.build_entity(active_scene)
-            .with_component(AudioSourceComponent::builder()
-                .sound_type(SoundType::Sound2D)
-                .sound(ambient_music_handle)
-                .volume(0.05)
-                .play_on_awake(false)
-                .build())
+        engine
+            .build_entity(active_scene)
+            .with_component(
+                AudioSourceComponent::builder()
+                    .sound_type(SoundType::Sound2D)
+                    .sound(ambient_music_handle)
+                    .volume(0.05)
+                    .play_on_awake(false)
+                    .build(),
+            )
             .build();
 
         // Create camera entity
-        engine.build_entity(active_scene)
-            .with_component(TransformComponent::builder()
-                .position(Vec3::new(0.0, 0.0, -30.0))
-                .rotation(Vec3::new(0.0, 0.0, 0.0))
-                .build())
-            .with_component(CameraComponent::builder()
-                .enabled(true)
-                .fov(60.0)
-                .clear_color(Vec3::new(0.35, 0.40, 0.50))
-                .build())
+        engine
+            .build_entity(active_scene)
+            .with_component(
+                TransformComponent::builder()
+                    .position(Vector3f::new(0.0, 0.0, -30.0))
+                    .rotation(Vector3f::new(0.0, 0.0, 0.0))
+                    .build(),
+            )
+            .with_component(
+                CameraComponent::builder()
+                    .enabled(true)
+                    .fov(60.0)
+                    .clear_color(Color::new(0.35, 0.40, 0.50))
+                    .build(),
+            )
             .with_component(CameraMovementComponent {
                 orbit_speed: 60.0,
                 zoom_speed: 5.0,
@@ -199,9 +229,7 @@ impl PillGame for Game {
                 delta_y: 0.0,
                 delta_z: 0.0,
             })
-            .with_component(AudioListenerComponent::builder()
-                .enabled(true)
-                .build())
+            .with_component(AudioListenerComponent::builder().enabled(true).build())
             .build();
 
         #[cfg(feature = "benchmark")]
@@ -219,10 +247,18 @@ impl PillGame for Game {
         let demo_state = DemoStateComponent {
             floating_objects_movement_enabled: true,
             current_mesh: 0,
-            mesh_handles: vec!(pill_mesh_handle, cube_mesh_handle, torus_mesh_handle),
+            mesh_handles: vec![pill_mesh_handle, cube_mesh_handle, torus_mesh_handle],
             current_material_set: 0,
-            textured_material_handles: vec!(fabric_material_handle, stones_material_handle, organic_material_handle),
-            plain_color_material_handles: vec!(yellow_material_handle, blue_material_handle, white_material_handle),
+            textured_material_handles: vec![
+                fabric_material_handle,
+                stones_material_handle,
+                organic_material_handle,
+            ],
+            plain_color_material_handles: vec![
+                yellow_material_handle,
+                blue_material_handle,
+                white_material_handle,
+            ],
         };
         engine.add_global_component(demo_state)?;
 
@@ -248,9 +284,10 @@ fn demo_control_system(engine: &mut Engine) -> Result<()> {
     let input_component = engine.get_global_component::<InputComponent>()?;
     let system_toggle_key = input_component.get_key_pressed(TOGGLE_FLOATING_OBJECTS_SYSTEM);
 
-    let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
+    let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
     if system_toggle_key {
-        demo_state.floating_objects_movement_enabled = !demo_state.floating_objects_movement_enabled;
+        demo_state.floating_objects_movement_enabled =
+            !demo_state.floating_objects_movement_enabled;
         let enabled = demo_state.floating_objects_movement_enabled;
         engine.toggle_system("objects_movement", UpdatePhase::Game, enabled)?;
     }
@@ -310,7 +347,7 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
             Vec3::new(
             angle.to_radians().cos() * radius,
             y_axis_factor.sin() * 0.8 * radius,
-            angle.to_radians().sin() * radius
+            angle.to_radians().sin() * radius,
         ));
     }
 
@@ -342,17 +379,23 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
 
     // Set same mesh
     if mesh_key {
-        let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
+        let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
         demo_state.current_mesh = (demo_state.current_mesh + 1) % 3;
-        let mesh_handle = demo_state.mesh_handles.get(demo_state.current_mesh).unwrap().clone();
-        for (_, mesh_rendering_component) in engine.iterate_one_component_mut::<MeshRenderingComponent>()? {
+        let mesh_handle = demo_state
+            .mesh_handles
+            .get(demo_state.current_mesh)
+            .unwrap()
+            .clone();
+        for (_, mesh_rendering_component) in
+            engine.iterate_one_component_mut::<MeshRenderingComponent>()?
+        {
             mesh_rendering_component.set_mesh(&mesh_handle);
         }
     }
 
     // Set random material from set
     if material_key {
-        let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
+        let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
         demo_state.current_material_set = (demo_state.current_material_set + 1) % 2;
 
         let current_material_set = match demo_state.current_material_set == 0 {
@@ -360,7 +403,9 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
             false => demo_state.plain_color_material_handles.clone(),
         };
 
-        for (_, mesh_rendering_component) in engine.iterate_one_component_mut::<MeshRenderingComponent>()? {
+        for (_, mesh_rendering_component) in
+            engine.iterate_one_component_mut::<MeshRenderingComponent>()?
+        {
             let material_handle = current_material_set[rng.gen_range(0..=2)];
             mesh_rendering_component.set_material(&material_handle);
         }
@@ -380,7 +425,8 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let mouse_scroll_delta = input_component.get_mouse_scroll_delta();
     let mouse_delta = input_component.get_mouse_delta();
 
-    for (_, transform_transform, camera_movement_component) in engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
+    for (_, transform_transform, camera_movement_component) in
+        engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
     {
         // Zoom
         let zoom_speed = camera_movement_component.zoom_speed;
@@ -388,8 +434,12 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Orbit
         let mut change_value: f32 = 0.0;
-        if d_key { change_value -= 1.0; }
-        if a_key { change_value += 1.0; }
+        if d_key {
+            change_value -= 1.0;
+        }
+        if a_key {
+            change_value += 1.0;
+        }
         let orbit_speed = camera_movement_component.orbit_speed;
         camera_movement_component.angle += change_value * orbit_speed * delta_time;
         let angle = camera_movement_component.angle;
@@ -400,12 +450,20 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Mouse movement
         let mut z_change_value = 0.0;
-        if mouse_delta.x > 0.0 { z_change_value -= 0.2; }
-        if mouse_delta.x < 0.0 { z_change_value += 0.2; }
+        if mouse_delta.x > 0.0 {
+            z_change_value -= 0.2;
+        }
+        if mouse_delta.x < 0.0 {
+            z_change_value += 0.2;
+        }
 
         let mut y_change_value = 0.0;
-        if mouse_delta.y > 0.0 { y_change_value -= 0.2; }
-        if mouse_delta.y < 0.0 { y_change_value += 0.2; }
+        if mouse_delta.y > 0.0 {
+            y_change_value -= 0.2;
+        }
+        if mouse_delta.y < 0.0 {
+            y_change_value += 0.2;
+        }
 
         if right_mouse_button {
             camera_movement_component.delta_z += z_change_value;
@@ -433,11 +491,14 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
     let t_key = input_component.get_key(INCREASE_CAMERA_FOV_BUTTON);
     let g_key = input_component.get_key(DECREASE_CAMERA_FOV_BUTTON);
 
-    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()?
-    {
+    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()? {
         let mut change_value: f32 = 0.0;
-        if t_key { change_value += 1.0; }
-        if g_key { change_value -= 1.0; }
+        if t_key {
+            change_value += 1.0;
+        }
+        if g_key {
+            change_value -= 1.0;
+        }
 
         let new_fov = camera_component.fov + change_value * 100.0 * delta_time;
         if new_fov > 10.0 && new_fov < 120.0 {
@@ -492,7 +553,6 @@ fn floating_objects_remove_system(engine: &mut Engine) -> Result<()> {
 // --- Functions ---
 
 fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()> {
-
     // Get active scene handle
     let active_scene = engine.get_active_scene_handle()?;
     let mut rng = thread_rng();
@@ -503,21 +563,20 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
     let textured_material_handles = demo_state.textured_material_handles.clone();
 
     for _ in 0..object_count {
+        let mesh_index = rng.gen_range(0..mesh_handles.len());
+        let mat_index = rng.gen_range(0..textured_material_handles.len());
 
-         let mesh_index = rng.gen_range(0..mesh_handles.len());
-    let mat_index = rng.gen_range(0..textured_material_handles.len());
+        let mesh_handle = mesh_handles[mesh_index];
+        let material_handle = textured_material_handles[mat_index];
 
+        // // Randommize mesh
+        //     let mesh_handle = mesh_handles[rng.gen_range(0..=2)];
 
-    let mesh_handle = mesh_handles[mesh_index];
-    let material_handle = textured_material_handles[mat_index];
+        //         // Randomize material
+        //     let material_handle = textured_material_handles[rng.gen_range(0..=2)];
 
-    // // Randommize mesh
-    //     let mesh_handle = mesh_handles[rng.gen_range(0..=2)];
-
-    //         // Randomize material
-    //     let material_handle = textured_material_handles[rng.gen_range(0..=2)];
-
-        engine.build_entity(active_scene)
+        engine
+            .build_entity(active_scene)
             .with_component(FloatingObjectComponent {
                 angle: rng.gen_range(0.0..359.0),
                 radius_factor: rng.gen_range(20.0..180.0),
@@ -531,10 +590,12 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
                 radius_speed: rng.gen_range(0.1..1.2),
             })
             .with_component(TransformComponent::new())
-            .with_component(MeshRenderingComponent::builder()
-                .material(&material_handle)
-                .mesh(&mesh_handle)
-                .build())
+            .with_component(
+                MeshRenderingComponent::builder()
+                    .material(&material_handle)
+                    .mesh(&mesh_handle)
+                    .build(),
+            )
             .build();
     }
 
