@@ -5,7 +5,7 @@ use pill_engine::internal::{
 
 use anyhow::{ Result };
 use wgpu::util::DeviceExt;
-use glam::{Mat3, Mat4, Vec3, Vec4};
+use glam::{Mat3, Mat4, Vector3f, Vec4};
 
 use crate::config::{
     CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, 
@@ -55,12 +55,12 @@ impl CameraParametersData {
         let yaw_matrix  = Mat3::from_rotation_y(transform_component.rotation.y.to_radians());
         let pitch_matrix  = Mat3::from_rotation_x(transform_component.rotation.x.to_radians());
         let rotation_matrix = yaw_matrix * pitch_matrix * roll_matrix;
-        let direction  = rotation_matrix * Vec3::Z;
+        let direction  = rotation_matrix * Vector3f::Z;
 
         Mat4::look_to_rh(
             transform_component.position,
             direction,
-            Vec3::Y
+            Vector3f::Y
         )
     }
 

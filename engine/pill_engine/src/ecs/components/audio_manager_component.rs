@@ -4,7 +4,7 @@ use crate::{
 
 use pill_core::PillTypeMapKey;
 
-use glam::Vec3;
+use glam::Vector3f;
 use std::{
     any::Any,
     cell::RefCell,
@@ -12,9 +12,9 @@ use std::{
 };
 use rodio::{ OutputStream, OutputStreamHandle, Sink, SpatialSink };
 
-const DEFAULT_LEFT_EAR_POSITION: Vec3 = Vec3::new(-1.0, 0.0, 0.0);
-const DEFAULT_RIGHT_EAR_POSITION: Vec3 = Vec3::new(1.0, 0.0, 0.0);
-const DEFAULT_SOUND_SOURCE_POSITION: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+const DEFAULT_LEFT_EAR_POSITION: Vector3f = Vector3f::new(-1.0, 0.0, 0.0);
+const DEFAULT_RIGHT_EAR_POSITION: Vector3f = Vector3f::new(1.0, 0.0, 0.0);
+const DEFAULT_SOUND_SOURCE_POSITION: Vector3f = Vector3f::new(0.0, 0.0, 0.0);
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SoundType {

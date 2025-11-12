@@ -6,7 +6,7 @@ use crate::{
 };
 
 use pill_core::{ PillSlotMapKey, PillStyle, get_type_name };
-use glam::Vec3;
+use glam::Vector3f;
 
 use anyhow::{Result, Context, Error};
 use pill_core::{ PillTypeMap, PillTypeMapKey };
@@ -55,7 +55,7 @@ impl CameraComponentBuilder {
         self
     }
 
-    pub fn clear_color(mut self, clear_color: Vec3) -> Self {
+    pub fn clear_color(mut self, clear_color: Vector3f) -> Self {
         self.component.clear_color = clear_color;
         self
     }
@@ -76,7 +76,7 @@ pub struct CameraComponent {
     pub aspect: CameraAspectRatio,
     pub fov: f32,
     pub range: Range<f32>,
-    pub clear_color: Vec3,
+    pub clear_color: Vector3f,
     pub enabled: bool,
     pub(crate) renderer_resource_handle: Option<RendererCameraHandle>,
 }
@@ -91,7 +91,7 @@ impl CameraComponent {
             aspect: CameraAspectRatio::Automatic(1.0),
             fov: 60.0,
             range: 0.1..100.0,
-            clear_color: Vec3::new(0.15, 0.15, 0.15),
+            clear_color: Vector3f::new(0.15, 0.15, 0.15),
             renderer_resource_handle: None,
             enabled: false,
         }

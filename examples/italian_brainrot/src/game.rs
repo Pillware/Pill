@@ -113,7 +113,7 @@ impl PillGame for Game {
 		// Create camera entity
 		engine.build_entity(active_scene)
 			.with_component(TransformComponent::builder()
-				.position(Vec3::new(0.0, 0.0, -3.0))
+				.position(Vector3f::new(0.0, 0.0, -3.0))
 				.build())
 			.with_component(CameraComponent::builder()
 				.enabled(true)

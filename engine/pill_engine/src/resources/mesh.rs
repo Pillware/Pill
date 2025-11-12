@@ -11,7 +11,7 @@ use pill_core::{ EngineError, PillSlotMapKey, PillTypeMap, PillTypeMapKey, Vecto
 use std::path::{ Path, PathBuf };
 use boolinator::Boolinator;
 use tobj::LoadOptions;
-use glam::{Vector2f, Vec3};
+use glam::{Vector2f, Vector3f};
 use anyhow::{Result, Context, Error};
 
 
@@ -184,9 +184,9 @@ impl MeshData {
             let v1 = vertices[c[1] as usize];
             let v2 = vertices[c[2] as usize];
 
-            let pos0: Vec3 = v0.position.into();
-            let pos1: Vec3 = v1.position.into();
-            let pos2: Vec3 = v2.position.into();
+            let pos0: Vector3f = v0.position.into();
+            let pos1: Vector3f = v1.position.into();
+            let pos2: Vector3f = v2.position.into();
 
             let uv0: Vector2f = v0.texture_coordinates.into();
             let uv1: Vector2f = v1.texture_coordinates.into();
@@ -206,12 +206,12 @@ impl MeshData {
             let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
 
             // Assign same tangent/bitangent to each vertex in the triangle
-            vertices[c[0] as usize].tangent = (tangent + Vec3::from(vertices[c[0] as usize].tangent)).into();
-            vertices[c[1] as usize].tangent = (tangent + Vec3::from(vertices[c[1] as usize].tangent)).into();
-            vertices[c[2] as usize].tangent = (tangent + Vec3::from(vertices[c[2] as usize].tangent)).into();
-            vertices[c[0] as usize].bitangent = (bitangent + Vec3::from(vertices[c[0] as usize].bitangent)).into();
-            vertices[c[1] as usize].bitangent = (bitangent + Vec3::from(vertices[c[1] as usize].bitangent)).into();
-            vertices[c[2] as usize].bitangent = (bitangent + Vec3::from(vertices[c[2] as usize].bitangent)).into();
+            vertices[c[0] as usize].tangent = (tangent + Vector3f::from(vertices[c[0] as usize].tangent)).into();
+            vertices[c[1] as usize].tangent = (tangent + Vector3f::from(vertices[c[1] as usize].tangent)).into();
+            vertices[c[2] as usize].tangent = (tangent + Vector3f::from(vertices[c[2] as usize].tangent)).into();
+            vertices[c[0] as usize].bitangent = (bitangent + Vector3f::from(vertices[c[0] as usize].bitangent)).into();
+            vertices[c[1] as usize].bitangent = (bitangent + Vector3f::from(vertices[c[1] as usize].bitangent)).into();
+            vertices[c[2] as usize].bitangent = (bitangent + Vector3f::from(vertices[c[2] as usize].bitangent)).into();
 
             // Prepare data for averaging tangents and bitangents
             triangles_included[c[0] as usize] += 1;
@@ -223,8 +223,8 @@ impl MeshData {
         for (i, n) in triangles_included.into_iter().enumerate() {
             let denom = 1.0 / n as f32;
             let vertex = &mut vertices[i];
-            vertex.tangent = (Vec3::from(vertex.tangent) * denom).normalize().into();
-            vertex.bitangent = (Vec3::from(vertex.bitangent) * denom).normalize().into();
+            vertex.tangent = (Vector3f::from(vertex.tangent) * denom).normalize().into();
+            vertex.bitangent = (Vector3f::from(vertex.bitangent) * denom).normalize().into();
         }
 
         let mesh_data = MeshData {

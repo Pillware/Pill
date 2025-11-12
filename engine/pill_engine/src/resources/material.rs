@@ -8,7 +8,7 @@ use crate::{
 
 use pill_core::{ Color, EngineError, PillSlotMapKey, PillTypeMapKey, PillStyle, enum_variant_eq, get_enum_variant_type_name, get_type_name };
 
-use glam::Vec3;
+use glam::Vector3f;
 use anyhow::{ Result, Context, Error };
 use boolinator::*;
 use std::{ 

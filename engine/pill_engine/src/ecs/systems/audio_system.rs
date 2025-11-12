@@ -3,12 +3,12 @@ use crate::{
     ecs::{ EntityHandle, TransformComponent, AudioListenerComponent, AudioSourceComponent, scene, AudioManagerComponent, SoundType },
 };
 
-use glam::{Vec3, Mat3};
+use glam::{Vector3f, Mat3};
 
 use anyhow::{Result, Context, Error};
 use std::f32::consts::PI;
 
-fn get_rotation_matrix(angles: Vec3) -> Result<Mat3> {
+fn get_rotation_matrix(angles: Vector3f) -> Result<Mat3> {
 
     // Get the angles from the vector and convert them to radians
     let alfa = angles.x.to_radians();
@@ -27,8 +27,8 @@ fn get_rotation_matrix(angles: Vec3) -> Result<Mat3> {
 pub fn audio_system(engine: &mut Engine) -> Result<()> {
 
     // --- Update ear positions
-    let mut left_ear_position = Vec3::new(-1.0, 0.0, 0.0);
-    let mut right_ear_position = Vec3::new(1.0, 0.0, 0.0);
+    let mut left_ear_position = Vector3f::new(-1.0, 0.0, 0.0);
+    let mut right_ear_position = Vector3f::new(1.0, 0.0, 0.0);
 
     // Update ear positions
     for (entity_handle, audio_listener_component, transform_component) in engine.iterate_two_components::<AudioListenerComponent, TransformComponent>()? {

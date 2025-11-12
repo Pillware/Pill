@@ -1,9 +1,9 @@
-use glam::{IVector2f, Vector2f, Vec3, Mat3};
+use glam::{IVec2, Vec2, Vec3, Mat3};
 
-pub type Vector2i = IVector2f;
+pub type Vector2i = IVec;
 
 pub type Vector3f = Vec3;
-pub type Vector2f = Vector2f;
+pub type Vector2f = Vec2;
 
 pub type Color = Vec3;
 pub type Matrix3f = Mat3;

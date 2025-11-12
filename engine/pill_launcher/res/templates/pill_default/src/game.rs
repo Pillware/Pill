@@ -50,8 +50,8 @@ impl PillGame for Game {
         // Create camera entity
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .position(Vec3::new(0.0,0.0,-8.0))
-            .rotation(Vec3::new(0.0,0.0,-20.0))
+            .position(Vector3f::new(0.0,0.0,-8.0))
+            .rotation(Vector3f::new(0.0,0.0,-20.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
         let camera_component = CameraComponent::builder().enabled(true).build();
@@ -60,7 +60,7 @@ impl PillGame for Game {
         // Create pill entity
         let pill = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .rotation(Vec3::new(-210.0,0.0,0.0))
+            .rotation(Vector3f::new(-210.0,0.0,0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component)?;
         let mesh_rendering_component = MeshRenderingComponent::builder()
@@ -81,7 +81,7 @@ fn pill_rotation_system(engine: &mut Engine) -> Result<()> {
     // Rotate pill if spacebar is not pressed
     if !input_component.get_key_pressed(KeyboardKey::Space) {
         for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
-            transform_component.rotate_around_axis(90.0 * delta_time, Vec3::new(0.0, 1.0, 0.0));
+            transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
         }
     }
 

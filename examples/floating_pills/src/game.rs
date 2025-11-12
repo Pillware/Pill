@@ -1,6 +1,6 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
-use glam::Vec3;
+use glam::Vector3f;
 use std::time::Instant;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -313,13 +313,13 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Local rotation
         let rotation_speed = floating_object_component.rotation_speed.clone();
-        floating_object_transform.rotate_around_axis(rotation_speed * delta_time, Vec3::new(1.0,1.0,1.0));
+        floating_object_transform.rotate_around_axis(rotation_speed * delta_time, Vector3f::new(1.0,1.0,1.0));
 
         // Local scale
         let scale_speed = floating_object_component.scale_speed.clone();
         floating_object_component.scale_factor += scale_speed * delta_time;
         let scale_factor = floating_object_component.scale_factor.clone();
-        floating_object_transform.set_scale(Vec3::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5));
+        floating_object_transform.set_scale(Vector3f::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5));
 
         // Radius
         let radius_speed = floating_object_component.radius_speed.clone();
@@ -333,7 +333,7 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
         let radius = floating_object_component.radius_factor.clone().sin() * 6.0 + 10.0;
 
         floating_object_transform.set_position(
-            Vec3::new(
+            Vector3f::new(
                 angle.to_radians().cos() * radius,
                 floating_object_transform.position.y,
                 angle.to_radians().sin() * radius
@@ -344,7 +344,7 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
         let y_axis_factor = floating_object_component.y_axis_factor.clone();
 
         floating_object_transform.set_position(
-            Vec3::new(
+            Vector3f::new(
             angle.to_radians().cos() * radius,
             y_axis_factor.sin() * 0.8 * radius,
             angle.to_radians().sin() * radius,
@@ -474,10 +474,10 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         let delta_z = camera_movement_component.delta_z;
 
         // Set position
-        transform_transform.set_position(Vec3::new(x_position, delta_y, z_position + delta_z));
+        transform_transform.set_position(Vector3f::new(x_position, delta_y, z_position + delta_z));
 
         // Set rotation
-        transform_transform.set_rotation(Vec3::new(0.0, -angle - 90.0, 0.0));
+        transform_transform.set_rotation(Vector3f::new(0.0, -angle - 90.0, 0.0));
     }
 
     Ok(())
