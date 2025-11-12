@@ -381,7 +381,7 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         let mut change_value: f32 = 0.0;
         // TODO: make it progressive for gamepad
         if d_key { change_value -= 1.0; } else if gamepad_left_stick < -0.1 { change_value += 1.0; }
-        //if a_key { change_value += 1.0; } else if gamepad_left_stick > 0.1 { change_value -= 1.0; }
+        if a_key { change_value += 1.0; } else if gamepad_left_stick > 0.1 { change_value -= 1.0; }
         let orbit_speed = camera_movement_component.orbit_speed;
         camera_movement_component.angle += change_value * orbit_speed * delta_time;
         let angle = camera_movement_component.angle;
