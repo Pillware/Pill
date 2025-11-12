@@ -57,6 +57,9 @@ pub use components::input_component::{
     GamepadAxis,
     GamepadButton,
     InputEvent,
+    GamepadEvent,
+    KeyboardEvent,
+    MouseEvent,
     HapticCommand,
     InFlight,
 };

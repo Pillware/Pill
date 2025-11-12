@@ -1,6 +1,6 @@
 use crate::{
     engine::Engine,
-    ecs::{ InputComponent, InputEvent, GamepadAxis, GamepadButton, HapticCommand, InFlight },
+    ecs::{ InputComponent, InputEvent, GamepadAxis, GamepadButton, HapticCommand, InFlight, GamepadEvent, MouseEvent, KeyboardEvent },
 };
 
 use pill_core::{ Vector2f };
@@ -25,13 +25,13 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
         let mut gilrs_input_system = GILRS.lock().unwrap();
         while let Some(ev) = gilrs_input_system.next_event() {
             match ev.event {
-                EventType::ButtonPressed(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: ev.id, button: b.into(), state: ElementState::Pressed }),
-                EventType::ButtonRepeated(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: ev.id, button: b.into(), state: ElementState::Pressed }), // TODO: do we want to treat repeated press differently?
-                EventType::ButtonReleased(b, _) => engine.input_queue.push_back(InputEvent::GamepadButton { id: ev.id, button: b.into(), state: ElementState::Released }),
-                EventType::AxisChanged(a, v, _) => engine.input_queue.push_back(InputEvent::GamepadAxis { id: ev.id, axis: a.into(), value: v }),
-                EventType::Connected => engine.input_queue.push_back(InputEvent::GamepadConnected { id: ev.id }),
-                EventType::Disconnected => engine.input_queue.push_back(InputEvent::GamepadDisconnected { id: ev.id }),
-                EventType::ForceFeedbackEffectCompleted => engine.input_queue.push_back(InputEvent::GamepadForceFeedbackEffectCompleted { id: ev.id }),
+                EventType::ButtonPressed(b, _) => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Button { id: ev.id, button: b.into(), state: ElementState::Pressed })),
+                EventType::ButtonRepeated(b, _) => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Button { id: ev.id, button: b.into(), state: ElementState::Pressed })), // TODO: do we want to treat repeated press differently?
+                EventType::ButtonReleased(b, _) => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Button { id: ev.id, button: b.into(), state: ElementState::Released })),
+                EventType::AxisChanged(a, v, _) => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Axis { id: ev.id, axis: a.into(), value: v })),
+                EventType::Connected => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Connected { id: ev.id })),
+                EventType::Disconnected => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Disconnected { id: ev.id })),
+                EventType::ForceFeedbackEffectCompleted => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::ForceFeedbackEffectCompleted { id: ev.id })),
                 _ => {},
             }
         }
@@ -55,17 +55,17 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
 
         match event {
             // Keyboard keys
-            InputEvent::KeyboardKey { key, state } => {
+            InputEvent::Keyboard(KeyboardEvent::Key { key, state }) => {
                 input_component.set_key(key, state);
             },
 
             // Mouse buttons
-            InputEvent::MouseButton {key, state} => {
+            InputEvent::Mouse(MouseEvent::Button {key, state}) => {
                 input_component.set_mouse_button(key, state);
             },
 
             // Mouse scroll
-            InputEvent::MouseWheel { delta } => {
+            InputEvent::Mouse(MouseEvent::Wheel { delta } ) => {
                 match delta {
                     MouseScrollDelta::LineDelta(x, y) => {
                         input_component.set_mouse_scroll_delta(Vector2f::new(x, y));
@@ -78,36 +78,36 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
             },
 
             // Mouse delta
-            InputEvent::MouseDelta { delta } => {
+            InputEvent::Mouse(MouseEvent::Delta { delta } ) => {
                 input_component.set_mouse_delta(delta);
             },
 
             // Mouse position
-            InputEvent::MousePosition { position} => {
+            InputEvent::Mouse(MouseEvent::Position { position}  )=> {
                 input_component.set_mouse_position(position);
             },
 
             // Gamepad buttons
-            InputEvent::GamepadButton { id, button, state } => {
+            InputEvent::Gamepad(GamepadEvent::Button { id, button, state }) => {
                 input_component.set_gamepad_button(id, button, state);
             },
 
             // Gamepad axes
-            InputEvent::GamepadAxis { id, axis, value } => {
+            InputEvent::Gamepad(GamepadEvent::Axis { id, axis, value }) => {
                 input_component.set_gamepad_axis(id, axis, value);
             },
 
             // Gamepad connection events
-            InputEvent::GamepadConnected { id } => {
+            InputEvent::Gamepad(GamepadEvent::Connected { id } ) => {
                 input_component.connect_gamepad(id);
             },
 
-            InputEvent::GamepadDisconnected { id } => {
+            InputEvent::Gamepad(GamepadEvent::Disconnected { id }) => {
                 input_component.disconnect_gamepad(id);
             },
 
             // Gamepad force feedback completion
-            InputEvent::GamepadForceFeedbackEffectCompleted { id } => {
+            InputEvent::Gamepad(GamepadEvent::ForceFeedbackEffectCompleted { id }) => {
                 input_component.complete_force_feedback_effect(id);
             },
         }

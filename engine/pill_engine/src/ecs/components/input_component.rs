@@ -86,17 +86,32 @@ pub struct InFlight {
     pub(crate) end_at: Instant,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum KeyboardEvent {
+    Key { key: KeyboardKey, state: ElementState },
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum MouseEvent {
+    Button { key: MouseButton, state: ElementState },
+    Wheel { delta: MouseScrollDelta },
+    Delta { delta: Vector2f },
+    Position { position: Vector2f },
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum GamepadEvent {
+    Button { id: GamepadId, button: GamepadButton, state: ElementState },
+    Axis { id: GamepadId, axis: GamepadAxis, value: f32 },
+    Connected { id: GamepadId },
+    Disconnected { id: GamepadId },
+    ForceFeedbackEffectCompleted { id: GamepadId },
+}
+
 pub enum InputEvent {
-    KeyboardKey { key: KeyboardKey, state: ElementState },
-    MouseButton { key: MouseButton, state: ElementState },
-    MouseWheel { delta: MouseScrollDelta },
-    MouseDelta { delta: Vector2f },
-    MousePosition { position: Vector2f },
-    GamepadButton { id: GamepadId, button: GamepadButton, state: ElementState },
-    GamepadAxis { id: GamepadId, axis: GamepadAxis, value: f32 },
-    GamepadConnected { id: GamepadId },
-    GamepadDisconnected { id: GamepadId },
-    GamepadForceFeedbackEffectCompleted { id: GamepadId },
+    Mouse(MouseEvent),
+    Keyboard(KeyboardEvent),
+    Gamepad(GamepadEvent),
 }
 
 pub type KeyState = BitArray<[u64; 4]>; // actually we have less but this is fine

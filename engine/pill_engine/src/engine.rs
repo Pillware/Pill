@@ -444,10 +444,10 @@ impl Engine {
         let state: winit::event::ElementState = keyboard_input.state;
         match keyboard_input.physical_key {
             winit::keyboard::PhysicalKey::Code(key_code) => {
-                let input_event = InputEvent::KeyboardKey {
+                let input_event = InputEvent::Keyboard(KeyboardEvent::Key{
                     key: key_code,
                     state: state,
-                };
+                });
                 self.input_queue.push_back(input_event);
                 debug!(LogContext::Input => "Got new keyboard key input: {:?} {:?}", key_code, state);
             }
@@ -458,32 +458,32 @@ impl Engine {
     }
 
     pub fn pass_mouse_key_input(&mut self, key: &MouseButton, state: &winit::event::ElementState) {
-        let input_event = InputEvent::MouseButton {
+        let input_event = InputEvent::Mouse(MouseEvent::Button {
             key: *key,
             state: *state,
-        };
+        });
         self.input_queue.push_back(input_event);
         debug!(LogContext::Input => "Got new mouse key input");
     }
 
     pub fn pass_mouse_wheel_input(&mut self, delta: &winit::event::MouseScrollDelta) {
-        let input_event = InputEvent::MouseWheel { delta: *delta };
+        let input_event = InputEvent::Mouse(MouseEvent::Wheel{ delta: *delta });
         self.input_queue.push_back(input_event);
         debug!(LogContext::Input => "Got new mouse wheel input");
     }
 
     pub fn pass_mouse_delta_input(&mut self, delta: &(f64, f64)) {
-        let input_event = InputEvent::MouseDelta {
+        let input_event = InputEvent::Mouse(MouseEvent::Delta{
             delta: Vector2f::new(delta.0 as f32, delta.1 as f32),
-        };
+        });
         self.input_queue.push_back(input_event);
         debug!(LogContext::Input => "Got new mouse motion input");
     }
 
     pub fn pass_mouse_position_input(&mut self, position: &PhysicalPosition<f64>) {
-        let input_event = InputEvent::MousePosition {
+        let input_event = InputEvent::Mouse(MouseEvent::Position {
             position: Vector2f::new(position.x as f32, position.y as f32),
-        };
+        });
         self.input_queue.push_back(input_event);
         debug!(LogContext::Input => "Got new mouse position input");
     }
