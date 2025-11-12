@@ -1,6 +1,6 @@
 use crate::{
-    ecs::{ audio_system, deferred_update_system, input_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase }, 
-    graphics::{ RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle }, 
+    ecs::{ audio_system, deferred_update_system, input_system, haptics_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase },
+    graphics::{ RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle },
     resources::{ MaterialHandle, ShaderHandle, TextureHandle, TextureType }
 };
 
@@ -147,12 +147,12 @@ pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle,
 
 
 // Default resource handle - Shader
-pub const DEFAULT_LIT_SHADER_HANDLE: ShaderHandle = ShaderHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const DEFAULT_LIT_SHADER_HANDLE: ShaderHandle = ShaderHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
-pub const DEFAULT_LIT_RENDERER_SHADER_HANDLE: RendererShaderHandle = RendererShaderHandle { 
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } } 
+pub const DEFAULT_LIT_RENDERER_SHADER_HANDLE: RendererShaderHandle = RendererShaderHandle {
+    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
 };
 
 pub fn get_default_lit_shader_handles() -> (ShaderHandle, RendererShaderHandle) {

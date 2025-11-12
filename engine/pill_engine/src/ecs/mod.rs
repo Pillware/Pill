@@ -57,7 +57,7 @@ pub use components::input_component::{
     GamepadAxis,
     GamepadButton,
     InputEvent,
-    HapticCmd,
+    HapticCommand,
     InFlight,
 };
 
@@ -94,9 +94,6 @@ pub use systems::deferred_update_system::{
 
 pub use systems::input_system::{
     input_system,
-};
-
-pub use systems::haptics_system::{
     haptics_system,
 };
 

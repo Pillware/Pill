@@ -73,7 +73,7 @@ pub enum GamepadAxis {
 pub const GAMEPAD_AXIS_COUNT: usize = GamepadAxis::DPadY as usize + 1;
 
 #[derive(Clone)]
-pub enum HapticCmd {
+pub enum HapticCommand {
     /// Simple dual-rumble (weak/strong in [0.0, 1.0]) for a duration in milliseconds
     Rumble { player_id: PlayerId, weak: f32, strong: f32, duration_ms: u32 },
     /// Play a prebuilt gilrs::ff::Effect on the given player_id
@@ -132,7 +132,7 @@ pub struct InputComponent {
     pub(crate) gamepad_id_to_player: HashMap<GamepadId, PlayerId>,
 
     // Haptics commands queue and in-flight effects
-    pub(crate) haptics: VecDeque<HapticCmd>,
+    pub(crate) haptics: VecDeque<HapticCommand>,
     pub(crate) in_flight_ff: Vec<InFlight>,
 }
 
@@ -416,11 +416,11 @@ impl InputComponent {
 
     // Haptics functions
     pub fn enqueue_rumble(&mut self, player_id: PlayerId, weak: f32, strong: f32, duration_ms: u32) {
-        self.haptics.push_back(HapticCmd::Rumble { player_id, weak, strong, duration_ms });
+        self.haptics.push_back(HapticCommand::Rumble { player_id, weak, strong, duration_ms });
     }
 
     pub fn enqueue_effect(&mut self, player_id: PlayerId, effect: Effect, duration_ms: u32) {
-        self.haptics.push_back(HapticCmd::PlayEffect { player_id, effect, duration_ms });
+        self.haptics.push_back(HapticCommand::PlayEffect { player_id, effect, duration_ms });
     }
 
     pub fn complete_force_feedback_effect(&mut self, gamepad_id: GamepadId) {
