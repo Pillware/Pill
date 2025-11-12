@@ -151,13 +151,13 @@ impl Component for MeshRenderingComponent {
         // Check if material handle is valid
         if self.material_handle.is_some() {
             engine.get_resource::<Material>(&self.material_handle.unwrap())
-                .context(format!("Creating {} {} failed", "Component".gobj_style(), get_type_name::<Self>().sobj_style()))?;
+                .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
         }
 
         // Check if mesh handle is valid
         if self.mesh_handle.is_some() {
             engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
-                .context(format!("Creating {} {} failed", "Component".gobj_style(), get_type_name::<Self>().sobj_style()))?;
+                .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
         }
 
         // Update mesh rendering queue
@@ -177,7 +177,7 @@ impl Component for MeshRenderingComponent {
             {
                 // Check if material handle is valid
                 engine.get_resource::<Material>(&self.material_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Resource".gobj_style(), "Material".sobj_style()))?;
+                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Material".specific_object_style()))?;
                 
                 self.update_render_queue_key(&engine.resource_manager)?;
             },
@@ -185,7 +185,7 @@ impl Component for MeshRenderingComponent {
             {
                 // Check if mesh handle is valid
                 engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Resource".gobj_style(), "Mesh".sobj_style()))?;
+                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Mesh".specific_object_style()))?;
 
                 self.update_render_queue_key(&engine.resource_manager)?;
             },
@@ -196,7 +196,7 @@ impl Component for MeshRenderingComponent {
             },
             _ => 
             {
-                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().sobj_style());
+                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
             }
         }
 

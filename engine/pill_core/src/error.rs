@@ -1,4 +1,4 @@
-use crate::utils::PillStyle;
+use crate::style::{PillStyle};
 
 use anyhow::{Context, Result, Error};
 use thiserror::Error;
@@ -9,16 +9,20 @@ use colored::*;
 
 #[derive(Error, Debug, Clone)]
 pub enum RendererError { 
-    #[error("Undefined {} error \n\nSource: ", "Renderer".gobj_style())]
+    #[error("Undefined {} error \n\nSource: ", "Renderer".general_object_style())]
     Other,
-    #[error("{} {} not found \n\nSource: ", "Renderer".gobj_style(), "Resource".sobj_style())]
+    #[error("{} {} not found \n\nSource: ", "Renderer".general_object_style(), "Resource".specific_object_style())]
     RendererResourceNotFound,
-    #[error("{} {} lost \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
+    #[error("{} {} lost \n\nSource: ", "Renderer".general_object_style(), "Surface".specific_object_style())]
     SurfaceLost,
-    #[error("{} {} out of memory \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
+    #[error("{} {} out of memory \n\nSource: ", "Renderer".general_object_style(), "Surface".specific_object_style())]
     SurfaceOutOfMemory,
-    #[error("Undefined {} {} error \n\nSource: ", "Renderer".gobj_style(), "Surface".sobj_style())]
+    #[error("Undefined {} {} error \n\nSource: ", "Renderer".general_object_style(), "Surface".specific_object_style())]
     SurfaceOther,
+    #[error("{} shader {} data bytes are invalid\n\n{}", .0, .1.name_style(), .2)]
+    InvalidShaderData(String, String, String),
+    #[error("{} shader {} compilation failed \n\n{}", .0, .1.name_style(), .2)]
+    ShaderCompilationFailed(String, String, String),
 }
 
 
@@ -26,86 +30,88 @@ pub enum RendererError {
 pub enum EngineError<'a> {
 
     // Config
-    #[error("Invalid {} config file", "Game".mobj_style())]
+    #[error("Invalid {} config file", "Game".module_object_style())]
     InvalidGameConfig(),
 
     // Scene
-    #[error("There is no active {} set", "Scene".gobj_style())]
+    #[error("There is no active {} set", "Scene".general_object_style())]
     NoActiveScene,
-    #[error("{} for that {} not found", "Scene".gobj_style(), "SceneHandle".sobj_style())]
+    #[error("{} for that {} not found", "Scene".general_object_style(), "SceneHandle".specific_object_style())]
     InvalidSceneHandle,
-    #[error("{} {} already exists", "Scene".gobj_style(), .0.name_style())]
+    #[error("{} {} already exists", "Scene".general_object_style(), .0.name_style())]
     SceneAlreadyExists(String),
-    #[error("{} {} does not exist", "Scene".gobj_style(), .0.name_style())]
+    #[error("{} {} does not exist", "Scene".general_object_style(), .0.name_style())]
     InvalidSceneName(String),
 
     // Entity
-    #[error("{} for that {} not found", "Entity".gobj_style(), "EntityHandle".sobj_style())]
+    #[error("{} for that {} not found", "Entity".general_object_style(), "EntityHandle".specific_object_style())]
     InvalidEntityHandle,
-    #[error("Cannot create {}. Maximum number of entities in {} reached. \n\nSource: ", "Entity".gobj_style(), "Scene".gobj_style())]
+    #[error("Cannot create {}. Maximum number of entities in {} reached. \n\nSource: ", "Entity".general_object_style(), "Scene".general_object_style())]
     EntityLimitReached,
 
     // Camera
-    #[error("There is no active {} set in active {}",  "Camera".gobj_style(), "Scene".gobj_style())]
+    #[error("There is no active {} set in active {}",  "Camera".general_object_style(), "Scene".general_object_style())]
     NoActiveCamera,   
 
     // Component
-    #[error("{} {} is already registered for {} {}", "Component".gobj_style(), .0.sobj_style(), "Scene".gobj_style(), .1.name_style())]
+    #[error("{} {} is already registered for {} {}", "Component".general_object_style(), .0.specific_object_style(), "Scene".general_object_style(), .1.name_style())]
     ComponentAlreadyRegistered(String, String),
-    #[error("{} {} is not registered for {} {}", "Component".gobj_style(), .0.sobj_style(), "Scene".gobj_style(), .1.name_style())]
+    #[error("{} {} is not registered for {} {}", "Component".general_object_style(), .0.specific_object_style(), "Scene".general_object_style(), .1.name_style())]
     ComponentNotRegistered(String, String),
-    #[error("{} {} is already added to {}", "Component".gobj_style(), .0.sobj_style(), "Entity".mobj_style())]
+    #[error("{} {} is already added to {}", "Component".general_object_style(), .0.specific_object_style(), "Entity".module_object_style())]
     ComponentAlreadyExists(String),
-    #[error("{} {} is already added to {}", "GlobalComponent".gobj_style(), .0.sobj_style(), "Engine".mobj_style())]
+    #[error("{} {} is already added to {}", "GlobalComponent".general_object_style(), .0.specific_object_style(), "Engine".module_object_style())]
     GlobalComponentAlreadyExists(String),
-    #[error("{} {} not found in {}", "GlobalComponent".gobj_style(), .0.sobj_style(), "Engine".mobj_style())]
+    #[error("{} {} not found in {}", "GlobalComponent".general_object_style(), .0.specific_object_style(), "Engine".module_object_style())]
     GlobalComponentNotFound(String),
-    #[error("{} is {} that cannot be removed", .0.sobj_style(), "GlobalComponent".gobj_style())]
+    #[error("{} is {} that cannot be removed", .0.specific_object_style(), "GlobalComponent".general_object_style())]
     GlobalComponentCannotBeRemoved(String),
 
     // System
-    #[error("Failed to update {} {} in {} {}", "System".gobj_style(), .0.sobj_style(), "UpdatePhase".sobj_style(), .1.name_style())]
+    #[error("Failed to update {} {} in {} {}", "System".general_object_style(), .0.specific_object_style(), "UpdatePhase".specific_object_style(), .1.name_style())]
     SystemUpdateFailed(String, String),
-    #[error("{} {} is already registered for {} {}", "System".gobj_style(), .0.name_style(), "UpdatePhase".sobj_style(), .1.name_style())]
+    #[error("{} {} is already registered for {} {}", "System".general_object_style(), .0.name_style(), "UpdatePhase".specific_object_style(), .1.name_style())]
     SystemAlreadyExists(String, String),
-    #[error("{} {} is not registered for {} {}", "System".gobj_style(), .0.name_style(), "UpdatePhase".sobj_style(), .1.name_style())]
+    #[error("{} {} is not registered for {} {}", "System".general_object_style(), .0.name_style(), "UpdatePhase".specific_object_style(), .1.name_style())]
     SystemNotFound(String, String),
-    #[error("{} {} not found", "UpdatePhase".sobj_style(), .0.name_style())]
+    #[error("{} {} not found", "UpdatePhase".specific_object_style(), .0.name_style())]
     SystemUpdatePhaseNotFound(String),
     
     // Resource
-    #[error("Path to {} is invalid: {}", "Asset".gobj_style(), .0.name_style())]
+    #[error("Path to {} is invalid: {}", "Asset".general_object_style(), .0.name_style())]
     InvalidAssetPath(String),
-    #[error("{} format is not supported. Expected one of: {:?} but is .{}", "Asset".gobj_style(), .0, .1.name_style())]
+    #[error("{} format is not supported. Expected one of: {:?} but is .{}", "Asset".general_object_style(), .0, .1.name_style())]
     InvalidAssetFormat(&'a [&'a str], String),
-    #[error("{} {} is not registered", "Resource".gobj_style(), .0.sobj_style())]
+    #[error("{} {} is not registered", "Resource".general_object_style(), .0.specific_object_style())]
     ResourceNotRegistered(String),
-    #[error("{} {} {} already exists", "Resource".gobj_style(), .0.sobj_style(), .1.name_style())]
+    #[error("{} {} {} already exists", "Resource".general_object_style(), .0.specific_object_style(), .1.name_style())]
     ResourceAlreadyExists(String, String),
-    #[error("{} {} for that {} not found", "Resource".gobj_style(), .0.sobj_style(), "Handle".sobj_style())]
+    #[error("{} {} for that {} not found", "Resource".general_object_style(), .0.specific_object_style(), "Handle".specific_object_style())]
     InvalidResourceHandle(String),
-    #[error("{} {} of type {} not found", "Resource".gobj_style(), .0.name_style(), .1.sobj_style(),)]
+    #[error("{} {} of type {} not found", "Resource".general_object_style(), .0.name_style(), .1.specific_object_style(),)]
     InvalidResourceName(String, String),
     #[error("Invalid .obj file {}", .0.name_style())]
     InvalidModelFile(String),
     #[error("Invalid .obj file {}\nFiles with multiple meshes are not supported", .0.name_style())]
     InvalidModelFileMultipleMeshes(String),
-    #[error("Cannot remove default {} {}", "Resource".gobj_style(), .0.name_style())]
+    #[error("Cannot remove default {} {}", "Resource".general_object_style(), .0.name_style())]
     RemoveDefaultResource(String),
-    #[error("Cannot add {} with name {}. This name is reserved only for default engine resources", "Resource".gobj_style(), .0.name_style())]
+    #[error("Cannot add {} with name {}. This name is reserved only for default engine resources", "Resource".general_object_style(), .0.name_style())]
     WrongResourceName(String),
-    #[error("Cannot add {} {}. Maximum number of resources reached. \n\nSource: ", "Resource".gobj_style(), .0.sobj_style())]
+    #[error("Cannot add {} {}. Maximum number of resources reached. \n\nSource: ", "Resource".general_object_style(), .0.specific_object_style())]
     ResourceLimitReached(String),
 
     // Material textures and parameters
-    #[error("Cannot set {} to {}. Accepted range is {}", "RenderingOrder".sobj_style(), .0.name_style(), .1.name_style())]
+    #[error("Cannot set {} to {}. Accepted range is {}", "RenderingOrder".specific_object_style(), .0.name_style(), .1.name_style())]
     WrongRenderingOrder(String, String),
-    #[error("Cannot set {} of type {} to slot {} of type {}", "Texture".sobj_style(), .0.name_style(), .1.name_style(), .2.name_style())]
+    #[error("Cannot set {} of type {} to slot {} of type {}", "Texture".specific_object_style(), .0.name_style(), .1.name_style(), .2.name_style())]
     WrongTextureType(String, String, String),
-    #[error("{} slot {} of type {} does not exist", "MaterialParameter".sobj_style(), .0.name_style(), .1.sobj_style())]
-    MaterialParameterSlotNotFound(String, String),
-    #[error("{} slot {} does not exist", "MaterialTexture".sobj_style(), .0.name_style())]
+    #[error("{} slot {} of type {} does not exist in {} {}", "MaterialParameter".specific_object_style(), .0.name_style(), .1.specific_object_style(), "Material".specific_object_style(), .2.name_style())]
+    MaterialParameterSlotNotFound(String, String, String),
+    #[error("{} slot {} does not exist", "MaterialTexture".specific_object_style(), .0.name_style())]
     MaterialTextureSlotNotFound(String),
+    #[error("Invalid {} for {} in slot {}", "Handle".specific_object_style(), "Texture".specific_object_style(), .0.name_style())]
+    InvalidTextureHandleForSlot(String),
 
     // Timer
     #[error("Timer context {} is invalid", .0.name_style())]
@@ -116,10 +122,10 @@ pub enum EngineError<'a> {
     NoTimerContextToEnd(),
     
     // Other
-    #[error("{} error: {}", "Engine".mobj_style(), .0)]
+    #[error("{} error: {}", "Engine".module_object_style(), .0)]
     Other(String),
 }
 
 pub fn err_prefix() -> ColoredString {
-    "\nERROR".err_style()
+    "\nERROR".error_style()
 }
