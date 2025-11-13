@@ -16,10 +16,13 @@ mod style;
 
 pub use math::{
     Vector2i,
-    Vector3f,
     Vector2f,
+    Vector3f,
+    Vector4f,
     Color,
     Matrix3f,
+    Matrix3fA,
+    Matrix4f,
     Direction,
 };
 
@@ -50,7 +53,6 @@ pub use bitmask_utils::{
 };
 
 pub use utils::{
-    PillStyle,
     get_type_name,
     get_value_type_name,
     enum_variant_eq,

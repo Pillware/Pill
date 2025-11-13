@@ -1,6 +1,5 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
-use glam::Vector3f;
 use std::time::Instant;
 use std::fs::OpenOptions;
 use std::io::Write;

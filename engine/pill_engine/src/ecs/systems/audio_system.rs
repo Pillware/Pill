@@ -2,13 +2,12 @@ use crate::{
     engine::Engine,
     ecs::{ EntityHandle, TransformComponent, AudioListenerComponent, AudioSourceComponent, scene, AudioManagerComponent, SoundType },
 };
-
-use glam::{Vector3f, Mat3};
+use pill_core::{ Matrix3f, Vector3f };
 
 use anyhow::{Result, Context, Error};
 use std::f32::consts::PI;
 
-fn get_rotation_matrix(angles: Vector3f) -> Result<Mat3> {
+fn get_rotation_matrix(angles: Vector3f) -> Result<Matrix3f> {
 
     // Get the angles from the vector and convert them to radians
     let alfa = angles.x.to_radians();
@@ -16,9 +15,9 @@ fn get_rotation_matrix(angles: Vector3f) -> Result<Mat3> {
     let gamma = angles.z.to_radians();
 
     // Prepare rotation matrices
-    let rot_z = Mat3::from_rotation_z(alfa);
-    let rot_y = Mat3::from_rotation_y(beta);
-    let rot_x = Mat3::from_rotation_x(gamma);
+    let rot_z = Matrix3f::from_rotation_z(alfa);
+    let rot_y = Matrix3f::from_rotation_y(beta);
+    let rot_x = Matrix3f::from_rotation_x(gamma);
 
     // Return rotation matrix
     Ok(rot_z * rot_y * rot_x)

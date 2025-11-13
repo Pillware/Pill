@@ -2,8 +2,8 @@ use crate::{
     engine::Engine,
     ecs::{ InputComponent, InputEvent },
 };
+use pill_core::Vector2f;
 
-use glam::Vector2f;
 use anyhow::{ Result, Context, Error };
 use winit::event::{ ElementState, MouseButton, MouseScrollDelta };
 

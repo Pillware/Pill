@@ -6,12 +6,11 @@ use crate::{
     config::*,
 };
 
-use pill_core::{ EngineError, PillSlotMapKey, PillTypeMap, PillTypeMapKey, Vector3f, PillStyle, get_type_name };
+use pill_core::{ EngineError, PillSlotMapKey, PillTypeMap, PillTypeMapKey, Vector2f, Vector3f, PillStyle, get_type_name };
 
 use std::path::{ Path, PathBuf };
 use boolinator::Boolinator;
 use tobj::LoadOptions;
-use glam::{Vector2f, Vector3f};
 use anyhow::{Result, Context, Error};
 
 
@@ -33,7 +32,7 @@ pub struct Mesh {
     flip_uv_y: bool,
 }
 
-// TODO: Add posibility to load from bytes using ResourceLoader 
+// TODO: Add posibility to load from bytes using ResourceLoader
 impl Mesh {
     pub fn new(name: &str, path: PathBuf) -> Self {
         Self {

@@ -4,9 +4,8 @@ use crate::{
     }, engine::Engine
 };
 use pill_core::{
-    get_type_name, Direction, PillStyle, PillTypeMap, PillTypeMapKey
+    get_type_name, Direction, Matrix3f, Matrix3fA, Matrix4f, PillTypeMap, PillTypeMapKey, Vector3f
 };
-use glam::{Vector3f, Mat3, Mat3A, Mat4};
 use anyhow::{ Result, Context, Error };
 use serde::{ Serialize, Deserialize };
 
@@ -67,8 +66,8 @@ pub struct TransformComponent {
     #[readonly]
     pub scale: Vector3f,
 
-    model_matrix: Mat4,
-    normal_matrix: Mat3A,
+    model_matrix: Matrix4f,
+    normal_matrix: Matrix3fA,
 
     // There may me multiple updates of the position/rotation/scale in the single frame.
     // Not to calculate matrices multiple times, we will update them only once per frame
@@ -87,8 +86,8 @@ impl TransformComponent {
             position: Vector3f::ZERO,
             rotation: Vector3f::ZERO,
             scale: Vector3f::new(1.0, 1.0, 1.0),
-            model_matrix: Mat4::IDENTITY,
-            normal_matrix: Mat3A::IDENTITY,
+            model_matrix: Matrix4f::IDENTITY,
+            normal_matrix: Matrix3fA::IDENTITY,
             matrix_update_required: true,
             net_dirty: false,
         }
@@ -157,10 +156,10 @@ impl TransformComponent {
         self.get_rotation_matrix() * Vector3f::new(0.0, -1.0, 0.0)
     }
 
-    fn get_rotation_matrix(&self) -> Mat3 {
-        let roll = Mat3::from_rotation_z(self.rotation.z.to_radians());
-        let yaw = Mat3::from_rotation_y(self.rotation.y.to_radians());
-        let pitch = Mat3::from_rotation_x(self.rotation.x.to_radians());
+    fn get_rotation_matrix(&self) -> Matrix3f {
+        let roll = Matrix3f::from_rotation_z(self.rotation.z.to_radians());
+        let yaw = Matrix3f::from_rotation_y(self.rotation.y.to_radians());
+        let pitch = Matrix3f::from_rotation_x(self.rotation.x.to_radians());
         yaw * pitch * roll
     }
 
@@ -187,18 +186,18 @@ impl TransformComponent {
 }
 
 pub fn update_transform_matrices(transform_component: &mut TransformComponent) {
-    let model = Mat4::model(transform_component.position, transform_component.rotation, transform_component.scale);
-    let normal = Mat3::from_euler_angles(transform_component.rotation);
+    let model = Matrix4f::model(transform_component.position, transform_component.rotation, transform_component.scale);
+    let normal = Matrix3f::from_euler_angles(transform_component.rotation);
 
     transform_component.model_matrix = model;
     transform_component.normal_matrix = normal.into();
 }
 
-pub fn get_model_matrix(transform_component: &TransformComponent) -> Mat4 {
+pub fn get_model_matrix(transform_component: &TransformComponent) -> Matrix4f {
     transform_component.model_matrix
 }
 
-pub fn get_normal_matrix(transform_component: &TransformComponent) -> Mat3A {
+pub fn get_normal_matrix(transform_component: &TransformComponent) -> Matrix3fA {
     transform_component.normal_matrix
 }
 
@@ -216,43 +215,43 @@ impl Default for TransformComponent {
     }
 }
 
-pub trait Mat3AngleExt {
-    fn from_euler_angles(rotation_deg: Vector3f) -> Mat3;
+pub trait Matrix3fAngleExt {
+    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix3f ;
 }
 
-pub trait Mat4ModelExt {
-    fn model(position: Vector3f, rotation_deg: Vector3f, scale: Vector3f) -> Mat4;
-    fn from_euler_angles(rotation_deg: Vector3f) -> Mat4;
+pub trait Matrix4fModelExt {
+    fn model(position: Vector3f, rotation_deg: Vector3f, scale: Vector3f) -> Matrix4f;
+    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix4f;
 }
 
-impl Mat3AngleExt for Mat3 {
-    fn from_euler_angles(rotation_deg: Vector3f) -> Mat3 {
-        let rz = Mat3::from_angle(rotation_deg.z.to_radians());
-        let ry = Mat3::from_angle(rotation_deg.y.to_radians());
-        let rx = Mat3::from_angle(rotation_deg.x.to_radians());
+impl Matrix3fAngleExt for Matrix3f {
+    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix3f {
+        let rz = Matrix3f::from_angle(rotation_deg.z.to_radians());
+        let ry = Matrix3f::from_angle(rotation_deg.y.to_radians());
+        let rx = Matrix3f::from_angle(rotation_deg.x.to_radians());
         rz * ry * rx
     }
 }
 
-impl Mat4ModelExt for Mat4 {
-    fn model(position: Vector3f, rotation_deg: Vector3f, scale: Vector3f) -> Mat4 {
-        let rz = Mat3::from_angle(rotation_deg.z.to_radians());
-        let ry = Mat3::from_angle(rotation_deg.y.to_radians());
-        let rx = Mat3::from_angle(rotation_deg.x.to_radians());
+impl Matrix4fModelExt for Matrix4f {
+    fn model(position: Vector3f, rotation_deg: Vector3f, scale: Vector3f) -> Matrix4f {
+        let rz = Matrix3f::from_angle(rotation_deg.z.to_radians());
+        let ry = Matrix3f::from_angle(rotation_deg.y.to_radians());
+        let rx = Matrix3f::from_angle(rotation_deg.x.to_radians());
         let rot3 = rz * ry * rx;
 
-        let t = Mat4::from_translation(position);
-        let r = Mat4::from_mat3(rot3);
-        let s = Mat4::from_scale(scale);
+        let t = Matrix4f::from_translation(position);
+        let r = Matrix4f::from_mat3(rot3);
+        let s = Matrix4f::from_scale(scale);
 
         t * r * s
     }
 
-    fn from_euler_angles(rotation_deg: Vector3f) -> Mat4 {
-        let rz = Mat3::from_angle(rotation_deg.z.to_radians());
-        let ry = Mat3::from_angle(rotation_deg.y.to_radians());
-        let rx = Mat3::from_angle(rotation_deg.x.to_radians());
+    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix4f {
+        let rz = Matrix3f::from_angle(rotation_deg.z.to_radians());
+        let ry = Matrix3f::from_angle(rotation_deg.y.to_radians());
+        let rx = Matrix3f::from_angle(rotation_deg.x.to_radians());
         let rot3 = rz * ry * rx;
-        Mat4::from_mat3(rot3)
+        Matrix4f::from_mat3(rot3)
     }
 }

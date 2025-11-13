@@ -1,14 +1,14 @@
-use crate::{ 
+use crate::{
     ecs::{
-        CameraComponent, ComponentStorage, EntityHandle, TransformComponent   
+        CameraComponent, ComponentStorage, EntityHandle, TransformComponent
     }, engine::Engine, graphics::RenderQueueItem, internal::{MaterialParameter, MaterialTexture}, resources::{
-        MaterialHandle, 
-        MeshData, 
-        MeshHandle, 
+        MaterialHandle,
+        MeshData,
+        MeshHandle,
         ShaderParameterSlot,
         ShaderTextureSlot,
-        TextureHandle, 
-        TextureType, 
+        TextureHandle,
+        TextureType,
     }
 };
 
@@ -23,54 +23,54 @@ use anyhow::{Result, Context, Error};
 
 // --- Renderer resource handles ---
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct RendererMaterialHandle;
 }
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct RendererMeshHandle;
 }
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct RendererCameraHandle;
 }
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
 }
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct RendererShaderHandle;
 }
 
 // --- Renderer trait definition ---
 
-pub trait PillRenderer { 
+pub trait PillRenderer {
     fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> where Self: Sized;
 
     // --- Create ---
 
     fn create_shader(
-        &mut self, 
-        name: &str, 
-        vertex_shader_bytes: &[u8], 
-        fragment_shader_bytes: &[u8], 
+        &mut self,
+        name: &str,
+        vertex_shader_bytes: &[u8],
+        fragment_shader_bytes: &[u8],
         texture_slots: &HashMap<String, ShaderTextureSlot>,
         parameter_slots: &HashMap<String, ShaderParameterSlot>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle>;
-    
+
     fn create_material(
-        &mut self, 
-        name: &str, 
+        &mut self,
+        name: &str,
         renderer_shader_handle: RendererShaderHandle,
-        textures: &IndexMap<String, MaterialTexture>, 
+        textures: &IndexMap<String, MaterialTexture>,
         parameters: &HashMap<String, MaterialParameter>
     ) -> Result<RendererMaterialHandle>;
 
     fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle>;
-    
+
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
 
     fn create_camera(&mut self) -> Result<RendererCameraHandle>;
@@ -99,9 +99,9 @@ pub trait PillRenderer {
 
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;
 
-    fn render(&mut self, 
+    fn render(&mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec::<RenderQueueItem>, 
+        render_queue: &Vec::<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui:  Box<dyn FnMut(&egui::Context)>,

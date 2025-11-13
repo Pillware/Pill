@@ -2,9 +2,8 @@ use crate::{
     ecs::{ GlobalComponent, ComponentStorage, GlobalComponentStorage },
 };
 
-use pill_core::PillTypeMapKey;
+use pill_core::{ PillTypeMapKey, Vector3f };
 
-use glam::Vector3f;
 use std::{
     any::Any,
     cell::RefCell,

@@ -176,8 +176,8 @@ impl Component for MeshRenderingComponent {
             {
                 // Check if material handle is valid
                 engine.get_resource::<Material>(&self.material_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Resource".gobj_style(), "Material".sobj_style()))?;
-                
+                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Material".specific_object_style()))?;
+
                 self.update_render_queue_key(&engine.resource_manager)?;
             },
             DEFERRED_REQUEST_VARIANT_SET_MESH =>

@@ -5,8 +5,7 @@ use crate::{
     ecs::{ Component, ComponentStorage, EntityHandle, SceneHandle, DeferredUpdateManagerPointer, DeferredUpdateComponentRequest },
 };
 
-use pill_core::{ PillSlotMapKey, PillStyle, get_type_name };
-use glam::Vector3f;
+use pill_core::{ PillSlotMapKey, PillStyle, get_type_name, Vector3f };
 
 use anyhow::{Result, Context, Error};
 use pill_core::{ PillTypeMap, PillTypeMapKey };

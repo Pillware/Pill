@@ -8,6 +8,7 @@ authors = [
 edition = "2021"
 
 [dependencies]
+glam = { version = "0.30.8", features = ["serde"] }
 anyhow = "1.0.45"
 thiserror = "1.0.30"
 colored = "2.0.0"

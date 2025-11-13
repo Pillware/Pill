@@ -3,8 +3,7 @@ use crate::{
     ecs::{ GlobalComponent, GlobalComponentStorage },
 };
 
-use pill_core::PillTypeMapKey;
-use glam::Vector2f;
+use pill_core::{ Vector2f, PillTypeMapKey };
 
 use std::{
     any::Any,
