@@ -25,15 +25,15 @@ pub const OPENGL_TO_WGPU_MATRIX: Matrix4f = Matrix4f::from_cols_array(&[
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraParametersData {
-    pub(crate) position: [f32; 4], // Camera position
-    pub(crate) view_projection_matrix: [[f32; 4]; 4], // Perspective manipulation
+    pub position: Vector4f, // Camera position
+    pub view_projection_matrix: Matrix4f, // Perspective manipulation
 }
 
 impl CameraParametersData {
     pub fn new() -> Self {
         Self {
-            position: Vector4f::ZERO.to_array(),
-            view_projection_matrix: Matrix4f::IDENTITY.to_cols_array_2d(),
+            position: Vector4f::ZERO,
+            view_projection_matrix: Matrix4f::IDENTITY,
         }
     }
 
@@ -44,10 +44,10 @@ impl CameraParametersData {
             transform_component.position.y,
             transform_component.position.z,
             0.0
-        ).to_array();
+        );
 
         // Update view-projection
-        self.view_projection_matrix = (CameraParametersData::calculate_projection_matrix(camera_component) * CameraParametersData::calculate_view_matrix(transform_component)).to_cols_array_2d();
+        self.view_projection_matrix = (CameraParametersData::calculate_projection_matrix(camera_component) * CameraParametersData::calculate_view_matrix(transform_component));
     }
 
     fn calculate_view_matrix(transform_component: &TransformComponent) -> Matrix4f {
