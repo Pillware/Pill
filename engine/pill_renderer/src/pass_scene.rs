@@ -1,7 +1,7 @@
-use crate::renderer::{Pass, Renderer, WorldQuery};
 use crate::resource_manager::ResourceManager;
 use crate::resources::CameraUniform;
 use crate::resources::RendererTexture;
+use pill_engine::internal::{Pass, Renderer, WorldQuery};
 use std::sync::Arc;
 
 use anyhow::{Error, Result};

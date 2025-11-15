@@ -71,12 +71,38 @@ pub struct MaterialDesc<'a> {
     pub emissive_tex: Option<RendererTextureHandle>,
 }
 
+pub struct RendererTargetDesc {
+    pub name: String,
+    pub format: wgpu::TextureFormat,
+    pub width: u32,
+    pub height: u32,
+}
+
 // --- Renderer trait definition ---
+
+// RendererTexture is renderer-internal; engine code uses handles only.
 
 pub struct PipelineV2 {
     pub pipeline: wgpu::RenderPipeline,
     pub bind_group_layouts: Vec<wgpu::BindGroupLayout>,
 }
+
+// --- Shared pass API (engine-visible) -------------------------------------------------
+pub trait Pass {
+    fn get_label(&self) -> &str;
+    fn init(&mut self, renderer: &mut dyn PillRenderer) -> Result<()>;
+    fn draw(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        renderer: &mut dyn PillRenderer,
+        frame: &wgpu::SurfaceTexture,
+        view: &wgpu::TextureView,
+        world: &WorldQuery,
+    ) -> Result<()>;
+}
+
+// Alias engine render query for passes
+pub type WorldQuery<'a> = RenderQuery<'a>;
 
 pub trait PillRenderer {
     fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self
@@ -95,6 +121,8 @@ pub trait PillRenderer {
         renderer_material_handle: RendererMaterialHandle,
         desc: MaterialDesc,
     ) -> Result<RendererMaterialHandle>;
+    fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<RendererTextureHandle>;
+    fn create_depth_texture(&mut self, label: &str) -> Result<RendererTextureHandle>;
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle>;
     fn create_texture(
         &mut self,
@@ -119,6 +147,19 @@ pub trait PillRenderer {
         egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()>;
+
+    // --- Engine pass management and helpers ---
+    fn set_passes(&mut self, passes: Vec<Box<dyn Pass>>) -> Result<()>;
+    fn get_surface_format(&self) -> wgpu::TextureFormat;
+    fn get_device(&self) -> &wgpu::Device;
+    fn get_queue(&self) -> &wgpu::Queue;
+    fn get_texture(&self, h: RendererTextureHandle) -> &wgpu::Texture;
+    fn get_mesh_buffers_and_count(
+        &self,
+        h: RendererMeshHandle,
+    ) -> (&wgpu::Buffer, &wgpu::Buffer, u32);
+    fn get_material_texture_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup;
+    fn get_material_params_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup;
 }
 
 pub type Renderer = Box<dyn PillRenderer>;

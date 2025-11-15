@@ -90,13 +90,13 @@ pub mod internal {
         },
         engine::{Engine, PillGame},
         graphics::{
-            decompose_render_queue_key, BufferDesc, MaterialDesc, PillRenderer, PipelineV2,
-            PipelineV2Desc, RenderQueueItem, RenderQueueKey, RenderQueueKeyFields,
+            decompose_render_queue_key, BufferDesc, MaterialDesc, Pass, PillRenderer, PipelineV2,
+            PipelineV2Desc, RenderQueueItem, RenderQueueKey, RenderQueueKeyFields, Renderer,
             RendererBufferHandle, RendererBufferTag, RendererCameraHandle, RendererCameraTag,
             RendererMaterialHandle, RendererMaterialTag, RendererMeshHandle, RendererMeshTag,
             RendererPipelineHandle, RendererPipelineTag, RendererPipelineV2Handle,
-            RendererPipelineV2Tag, RendererTextureHandle, RendererTextureTag, ShaderDesc,
-            RENDER_QUEUE_KEY_ORDER,
+            RendererPipelineV2Tag, RendererTargetDesc, RendererTextureHandle, RendererTextureTag,
+            ShaderDesc, WorldQuery, RENDER_QUEUE_KEY_ORDER,
         },
         resources::{
             Mesh, MeshData, MeshHandle, MeshVertex, PBRMaterial, PBRMaterialHandle,

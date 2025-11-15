@@ -3,11 +3,6 @@
 // https://github.com/emilk/egui/discussions/3067
 
 use crate::{
-    pass_compose::PassCompose,
-    pass_overlay_depth::PassOverlayDepth,
-    pass_overlay_logo::PassOverlayLogo,
-    pass_overlay_uv::PassOverlayUV,
-    pass_scene::PassScene,
     resource_manager::ResourceManager,
     resources::{
         RendererCamera, RendererMaterial, RendererMaterialParamsStd140, RendererMaterialTextures,
@@ -19,10 +14,11 @@ use std::sync::Arc;
 
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, BufferDesc, CameraComponent,
-    ComponentStorage, EntityHandle, MaterialDesc, MeshData, PillRenderer, PipelineV2,
+    ComponentStorage, EntityHandle, MaterialDesc, MeshData, Pass, PillRenderer, PipelineV2,
     PipelineV2Desc, RenderQueueItem, RendererBufferHandle, RendererCameraHandle,
     RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererPipelineV2Handle,
-    RendererTextureHandle, ShaderDesc, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER,
+    RendererTargetDesc, RendererTextureHandle, ShaderDesc, TextureType, TransformComponent,
+    WorldQuery, RENDER_QUEUE_KEY_ORDER,
 };
 
 use pill_core::{Handle, PillSlotMapKey, PillStyle, RendererError, Timer};
@@ -44,9 +40,6 @@ use wgpu::util::DeviceExt;
 pub const MAX_INSTANCE_BATCH_SIZE: usize = 10000; // Maximum number of instances that can be drawn in a single draw call
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
 // M2 inline draw: no MeshDrawer/instance batching
-
-// Default resource handle - Master pipeline
-pub const MASTER_PIPELINE_HANDLE: RendererPipelineHandle = Handle::INVALID;
 
 fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String> {
     let mut frontend = glsl::Frontend::default();
@@ -109,19 +102,6 @@ fn create_render_target(
     }
 }
 
-pub trait Pass {
-    fn get_label(&self) -> &str;
-    fn init(&mut self, renderer: &mut Renderer) -> Result<()>;
-    fn draw(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        renderer: &mut Renderer,
-        frame: &wgpu::SurfaceTexture,
-        view: &wgpu::TextureView,
-        world: &WorldQuery,
-    ) -> Result<()>;
-}
-
 pub struct DeviceContext {
     pub(crate) config: config::Config,
     // Window
@@ -135,15 +115,6 @@ pub struct DeviceContext {
     pub(crate) surface_configuration: wgpu::SurfaceConfiguration,
 }
 
-// Local world query for passes (avoids depending on pill_engine::graphics visibility)
-// TODO: Rename to WorldView, SceneView, ...
-pub struct WorldQuery<'a> {
-    pub active_camera: EntityHandle,
-    pub render_queue: &'a Vec<RenderQueueItem>,
-    pub camera_components: &'a ComponentStorage<CameraComponent>,
-    pub transform_components: &'a ComponentStorage<TransformComponent>,
-}
-
 pub struct State {
     passes: Vec<Box<dyn Pass>>,
     egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
@@ -151,13 +122,10 @@ pub struct State {
     pub(crate) resource_manager: ResourceManager,
     pub(crate) color_format: wgpu::TextureFormat,
     pub(crate) depth_format: wgpu::TextureFormat,
-    pub(crate) depth_texture: Arc<RendererTexture>,
-    pub(crate) offscreen_color_texture: Arc<RendererTexture>,
+    // pub(crate) depth_texture: Arc<RendererTexture>,
+    // pub(crate) offscreen_color_texture: Arc<RendererTexture>,
     // Prebuilt PSO handle
     // [SIMILAR] Prebuilt once; no per-draw pipeline churn per TALK
-    pub(crate) master_pipeline_handle: RendererPipelineHandle,
-    // resources
-    pub(crate) tex_logo: RendererTextureHandle,
 }
 
 pub struct Renderer {
@@ -295,12 +263,12 @@ impl PillRenderer for Renderer {
             let mut resource_manager = ResourceManager::new();
 
             // Create depth and color texture
-            let depth_texture = RendererTexture::new_depth_texture(
-                &ctx.device,
-                &ctx.surface_configuration,
-                "depth_texture",
-            )
-            .unwrap();
+            // let depth_texture = RendererTexture::new_depth_texture(
+            //     &ctx.device,
+            //     &ctx.surface_configuration,
+            //     "depth_texture",
+            // )
+            // .unwrap();
 
             // Use Rgba16Float for HDR color buffers; it's the common, well-supported,
             // performant choice. Reserve Rgba32Float for niche cases needing extreme
@@ -311,13 +279,13 @@ impl PillRenderer for Renderer {
             let depth_format = wgpu::TextureFormat::Depth32Float;
 
             // Milestone 6: Create offscreen color target (RENDER_ATTACHMENT | TEXTURE_BINDING)
-            let offscreen_color_texture = Arc::new(create_render_target(
-                &ctx.device,
-                color_format,
-                ctx.surface_configuration.width,
-                ctx.surface_configuration.height,
-                "offscreen_color",
-            ));
+            // let offscreen_color_texture = Arc::new(create_render_target(
+            //     &ctx.device,
+            //     color_format,
+            //     ctx.surface_configuration.width,
+            //     ctx.surface_configuration.height,
+            //     "offscreen_color",
+            // ));
 
             let egui_renderer = EguiRenderer::new(
                 &ctx.device,
@@ -327,105 +295,7 @@ impl PillRenderer for Renderer {
                 ctx.window_ref.clone(),
             );
 
-            // Build static shader modules and pipeline once ([SIMILAR] prebuilt PSO per TALK)
-            let vertex_wgsl = r#"
-            struct Camera { position: vec4<f32>, view_projection_matrix: mat4x4<f32>, };
-            @group(0) @binding(0) var<uniform> GCamera: Camera;
-
-            struct PerDraw { mvp: mat4x4<f32>, };
-            @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
-
-            struct VSIn { @location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>, };
-            struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
-
-            @vertex fn main(input: VSIn) -> VSOut {
-              var out: VSOut;
-              out.pos = UPerDraw.mvp * vec4<f32>(input.pos, 1.0);
-              out.uv = input.uv;
-              return out;
-            }
-            "#;
-            let fragment_wgsl = r#"
-            // Material set(1):
-            @group(1) @binding(0) var tex_diffuse: texture_2d<f32>;
-            @group(1) @binding(1) var smp_diffuse: sampler;
-            @group(1) @binding(2) var tex_normal: texture_2d<f32>;
-            @group(1) @binding(3) var smp_normal: sampler;
-
-            // Material parameters set(2) - pack tint.rgb + specularity in a single vec4
-            struct MaterialParams { tint_spec: vec4<f32>, }
-            @group(2) @binding(0) var<uniform> UMaterial: MaterialParams;
-
-            // Per-draw (set 3): MVP only
-            struct PerDraw { mvp: mat4x4<f32>, };
-            @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
-
-            @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
-              let albedo = textureSample(tex_diffuse, smp_diffuse, uv);
-              let tinted = vec4<f32>(UMaterial.tint_spec.rgb, 1.0);
-              let spec_boost = 0.5 + 0.5 * UMaterial.tint_spec.a;
-              let color = albedo * tinted * spec_boost;
-              return vec4<f32>(color.rgb, 1.0);
-            }
-            "#;
-            let vertex_shader = ctx
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("m2_vertex_shader"),
-                    source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
-                });
-            let fragment_shader = ctx
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("m2_fragment_shader"),
-                    source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
-                });
-            let default_pipeline = RendererPipeline::new(
-                &ctx.device,
-                vertex_shader,
-                fragment_shader,
-                color_format,
-                Some(depth_format),
-                &[RendererMesh::data_layout_descriptor()],
-            )
-            .unwrap();
-            let master_handle = resource_manager.pipelines.insert(default_pipeline);
-
             // Create state
-            let _per_draw_bind_group_layout =
-                ctx.device
-                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("per_draw_bind_group_layout_unused"),
-                        entries: &[wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: true,
-                                min_binding_size: Some(std::num::NonZeroU64::new(80).unwrap()),
-                            },
-                            count: None,
-                        }],
-                    });
-
-            // Ideally Client submitted pass via API
-            // Create logo texture via renderer API and pass handle into overlay factory
-            let logo_image = image::open(
-                            "/Users/mk/dev/demo/Pill-Engine/engine/pill_renderer/res/pill_logo_horizontal_white.png",
-                        )
-                        .expect("failed to load overlay logo image");
-
-            let tex_logo = {
-                let tex = RendererTexture::new_texture(
-                    &ctx.device,
-                    &ctx.queue,
-                    Some("overlay_logo"),
-                    &logo_image,
-                    TextureType::Gamma,
-                )
-                .expect("failed to create overlay logo texture");
-                resource_manager.textures.insert(tex)
-            };
 
             State {
                 passes: vec![],
@@ -436,70 +306,19 @@ impl PillRenderer for Renderer {
                 // Renderer variables
                 color_format,
                 depth_format,
-                depth_texture: Arc::new(depth_texture),
-                offscreen_color_texture,
+                // depth_texture: Arc::new(depth_texture),
+                // offscreen_color_texture,
                 // Scene pass owns per-draw ring and working buffers now
-                // Prebuilt PSO handle
-                master_pipeline_handle: master_handle,
-                // Overlays
-                tex_logo,
             }
         };
         Self { state, ctx }
     }
 
     fn init(&mut self) -> Result<()> {
-        self.state.passes.clear();
-
         // Ensure default textures are created before any pass init that may need them
         self.state
             .resource_manager
             .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
-
-        // Scene pass first: renders into offscreen targets
-        self.state.passes.push(Box::new(PassScene::new(
-            "scene",
-            self.state.offscreen_color_texture.clone(),
-            self.state.depth_texture.clone(),
-        )));
-
-        self.state.passes.push(Box::new(PassCompose::new(
-            "compose",
-            self.state.offscreen_color_texture.clone(),
-            self.ctx.surface_configuration.format,
-        )));
-
-        self.state.passes.push(Box::new(PassOverlayUV::new(
-            "overlay_uv",
-            [0.75, 0.75, 0.95, 0.95],
-            self.ctx.surface_configuration.format,
-        )));
-
-        let h: f32 = 0.04; // Logo height
-        self.state.passes.push(Box::new(PassOverlayLogo::new(
-            "overlay_logo",
-            [0.98 - 3. * h, 0.02, 0.98, 0.02 + h], // bottom right
-            [1.0, 1.0, 1.0, 1.0],
-            self.state.tex_logo,
-            self.ctx.surface_configuration.format,
-        )));
-
-        self.state.passes.push(Box::new(PassOverlayDepth::new(
-            "overlay_depth",
-            [0.75, 0.50, 0.95, 0.70],
-            [1.0, 1.0, 1.0, 1.0],
-            self.state.depth_texture.clone(),
-            self.ctx.surface_configuration.format,
-        )));
-
-        // Initialize passes - call init on each pass
-        // Temporarily move passes out to avoid borrowing conflicts
-        let mut passes = std::mem::take(&mut self.state.passes);
-        for pass in passes.iter_mut() {
-            let _ = pass.init(self);
-        }
-        self.state.passes = passes;
-
         Ok(())
     }
 
@@ -1023,6 +842,18 @@ impl PillRenderer for Renderer {
         Ok(renderer_material_handle)
     }
 
+    fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<RendererTextureHandle> {
+        let tex = create_render_target(
+            &self.ctx.device,
+            desc.format,
+            desc.width,
+            desc.height,
+            desc.name.as_str(),
+        );
+        let handle = self.state.resource_manager.textures.insert(tex);
+        Ok(handle)
+    }
+
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.ctx.device, name, mesh_data)?;
         let handle = self.state.resource_manager.meshes.insert(mesh);
@@ -1046,6 +877,15 @@ impl PillRenderer for Renderer {
         let handle = self.state.resource_manager.textures.insert(texture);
 
         Ok(handle)
+    }
+
+    fn create_depth_texture(&mut self, label: &str) -> Result<RendererTextureHandle> {
+        let tex = RendererTexture::new_depth_texture(
+            &self.ctx.device,
+            &self.ctx.surface_configuration,
+            label,
+        )?;
+        Ok(self.state.resource_manager.textures.insert(tex))
     }
 
     fn create_camera(&mut self) -> Result<RendererCameraHandle> {
@@ -1111,26 +951,30 @@ impl PillRenderer for Renderer {
             self.ctx
                 .surface
                 .configure(&self.ctx.device, &self.ctx.surface_configuration);
-            self.state.depth_texture = Arc::new(
-                RendererTexture::new_depth_texture(
-                    &self.ctx.device,
-                    &self.ctx.surface_configuration,
-                    "depth_texture",
-                )
-                .unwrap(),
-            );
+            // self.state.depth_texture = Arc::new(
+            //     RendererTexture::new_depth_texture(
+            //         &self.ctx.device,
+            //         &self.ctx.surface_configuration,
+            //         "depth_texture",
+            //     )
+            //     .unwrap(),
+            // );
 
             // ================================
             // Recreate offscreen color target and reinitialize passes
-            self.state.offscreen_color_texture = Arc::new(create_render_target(
-                &self.ctx.device,
-                self.state.color_format,
-                self.ctx.surface_configuration.width,
-                self.ctx.surface_configuration.height,
-                "offscreen_color",
-            ));
-            // Reinitialize all passes (including compose pass)
-            let _ = self.init();
+            // self.state.offscreen_color_texture = Arc::new(create_render_target(
+            //     &self.ctx.device,
+            //     self.state.color_format,
+            //     self.ctx.surface_configuration.width,
+            //     self.ctx.surface_configuration.height,
+            //     "offscreen_color",
+            // ));
+            // Reinitialize existing passes in place (engine may have set custom passes)
+            let mut passes = std::mem::take(&mut self.state.passes);
+            for pass in passes.iter_mut() {
+                let _ = pass.init(self);
+            }
+            self.state.passes = passes;
             // Old offscreen texture/view/sampler are dropped when replaced; wgpu defers actual GPU resource
             // destruction until safe. See optional early reclamation via device.poll:
             // https://docs.rs/wgpu/latest/wgpu/struct.Device.html#method.poll
@@ -1236,6 +1080,65 @@ impl PillRenderer for Renderer {
         self.state.egui_renderer.handle_input(event);
         Ok(())
     }
+
+    // --- Engine pass management and helpers ---
+    fn set_passes(&mut self, mut passes: Vec<Box<dyn Pass>>) -> Result<()> {
+        for pass in passes.iter_mut() {
+            let _ = pass.init(self);
+        }
+        self.state.passes = passes;
+        Ok(())
+    }
+
+    fn get_surface_format(&self) -> wgpu::TextureFormat {
+        self.ctx.surface_configuration.format
+    }
+
+    fn get_device(&self) -> &wgpu::Device {
+        &self.ctx.device
+    }
+
+    fn get_texture(&self, h: RendererTextureHandle) -> &wgpu::Texture {
+        let tex = self
+            .state
+            .resource_manager
+            .textures
+            .get(h)
+            .expect("texture");
+        &tex.texture
+    }
+
+    fn get_mesh_buffers_and_count(
+        &self,
+        h: RendererMeshHandle,
+    ) -> (&wgpu::Buffer, &wgpu::Buffer, u32) {
+        let mesh = self.state.resource_manager.meshes.get(h).expect("mesh");
+        (&mesh.vertex_buffer, &mesh.index_buffer, mesh.index_count)
+    }
+
+    fn get_material_texture_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup {
+        let mat = self
+            .state
+            .resource_manager
+            .materials
+            .get(h)
+            .expect("material");
+        &mat.texture_bind_group
+    }
+
+    fn get_material_params_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup {
+        let mat = self
+            .state
+            .resource_manager
+            .materials
+            .get(h)
+            .expect("material");
+        &mat.param_bind_group
+    }
+
+    fn get_queue(&self) -> &wgpu::Queue {
+        &self.ctx.queue
+    }
 }
 
 impl Renderer {
@@ -1251,7 +1154,24 @@ impl Renderer {
         &self.ctx.surface
     }
 
-    pub fn get_surface_view(&self) -> &wgpu::TextureView {
-        &self.state.offscreen_color_texture.texture_view
+    // Lightweight resolve helpers for engine passes
+    pub fn get_texture_view(&self, h: RendererTextureHandle) -> &wgpu::TextureView {
+        let tex = self
+            .state
+            .resource_manager
+            .textures
+            .get(h)
+            .expect("texture");
+        &tex.texture_view
+    }
+
+    pub fn get_texture_sampler(&self, h: RendererTextureHandle) -> &wgpu::Sampler {
+        let tex = self
+            .state
+            .resource_manager
+            .textures
+            .get(h)
+            .expect("texture");
+        &tex.sampler
     }
 }

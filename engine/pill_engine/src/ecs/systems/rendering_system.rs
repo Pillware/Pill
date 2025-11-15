@@ -1,3 +1,4 @@
+use crate::graphics::RendererTargetDesc;
 use crate::{
     config::RENDERING_SYSTEM,
     ecs::{
@@ -24,6 +25,7 @@ use crate::config::{
     MAX_MESHES, MAX_MODELS, MAX_SOUNDS, MAX_TEXTURES,
 };
 use crate::ecs::components::render_state_component::RenderStateComponent;
+use crate::graphics::{Pass, PassCompose, PassLogo, PassOverlayDepth, PassOverlayUV};
 use crate::resources::{Resource, ResourceLoadType, Texture, TextureHandle, TextureType};
 
 // Constants for hot path optimization
@@ -49,6 +51,77 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         // Preallocate static dirty_entities Vec capacity
         unsafe {
             DIRTY_ENTITIES.reserve(MAX_RENDERABLES_CAPACITY); // Reserve space for up to 100k entities
+        }
+
+        // Install renderer passes once during bootstrap
+        {
+            // Resolve logo texture created in init_default_resources
+            let tex_logo = engine
+                .resource_manager
+                .get_resource_by_name::<Texture>("pill_logo_horizontal_white")?;
+            let fmt = engine.renderer.get_surface_format();
+
+            let offscreen_color_texture =
+                engine.renderer.create_render_target(RendererTargetDesc {
+                    name: "offscreen_color".to_string(),
+                    format: fmt,
+                    width: engine.window_size.width,
+                    height: engine.window_size.height,
+                })?;
+
+            // Create depth and color texture
+            let depth_texture = engine.renderer.create_depth_texture("depth_texture")?;
+
+            // Build passes
+            let mut passes: Vec<Box<dyn Pass>> = Vec::new();
+
+            // Scene (renders into offscreen targets)
+            passes.push(Box::new(crate::graphics::pass_scene::PassScene::new(
+                "scene",
+                offscreen_color_texture,
+                depth_texture,
+                fmt,
+            )));
+
+            // Compose (tone map) from offscreen to swapchain (last)
+            passes.push(Box::new(crate::graphics::PassCompose::new(
+                "compose",
+                offscreen_color_texture,
+                fmt,
+            )));
+
+            // UV overlay
+            passes.push(Box::new(crate::graphics::PassOverlayUV::new(
+                "overlay_uv",
+                [0.75, 0.75, 0.95, 0.95],
+                fmt,
+            )));
+
+            // Depth overlay
+            passes.push(Box::new(crate::graphics::PassOverlayDepth::new(
+                "overlay_depth",
+                [0.75, 0.50, 0.95, 0.70],
+                [1.0, 1.0, 1.0, 1.0],
+                fmt,
+                depth_texture,
+            )));
+
+            // Logo overlay
+            let h: f32 = 0.04;
+            let rect_logo = [0.98 - 3.0 * h, 0.02, 0.98, 0.02 + h];
+            // Convert engine Texture -> renderer texture handle
+            let tex_logo_rt = tex_logo
+                .renderer_resource_handle
+                .expect("renderer handle for logo texture");
+            passes.push(Box::new(PassLogo::new(
+                "overlay_logo",
+                rect_logo,
+                [1.0, 1.0, 1.0, 1.0],
+                tex_logo_rt,
+                fmt,
+            )));
+
+            engine.renderer.set_passes(passes)?;
         }
 
         if let Ok(rs) = engine.get_global_component_mut::<RenderStateComponent>() {
@@ -323,6 +396,18 @@ fn init_default_resources(engine: &mut Engine) -> Result<(), Error> {
     );
     normal.initialize(engine)?;
     engine.resource_manager.add_resource(normal)?;
+
+    // Pill logo (overlay) texture
+    let pill_logo = Box::new(*include_bytes!(
+        "../../../../pill_renderer/res/pill_logo_horizontal_white.png"
+    ));
+    let mut tex_logo = Texture::new(
+        "pill_logo_horizontal_white",
+        TextureType::Gamma,
+        ResourceLoadType::Bytes(pill_logo),
+    );
+    tex_logo.initialize(engine)?;
+    engine.resource_manager.add_resource(tex_logo)?;
 
     let mut mat = PBRMaterial::new(DEFAULT_MATERIAL_NAME);
     mat.initialize(engine)?;
