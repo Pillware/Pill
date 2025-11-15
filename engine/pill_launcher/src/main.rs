@@ -199,32 +199,32 @@ fn render_puml_for_crate(crate_dir: &PathBuf) -> Result<()> {
     let have_cli = Command::new("plantuml").arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok();
 
     // Prefer "plantuml" CLI tool if available
-    if have_cli {
-        for puml in &inputs {
-            let svg_path = out_dir.join(puml.file_stem().unwrap()).with_extension("svg");
+    if !have_cli {
+        bail!("Please install plantuml!");
+    }
 
-            let mut child = Command::new("plantuml")
-                .arg("-tsvg")
-                .arg("-pipe")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()
-                .context("Spawn plantuml -pipe")?;
+    for puml in &inputs {
+        let svg_path = out_dir.join(puml.file_stem().unwrap()).with_extension("svg");
 
-            {
-                let mut stdin = child.stdin.take().unwrap();
-                let bytes = fs::read(puml).with_context(|| format!("Read PUML file {}", puml.display()))?;
-                stdin.write_all(&bytes)?;
-            }
+        let mut child = Command::new("plantuml")
+            .arg("-tsvg")
+            .arg("-pipe")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .context("Spawn plantuml -pipe")?;
 
-            let out = child.wait_with_output().context("Wait plantuml")?;
-            if !out.status.success() {
-                bail!("plantuml failed with code {}", out.status);
-            }
-            fs::write(&svg_path, &out.stdout).with_context(|| format!("Write SVG file {}", svg_path.display()))?;
-
+        {
+            let mut stdin = child.stdin.take().unwrap();
+            let bytes = fs::read(puml).with_context(|| format!("Read PUML file {}", puml.display()))?;
+            stdin.write_all(&bytes)?;
         }
-        return Ok(());
+
+        let out = child.wait_with_output().context("Wait plantuml")?;
+        if !out.status.success() {
+            bail!("plantuml failed with code {}", out.status);
+        }
+        fs::write(&svg_path, &out.stdout).with_context(|| format!("Write SVG file {}", svg_path.display()))?;
     }
 
     // TODO: either distribute plantuml or download it automatically
@@ -364,6 +364,11 @@ fn build_game_project(game_project_directory_path: &PathBuf, output_directory_pa
         if line.contains("workspace") { return format!("workspace = \"{}\"", get_path(Location::EngineCrates).to_str().unwrap().replace("\\", "/")) }
         line
     })?;
+
+    // Pre-render all PUML in the engine crate
+    // TODO: just regenerate ones that changed
+    let pill_engine_dir = get_path(Location::PillEngineCrate);
+    render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
 
     // Build standalone executable along with game dynamic library
 	let mut arguments = vec![
