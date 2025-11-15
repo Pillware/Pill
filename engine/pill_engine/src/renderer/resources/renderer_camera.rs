@@ -1,5 +1,5 @@
 use cgmath::{EuclideanSpace, SquareMatrix, Zero};
-use pill_engine::internal::{CameraComponent, TransformComponent};
+use crate::ecs::{CameraComponent, TransformComponent};
 
 use anyhow::Result;
 use std::f32::consts::FRAC_PI_2;

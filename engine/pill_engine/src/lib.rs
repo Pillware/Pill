@@ -4,6 +4,7 @@ mod config;
 mod ecs;
 mod engine;
 mod graphics;
+mod renderer;
 mod resources;
 
 // --- Macros ---
@@ -103,4 +104,6 @@ pub mod internal {
             ResourceLoadType, ResourceManager, Texture, TextureHandle, TextureType,
         },
     };
+    // Expose the concrete wgpu renderer type for standalone host
+    pub use crate::renderer::Renderer as WgpuRenderer;
 }

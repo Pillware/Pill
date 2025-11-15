@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "pill_core",
     "pill_engine",
-    "pill_renderer",
     "pill_standalone",
     "/Users/mk/dev/demo/pill_demo", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
 ]

@@ -1,5 +1,6 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
 
+mod gpu_resources;
 mod material;
 mod mesh;
 mod model;
@@ -13,6 +14,7 @@ mod texture;
 
 pub use resource_manager::ResourceManager;
 
+pub use gpu_resources::GpuResources;
 pub use resource::{Resource, ResourceLoadType};
 
 pub use resource_storage::ResourceStorage;

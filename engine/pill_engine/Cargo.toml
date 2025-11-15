@@ -27,6 +27,8 @@ rodio = { version = "0.20", features = ["wav", "mp3"] }
 
 # Rendering
 wgpu = { version = "0.20.1", features = [ "spirv" ] }
+egui-wgpu = "0.28.1"
+egui-winit = "0.28.1"
 
 # Other
 readonly = "0.2"
@@ -45,6 +47,7 @@ bincode = "1.0"
 gilrs = "0.11.0"
 once_cell = "1.21.3"
 glam = { version = "0.27" }
+pollster = "0.3"
 
 [build-dependencies]
 anyhow = "1.0"

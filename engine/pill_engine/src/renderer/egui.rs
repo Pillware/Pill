@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use egui::epaint::Shadow;
 use egui::{Context, Visuals};
-use egui_wgpu::ScreenDescriptor;
 use egui_wgpu::Renderer;
+use egui_wgpu::ScreenDescriptor;
 
+use anyhow::{Error, Result};
 use egui_winit::State;
 use pill_core::Timer;
 use wgpu::{CommandEncoder, Device, Queue, TextureFormat, TextureView};
 use winit::event::WindowEvent;
 use winit::window::Window;
-use anyhow::{Error, Result};
 
 pub struct EguiRenderer {
     pub context: Context,
@@ -32,7 +32,7 @@ impl EguiRenderer {
         let egui_context = egui::Context::default();
         let id = egui_context.viewport_id();
         const BORDER_RADIUS: f32 = 2.0;
-        
+
         let visuals = egui::Visuals {
             window_rounding: egui::Rounding::same(BORDER_RADIUS),
             window_shadow: egui::Shadow::NONE,
@@ -54,7 +54,7 @@ impl EguiRenderer {
             state: egui_state,
             renderer: egui_renderer,
             window_scale_factor,
-            window
+            window,
         }
     }
 
@@ -82,18 +82,23 @@ impl EguiRenderer {
 
         timer.record("Handle platform output");
 
-        self.state.handle_platform_output(&window, full_output.platform_output);
+        self.state
+            .handle_platform_output(&window, full_output.platform_output);
 
         timer.record("Tesselate and update textures");
 
-        let tris = self.context.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let tris = self
+            .context
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
-            self.renderer.update_texture(&device, &queue, *id, &image_delta);
+            self.renderer
+                .update_texture(&device, &queue, *id, &image_delta);
         }
 
         timer.record("Update buffers and record render pass");
 
-        self.renderer.update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
+        self.renderer
+            .update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -112,7 +117,8 @@ impl EguiRenderer {
 
         timer.record("Render");
 
-        self.renderer.render(&mut render_pass, &tris, &screen_descriptor);
+        self.renderer
+            .render(&mut render_pass, &tris, &screen_descriptor);
 
         drop(render_pass);
         for x in &full_output.textures_delta.free {
@@ -122,4 +128,3 @@ impl EguiRenderer {
         Ok(())
     }
 }
-

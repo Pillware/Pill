@@ -1,7 +1,8 @@
 use crate::{
     graphics::RendererTextureHandle,
     resources::{
-        PBRMaterial, PBRMaterialHandle, Resource, ResourceStorage, Texture, TextureHandle, TextureType,
+        PBRMaterial, PBRMaterialHandle, Resource, ResourceStorage, Texture, TextureHandle,
+        TextureType,
     },
 };
 
@@ -13,13 +14,23 @@ use std::{collections::HashMap, convert::TryInto, env, num::NonZeroU32, path::Pa
 
 pub struct ResourceManager {
     resources: PillTypeMap,
+    pub gpu: crate::resources::GpuResources,
 }
 
 impl ResourceManager {
     pub fn new() -> Self {
         Self {
             resources: PillTypeMap::new(),
+            gpu: crate::resources::GpuResources::new(),
         }
+    }
+
+    pub fn gpu(&self) -> &crate::resources::GpuResources {
+        &self.gpu
+    }
+
+    pub fn gpu_mut(&mut self) -> &mut crate::resources::GpuResources {
+        &mut self.gpu
     }
 
     // --- Slots ---

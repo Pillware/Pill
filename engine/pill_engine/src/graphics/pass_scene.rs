@@ -1,10 +1,11 @@
+use crate::ecs::get_model_matrix;
+use crate::graphics::decompose_render_queue_key;
 use crate::graphics::renderer::{
     Pass, PillRenderer as EnginePillRenderer, PipelineV2, PipelineV2Desc, ShaderDesc, WorldQuery,
 };
 use crate::graphics::{
     BufferDesc, RendererMaterialHandle, RendererMeshHandle, RendererTextureHandle,
 };
-use crate::internal;
 use anyhow::Result;
 use glam::{EulerRot, Mat4, Quat, Vec3, Vec4};
 use pill_core::PillSlotMapKey;
@@ -597,7 +598,7 @@ impl Pass for PassScene {
         // Build visible set
         self.visible_pre_draw_buffer.clear();
         for render_queue_item in world.render_queue.iter() {
-            let key = internal::decompose_render_queue_key(render_queue_item.key);
+            let key = decompose_render_queue_key(render_queue_item.key);
             let mesh_handle =
                 RendererMeshHandle::from_parts(key.mesh_index as u32, key.mesh_version as u32);
             let material_handle = RendererMaterialHandle::from_parts(
@@ -613,7 +614,7 @@ impl Pass for PassScene {
                 .unwrap()
                 .as_ref()
                 .unwrap();
-            let model_arr = internal::get_model_matrix(transform);
+            let model_arr = get_model_matrix(transform);
             let model: Mat4 = Mat4::from_cols_array_2d(&model_arr);
 
             // NOTE: Temporarily skip AABB-based frustum culling to avoid accessing renderer internals.

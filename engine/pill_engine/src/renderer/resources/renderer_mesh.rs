@@ -1,4 +1,4 @@
-use pill_engine::internal::{MeshData, MeshVertex};
+use crate::resources::{MeshData, MeshVertex};
 
 use anyhow::*;
 use wgpu::util::DeviceExt;

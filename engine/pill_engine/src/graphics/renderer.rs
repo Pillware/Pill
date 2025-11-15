@@ -154,10 +154,8 @@ pub trait PillRenderer {
     fn get_device(&self) -> &wgpu::Device;
     fn get_queue(&self) -> &wgpu::Queue;
     fn get_texture(&self, h: RendererTextureHandle) -> &wgpu::Texture;
-    fn get_mesh_buffers_and_count(
-        &self,
-        h: RendererMeshHandle,
-    ) -> (&wgpu::Buffer, &wgpu::Buffer, u32);
+    fn get_mesh_buffers_and_count(&self, h: RendererMeshHandle)
+        -> (&wgpu::Buffer, &wgpu::Buffer, u32);
     fn get_material_texture_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup;
     fn get_material_params_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup;
 }

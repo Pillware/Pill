@@ -1,6 +1,6 @@
+use crate::resources::TextureType;
 use anyhow::Result;
 use image::{DynamicImage, GenericImageView};
-use pill_engine::internal::TextureType;
 use wgpu::{Device, Queue, SurfaceConfiguration, TextureFormat};
 
 pill_core::define_new_pill_slotmap_key! {

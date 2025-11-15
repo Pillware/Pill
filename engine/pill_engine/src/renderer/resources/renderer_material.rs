@@ -1,4 +1,4 @@
-use crate::resources::RendererTexture;
+use crate::renderer::resources::RendererTexture;
 
 // COLD: construction-only helper; no allocations, just references bundled for factory use.
 pub struct RendererMaterialTextures<'a> {

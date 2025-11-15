@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 
+use crate::graphics::{
+    RendererBufferHandle, RendererCameraHandle, RendererMeshHandle, RendererPipelineHandle,
+    RendererTextureHandle,
+};
+use crate::resources::TextureType;
 use pill_core::{
     Handle, RendererBufferTag, RendererCameraTag, RendererMaterialTag, RendererMeshTag,
     RendererPipelineTag, RendererTextureTag, ResourcePool,
 };
-use pill_engine::internal::{
-    RendererBufferHandle, RendererCameraHandle, RendererMeshHandle, RendererPipelineHandle,
-    RendererTextureHandle,
-};
 
-use crate::resources::{
+use crate::renderer::resources::{
     RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture,
 };
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -89,7 +90,7 @@ impl ResourceManager {
                 queue,
                 Some("default_color"),
                 &dyn_img,
-                pill_engine::internal::TextureType::Gamma,
+                TextureType::Gamma,
             )
             .expect("create default color tex");
             let h = self.textures.insert(tex);
@@ -105,7 +106,7 @@ impl ResourceManager {
                 queue,
                 Some("default_normal"),
                 &dyn_img,
-                pill_engine::internal::TextureType::Linear,
+                TextureType::Linear,
             )
             .expect("create default normal tex");
             let h = self.textures.insert(tex);

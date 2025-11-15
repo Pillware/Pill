@@ -2,8 +2,8 @@ mod file_watcher;
 use crate::file_watcher::FileWatcher;
 use config::Config;
 use pill_core::{ PillStyle, EngineError };
-use pill_engine::internal::*;
-use pill_renderer;
+use pill_engine::internal::{Engine, PillGame};
+use pill_engine::internal::PillRenderer;
 use anyhow::{ Context, Ok, Result };
 use winit::{
     event::{ Event, WindowEvent, DeviceEvent },
@@ -234,7 +234,7 @@ fn check_and_reload_game(
 
         // Load new game dynamic library
         let (game_library, game) = load_game_dynamic_library(&project_paths.game_dynamic_library_path);
-        let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(&window), config.clone()));
+        let renderer: Box<dyn PillRenderer> = Box::new(<pill_engine::internal::WgpuRenderer as PillRenderer>::new(Arc::clone(&window), config.clone()));
         let mut new_engine = Engine::new(game, project_paths.game_resources_directory_path.clone(), renderer, config.clone());
         new_engine.initialize(*window_size).unwrap();
         *engine = Some(new_engine);
@@ -447,7 +447,7 @@ fn main() {
     game_dynamic_library = Some(game_library);
 
     // Initialize renderer and engine
-    let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(&window_data.window), config.clone()));
+    let renderer: Box<dyn PillRenderer> = Box::new(<pill_engine::internal::WgpuRenderer as PillRenderer>::new(Arc::clone(&window_data.window), config.clone()));
     let mut engine: Option<Engine> = Some(Engine::new(game, project_paths.game_resources_directory_path.clone(), renderer, config.clone()));
     engine.as_mut().unwrap().initialize(window_data.size).context("Failed to initialize engine").unwrap();
 

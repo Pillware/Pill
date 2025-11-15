@@ -1,10 +1,10 @@
-use crate::resources::{
+use super::resources::{
     RendererCamera, RendererMaterial, RendererMesh, RendererPipeline, RendererTexture,
 };
 
 use pill_core::PillSlotMap;
 
-use pill_engine::internal::{
+use crate::graphics::{
     RendererBufferHandle, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
     RendererPipelineHandle, RendererPipelineV2Handle, RendererTextureHandle,
 };
@@ -28,7 +28,7 @@ pub struct RendererResourceStorage {
 }
 
 impl RendererResourceStorage {
-    pub fn new(config: &config::Config) -> Self {
+    pub fn new(config: &crate::config::Config) -> Self {
         let max_pipeline_count = config
             .get_int("MAX_PIPELINES")
             .unwrap_or(MAX_PIPELINES as i64) as usize;

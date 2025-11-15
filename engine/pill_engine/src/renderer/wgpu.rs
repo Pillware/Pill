@@ -2,24 +2,22 @@
 // https://github.com/kaphula/winit-egui-wgpu-template/blob/master/src/main.rs
 // https://github.com/emilk/egui/discussions/3067
 
-use crate::{
-    resource_manager::ResourceManager,
-    resources::{
-        RendererCamera, RendererMaterial, RendererMaterialParamsStd140, RendererMaterialTextures,
-        RendererMesh, RendererPipeline, RendererTexture, Vertex,
-    },
+use crate::renderer::resource_manager::ResourceManager as RendererResourceManager;
+use crate::renderer::resources::{
+    RendererCamera, RendererMaterial, RendererMaterialParamsStd140, RendererMaterialTextures,
+    RendererMesh, RendererPipeline, RendererTexture, Vertex,
 };
 
 use std::sync::Arc;
 
-use pill_engine::internal::{
-    get_renderer_resource_handle_from_camera_component, BufferDesc, CameraComponent,
-    ComponentStorage, EntityHandle, MaterialDesc, MeshData, Pass, PillRenderer, PipelineV2,
-    PipelineV2Desc, RenderQueueItem, RendererBufferHandle, RendererCameraHandle,
-    RendererMaterialHandle, RendererMeshHandle, RendererPipelineHandle, RendererPipelineV2Handle,
-    RendererTargetDesc, RendererTextureHandle, ShaderDesc, TextureType, TransformComponent,
-    WorldQuery, RENDER_QUEUE_KEY_ORDER,
+use crate::ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent};
+use crate::graphics::{
+    BufferDesc, MaterialDesc, Pass, PillRenderer, PipelineV2, PipelineV2Desc, RenderQueueItem,
+    RendererBufferHandle, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+    RendererPipelineHandle, RendererPipelineV2Handle, RendererTargetDesc, RendererTextureHandle,
+    ShaderDesc, WorldQuery,
 };
+use crate::resources::{MeshData, TextureType};
 
 use pill_core::{Handle, PillSlotMapKey, PillStyle, RendererError, Timer};
 
@@ -27,38 +25,17 @@ use std::num::NonZeroU32;
 
 use cgmath::{Deg, InnerSpace};
 use glam::{Mat4, Vec3, Vec4};
-use naga::back::wgsl;
-use naga::front::glsl;
 
 use anyhow::{Error, Result};
 use log::{error, info};
 
-use crate::egui::EguiRenderer;
+use crate::renderer::egui::EguiRenderer;
 use image::GenericImageView;
 use wgpu::util::DeviceExt;
 
 pub const MAX_INSTANCE_BATCH_SIZE: usize = 10000; // Maximum number of instances that can be drawn in a single draw call
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
 // M2 inline draw: no MeshDrawer/instance batching
-
-fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String> {
-    let mut frontend = glsl::Frontend::default();
-    let options = glsl::Options::from(stage);
-    let module = frontend.parse(&options, source).unwrap();
-
-    let mut validator = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::empty(),
-    );
-
-    let info = validator.validate(&module)?;
-
-    let mut output = String::new();
-    let mut writer = wgsl::Writer::new(&mut output, wgsl::WriterFlags::empty());
-    writer.write(&module, &info)?;
-
-    Ok(output)
-}
 
 // KISS helper: create a color render target texture+view+sampler
 fn create_render_target(
@@ -117,9 +94,9 @@ pub struct DeviceContext {
 
 pub struct State {
     passes: Vec<Box<dyn Pass>>,
-    egui_renderer: crate::egui::EguiRenderer, // TODO: Separate system adding Pass
+    egui_renderer: crate::renderer::egui::EguiRenderer, // TODO: Separate system adding Pass
     // Resources and GPU objects moved from ctor into here explicitly
-    pub(crate) resource_manager: ResourceManager,
+    pub(crate) resource_manager: RendererResourceManager,
     pub(crate) color_format: wgpu::TextureFormat,
     pub(crate) depth_format: wgpu::TextureFormat,
     // pub(crate) depth_texture: Arc<RendererTexture>,
@@ -260,7 +237,7 @@ impl PillRenderer for Renderer {
 
         let state: State = {
             // Configure collections
-            let mut resource_manager = ResourceManager::new();
+            let mut resource_manager = RendererResourceManager::new();
 
             // Create depth and color texture
             // let depth_texture = RendererTexture::new_depth_texture(
@@ -428,7 +405,7 @@ impl PillRenderer for Renderer {
                 vertex: wgpu::VertexState {
                     module: &vs,
                     entry_point: desc.vs.entry_func,
-                    buffers: &[crate::resources::RendererMesh::data_layout_descriptor()],
+                    buffers: &[RendererMesh::data_layout_descriptor()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
