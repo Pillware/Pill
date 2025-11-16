@@ -191,7 +191,11 @@ impl Pass for PassScene {
         &self.label
     }
 
-    fn init(&mut self, renderer: &mut dyn EnginePillRenderer) -> Result<()> {
+    fn init(
+        &mut self,
+        renderer: &mut dyn EnginePillRenderer,
+        resources: &mut crate::resources::ResourceManager,
+    ) -> Result<()> {
         // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
         // Shaders: must match bind group layout indices: 0(camera),1(material textures),2(material params),3(per-draw)
         let vertex_wgsl = r#"
@@ -485,6 +489,7 @@ impl Pass for PassScene {
             multisample: wgpu::MultisampleState::default(),
         };
 
+        // Use renderer API to build pipeline
         let pipeline = renderer.create_pipeline_v2(desc)?;
 
         // Camera buffer and bind group using pipeline's camera layout (group 0)
@@ -553,6 +558,7 @@ impl Pass for PassScene {
         &mut self,
         encoder: &mut CommandEncoder,
         renderer: &mut dyn EnginePillRenderer,
+        resources: &mut crate::resources::ResourceManager,
         _frame: &wgpu::SurfaceTexture,
         _view: &wgpu::TextureView,
         world: &WorldQuery,
@@ -721,11 +727,19 @@ impl Pass for PassScene {
         }
 
         // Encode offscreen pass
-        let color_view = renderer
-            .get_texture(self.offscreen_color_texture)
+        let color_view = resources
+            .gpu()
+            .textures
+            .get(self.offscreen_color_texture)
+            .expect("offscreen color")
+            .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let depth_view = renderer
-            .get_texture(self.depth_texture)
+        let depth_view = resources
+            .gpu()
+            .textures
+            .get(self.depth_texture)
+            .expect("depth")
+            .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("m6_offscreen_pass"),
@@ -762,21 +776,27 @@ impl Pass for PassScene {
                 &state_ref.camera_bind_group,
                 &[],
             );
-            rpass.set_bind_group(
-                MATERIAL_BIND_GROUP_TEXTURES as u32,
-                renderer.get_material_texture_bind_group(group.material_handle),
-                &[],
-            );
-            rpass.set_bind_group(
-                MATERIAL_BIND_GROUP_PARAMS as u32,
-                renderer.get_material_params_bind_group(group.material_handle),
-                &[],
-            );
+            {
+                let mat = resources
+                    .gpu()
+                    .materials
+                    .get(group.material_handle)
+                    .expect("material");
+                rpass.set_bind_group(
+                    MATERIAL_BIND_GROUP_TEXTURES as u32,
+                    &mat.texture_bind_group,
+                    &[],
+                );
+                rpass.set_bind_group(
+                    MATERIAL_BIND_GROUP_PARAMS as u32,
+                    &mat.param_bind_group,
+                    &[],
+                );
+            }
             for batch in &group.batches {
-                let (vbuf, ibuf, index_count) =
-                    renderer.get_mesh_buffers_and_count(batch.mesh_handle);
-                rpass.set_vertex_buffer(0, vbuf.slice(..));
-                rpass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                let mesh = resources.gpu().meshes.get(batch.mesh_handle).expect("mesh");
+                rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                rpass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 for i in 0..batch.instances.len() {
                     let offset = batch
                         .base_offset_u32
@@ -786,7 +806,7 @@ impl Pass for PassScene {
                         &state_ref.per_draw_bind_group,
                         &[offset],
                     );
-                    rpass.draw_indexed(0..index_count, 0, 0..1);
+                    rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
             }
         }

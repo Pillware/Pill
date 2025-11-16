@@ -32,9 +32,12 @@ impl Pass for PassOverlayUV {
         &self.label
     }
 
-    fn init(&mut self, renderer: &mut dyn EnginePillRenderer) -> Result<()> {
+    fn init(
+        &mut self,
+        renderer: &mut dyn EnginePillRenderer,
+        resources: &mut crate::resources::ResourceManager,
+    ) -> Result<()> {
         let device = renderer.get_device();
-
         // Create buffer for overlay rect UBO
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("overlay_uv_rect_ubo"),
@@ -151,6 +154,7 @@ impl Pass for PassOverlayUV {
         &mut self,
         encoder: &mut CommandEncoder,
         _renderer: &mut dyn EnginePillRenderer,
+        _resources: &mut crate::resources::ResourceManager,
         _frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
         _world: &WorldQuery,

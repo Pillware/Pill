@@ -90,11 +90,16 @@ pub struct PipelineV2 {
 // --- Shared pass API (engine-visible) -------------------------------------------------
 pub trait Pass {
     fn get_label(&self) -> &str;
-    fn init(&mut self, renderer: &mut dyn PillRenderer) -> Result<()>;
+    fn init(
+        &mut self,
+        renderer: &mut dyn PillRenderer,
+        resources: &mut crate::resources::ResourceManager,
+    ) -> Result<()>;
     fn draw(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         renderer: &mut dyn PillRenderer,
+        resources: &mut crate::resources::ResourceManager,
         frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
         world: &WorldQuery,
@@ -106,9 +111,9 @@ pub type WorldQuery<'a> = RenderQuery<'a>;
 
 pub trait PillRenderer {
     fn new(
+        resources: &mut crate::resources::ResourceManager,
         window: Arc<winit::window::Window>,
         config: config::Config,
-        gpu_resources: &mut crate::resources::GpuResources,
     ) -> Self
     where
         Self: Sized;
@@ -157,13 +162,6 @@ pub trait PillRenderer {
     fn get_surface_format(&self) -> wgpu::TextureFormat;
     fn get_device(&self) -> &wgpu::Device;
     fn get_queue(&self) -> &wgpu::Queue;
-    fn get_texture(&self, h: RendererTextureHandle) -> &wgpu::Texture;
-    fn get_mesh_buffers_and_count(
-        &self,
-        h: RendererMeshHandle,
-    ) -> (&wgpu::Buffer, &wgpu::Buffer, u32);
-    fn get_material_texture_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup;
-    fn get_material_params_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup;
 }
 
 pub type Renderer = Box<dyn PillRenderer>;

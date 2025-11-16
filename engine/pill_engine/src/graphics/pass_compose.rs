@@ -34,9 +34,12 @@ impl Pass for PassCompose {
         &self.label
     }
 
-    fn init(&mut self, renderer: &mut dyn EnginePillRenderer) -> Result<()> {
+    fn init(
+        &mut self,
+        renderer: &mut dyn EnginePillRenderer,
+        resources: &mut crate::resources::ResourceManager,
+    ) -> Result<()> {
         let device = renderer.get_device();
-
         let vs = r#"
         struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, };
         @vertex fn main(@builtin(vertex_index) vi: u32) -> VSOut {
@@ -131,14 +134,15 @@ impl Pass for PassCompose {
             multiview: None,
         });
 
-        // Bind offscreen color texture from renderer (offscreen target)
-        // let (view, sampler) = renderer.get_offscreen_color_view_and_sampler();
-        let view = renderer
-            .get_texture(self.offscreen_color_texture)
+        // Bind offscreen color texture using ResourceManager GPU pools
+        let view = resources
+            .gpu()
+            .textures
+            .get(self.offscreen_color_texture)
+            .expect("offscreen color")
+            .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = renderer
-            .get_device()
-            .create_sampler(&wgpu::SamplerDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("compose_bind_group"),
             layout: &bgl, // Group 0: Texture and sampler bindings
@@ -168,6 +172,7 @@ impl Pass for PassCompose {
         &mut self,
         encoder: &mut CommandEncoder,
         _renderer: &mut dyn EnginePillRenderer,
+        _resources: &mut crate::resources::ResourceManager,
         _frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
         _world: &WorldQuery,

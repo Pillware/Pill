@@ -48,9 +48,12 @@ impl Pass for PassLogo {
         &self.label
     }
 
-    fn init(&mut self, renderer: &mut dyn EnginePillRenderer) -> Result<()> {
+    fn init(
+        &mut self,
+        renderer: &mut dyn EnginePillRenderer,
+        resources: &mut crate::resources::ResourceManager,
+    ) -> Result<()> {
         let device = renderer.get_device();
-
         // Create mapped buffer for overlay rect UBO
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("overlay_logo_ubo"),
@@ -187,20 +190,22 @@ impl Pass for PassLogo {
             }],
         });
 
-        let tex_logo_view = renderer
-            .get_texture(self.tex_logo)
+        let tex_logo_view = resources
+            .gpu()
+            .textures
+            .get(self.tex_logo)
+            .expect("texture")
+            .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let tex_logo_sampler = renderer
-            .get_device()
-            .create_sampler(&wgpu::SamplerDescriptor {
-                address_mode_u: wgpu::AddressMode::Repeat,
-                address_mode_v: wgpu::AddressMode::Repeat,
-                address_mode_w: wgpu::AddressMode::Repeat,
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Nearest,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                ..Default::default()
-            });
+        let tex_logo_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
 
         let tint_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("overlay_logo_tint"),
@@ -258,6 +263,7 @@ impl Pass for PassLogo {
         &mut self,
         encoder: &mut CommandEncoder,
         _renderer: &mut dyn EnginePillRenderer,
+        _resources: &mut crate::resources::ResourceManager,
         _frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
         _world: &WorldQuery,

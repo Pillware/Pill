@@ -44,9 +44,12 @@ impl Pass for PassOverlayDepth {
         &self.label
     }
 
-    fn init(&mut self, renderer: &mut dyn EnginePillRenderer) -> Result<()> {
+    fn init(
+        &mut self,
+        renderer: &mut dyn EnginePillRenderer,
+        resources: &mut crate::resources::ResourceManager,
+    ) -> Result<()> {
         let device = renderer.get_device();
-
         // Create buffer for overlay rect UBO
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("overlay_depth_rect_ubo"),
@@ -193,9 +196,13 @@ impl Pass for PassOverlayDepth {
         }
         tint_buffer.unmap();
 
-        // Create material bind group using renderer-provided depth texture view
-        let depth_view = renderer
-            .get_texture(self.depth_texture)
+        // Create material bind group using ResourceManager-provided depth texture view
+        let depth_view = resources
+            .gpu()
+            .textures
+            .get(self.depth_texture)
+            .expect("depth texture")
+            .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group_material = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("overlay_depth_material_bg"),
@@ -232,6 +239,7 @@ impl Pass for PassOverlayDepth {
         &mut self,
         encoder: &mut CommandEncoder,
         _renderer: &mut dyn EnginePillRenderer,
+        _resources: &mut crate::resources::ResourceManager,
         _frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
         _world: &WorldQuery,

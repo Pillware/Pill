@@ -282,9 +282,9 @@ fn check_and_reload_game(
         let mut resource_manager = pill_engine::internal::ResourceManager::new();
         let renderer: Box<dyn PillRenderer> =
             Box::new(<pill_engine::internal::WgpuRenderer as PillRenderer>::new(
+                &mut resource_manager,
                 Arc::clone(&window),
                 config.clone(),
-                resource_manager.gpu_mut(),
             ));
         let mut new_engine = Engine::new(
             game,
@@ -530,9 +530,9 @@ fn main() {
     let mut resource_manager = pill_engine::internal::ResourceManager::new();
     let renderer: Box<dyn PillRenderer> =
         Box::new(<pill_engine::internal::WgpuRenderer as PillRenderer>::new(
+            &mut resource_manager,
             Arc::clone(&window_data.window),
             config.clone(),
-            resource_manager.gpu_mut(),
         ));
     let mut engine: Option<Engine> = Some(Engine::new(
         game,
