@@ -68,6 +68,7 @@ impl Engine {
         game: Box<dyn PillGame>,
         game_resources_directory_path: std::path::PathBuf,
         renderer: Box<dyn PillRenderer>,
+        resource_manager: ResourceManager,
         config: config::Config,
     ) -> Self {
         let max_entity_count = config
@@ -80,7 +81,7 @@ impl Engine {
             renderer,
             scene_manager: SceneManager::new(max_entity_count),
             system_manager: SystemManager::new(),
-            resource_manager: ResourceManager::new(),
+            resource_manager,
             global_components: PillTypeMap::new(),
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),

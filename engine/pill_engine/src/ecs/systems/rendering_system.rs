@@ -60,6 +60,14 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                 .resource_manager
                 .get_resource_by_name::<Texture>("pill_logo_horizontal_white")?;
             let fmt = engine.renderer.get_surface_format();
+            // Convert engine Texture -> renderer texture handle
+            let tex_logo_rt = tex_logo
+                .renderer_resource_handle
+                .expect("renderer handle for logo texture");
+
+            // Logo overlay
+            let h: f32 = 0.04;
+            let rect_logo = [0.98 - 3.0 * h, 0.02, 0.98, 0.02 + h];
 
             let offscreen_color_texture =
                 engine.renderer.create_render_target(RendererTargetDesc {
@@ -72,55 +80,39 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             // Create depth and color texture
             let depth_texture = engine.renderer.create_depth_texture("depth_texture")?;
 
-            // Build passes
-            let mut passes: Vec<Box<dyn Pass>> = Vec::new();
-
-            // Scene (renders into offscreen targets)
-            passes.push(Box::new(crate::graphics::pass_scene::PassScene::new(
-                "scene",
-                offscreen_color_texture,
-                depth_texture,
-                fmt,
-            )));
-
-            // Compose (tone map) from offscreen to swapchain (last)
-            passes.push(Box::new(crate::graphics::PassCompose::new(
-                "compose",
-                offscreen_color_texture,
-                fmt,
-            )));
-
-            // UV overlay
-            passes.push(Box::new(crate::graphics::PassOverlayUV::new(
-                "overlay_uv",
-                [0.75, 0.75, 0.95, 0.95],
-                fmt,
-            )));
-
-            // Depth overlay
-            passes.push(Box::new(crate::graphics::PassOverlayDepth::new(
-                "overlay_depth",
-                [0.75, 0.50, 0.95, 0.70],
-                [1.0, 1.0, 1.0, 1.0],
-                fmt,
-                depth_texture,
-            )));
-
-            // Logo overlay
-            let h: f32 = 0.04;
-            let rect_logo = [0.98 - 3.0 * h, 0.02, 0.98, 0.02 + h];
-            // Convert engine Texture -> renderer texture handle
-            let tex_logo_rt = tex_logo
-                .renderer_resource_handle
-                .expect("renderer handle for logo texture");
-            passes.push(Box::new(PassLogo::new(
-                "overlay_logo",
-                rect_logo,
-                [1.0, 1.0, 1.0, 1.0],
-                tex_logo_rt,
-                fmt,
-            )));
-
+            // Build passes as an array with elements, then convert to Vec
+            let passes: Vec<Box<dyn Pass>> = vec![
+                // Box::new(crate::graphics::pass_scene::PassScene::new(
+                //     "scene",
+                //     offscreen_color_texture,
+                //     depth_texture,
+                //     fmt,
+                // )),
+                // Box::new(crate::graphics::PassCompose::new(
+                //     "compose",
+                //     offscreen_color_texture,
+                //     fmt,
+                // )),
+                // Box::new(crate::graphics::PassOverlayUV::new(
+                //     "overlay_uv",
+                //     [0.75, 0.75, 0.95, 0.95],
+                //     fmt,
+                // )),
+                // Box::new(crate::graphics::PassOverlayDepth::new(
+                //     "overlay_depth",
+                //     [0.75, 0.50, 0.95, 0.70],
+                //     [1.0, 1.0, 1.0, 1.0],
+                //     fmt,
+                //     depth_texture,
+                // )),
+                // Box::new(PassLogo::new(
+                //     "overlay_logo",
+                //     rect_logo,
+                //     [1.0, 1.0, 1.0, 1.0],
+                //     tex_logo_rt,
+                //     fmt,
+                // )),
+            ];
             engine.renderer.set_passes(passes)?;
         }
 

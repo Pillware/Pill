@@ -2,7 +2,6 @@
 // https://github.com/kaphula/winit-egui-wgpu-template/blob/master/src/main.rs
 // https://github.com/emilk/egui/discussions/3067
 
-use crate::renderer::resource_manager::ResourceManager as RendererResourceManager;
 use crate::renderer::resources::{
     RendererCamera, RendererMaterial, RendererMaterialParamsStd140, RendererMaterialTextures,
     RendererMesh, RendererPipeline, RendererTexture, Vertex,
@@ -95,23 +94,20 @@ pub struct DeviceContext {
 pub struct State {
     passes: Vec<Box<dyn Pass>>,
     egui_renderer: crate::renderer::egui::EguiRenderer, // TODO: Separate system adding Pass
-    // Resources and GPU objects moved from ctor into here explicitly
-    pub(crate) resource_manager: RendererResourceManager,
-    pub(crate) color_format: wgpu::TextureFormat,
-    pub(crate) depth_format: wgpu::TextureFormat,
-    // pub(crate) depth_texture: Arc<RendererTexture>,
-    // pub(crate) offscreen_color_texture: Arc<RendererTexture>,
-    // Prebuilt PSO handle
-    // [SIMILAR] Prebuilt once; no per-draw pipeline churn per TALK
 }
 
 pub struct Renderer {
     pub state: State,
     pub ctx: DeviceContext,
+    gpu_resources: *mut crate::resources::GpuResources,
 }
 
 impl PillRenderer for Renderer {
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Self {
+    fn new(
+        window: Arc<winit::window::Window>,
+        config: config::Config,
+        gpu_resources: &mut crate::resources::GpuResources,
+    ) -> Self {
         info!("Initializing {}", "Renderer".mobj_style());
         let ctx: DeviceContext = pollster::block_on(async move {
             let window_size = window.inner_size();
@@ -237,32 +233,15 @@ impl PillRenderer for Renderer {
 
         let state: State = {
             // Configure collections
-            let mut resource_manager = RendererResourceManager::new();
-
-            // Create depth and color texture
-            // let depth_texture = RendererTexture::new_depth_texture(
-            //     &ctx.device,
-            //     &ctx.surface_configuration,
-            //     "depth_texture",
-            // )
-            // .unwrap();
+            // let mut resource_manager = RendererResourceManager::new();
 
             // Use Rgba16Float for HDR color buffers; it's the common, well-supported,
             // performant choice. Reserve Rgba32Float for niche cases needing extreme
             // precision and accept the 2× bandwidth/memory hit. If alpha isn't needed,
             // Rg11b10Float/R11G11B10_FLOAT is a fast alternative.
             // Tone-map to the sRGB swapchain in the composite pass.
-            let color_format = wgpu::TextureFormat::Rgba16Float;
-            let depth_format = wgpu::TextureFormat::Depth32Float;
-
-            // Milestone 6: Create offscreen color target (RENDER_ATTACHMENT | TEXTURE_BINDING)
-            // let offscreen_color_texture = Arc::new(create_render_target(
-            //     &ctx.device,
-            //     color_format,
-            //     ctx.surface_configuration.width,
-            //     ctx.surface_configuration.height,
-            //     "offscreen_color",
-            // ));
+            // let color_format = wgpu::TextureFormat::Rgba16Float;
+            // let depth_format = wgpu::TextureFormat::Depth32Float;
 
             let egui_renderer = EguiRenderer::new(
                 &ctx.device,
@@ -272,30 +251,23 @@ impl PillRenderer for Renderer {
                 ctx.window_ref.clone(),
             );
 
-            // Create state
-
             State {
                 passes: vec![],
-                // Other
                 egui_renderer,
-                // Resources
-                resource_manager,
-                // Renderer variables
-                color_format,
-                depth_format,
-                // depth_texture: Arc::new(depth_texture),
-                // offscreen_color_texture,
-                // Scene pass owns per-draw ring and working buffers now
             }
         };
-        Self { state, ctx }
+        Self {
+            state,
+            ctx,
+            gpu_resources: gpu_resources as *mut crate::resources::GpuResources,
+        }
     }
 
     fn init(&mut self) -> Result<()> {
         // Ensure default textures are created before any pass init that may need them
-        self.state
-            .resource_manager
-            .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
+        // self.state
+        //     .resource_manager
+        //     .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
         Ok(())
     }
 
@@ -307,10 +279,6 @@ impl PillRenderer for Renderer {
             usage: desc.usage,
             mapped_at_creation: false,
         });
-        // let handle = unsafe {
-        //     let storage = &mut *self.state.renderer_resource_storage.as_ptr();
-        //     storage.buffers.insert(buffer)
-        // };
         Ok(buffer)
     }
 
@@ -431,22 +399,22 @@ impl PillRenderer for Renderer {
 
     fn create_material(&mut self, desc: MaterialDesc) -> Result<RendererMaterialHandle> {
         // Ensure default textures exist
-        let (def_color_h, def_normal_h) = self
-            .state
-            .resource_manager
-            .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
-        let def_color = self
-            .state
-            .resource_manager
-            .textures
-            .get(def_color_h)
-            .expect("default color");
-        let def_normal = self
-            .state
-            .resource_manager
-            .textures
-            .get(def_normal_h)
-            .expect("default normal");
+        // let (def_color_h, def_normal_h) = self
+        //     .state
+        //     .resource_manager
+        //     .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
+        // let def_color = self
+        //     .state
+        //     .resource_manager
+        //     .textures
+        //     .get(def_color_h)
+        //     .expect("default color");
+        // let def_normal = self
+        //     .state
+        //     .resource_manager
+        //     .textures
+        //     .get(def_normal_h)
+        //     .expect("default normal");
 
         // Create bind group layouts matching PassScene
         let textures_bgl =
@@ -570,21 +538,26 @@ impl PillRenderer for Renderer {
                 label: Some(&format!("{}_material_params_bg", desc.label)),
             });
         // Resolve textures (use defaults if None)
+        let (def_color_h, def_normal_h) = unsafe {
+            (*self.gpu_resources).ensure_default_textures(&self.ctx.device, &self.ctx.queue)
+        };
+        let def_color = self.resources().textures.get(def_color_h).unwrap();
+        let def_normal = self.resources().textures.get(def_normal_h).unwrap();
         let albedo_tex = desc
             .albedo_tex
-            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .and_then(|h| self.resources().textures.get(h))
             .unwrap_or(def_color);
         let normal_tex = desc
             .normal_tex
-            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .and_then(|h| self.resources().textures.get(h))
             .unwrap_or(def_normal);
         let mr_tex = desc
             .metallic_roughness_tex
-            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .and_then(|h| self.resources().textures.get(h))
             .unwrap_or(def_color);
         let emissive_tex = desc
             .emissive_tex
-            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .and_then(|h| self.resources().textures.get(h))
             .unwrap_or(def_color);
 
         // Build texture bind group
@@ -635,7 +608,7 @@ impl PillRenderer for Renderer {
             param_buffer,
             param_bind_group,
         };
-        let handle = self.state.resource_manager.materials.insert(mat);
+        let handle = self.resources_mut().materials.insert(mat);
         Ok(handle)
     }
 
@@ -656,37 +629,26 @@ impl PillRenderer for Renderer {
         };
 
         // Resolve textures without holding a mutable borrow to materials
-        let (def_color_h, def_normal_h) = self
-            .state
-            .resource_manager
-            .ensure_default_textures(&self.ctx.device, &self.ctx.queue);
-        let def_color = self
-            .state
-            .resource_manager
-            .textures
-            .get(def_color_h)
-            .unwrap();
-        let def_normal = self
-            .state
-            .resource_manager
-            .textures
-            .get(def_normal_h)
-            .unwrap();
+        let (def_color_h, def_normal_h) = unsafe {
+            (*self.gpu_resources).ensure_default_textures(&self.ctx.device, &self.ctx.queue)
+        };
+        let def_color = self.resources().textures.get(def_color_h).unwrap();
+        let def_normal = self.resources().textures.get(def_normal_h).unwrap();
         let albedo_tex = desc
             .albedo_tex
-            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .and_then(|h| self.resources().textures.get(h))
             .unwrap_or(def_color);
         let normal_tex = desc
             .normal_tex
-            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .and_then(|h| self.resources().textures.get(h))
             .unwrap_or(def_normal);
         let mr_tex = desc
             .metallic_roughness_tex
-            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .and_then(|h| self.resources().textures.get(h))
             .unwrap_or(def_color);
         let emissive_tex = desc
             .emissive_tex
-            .and_then(|h| self.state.resource_manager.textures.get(h))
+            .and_then(|h| self.resources().textures.get(h))
             .unwrap_or(def_color);
 
         // Create a compatible layout and new texture bind group
@@ -805,15 +767,15 @@ impl PillRenderer for Renderer {
             });
 
         // Mutate material once
+        let queue_ptr: *const wgpu::Queue = &self.ctx.queue;
         if let Some(mat) = self
-            .state
-            .resource_manager
+            .resources_mut()
             .materials
             .get_mut(renderer_material_handle)
         {
-            self.ctx
-                .queue
-                .write_buffer(&mat.param_buffer, 0, bytemuck::bytes_of(&params));
+            unsafe {
+                (*queue_ptr).write_buffer(&mat.param_buffer, 0, bytemuck::bytes_of(&params));
+            }
             mat.texture_bind_group = new_texture_bg;
         }
         Ok(renderer_material_handle)
@@ -827,13 +789,13 @@ impl PillRenderer for Renderer {
             desc.height,
             desc.name.as_str(),
         );
-        let handle = self.state.resource_manager.textures.insert(tex);
+        let handle = self.resources_mut().textures.insert(tex);
         Ok(handle)
     }
 
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.ctx.device, name, mesh_data)?;
-        let handle = self.state.resource_manager.meshes.insert(mesh);
+        let handle = self.resources_mut().meshes.insert(mesh);
 
         Ok(handle)
     }
@@ -851,7 +813,7 @@ impl PillRenderer for Renderer {
             image_data,
             texture_type,
         )?;
-        let handle = self.state.resource_manager.textures.insert(texture);
+        let handle = self.resources_mut().textures.insert(texture);
 
         Ok(handle)
     }
@@ -862,7 +824,7 @@ impl PillRenderer for Renderer {
             &self.ctx.surface_configuration,
             label,
         )?;
-        Ok(self.state.resource_manager.textures.insert(tex))
+        Ok(self.resources_mut().textures.insert(tex))
     }
 
     fn create_camera(&mut self) -> Result<RendererCameraHandle> {
@@ -883,14 +845,13 @@ impl PillRenderer for Renderer {
                     }],
                 });
         let camera = RendererCamera::new(&self.ctx.device, &camera_bind_group_layout)?;
-        let handle = self.state.resource_manager.cameras.insert(camera);
+        let handle = self.resources_mut().cameras.insert(camera);
 
         Ok(handle)
     }
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
-        self.state
-            .resource_manager
+        self.resources_mut()
             .meshes
             .remove(renderer_mesh_handle)
             .unwrap();
@@ -899,8 +860,7 @@ impl PillRenderer for Renderer {
     }
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
-        self.state
-            .resource_manager
+        self.resources_mut()
             .textures
             .remove(renderer_texture_handle)
             .unwrap();
@@ -909,8 +869,7 @@ impl PillRenderer for Renderer {
     }
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
-        self.state
-            .resource_manager
+        self.resources_mut()
             .cameras
             .remove(renderer_camera_handle)
             .unwrap();
@@ -920,7 +879,6 @@ impl PillRenderer for Renderer {
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         info!("Resizing {} resources", "Renderer".mobj_style());
-        // self.state.resize(new_window_size)
         if new_window_size.width > 0 && new_window_size.height > 0 {
             self.ctx.window_size = new_window_size;
             self.ctx.surface_configuration.width = new_window_size.width;
@@ -928,24 +886,7 @@ impl PillRenderer for Renderer {
             self.ctx
                 .surface
                 .configure(&self.ctx.device, &self.ctx.surface_configuration);
-            // self.state.depth_texture = Arc::new(
-            //     RendererTexture::new_depth_texture(
-            //         &self.ctx.device,
-            //         &self.ctx.surface_configuration,
-            //         "depth_texture",
-            //     )
-            //     .unwrap(),
-            // );
 
-            // ================================
-            // Recreate offscreen color target and reinitialize passes
-            // self.state.offscreen_color_texture = Arc::new(create_render_target(
-            //     &self.ctx.device,
-            //     self.state.color_format,
-            //     self.ctx.surface_configuration.width,
-            //     self.ctx.surface_configuration.height,
-            //     "offscreen_color",
-            // ));
             // Reinitialize existing passes in place (engine may have set custom passes)
             let mut passes = std::mem::take(&mut self.state.passes);
             for pass in passes.iter_mut() {
@@ -982,7 +923,6 @@ impl PillRenderer for Renderer {
         timer.record("Frame: setup view");
 
         // Scene draw is now a Pass; remaining work is handled in user passes encoder below
-
         {
             // User passes with separate encoder
             timer.begin_context("User passes");
@@ -1076,12 +1016,7 @@ impl PillRenderer for Renderer {
     }
 
     fn get_texture(&self, h: RendererTextureHandle) -> &wgpu::Texture {
-        let tex = self
-            .state
-            .resource_manager
-            .textures
-            .get(h)
-            .expect("texture");
+        let tex = self.resources().textures.get(h).expect("texture");
         &tex.texture
     }
 
@@ -1089,27 +1024,17 @@ impl PillRenderer for Renderer {
         &self,
         h: RendererMeshHandle,
     ) -> (&wgpu::Buffer, &wgpu::Buffer, u32) {
-        let mesh = self.state.resource_manager.meshes.get(h).expect("mesh");
+        let mesh = self.resources().meshes.get(h).expect("mesh");
         (&mesh.vertex_buffer, &mesh.index_buffer, mesh.index_count)
     }
 
     fn get_material_texture_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup {
-        let mat = self
-            .state
-            .resource_manager
-            .materials
-            .get(h)
-            .expect("material");
+        let mat = self.resources().materials.get(h).expect("material");
         &mat.texture_bind_group
     }
 
     fn get_material_params_bind_group(&self, h: RendererMaterialHandle) -> &wgpu::BindGroup {
-        let mat = self
-            .state
-            .resource_manager
-            .materials
-            .get(h)
-            .expect("material");
+        let mat = self.resources().materials.get(h).expect("material");
         &mat.param_bind_group
     }
 
@@ -1119,6 +1044,23 @@ impl PillRenderer for Renderer {
 }
 
 impl Renderer {
+    #[inline]
+    fn resources(&self) -> &crate::resources::GpuResources {
+        assert!(
+            !self.gpu_resources.is_null(),
+            "Renderer GPU resources not attached. Use Renderer::new(window, config, gpu_resources)."
+        );
+        unsafe { &*self.gpu_resources }
+    }
+
+    #[inline]
+    fn resources_mut(&mut self) -> &mut crate::resources::GpuResources {
+        assert!(
+            !self.gpu_resources.is_null(),
+            "Renderer GPU resources not attached. Use Renderer::new(window, config, gpu_resources)."
+        );
+        unsafe { &mut *self.gpu_resources }
+    }
     pub fn get_surface_format(&self) -> wgpu::TextureFormat {
         self.ctx.surface_configuration.format
     }
@@ -1133,22 +1075,12 @@ impl Renderer {
 
     // Lightweight resolve helpers for engine passes
     pub fn get_texture_view(&self, h: RendererTextureHandle) -> &wgpu::TextureView {
-        let tex = self
-            .state
-            .resource_manager
-            .textures
-            .get(h)
-            .expect("texture");
+        let tex = self.resources().textures.get(h).expect("texture");
         &tex.texture_view
     }
 
     pub fn get_texture_sampler(&self, h: RendererTextureHandle) -> &wgpu::Sampler {
-        let tex = self
-            .state
-            .resource_manager
-            .textures
-            .get(h)
-            .expect("texture");
+        let tex = self.resources().textures.get(h).expect("texture");
         &tex.sampler
     }
 }
