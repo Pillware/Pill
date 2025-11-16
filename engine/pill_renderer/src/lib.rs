@@ -2,10 +2,10 @@
 
 pub mod renderer;
 pub mod resources;
-pub mod renderer_resource_storage;
 pub mod instance;
-pub mod egui;
-pub mod mesh_drawer;
+pub mod config;
+pub mod drawers;
+//pub mod profiler;
 
 // --- Use ---
 
@@ -15,6 +15,3 @@ pub use instance::{
     Instance, 
 };
 
-pub use renderer_resource_storage::{ 
-    RendererResourceStorage,
-};

@@ -4,6 +4,7 @@ mod renderer;
 #[cfg(feature = "headless")]
 mod dummy_renderer;
 mod render_queue;
+mod egui;
 
 // --- Use ---
 
@@ -14,11 +15,12 @@ pub use renderer::{
     RendererMaterialHandle,
     RendererMeshHandle,
     RendererTextureHandle,
-    RendererPipelineHandle,
+    RendererShaderHandle,
 };
 
 #[cfg(feature = "headless")]
 pub use self::dummy_renderer::DummyRenderer;
+pub use egui::EguiUI;
 
 pub use render_queue::{
     RenderQueueItem,

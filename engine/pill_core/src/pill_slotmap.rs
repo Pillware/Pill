@@ -83,7 +83,7 @@ impl<T> Slot<T> {
         }
     }
 
-    pub fn get_mut(&mut self) -> SlotContentMut<T> {
+    pub fn get_mut(&'_ mut self) -> SlotContentMut<'_, T> {
         unsafe {
             if self.occupied() {
                 OccupiedMut(&mut *self.u.value)
@@ -366,7 +366,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .value
     }
 
-    pub fn iter(&self) -> Iter<K, V> {
+    pub fn iter(&'_ self) -> Iter<'_, K, V> {
         let mut it = self.slots.iter().enumerate();
         it.next(); // Skip sentinel.
         Iter {
@@ -376,7 +376,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         }
     }
 
-    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+    pub fn iter_mut(&'_ mut self) -> IterMut<'_, K, V> {
         let len = self.len();
         let mut it = self.slots.iter_mut().enumerate();
         it.next(); // Skip sentinel.

@@ -9,8 +9,10 @@ mod pill_twinmap;
 mod pill_typemap;
 mod bitmask_utils;
 mod timer;
-mod color;
 mod networking;
+mod log;
+mod style;
+mod color;
 
 // --- Use ---
 
@@ -52,7 +54,6 @@ pub use bitmask_utils::{
 };
 
 pub use utils::{
-    PillStyle,
     get_type_name,
     get_value_type_name,
     enum_variant_eq,
@@ -97,4 +98,14 @@ pub use networking::{
     client_get_events,
     client_flush,
     is_not_ready,
+};
+
+pub use style::{
+    PillStyle,
+};
+
+pub use log::{
+    set_log_levels,
+    get_default_log_levels,
+    LogContext
 };

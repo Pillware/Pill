@@ -23,7 +23,7 @@ pub trait Resource : PillTypeMapKey {
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> { Ok(()) } // Called when resource is being removed from the engine
 }
 
-pub enum ResourceLoadType {
+pub enum ResourceLoader {
     Path(PathBuf),
     Bytes(Box::<[u8]>),
 }

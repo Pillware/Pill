@@ -6,7 +6,7 @@ use crate::{
     config::*,
 };
 
-use pill_core::{ EngineError, PillSlotMapKey, PillTypeMap, PillTypeMapKey, Vector3f, PillStyle, get_type_name };
+use pill_core::{ debug, get_type_name, EngineError, LogContext, PillSlotMapKey, PillStyle, PillTypeMap, PillTypeMapKey, Vector3f };
 
 use std::path::{ Path, PathBuf };
 use boolinator::Boolinator;
@@ -33,6 +33,7 @@ pub struct Mesh {
     flip_uv_y: bool,
 }
 
+// TODO: Add posibility to load from bytes using ResourceLoader 
 impl Mesh {
     pub fn new(name: &str, path: PathBuf) -> Self {
         Self {
@@ -62,14 +63,16 @@ impl Resource for Mesh {
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+        let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
 
         // Check if path to asset is correct
         let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-        pill_core::validate_asset_path(&resource_file_path, &["obj"]).context(error_message.clone())?;
+        pill_core::validate_asset_path(&resource_file_path, &["obj"])
+            .context(error_message.clone())?;
 
         // Create mesh data
-        let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y).context(error_message.clone())
+        let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
+            .context(error_message.clone())
             .context(format!("Failed to create mesh data from {} file", resource_file_path.file_name().unwrap().to_string_lossy()))?;
         self.mesh_data = Some(mesh_data);
 

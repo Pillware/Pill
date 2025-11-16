@@ -1,12 +1,12 @@
 use crate::{
     engine::Engine,
     graphics::{ RendererTextureHandle },
-    resources::{ ResourceStorage, Resource, ResourceLoadType, Material },
+    resources::{ ResourceStorage, Resource, ResourceLoader, Material },
     ecs::{ DeferredUpdateManagerPointer, AudioSourceComponent, SoundType, AudioManagerComponent },
     config::*,
 };
 
-use pill_core::{ PillSlotMapKey, PillTypeMapKey, PillStyle, get_type_name, EngineError };
+use pill_core::{ debug, get_type_name, EngineError, LogContext, PillSlotMapKey, PillStyle, PillTypeMapKey };
 
 use std::{
     collections::HashSet,
@@ -49,7 +49,7 @@ impl Resource for Sound {
     type Handle = SoundHandle;
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".gobj_style(), get_type_name::<Self>().sobj_style());
+        let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
 
         // Check if path to asset is correct
         let resource_file_path = engine.game_resources_directory_path.join(&self.path);
