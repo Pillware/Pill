@@ -175,7 +175,7 @@ impl Engine {
             RENDERING_SYSTEM.update_phase,
         )?;
 
-        self.renderer.init();
+        let _ = self.renderer.init();
         self.init_renderer();
 
         // Start game

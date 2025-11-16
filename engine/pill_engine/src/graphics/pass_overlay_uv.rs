@@ -35,7 +35,7 @@ impl Pass for PassOverlayUV {
     fn init(
         &mut self,
         renderer: &mut dyn EnginePillRenderer,
-        resources: &mut crate::resources::ResourceManager,
+        _resources: &mut crate::resources::ResourceManager,
     ) -> Result<()> {
         let device = renderer.get_device();
         // Create buffer for overlay rect UBO

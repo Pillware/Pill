@@ -194,7 +194,7 @@ impl Pass for PassScene {
     fn init(
         &mut self,
         renderer: &mut dyn EnginePillRenderer,
-        resources: &mut crate::resources::ResourceManager,
+        _resources: &mut crate::resources::ResourceManager,
     ) -> Result<()> {
         // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
         // Shaders: must match bind group layout indices: 0(camera),1(material textures),2(material params),3(per-draw)
