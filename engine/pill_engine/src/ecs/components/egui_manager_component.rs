@@ -25,7 +25,7 @@ impl EguiManagerComponent {
         }
     }
 
-    pub fn get_ui(engine: &mut Engine) -> Box<dyn Fn(&egui::Context)> {
+    pub fn get_ui(engine: &mut Engine) -> Box<dyn Fn(&egui::Context) + Send> {
         let entity_count = engine
             .scene_manager
             .get_active_scene()
@@ -143,7 +143,7 @@ impl EguiManagerComponent {
                             }
                         });
                 });
-        });
+        }) as Box<dyn Fn(&egui::Context) + Send>;
 
         ui
     }

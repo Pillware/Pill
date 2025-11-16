@@ -145,15 +145,12 @@ pub trait PillRenderer {
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()>;
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()>;
 
-    fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;
-
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
         render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()>;
 
@@ -171,12 +168,7 @@ pub type Renderer = Box<dyn PillRenderer>;
 /// Renders using a zero-cost factory that provides borrowed references.
 /// Keeps the PillRenderer trait object-safe while allowing call sites to be generic and inlined.
 #[inline(always)]
-pub fn render_with_factory<R, F>(
-    renderer: &mut R,
-    factory: &F,
-    egui_ui: Box<dyn Fn(&egui::Context)>,
-    timer: &mut Timer,
-) -> Result<()>
+pub fn render_with_factory<R, F>(renderer: &mut R, factory: &F, timer: &mut Timer) -> Result<()>
 where
     R: PillRenderer + ?Sized,
     F: RenderQueueFactory,
@@ -187,7 +179,6 @@ where
         q.render_queue,
         q.camera_components,
         q.transform_components,
-        egui_ui,
         timer,
     )
 }

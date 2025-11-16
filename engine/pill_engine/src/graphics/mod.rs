@@ -35,3 +35,5 @@ pub mod pass_compose;
 pub use pass_compose::PassCompose;
 pub mod pass_scene;
 pub use pass_scene::PassScene;
+pub mod pass_egui;
+pub use pass_egui::PassEgui;

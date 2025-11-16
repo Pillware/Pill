@@ -5,6 +5,7 @@ mod entity;
 mod scene;
 mod scene_manager;
 mod systems;
+mod egui_client;
 
 // --- Use ---
 
@@ -47,6 +48,9 @@ pub use components::render_state_component::RenderStateComponent;
 // - Systems
 
 pub use systems::{SystemFunction, SystemManager, UpdatePhase};
+
+// - Egui client (UI input/closure mailbox)
+pub use egui_client::EguiClient;
 
 pub use systems::rendering_system::rendering_system;
 

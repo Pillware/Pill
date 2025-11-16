@@ -38,6 +38,7 @@ pub struct Engine {
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
+    pub(crate) window: std::sync::Arc<winit::window::Window>,
     pub(crate) game_resources_directory_path: std::path::PathBuf,
     pub(crate) frame_delta_time: f32, // In milliseconds
 }
@@ -70,6 +71,7 @@ impl Engine {
         renderer: Box<dyn PillRenderer>,
         resource_manager: ResourceManager,
         config: config::Config,
+        window: std::sync::Arc<winit::window::Window>,
     ) -> Self {
         let max_entity_count = config
             .get_int("MAX_ENTITIES")
@@ -86,6 +88,7 @@ impl Engine {
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
+            window,
             game_resources_directory_path,
             frame_delta_time: 0.0.into(),
         }
@@ -361,8 +364,12 @@ impl Engine {
         debug!("Got new mouse position input");
     }
 
-    pub fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) {
-        self.renderer.pass_input_to_egui(event).unwrap();
+    pub fn pass_input_to_ui(&mut self, event: &winit::event::WindowEvent) {
+        if let Ok(rs) = self.get_global_component_mut::<RenderStateComponent>() {
+            if let Some(ref client) = rs.egui_client {
+                client.handle_input(event);
+            }
+        }
     }
 
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {

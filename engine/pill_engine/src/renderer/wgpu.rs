@@ -28,55 +28,11 @@ use glam::{Mat4, Vec3, Vec4};
 use anyhow::{Error, Result};
 use log::{error, info};
 
-use crate::renderer::egui::EguiRenderer;
 use image::GenericImageView;
 use wgpu::util::DeviceExt;
 
 pub const MAX_INSTANCE_BATCH_SIZE: usize = 10000; // Maximum number of instances that can be drawn in a single draw call
 pub const INITIAL_INSTANCE_VECTOR_CAPACITY: usize = 10000;
-// M2 inline draw: no MeshDrawer/instance batching
-
-// KISS helper: create a color render target texture+view+sampler
-fn create_render_target(
-    device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    width: u32,
-    height: u32,
-    label: &str,
-) -> RendererTexture {
-    let size = wgpu::Extent3d {
-        width,
-        height,
-        depth_or_array_layers: 1,
-    };
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some(label),
-        size,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Nearest,
-        lod_min_clamp: 0.0,
-        lod_max_clamp: 100.0,
-        ..Default::default()
-    });
-    RendererTexture {
-        texture,
-        texture_view,
-        sampler,
-    }
-}
 
 pub struct DeviceContext {
     pub(crate) config: config::Config,
@@ -93,7 +49,6 @@ pub struct DeviceContext {
 
 pub struct State {
     passes: Vec<Box<dyn Pass>>,
-    egui_renderer: crate::renderer::egui::EguiRenderer, // TODO: Separate system adding Pass
 }
 
 pub struct Renderer {
@@ -243,18 +198,7 @@ impl PillRenderer for Renderer {
             // let color_format = wgpu::TextureFormat::Rgba16Float;
             // let depth_format = wgpu::TextureFormat::Depth32Float;
 
-            let egui_renderer = EguiRenderer::new(
-                &ctx.device,
-                ctx.surface_configuration.format,
-                None,
-                1,
-                ctx.window_ref.clone(),
-            );
-
-            State {
-                passes: vec![],
-                egui_renderer,
-            }
+            State { passes: vec![] }
         };
         Self {
             state,
@@ -777,14 +721,38 @@ impl PillRenderer for Renderer {
     }
 
     fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<RendererTextureHandle> {
-        let tex = create_render_target(
-            &self.ctx.device,
-            desc.format,
-            desc.width,
-            desc.height,
-            desc.name.as_str(),
-        );
-        let handle = self.rm_mut().gpu_mut().textures.insert(tex);
+        let size = wgpu::Extent3d {
+            width: desc.width,
+            height: desc.height,
+            depth_or_array_layers: 1,
+        };
+        let texture = self.ctx.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(desc.name.as_str()),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: desc.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = self.ctx.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+        let handle = self.rm_mut().gpu_mut().textures.insert(RendererTexture {
+            texture,
+            texture_view,
+            sampler,
+        });
         Ok(handle)
     }
 
@@ -907,7 +875,6 @@ impl PillRenderer for Renderer {
         render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn Fn(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()> {
         timer.record("Frame: acquire");
@@ -969,32 +936,6 @@ impl PillRenderer for Renderer {
             timer.end_context()?; // End "User passes"
         }
 
-        // Egui overlay (load over the rendered frame)
-        timer.begin_context("UI pass");
-        // ALLOCATION: CommandEncoder creation (CPU memory) - ~1KB command buffer
-        let mut encoder = self
-            .ctx
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("egui_encoder"),
-            });
-        let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [self.ctx.window_size.width, self.ctx.window_size.height],
-            pixels_per_point: self.state.egui_renderer.window_scale_factor,
-        };
-        self.state.egui_renderer.draw(
-            &self.ctx.device,
-            &self.ctx.queue,
-            &mut encoder,
-            &view,
-            screen_descriptor,
-            |ctx| egui_ui(ctx),
-            timer,
-        )?;
-        self.ctx.queue.submit([encoder.finish()]);
-        timer.record("UI draw & submit");
-        timer.end_context()?; // End "UI pass"
-
         // Present frame
         frame.present();
         timer.record("Present");
@@ -1003,11 +944,6 @@ impl PillRenderer for Renderer {
         // without blocking the CPU. See Device::poll docs.
         self.ctx.device.poll(wgpu::Maintain::Poll);
 
-        Ok(())
-    }
-
-    fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
-        self.state.egui_renderer.handle_input(event);
         Ok(())
     }
 

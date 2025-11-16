@@ -65,6 +65,15 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                 .renderer_resource_handle
                 .expect("renderer handle for logo texture");
 
+            // Ensure EguiClient exists in global render state
+            let egui_client = {
+                let rs = engine.get_global_component_mut::<RenderStateComponent>()?;
+                if rs.egui_client.is_none() {
+                    rs.egui_client = Some(crate::ecs::EguiClient::new());
+                }
+                rs.egui_client.as_ref().unwrap().clone()
+            };
+
             // Logo overlay
             let h: f32 = 0.04;
             let rect_logo = [0.98 - 3.0 * h, 0.02, 0.98, 0.02 + h];
@@ -111,6 +120,11 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     [1.0, 1.0, 1.0, 1.0],
                     tex_logo_rt,
                     fmt,
+                )),
+                Box::new(crate::graphics::PassEgui::new(
+                    "egui",
+                    engine.window.clone(),
+                    egui_client,
                 )),
             ];
             engine.renderer.set_passes(passes)?;
@@ -285,7 +299,12 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     timer.record("Get component storages");
 
-    let egui_ui = EguiManagerComponent::get_ui(engine); // egui_manager_component.get_ui(engine);
+    let egui_ui: Box<dyn Fn(&egui::Context) + Send> = EguiManagerComponent::get_ui(engine); // egui_manager_component.get_ui(engine)
+    if let Ok(rs) = engine.get_global_component_mut::<RenderStateComponent>() {
+        if let Some(ref client) = rs.egui_client {
+            client.set_ui(egui_ui);
+        }
+    }
 
     // Storages fetched inside renderer via immutable Engine
 
@@ -307,12 +326,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
     };
     let factory = crate::graphics::WorldViewFactory { world: world_view };
-    match crate::graphics::render_with_factory(
-        engine.renderer.as_mut(),
-        &factory,
-        egui_ui,
-        &mut timer,
-    ) {
+    match crate::graphics::render_with_factory(engine.renderer.as_mut(), &factory, &mut timer) {
         Ok(_) => {
             timer.end_context()?; // End "Render" context
             engine.system_manager.update_system_timer(

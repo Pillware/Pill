@@ -292,6 +292,7 @@ fn check_and_reload_game(
             renderer,
             resource_manager,
             config.clone(),
+            Arc::clone(&window),
         );
         new_engine.initialize(*window_size).unwrap();
         *engine = Some(new_engine);
@@ -367,7 +368,7 @@ fn main_loop(
                     window_id,
                 } if window_id == window_data.window.id() => {
                     if let Some(ref mut engine) = engine {
-                        engine.pass_input_to_egui(event);
+                        engine.pass_input_to_ui(event);
                     }
 
                     match event {
@@ -540,6 +541,7 @@ fn main() {
         renderer,
         resource_manager,
         config.clone(),
+        Arc::clone(&window_data.window),
     ));
     engine
         .as_mut()

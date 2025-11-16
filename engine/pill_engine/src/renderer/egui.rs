@@ -70,22 +70,15 @@ impl EguiRenderer {
         window_surface_view: &TextureView,
         screen_descriptor: ScreenDescriptor,
         run_ui: impl FnOnce(&Context),
-        timer: &mut Timer,
     ) -> Result<()> {
-        timer.record("Prepare window and input");
-
         let window = &self.window;
         let raw_input = self.state.take_egui_input(&window);
         let full_output = self.context.run(raw_input, |_| {
             run_ui(&self.context);
         });
 
-        timer.record("Handle platform output");
-
         self.state
             .handle_platform_output(&window, full_output.platform_output);
-
-        timer.record("Tesselate and update textures");
 
         let tris = self
             .context
@@ -94,8 +87,6 @@ impl EguiRenderer {
             self.renderer
                 .update_texture(&device, &queue, *id, &image_delta);
         }
-
-        timer.record("Update buffers and record render pass");
 
         self.renderer
             .update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
@@ -114,8 +105,6 @@ impl EguiRenderer {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-
-        timer.record("Render");
 
         self.renderer
             .render(&mut render_pass, &tris, &screen_descriptor);
