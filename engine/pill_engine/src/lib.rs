@@ -109,6 +109,7 @@ pub mod game {
         Vector3fExt,
         create_game,
         define_new_pill_slotmap_key,
+        DISTINCT_COLOR_PALETTE
     };
 
     extern crate anyhow;

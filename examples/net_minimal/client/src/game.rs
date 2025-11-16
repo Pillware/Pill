@@ -10,8 +10,6 @@ use pill_engine::internal::{
     client_go_offline,
 };
 
-use pill_core::DISTINCT_COLOR_PALETTE;
-
 // ----- CONSTANTS -----------------------------------------------------------
 
 // Move speed in world units per second
@@ -172,10 +170,10 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
         dir.z += 1.0;
     }
     if input.get_key(KeyboardKey::ArrowLeft) {
-        dir.x -= 1.0;
+        dir.x += 1.0;
     }
     if input.get_key(KeyboardKey::ArrowRight) {
-        dir.x += 1.0;
+        dir.x -= 1.0;
     }
     if input.get_key(KeyboardKey::ControlLeft) {
         dir.y += 1.0;
@@ -250,7 +248,6 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
 	// let b = rng.random_range(0.2..1.0);
 
     let (mesh, mat) = {
-        use pill_core::Color;
         //let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Truck") {
         //    Ok(h) => h,
         //    Err(_) => engine.add_resource(Mesh::new("Truck", "models/Truck.obj".into()))?,

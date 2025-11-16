@@ -1,4 +1,3 @@
-
 use anyhow::Result;
 use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, NetworkSide, NetworkEntityState, networking_system_server};
 use pill_core::{server_broadcast_exit, server_dying_grasp};
@@ -6,8 +5,6 @@ use log::info;
 use std::time::{Duration, Instant};
 use env_logger;
 use std::io::Write;
-
-#[cfg(feature = "networking")]
 use pill_engine::internal::{NetworkManagerComponent};
 
 fn spawn_player(engine: &mut Engine, network_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
@@ -43,20 +40,17 @@ impl PillGame for HeadlessGame {
         engine.register_component::<TransformComponent>(scene)?;
         engine.register_component::<NetworkStateComponent>(scene)?;
 
-        #[cfg(feature = "networking")]
-        {
-            let mut network_manager = NetworkManagerComponent::new_server("0.0.0.0:5000", 8)?;
+        let mut network_manager = NetworkManagerComponent::new_server("0.0.0.0:5000", 8)?;
 
-            network_manager.spawn_handlers.insert("player".into(), spawn_player);
-            engine.add_global_component(network_manager)?;
+        network_manager.spawn_handlers.insert("player".into(), spawn_player);
+        engine.add_global_component(network_manager)?;
 
-            engine.add_system(
-                "NetworkingSystemServer",
-                networking_system_server,
-            )?;
+        engine.add_system(
+            "NetworkingSystemServer",
+            networking_system_server,
+        )?;
 
-            log::info!("Server listening on 0.0.0.0:5000");
-        }
+        log::info!("Server listening on 0.0.0.0:5000");
 
         Ok(())
     }
