@@ -399,7 +399,7 @@ fn init_default_resources(engine: &mut Engine) -> Result<(), Error> {
 
     // Pill logo (overlay) texture
     let pill_logo = Box::new(*include_bytes!(
-        "../../../../../media/logo/pill_logo_horizontal_white.png"
+        "../../../res/textures/pill_logo_horizontal_white.png"
     ));
     let mut tex_logo = Texture::new(
         "pill_logo_horizontal_white",
