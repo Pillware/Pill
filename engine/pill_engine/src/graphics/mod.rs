@@ -31,6 +31,8 @@ pub mod pass_overlay_uv;
 pub use pass_overlay_uv::PassOverlayUV;
 pub mod pass_overlay_depth;
 pub use pass_overlay_depth::PassOverlayDepth;
+pub mod pass_linearize_depth;
+pub use pass_linearize_depth::PassLinearizeDepth;
 pub mod pass_compose;
 pub use pass_compose::PassCompose;
 pub mod pass_scene;

@@ -364,10 +364,6 @@ impl Pass for PassSkyboxEquirect {
                 label: Some("skybox_offscreen_color_view"),
                 ..Default::default()
             });
-        log::info!(
-            "skybox:draw begin offscreen_view target_format={:?}",
-            self.color_format
-        );
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some(&self.label),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -389,7 +385,6 @@ impl Pass for PassSkyboxEquirect {
         rpass.draw(0..3, 0..1);
         // Explicitly end the pass so pass boundaries are clear in logs and ordering.
         drop(rpass);
-        log::info!("skybox:draw completed");
         Ok(())
     }
 }

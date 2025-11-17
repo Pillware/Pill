@@ -85,13 +85,13 @@ impl Pass for PassOverlayDepth {
           "#;
 
         let fs = r#"
-          @group(0) @binding(0) var tex: texture_depth_2d;
+          @group(0) @binding(0) var tex: texture_2d<f32>;
           @group(0) @binding(1) var<uniform> UTint: vec4<f32>;
           @fragment fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
             let dims = textureDimensions(tex, 0u);
             let coord = vec2<i32>(uv * vec2<f32>(dims));
-            let d = textureLoad(tex, coord, 0);
-            let vis = fract(1000.0*d);
+            let d : f32 = textureLoad(tex, coord, 0).r;
+            let vis = fract(100.0*d);
             return vec4<f32>(vis, vis, vis, 1.0) * UTint;
           }
           "#;
@@ -106,7 +106,7 @@ impl Pass for PassOverlayDepth {
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Depth,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },

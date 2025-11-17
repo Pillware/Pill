@@ -89,6 +89,14 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             // Create depth and color texture
             let depth_texture = engine.renderer.create_depth_texture("depth_texture")?;
 
+            // Linear-depth render target for post-processing
+            let linear_depth_rt = engine.renderer.create_render_target(RendererTargetDesc {
+                name: "linear_depth".to_string(),
+                format: wgpu::TextureFormat::R16Float,
+                width: engine.window_size.width,
+                height: engine.window_size.height,
+            })?;
+
             // Build passes as an array with elements, then convert to Vec
             // Load equirectangular HDR environment map (as 2D)
             let env_tex_handle = {
@@ -239,6 +247,13 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     Some(ibl_prefilter_rt),
                     Some(ibl_brdf_rt),
                 )),
+                // Linearize scene depth into a color RT for later passes
+                Box::new(crate::graphics::PassLinearizeDepth::new(
+                    "linearize_depth",
+                    depth_texture,
+                    linear_depth_rt,
+                    wgpu::TextureFormat::R16Float,
+                )),
                 Box::new(crate::graphics::PassCompose::new(
                     "compose",
                     offscreen_color_texture,
@@ -254,7 +269,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     [0.75, 0.50, 0.95, 0.70],
                     [1.0, 1.0, 1.0, 1.0],
                     fmt,
-                    depth_texture,
+                    linear_depth_rt,
                 )),
                 Box::new(PassLogo::new(
                     "overlay_logo",
