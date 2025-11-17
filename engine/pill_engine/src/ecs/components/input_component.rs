@@ -1,6 +1,7 @@
 use crate::{
     engine::{ KeyboardKey, MouseButton },
     ecs::{ GlobalComponent, GlobalComponentStorage },
+    internal::NUM_SUPPORTED_GAMEPADS,
 };
 
 use pill_core::{ PillTypeMapKey, Vector2f };
@@ -43,7 +44,6 @@ impl TryFrom<u8> for PlayerId {
     }
 }
 
-pub const NUM_SUPPORTED_GAMEPADS: usize = PlayerId::Player4 as usize + 1; // Maximum number of supported gamepads
 pub const GAMEPAD_DEADZONE: f32 = 0.05; // Deadzone for gamepad axes
 
 pub const KEYBOARD_KEY_COUNT: usize = KeyboardKey::F35 as usize + 1; // Total number of keys in KeyboardKey enum
@@ -147,8 +147,8 @@ pub struct InputComponent {
     pub(crate) gamepad_id_to_player: HashMap<GamepadId, PlayerId>,
 
     // Haptics commands queue and in-flight effects
-    pub(crate) haptics: VecDeque<HapticCommand>,
-    pub(crate) in_flight_ff: Vec<InFlight>,
+    pub(crate) haptic_commands: VecDeque<HapticCommand>,
+    pub(crate) in_flight_force_feedback: Vec<InFlight>,
 }
 
 impl InputComponent {
@@ -176,8 +176,8 @@ impl InputComponent {
             gamepad_ids: [None; NUM_SUPPORTED_GAMEPADS],
             gamepad_id_to_player: HashMap::new(),
 
-            haptics: VecDeque::new(),
-            in_flight_ff: Vec::new(),
+            haptic_commands: VecDeque::new(),
+            in_flight_force_feedback: Vec::new(),
         }
     }
 
@@ -409,7 +409,7 @@ impl InputComponent {
         if let Some(player_id) = self.gamepad_id_to_player.remove(&gamepad_id) {
             let index = player_id as usize;
             self.gamepad_ids[index] = None;
-            self.in_flight_ff.retain(|ff| ff.id != gamepad_id);
+            self.in_flight_force_feedback.retain(|ff| ff.id != gamepad_id);
 
             // Reset buttons and axes for this gamepad
             let base = index * u32::BITS as usize;
@@ -431,15 +431,15 @@ impl InputComponent {
 
     // Haptics functions
     pub fn enqueue_rumble(&mut self, player_id: PlayerId, weak: f32, strong: f32, duration_ms: u32) {
-        self.haptics.push_back(HapticCommand::Rumble { player_id, weak, strong, duration_ms });
+        self.haptic_commands.push_back(HapticCommand::Rumble { player_id, weak, strong, duration_ms });
     }
 
     pub fn enqueue_effect(&mut self, player_id: PlayerId, effect: Effect, duration_ms: u32) {
-        self.haptics.push_back(HapticCommand::PlayEffect { player_id, effect, duration_ms });
+        self.haptic_commands.push_back(HapticCommand::PlayEffect { player_id, effect, duration_ms });
     }
 
     pub fn complete_force_feedback_effect(&mut self, gamepad_id: GamepadId) {
-        self.in_flight_ff.retain(|ff| ff.id != gamepad_id);
+        self.in_flight_force_feedback.retain(|ff| ff.id != gamepad_id);
     }
 }
 

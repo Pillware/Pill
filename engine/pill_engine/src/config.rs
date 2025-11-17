@@ -1,5 +1,5 @@
 use crate::{
-    ecs::{ audio_system, deferred_update_system, input_system, haptics_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase },
+    ecs::{ audio_system, deferred_update_system, input_system, haptics_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase, PlayerId },
     graphics::{ RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle },
     resources::{ MaterialHandle, ShaderHandle, TextureHandle, TextureType }
 };
@@ -19,6 +19,7 @@ pub const MAX_ENTITIES: usize = 1000;
 pub const MAX_CONCURRENT_2D_SOUNDS: usize = 10;
 pub const MAX_CONCURRENT_3D_SOUNDS: usize = 10;
 pub const MAX_CAMERAS: usize = 10;
+pub const NUM_SUPPORTED_GAMEPADS: usize = PlayerId::Player4 as usize + 1; // Maximum number of supported gamepads
 
 pub struct SystemConfig {
     pub name: &'static str,
