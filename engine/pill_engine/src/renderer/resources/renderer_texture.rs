@@ -11,6 +11,7 @@ pub struct RendererTexture {
     pub texture: wgpu::Texture,
     pub texture_view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
+    pub format: wgpu::TextureFormat,
 }
 
 impl RendererTexture {
@@ -43,7 +44,9 @@ impl RendererTexture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
 
@@ -113,6 +116,7 @@ impl RendererTexture {
             texture,
             texture_view,
             sampler,
+            format,
         })
     }
 
@@ -154,6 +158,7 @@ impl RendererTexture {
             texture,
             texture_view,
             sampler,
+            format: Self::DEPTH_FORMAT,
         })
     }
 
@@ -195,6 +200,7 @@ impl RendererTexture {
             texture,
             texture_view,
             sampler,
+            format,
         })
     }
 }

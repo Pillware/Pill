@@ -51,6 +51,8 @@ pub struct PipelineV2Desc<'a> {
     pub label: Option<&'a str>,
     pub vs: ShaderDesc<'a>,
     pub ps: ShaderDesc<'a>,
+    // Vertex buffer layouts; empty slice means no vertex buffers (e.g., fullscreen triangle via vertex_index)
+    pub vertex_buffers: &'a [wgpu::VertexBufferLayout<'a>],
     pub bind_groups: Vec<Vec<wgpu::BindGroupLayoutEntry>>,
     pub targets: &'a [Option<wgpu::ColorTargetState>],
     pub depth_stencil: Option<wgpu::DepthStencilState>,

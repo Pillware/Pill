@@ -72,7 +72,10 @@ impl Resource for Texture {
             ResourceLoadType::Path(path) => {
                 // Check if path to asset is correct
                 let resource_file_path = engine.game_resources_directory_path.join(path);
-                pill_core::validate_asset_path(&resource_file_path, &["png", "jpg", "gif", "tif"])?;
+                pill_core::validate_asset_path(
+                    &resource_file_path,
+                    &["png", "jpg", "gif", "tif", "hdr"],
+                )?;
 
                 // Load data
                 image::open(&resource_file_path)?

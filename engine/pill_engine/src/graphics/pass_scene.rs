@@ -135,6 +135,10 @@ pub struct PassScene {
     offscreen_color_texture: RendererTextureHandle,
     depth_texture: RendererTextureHandle,
     color_format: wgpu::TextureFormat,
+    load_existing_color: bool,
+    ibl_irradiance_tex: Option<RendererTextureHandle>,
+    ibl_prefilter_tex: Option<RendererTextureHandle>,
+    ibl_brdf_lut_tex: Option<RendererTextureHandle>,
     // Per-frame dynamic UBO ring (Milestone 5)
     per_draw_stride: u64,
     per_draw_capacity: u64,
@@ -149,8 +153,9 @@ pub struct PassScene {
 struct PassSceneState {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
+    globals_bind_group: wgpu::BindGroup,
     pipeline: PipelineV2,
+    ibl_sampler: wgpu::Sampler,
     // Per-draw resources
     per_draw_buffer: wgpu::Buffer,
     per_draw_bind_group: wgpu::BindGroup,
@@ -162,12 +167,20 @@ impl PassScene {
         offscreen_color_texture: RendererTextureHandle,
         depth_texture: RendererTextureHandle,
         color_format: wgpu::TextureFormat,
+        load_existing_color: bool,
+        ibl_irradiance_tex: Option<RendererTextureHandle>,
+        ibl_prefilter_tex: Option<RendererTextureHandle>,
+        ibl_brdf_lut_tex: Option<RendererTextureHandle>,
     ) -> Self {
         Self {
             label: label.to_string(),
             offscreen_color_texture,
             depth_texture,
             color_format,
+            load_existing_color,
+            ibl_irradiance_tex,
+            ibl_prefilter_tex,
+            ibl_brdf_lut_tex,
             per_draw_stride: PER_DRAW_STRIDE_BYTES as u64,
             per_draw_capacity: 0,
             visible_pre_draw_buffer: Vec::with_capacity(MAX_EXPECTED_PER_DRAW_INSTANCES),
@@ -194,7 +207,7 @@ impl Pass for PassScene {
     fn init(
         &mut self,
         renderer: &mut dyn EnginePillRenderer,
-        _resources: &mut crate::resources::ResourceManager,
+        resources: &mut crate::resources::ResourceManager,
     ) -> Result<()> {
         // [SIMILAR] Prebuilt PSO used; avoid hot-path pipeline creation per TALK
         // Shaders: must match bind group layout indices: 0(camera),1(material textures),2(material params),3(per-draw)
@@ -204,6 +217,9 @@ impl Pass for PassScene {
               viewProjection: mat4x4<f32>,
             };
             @group(0) @binding(0) var<uniform> UCamera: Camera;
+            // IBL irradiance moved into globals (set 0)
+            @group(0) @binding(1) var texIrradiance: texture_2d<f32>;
+            @group(0) @binding(2) var smpIrradiance: sampler;
             struct PerDraw { mvp: mat4x4<f32>, model: mat4x4<f32>, };
             @group(3) @binding(0) var<uniform> UPerDraw: PerDraw;
             struct VSIn {
@@ -254,6 +270,13 @@ impl Pass for PassScene {
               viewProjection: mat4x4<f32>,
             };
             @group(0) @binding(0) var<uniform> UCamera: Camera;
+            // IBL resources in globals (set 0)
+            @group(0) @binding(1) var texIrradiance: texture_2d<f32>;
+            @group(0) @binding(2) var smpIrradiance: sampler;
+            @group(0) @binding(3) var texPrefilter: texture_2d<f32>;
+            @group(0) @binding(4) var smpPrefilter: sampler;
+            @group(0) @binding(5) var texBrdfLut: texture_2d<f32>;
+            @group(0) @binding(6) var smpBrdfLut: sampler;
 
             const PI: f32 = 3.14159265359;
 
@@ -294,6 +317,16 @@ impl Pass for PassScene {
 
             fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
               return F0 + (vec3<f32>(1.0, 1.0, 1.0) - F0) * pow(1.0 - cosTheta, 5.0);
+            }
+            fn fresnelSchlickRoughness(cosTheta: f32, F0: vec3<f32>, roughness: f32) -> vec3<f32> {
+              return F0 + (max(vec3<f32>(1.0, 1.0, 1.0) * (1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
+            }
+
+            fn dir_to_equirect_uv(dir: vec3<f32>) -> vec2<f32> {
+              let d = normalize(dir);
+              let u = 0.5 + atan2(d.x, -d.z) / (2.0 * PI);
+              let v = 0.5 - asin(clamp(d.y, -1.0, 1.0)) / PI;
+              return vec2<f32>(fract(u), clamp(v, 0.0, 1.0));
             }
 
             // Directional light accumulator (white light scaled by intensity).
@@ -348,6 +381,22 @@ impl Pass for PassScene {
               Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR2, LIGHT_COL2);
 
               var color = Lo;
+              // Diffuse IBL ambient (equirect irradiance)
+              let kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
+              let kD = (vec3<f32>(1.0, 1.0, 1.0) - kS) * (1.0 - metallic);
+              let uvIrr = dir_to_equirect_uv(N);
+              let irradiance = textureSample(texIrradiance, smpIrradiance, uvIrr).rgb;
+              let ambient_diffuse = kD * irradiance * albedo;
+              // Specular IBL
+              let R = reflect(-V, N);
+              let MAX_REFLECTION_LOD: f32 = 4.0;
+              let prefilteredColor = textureSampleLevel(
+                texPrefilter, smpPrefilter, dir_to_equirect_uv(R), roughness * MAX_REFLECTION_LOD
+              ).rgb;
+              let envBRDF = textureSample(texBrdfLut, smpBrdfLut, vec2<f32>(max(dot(N, V), 0.0), roughness)).rg;
+              let F = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
+              let specular = prefilteredColor * (F * envBRDF.x + envBRDF.y);
+              color = color + ambient_diffuse + specular;
               // color = vec3<f32>(uv, 0.0); // DBG uv
               // color = vec3<f32>(N*0.5+0.5); // DBG Normal
               // color = vec3<f32>(WorldPos); // DBG WorldPos
@@ -358,17 +407,69 @@ impl Pass for PassScene {
 
         // Describe bind group layouts for pipeline creation
         let bind_groups: Vec<Vec<wgpu::BindGroupLayoutEntry>> = vec![
-            // 0: camera
-            vec![wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            // 0: globals (camera + IBL)
+            vec![
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // Prefiltered spec texture + sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // BRDF LUT texture + sampler
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
             // 1: material textures (PBR)
             vec![
                 wgpu::BindGroupLayoutEntry {
@@ -473,6 +574,7 @@ impl Pass for PassScene {
                 source: fragment_wgsl,
                 entry_func: "main",
             },
+            vertex_buffers: &[<crate::renderer::resources::RendererMesh as crate::renderer::resources::Vertex>::data_layout_descriptor()],
             bind_groups,
             targets: &[Some(wgpu::ColorTargetState {
                 format: self.color_format,
@@ -492,24 +594,15 @@ impl Pass for PassScene {
         // Use renderer API to build pipeline
         let pipeline = renderer.create_pipeline_v2(desc)?;
 
-        // Camera buffer and bind group using pipeline's camera layout (group 0)
-        let (camera_buffer, camera_bind_group) = {
+        // Camera buffer (group 0 binding 0)
+        let camera_buffer = {
             let device = renderer.get_device();
-            let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("camera_buffer"),
                 size: std::mem::size_of::<CameraUniform>() as u64,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
-            });
-            let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("camera_bind_group"),
-                layout: &pipeline.bind_group_layouts[MATERIAL_BIND_GROUP_GLOBALS],
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                }],
-            });
-            (camera_buffer, camera_bind_group)
+            })
         };
 
         // Pre-create per-draw dynamic UBO ring and its bind group with large preallocation
@@ -542,11 +635,117 @@ impl Pass for PassScene {
             })
         };
 
+        // IBL resources and globals bind group (group 0: camera + IBL)
+        let (globals_bind_group, ibl_sampler) = {
+            let device = renderer.get_device();
+            // choose texture view: if missing, use default color
+            let tex_view_ref: &wgpu::TextureView = if let Some(h) = self.ibl_irradiance_tex {
+                &resources
+                    .gpu()
+                    .textures
+                    .get(h)
+                    .expect("ibl irradiance")
+                    .texture_view
+            } else {
+                let (def_color_h, _) = {
+                    let device_ptr: *const wgpu::Device = renderer.get_device();
+                    let queue_ptr: *const wgpu::Queue = renderer.get_queue();
+                    unsafe {
+                        resources
+                            .gpu_mut()
+                            .ensure_default_textures(&*device_ptr, &*queue_ptr)
+                    }
+                };
+                &resources
+                    .gpu()
+                    .textures
+                    .get(def_color_h)
+                    .expect("default color")
+                    .texture_view
+            };
+            let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+            // Prefilter + BRDF LUT views (optional)
+            let prefilter_view_opt: Option<&wgpu::TextureView> = self
+                .ibl_prefilter_tex
+                .and_then(|h| resources.gpu().textures.get(h).map(|t| &t.texture_view));
+            let brdf_view_opt: Option<&wgpu::TextureView> = self
+                .ibl_brdf_lut_tex
+                .and_then(|h| resources.gpu().textures.get(h).map(|t| &t.texture_view));
+
+            let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("globals_bind_group"),
+                layout: &pipeline.bind_group_layouts[MATERIAL_BIND_GROUP_GLOBALS as usize],
+                entries: &[
+                    // binding 0: camera buffer
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera_buffer.as_entire_binding(),
+                    },
+                    // binding 1: IBL texture
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(tex_view_ref),
+                    },
+                    // binding 2: IBL sampler
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                    // binding 3: Prefilter texture (or fallback to irradiance if missing)
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(
+                            prefilter_view_opt.unwrap_or(tex_view_ref),
+                        ),
+                    },
+                    // binding 4: Prefilter sampler (use mipmap-capable sampler)
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Sampler(&device.create_sampler(
+                            &wgpu::SamplerDescriptor {
+                                address_mode_u: wgpu::AddressMode::Repeat,
+                                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                                mag_filter: wgpu::FilterMode::Linear,
+                                min_filter: wgpu::FilterMode::Linear,
+                                mipmap_filter: wgpu::FilterMode::Linear,
+                                lod_min_clamp: 0.0,
+                                lod_max_clamp: 16.0,
+                                ..Default::default()
+                            },
+                        )),
+                    },
+                    // binding 5: BRDF LUT texture (fallback to irradiance if missing)
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(
+                            brdf_view_opt.unwrap_or(tex_view_ref),
+                        ),
+                    },
+                    // binding 6: BRDF LUT sampler
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            });
+            (bg, sampler)
+        };
+
         self.state = Some(PassSceneState {
             camera_uniform: CameraUniform::new(),
             camera_buffer,
-            camera_bind_group,
+            globals_bind_group,
             pipeline,
+            ibl_sampler,
             per_draw_buffer,
             per_draw_bind_group,
         });
@@ -733,27 +932,40 @@ impl Pass for PassScene {
             .get(self.offscreen_color_texture)
             .expect("offscreen color")
             .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("scene_offscreen_color_view"),
+                ..Default::default()
+            });
         let depth_view = resources
             .gpu()
             .textures
             .get(self.depth_texture)
             .expect("depth")
             .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("scene_depth_view"),
+                ..Default::default()
+            });
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("m6_offscreen_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &color_view,
                 resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: clear_color.x as f64,
-                        g: clear_color.y as f64,
-                        b: clear_color.z as f64,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
+                ops: if self.load_existing_color {
+                    wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }
+                } else {
+                    wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: clear_color.x as f64,
+                            g: clear_color.y as f64,
+                            b: clear_color.z as f64,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    }
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -773,7 +985,7 @@ impl Pass for PassScene {
             rpass.set_pipeline(unsafe { &*group.pipeline });
             rpass.set_bind_group(
                 MATERIAL_BIND_GROUP_GLOBALS as u32,
-                &state_ref.camera_bind_group,
+                &state_ref.globals_bind_group,
                 &[],
             );
             {

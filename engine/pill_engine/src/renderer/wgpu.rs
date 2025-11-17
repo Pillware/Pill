@@ -321,7 +321,11 @@ impl PillRenderer for Renderer {
                 vertex: wgpu::VertexState {
                     module: &vs,
                     entry_point: desc.vs.entry_func,
-                    buffers: &[RendererMesh::data_layout_descriptor()],
+                    buffers: if desc.vertex_buffers.is_empty() {
+                        &[]
+                    } else {
+                        desc.vertex_buffers
+                    },
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -752,6 +756,7 @@ impl PillRenderer for Renderer {
             texture,
             texture_view,
             sampler,
+            format: desc.format,
         });
         Ok(handle)
     }

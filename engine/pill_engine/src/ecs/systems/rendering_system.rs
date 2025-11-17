@@ -90,12 +90,154 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             let depth_texture = engine.renderer.create_depth_texture("depth_texture")?;
 
             // Build passes as an array with elements, then convert to Vec
+            // Load equirectangular HDR environment map (as 2D)
+            let env_tex_handle = {
+                // Add if not already present
+                match engine.get_resource_handle::<Texture>("ibl_env_equirect") {
+                    Ok(h) => h,
+                    Err(_) => {
+                        let tex = Texture::new(
+                            "ibl_env_equirect",
+                            TextureType::Linear,
+                            ResourceLoadType::Path("ibl/HDR_111_Parking_Lot_2_Env.hdr".into()),
+                        );
+                        engine.add_resource::<Texture>(tex)?
+                    }
+                }
+            };
+            let env_tex_rt = engine
+                .get_resource::<Texture>(&env_tex_handle)?
+                .renderer_resource_handle
+                .expect("renderer handle for env texture");
+
+            // Create IBL output resources up front
+            let ibl_irradiance_rt = engine.renderer.create_render_target(RendererTargetDesc {
+                name: "ibl_irradiance_2d".to_string(),
+                format: wgpu::TextureFormat::Rgba16Float,
+                width: 64,
+                height: 32,
+            })?;
+            let ibl_brdf_rt = engine.renderer.create_render_target(RendererTargetDesc {
+                name: "ibl_brdf_lut".to_string(),
+                format: wgpu::TextureFormat::Rgba16Float,
+                width: 512,
+                height: 512,
+            })?;
+
+            // Build and run diffuse IBL convolution once (init-time)
+            let mut pass_ibl_diff = crate::graphics::PassIblDiffuseEquirect::new(
+                "ibl_diffuse_equirect",
+                env_tex_rt,
+                ibl_irradiance_rt,
+                wgpu::TextureFormat::Rgba16Float,
+            );
+            // Manually init to precompute before scene pass init
+            {
+                // SAFETY: renderer exposes init path; we can call with engine resources
+                let self_ptr: *mut dyn crate::graphics::PillRenderer = &mut *engine.renderer;
+                let rm_ptr: *mut crate::resources::ResourceManager = &mut engine.resource_manager;
+                unsafe {
+                    pass_ibl_diff.init(&mut *self_ptr, &mut *rm_ptr)?;
+                }
+            }
+            // Provide BRDF target to specular pass
+
+            // Create prefilter target (mip chain) in RenderSystem and pass to pass
+            let prefilter_handle = {
+                let device = engine.renderer.get_device();
+                let tex = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("ibl_prefilter_2d"),
+                    size: wgpu::Extent3d {
+                        width: 256,
+                        height: 128,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 5,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+                let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                    address_mode_u: wgpu::AddressMode::Repeat,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
+                    mipmap_filter: wgpu::FilterMode::Linear,
+                    lod_min_clamp: 0.0,
+                    lod_max_clamp: 5.0,
+                    ..Default::default()
+                });
+                let handle = engine.resource_manager.gpu_mut().textures.insert(
+                    crate::renderer::resources::RendererTexture {
+                        texture: tex,
+                        texture_view: view,
+                        sampler,
+                        format: wgpu::TextureFormat::Rgba16Float,
+                    },
+                );
+                // Sanity: log handle id and format
+                {
+                    use pill_core::PillSlotMapKey;
+                    let fmt = engine
+                        .resource_manager
+                        .gpu()
+                        .textures
+                        .get(handle)
+                        .map(|t| t.format)
+                        .unwrap_or(wgpu::TextureFormat::Rgba8UnormSrgb);
+                    log::info!(
+                        "rendering_system: created prefilter handle=({},{}) format={:?}",
+                        handle.index(),
+                        handle.generation(),
+                        fmt
+                    );
+                }
+                handle
+            };
+
+            // Specular IBL prefilter + BRDF LUT
+            let mut pass_ibl_spec = crate::graphics::PassIblSpecularEquirect::new(
+                "ibl_specular_equirect",
+                env_tex_rt,
+                prefilter_handle,
+                ibl_brdf_rt,
+                5,
+            );
+            {
+                let self_ptr: *mut dyn crate::graphics::PillRenderer = &mut *engine.renderer;
+                let rm_ptr: *mut crate::resources::ResourceManager = &mut engine.resource_manager;
+                unsafe {
+                    pass_ibl_spec.init(&mut *self_ptr, &mut *rm_ptr)?;
+                }
+            }
+            let ibl_prefilter_rt = pass_ibl_spec.prefilter_texture_handle();
+
             let passes: Vec<Box<dyn Pass>> = vec![
+                // Keep the pass in list so it's a no-op afterwards (done flag)
+                Box::new(pass_ibl_diff),
+                Box::new(pass_ibl_spec),
+                // Skybox (draws into offscreen color); must come before scene
+                // TODO: move after all geometry was drawn and draw at end of depth
+                Box::new(crate::graphics::PassSkyboxEquirect::new(
+                    "skybox_equirect",
+                    offscreen_color_texture,
+                    fmt,
+                    env_tex_rt,
+                )),
                 Box::new(crate::graphics::pass_scene::PassScene::new(
                     "scene",
                     offscreen_color_texture,
                     depth_texture,
                     fmt,
+                    true, // load offscreen color (skybox already cleared/drew background)
+                    Some(ibl_irradiance_rt),
+                    Some(ibl_prefilter_rt),
+                    Some(ibl_brdf_rt),
                 )),
                 Box::new(crate::graphics::PassCompose::new(
                     "compose",

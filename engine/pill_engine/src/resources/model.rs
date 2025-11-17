@@ -8,7 +8,7 @@ use crate::{
 use anyhow::{anyhow, Context, Result};
 use cgmath::InnerSpace;
 use gltf::import as gltf_import;
-use image::{DynamicImage, ImageBuffer, ImageOutputFormat, Luma, Rgb, Rgba};
+use image::{DynamicImage, ImageBuffer, ImageFormat, Luma, Rgb, Rgba};
 use log::info;
 use pill_core::{get_type_name, PillSlotMapKey, PillTypeMapKey, Vector3f};
 use std::collections::HashMap;
@@ -524,7 +524,7 @@ fn encode_gltf_image_to_png_bytes(data: &gltf::image::Data) -> Result<Box<[u8]>>
     let mut buf = Vec::new();
     {
         let mut writer = Cursor::new(&mut buf);
-        dyn_img.write_to(&mut writer, ImageOutputFormat::Png)?;
+        dyn_img.write_to(&mut writer, ImageFormat::Png)?;
     }
     Ok(buf.into_boxed_slice())
 }
