@@ -1,7 +1,7 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100000;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 10;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyO;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyL;
@@ -68,8 +68,8 @@ impl PillGame for Game {
         engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
         engine.add_system("delete_floating_objects", floating_objects_remove_system)?;
         engine.add_system("objects_movement", floating_objects_movement_system)?;
-        //engine.add_system("camera_movement", camera_movement_system)?;
-        //engine.add_system("camera_fov", camera_fov_changing_system)?;
+        engine.add_system("camera_movement", camera_movement_system)?;
+        engine.add_system("camera_fov", camera_fov_changing_system)?;
         //engine.add_system("mesh_changing", object_appearance_changing_system)?;
         engine.add_system("demo_control", demo_control_system)?;
 
@@ -353,7 +353,7 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
 
 fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let input_component = engine.get_global_component::<InputComponent>()?;
+    let input_component = engine.get_global_component_mut::<InputComponent>()?;
 
     // Get input
     let a_key = input_component.get_key(KeyboardKey::KeyA);
@@ -362,8 +362,16 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let mouse_scroll_delta = input_component.get_mouse_scroll_delta();
     let mouse_delta = input_component.get_mouse_delta();
 
-    for (_, transform_transform, camera_movement_component) in
-        engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
+    // Get gamepad input
+    let gamepad_left_stick = input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::LeftStickX);
+
+    // Pressing left bumper causes rumble (Example of haptics usage)
+    let left_bumper = input_component.get_gamepad_button(PlayerId::Player1, GamepadButton::LeftBumper);
+    if left_bumper {
+        input_component.enqueue_rumble(PlayerId::Player1, 1.0, 1.0, 500);
+    }
+
+    for (_, transform_transform, camera_movement_component) in engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
     {
         // Zoom
         let zoom_speed = camera_movement_component.zoom_speed;
@@ -371,12 +379,9 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Orbit
         let mut change_value: f32 = 0.0;
-        if d_key {
-            change_value -= 1.0;
-        }
-        if a_key {
-            change_value += 1.0;
-        }
+        // TODO: make it progressive for gamepad
+        if d_key { change_value -= 1.0; } else if gamepad_left_stick < -0.1 { change_value += 1.0; }
+        if a_key { change_value += 1.0; } else if gamepad_left_stick > 0.1 { change_value -= 1.0; }
         let orbit_speed = camera_movement_component.orbit_speed;
         camera_movement_component.angle += change_value * orbit_speed * delta_time;
         let angle = camera_movement_component.angle;
@@ -428,14 +433,14 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
     let t_key = input_component.get_key(INCREASE_CAMERA_FOV_BUTTON);
     let g_key = input_component.get_key(DECREASE_CAMERA_FOV_BUTTON);
 
-    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()? {
+    // Get gamepad input
+    let gamepad_right_stick = input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::RightStickY);
+
+    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()?
+    {
         let mut change_value: f32 = 0.0;
-        if t_key {
-            change_value += 1.0;
-        }
-        if g_key {
-            change_value -= 1.0;
-        }
+        if t_key { change_value += 1.0; } else if gamepad_right_stick > 0.1 { change_value -= 1.0; }
+        if g_key { change_value -= 1.0; } else if gamepad_right_stick < -0.1 { change_value += 1.0; }
 
         let new_fov = camera_component.fov + change_value * 100.0 * delta_time;
         if new_fov > 10.0 && new_fov < 120.0 {

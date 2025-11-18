@@ -1,15 +1,15 @@
 use crate::{
-    config::MAX_INSTANCE_PER_DRAWCALL_COUNT, 
-    instance::Instance, 
-    drawers::mesh_drawer::MeshDrawer, 
+    config::MAX_INSTANCE_PER_DRAWCALL_COUNT,
+    instance::Instance,
+    drawers::mesh_drawer::MeshDrawer,
     drawers::egui_drawer::EguiDrawer,
     resources::{
         RendererResourceStorage,
-        RendererCamera, 
-        RendererMaterial, 
-        RendererMesh, 
-        RendererShader, 
-        RendererTexture, 
+        RendererCamera,
+        RendererMaterial,
+        RendererMesh,
+        RendererShader,
+        RendererTexture,
         Vertex
     }
 };
@@ -20,23 +20,23 @@ use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
 };
 
-use pill_core::{ 
-    debug, 
-    info, 
-    LogContext, 
-    PillSlotMapKey, 
-    PillSlotMapKeyData, 
-    PillStyle, 
-    RendererError, 
-    Timer 
+use pill_core::{
+    debug,
+    info,
+    LogContext,
+    PillSlotMapKey,
+    PillSlotMapKeyData,
+    PillStyle,
+    RendererError,
+    Timer
 };
 
 use std::{
-    collections::HashMap, 
-    iter, 
-    mem::size_of, 
-    num::NonZeroU32, 
-    ops::Range, 
+    collections::HashMap,
+    iter,
+    mem::size_of,
+    num::NonZeroU32,
+    ops::Range,
     sync::Arc
 };
 
@@ -50,22 +50,22 @@ pub struct Renderer {
 }
 
 impl PillRenderer for Renderer {
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> { 
+    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> {
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
         let state: State = pollster::block_on(State::new(window, config))?;
 
         Ok(Self {
             state,
         })
-    }   
+    }
 
     // --- Create ---
 
     fn create_shader(
-        &mut self, 
-        name: &str, 
-        vertex_shader_bytes: &[u8], 
-        fragment_shader_bytes: &[u8], 
+        &mut self,
+        name: &str,
+        vertex_shader_bytes: &[u8],
+        fragment_shader_bytes: &[u8],
         texture_slots: &HashMap<String, ShaderTextureSlot>,
         parameter_slots: &HashMap<String, ShaderParameterSlot>,
         pass_engine_parameters: bool,
@@ -92,10 +92,10 @@ impl PillRenderer for Renderer {
     }
 
     fn create_material(
-        &mut self, 
-        name: &str, 
-        renderer_shader_handle: RendererShaderHandle, 
-        textures: &IndexMap<String, MaterialTexture>, 
+        &mut self,
+        name: &str,
+        renderer_shader_handle: RendererShaderHandle,
+        textures: &IndexMap<String, MaterialTexture>,
         parameters: &HashMap<String, MaterialParameter>
     ) -> Result<RendererMaterialHandle> {
         let material = RendererMaterial::new(
@@ -133,19 +133,19 @@ impl PillRenderer for Renderer {
 
     fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &IndexMap<String, MaterialTexture>) -> Result<()> {
         RendererMaterial::update_textures(
-            &self.state.device, 
-            renderer_material_handle, 
-            &mut self.state.renderer_resource_storage, 
+            &self.state.device,
+            renderer_material_handle,
+            &mut self.state.renderer_resource_storage,
             textures
         )
     }
 
     fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &HashMap<String, MaterialParameter>) -> Result<()> {
         RendererMaterial::update_parameters(
-            &self.state.device, 
-            &self.state.queue, 
-            renderer_material_handle, 
-            &mut self.state.renderer_resource_storage, 
+            &self.state.device,
+            &self.state.queue,
+            renderer_material_handle,
+            &mut self.state.renderer_resource_storage,
             parameters
         )
     }
@@ -194,7 +194,7 @@ impl PillRenderer for Renderer {
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
+        render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
@@ -221,7 +221,7 @@ pub struct State {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
-    window_size: winit::dpi::PhysicalSize<u32>, 
+    window_size: winit::dpi::PhysicalSize<u32>,
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     depth_texture: RendererTexture,
@@ -409,23 +409,23 @@ impl State {
             ).unwrap();
         }
     }
-  
+
     fn render(
-        &mut self, 
+        &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>, 
+        render_queue: &Vec<RenderQueueItem>,
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer
-    ) -> Result<()> { 
+    ) -> Result<()> {
 
         debug!(LogContext::Frame => "Starting frame render");
 
         timer.record("Get frame");
         // self.profiler.begin_frame();
-  
+
         // Get frame or return mapped error if failed
         let frame = self.surface.get_current_texture();
         let frame = match frame {
@@ -440,7 +440,7 @@ impl State {
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         timer.record("Update engine parameters");
-        
+
         self.renderer_resource_storage.engine_parameters.update(&self.queue, delta_time);
 
         timer.record("Update camera parameters");
@@ -475,7 +475,7 @@ impl State {
                     load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
                     store: wgpu::StoreOp::Store,
                 },
-                //depth_slice: None, 
+                //depth_slice: None,
             };
 
             // Create depth attachment
@@ -492,20 +492,20 @@ impl State {
             timer.begin_context("Mesh Drawer");
 
             self.mesh_drawer.record_draw_commands(
-                &self.queue, 
+                &self.queue,
                 &mut encoder,
-                &self.renderer_resource_storage, 
-                color_attachment, 
-                depth_stencil_attachment, 
+                &self.renderer_resource_storage,
+                color_attachment,
+                depth_stencil_attachment,
                 &renderer_camera,
-                &render_queue, 
+                &render_queue,
                 &transform_component_storage,
                 timer,
                 //&mut self.profiler
             )?;
 
             timer.end_context()?;
-        }  
+        }
 
         // Render egui UI
         {
@@ -522,7 +522,7 @@ impl State {
                     size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
                     pixels_per_point: self.egui_drawer.window_scale_factor,
                 },
-                egui_ui, 
+                egui_ui,
                 timer
             )?;
 
@@ -534,7 +534,7 @@ impl State {
         // self.profiler.resolve_timestamp_queries(&self.device, &mut encoder);
         // self.profiler.resolve_occlusion_queries(&self.device, &mut encoder);
         // self.profiler.resolve_pipeline_statistics_queries(&self.device, &mut encoder);
-        
+
         timer.record("Submit commands and present frame");
 
         // Submit the command buffer to the GPU
