@@ -64,6 +64,9 @@ pub mod game {
             MeshRenderingComponent,
             TransformComponent,
             InputComponent,
+            PlayerId,
+            GamepadAxis,
+            GamepadButton,
             CameraComponent,
             CameraAspectRatio,
             EntityHandle,
@@ -100,9 +103,13 @@ pub mod game {
 
     extern crate pill_core;
     pub use pill_core::{
+        PillTypeMapKey,
+        Vector2f,
         Vector3f,
         Color,
-        PillTypeMapKey,
+        Vector2i,
+        Vector3i,
+        Vector3fExt,
         create_game,
         define_new_pill_slotmap_key,
     };

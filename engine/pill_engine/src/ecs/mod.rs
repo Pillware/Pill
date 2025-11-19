@@ -53,7 +53,15 @@ pub use components::deferred_update_component::{
 
 pub use components::input_component::{
     InputComponent,
+    PlayerId,
+    GamepadAxis,
+    GamepadButton,
     InputEvent,
+    GamepadEvent,
+    KeyboardEvent,
+    MouseEvent,
+    HapticCommand,
+    InFlight,
 };
 
 pub use components::transform_component::{
@@ -89,6 +97,7 @@ pub use systems::deferred_update_system::{
 
 pub use systems::input_system::{
     input_system,
+    haptics_system,
 };
 
 pub use systems::time_system::{
