@@ -108,8 +108,6 @@ pub mod game {
         Vector3f,
         Color,
         Vector2i,
-        Vector3i,
-        Vector3fExt,
         create_game,
         define_new_pill_slotmap_key,
     };
