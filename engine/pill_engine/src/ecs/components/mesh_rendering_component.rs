@@ -1,12 +1,11 @@
 use crate::{
     engine::Engine,
-    graphics::{ RenderQueueKey, compose_render_queue_key }, 
+    graphics::{ RenderQueueKey, compose_render_queue_key },
     resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager },
-    ecs::{ EntityHandle, ComponentStorage, Component, SceneHandle, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, DeferredUpdateComponent }, 
+    ecs::{ EntityHandle, ComponentStorage, Component, SceneHandle, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, DeferredUpdateComponent },
     config::DEFAULT_MATERIAL_HANDLE,
 };
 
-use cgmath::num_traits::Float;
 use pill_core::{ PillTypeMap, PillTypeMapKey, PillStyle, get_type_name, PillSlotMapKey };
 
 use anyhow::{ Result, Context, Error };
@@ -28,7 +27,7 @@ impl MeshRenderingComponentBuilder {
             component: MeshRenderingComponent::new(),
         }
     }
-    
+
     pub fn mesh(mut self, mesh_handle: &MeshHandle) -> Self {
         self.component.mesh_handle = Some(mesh_handle.clone());
         self
@@ -52,7 +51,7 @@ pub struct MeshRenderingComponent {
     pub mesh_handle: Option<MeshHandle>,
     #[readonly]
     pub material_handle: Option<MaterialHandle>,
-    pub(crate) render_queue_key: Option<RenderQueueKey>, 
+    pub(crate) render_queue_key: Option<RenderQueueKey>,
 
     entity_handle: Option<EntityHandle>,
     scene_handle: Option<SceneHandle>,
@@ -65,7 +64,7 @@ impl MeshRenderingComponent {
     }
 
     pub fn new() -> Self {
-        Self { 
+        Self {
             mesh_handle: None,
             material_handle: None,
             render_queue_key: None,
@@ -112,7 +111,7 @@ impl MeshRenderingComponent {
             };
 
             // Compose render queue key and set it
-            if let Ok(render_queue_key) = compose_render_queue_key(resource_manager, &material_handle, &self.mesh_handle.unwrap()) 
+            if let Ok(render_queue_key) = compose_render_queue_key(resource_manager, &material_handle, &self.mesh_handle.unwrap())
             {
                 self.render_queue_key = Some(render_queue_key);
             }
@@ -139,7 +138,7 @@ impl MeshRenderingComponent {
 }
 
 impl PillTypeMapKey for MeshRenderingComponent {
-    type Storage = ComponentStorage<MeshRenderingComponent>; 
+    type Storage = ComponentStorage<MeshRenderingComponent>;
 }
 
 impl Component for MeshRenderingComponent {
@@ -171,14 +170,14 @@ impl Component for MeshRenderingComponent {
         self.entity_handle = Some(self_entity_handle);
     }
 
-    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { 
+    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> {
         match request {
-            DEFERRED_REQUEST_VARIANT_SET_MATERIAL => 
+            DEFERRED_REQUEST_VARIANT_SET_MATERIAL =>
             {
                 // Check if material handle is valid
                 engine.get_resource::<Material>(&self.material_handle.unwrap())
                     .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Material".specific_object_style()))?;
-                
+
                 self.update_render_queue_key(&engine.resource_manager)?;
             },
             DEFERRED_REQUEST_VARIANT_SET_MESH =>
@@ -189,17 +188,17 @@ impl Component for MeshRenderingComponent {
 
                 self.update_render_queue_key(&engine.resource_manager)?;
             },
-            DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE => 
+            DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE =>
             {
                 // Update mesh rendering queue
                 self.update_render_queue_key(&engine.resource_manager)?;
             },
-            _ => 
+            _ =>
             {
                 panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
             }
         }
 
-        Ok(()) 
+        Ok(())
     }
 }

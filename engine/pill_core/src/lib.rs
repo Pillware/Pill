@@ -15,14 +15,15 @@ mod style;
 // --- Use ---
 
 pub use math::{
-    Vector3i,
     Vector2i,
-    Vector3f, 
-    Vector2f, 
+    Vector2f,
+    Vector3f,
+    Vector4f,
     Color,
     Matrix3f,
-    Direction, 
-    Vector3fExt,
+    Matrix3fA,
+    Matrix4f,
+    Direction,
 };
 
 pub use error::{
@@ -30,9 +31,9 @@ pub use error::{
     RendererError
 };
 
-pub use pill_slotmap::{ 
-    PillSlotMap, 
-    PillSlotMapKey, 
+pub use pill_slotmap::{
+    PillSlotMap,
+    PillSlotMapKey,
     PillSlotMapKeyData,
 };
 
@@ -51,11 +52,11 @@ pub use bitmask_utils::{
     get_indices_of_set_elements,
 };
 
-pub use utils::{ 
-    get_type_name, 
-    get_value_type_name, 
-    enum_variant_eq, 
-    get_enum_variant_type_name, 
+pub use utils::{
+    get_type_name,
+    get_value_type_name,
+    enum_variant_eq,
+    get_enum_variant_type_name,
     validate_asset_path,
     get_game_error_message,
 };
@@ -65,8 +66,8 @@ pub use timer::{
     TimerRecord
 };
 
-pub use style::{ 
-    PillStyle, 
+pub use style::{
+    PillStyle,
 };
 
 pub use log::{

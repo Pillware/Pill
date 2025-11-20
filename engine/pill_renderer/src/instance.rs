@@ -1,5 +1,6 @@
 use crate::resources::Vertex;
 
+use pill_core::Matrix3f;
 use pill_engine::{ internal::{ TransformComponent, get_model_matrix, get_normal_matrix, update_transform_matrices }};
 
 // --- Instance ---
@@ -7,19 +8,17 @@ use pill_engine::{ internal::{ TransformComponent, get_model_matrix, get_normal_
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Instance {
-    pub(crate) transform: [[f32; 3]; 3], // It is matrix3 because we only need the rotation componen
+    pub(crate) transform: Matrix3f, // It is matrix3 because we only need the rotation componen
 }
 
 impl Instance {
     pub fn new(transform_component: &TransformComponent) -> Instance {
         Instance {
-            transform: {
-                [
-                    [transform_component.position.x, transform_component.position.y, transform_component.position.z],
-                    [transform_component.rotation.x, transform_component.rotation.y, transform_component.rotation.z],
-                    [transform_component.scale.x, transform_component.scale.y, transform_component.scale.z],
-                ]
-            }
+            transform: Matrix3f::from_cols(
+                transform_component.position,
+                transform_component.rotation,
+                transform_component.scale,
+            ),
         }
     }
 }
@@ -91,4 +90,5 @@ impl Vertex for Instance {
         }
     }
 }
+
 

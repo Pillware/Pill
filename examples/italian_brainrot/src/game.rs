@@ -158,7 +158,7 @@ fn rotation_system(engine: &mut Engine) -> Result<()> {
 	println!("Delta time: {}", delta_time);
 
 	for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, TagAlphaComponent>()? {
-		transform_component.rotate_around_axis(1.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
+		transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
 	}
 
 	Ok(())
