@@ -61,7 +61,6 @@ use std::time::Duration;
 use std::collections::HashSet;
 use bincode;
 use rand::{rng, Rng, SeedableRng};
-use cgmath::InnerSpace;
 
 /// High-level action for an entity update.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,8 +123,8 @@ fn lerp_vec3(from: Vector3f, to: Vector3f, t: f32) -> Vector3f {
 ///
 /// Uses squared thresholds (≈ 0.1 units) on position/rotation.
 fn changed_enough(current: &TransformComponent, previous: &TransformComponent) -> bool {
-    let pos_diff = (current.position - previous.position).magnitude2();
-    let rot_diff = (current.rotation - previous.rotation).magnitude2();
+    let pos_diff = (current.position - previous.position).length();
+    let rot_diff = (current.rotation - previous.rotation).length();
     pos_diff > 0.01 || rot_diff > 0.01
 }
 

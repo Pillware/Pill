@@ -17,14 +17,15 @@ mod color;
 // --- Use ---
 
 pub use math::{
-    Vector3i,
     Vector2i,
-    Vector3f,
     Vector2f,
+    Vector3f,
+    Vector4f,
     Color,
     Matrix3f,
+    Matrix3fA,
+    Matrix4f,
     Direction,
-    Vector3fExt,
 };
 
 pub use error::{

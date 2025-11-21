@@ -70,22 +70,23 @@ impl PillGame for Game {
         let pill_color_texture = Texture::new(
             "pill_color",
             TextureType::Color,
-            ResourceLoadType::Path("textures/pill_color.png".into()),
+            ResourceLoader::Path("textures/pill_color.png".into()),
         );
         let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
         let pill_normal_texture = Texture::new(
             "pill_normal",
             TextureType::Normal,
-            ResourceLoadType::Path("textures/pill_normal.png".into()),
+            ResourceLoader::Path("textures/pill_normal.png".into()),
         );
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
-        let mut pill_material = Material::new("pill");
-        pill_material.set_texture("color", pill_color_texture_handle)?;
-        pill_material.set_texture("normal", pill_normal_texture_handle)?;
-        pill_material.set_color("tint", Color::new(1.0, 1.0, 1.0))?;
-        pill_material.set_scalar("specularity", 0.5)?;
+        let mut pill_material = Material::builder("pill")
+            .texture("color", pill_color_texture_handle)?
+            .texture("normal", pill_normal_texture_handle)?
+            .color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
+            .scalar_parameter("specularity", 0.5)?
+            .build();
         let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
 
         // Create camera entity
@@ -261,8 +262,8 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
             Err(_) => {
                 engine.add_resource::<Material>(
                     Material::builder("pill_other")
-                        .color("tint", Color::new(r, g, b))?
-                        .scalar("specularity", 0.5)?
+                        .color_parameter("tint", Color::new(r, g, b))?
+                        .scalar_parameter("specularity", 0.5)?
                         .build()
                     )?
             }

@@ -24,7 +24,7 @@ pub struct RendererMaterial {
 impl RendererMaterial {
     pub fn new(
         device: &wgpu::Device,
-        queue: &wgpu::Queue, 
+        queue: &wgpu::Queue,
         rendering_resource_storage: &RendererResourceStorage,
         name: &str,
         shader_handle: RendererShaderHandle,
@@ -109,7 +109,7 @@ impl RendererMaterial {
     }
 
     pub fn update_textures(
-        device: &wgpu::Device, 
+        device: &wgpu::Device,
         material_renderer_handle: RendererMaterialHandle,
         rendering_resource_storage: &mut RendererResourceStorage,
         textures: &IndexMap<String, MaterialTexture>
@@ -146,8 +146,8 @@ impl RendererMaterial {
     }
 
     pub fn update_parameters(
-        device: &wgpu::Device, 
-        queue: &wgpu::Queue, 
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         material_renderer_handle: RendererMaterialHandle,
         rendering_resource_storage: &mut RendererResourceStorage,
         parameters: &HashMap<String, MaterialParameter>

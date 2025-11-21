@@ -24,9 +24,10 @@ env_logger = "0.9.0"
 log = "0.4"
 
 # Other
+wgpu = { version = "25.0.0", features = [ "spirv" ] }
+glam = { version = "0.30.8", features = ["serde", "bytemuck"] }
 winit = "0.30.12"
 cgmath = "0.18"
-wgpu = { version = "25.0.0", features = [ "spirv" ] }
 futures = "0.3"
 pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }
