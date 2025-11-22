@@ -30,7 +30,7 @@ pub trait PillTypeMapKey: Any {
 ///
 /// [`HashMap`]: std::collections::HashMap
 //pub struct PillTypeMap(HashMap<TypeId, Box<(dyn Any + Send + Sync)>>);
-pub struct PillTypeMap(HashMap<TypeId, Box<(dyn Any + Send)>>);
+pub struct PillTypeMap(HashMap<TypeId, Box<dyn Any + Send>>);
 
 
 impl PillTypeMap {
@@ -278,7 +278,7 @@ where
     K: PillTypeMapKey,
 {
     //entry: HashMapOccupiedEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
-    entry: HashMapOccupiedEntry<'a, TypeId, Box<(dyn Any + Send)>>,
+    entry: HashMapOccupiedEntry<'a, TypeId, Box<dyn Any + Send>>,
     _marker: PhantomData<&'a K::Storage>,
 }
 
@@ -317,7 +317,7 @@ where
     K: PillTypeMapKey,
 {
     //entry: HashMapVacantEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
-    entry: HashMapVacantEntry<'a, TypeId, Box<(dyn Any + Send)>>,
+    entry: HashMapVacantEntry<'a, TypeId, Box<dyn Any + Send>>,
     _marker: PhantomData<&'a K::Storage>,
 }
 

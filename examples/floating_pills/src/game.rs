@@ -355,7 +355,7 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
         let math_ns = math_t0.elapsed().as_nanos();
         let frame_ms = frame_t0.elapsed().as_secs_f64() * 1_000.0;
 
-        let mut s = engine.get_global_component_mut::<BenchComponent>()?;
+        let s = engine.get_global_component_mut::<BenchComponent>()?;
         s.frames += 1;
         s.acc_math_ns += math_ns;
         s.acc_frame_ms += frame_ms;
@@ -612,7 +612,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
 #[cfg(feature = "benchmark")]
 fn bench_report_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let mut s = engine.get_global_component_mut::<BenchComponent>()?;
+    let s = engine.get_global_component_mut::<BenchComponent>()?;
 
     if s.frames >= s.report_every_frames as u64 {
         let f = s.frames as f64;

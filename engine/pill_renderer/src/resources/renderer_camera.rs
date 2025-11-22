@@ -47,7 +47,7 @@ impl CameraParametersData {
         );
 
         // Update view-projection
-        self.view_projection_matrix = (CameraParametersData::calculate_projection_matrix(camera_component) * CameraParametersData::calculate_view_matrix(transform_component));
+        self.view_projection_matrix = CameraParametersData::calculate_projection_matrix(camera_component) * CameraParametersData::calculate_view_matrix(transform_component);
     }
 
     fn calculate_view_matrix(transform_component: &TransformComponent) -> Matrix4f {
