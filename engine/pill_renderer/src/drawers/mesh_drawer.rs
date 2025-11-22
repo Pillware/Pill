@@ -227,9 +227,9 @@ impl MeshDrawer {
             current_drawing_context.instance_batch_number = i as u32;
             current_drawing_context.instance_batch_size = batch_size as u32;
 
-            timer.begin_context(&format!("Prepare draw instance batch {}", i));
+            timer.begin_context(format!("Prepare draw instance batch {}", i));
             
-            timer.record(&format!("Write instance buffer"));
+            timer.record("Write instance buffer".to_string());
 
             // Prepare instance data and load it to buffer
             self.instances.clear();

@@ -497,9 +497,9 @@ impl State {
                 &self.renderer_resource_storage,
                 color_attachment,
                 depth_stencil_attachment,
-                &renderer_camera,
-                &render_queue,
-                &transform_component_storage,
+                renderer_camera,
+                render_queue,
+                transform_component_storage,
                 timer,
                 //&mut self.profiler
             )?;

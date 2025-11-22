@@ -311,25 +311,25 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
         }
 
         // Local rotation
-        let rotation_speed = floating_object_component.rotation_speed.clone();
+        let rotation_speed = floating_object_component.rotation_speed;
         floating_object_transform.rotate_around_axis(rotation_speed * delta_time, Vector3f::new(1.0,1.0,1.0));
 
         // Local scale
-        let scale_speed = floating_object_component.scale_speed.clone();
+        let scale_speed = floating_object_component.scale_speed;
         floating_object_component.scale_factor += scale_speed * delta_time;
-        let scale_factor = floating_object_component.scale_factor.clone();
+        let scale_factor = floating_object_component.scale_factor;
         floating_object_transform.set_scale(Vector3f::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5));
 
         // Radius
-        let radius_speed = floating_object_component.radius_speed.clone();
+        let radius_speed = floating_object_component.radius_speed;
         floating_object_component.radius_factor += radius_speed * delta_time;
 
         // Movement
-        let orbital_movement_speed = floating_object_component.orbital_movement_speed.clone();
+        let orbital_movement_speed = floating_object_component.orbital_movement_speed;
         floating_object_component.angle += orbital_movement_speed * delta_time;
 
-        let angle = floating_object_component.angle.clone();
-        let radius = floating_object_component.radius_factor.clone().sin() * 6.0 + 10.0;
+        let angle = floating_object_component.angle;
+        let radius = floating_object_component.radius_factor.sin() * 6.0 + 10.0;
 
         floating_object_transform.set_position(
             Vector3f::new(
@@ -338,9 +338,9 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
                 angle.to_radians().sin() * radius
         ));
 
-        let y_axis_movement_speed = floating_object_component.y_axis_movement_speed.clone();
+        let y_axis_movement_speed = floating_object_component.y_axis_movement_speed;
         floating_object_component.y_axis_factor += y_axis_movement_speed * delta_time;
-        let y_axis_factor = floating_object_component.y_axis_factor.clone();
+        let y_axis_factor = floating_object_component.y_axis_factor;
 
         floating_object_transform.set_position(
             Vector3f::new(
@@ -380,11 +380,10 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
     if mesh_key {
         let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
         demo_state.current_mesh = (demo_state.current_mesh + 1) % 3;
-        let mesh_handle = demo_state
+        let mesh_handle = *demo_state
             .mesh_handles
             .get(demo_state.current_mesh)
-            .unwrap()
-            .clone();
+            .unwrap();
         for (_, mesh_rendering_component) in
             engine.iterate_one_component_mut::<MeshRenderingComponent>()?
         {
@@ -515,7 +514,7 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
 
 fn floating_objects_spawn_system(engine: &mut Engine) -> Result<()> {
     // Get input component
-    let input_component = (&*engine).get_global_component::<InputComponent>()?;
+    let input_component = engine.get_global_component::<InputComponent>()?;
 
     // Create new objects
     if input_component.get_key_pressed(SPAWN_FLOATING_OBJECTS_BUTTON) {
@@ -532,7 +531,7 @@ fn floating_objects_remove_system(engine: &mut Engine) -> Result<()> {
     let scene_handle = engine.get_active_scene_handle()?;
 
     // Get input component
-    let input_component = (&*engine).get_global_component::<InputComponent>()?;
+    let input_component = engine.get_global_component::<InputComponent>()?;
 
     // Remove objects
     if input_component.get_key_pressed(REMOVE_FLOATING_OBJECTS_BUTTON) {
@@ -562,7 +561,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
     let mut rng = thread_rng();
 
     // Get resources
-    let demo_state = (&*engine).get_global_component::<DemoStateComponent>()?;
+    let demo_state = engine.get_global_component::<DemoStateComponent>()?;
     let mesh_handles = demo_state.mesh_handles.clone();
     let textured_material_handles = demo_state.textured_material_handles.clone();
 

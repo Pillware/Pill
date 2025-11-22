@@ -30,6 +30,7 @@ pub trait PillTypeMapKey: Any {
 ///
 /// [`HashMap`]: std::collections::HashMap
 //pub struct PillTypeMap(HashMap<TypeId, Box<(dyn Any + Send + Sync)>>);
+#[derive(Default)]
 pub struct PillTypeMap(HashMap<TypeId, Box<dyn Any + Send>>);
 
 
@@ -201,11 +202,6 @@ impl PillTypeMap {
     }
 }
 
-impl Default for PillTypeMap {
-    fn default() -> Self {
-        Self(HashMap::default())
-    }
-}
 
 /// A view into a single entry in the [`PillTypeMap`],
 /// which may either be vacant or occupied.

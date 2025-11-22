@@ -70,7 +70,7 @@ impl<T> Slot<T> {
     // Is this slot occupied?
     #[inline(always)]
     pub fn occupied(&self) -> bool {
-        self.version % 2 > 0
+        !self.version.is_multiple_of(2)
     }
 
     pub fn get(&self) -> SlotContent<T> {
@@ -153,7 +153,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
 
     // Warning: Version limit has to be odd value
     pub fn with_capacity_and_key_and_version_limit(capacity: usize, version_limit: u32) -> Result<Self, ()> {
-        if version_limit % 2 == 0 {
+        if version_limit.is_multiple_of(2) {
             return Err(())
         }
         
@@ -197,7 +197,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         let kd = key.data();
         self.slots
             .get(kd.index as usize)
-            .map_or(false, |slot| slot.version == kd.version.get())
+            .is_some_and(|slot| slot.version == kd.version.get())
     }
 
     pub fn get_next_free_slot_handle(&self) -> K {
@@ -218,7 +218,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         let version = 1;
         let kd = PillSlotMapKeyData::new(self.slots.len() as u32, version);
 
-        return kd.into();
+        kd.into()
     }
 
     pub fn insert_and_get_mut(&mut self, value: V) -> (K, &mut V) {
@@ -426,7 +426,7 @@ impl<'a, K: PillSlotMapKey, V> Iterator for Iter<'a, K, V> {
     type Item = (K, &'a V);
 
     fn next(&mut self) -> Option<(K, &'a V)> {
-        while let Some((idx, slot)) = self.slots.next() {
+        for (idx, slot) in self.slots.by_ref() {
             if let Occupied(value) = slot.get() {
                 let kd = PillSlotMapKeyData::new(idx as u32, slot.version);
                 self.num_left -= 1;
@@ -446,7 +446,7 @@ impl<'a, K: PillSlotMapKey, V> Iterator for IterMut<'a, K, V> {
     type Item = (K, &'a mut V);
 
     fn next(&mut self) -> Option<(K, &'a mut V)> {
-        while let Some((idx, slot)) = self.slots.next() {
+        for (idx, slot) in self.slots.by_ref() {
             let version = slot.version;
             if let OccupiedMut(value) = slot.get_mut() {
                 let kd = PillSlotMapKeyData::new(idx as u32, version);

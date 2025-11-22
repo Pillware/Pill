@@ -19,6 +19,12 @@ pub struct ResourceManager {
     resources: PillTypeMap,
 }
 
+impl Default for ResourceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResourceManager {
     pub fn new() -> Self {
 	    Self {
@@ -35,7 +41,7 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage::<T>()?;
 
         // Get resource slot
-        let resource_slot = resource_storage.data.get(resource_handle.clone())
+        let resource_slot = resource_storage.data.get(*resource_handle)
             .ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
 
         Ok(resource_slot)
@@ -48,7 +54,7 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Get resource slot
-        let resource_slot = resource_storage.data.get_mut(resource_handle.clone())
+        let resource_slot = resource_storage.data.get_mut(*resource_handle)
             .ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
 
         Ok(resource_slot)
@@ -119,7 +125,7 @@ impl ResourceManager {
         // Remove mapping
         resource_storage.mapping.remove_by_value(resource_handle);
 
-        Ok((resource_handle.clone(), resource))
+        Ok((*resource_handle, resource))
     }
 
     pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<(T::Handle, T)>
@@ -129,8 +135,8 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Get handle by name
-        let resource_handle = resource_storage.mapping.get_value(&name.to_string())
-            .ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?.clone();
+        let resource_handle = *resource_storage.mapping.get_value(&name.to_string())
+            .ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?;
 
         // Remove resource
         let resource = resource_storage.data.remove(resource_handle).unwrap().expect("Critical: Resource is None");
@@ -150,8 +156,8 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage::<T>()?;
 
         // Get resource handle
-        let resource_handle = resource_storage.mapping.get_value(&name.to_string())
-            .ok_or(EngineError::InvalidSceneName(name.to_string()))?.clone();
+        let resource_handle = *resource_storage.mapping.get_value(&name.to_string())
+            .ok_or(EngineError::InvalidSceneName(name.to_string()))?;
 
         Ok(resource_handle)
     }
@@ -197,8 +203,8 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Get handle by name
-        let resource_handle = resource_storage.mapping.get_value(&name.to_string())
-            .ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?.clone();
+        let resource_handle = *resource_storage.mapping.get_value(&name.to_string())
+            .ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?;
 
         // Get resource
         let resource = self.get_resource_slot_mut::<T>(&resource_handle)?.as_mut().expect("Critical: Resource is None");

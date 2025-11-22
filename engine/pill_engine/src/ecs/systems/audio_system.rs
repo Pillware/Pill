@@ -62,7 +62,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
     for (entity_handle, audio_source_component, transform_component) in active_scene.get_two_component_iterator::<AudioSourceComponent, TransformComponent>()? {
         let audio_manager = engine.get_global_component::<AudioManagerComponent>()?;
         if let Some(index) = audio_source_component.sink_handle {
-            audio_manager.get_spatial_sink(index).set_emitter_position(transform_component.position.clone().into());
+            audio_manager.get_spatial_sink(index).set_emitter_position(transform_component.position.into());
         }
     }
 
@@ -75,7 +75,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
         // Check if the audio source has sink handle assigned
         if let Some(sink_handle) = audio_source_component.sink_handle {
             // Check if is playing
-            let sound_type = audio_source_component.sound_type.clone();
+            let sound_type = audio_source_component.sound_type;
             let playing = match sound_type {
                 SoundType::Sound2D => {
                     let sink = audio_manager.get_ambient_sink(sink_handle);

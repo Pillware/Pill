@@ -14,6 +14,12 @@ pub struct EguiManagerComponent {
     collapsing_state: HashMap<String, bool>,
 }
 
+impl Default for EguiManagerComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EguiManagerComponent {
     pub fn new() -> Self {
         Self { 

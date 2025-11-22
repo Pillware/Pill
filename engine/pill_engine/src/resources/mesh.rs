@@ -76,7 +76,7 @@ impl Resource for Mesh {
         self.mesh_data = Some(mesh_data);
 
         // Create new renderer mesh resource
-        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
+        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -140,7 +140,7 @@ impl MeshData {
             return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(path.clone().into_os_string().into_string().unwrap())));
         }
 
-        if models.len() < 1 {
+        if models.is_empty() {
             return Err(Error::new(EngineError::InvalidModelFile(path.clone().into_os_string().into_string().unwrap())));
         }
 
@@ -168,8 +168,8 @@ impl MeshData {
                     mesh.normals[i * 3 + 1],
                     mesh.normals[i * 3 + 2],
                 ],
-                tangent: [0.0; 3].into(),
-                bitangent: [0.0; 3].into(),
+                tangent: [0.0; 3],
+                bitangent: [0.0; 3],
             });
         }
 
@@ -227,7 +227,7 @@ impl MeshData {
         }
 
         let mesh_data = MeshData {
-            vertices: vertices,
+            vertices,
             indices: mesh.indices.clone(),
         };
 

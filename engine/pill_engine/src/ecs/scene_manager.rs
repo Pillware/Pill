@@ -44,7 +44,7 @@ impl SceneManager {
         }
 
         // Create new entity with empty bitmask
-        let new_entity = Entity::new(scene_handle.clone());
+        let new_entity = Entity::new(scene_handle);
 
         // Insert new entity into storage, with key as returned type
         let new_entity_handle = target_scene.entities.insert(new_entity);
@@ -84,7 +84,7 @@ impl SceneManager {
         where T: Component<Storage = ComponentStorage::<T>>
     {
         // Prepare the capacity for component storage
-        let component_storage_capacity = self.max_entity_count.clone();
+        let component_storage_capacity = self.max_entity_count;
 
         // Get scene
         let target_scene = self.get_scene_mut(scene)?;
@@ -195,7 +195,7 @@ impl SceneManager {
     }
 
     pub fn get_scene_handle(&self, name: &str) -> Result<SceneHandle> {
-        let scene_handle = self.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidSceneName(name.to_string()))?.clone();
+        let scene_handle = *self.mapping.get_value(&name.to_string()).ok_or(EngineError::InvalidSceneName(name.to_string()))?;
 
         Ok(scene_handle)
     }
@@ -236,7 +236,7 @@ impl SceneManager {
 
     pub fn get_active_scene_handle(&self) -> Result<SceneHandle> {
         match self.active_scene_handle {
-            Some(v) =>  Ok(v.clone()),
+            Some(v) =>  Ok(v),
             None => Err(Error::new(EngineError::NoActiveScene)),
         }
     }

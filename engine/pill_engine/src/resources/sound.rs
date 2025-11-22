@@ -113,7 +113,7 @@ impl SoundData {
 
         // Read bytes from the buffer
         for buffer in self.source_buffer.iter() {
-            sound_source.push(buffer.clone());
+            sound_source.push(*buffer);
         }
 
         // Return decoded bytes as the sound, which can be played

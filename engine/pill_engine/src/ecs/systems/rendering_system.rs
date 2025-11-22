@@ -39,7 +39,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
     }
 
-    let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera))?.clone();
+    let active_camera_entity_handle = active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera))?;
 
     // - Prepare rendering data
     timer.record("Clear render queue");
@@ -64,7 +64,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         if let Some(render_queue_key) = mesh_rendering_component.render_queue_key {
             let render_queue_item = RenderQueueItem {
                 key: render_queue_key,
-                entity_index: entity_handle.data().index as u32,
+                entity_index: entity_handle.data().index,
             };
             engine.render_queue.push(render_queue_item);
         } else {
@@ -74,8 +74,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         add_to_render_queue_duration += add_to_render_queue_start_time.elapsed().as_secs_f32() * 1000.0;
     }
 
-    timer.record(&format!("Matrix calculation {} ms", _matrix_calculation_duration));
-    timer.record(&format!("Add to render queue {} ms", add_to_render_queue_duration));
+    timer.record(format!("Matrix calculation {} ms", _matrix_calculation_duration));
+    timer.record(format!("Add to render queue {} ms", add_to_render_queue_duration));
 
     timer.record("Sort render queue");
 
@@ -116,7 +116,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     // Recreate lost surface
                     timer.end_context()?; // End "Render" context
                     engine.system_manager.update_system_timer(RENDERING_SYSTEM.name, RENDERING_SYSTEM.update_phase, timer)?;
-                    Ok(engine.renderer.resize(engine.window_size))
+                    engine.renderer.resize(engine.window_size);
+                    Ok(())
                 },
                 Some(RendererError::SurfaceOutOfMemory) => {
                     panic!("Critical: Renderer error, system out of memory");

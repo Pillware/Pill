@@ -98,9 +98,9 @@ impl AudioManagerComponent {
         match self.get_free_sink_handle_queue(sound_type).pop_front() {
             Some(v) => {
                 self.get_busy_sink_handle_queue(sound_type).push_back(v);
-                return Some(v);
+                Some(v)
             },
-            None => return None,
+            None => None,
         }
     }
 

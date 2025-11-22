@@ -210,15 +210,11 @@ pub struct DeferredUpdateManagerPointer(pub(crate) Arc<Mutex<DeferredUpdateManag
 
 impl DeferredUpdateManagerPointer {
     pub fn new() -> Self {  
-        Self { 
-            0: Arc::new(Mutex::new(DeferredUpdateManager::new())),
-        }
+        Self(Arc::new(Mutex::new(DeferredUpdateManager::new())))
     }
 
     pub(crate) fn clone(&mut self) -> Self {
-        Self { 
-            0: self.0.clone(),
-        }
+        Self(self.0.clone())
     }
 
     pub fn post_update_request(&mut self, request: impl DeferredUpdateRequest + 'static) {

@@ -63,7 +63,7 @@ fn parse_config_log_settings(log_levels_config_setting: &str) -> HashMap<String,
 
 /// Initialize logger with per-context levels from Config
 pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
-    let context_levels = parse_config_log_settings(&log_levels_config_setting);
+    let context_levels = parse_config_log_settings(log_levels_config_setting);
 
     fn styled_level(level: log::Level) -> colored::ColoredString {
         match level {

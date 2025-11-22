@@ -84,7 +84,7 @@ impl RendererMaterial {
             Some(Self::create_textures_bind_group(
                 device,
                 rendering_resource_storage,
-                &shader.textures_bind_group_layout.as_ref().unwrap(),
+                shader.textures_bind_group_layout.as_ref().unwrap(),
                 &format!("{}_textures", name),
                 texture_slots,
                 textures,
@@ -272,7 +272,7 @@ impl RendererMaterial {
 
         // Set texture resources to the bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
+            layout: texture_bind_group_layout,
             entries: &entries,
             label: Some(name),
         });

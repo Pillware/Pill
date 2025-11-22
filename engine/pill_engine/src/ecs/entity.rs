@@ -20,7 +20,7 @@ pub struct EntityBuilder<'a> {
 
 impl<'a> EntityBuilder<'a> {
     pub fn with_component<T: Component<Storage = ComponentStorage::<T>>>(self, component: T) -> Self {
-        self.engine.add_component_to_entity(self.scene_handle.clone(), self.entity_handle.clone(), component).unwrap();
+        self.engine.add_component_to_entity(self.scene_handle, self.entity_handle, component).unwrap();
         self
     }
 

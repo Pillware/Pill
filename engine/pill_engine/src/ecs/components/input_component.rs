@@ -151,6 +151,12 @@ pub struct InputComponent {
     pub(crate) in_flight_force_feedback: Vec<InFlight>,
 }
 
+impl Default for InputComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InputComponent {
     pub fn new() -> Self {
         Self {

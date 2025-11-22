@@ -41,10 +41,10 @@ pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static s
 
     match path.extension() {
         Some(v) => match allowed_formats.contains(&v.to_str().unwrap()) { //} v.eq(allowed_format) {
-            true => return Ok(()),
-            false => return Err(Error::new(EngineError::InvalidAssetFormat(allowed_formats, v.to_str().unwrap().to_string()))),
+            true => Ok(()),
+            false => Err(Error::new(EngineError::InvalidAssetFormat(allowed_formats, v.to_str().unwrap().to_string()))),
         },
-        None => return Err(Error::new(EngineError::InvalidAssetPath(path.display().to_string()))),
+        None => Err(Error::new(EngineError::InvalidAssetPath(path.display().to_string()))),
     }
 }
 

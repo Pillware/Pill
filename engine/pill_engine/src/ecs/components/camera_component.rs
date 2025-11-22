@@ -80,6 +80,12 @@ pub struct CameraComponent {
     pub(crate) renderer_resource_handle: Option<RendererCameraHandle>,
 }
 
+impl Default for CameraComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CameraComponent {
     pub fn builder() -> CameraComponentBuilder {
         CameraComponentBuilder::default()

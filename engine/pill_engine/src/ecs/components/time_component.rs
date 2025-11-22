@@ -14,6 +14,12 @@ pub struct TimeComponent {
     pub delta_time: f32, // Time of last frame in seconds
 }
 
+impl Default for TimeComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimeComponent {
     pub fn new() -> Self {
         Self { 

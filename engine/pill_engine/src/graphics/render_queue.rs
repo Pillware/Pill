@@ -80,8 +80,8 @@ where
     T: Copy + Default + Pow + Binary + Debug + From<u8> + From<u32> + Ord + Shl<Output = T> + Sub<Output = T> + Add<Output = T> + Not<Output = T>,
 {
     pub fn new(mask_range: core::ops::Range<T>) -> Self { // Compile-time evaluable function
-        let one: T = T::from(1 as u8);
-        let two: T = T::from(2 as u8);
+        let one: T = T::from(1_u8);
+        let two: T = T::from(2_u8);
         let mask_range_length = mask_range.end - mask_range.start + one; //if mask_range.start == zero { mask_range.end + one } else { mask_range.end - mask_range.start };
         let mask_size: T = T::from(std::mem::size_of::<T>() as u8 * 8);
         let mask_shift: T = mask_size - mask_range.end - one;
@@ -169,7 +169,7 @@ fn get_render_queue_key_item_range(render_queue_item_index: u8) -> Range<RenderQ
     let mut end: RenderQueueKey = 0;
     for i in 0..render_queue_item_index + 1
     {
-        start += i.ne(&0).then(|| RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize - 1]).unwrap_or(0);   
+        start += if i.ne(&0) { RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize - 1] } else { 0 };   
         end += RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize];
     }
     start..(end - 1)

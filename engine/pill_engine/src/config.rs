@@ -124,20 +124,12 @@ pub const RENDER_QUEUE_KEY_MESH_INDEX_IDX: u8 = 5;
 pub const RENDER_QUEUE_KEY_MESH_VERSION_IDX: u8 = 6;
 
 // Default resource handle - Color texture
-pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle {
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
-};
-pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
-};
+pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
+pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
 
 // Default resource handle - Normal texture
-pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle {
-    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
-};
-pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle {
-    0: PillSlotMapKeyData { index: 2, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
-};
+pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData { index: 2, version: std::num::NonZeroU32::new(1).unwrap() });
+pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle(PillSlotMapKeyData { index: 2, version: std::num::NonZeroU32::new(1).unwrap() });
 
 pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle, RendererTextureHandle) {
     match texture_type {
@@ -148,25 +140,17 @@ pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle,
 
 
 // Default resource handle - Shader
-pub const DEFAULT_LIT_SHADER_HANDLE: ShaderHandle = ShaderHandle {
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
-};
+pub const DEFAULT_LIT_SHADER_HANDLE: ShaderHandle = ShaderHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
 
-pub const DEFAULT_LIT_RENDERER_SHADER_HANDLE: RendererShaderHandle = RendererShaderHandle {
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
-};
+pub const DEFAULT_LIT_RENDERER_SHADER_HANDLE: RendererShaderHandle = RendererShaderHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
 
 pub fn get_default_lit_shader_handles() -> (ShaderHandle, RendererShaderHandle) {
     (DEFAULT_LIT_SHADER_HANDLE, DEFAULT_LIT_RENDERER_SHADER_HANDLE)
 }
 
 // Default resource handle - Material
-pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle {
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
-};
-pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle {
-    0: PillSlotMapKeyData { index: 1, version: unsafe { std::num::NonZeroU32::new_unchecked(1) } }
-};
+pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
+pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
 
 pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle) {
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)

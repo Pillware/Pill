@@ -125,11 +125,7 @@ pub fn haptics_system(engine: &mut Engine) -> Result<()> {
     {
         let now = std::time::Instant::now();
         input_component.in_flight_force_feedback.retain(|in_flight| {
-            if now >= in_flight.end_at {
-                false
-            } else {
-                true
-            }
+            now < in_flight.end_at
         });
     }
 

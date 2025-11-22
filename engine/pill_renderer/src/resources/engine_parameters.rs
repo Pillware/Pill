@@ -20,6 +20,12 @@ pub struct EngineParametersData {
     pub delta_time: f32,
 }
 
+impl Default for EngineParametersData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EngineParametersData {
     pub fn new() -> Self {
         Self {

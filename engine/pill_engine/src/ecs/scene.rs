@@ -33,7 +33,7 @@ pub struct Scene {
 
 impl Scene {
     pub fn new(name: String) -> Self {  
-        return Self { 
+        Self { 
             name,
             entities: PillSlotMap::<EntityHandle, Entity>::with_key(),
             components: PillTypeMap::new(),
@@ -42,7 +42,7 @@ impl Scene {
             component_bitmasks: IndexMap::new(),
 
             component_destroyers: HashMap::new(),
-        };
+        }
     }
 
     // --- Components ---
@@ -75,9 +75,7 @@ impl Scene {
     {
         let component_typeid = TypeId::of::<T>();
         let component_destroyer = ConcreteComponentDestroyer::<T>::new();
-        if !self.component_destroyers.contains_key(&component_typeid) {
-            self.component_destroyers.insert(component_typeid, Box::new(component_destroyer));
-        }
+        self.component_destroyers.entry(component_typeid).or_insert_with(|| Box::new(component_destroyer));
     }
 
     pub fn get_component_destoyer(&self, type_id: &TypeId) -> Result<Box::<dyn ComponentDestroyer>> {
@@ -111,7 +109,7 @@ impl Scene {
             self.component_bitmasks.insert(TypeId::of::<T>(), component_bitmask); 
 
             // Update scene bitmask 
-            self.scene_bitmask = self.scene_bitmask | component_bitmask;
+            self.scene_bitmask |= component_bitmask;
         }
     }
 
@@ -119,7 +117,7 @@ impl Scene {
         where T: Component<Storage = ComponentStorage::<T>>
     {
         match self.component_bitmasks.get(&TypeId::of::<T>()) {
-            Some(v) => Ok(v.clone()),
+            Some(v) => Ok(*v),
             None => Err(Error::new(EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone()))),
         }
     }
@@ -130,7 +128,7 @@ impl Scene {
         let component_indices = get_indices_of_set_elements(bitmask);
         for index in component_indices {
             let (typeid, bitmask) = self.component_bitmasks.get_index(index).unwrap();
-            component_typeids.push(typeid.clone());
+            component_typeids.push(*typeid);
         }
         component_typeids
     }

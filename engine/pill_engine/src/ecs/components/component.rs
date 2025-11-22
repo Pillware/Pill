@@ -57,7 +57,7 @@ impl<T> ConcreteComponentDestroyer<T> {
 
 impl <T> Clone for ConcreteComponentDestroyer<T> {
     fn clone(&self) -> Self {
-        Self { component_type: self.component_type.clone() }
+        Self { component_type: self.component_type }
     }
 }
 

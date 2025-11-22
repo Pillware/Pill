@@ -212,8 +212,8 @@ impl Resource for Shader {
         // Load data
         let renderer_resource_handle = engine.renderer.create_shader(
             &self.name, 
-            &vertex_shader_bytes, 
-            &fragment_shader_bytes,
+            vertex_shader_bytes, 
+            fragment_shader_bytes,
             &self.texture_slots,
             &self.parameter_slots,
             self.enable_engine_binding,

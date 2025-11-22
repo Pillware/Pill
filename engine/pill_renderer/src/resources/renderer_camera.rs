@@ -29,6 +29,12 @@ pub struct CameraParametersData {
     pub view_projection_matrix: Matrix4f, // Perspective manipulation
 }
 
+impl Default for CameraParametersData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CameraParametersData {
     pub fn new() -> Self {
         Self {

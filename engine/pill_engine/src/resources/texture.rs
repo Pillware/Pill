@@ -42,7 +42,7 @@ impl Texture {
     ) -> Self {
         Self {
             name: name.to_string(),
-            resource_loader: resource_loader,
+            resource_loader,
             texture_type,
             renderer_resource_handle: None,
         }

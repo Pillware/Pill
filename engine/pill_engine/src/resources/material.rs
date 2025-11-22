@@ -231,7 +231,7 @@ impl Material {
     // }
 
     pub fn set_rendering_order(&mut self, order: u8) -> Result<()> {
-        let error = EngineError::WrongRenderingOrder(order.to_string(), format!("{}-{}", 0, RENDER_QUEUE_KEY_ORDER.max.to_string()));
+        let error = EngineError::WrongRenderingOrder(order.to_string(), format!("{}-{}", 0, RENDER_QUEUE_KEY_ORDER.max));
         if order < RENDER_QUEUE_KEY_ORDER.max as u8 {
             self.rendering_order = order;
             // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
@@ -427,7 +427,7 @@ impl Resource for Material {
             {
                 // Check if assigned texture is of correct type
                 let (texture_slot_name, texture_slot) = self.textures.get_index(request - DEFERRED_REQUEST_VARIANT_TEXTURE_START).unwrap();
-                self.validate_texture(engine, texture_slot_name, &texture_slot)?;
+                self.validate_texture(engine, texture_slot_name, texture_slot)?;
 
                 // Assign renderer resource handle to texture slot
                 let (texture_slot_name, texture_slot) = self.textures.get_index_mut(request - DEFERRED_REQUEST_VARIANT_TEXTURE_START).unwrap();
