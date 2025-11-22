@@ -124,7 +124,7 @@ pub struct MeshData {
 }
 
 impl MeshData {
-    pub fn new(path: &PathBuf, flip_uv_y: bool) -> Result<Self> {
+    pub fn new(path: &Path, flip_uv_y: bool) -> Result<Self> {
         // Load model from path using tinyobjloader crate
         let load_options = LoadOptions {
             triangulate: true,
@@ -133,15 +133,15 @@ impl MeshData {
         };
 
         // Load data
-        let (models, _materials) = tobj::load_obj(path.as_path(), &load_options)?;
+        let (models, _materials) = tobj::load_obj(path, &load_options)?;
 
         // Check data validity
         if models.len() > 1 {
-            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(path.clone().into_os_string().into_string().unwrap())));
+            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(path.to_path_buf().into_os_string().into_string().unwrap())));
         }
 
         if models.is_empty() {
-            return Err(Error::new(EngineError::InvalidModelFile(path.clone().into_os_string().into_string().unwrap())));
+            return Err(Error::new(EngineError::InvalidModelFile(path.to_path_buf().into_os_string().into_string().unwrap())));
         }
 
         // Load vertex data from model

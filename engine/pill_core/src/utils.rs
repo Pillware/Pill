@@ -2,7 +2,7 @@ use crate::{EngineError, define_new_pill_slotmap_key};
 
 use anyhow::{ Context, Result, Error };
 use boolinator::Boolinator;
-use std::{ any::type_name, collections::HashMap, hash::Hash, path::PathBuf };
+use std::{ any::type_name, collections::HashMap, hash::Hash, path::Path };
 
 // --- Type to string utils ---
 
@@ -36,7 +36,7 @@ pub fn get_enum_variant_type_name<T: core::fmt::Debug>(a: &T) -> String {
 // --- Path utils ---
 
 // Check if path to asset is correct (exists and has supported format)
-pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static str]) -> Result<()> {
+pub fn validate_asset_path(path: &Path, allowed_formats: &'static [&'static str]) -> Result<()> {
     path.exists().ok_or(Error::new(EngineError::InvalidAssetPath(path.display().to_string())))?;
 
     match path.extension() {
@@ -50,17 +50,17 @@ pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static s
 
 // --- PillSlotMap utils ---
 
-#[macro_export] macro_rules! define_component_handle { 
+#[macro_export] macro_rules! define_component_handle {
     ( $(#[$outer:meta])* $vis:vis struct $name:ident; $($rest:tt)* ) => {
         pill_core::define_new_pill_slotmap_key! { }
-    }; 
+    };
 }
 
 // --- Other ---
 
 #[inline]
 pub fn get_game_error_message(result: Result<()>) -> Option<String> {
-    if result.is_err() { 
+    if result.is_err() {
         let mut message = String::new();
         for (i, error) in result.err().unwrap().chain().enumerate() {
             let message_part = match i == 0 {

@@ -131,7 +131,7 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
 
     // Init window
     let window_event_loop = winit::event_loop::EventLoop::new().unwrap();
-   
+
     // Initialize other window parameters
     let window_size = winit::dpi::PhysicalSize::<u32>::new(window_width, window_height);
     let window_min_size = winit::dpi::PhysicalSize::<u32>::new(100, 100);
@@ -447,7 +447,7 @@ fn main() {
 
     // Configure logging context and levels
     configure_logging(&config);
-  
+
     info!("Initializing {}", "Standalone".module_object_style());
 
     // Create windows

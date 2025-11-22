@@ -194,7 +194,7 @@ impl PillRenderer for Renderer {
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>,
+        render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
@@ -413,7 +413,7 @@ impl State {
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>,
+        render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,

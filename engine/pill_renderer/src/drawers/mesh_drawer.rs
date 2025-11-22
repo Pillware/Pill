@@ -3,12 +3,12 @@ use std::{num::NonZeroU32, ops::Range};
 
 use pill_core::{debug, LogContext, PillStyle, RendererError, Timer};
 use pill_engine::{ internal::{ RenderQueueItem, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, TransformComponent, RENDER_QUEUE_KEY_ORDER}, ComponentStorage};
-use crate::{ 
+use crate::{
     config::{
         CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, INITIAL_INSTANCE_VECTOR_CAPACITY, MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, MATERIAL_TEXTURES_BIND_GROUP_LAYOUT_INDEX
-    }, 
-    resources::{ RendererCamera, RendererResourceStorage, RendererShader }, 
-    Instance, 
+    },
+    resources::{ RendererCamera, RendererResourceStorage, RendererShader },
+    Instance,
 };
 
 use anyhow::{Error, Result};
@@ -22,7 +22,7 @@ pub struct DrawingContext {
     material_name: String,
     mesh_handle: Option<RendererMeshHandle>,
     mesh_name: String,
-    mesh_index_count: u32, // Number of indices in the current mesh   
+    mesh_index_count: u32, // Number of indices in the current mesh
 
     accumulated_instance_range: Range<u32>,
     accumulated_instance_count: u32,
@@ -38,14 +38,14 @@ impl DrawingContext {
         debug!(
             LogContext::Frame =>
             "Draw {} instance(s) {}->{}/{} command recorded [Batch: {}, Rendering order: {}, Shader: {}, Material: {}, Mesh: {}]",
-            self.accumulated_instance_count, 
-            self.accumulated_instance_range.start, 
-            self.accumulated_instance_range.end - 1, 
-            self.instance_batch_size, 
-            self.instance_batch_number, 
-            self.rendering_order, 
-            self.shader_name.name_style(), 
-            self.material_name.name_style(), 
+            self.accumulated_instance_count,
+            self.accumulated_instance_range.start,
+            self.accumulated_instance_range.end - 1,
+            self.instance_batch_size,
+            self.instance_batch_number,
+            self.rendering_order,
+            self.shader_name.name_style(),
+            self.material_name.name_style(),
             self.mesh_name.name_style()
         );
     }
@@ -66,14 +66,14 @@ impl DrawingContext {
 
     pub fn change_rendering_order(&mut self, new_order: u8) {
         self.rendering_order = new_order;
-        
+
         self.rendering_context_change_number += 1;
         debug!(LogContext::Frame => "Rendering order changed to: {}", self.rendering_order);
     }
 
     pub fn change_shader(
-        &mut self, 
-        renderer_resource_storage: &RendererResourceStorage, 
+        &mut self,
+        renderer_resource_storage: &RendererResourceStorage,
         shader_handle: RendererShaderHandle,
         render_pass: &mut wgpu::RenderPass,
         camera: &RendererCamera,
@@ -90,7 +90,7 @@ impl DrawingContext {
         if shader.pass_engine_parameters {
             render_pass.set_bind_group(ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &renderer_resource_storage.engine_parameters.bind_group, &[]);
             debug!(LogContext::Frame => "Engine parameters bound");
-        }   
+        }
 
         if shader.pass_camera_parameters {
             render_pass.set_bind_group(CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, &camera.bind_group, &[]);
@@ -102,44 +102,44 @@ impl DrawingContext {
     }
 
     pub fn change_material(
-        &mut self, 
-        renderer_resource_storage: &RendererResourceStorage, 
+        &mut self,
+        renderer_resource_storage: &RendererResourceStorage,
         material_handle: RendererMaterialHandle,
         render_pass: &mut wgpu::RenderPass,
     ) {
         self.material_handle = Some(material_handle);
         let material = renderer_resource_storage.materials.get(material_handle).unwrap();
         self.material_name = material.name.clone();
-    
+
         debug!(LogContext::Frame => "Changing material to: {}", self.material_name.name_style());
 
         if let Some(ref parameters_bind_group) = material.parameters_bind_group {
             render_pass.set_bind_group(MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, parameters_bind_group, &[]);
-            debug!(LogContext::Frame => "Material parameters bound"); 
+            debug!(LogContext::Frame => "Material parameters bound");
         }
 
         if let Some(ref texture_bind_group) = material.textures_bind_group {
             render_pass.set_bind_group(MATERIAL_TEXTURES_BIND_GROUP_LAYOUT_INDEX, texture_bind_group, &[]);
             debug!(LogContext::Frame => "Material textures bound");
         }
-        
+
         self.rendering_context_change_number += 1;
         debug!(LogContext::Frame => "Renderer pipeline material changed to: {}", self.material_name.name_style());
     }
 
     pub fn change_mesh(
-        &mut self, 
-        renderer_resource_storage: &RendererResourceStorage, 
+        &mut self,
+        renderer_resource_storage: &RendererResourceStorage,
         mesh_handle: RendererMeshHandle,
         render_pass: &mut wgpu::RenderPass,
     ) {
-        self.mesh_handle = Some(mesh_handle);               
+        self.mesh_handle = Some(mesh_handle);
         let mesh = renderer_resource_storage.meshes.get(mesh_handle).unwrap();
         self.mesh_name = mesh.name.clone();
 
         self.mesh_index_count = mesh.index_count;
-        render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..)); 
-        render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32); 
+        render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
         self.rendering_context_change_number += 1;
         debug!(LogContext::Frame => "Renderer pipeline mesh changed to: {}", self.mesh_name.name_style());
@@ -165,26 +165,26 @@ impl MeshDrawer {
 
         MeshDrawer {
             max_instance_batch_size,
-            instances: Vec::<Instance>::with_capacity(INITIAL_INSTANCE_VECTOR_CAPACITY), 
+            instances: Vec::<Instance>::with_capacity(INITIAL_INSTANCE_VECTOR_CAPACITY),
             instance_buffer,
         }
     }
 
     pub fn record_draw_commands(
-        &mut self, 
+        &mut self,
         // Resources
-        queue: &wgpu::Queue, 
+        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        renderer_resource_storage: &RendererResourceStorage, 
-        color_attachment: wgpu::RenderPassColorAttachment, 
+        renderer_resource_storage: &RendererResourceStorage,
+        color_attachment: wgpu::RenderPassColorAttachment,
         depth_stencil_attachment: wgpu::RenderPassDepthStencilAttachment,
         // Rendring data
         camera: &RendererCamera,
-        render_queue: &Vec::<RenderQueueItem>, 
+        render_queue: &[RenderQueueItem],
         transform_component_storage: &ComponentStorage<TransformComponent>,
         timer: &mut Timer,
        // profiler: &mut Profiler,
-    ) -> Result<()> { 
+    ) -> Result<()> {
         timer.record("Prepare render pass");
         debug!(LogContext::Frame => "Recording mesh draw commands");
 
@@ -208,7 +208,7 @@ impl MeshDrawer {
        // let _pipeline_statistics_query_start = profiler.begin_pipeline_statistics_query(&mut render_pass);
         //let _occlusion_query_start = profiler.begin_occlusion_query(&mut render_pass);
 
-       
+
  // let mut current_rendering_order: u8 = 0;
 
         // let mut current_shader_handle: Option<RendererShaderHandle> = None;
@@ -218,7 +218,7 @@ impl MeshDrawer {
         // let mut current_mesh_handle: Option<RendererMeshHandle> = None;
         // let mut current_mesh_name = "";
         // let mut current_mesh_index_count: u32 = 0; // Number of indices in the current mesh
-    
+
         let mut current_drawing_context = DrawingContext::default();
 
         for (i, instance_batch) in render_queue.chunks(self.max_instance_batch_size as usize).enumerate() {
@@ -228,7 +228,7 @@ impl MeshDrawer {
             current_drawing_context.instance_batch_size = batch_size as u32;
 
             timer.begin_context(format!("Prepare draw instance batch {}", i));
-            
+
             timer.record("Write instance buffer".to_string());
 
             // Prepare instance data and load it to buffer
@@ -249,12 +249,12 @@ impl MeshDrawer {
             queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instances)); // Update instance buffer
 
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Set instance buffer
-            
+
             timer.record("Record draw instances commands");
 
             // Reset instance range for each batch
             current_drawing_context.accumulated_instance_range = 0..0;
-            current_drawing_context.accumulated_instance_count = 0; 
+            current_drawing_context.accumulated_instance_count = 0;
 
             for (j, render_queue_item) in instance_batch.iter().enumerate() {
                 let render_queue_key_fields = pill_engine::internal::decompose_render_queue_key(render_queue_item.key);
@@ -299,11 +299,11 @@ impl MeshDrawer {
 
             timer.end_context()?; // End "Draw instance batch" context
         }
-        
+
         // Drop render_pass before finishing encoder
         //let _occlusion_query_end = profiler.end_occlusion_query(&mut render_pass);
         //let _pipeline_statistics_query_end = profiler.end_pipeline_statistics_query(&mut render_pass);
-        
+
         drop(render_pass);
 
        // let _timestamp_query_end = profiler.write_timestamp(encoder, "xx12");

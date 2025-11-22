@@ -59,7 +59,7 @@ pub trait PillRenderer {
         parameter_slots: &HashMap<String, ShaderParameterSlot>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
-    ) -> Result<RendererShaderHandle>;
+   ) -> Result<RendererShaderHandle>;
 
     fn create_material(
         &mut self,
@@ -101,7 +101,7 @@ pub trait PillRenderer {
 
     fn render(&mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec::<RenderQueueItem>,
+        render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui:  Box<dyn FnMut(&egui::Context)>,

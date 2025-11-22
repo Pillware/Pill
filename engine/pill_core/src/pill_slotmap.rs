@@ -156,7 +156,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         if version_limit.is_multiple_of(2) {
             return Err(())
         }
-        
+
         let mut slots = Vec::with_capacity(capacity + 1);
         slots.push(Slot {
             u: SlotUnion { next_free: 0 },
@@ -170,7 +170,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             version_limit,
             _k: PhantomData,
         };
-        
+
         Ok(slotmap)
     }
 
@@ -203,7 +203,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     pub fn get_next_free_slot_handle(&self) -> K {
 
         let new_num_elems = self.num_elems + 1;
-        if new_num_elems == core::u32::MAX {
+        if new_num_elems == u32::MAX {
             panic!("PillSlotMap number of elements overflow");
         }
 
@@ -237,7 +237,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     {
         // In case f panics, we don't make any changes until we have the value.
         let new_num_elems = self.num_elems + 1;
-        if new_num_elems == core::u32::MAX {
+        if new_num_elems == u32::MAX {
             panic!("PillSlotMap number of elements overflow");
         }
 
@@ -482,11 +482,11 @@ impl PillSlotMapKeyData {
     }
 
     fn null() -> Self {
-        Self::new(core::u32::MAX, 1)
+        Self::new(u32::MAX, 1)
     }
 
     fn is_null(self) -> bool {
-        self.index == core::u32::MAX
+        self.index == u32::MAX
     }
 
     /// Returns the key data as a 64-bit integer. No guarantees about its value
@@ -528,7 +528,7 @@ impl Default for PillSlotMapKeyData {
     }
 }
 
-pub unsafe trait PillSlotMapKey: 
+pub unsafe trait PillSlotMapKey:
     From<PillSlotMapKeyData> + Copy + Clone + Default + Eq + PartialEq + Ord + PartialOrd + core::hash::Hash + core::fmt::Debug {
     fn null() -> Self {
         PillSlotMapKeyData::null().into()
