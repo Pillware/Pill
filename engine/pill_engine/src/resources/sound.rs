@@ -8,7 +8,7 @@ use pill_core::{ get_type_name, EngineError, PillSlotMapKey, PillStyle, PillType
 
 use std::{
     io::{ Read, Cursor},
-    path::{Path, PathBuf},
+    path::PathBuf,
     fs::File,
 };
 use anyhow::{ Result, Context, Error };

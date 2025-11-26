@@ -1,12 +1,11 @@
 use crate::{
     ecs::{
-        Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, EntityHandle, SceneHandle
-    }, engine::Engine
+        Component, ComponentStorage,
+    },
 };
 use pill_core::{
-    get_type_name, Direction, Matrix3f, Matrix3fA, Matrix4f, PillTypeMap, PillTypeMapKey, Vector3f
+    Direction, Matrix3f, Matrix3fA, Matrix4f, PillTypeMapKey, Vector3f
 };
-use anyhow::{ Result, Context, Error };
 use serde::{ Serialize, Deserialize };
 
 // Coordinate system:

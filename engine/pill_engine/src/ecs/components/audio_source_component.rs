@@ -14,9 +14,9 @@ use crate::{
     },
 };
 
-use pill_core::{ PillTypeMapKey, get_type_name, warn, LogContext, PillStyle, Vector3f, get_enum_variant_type_name };
+use pill_core::{ PillTypeMapKey, get_type_name, warn, LogContext, PillStyle, get_enum_variant_type_name };
 
-use anyhow::{ Result, Context, Error };
+use anyhow::{ Result, Context };
 
 const DEFERRED_REQUEST_VARIANT_SET_SOUND: usize = 0;
 const DEFERRED_REQUEST_VARIANT_SET_VOLUME: usize = 1;

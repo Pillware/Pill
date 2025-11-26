@@ -8,18 +8,15 @@ use pill_core::{ PillTypeMapKey, Vector2f };
 use bitvec::prelude::*;
 
 use std::{
-    any::Any,
-    cell::RefCell,
     collections::{HashMap, VecDeque},
     time::Instant,
 };
-use winit::dpi::PhysicalPosition;
 use winit::event::{ ElementState, MouseScrollDelta };
 use gilrs::{
     GamepadId,
     ff::Effect,
 };
-use anyhow::{ Result, Context, Error };
+use anyhow::{ Result, Error };
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]

@@ -6,9 +6,9 @@ use crate::{
     config::DEFAULT_MATERIAL_HANDLE,
 };
 
-use pill_core::{ PillTypeMap, PillTypeMapKey, PillStyle, get_type_name, PillSlotMapKey };
+use pill_core::{ PillTypeMapKey, PillStyle, get_type_name };
 
-use anyhow::{ Result, Context, Error };
+use anyhow::{ Result, Context };
 
 
 const DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE: usize = 0;

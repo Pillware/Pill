@@ -11,9 +11,8 @@ use crate::{
 use indexmap::IndexMap;
 use pill_core::Timer;
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use thiserror::Error;
-use anyhow::{Result, Context, Error};
+use std::{collections::HashMap, sync::Arc};
+use anyhow::Result;
 
 
 // --- Renderer resource handles ---

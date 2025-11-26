@@ -16,8 +16,6 @@ pub use renderer::{
     RendererShaderHandle,
 };
 
-pub use egui::EguiUI;
-
 pub use render_queue::{
     RenderQueueItem,
     RenderQueueKeyFields,

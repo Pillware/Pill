@@ -1,4 +1,4 @@
-use crate::ecs::{ Component, ComponentStorage, GlobalComponentStorage };
+use crate::ecs::{ Component, ComponentStorage };
 
 use pill_core::PillTypeMapKey;
 

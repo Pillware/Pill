@@ -1,12 +1,10 @@
 use crate::{
     engine::Engine,
-    ecs::{ SceneManager, SceneHandle, Component, ComponentStorage }, 
+    ecs::{ SceneHandle, Component, ComponentStorage },
 };
 
-use anyhow::{Result, Error};
 
-
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct EntityHandle;
 }
 
@@ -27,7 +25,7 @@ impl<'a> EntityBuilder<'a> {
     pub fn build(self) -> EntityHandle {
         self.entity_handle
     }
-}  
+}
 
 // --- Entity ---
 
