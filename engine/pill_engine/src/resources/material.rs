@@ -18,18 +18,15 @@ use crate::{
         Shader,
         ShaderHandle,
         Texture,
-        TextureHandle,
-        TextureType }
+        TextureHandle}
 };
 
 use pill_core::{
-    debug,
     enum_variant_eq,
     get_enum_variant_type_name,
     get_type_name,
     Color,
     EngineError,
-    LogContext,
     PillSlotMapKey,
     PillStyle,
     PillTypeMapKey
@@ -38,9 +35,7 @@ use pill_core::{
 use anyhow::{ Result, Context, Error };
 use boolinator::*;
 use std::{
-    collections::{hash_map::Entry, HashMap},
-    ops::{Range, RangeInclusive},
-    path::{ Path, PathBuf }
+    collections::{HashMap},
 };
 use indexmap::IndexMap;
 

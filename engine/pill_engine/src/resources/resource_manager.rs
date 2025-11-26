@@ -1,19 +1,11 @@
 use crate::{
-    graphics::{ RendererMaterialHandle, RendererTextureHandle },
-    resources::{ ResourceStorage, Resource, MaterialHandle, Material, TextureHandle, Texture, TextureType },
+    resources::{ ResourceStorage, Resource },
 };
 
-use pill_core::{ EngineError, get_type_name, PillSlotMapKey, PillTypeMap, PillTypeMapKey };
+use pill_core::{ EngineError, get_type_name, PillSlotMapKey, PillTypeMap };
 
-use std::{
-    collections::{HashMap},
-    convert::TryInto,
-    env,
-    num::NonZeroU32,
-    path::PathBuf
-};
 use boolinator::Boolinator;
-use anyhow::{Result, Context, Error};
+use anyhow::{Result, Error};
 
 pub struct ResourceManager {
     resources: PillTypeMap,

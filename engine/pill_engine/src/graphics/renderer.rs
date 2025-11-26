@@ -1,20 +1,15 @@
 use crate::{
     ecs::{
         CameraComponent, ComponentStorage, EntityHandle, TransformComponent
-    }, engine::Engine, graphics::RenderQueueItem, internal::{MaterialParameter, MaterialTexture}, resources::{
-        MaterialHandle,
-        MeshData,
-        MeshHandle,
+    },  graphics::RenderQueueItem, internal::{MaterialParameter, MaterialTexture, MeshData}, resources::{
         ShaderParameterSlot,
         ShaderTextureSlot,
-        TextureHandle,
         TextureType,
     }
 };
 
 use indexmap::IndexMap;
-use pill_core::{PillSlotMapKey, Timer};
-use pill_core::PillStyle;
+use pill_core::Timer;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use thiserror::Error;

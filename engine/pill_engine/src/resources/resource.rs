@@ -1,9 +1,9 @@
 use crate::engine::Engine;
 
-use pill_core::{ PillTypeMap, PillTypeMapKey, PillSlotMapKey };
+use pill_core::{ PillTypeMapKey, PillSlotMapKey };
 
 use std::path::PathBuf;
-use anyhow::{Context, Result, Error};
+use anyhow::Result;
 
 // --- Resource ---
 
@@ -11,7 +11,7 @@ use anyhow::{Context, Result, Error};
 // PillSlotMapKey trait gives handle to the actual object in ResourceStorage
 
 pub trait Resource : PillTypeMapKey {
-    type Handle: PillSlotMapKey + Send; 
+    type Handle: PillSlotMapKey + Send;
 
     // Required to implement
     fn get_name(&self) -> String;

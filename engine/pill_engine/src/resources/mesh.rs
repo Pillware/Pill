@@ -2,14 +2,12 @@ use crate::{
     engine::Engine,
     graphics::{ RendererMeshHandle },
     resources::{ ResourceStorage, Resource },
-    ecs::{ DeferredUpdateManagerPointer, MeshRenderingComponent },
-    config::*,
+    ecs::MeshRenderingComponent,
 };
 
-use pill_core::{ EngineError, PillSlotMapKey, PillTypeMap, PillTypeMapKey, Vector2f, Vector3f, PillStyle, get_type_name };
+use pill_core::{ EngineError, PillSlotMapKey, PillTypeMapKey, Vector2f, Vector3f, PillStyle, get_type_name };
 
 use std::path::{ Path, PathBuf };
-use boolinator::Boolinator;
 use tobj::LoadOptions;
 use anyhow::{Result, Context, Error};
 
