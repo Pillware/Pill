@@ -1,4 +1,4 @@
-use pill_core::{debug, EngineError, LogContext, PillStyle, RendererError};
+use pill_core::{debug, LogContext, PillStyle, RendererError};
 use pill_engine::internal::{ShaderParameterSlot, ShaderTextureSlot};
 use std::collections::HashMap;
 use anyhow::{Error, Result};
@@ -164,10 +164,10 @@ impl RendererShader {
             let mut bind_group_layouts = Vec::new();
 
             if pass_engine_parameters {
-                bind_group_layouts.push(engine_bind_group_layout);            
+                bind_group_layouts.push(engine_bind_group_layout);
             }
             if pass_camera_parameters {
-                bind_group_layouts.push(camera_bind_group_layout);            
+                bind_group_layouts.push(camera_bind_group_layout);
             }
             if let Some(ref layout) = parameters_bind_group_layout {
                 bind_group_layouts.push(layout);
@@ -182,9 +182,9 @@ impl RendererShader {
                 push_constant_ranges: &[],
             })
         };
-        
+
         // Create color target states that specifies what what color outputs wgpu should set up
-        let color_target_states = &[Some(wgpu::ColorTargetState { 
+        let color_target_states = &[Some(wgpu::ColorTargetState {
             format: color_format,
             blend: Some(wgpu::BlendState {
                 alpha: wgpu::BlendComponent::REPLACE,
@@ -196,7 +196,7 @@ impl RendererShader {
         let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
             label: Some(&format!("{}_render_pipeline", name)),
             layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState { 
+            vertex: wgpu::VertexState {
                 module: &vertex_shader,
                 entry_point: Some("main"),
                 buffers: vertex_layouts, // Specifies structure of vertices that will be passed to the vertex shader
@@ -212,8 +212,8 @@ impl RendererShader {
                 topology: wgpu::PrimitiveTopology::TriangleList, // Each three vertices will correspond to one triangle
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw, // Specifies how to determine whether a given triangle is facing forward or not (FrontFace::Ccw means that a triangle is facing forward if the vertices are arranged in a counter clockwise direction)
-                cull_mode: Some(wgpu::Face::Back), // Triangles that are not considered facing forward are culled (not included in the render) as specified by CullMode::Back            
-                polygon_mode: wgpu::PolygonMode::Fill, // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE     
+                cull_mode: Some(wgpu::Face::Back), // Triangles that are not considered facing forward are culled (not included in the render) as specified by CullMode::Back
+                polygon_mode: wgpu::PolygonMode::Fill, // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                 conservative: false, // Requires Features::CONSERVATIVE_RASTERIZATION
                 unclipped_depth: true, // Requires Features::DEPTH_CLAMPING
             },
@@ -235,7 +235,7 @@ impl RendererShader {
 
         let render_pipeline = device.create_render_pipeline(&render_pipeline_descriptor);
 
-        let pipeline = Self { 
+        let pipeline = Self {
             name: name.to_string(),
             render_pipeline,
             parameter_slots: parameter_slots.clone(),
@@ -256,17 +256,17 @@ fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String
     let mut frontend = glsl::Frontend::default();
     let options = glsl::Options::from(stage);
     let module = frontend.parse(&options, source).unwrap();
-    
+
     let mut validator = naga::valid::Validator::new(
         naga::valid::ValidationFlags::all(),
         naga::valid::Capabilities::empty(),
     );
-    
+
     let info = validator.validate(&module)?;
-    
+
     let mut output = String::new();
     let mut writer = wgsl::Writer::new(&mut output, wgsl::WriterFlags::empty());
     writer.write(&module, &info)?;
-    
+
     Ok(output)
 }

@@ -7,7 +7,6 @@ use crate::{
 use pill_core::{ get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey };
 
 use anyhow::{ Result, Context };
-use readonly::make;            // For #[readonly::make] to resolve
 pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }

@@ -5,7 +5,6 @@ use crate::{
 use pill_core::{ EngineError, get_type_name, PillSlotMapKey };
 
 use anyhow::{ Result, Context, Error };
-use boolinator::Boolinator;
 
 pill_core::define_new_pill_slotmap_key! {
     pub struct SceneHandle;
@@ -212,8 +211,6 @@ impl SceneManager {
     }
 
     pub fn remove_scene(&mut self, scene_handle: SceneHandle) -> Result<Scene> {
-        let scene = self.scenes.get_mut(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
-
         // Remove scene
         let scene = self.scenes.remove(scene_handle).ok_or(Error::new(EngineError::InvalidSceneHandle))?;
 

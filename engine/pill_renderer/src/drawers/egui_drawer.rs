@@ -1,8 +1,7 @@
 use std::sync::Arc;
 use pill_core::Timer;
 use winit::event::WindowEvent;
-use winit::window::Window;
-use anyhow::{Error, Result};
+use anyhow::Result;
 
 const BORDER_RADIUS: f32 = 2.0;
 
@@ -34,10 +33,10 @@ impl EguiDrawer {
         context.set_visuals(visuals);
 
         let state = egui_winit::State::new(
-            context.clone(), 
-            id, 
-            &window, 
-            None, 
+            context.clone(),
+            id,
+            &window,
+            None,
             None,
             None
         );
@@ -121,7 +120,7 @@ impl EguiDrawer {
 
         let render_pass: &mut wgpu::RenderPass<'static> = unsafe { std::mem::transmute(&mut render_pass) };
 
-        self.renderer.render(&mut *render_pass, &tris, &screen_descriptor); 
+        self.renderer.render(&mut *render_pass, &tris, &screen_descriptor);
 
        // let _ = drop(render_pass);
 

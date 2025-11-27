@@ -126,7 +126,7 @@ impl Scene {
         let mut component_typeids = Vec::<TypeId>::new();
         let component_indices = get_indices_of_set_elements(bitmask);
         for index in component_indices {
-            let (typeid, bitmask) = self.component_bitmasks.get_index(index).unwrap();
+            let (typeid, _bitmask) = self.component_bitmasks.get_index(index).unwrap();
             component_typeids.push(*typeid);
         }
         component_typeids

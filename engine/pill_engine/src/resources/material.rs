@@ -33,7 +33,6 @@ use pill_core::{
 };
 
 use anyhow::{ Result, Context, Error };
-use boolinator::*;
 use std::{
     collections::{HashMap},
 };
@@ -402,8 +401,8 @@ impl Resource for Material {
             DEFERRED_REQUEST_VARIANT_RENDERING_ORDER =>
             {
                 // Find mesh rendering components that use this material and update them
-                for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-                    for (entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
+                for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+                    for (_entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
                         if let Some(material_handle) = mesh_rendering_component.material_handle {
                             // If mesh rendering component has handle to this material
                             if material_handle.data() == self.handle.unwrap().data() {
@@ -442,7 +441,7 @@ impl Resource for Material {
         Ok(())
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_material(v).unwrap();
@@ -452,8 +451,8 @@ impl Resource for Material {
 
 
 
-        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            let x = &engine.resource_manager;
+        //for (_scene_handle, _scene) in engine.scene_manager.scenes.iter_mut() {
+        //    let x = &engine.resource_manager;
 
             // for (entity_handle, mesh_rendering_component) in engine.iterate_one_component::<MeshRenderingComponent>()? {
             //     if let Some(material_handle) = mesh_rendering_component.material_handle {
@@ -464,7 +463,7 @@ impl Resource for Material {
             //         }
             //     }
             // }
-        }
+        //}
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 use crate::resources::Vertex;
 
 use pill_core::Matrix3f;
-use pill_engine::{ internal::{ TransformComponent, get_model_matrix, get_normal_matrix, update_transform_matrices }};
+use pill_engine::internal::TransformComponent;
 
 // --- Instance ---
 

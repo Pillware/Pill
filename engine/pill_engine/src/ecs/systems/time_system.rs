@@ -3,7 +3,7 @@ use crate::{
     ecs::TimeComponent,
 };
 
-use anyhow::{Result, Context, Error};
+use anyhow::Result;
 
 pub fn time_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.frame_delta_time;

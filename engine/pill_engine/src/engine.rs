@@ -7,9 +7,8 @@ use pill_core::{
 };
 
 use anyhow::{Context, Error, Result};
-use boolinator::Boolinator;
 use std::{
-    any::TypeId, collections::VecDeque, ops::RangeBounds,
+    any::TypeId, collections::VecDeque
 };
 use winit::{dpi::PhysicalPosition, event::KeyEvent};
 

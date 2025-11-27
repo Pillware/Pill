@@ -2,9 +2,8 @@ use crate::{
     resources::{ ResourceStorage, Resource },
 };
 
-use pill_core::{ EngineError, get_type_name, PillSlotMapKey, PillTypeMap };
+use pill_core::{ EngineError, get_type_name, PillTypeMap };
 
-use boolinator::Boolinator;
 use anyhow::{Result, Error};
 
 pub struct ResourceManager {

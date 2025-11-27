@@ -7,11 +7,6 @@ use anyhow::{ Result };
 use wgpu::util::DeviceExt;
 use pill_core::{Matrix3f, Matrix4f, Vector3f, Vector4f};
 
-use crate::config::{
-    CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX,
-    MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX
-};
-
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: Matrix4f = Matrix4f::from_cols_array(&[
     1.0, 0.0, 0.0, 0.0, // column 1

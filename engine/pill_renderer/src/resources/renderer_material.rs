@@ -1,12 +1,11 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
 
 use indexmap::IndexMap;
-use pill_core::{ debug, Color, LogContext, PillStyle, RendererError };
+use pill_core::{ debug, LogContext, PillStyle, RendererError };
 use pill_engine::internal::{
     get_default_texture_handles, get_renderer_texture_handle_from_material_texture, MaterialParameter, MaterialTexture, RendererMaterialHandle, RendererShaderHandle, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot
 };
 
-use wgpu::util::DeviceExt;
 use anyhow::{ Result, Error};
 use std::collections::HashMap;
 use crate::resources::RendererResourceStorage;
@@ -32,7 +31,7 @@ impl RendererMaterial {
         parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<Self> {
         debug!(LogContext::Rendering => "Creating material {}", name.name_style());
-        
+
         let shader = rendering_resource_storage.shaders.get(shader_handle)
             .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
@@ -41,7 +40,7 @@ impl RendererMaterial {
 
 
         // Create parameters uniform buffer and bind group if there are parameter slots
-        let (parameters_bind_group, parameters_uniform_buffer) = { 
+        let (parameters_bind_group, parameters_uniform_buffer) = {
             if !parameter_slots.is_empty() {
                 // Calculate uniform buffer size, create buffer if needed and write data to it
                 let parameters_uniform_buffer_size = Self::calculate_uniform_size(parameter_slots);
@@ -109,10 +108,10 @@ impl RendererMaterial {
     }
 
     pub fn update_textures(
-        device: &wgpu::Device,
-        material_renderer_handle: RendererMaterialHandle,
-        rendering_resource_storage: &mut RendererResourceStorage,
-        textures: &IndexMap<String, MaterialTexture>
+        _device: &wgpu::Device,
+        _material_renderer_handle: RendererMaterialHandle,
+        _rendering_resource_storage: &mut RendererResourceStorage,
+        _textures: &IndexMap<String, MaterialTexture>
     ) -> Result<()> {
         // let material = rendering_resource_storage.materials.get(material_renderer_handle)
         //     .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
@@ -126,9 +125,9 @@ impl RendererMaterial {
         // Recreate texture bind group
         // if !texture_slots.is_empty() && !shader.bind_group_layouts.is_empty() {
         //     let texture_bind_group = Self::create_texture_bind_group(
-        //         device, 
-        //         rendering_resource_storage, 
-        //         &shader.bind_group_layouts[0], 
+        //         device,
+        //         rendering_resource_storage,
+        //         &shader.bind_group_layouts[0],
         //         &format!("{}_textures", material.name),
         //         texture_slots,
         //         textures
@@ -136,7 +135,7 @@ impl RendererMaterial {
 
         //     let material = rendering_resource_storage.materials.get_mut(material_renderer_handle)
         //         .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
-            
+
         //     // if !material.bind_groups.is_empty() {
         //     //     material.bind_groups[0] = texture_bind_group;
         //     // }
@@ -146,7 +145,7 @@ impl RendererMaterial {
     }
 
     pub fn update_parameters(
-        device: &wgpu::Device,
+        _device: &wgpu::Device,
         queue: &wgpu::Queue,
         material_renderer_handle: RendererMaterialHandle,
         rendering_resource_storage: &mut RendererResourceStorage,
@@ -185,7 +184,7 @@ impl RendererMaterial {
     ) -> Result<()> {
         // Create a temporary buffer to hold all parameter data
         let mut data = Vec::new();
-        
+
         // NOTE: Each parameter is 16 bytes (vec4 alignment in WGSL)
         //       Padding is added to ensure each parameter takes 16 bytes
         //       This is not ideal because we could make it more efficient by packing parameters more tightly
@@ -224,17 +223,17 @@ impl RendererMaterial {
                 }
             }
         }
-        
+
         if !data.is_empty() {
             queue.write_buffer(buffer, 0, &data);
         }
-        
+
         Ok(())
     }
 
     fn create_textures_bind_group(
-        device: &wgpu::Device, 
-        rendering_resource_storage: &RendererResourceStorage, 
+        device: &wgpu::Device,
+        rendering_resource_storage: &RendererResourceStorage,
         texture_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
@@ -262,7 +261,7 @@ impl RendererMaterial {
                 binding: slot.texture_binding,
                 resource: wgpu::BindingResource::TextureView(&texture.texture_view),
             });
-            
+
             // Add sampler entry
             entries.push(wgpu::BindGroupEntry {
                 binding: slot.sampler_binding,
@@ -281,7 +280,7 @@ impl RendererMaterial {
     }
 
     // fn create_parameters_bind_group(
-    //     device: &wgpu::Device, 
+    //     device: &wgpu::Device,
     //     parameter_bind_group_layout: &wgpu::BindGroupLayout,
     //     name: &str,
     //     buffer: &wgpu::Buffer,

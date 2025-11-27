@@ -1,11 +1,10 @@
 use crate::{
     engine::Engine,
-    ecs::{ EntityHandle, TransformComponent, AudioListenerComponent, AudioSourceComponent, scene, AudioManagerComponent, SoundType },
+    ecs::{ TransformComponent, AudioListenerComponent, AudioSourceComponent, AudioManagerComponent, SoundType },
 };
 use pill_core::{ Matrix3f, Vector3f };
 
-use anyhow::{Result, Context, Error};
-use std::f32::consts::PI;
+use anyhow::Result;
 
 fn get_rotation_matrix(angles: Vector3f) -> Result<Matrix3f> {
 
@@ -30,7 +29,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
     let mut right_ear_position = Vector3f::new(1.0, 0.0, 0.0);
 
     // Update ear positions
-    for (entity_handle, audio_listener_component, transform_component) in engine.iterate_two_components::<AudioListenerComponent, TransformComponent>()? {
+    for (_entity_handle, audio_listener_component, transform_component) in engine.iterate_two_components::<AudioListenerComponent, TransformComponent>()? {
 
         if audio_listener_component.enabled {
 
@@ -59,7 +58,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
 
     // Update emitter position in all sinks based on transform components of entities to which audio source components are added
     let active_scene = engine.scene_manager.get_active_scene()?;
-    for (entity_handle, audio_source_component, transform_component) in active_scene.get_two_component_iterator::<AudioSourceComponent, TransformComponent>()? {
+    for (_entity_handle, audio_source_component, transform_component) in active_scene.get_two_component_iterator::<AudioSourceComponent, TransformComponent>()? {
         let audio_manager = engine.get_global_component::<AudioManagerComponent>()?;
         if let Some(index) = audio_source_component.sink_handle {
             audio_manager.get_spatial_sink(index).set_emitter_position(transform_component.position.into());
@@ -71,7 +70,7 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
     // Iterate over each audio source and find sinks that stopped playing
     let audio_manager = engine.global_components.get_mut::<AudioManagerComponent>().unwrap().data.as_mut().unwrap();
     let active_scene = engine.scene_manager.get_active_scene_mut()?;
-    for (entity_handle, audio_source_component) in active_scene.get_one_component_iterator_mut::<AudioSourceComponent>()? {
+    for (_entity_handle, audio_source_component) in active_scene.get_one_component_iterator_mut::<AudioSourceComponent>()? {
         // Check if the audio source has sink handle assigned
         if let Some(sink_handle) = audio_source_component.sink_handle {
             // Check if is playing

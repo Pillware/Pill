@@ -122,7 +122,7 @@ impl Component for CameraComponent {
         Ok(())
     }
 
-    fn destroy(&mut self, engine: &mut Engine, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) -> Result<()> {
+    fn destroy(&mut self, engine: &mut Engine, _self_scene_handle: SceneHandle, _self_entity_handle: EntityHandle) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_camera(v).unwrap();

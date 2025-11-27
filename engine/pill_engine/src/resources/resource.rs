@@ -17,10 +17,10 @@ pub trait Resource : PillTypeMapKey {
     fn get_name(&self) -> String;
 
     // Optional to implement
-    fn initialize(&mut self, engine: &mut Engine) -> Result<()> { Ok(()) } // Called when resource is added to the engine, before adding it to storage
-    fn pass_handle<H: PillSlotMapKey>(&mut self, self_handle: H) {} // Called right after resource is added to the engine, after adding it to storage
-    fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> { Ok(()) } // Called by DeferredUpdateSystem when request related to the resource is being processed
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> { Ok(()) } // Called when resource is being removed from the engine
+    fn initialize(&mut self, _engine: &mut Engine) -> Result<()> { Ok(()) } // Called when resource is added to the engine, before adding it to storage
+    fn pass_handle<H: PillSlotMapKey>(&mut self, _self_handle: H) {} // Called right after resource is added to the engine, after adding it to storage
+    fn deferred_update(&mut self, _engine: &mut Engine, _request: usize) -> Result<()> { Ok(()) } // Called by DeferredUpdateSystem when request related to the resource is being processed
+    fn destroy<H: PillSlotMapKey>(&mut self, _engine: &mut Engine, _self_handle: H) -> Result<()> { Ok(()) } // Called when resource is being removed from the engine
 }
 
 pub enum ResourceLoader {

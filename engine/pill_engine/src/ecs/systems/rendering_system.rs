@@ -1,16 +1,14 @@
 use crate::{
-    config::RENDERING_SYSTEM, 
-    ecs::{ scene, update_transform_matrices, CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle, MeshRenderingComponent, TransformComponent, UpdatePhase }, 
-    engine::Engine, 
-    graphics::{ compose_render_queue_key, RenderQueueItem, RenderQueueKey }, 
-    resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager }
+    config::RENDERING_SYSTEM,
+    ecs::{ EntityHandle, CameraAspectRatio, CameraComponent, MeshRenderingComponent, TransformComponent, EguiManagerComponent },
+    engine::Engine,
+    graphics::RenderQueueItem,
 };
 
 use pill_core::{ warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer };
 
-use std::{ ops::Range, time::Instant };
+use std::time::Instant;
 use anyhow::{ Result, Context, Error };
-use boolinator::Boolinator;
 
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let mut timer = Timer::new();
@@ -19,7 +17,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
     let mut active_camera_entity_handle_result: Option<EntityHandle> = None;
-    
+
     {
         let active_scene = engine.scene_manager.get_active_scene_mut()?;
 
@@ -54,7 +52,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let mut add_to_render_queue_duration: f32 = 0.0;
 
     // Iterate mesh rendering components
-    for (entity_handle, transform_component, mesh_rendering_component) in
+    for (entity_handle, _transform_component, mesh_rendering_component) in
         engine.scene_manager.get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(active_scene_handle)?
     {
         // Update transform matrices if required
@@ -97,8 +95,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     // Render
     match engine.renderer.render(
-        active_camera_entity_handle, 
-        &engine.render_queue, 
+        active_camera_entity_handle,
+        &engine.render_queue,
         camera_component_storage,
         transform_component_storage,
         egui_ui,
@@ -109,7 +107,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             timer.end_context()?; // End "Render" context
             engine.system_manager.update_system_timer(RENDERING_SYSTEM.name, RENDERING_SYSTEM.update_phase, timer)?;
             Ok(())
-        } 
+        }
         Err(e) => {
             match e.downcast_ref::<RendererError>() {
                 Some(RendererError::SurfaceLost) => {

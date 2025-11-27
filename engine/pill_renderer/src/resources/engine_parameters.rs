@@ -1,18 +1,5 @@
-use cgmath::{EuclideanSpace, SquareMatrix, Zero};
-use pill_engine::internal::{
-    TransformComponent,
-    CameraComponent
-};
-
 use anyhow::{ Result };
 use wgpu::util::DeviceExt;
-use std::f32::consts::FRAC_PI_2;
-
-use crate::config::{
-    CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, 
-    ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, 
-    MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX
-};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

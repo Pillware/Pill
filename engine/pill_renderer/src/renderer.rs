@@ -17,7 +17,7 @@ use crate::{
 use indexmap::IndexMap;
 
 use pill_engine::internal::{
-    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
+    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent,
 };
 
 use pill_core::{
@@ -25,7 +25,6 @@ use pill_core::{
     info,
     LogContext,
     PillSlotMapKey,
-    PillSlotMapKeyData,
     PillStyle,
     RendererError,
     Timer
@@ -33,15 +32,8 @@ use pill_core::{
 
 use std::{
     collections::HashMap,
-    iter,
-    mem::size_of,
-    num::NonZeroU32,
-    ops::Range,
     sync::Arc
 };
-
-use naga::front::glsl;
-use naga::back::wgsl;
 
 use anyhow::{Context, Error, Ok, Result};
 

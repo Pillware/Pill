@@ -65,8 +65,8 @@ impl Resource for Sound {
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Find audio source components that use this sound and update them
-        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            for (entity_handle, audio_source_component) in scene.get_one_component_iterator_mut::<AudioSourceComponent>()? {
+        for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            for (_entity_handle, audio_source_component) in scene.get_one_component_iterator_mut::<AudioSourceComponent>()? {
                 if let Some(sound_handle) = audio_source_component.sound_handle {
                     // If audio source component has handle to this sound
                     if sound_handle.data() == self_handle.data() {
@@ -89,7 +89,7 @@ impl SoundData {
     pub fn new(path: &PathBuf) -> Result<Self> {
         // Open sound file
         let mut sound_file = match File::open(path) {
-            Err(err) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
+            Err(_err) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
             file => file?
         };
 

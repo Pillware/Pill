@@ -205,7 +205,7 @@ impl Resource for Shader {
         self.handle = Some(ShaderHandle::from(self_handle.data()));
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_shader(v).unwrap();

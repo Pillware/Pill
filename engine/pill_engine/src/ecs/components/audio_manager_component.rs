@@ -104,7 +104,7 @@ impl AudioManagerComponent {
 
     // Give back the free handle
     pub(crate) fn return_sink(&mut self, sink_handle: usize, sound_type: &SoundType) {
-        if let Some(handle) = self.get_busy_sink_handle_queue(sound_type).iter().position(|x| *x == sink_handle) {
+        if let Some(_handle) = self.get_busy_sink_handle_queue(sound_type).iter().position(|x| *x == sink_handle) {
             self.get_busy_sink_handle_queue(sound_type).remove(sink_handle);
             self.get_free_sink_handle_queue(sound_type).push_back(sink_handle);
         }

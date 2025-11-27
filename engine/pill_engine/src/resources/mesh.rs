@@ -88,8 +88,8 @@ impl Resource for Mesh {
         }
 
         // Find mesh rendering components that use this mesh and update them
-        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            for (entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
+        for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            for (_entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
                 if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
                     // If mesh rendering component has handle to this mesh
                     if mesh_handle.data() == self_handle.data() {

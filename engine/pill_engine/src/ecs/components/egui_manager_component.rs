@@ -76,7 +76,7 @@ impl EguiManagerComponent {
                             .id_salt(&phase_id)
                             .default_open(is_phase_open)
                             .show(ui, |ui| {
-                                for (system_name, timer) in system_timers {
+                                for (_system_name, timer) in system_timers {
                                     let mut state = HashMap::new();
                                     for record in &timer.records {
                                         Self::render_timer_tree_with_state(ui, record, &mut state);
@@ -119,7 +119,7 @@ impl EguiManagerComponent {
         }
     }
 
-    pub(crate) fn update(&mut self, delta_time: f32) -> Result<()> {
+    pub(crate) fn update(&mut self, _delta_time: f32) -> Result<()> {
 
 
         Ok(())

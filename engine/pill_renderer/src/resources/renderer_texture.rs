@@ -2,11 +2,10 @@ use pill_engine::internal::TextureType;
 
 use anyhow::*;
 use image::GenericImageView;
-use std::{ num::NonZeroU32 };
 
 // --- Texture ---
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
 }
 
@@ -91,7 +90,7 @@ impl RendererTexture {
 
         // Create texture view
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         // Create sampler
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
