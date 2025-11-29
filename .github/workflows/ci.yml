@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -21,7 +20,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install Linux deps
+      x-linux-deps: &linux_deps
+        name: Install Linux deps
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libasound2-dev
@@ -40,6 +40,7 @@ jobs:
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
+      - *linux_deps
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -52,14 +53,6 @@ jobs:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release
 
-      - name: Debug layout
-        run: |
-          pwd
-          ls -la
-          ls -la engine || true
-          find . -maxdepth 3 -name Cargo.toml -print
-          ls -la engine/pill_launcher/target/release || true
-
       - name: Run fmt via PillLauncher and ensure repo stays clean
         run: |
           chmod +x engine/pill_launcher/target/release/PillLauncher
@@ -71,6 +64,7 @@ jobs:
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
+      - *linux_deps
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -100,6 +94,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - *linux_deps
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
