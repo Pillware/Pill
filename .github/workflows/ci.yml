@@ -94,9 +94,6 @@ jobs:
       matrix:
         example:
           - examples/floating_pills/
-          # add more examples here:
-          # - examples/Empty/
-          # - examples/Whatever/
 
     steps:
       - uses: actions/checkout@v4
