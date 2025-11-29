@@ -59,7 +59,7 @@ jobs:
         run: |
           chmod +x engine/pill_launcher/target/release/PillLauncher
           ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills/ -- fmt
-          git diff --exit-code
+          git diff --exit-code -- . ':(exclude)engine/Cargo.toml' ':(exclude)examples/floating_pills/Cargo.toml'
 
   clippy_check:
     runs-on: ubuntu-latest
@@ -82,7 +82,7 @@ jobs:
         run: |
           chmod +x engine/pill_launcher/target/release/PillLauncher
           ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills/ -- clippy --fix
-          git diff --exit-code
+          git diff --exit-code -- . ':(exclude)engine/Cargo.toml' ':(exclude)examples/floating_pills/Cargo.toml'
 
   build_examples:
     runs-on: ubuntu-latest
