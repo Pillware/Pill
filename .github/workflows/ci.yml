@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_launcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build PillLauncher (release)
+        run: cargo build --release --manifest-path engine/pill_launcher/Cargo.toml
+
+      - name: Upload PillLauncher artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: engine/pill_launcher/target/release/PillLauncher
+
+  fmt_check:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Download PillLauncher artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: .ci/bin
+
+      - name: Run fmt via PillLauncher and ensure repo stays clean
+        run: |
+          chmod +x .ci/bin/PillLauncher
+          .ci/bin/PillLauncher -a cargo -p examples/floating_pills/ -- fmt
+          git diff --exit-code
+
+  clippy_check:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Download PillLauncher artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: .ci/bin
+
+      - name: Run clippy via PillLauncher and ensure there are no errors
+        run: |
+          chmod +x .ci/bin/PillLauncher
+          .ci/bin/PillLauncher -a cargo -p examples/floating_pills/ -- clippy --fix
+          git diff --exit-code
+
+  build_examples:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - examples/floating_pills/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Download PillLauncher artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: .ci/bin
+
+      - name: Build example via PillLauncher
+        run: |
+          chmod +x .ci/bin/PillLauncher
+          .ci/bin/PillLauncher -a cargo -p "${{ matrix.example }}" -- build
+
