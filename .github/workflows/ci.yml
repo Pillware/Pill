@@ -7,6 +7,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Define reusable step(s) at top-level
+x-linux-deps: &linux_deps
+  name: Install Linux deps
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y pkg-config libasound2-dev
+
 jobs:
   build_launcher:
     runs-on: ubuntu-latest
@@ -20,11 +27,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      x-linux-deps: &linux_deps
-        name: Install Linux deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev
+      - *linux_deps
 
       - name: Build PillLauncher (release)
         run: cargo build --release --manifest-path engine/pill_launcher/Cargo.toml
