@@ -45,12 +45,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pilllauncher-linux
-          path: .ci/bin
+          path: engine/pill_launcher/target/release
+
+      - name: Debug layout
+        run: |
+          pwd
+          ls -la
+          ls -la engine || true
+          find . -maxdepth 3 -name Cargo.toml -print
+          ls -la engine/pill_launcher/target/release || true
 
       - name: Run fmt via PillLauncher and ensure repo stays clean
         run: |
-          chmod +x .ci/bin/PillLauncher
-          .ci/bin/PillLauncher -a cargo -p examples/floating_pills/ -- fmt
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+          ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills/ -- fmt
           git diff --exit-code
 
   clippy_check:
@@ -68,12 +76,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pilllauncher-linux
-          path: .ci/bin
+          path: engine/pill_launcher/target/release
 
       - name: Run clippy via PillLauncher and ensure there are no errors
         run: |
-          chmod +x .ci/bin/PillLauncher
-          .ci/bin/PillLauncher -a cargo -p examples/floating_pills/ -- clippy --fix
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+          ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills/ -- clippy --fix
           git diff --exit-code
 
   build_examples:
@@ -98,10 +106,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pilllauncher-linux
-          path: .ci/bin
+          path: engine/pill_launcher/target/release
 
       - name: Build example via PillLauncher
         run: |
-          chmod +x .ci/bin/PillLauncher
-          .ci/bin/PillLauncher -a cargo -p "${{ matrix.example }}" -- build
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+          ./engine/pill_launcher/target/release/PillLauncher -a cargo -p "${{ matrix.example }}" -- build
 
