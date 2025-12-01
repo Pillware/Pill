@@ -46,7 +46,6 @@ glob = "0.3"
 [features]
 game = []
 internal = []
-
-[profile.release]
-debug = 2
-
+headless = []
+networking = []
+all = ["game", "internal", "networking"]

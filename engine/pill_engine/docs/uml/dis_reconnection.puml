@@ -1,0 +1,85 @@
+
+     ┌────────┐                                                 ┌──────┐                                           ┌────────┐
+     │Client_1│                                                 │Server│                                           │Client_2│
+     └───┬────┘                                                 └──┬───┘                                           └───┬────┘
+         │                   Drops the connection                  │                                                   │
+         │ ────────────────────────────────────────────────────────>                                                   │
+         │                                                         │                                                   │
+         │─ ─ ┐                                                    │                                                   │
+         │    | Start the reconnection process                     │                                                   │
+         │< ─ ┘                                                    │                                                   │
+         │                                                         │                                                   │
+         │                                                         │────┐                                              │
+         │                                                         │    │ Handle entities owned by Client_1            │
+         │                                                         │<───┘                                              │
+         │                                                         │                                                   │
+         │                                                         │                                                   │
+         │                                            ╔══════╤═════╪═══════════════════════════════════════════════════╪══════════════╗
+         │                                            ║ ALT  │  OfflinePolicy::Despawn                                 │              ║
+         │                                            ╟──────┘     │                                                   │              ║
+         │                                            ║            │────┐                                              │              ║
+         │                                            ║            │    │ Despawn entities owned by Client_1           │              ║
+         │                                            ║            │<───┘                                              │              ║
+         │                                            ║            │                                                   │              ║
+         │                                            ║            │          Notify about despawned entities          │              ║
+         │                                            ║            │ ──────────────────────────────────────────────────>              ║
+         │                                            ╠════════════╪═══════════════════════════════════════════════════╪══════════════╣
+         │                                            ║ [OfflinePolicy::Freeze]                                        │              ║
+         │                                            ║            │────┐                                                             ║
+         │                                            ║            │    │ Entities owned by Client_1 remain in the world              ║
+         │                                            ║            │<───┘                                                             ║
+         │                                            ╚════════════╪═══════════════════════════════════════════════════╪══════════════╝
+         │                                                         │                                                   │
+         │                                                         │                                                   │
+         │                                                      ╔══╧═════════════════════════╗                         │
+═════════╪══════════════════════════════════════════════════════╣ Finally Client_1 reconnects╠═════════════════════════╪═══════════════════════════════════════
+         │                                                      ╚══╤═════════════════════════╝                         │
+         │                                                         │                                                   │
+         │          Reconnects and sends the current state         │                                                   │
+         │ ────────────────────────────────────────────────────────>                                                   │
+         │                                                         │                                                   │
+         │ Authoritatively force the state of the world to Server's│                                                   │
+         │ <────────────────────────────────────────────────────────                                                   │
+         │                                                         │                                                   │
+         │────┐                                                    │                                                   │
+         │    │ Update local state to match Server's               │                                                   │
+         │<───┘                                                    │                                                   │
+         │                                                         │                                                   │
+         │                                                         │────┐                                              │
+         │                                                         │    │ Spawn entities owned by Client_1             │
+         │                                                         │<───┘                                              │
+         │                                                         │                                                   │
+         │                                                         │          Notify about respawned entities          │
+         │                                                         │ ──────────────────────────────────────────────────>
+         │                                                         │                                                   │
+         │                                                         │                                                   │─ ─ ┐
+         │                                                         │                                                   │    | Spawns entities owned by Client_1
+         │                                                         │                                                   │< ─ ┘
+     ┌───┴────┐                                                 ┌──┴───┐                                           ┌───┴────┐
+     │Client_1│                                                 │Server│                                           │Client_2│
+     └────────┘                                                 └──────┘                                           └────────┘
+
+@startuml
+participant Server order 2
+participant Client_1 order 1
+participant Client_2 order 3
+
+Client_1 -> Server: Drops the connection
+Client_1 --> Client_1: Start the reconnection process
+Server -> Server: Handle entities owned by Client_1
+alt OfflinePolicy::Despawn
+    Server -> Server: Despawn entities owned by Client_1
+    Server -> Client_2: Notify about despawned entities
+else OfflinePolicy::Freeze
+    Server -> Server: Entities owned by Client_1 remain in the world
+end
+
+...Finally Client_1 reconnects...
+Client_1 -> Server: Reconnects and sends the current state
+Server -> Client_1: Authoritatively force the state of the world to Server's
+Client_1 -> Client_1: Update local state to match Server's
+Server -> Server: Spawn entities owned by Client_1
+Server -> Client_2: Notify about respawned entities
+Client_2 --> Client_2: Spawns entities owned by Client_1
+
+@enduml

@@ -15,6 +15,7 @@ enum Location {
     EngineProjectRoot, // Main engine project directory (containing creates, examples, etc)
     EngineCrates,
     PillEngineCrate,
+    PillCoreCrate,
     PillStandaloneCrate,
     PillLauncherCrate,
 }
@@ -66,6 +67,7 @@ fn get_path(location: Location) -> PathBuf {
         Location::EngineProjectRoot => main_engine_directory,
         Location::EngineCrates => main_engine_directory.join("engine"),
         Location::PillEngineCrate => main_engine_directory.join("engine").join("pill_engine"),
+        Location::PillCoreCrate => main_engine_directory.join("engine").join("pill_core"),
         Location::PillStandaloneCrate => main_engine_directory.join("engine").join("pill_standalone"),
         Location::PillLauncherCrate => main_engine_directory.join("engine").join("pill_launcher"),
     }
@@ -333,7 +335,7 @@ fn create_game_project(game_project_parent_directory_path: &PathBuf, game_name: 
     Ok(())
 }
 
-fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode) -> Result<()> {
+fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode, game_args: &[String]) -> Result<()> {
     // Build game project
     build_game_project(game_project_directory_path, output_directory_path, compile_mode)?;
 
@@ -345,6 +347,7 @@ fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path
     // Run exe (capture potential IO error here)
     let status = Command::new(&standalone_executable_path)
         .current_dir(output_directory_path)
+        .args(game_args)
         .status()
         .context(format!(
             "Failed to launch game project executable: {}",
@@ -363,6 +366,11 @@ fn build_game_project(game_project_directory_path: &PathBuf, output_directory_pa
     println!("Building game project from {}...", game_project_directory_path.display());
 
     let engine_workspace_directory_path = prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
+
+    // Pre-render all PUML in the engine crate
+    // TODO: just regenerate ones that changed
+    let pill_engine_dir = get_path(Location::PillEngineCrate);
+    render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
 
     // Build standalone executable along with game dynamic library
 	let mut arguments = vec![
@@ -482,20 +490,36 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     let engine_crate_manifest_path = get_path(Location::PillEngineCrate).join("Cargo.toml");
     let full_engine_manifest_path = empty_example_game_path.join("Cargo.toml");
 
+    // Pre-render all PUML in the engine crate
+    let pill_engine_dir = get_path(Location::PillEngineCrate);
+    render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
+
     // Game dev docs
-    let arguments = vec!["doc", "--no-deps", "--features", "game", "--manifest-path", engine_crate_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
+    let arguments = vec!["doc", "--no-deps", "--features", "game", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
         .context("Failed to execute command for generating game dev docs")?;
 
 	if status.success() {
-        println!("Engine dev docs generated successfully!");
+        println!("Game dev docs generated successfully!");
     }
 
     // Engine dev docs
-    // TODO: Remove game from workspace cargo.toml
-    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--features", "internal game", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
+    // Generate pill_core before pill_engine and don't generate other dependencies
+    let core_crate_manifest_path = get_path(Location::PillCoreCrate).join("Cargo.toml");
+    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--manifest-path", core_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
+    let status = Command::new("cargo")
+        .args(arguments)
+        .status()
+        .context("Failed to execute command for generating core dev docs")?;
+
+    // Success
+	if status.success() {
+        println!("Core dev docs generated successfully!");
+    }
+
+    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--features", "all", "--manifest-path", engine_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
@@ -503,7 +527,7 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Success
 	if status.success() {
-        println!("Game dev docs generated successfully!");
+        println!("Engine dev docs generated successfully!");
     }
 
     Ok(())
@@ -623,7 +647,7 @@ fn main() {
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
             output_directory_path = get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
-            run_game_project(&game_project_directory_path, &output_directory_path, &compile_mode).context("Failed to run game project").unwrap();
+            run_game_project(&game_project_directory_path, &output_directory_path, &compile_mode, &passthrough_args).context("Failed to run game project").unwrap();
         },
         "build" => {
             let game_project_directory_path = PathBuf::from(directory_path_argument.expect("Game project directory path has to be specified using --path flag. For example: --path <GAME_PROJECT_DIR>"))

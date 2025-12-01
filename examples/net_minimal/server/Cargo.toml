@@ -1,0 +1,22 @@
+[package]
+name = "pill_server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow     = "1"
+log        = "0.4"
+env_logger = "0.11"
+config     = "0.11"
+
+pill_engine = { path = "../../../engine/pill_engine", default-features = false }
+pill_core = { path = "../../../engine/pill_core", default-features = false }
+chrono = "0.4.41"
+ctrlc = "3.4.7"
+
+[features]
+default = [
+  "pill_engine/internal",
+  "pill_engine/headless",
+]
+

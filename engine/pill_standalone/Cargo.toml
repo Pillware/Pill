@@ -13,4 +13,7 @@ log = "0.4"
 config = "0.11"
 anyhow = "1.0.45"
 libloading = "0.8.8"
-image = "0.25.8"
+image = "0.25.6"
+
+[build-dependencies]
+winres = "0.1"

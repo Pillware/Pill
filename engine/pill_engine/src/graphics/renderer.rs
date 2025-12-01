@@ -107,7 +107,3 @@ pub trait PillRenderer {
 
 pub type Renderer = Box<dyn PillRenderer>;
 
-
-
-
-

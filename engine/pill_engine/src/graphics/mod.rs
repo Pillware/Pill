@@ -1,6 +1,8 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
 
 mod renderer;
+#[cfg(feature = "headless")]
+mod dummy_renderer;
 mod render_queue;
 mod egui;
 
@@ -15,6 +17,10 @@ pub use renderer::{
     RendererTextureHandle,
     RendererShaderHandle,
 };
+
+#[cfg(feature = "headless")]
+pub use self::dummy_renderer::DummyRenderer;
+pub use egui::EguiUI;
 
 pub use render_queue::{
     RenderQueueItem,

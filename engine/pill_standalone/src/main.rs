@@ -102,20 +102,9 @@ fn configure_logging(config: &Config) {
 }
 
 pub fn load_window_icon(path: &Path) -> Option<Icon> {
-    // Fast path on Windows: let the OS decode common formats for us.
-    #[cfg(target_os = "windows")]
-    {
-        let icon = Icon::from_path(path, None).ok()?;
-        return Some(icon);
-    }
-
-    // Cross‑platform path: decode with the `image` crate.
-    #[cfg(not(target_os = "windows"))]
-    {
-        let image = image::open(path).ok()?.into_rgba8();
-        let (width, height) = image.dimensions();
-        Icon::from_rgba(image.into_raw(), width, height).ok()
-    }
+    let image = image::open(path).ok()?.into_rgba8();
+    let (width, height) = image.dimensions();
+    Icon::from_rgba(image.into_raw(), width, height).ok()
 }
 
 fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> WindowData {
@@ -248,7 +237,7 @@ fn check_and_reload_game(
         let (game_library, game) = load_game_dynamic_library(&project_paths.game_dynamic_library_path);
         let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(window), config.clone()).unwrap());
         let mut new_engine = Engine::new(game, project_paths.game_resources_directory_path.clone(), renderer, config.clone());
-        new_engine.initialize(*window_size).unwrap();
+        new_engine.initialize(Some(*window_size)).unwrap();
         *engine = Some(new_engine);
         *game_dynamic_library = Some(game_library);
 
@@ -461,7 +450,7 @@ fn main() {
     // Initialize renderer and engine
     let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(&window_data.window), config.clone()).unwrap());
     let mut engine: Option<Engine> = Some(Engine::new(game, project_paths.game_resources_directory_path.clone(), renderer, config.clone()));
-    engine.as_mut().unwrap().initialize(window_data.size).context("Failed to initialize engine").unwrap();
+    engine.as_mut().unwrap().initialize(Some(window_data.size)).context("Failed to initialize engine").unwrap();
 
     // Run loop
     window_data.event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
