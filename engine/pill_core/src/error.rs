@@ -76,7 +76,7 @@ pub enum EngineError<'a> {
     SystemNotFound(String, String),
     #[error("{} {} not found", "UpdatePhase".specific_object_style(), .0.name_style())]
     SystemUpdatePhaseNotFound(String),
-    
+
     // Resource
     #[error("Path to {} is invalid: {}", "Asset".general_object_style(), .0.name_style())]
     InvalidAssetPath(String),
@@ -120,7 +120,13 @@ pub enum EngineError<'a> {
     NonReturnedSystemTimer(String),
     #[error("There is no active timer context to end")]
     NoTimerContextToEnd(),
-    
+
+    // Network
+    #[error("Invalid NetworkAction byte: {}", .0)]
+    InvalidNetworkAction(u8),
+    #[error("Connection not stable yet")]
+    ConnectionNotStable,
+
     // Other
     #[error("{} error: {}", "Engine".module_object_style(), .0)]
     Other(String),

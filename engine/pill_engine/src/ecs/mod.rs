@@ -79,6 +79,18 @@ pub use components::time_component::{
     TimeComponent,
 };
 
+pub use components::network_manager_component::{
+    NetworkManagerComponent,
+    NetworkSide,
+    ConnectionState,
+    ClientState,
+};
+
+pub use components::network_state_component::{
+    NetworkStateComponent,
+    NetworkEntityState,
+};
+
 // - Systems
 
 pub use systems::{
@@ -106,6 +118,15 @@ pub use systems::time_system::{
 
 pub use systems::audio_system::{
     audio_system,
+};
+
+pub use systems::networking_system::{
+    networking_system_client,
+    networking_system_server,
+    EntityUpdate,
+    NetworkUpdatePayload,
+    NetworkEntityAction,
+    client_go_offline
 };
 
 // - Other

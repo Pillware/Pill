@@ -50,17 +50,17 @@ pub fn validate_asset_path(path: &PathBuf, allowed_formats: &'static [&'static s
 
 // --- PillSlotMap utils ---
 
-#[macro_export] macro_rules! define_component_handle { 
+#[macro_export] macro_rules! define_component_handle {
     ( $(#[$outer:meta])* $vis:vis struct $name:ident; $($rest:tt)* ) => {
         pill_core::define_new_pill_slotmap_key! { }
-    }; 
+    };
 }
 
 // --- Other ---
 
 #[inline]
 pub fn get_game_error_message(result: Result<()>) -> Option<String> {
-    if result.is_err() { 
+    if result.is_err() {
         let mut message = String::new();
         for (i, error) in result.err().unwrap().chain().enumerate() {
             let message_part = match i == 0 {

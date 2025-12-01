@@ -1,12 +1,12 @@
 #![allow(non_snake_case, dead_code)]
 
 use std::{
-    env, fs::{self, File}, io::{ BufRead, BufReader, Write }, path::{ PathBuf }, process::Command
+    env, fs::{self, File}, io::{ BufRead, BufReader, Write }, path::{ PathBuf }, process::{Command, Stdio}, ffi::OsStr, result::Result::Ok
 };
 use config::Config;
 use fs_extra::dir::CopyOptions;
 use anyhow::*;
-use clap::{ Arg, App };
+use clap::{ Arg, App, AppSettings };
 use path_absolutize::Absolutize;
 
 // - Cargo commands
@@ -15,6 +15,7 @@ enum Location {
     EngineProjectRoot, // Main engine project directory (containing creates, examples, etc)
     EngineCrates,
     PillEngineCrate,
+    PillCoreCrate,
     PillStandaloneCrate,
     PillLauncherCrate,
 }
@@ -66,6 +67,7 @@ fn get_path(location: Location) -> PathBuf {
         Location::EngineProjectRoot => main_engine_directory,
         Location::EngineCrates => main_engine_directory.join("engine"),
         Location::PillEngineCrate => main_engine_directory.join("engine").join("pill_engine"),
+        Location::PillCoreCrate => main_engine_directory.join("engine").join("pill_core"),
         Location::PillStandaloneCrate => main_engine_directory.join("engine").join("pill_standalone"),
         Location::PillLauncherCrate => main_engine_directory.join("engine").join("pill_launcher"),
     }
@@ -168,6 +170,67 @@ fn remove_files_starting_with(directory_path: &PathBuf, file_name_prefix: &str) 
     Ok(())
 }
 
+// Render all *.puml under <crate>/docs/uml into <crate>/docs/uml_out as SVGs
+fn render_puml_for_crate(crate_dir: &PathBuf) -> Result<()> {
+    let in_dir = crate_dir.join("docs").join("uml");
+    let out_dir = crate_dir.join("docs").join("uml_out");
+
+    if !in_dir.exists() {
+        return Ok(()); // Skip non-existent
+    }
+    fs::create_dir_all(&out_dir)?;
+
+    // Collect input files
+    let mut inputs = Vec::new();
+    for entry in fs::read_dir(&in_dir).with_context(|| format!("Failed to read directory: {}", in_dir.display()))? {
+        let path = entry?.path();
+        println!("Checking file: {}", path.display());
+        if path.extension() == Some(OsStr::new("puml")) {
+            inputs.push(path);
+        }
+    }
+
+    println!("Found {} PlantUML files to render in {}", inputs.len(), in_dir.display());
+
+    if inputs.is_empty() {
+        return Ok(());
+    }
+
+    let have_cli = Command::new("plantuml").arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok();
+
+    // Prefer "plantuml" CLI tool if available
+    if !have_cli {
+        bail!("Please install plantuml!");
+    }
+
+    for puml in &inputs {
+        let svg_path = out_dir.join(puml.file_stem().unwrap()).with_extension("svg");
+
+        let mut child = Command::new("plantuml")
+            .arg("-tsvg")
+            .arg("-pipe")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .context("Spawn plantuml -pipe")?;
+
+        {
+            let mut stdin = child.stdin.take().unwrap();
+            let bytes = fs::read(puml).with_context(|| format!("Read PUML file {}", puml.display()))?;
+            stdin.write_all(&bytes)?;
+        }
+
+        let out = child.wait_with_output().context("Wait plantuml")?;
+        if !out.status.success() {
+            bail!("plantuml failed with code {}", out.status);
+        }
+        fs::write(&svg_path, &out.stdout).with_context(|| format!("Write SVG file {}", svg_path.display()))?;
+    }
+
+    // TODO: either distribute plantuml or download it automatically
+    Ok(())
+}
+
 
 // --- Actions ---
 
@@ -225,7 +288,7 @@ fn create_game_project(game_project_parent_directory_path: &PathBuf, game_name: 
     Ok(())
 }
 
-fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode) -> Result<()> {
+fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode, game_args: &[String]) -> Result<()> {
     // Build game project
     build_game_project(game_project_directory_path, output_directory_path, compile_mode)?;
 
@@ -237,6 +300,7 @@ fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path
     // Run exe (capture potential IO error here)
     let status = Command::new(&standalone_executable_path)
         .current_dir(output_directory_path)
+        .args(game_args)
         .status()
         .context(format!(
             "Failed to launch game project executable: {}",
@@ -300,6 +364,11 @@ fn build_game_project(game_project_directory_path: &PathBuf, output_directory_pa
         if line.contains("workspace") { return format!("workspace = \"{}\"", get_path(Location::EngineCrates).to_str().unwrap().replace("\\", "/")) }
         line
     })?;
+
+    // Pre-render all PUML in the engine crate
+    // TODO: just regenerate ones that changed
+    let pill_engine_dir = get_path(Location::PillEngineCrate);
+    render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
 
     // Build standalone executable along with game dynamic library
 	let mut arguments = vec![
@@ -415,20 +484,36 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     let engine_crate_manifest_path = get_path(Location::PillEngineCrate).join("Cargo.toml");
     let full_engine_manifest_path = empty_example_game_path.join("Cargo.toml");
 
+    // Pre-render all PUML in the engine crate
+    let pill_engine_dir = get_path(Location::PillEngineCrate);
+    render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
+
     // Game dev docs
-    let arguments = vec!["doc", "--no-deps", "--features", "game", "--manifest-path", engine_crate_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
+    let arguments = vec!["doc", "--no-deps", "--features", "game", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
         .context("Failed to execute command for generating game dev docs")?;
 
 	if status.success() {
-        println!("Engine dev docs generated successfully!");
+        println!("Game dev docs generated successfully!");
     }
 
     // Engine dev docs
-    // TODO: Remove game from workspace cargo.toml
-    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--features", "internal game", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
+    // Generate pill_core before pill_engine and don't generate other dependencies
+    let core_crate_manifest_path = get_path(Location::PillCoreCrate).join("Cargo.toml");
+    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--manifest-path", core_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
+    let status = Command::new("cargo")
+        .args(arguments)
+        .status()
+        .context("Failed to execute command for generating core dev docs")?;
+
+    // Success
+	if status.success() {
+        println!("Core dev docs generated successfully!");
+    }
+
+    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--features", "all", "--manifest-path", engine_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
@@ -436,7 +521,7 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Success
 	if status.success() {
-        println!("Game dev docs generated successfully!");
+        println!("Engine dev docs generated successfully!");
     }
 
     Ok(())
@@ -487,13 +572,20 @@ fn main() {
         .default_value("debug")
         .required(false);
 
+    let game_args = Arg::with_name("game-args")
+        .help("Arguments passed to the game (use `--` to separate them)")
+        .multiple(true)
+        .last(true)
+        .allow_hyphen_values(true);
+
     // Addition of the options to the CLI
-    let app = app.arg(action_option).arg(name_option).arg(path_option).arg(output_path_option).arg(compile_mode_option);
+    let app = app.arg(action_option).arg(name_option).arg(path_option).arg(output_path_option).arg(compile_mode_option).arg(game_args).setting(AppSettings::TrailingVarArg);
 
     // Extraction of the arguments
     let matches = app.get_matches();
 
     // Arguments
+    let passthrough_args: Vec<String> = matches.values_of("game-args").map(|vals| vals.map(|s| s.to_string()).collect()).unwrap_or_default();
     let action_argument = matches.value_of("action").expect("Action has to be specified");
     let directory_path_argument = matches.value_of("path");
     let game_name_argument = matches.value_of("name");
@@ -522,7 +614,7 @@ fn main() {
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
             output_directory_path = get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
-            run_game_project(&game_project_directory_path, &output_directory_path, &compile_mode).context("Failed to run game project").unwrap();
+            run_game_project(&game_project_directory_path, &output_directory_path, &compile_mode, &passthrough_args).context("Failed to run game project").unwrap();
         },
         "build" => {
             let game_project_directory_path = PathBuf::from(directory_path_argument.expect("Game project directory path has to be specified using --path flag. For example: --path <GAME_PROJECT_DIR>"))

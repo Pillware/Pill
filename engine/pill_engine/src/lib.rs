@@ -10,6 +10,9 @@ mod config;
 pub use pill_core::PillTypeMapKey;
 pub use ecs::{Component, GlobalComponent, ComponentStorage, GlobalComponentStorage};
 
+#[cfg(feature = "headless")]
+pub use graphics::DummyRenderer;
+
 #[macro_export]
 macro_rules! define_component {
     (
@@ -110,6 +113,7 @@ pub mod game {
         Vector2i,
         create_game,
         define_new_pill_slotmap_key,
+        DISTINCT_COLOR_PALETTE
     };
 
     extern crate anyhow;
@@ -155,6 +159,16 @@ pub mod internal {
             update_transform_matrices,
             get_model_matrix,
             get_normal_matrix,
+            NetworkStateComponent,
+            networking_system_server,
+            networking_system_client,
+            NetworkManagerComponent,
+            NetworkEntityState,
+            EntityUpdate,
+            NetworkUpdatePayload,
+            NetworkEntityAction,
+            NetworkSide,
+            client_go_offline
         },
         resources::{
             Texture,

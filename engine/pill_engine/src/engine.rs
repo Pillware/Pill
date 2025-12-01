@@ -1,4 +1,9 @@
-use crate::{config::*, ecs::*, graphics::*, resources::*};
+use crate::{
+    resources::*,
+    ecs::*,
+    graphics::*,
+    config::*,
+};
 
 use pill_core::{
     debug, error, get_enum_variant_type_name, get_game_error_message, get_type_name,
@@ -6,11 +11,8 @@ use pill_core::{
     PillTypeMap, Timer, Vector2f,
 };
 
-use anyhow::{Context, Error, Result};
-use boolinator::Boolinator;
-use std::{
-    any::type_name, any::Any, any::TypeId, cell::RefCell, collections::VecDeque, ops::RangeBounds,
-};
+use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell, ops::RangeBounds };
+use anyhow::{Context, Result, Error};
 use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
 // -------------------------------------------------------------------------------
@@ -30,7 +32,7 @@ pub trait PillGame {
 pub struct Engine {
     pub(crate) config: config::Config,
     pub(crate) game: Option<Game>,
-    pub(crate) renderer: Renderer,
+    pub(crate) renderer: Box<dyn PillRenderer>,
     pub(crate) scene_manager: SceneManager,
     pub(crate) system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
@@ -47,6 +49,7 @@ pub struct Engine {
 /// Pill Engine internal API
 #[cfg(feature = "internal")]
 impl Engine {
+    #[cfg(not(feature = "headless"))]
     pub fn new(
         game: Box<dyn PillGame>,
         game_resources_directory_path: std::path::PathBuf,
@@ -69,6 +72,30 @@ impl Engine {
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path,
+            frame_delta_time: 0.0.into(),
+        }
+    }
+
+    #[cfg(feature = "headless")]
+    pub fn new(
+        game: Box<dyn PillGame>,
+        config: config::Config
+    ) -> Self {
+        let max_entity_count = config.get_int("MAX_ENTITIES").unwrap_or(MAX_ENTITIES as i64) as usize;
+        let dummy_renderer = Box::new(DummyRenderer) as Box<dyn PillRenderer>;
+
+        Self {
+            config,
+            game: Some(game),
+            renderer: dummy_renderer,
+            scene_manager: SceneManager::new(max_entity_count),
+            system_manager: SystemManager::new(),
+            resource_manager: ResourceManager::new(),
+            global_components: PillTypeMap::new(),
+            input_queue: VecDeque::new(),
+            render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
+            window_size: winit::dpi::PhysicalSize::<u32>::default(),
+            game_resources_directory_path: std::path::PathBuf::new(),
             frame_delta_time: 0.0.into(),
         }
     }
@@ -276,57 +303,35 @@ impl Engine {
     /// Initializes Pill Engine
     ///
     /// Creates default global components, adds default systems, creates default resources, initializes game
-    pub fn initialize(&mut self, window_size: winit::dpi::PhysicalSize<u32>) -> Result<()> {
+    pub fn initialize(&mut self, window_size: Option<winit::dpi::PhysicalSize<u32>>) -> Result<()> {
         info!(LogContext::Engine => "Initializing {}", "Engine".module_object_style());
 
         // Set window size
-        self.window_size = window_size;
+        self.window_size = window_size.unwrap_or(winit::dpi::PhysicalSize::<u32>::new(800, 600));
 
         // Register global components
-        self.add_global_component(InputComponent::new())?;
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
         self.add_global_component(EguiManagerComponent::new())?;
 
-        let max_ambient_sink_count =
-            self.config
-                .get_int("MAX_CONCURRENT_2D_SOUNDS")
-                .unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
-        let max_spatial_sink_count =
-            self.config
-                .get_int("MAX_CONCURRENT_3D_SOUNDS")
-                .unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
-        self.add_global_component(AudioManagerComponent::new(
-            max_ambient_sink_count,
-            max_spatial_sink_count,
-        ))?;
+        #[cfg(not(feature = "headless"))]
+        {
+            self.add_global_component(InputComponent::new())?;
+            let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUNDS").unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
+            let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUNDS").unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
+            self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
+        }
 
         // Add built-in systems
-        self.system_manager.add_system(
-            INPUT_SYSTEM.name,
-            INPUT_SYSTEM.system_function,
-            INPUT_SYSTEM.update_phase,
-        )?;
-        self.system_manager.add_system(
-            TIME_SYSTEM.name,
-            TIME_SYSTEM.system_function,
-            TIME_SYSTEM.update_phase,
-        )?;
-        self.system_manager.add_system(
-            AUDIO_SYSTEM.name,
-            AUDIO_SYSTEM.system_function,
-            AUDIO_SYSTEM.update_phase,
-        )?;
-        self.system_manager.add_system(
-            DEFERRED_UPDATE_SYSTEM.name,
-            DEFERRED_UPDATE_SYSTEM.system_function,
-            DEFERRED_UPDATE_SYSTEM.update_phase,
-        )?;
-        self.system_manager.add_system(
-            RENDERING_SYSTEM.name,
-            RENDERING_SYSTEM.system_function,
-            RENDERING_SYSTEM.update_phase,
-        )?;
+        self.system_manager.add_system(TIME_SYSTEM.name, TIME_SYSTEM.system_function, TIME_SYSTEM.update_phase)?;
+        self.system_manager.add_system(DEFERRED_UPDATE_SYSTEM.name, DEFERRED_UPDATE_SYSTEM.system_function, DEFERRED_UPDATE_SYSTEM.update_phase)?;
+
+        #[cfg(not(feature = "headless"))]
+        {
+            self.system_manager.add_system(INPUT_SYSTEM.name, INPUT_SYSTEM.system_function, INPUT_SYSTEM.update_phase)?;
+            self.system_manager.add_system(AUDIO_SYSTEM.name, AUDIO_SYSTEM.system_function, AUDIO_SYSTEM.update_phase)?;
+            self.system_manager.add_system(RENDERING_SYSTEM.name, RENDERING_SYSTEM.system_function, RENDERING_SYSTEM.update_phase)?;
+        }
 
         // Create default resources
         self.create_default_resources()
@@ -367,6 +372,7 @@ impl Engine {
                 // because it has to render its own timer data in the UI
                 // (and since the frame in which it renders is not yet finished when it renders UI, it has to use previous frame timer data)
                 if system_name != RENDERING_SYSTEM.name {
+
                     let mut timer = Timer::new();
                     timer.begin_context(&format!("{} system update", system_name));
                     self.system_manager
@@ -637,6 +643,21 @@ impl Engine {
                 "Creating {} failed",
                 "Entity".general_object_style()
             ))?;
+
+        // Destroy components using destroyers
+        for mut component_destroyer in component_destroyers {
+            component_destroyer.destroy(self, scene_handle, entity_handle)?;
+        }
+
+        Ok(())
+    }
+
+    // Removes entity specified with entity handle from its scene
+    pub fn remove_entity_default_scene(&mut self, entity_handle: EntityHandle) -> Result<()> {
+        let scene_handle = self.scene_manager.get_active_scene_handle()?;
+        debug!("Removing {} from {} {}", "Entity".general_object_style(), "Scene".general_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+
+        let component_destroyers = self.scene_manager.remove_entity(scene_handle, entity_handle).context(format!("Creating {} failed", "Entity".general_object_style()))?;
 
         // Destroy components using destroyers
         for mut component_destroyer in component_destroyers {

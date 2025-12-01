@@ -1,0 +1,16 @@
+[package]
+name = "pill_game"
+version = "0.1.0"
+edition = "2021"
+workspace = "/home/jduchniewicz/Projects/StickyPistonStudios/Pill-Engine/engine"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pill_engine = { path = "../../../engine/pill_engine", default-features = false, features = ["internal", "networking", "game"] }
+
+rand = "0.9.2"
+anyhow = "1"
+log    = "0.4"
+bincode = "1.0"

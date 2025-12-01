@@ -9,8 +9,10 @@ mod pill_twinmap;
 mod pill_typemap;
 mod bitmask_utils;
 mod timer;
+mod networking;
 mod log;
 mod style;
+mod color;
 
 // --- Use ---
 
@@ -61,9 +63,42 @@ pub use utils::{
     get_game_error_message,
 };
 
+pub use color::{
+	generate_color_palette,
+    hsl_to_rgb,
+    DISTINCT_COLOR_PALETTE
+};
+
 pub use timer::{
     Timer,
     TimerRecord
+};
+
+pub use networking::{
+    NetworkServer,
+    NetworkClient,
+    NetworkPacket,
+    NetworkAction,
+    ExitNotice,
+    RELIABLE_CHANNEL_ID,
+    UNRELIABLE_CHANNEL_ID,
+    server_start,
+    server_send_one,
+    server_broadcast,
+    server_broadcast_except,
+    server_broadcast_exit,
+    server_dying_grasp,
+    server_flush,
+    server_update,
+    server_get_events,
+    server_disconnect_client,
+    client_connect,
+    client_disconnect,
+    client_send,
+    client_update,
+    client_get_events,
+    client_flush,
+    is_not_ready,
 };
 
 pub use style::{

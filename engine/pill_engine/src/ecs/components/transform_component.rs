@@ -73,7 +73,6 @@ pub struct TransformComponent {
     // Not to calculate matrices multiple times, we will update them only once per frame
     // The update happens in the rendering system
     pub matrix_update_required: bool,
-    pub net_dirty: bool,
 }
 
 impl TransformComponent {
@@ -89,7 +88,6 @@ impl TransformComponent {
             model_matrix: Matrix4f::IDENTITY,
             normal_matrix: Matrix3fA::IDENTITY,
             matrix_update_required: true,
-            net_dirty: false,
         }
     }
 
