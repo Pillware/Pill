@@ -3,7 +3,8 @@ name = "pill_core"
 version = "0.1.0"
 authors = [
     # Extend this list when submiting PR
-    "Mateusz Szymoński <mateusz.szymonski@gmail.com>"
+    "Mateusz Szymoński <mateusz.szymonski@gmail.com>",
+    "Jakub Duchniewicz <j.duchniewicz@gmail.com>"
     ]
 edition = "2021"
 

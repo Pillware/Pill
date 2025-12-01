@@ -1,3 +1,4 @@
+# Run the github CI which builds the launcher and uses it to build examples, run the formatter and clippy checker
 name: CI
 
 on:
@@ -31,7 +32,7 @@ jobs:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release/PillLauncher
 
-  fmt_check:
+  code_formatting_check:
     runs-on: ubuntu-latest
     needs: build_launcher
     steps:
@@ -58,7 +59,7 @@ jobs:
           ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills/ -- fmt
           git diff --exit-code -- . ':(exclude)engine/Cargo.toml' ':(exclude)examples/floating_pills/Cargo.toml'
 
-  clippy_check:
+  code_linting_check:
     runs-on: ubuntu-latest
     needs: build_launcher
     steps:
