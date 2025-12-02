@@ -245,10 +245,8 @@ fn render_puml_for_crate(crate_dir: &Path) -> Result<()> {
 
     let have_cli = Command::new("plantuml")
         .arg("-version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("PlantUML version"))
         .unwrap_or(false);
 
     // Prefer "plantuml" CLI tool if available
