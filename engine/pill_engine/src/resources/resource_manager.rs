@@ -1,10 +1,8 @@
-use crate::{
-    resources::{ ResourceStorage, Resource },
-};
+use crate::resources::{Resource, ResourceStorage};
 
-use pill_core::{ EngineError, get_type_name, PillTypeMap };
+use pill_core::{get_type_name, EngineError, PillTypeMap};
 
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 
 pub struct ResourceManager {
     resources: PillTypeMap,
@@ -18,35 +16,51 @@ impl Default for ResourceManager {
 
 impl ResourceManager {
     pub fn new() -> Self {
-	    Self {
+        Self {
             resources: PillTypeMap::new(),
         }
     }
 
     // --- Slots ---
 
-    pub(crate) fn get_resource_slot<'a, T>(&'a self, resource_handle: &T::Handle) -> Result<&'a Option<T>>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    pub(crate) fn get_resource_slot<'a, T>(
+        &'a self,
+        resource_handle: &T::Handle,
+    ) -> Result<&'a Option<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource storage
         let resource_storage = self.get_resource_storage::<T>()?;
 
         // Get resource slot
-        let resource_slot = resource_storage.data.get(*resource_handle)
-            .ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+        let resource_slot = resource_storage
+            .data
+            .get(*resource_handle)
+            .ok_or(Error::new(EngineError::InvalidResourceHandle(
+                get_type_name::<T>(),
+            )))?;
 
         Ok(resource_slot)
     }
 
-    pub(crate) fn get_resource_slot_mut<'a, T>(&'a mut self, resource_handle: &T::Handle) -> Result<&'a mut Option<T>>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    pub(crate) fn get_resource_slot_mut<'a, T>(
+        &'a mut self,
+        resource_handle: &T::Handle,
+    ) -> Result<&'a mut Option<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Get resource slot
-        let resource_slot = resource_storage.data.get_mut(*resource_handle)
-            .ok_or(Error::new(EngineError::InvalidResourceHandle(get_type_name::<T>())))?;
+        let resource_slot = resource_storage
+            .data
+            .get_mut(*resource_handle)
+            .ok_or(Error::new(EngineError::InvalidResourceHandle(
+                get_type_name::<T>(),
+            )))?;
 
         Ok(resource_slot)
     }
@@ -54,30 +68,42 @@ impl ResourceManager {
     // --- Storages ---
 
     pub(crate) fn get_resource_storage<T>(&self) -> Result<&ResourceStorage<T>>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
-        self.resources.get::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
+        self.resources
+            .get::<T>()
+            .ok_or(Error::new(EngineError::ResourceNotRegistered(
+                get_type_name::<T>(),
+            )))
     }
 
     pub(crate) fn get_resource_storage_mut<T>(&mut self) -> Result<&mut ResourceStorage<T>>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
-
-        self.resources.get_mut::<T>().ok_or(Error::new(EngineError::ResourceNotRegistered(get_type_name::<T>())))
+        self.resources
+            .get_mut::<T>()
+            .ok_or(Error::new(EngineError::ResourceNotRegistered(
+                get_type_name::<T>(),
+            )))
     }
 
     // --- Register - Add - Remove ---
 
     pub fn register_resource_type<T>(&mut self, max_resource_count: usize) -> Result<()>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
-        self.resources.insert::<T>(ResourceStorage::<T>::new(max_resource_count));
+        self.resources
+            .insert::<T>(ResourceStorage::<T>::new(max_resource_count));
 
         Ok(())
     }
 
     pub fn add_resource<T>(&mut self, resource: T) -> Result<(T::Handle, &mut T)>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
@@ -85,33 +111,49 @@ impl ResourceManager {
 
         // Check if there is space for resource
         if resource_storage.data.len() >= resource_storage.max_resource_count {
-            return Err(Error::new(EngineError::ResourceLimitReached(get_type_name::<T>())));
+            return Err(Error::new(EngineError::ResourceLimitReached(
+                get_type_name::<T>(),
+            )));
         }
 
         // Check if resource already exists
         if resource_storage.mapping.contains_key(&resource_name) {
-            return Err(Error::new(EngineError::ResourceAlreadyExists(get_type_name::<T>(), resource_name.clone())));
+            return Err(Error::new(EngineError::ResourceAlreadyExists(
+                get_type_name::<T>(),
+                resource_name.clone(),
+            )));
         }
 
         // Insert new resource
         let resource_handle = resource_storage.data.insert(Some(resource));
-        let resource = resource_storage.data.get_mut(resource_handle).unwrap().as_mut().unwrap();
+        let resource = resource_storage
+            .data
+            .get_mut(resource_handle)
+            .unwrap()
+            .as_mut()
+            .unwrap();
 
         // Insert new mapping
-        resource_storage.mapping.insert(&resource_name, &resource_handle);
+        resource_storage
+            .mapping
+            .insert(&resource_name, &resource_handle);
 
         Ok((resource_handle, resource))
     }
 
     pub fn remove_resource<T>(&mut self, resource_handle: &T::Handle) -> Result<(T::Handle, T)>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Remove resource
-        let resource = resource_storage.data.remove(*resource_handle)
-            .ok_or(EngineError::InvalidResourceHandle(get_type_name::<T>()))?.expect("Critical: Resource is None");
+        let resource = resource_storage
+            .data
+            .remove(*resource_handle)
+            .ok_or(EngineError::InvalidResourceHandle(get_type_name::<T>()))?
+            .expect("Critical: Resource is None");
 
         // Remove mapping
         resource_storage.mapping.remove_by_value(resource_handle);
@@ -120,17 +162,27 @@ impl ResourceManager {
     }
 
     pub fn remove_resource_by_name<T>(&mut self, name: &str) -> Result<(T::Handle, T)>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Get handle by name
-        let resource_handle = *resource_storage.mapping.get_value(&name.to_string())
-            .ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?;
+        let resource_handle = *resource_storage
+            .mapping
+            .get_value(&name.to_string())
+            .ok_or(EngineError::InvalidResourceName(
+                name.to_string(),
+                get_type_name::<T>(),
+            ))?;
 
         // Remove resource
-        let resource = resource_storage.data.remove(resource_handle).unwrap().expect("Critical: Resource is None");
+        let resource = resource_storage
+            .data
+            .remove(resource_handle)
+            .unwrap()
+            .expect("Critical: Resource is None");
 
         // Remove mapping
         resource_storage.mapping.remove_by_key(&name.to_string());
@@ -141,64 +193,96 @@ impl ResourceManager {
     // --- Get ---
 
     pub fn get_resource_handle<T>(&self, name: &str) -> Result<T::Handle>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource storage
         let resource_storage = self.get_resource_storage::<T>()?;
 
         // Get resource handle
-        let resource_handle = *resource_storage.mapping.get_value(&name.to_string())
+        let resource_handle = *resource_storage
+            .mapping
+            .get_value(&name.to_string())
             .ok_or(EngineError::InvalidSceneName(name.to_string()))?;
 
         Ok(resource_handle)
     }
 
     pub fn get_resource<'a, T>(&'a self, resource_handle: &'a T::Handle) -> Result<&'a T>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource
-        let resource = self.get_resource_slot::<T>(resource_handle)?.as_ref().expect("Critical: Resource is None");
+        let resource = self
+            .get_resource_slot::<T>(resource_handle)?
+            .as_ref()
+            .expect("Critical: Resource is None");
 
         Ok(resource)
     }
 
     pub fn get_resource_by_name<'a, T>(&'a self, name: &str) -> Result<&'a T>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource storage
         let resource_storage = self.get_resource_storage::<T>()?;
 
         // Get handle by name
-        let resource_handle = resource_storage.mapping.get_value(&name.to_string())
-            .ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?;
+        let resource_handle = resource_storage
+            .mapping
+            .get_value(&name.to_string())
+            .ok_or(EngineError::InvalidResourceName(
+                name.to_string(),
+                get_type_name::<T>(),
+            ))?;
 
         // Get resource
-        let resource = self.get_resource_slot::<T>(resource_handle)?.as_ref().expect("Critical: Resource is None");
+        let resource = self
+            .get_resource_slot::<T>(resource_handle)?
+            .as_ref()
+            .expect("Critical: Resource is None");
 
         Ok(resource)
     }
 
-    pub fn get_resource_mut<'a, T>(&'a mut self, resource_handle: &'a T::Handle) -> Result<&'a mut T>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    pub fn get_resource_mut<'a, T>(
+        &'a mut self,
+        resource_handle: &'a T::Handle,
+    ) -> Result<&'a mut T>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource
-        let resource = self.get_resource_slot_mut::<T>(resource_handle)?.as_mut().expect("Critical: Resource is None");
+        let resource = self
+            .get_resource_slot_mut::<T>(resource_handle)?
+            .as_mut()
+            .expect("Critical: Resource is None");
 
         Ok(resource)
     }
 
     pub fn get_resource_by_name_mut<'a, T>(&'a mut self, name: &str) -> Result<&'a mut T>
-        where T: Resource<Storage = ResourceStorage::<T>>
+    where
+        T: Resource<Storage = ResourceStorage<T>>,
     {
         // Get resource storage
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Get handle by name
-        let resource_handle = *resource_storage.mapping.get_value(&name.to_string())
-            .ok_or(EngineError::InvalidResourceName(name.to_string(), get_type_name::<T>()))?;
+        let resource_handle = *resource_storage
+            .mapping
+            .get_value(&name.to_string())
+            .ok_or(EngineError::InvalidResourceName(
+                name.to_string(),
+                get_type_name::<T>(),
+            ))?;
 
         // Get resource
-        let resource = self.get_resource_slot_mut::<T>(&resource_handle)?.as_mut().expect("Critical: Resource is None");
+        let resource = self
+            .get_resource_slot_mut::<T>(&resource_handle)?
+            .as_mut()
+            .expect("Critical: Resource is None");
 
         Ok(resource)
     }

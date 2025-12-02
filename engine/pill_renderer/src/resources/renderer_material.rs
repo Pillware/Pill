@@ -1,14 +1,16 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
 
 use indexmap::IndexMap;
-use pill_core::{ debug, LogContext, PillStyle, RendererError };
+use pill_core::{debug, LogContext, PillStyle, RendererError};
 use pill_engine::internal::{
-    get_default_texture_handles, get_renderer_texture_handle_from_material_texture, MaterialParameter, MaterialTexture, RendererMaterialHandle, RendererShaderHandle, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot
+    get_default_texture_handles, get_renderer_texture_handle_from_material_texture,
+    MaterialParameter, MaterialTexture, RendererMaterialHandle, RendererShaderHandle,
+    ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot,
 };
 
-use anyhow::{ Result, Error};
-use std::collections::HashMap;
 use crate::resources::RendererResourceStorage;
+use anyhow::{Error, Result};
+use std::collections::HashMap;
 
 // --- Material ---
 
@@ -32,12 +34,13 @@ impl RendererMaterial {
     ) -> Result<Self> {
         debug!(LogContext::Rendering => "Creating material {}", name.name_style());
 
-        let shader = rendering_resource_storage.shaders.get(shader_handle)
+        let shader = rendering_resource_storage
+            .shaders
+            .get(shader_handle)
             .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
         let parameter_slots = &shader.parameter_slots;
         let texture_slots = &shader.texture_slots;
-
 
         // Create parameters uniform buffer and bind group if there are parameter slots
         let (parameters_bind_group, parameters_uniform_buffer) = {
@@ -53,7 +56,12 @@ impl RendererMaterial {
                 });
 
                 // Write parameter data to buffer
-                Self::write_parameters_to_buffer(queue, &parameters_uniform_buffer, parameter_slots, parameters)?;
+                Self::write_parameters_to_buffer(
+                    queue,
+                    &parameters_uniform_buffer,
+                    parameter_slots,
+                    parameters,
+                )?;
 
                 debug!(LogContext::Rendering => "Uniform buffer of size {} bytes created", parameters_uniform_buffer_size);
 
@@ -61,12 +69,10 @@ impl RendererMaterial {
                 let parameters_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some(&format!("{}_material_parameters_bind_group", name)),
                     layout: shader.parameters_bind_group_layout.as_ref().unwrap(),
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0, // (set = 2, binding = 0)
-                            resource: parameters_uniform_buffer.as_entire_binding(),
-                        },
-                    ],
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0, // (set = 2, binding = 0)
+                        resource: parameters_uniform_buffer.as_entire_binding(),
+                    }],
                 });
 
                 debug!(LogContext::Rendering => "Parameters bind group created");
@@ -111,7 +117,7 @@ impl RendererMaterial {
         _device: &wgpu::Device,
         _material_renderer_handle: RendererMaterialHandle,
         _rendering_resource_storage: &mut RendererResourceStorage,
-        _textures: &IndexMap<String, MaterialTexture>
+        _textures: &IndexMap<String, MaterialTexture>,
     ) -> Result<()> {
         // let material = rendering_resource_storage.materials.get(material_renderer_handle)
         //     .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
@@ -149,17 +155,23 @@ impl RendererMaterial {
         queue: &wgpu::Queue,
         material_renderer_handle: RendererMaterialHandle,
         rendering_resource_storage: &mut RendererResourceStorage,
-        parameters: &HashMap<String, MaterialParameter>
+        parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<()> {
-        let material = rendering_resource_storage.materials.get(material_renderer_handle)
+        let material = rendering_resource_storage
+            .materials
+            .get(material_renderer_handle)
             .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
         let shader_handle = material.shader_handle;
-        let shader = rendering_resource_storage.shaders.get(shader_handle)
+        let shader = rendering_resource_storage
+            .shaders
+            .get(shader_handle)
             .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
         let parameter_slots = &shader.parameter_slots;
 
-        let material = rendering_resource_storage.materials.get_mut(material_renderer_handle)
+        let material = rendering_resource_storage
+            .materials
+            .get_mut(material_renderer_handle)
             .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
 
         // Update uniform buffer if it exists
@@ -180,7 +192,7 @@ impl RendererMaterial {
         queue: &wgpu::Queue,
         buffer: &wgpu::Buffer,
         parameter_slots: &HashMap<String, ShaderParameterSlot>,
-        parameters: &HashMap<String, MaterialParameter>
+        parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<()> {
         // Create a temporary buffer to hold all parameter data
         let mut data = Vec::new();
@@ -237,7 +249,7 @@ impl RendererMaterial {
         texture_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        textures: &IndexMap<String, MaterialTexture>
+        textures: &IndexMap<String, MaterialTexture>,
     ) -> Result<wgpu::BindGroup> {
         let mut entries = Vec::new();
 
@@ -247,14 +259,17 @@ impl RendererMaterial {
                 Some(material_texture) => {
                     debug!(LogContext::Rendering => "Material texture slot {} found in material textures", slot_name.name_style());
                     get_renderer_texture_handle_from_material_texture(material_texture).unwrap()
-                },
+                }
                 None => {
                     debug!(LogContext::Rendering => "Material texture slot {} not found in material textures, using default texture", slot_name.name_style());
                     get_default_texture_handles(slot.texture_type).1
                 }
             };
 
-            let texture = rendering_resource_storage.textures.get(renderer_texture_handle).unwrap();
+            let texture = rendering_resource_storage
+                .textures
+                .get(renderer_texture_handle)
+                .unwrap();
 
             // Add texture view entry
             entries.push(wgpu::BindGroupEntry {

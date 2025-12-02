@@ -1,20 +1,12 @@
-use crate::{
-    resources::*,
-    ecs::*,
-    graphics::*,
-    config::*,
-};
+use crate::{config::*, ecs::*, graphics::*, resources::*};
 
 use pill_core::{
-    debug, error, get_game_error_message, get_type_name,
-    info, EngineError, LogContext, PillSlotMapKey, PillStyle,
-    PillTypeMap, Timer, Vector2f,
+    debug, error, get_game_error_message, get_type_name, info, EngineError, LogContext,
+    PillSlotMapKey, PillStyle, PillTypeMap, Timer, Vector2f,
 };
 
 use anyhow::{Context, Error, Result};
-use std::{
-    any::TypeId, collections::VecDeque
-};
+use std::{any::TypeId, collections::VecDeque};
 use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
 // -------------------------------------------------------------------------------
@@ -79,11 +71,10 @@ impl Engine {
     }
 
     #[cfg(feature = "headless")]
-    pub fn new(
-        game: Box<dyn PillGame>,
-        config: config::Config
-    ) -> Self {
-        let max_entity_count = config.get_int("MAX_ENTITIES").unwrap_or(MAX_ENTITIES as i64) as usize;
+    pub fn new(game: Box<dyn PillGame>, config: config::Config) -> Self {
+        let max_entity_count = config
+            .get_int("MAX_ENTITIES")
+            .unwrap_or(MAX_ENTITIES as i64) as usize;
         let dummy_renderer = Box::new(DummyRenderer) as Box<dyn PillRenderer>;
 
         Self {
@@ -318,20 +309,49 @@ impl Engine {
         #[cfg(not(feature = "headless"))]
         {
             self.add_global_component(InputComponent::new())?;
-            let max_ambient_sink_count = self.config.get_int("MAX_CONCURRENT_2D_SOUNDS").unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
-            let max_spatial_sink_count = self.config.get_int("MAX_CONCURRENT_3D_SOUNDS").unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
-            self.add_global_component(AudioManagerComponent::new(max_ambient_sink_count, max_spatial_sink_count))?;
+            let max_ambient_sink_count =
+                self.config
+                    .get_int("MAX_CONCURRENT_2D_SOUNDS")
+                    .unwrap_or(MAX_CONCURRENT_2D_SOUNDS as i64) as usize;
+            let max_spatial_sink_count =
+                self.config
+                    .get_int("MAX_CONCURRENT_3D_SOUNDS")
+                    .unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
+            self.add_global_component(AudioManagerComponent::new(
+                max_ambient_sink_count,
+                max_spatial_sink_count,
+            ))?;
         }
 
         // Add built-in systems
-        self.system_manager.add_system(TIME_SYSTEM.name, TIME_SYSTEM.system_function, TIME_SYSTEM.update_phase)?;
-        self.system_manager.add_system(DEFERRED_UPDATE_SYSTEM.name, DEFERRED_UPDATE_SYSTEM.system_function, DEFERRED_UPDATE_SYSTEM.update_phase)?;
+        self.system_manager.add_system(
+            TIME_SYSTEM.name,
+            TIME_SYSTEM.system_function,
+            TIME_SYSTEM.update_phase,
+        )?;
+        self.system_manager.add_system(
+            DEFERRED_UPDATE_SYSTEM.name,
+            DEFERRED_UPDATE_SYSTEM.system_function,
+            DEFERRED_UPDATE_SYSTEM.update_phase,
+        )?;
 
         #[cfg(not(feature = "headless"))]
         {
-            self.system_manager.add_system(INPUT_SYSTEM.name, INPUT_SYSTEM.system_function, INPUT_SYSTEM.update_phase)?;
-            self.system_manager.add_system(AUDIO_SYSTEM.name, AUDIO_SYSTEM.system_function, AUDIO_SYSTEM.update_phase)?;
-            self.system_manager.add_system(RENDERING_SYSTEM.name, RENDERING_SYSTEM.system_function, RENDERING_SYSTEM.update_phase)?;
+            self.system_manager.add_system(
+                INPUT_SYSTEM.name,
+                INPUT_SYSTEM.system_function,
+                INPUT_SYSTEM.update_phase,
+            )?;
+            self.system_manager.add_system(
+                AUDIO_SYSTEM.name,
+                AUDIO_SYSTEM.system_function,
+                AUDIO_SYSTEM.update_phase,
+            )?;
+            self.system_manager.add_system(
+                RENDERING_SYSTEM.name,
+                RENDERING_SYSTEM.system_function,
+                RENDERING_SYSTEM.update_phase,
+            )?;
         }
 
         // Create default resources
@@ -373,7 +393,6 @@ impl Engine {
                 // because it has to render its own timer data in the UI
                 // (and since the frame in which it renders is not yet finished when it renders UI, it has to use previous frame timer data)
                 if system_name != RENDERING_SYSTEM.name {
-
                     let mut timer = Timer::new();
                     timer.begin_context(format!("{} system update", system_name));
                     self.system_manager
@@ -451,7 +470,7 @@ impl Engine {
         let state: winit::event::ElementState = keyboard_input.state;
         match keyboard_input.physical_key {
             winit::keyboard::PhysicalKey::Code(key_code) => {
-                let input_event = InputEvent::Keyboard(KeyboardEvent::Key{
+                let input_event = InputEvent::Keyboard(KeyboardEvent::Key {
                     key: key_code,
                     state,
                 });
@@ -474,13 +493,13 @@ impl Engine {
     }
 
     pub fn pass_mouse_wheel_input(&mut self, delta: &winit::event::MouseScrollDelta) {
-        let input_event = InputEvent::Mouse(MouseEvent::Wheel{ delta: *delta });
+        let input_event = InputEvent::Mouse(MouseEvent::Wheel { delta: *delta });
         self.input_queue.push_back(input_event);
         debug!(LogContext::Input => "Got new mouse wheel input");
     }
 
     pub fn pass_mouse_delta_input(&mut self, delta: &(f64, f64)) {
-        let input_event = InputEvent::Mouse(MouseEvent::Delta{
+        let input_event = InputEvent::Mouse(MouseEvent::Delta {
             delta: Vector2f::new(delta.0 as f32, delta.1 as f32),
         });
         self.input_queue.push_back(input_event);
@@ -656,9 +675,24 @@ impl Engine {
     // Removes entity specified with entity handle from its scene
     pub fn remove_entity_default_scene(&mut self, entity_handle: EntityHandle) -> Result<()> {
         let scene_handle = self.scene_manager.get_active_scene_handle()?;
-        debug!("Removing {} from {} {}", "Entity".general_object_style(), "Scene".general_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
+        debug!(
+            "Removing {} from {} {}",
+            "Entity".general_object_style(),
+            "Scene".general_object_style(),
+            self.scene_manager
+                .get_scene(scene_handle)
+                .unwrap()
+                .name
+                .name_style()
+        );
 
-        let component_destroyers = self.scene_manager.remove_entity(scene_handle, entity_handle).context(format!("Creating {} failed", "Entity".general_object_style()))?;
+        let component_destroyers = self
+            .scene_manager
+            .remove_entity(scene_handle, entity_handle)
+            .context(format!(
+                "Creating {} failed",
+                "Entity".general_object_style()
+            ))?;
 
         // Destroy components using destroyers
         for mut component_destroyer in component_destroyers {
@@ -1103,9 +1137,7 @@ impl Engine {
     where
         T: Resource<Storage = ResourceStorage<T>>,
     {
-        self
-            .resource_manager
-            .get_resource_mut::<T>(resource_handle)
+        self.resource_manager.get_resource_mut::<T>(resource_handle)
     }
 
     /// Returns mutable resource specified by its name

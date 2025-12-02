@@ -1,9 +1,9 @@
-use std::{collections::HashMap, fmt::Debug};
 use colored::Colorize;
 use config::Config;
 use log::LevelFilter;
-use std::str::FromStr;
 use std::io::Write;
+use std::str::FromStr;
+use std::{collections::HashMap, fmt::Debug};
 use strum_macros::{AsRefStr, EnumString};
 
 use crate::PillStyle;
@@ -19,7 +19,7 @@ pub enum LogContext {
     ECS,
     Rendering,
     Resources,
-    Frame
+    Frame,
 }
 
 pub fn get_default_log_levels() -> String {
@@ -52,7 +52,9 @@ fn parse_config_log_settings(log_levels_config_setting: &str) -> HashMap<String,
     let mut map = HashMap::new();
     for context_log_level in log_levels_config_setting.split(',') {
         let context_log_level = context_log_level.trim();
-        if context_log_level.is_empty() { continue; }
+        if context_log_level.is_empty() {
+            continue;
+        }
 
         if let Some((context, level)) = context_log_level.split_once('=') {
             map.insert(context.trim().to_string(), parse_log_level(level.trim()));
@@ -78,10 +80,16 @@ pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
     let mut builder = env_logger::Builder::new();
 
     builder.format(move |buf, record| {
-        writeln!(buf, "[{}][{}] {} {}:{}: {}",
+        writeln!(
+            buf,
+            "[{}][{}] {} {}:{}: {}",
             styled_level(record.level()),
             record.target(),
-            chrono::Local::now().format(if show_date { "%Y-%m-%dT%H:%M:%S" } else { "%H:%M:%S" }),
+            chrono::Local::now().format(if show_date {
+                "%Y-%m-%dT%H:%M:%S"
+            } else {
+                "%H:%M:%S"
+            }),
             record.file().unwrap_or("unknown"),
             record.line().unwrap_or(0),
             record.args()
@@ -89,8 +97,8 @@ pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
     });
 
     // Allow non-contextual logging
-    //builder.filter_level(LevelFilter::Info); 
-    //builder.filter_module("wgpu_hal::vulkan::instance", LevelFilter::Info); 
+    //builder.filter_level(LevelFilter::Info);
+    //builder.filter_module("wgpu_hal::vulkan::instance", LevelFilter::Info);
 
     // Allow default context logging
     // TODO: Does it work??
@@ -107,7 +115,8 @@ pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
 /// Context-aware logging macros
 /// Log an error message with context. The first argument must be a LogContext, and
 /// the format string must be a string literal, like `"error: {}"` not a variable.
-#[macro_export] macro_rules! log_context {
+#[macro_export]
+macro_rules! log_context {
     ($level:ident, $ctx:expr, $($arg:tt)+) => {
         log::$level!(target: $ctx.as_ref(), $($arg)+)
     };

@@ -1,12 +1,12 @@
 use crate::{
     engine::Engine,
-    graphics::{ RendererTextureHandle },
-    resources::{ ResourceStorage, Resource, ResourceLoader, Material },
+    graphics::RendererTextureHandle,
+    resources::{Material, Resource, ResourceLoader, ResourceStorage},
 };
 
-use pill_core::{ get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey };
+use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
-use anyhow::{ Result, Context };
+use anyhow::{Context, Result};
 pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }
@@ -29,11 +29,7 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub fn new(
-        name: &str,
-        texture_type: TextureType,
-        resource_loader: ResourceLoader
-    ) -> Self {
+    pub fn new(name: &str, texture_type: TextureType, resource_loader: ResourceLoader) -> Self {
         Self {
             name: name.to_string(),
             resource_loader,
@@ -55,7 +51,11 @@ impl Resource for Texture {
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
+        let error_message = format!(
+            "Initializing {} {} failed",
+            "Resource".general_object_style(),
+            get_type_name::<Self>().specific_object_style()
+        );
 
         // Create new renderer texture resource
         let image_data = match &self.resource_loader {
@@ -66,15 +66,18 @@ impl Resource for Texture {
 
                 // Load data
                 image::open(&resource_file_path)?
-            },
+            }
             ResourceLoader::Bytes(bytes) => {
                 // Load data
                 image::load_from_memory(bytes)?
-            },
+            }
         };
 
         // Create renderer texture resource
-        let renderer_resource_handle = engine.renderer.create_texture(&self.name, &image_data, self.texture_type).context(error_message.clone())?;
+        let renderer_resource_handle = engine
+            .renderer
+            .create_texture(&self.name, &image_data, self.texture_type)
+            .context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -87,12 +90,17 @@ impl Resource for Texture {
         }
 
         // Take resource storage from engine
-        let resource_storage = engine.resource_manager.get_resource_storage_mut::<Material>()?;
+        let resource_storage = engine
+            .resource_manager
+            .get_resource_storage_mut::<Material>()?;
         let materials = &mut resource_storage.data;
 
         // Find materials that use this texture and update them
         for material_slot in materials.iter_mut() {
-            let material: &mut Material = material_slot.1.as_mut().expect("Critical: Resource is None");
+            let material: &mut Material = material_slot
+                .1
+                .as_mut()
+                .expect("Critical: Resource is None");
 
             // Update texture slots
             let mut material_updated = false;
@@ -127,7 +135,13 @@ impl Resource for Texture {
             // }
 
             if material_updated {
-                engine.renderer.update_material_textures(material.renderer_resource_handle.unwrap(), &material.textures).unwrap();
+                engine
+                    .renderer
+                    .update_material_textures(
+                        material.renderer_resource_handle.unwrap(),
+                        &material.textures,
+                    )
+                    .unwrap();
             }
         }
 

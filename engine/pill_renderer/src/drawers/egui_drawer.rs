@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use pill_core::Timer;
-use winit::event::WindowEvent;
 use anyhow::Result;
+use pill_core::Timer;
+use std::sync::Arc;
+use winit::event::WindowEvent;
 
 const BORDER_RADIUS: f32 = 2.0;
 
@@ -32,21 +32,14 @@ impl EguiDrawer {
         };
         context.set_visuals(visuals);
 
-        let state = egui_winit::State::new(
-            context.clone(),
-            id,
-            &window,
-            None,
-            None,
-            None
-        );
+        let state = egui_winit::State::new(context.clone(), id, &window, None, None, None);
 
         let renderer = egui_wgpu::Renderer::new(
             device,
             output_color_format,
             output_depth_format,
             msaa_samples,
-            false
+            false,
         );
 
         EguiDrawer {
@@ -54,7 +47,7 @@ impl EguiDrawer {
             state,
             renderer,
             window_scale_factor,
-            window
+            window,
         }
     }
 
@@ -87,18 +80,23 @@ impl EguiDrawer {
 
         timer.record("Handle platform output");
 
-        self.state.handle_platform_output(window, full_output.platform_output);
+        self.state
+            .handle_platform_output(window, full_output.platform_output);
 
         timer.record("Tesselate and update textures");
 
-        let tris = self.context.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let tris = self
+            .context
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
-            self.renderer.update_texture(device, queue, *id, image_delta);
+            self.renderer
+                .update_texture(device, queue, *id, image_delta);
         }
 
         timer.record("Update buffers and record render pass");
 
-        self.renderer.update_buffers(device, queue, encoder, &tris, &screen_descriptor);
+        self.renderer
+            .update_buffers(device, queue, encoder, &tris, &screen_descriptor);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -118,11 +116,13 @@ impl EguiDrawer {
 
         timer.record("Render");
 
-        let render_pass: &mut wgpu::RenderPass<'static> = unsafe { std::mem::transmute(&mut render_pass) };
+        let render_pass: &mut wgpu::RenderPass<'static> =
+            unsafe { std::mem::transmute(&mut render_pass) };
 
-        self.renderer.render(&mut *render_pass, &tris, &screen_descriptor);
+        self.renderer
+            .render(&mut *render_pass, &tris, &screen_descriptor);
 
-       // let _ = drop(render_pass);
+        // let _ = drop(render_pass);
 
         for texture_id in &full_output.textures_delta.free {
             self.renderer.free_texture(texture_id)
@@ -131,4 +131,3 @@ impl EguiDrawer {
         Ok(())
     }
 }
-

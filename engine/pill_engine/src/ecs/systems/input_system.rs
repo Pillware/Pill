@@ -1,22 +1,26 @@
 use crate::{
+    ecs::{
+        GamepadAxis, GamepadButton, GamepadEvent, HapticCommand, InFlight, InputComponent,
+        InputEvent, KeyboardEvent, MouseEvent,
+    },
     engine::Engine,
-    ecs::{ InputComponent, InputEvent, GamepadAxis, GamepadButton, HapticCommand, InFlight, GamepadEvent, MouseEvent, KeyboardEvent },
 };
 use pill_core::Vector2f;
 
 use anyhow::Result;
-use winit::event::{ ElementState, MouseScrollDelta };
+use winit::event::{ElementState, MouseScrollDelta};
 
 // use a lazy static GILRS instance
-use gilrs::{ Gilrs, EventType, Axis, Button, GamepadId };
-use gilrs::ff::{Effect, EffectBuilder, BaseEffect, BaseEffectType, Replay, Ticks};
+use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Replay, Ticks};
+use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
 use once_cell::sync::Lazy;
 use std::{
     sync::Mutex,
     time::{Duration, Instant},
 };
 
-pub(crate) static GILRS: Lazy<Mutex<Gilrs>> = Lazy::new(|| Mutex::new(Gilrs::new().expect("Failed to initialize Gilrs")));
+pub(crate) static GILRS: Lazy<Mutex<Gilrs>> =
+    Lazy::new(|| Mutex::new(Gilrs::new().expect("Failed to initialize Gilrs")));
 
 pub fn input_system(engine: &mut Engine) -> Result<()> {
     // Poll GILRS first
@@ -24,14 +28,62 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
         let mut gamepad_input_system = GILRS.lock().unwrap();
         while let Some(event) = gamepad_input_system.next_event() {
             match event.event {
-                EventType::ButtonPressed(b, _) => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Button { id: event.id, button: b.into(), state: ElementState::Pressed })),
-                EventType::ButtonRepeated(b, _) => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Button { id: event.id, button: b.into(), state: ElementState::Pressed })), // TODO: do we want to treat repeated press differently?
-                EventType::ButtonReleased(b, _) => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Button { id: event.id, button: b.into(), state: ElementState::Released })),
-                EventType::AxisChanged(a, v, _) => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Axis { id: event.id, axis: a.into(), value: v })),
-                EventType::Connected => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Connected { id: event.id })),
-                EventType::Disconnected => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::Disconnected { id: event.id })),
-                EventType::ForceFeedbackEffectCompleted => engine.input_queue.push_back(InputEvent::Gamepad(GamepadEvent::ForceFeedbackEffectCompleted { id: event.id })),
-                _ => {},
+                EventType::ButtonPressed(b, _) => {
+                    engine
+                        .input_queue
+                        .push_back(InputEvent::Gamepad(GamepadEvent::Button {
+                            id: event.id,
+                            button: b.into(),
+                            state: ElementState::Pressed,
+                        }))
+                }
+                EventType::ButtonRepeated(b, _) => {
+                    engine
+                        .input_queue
+                        .push_back(InputEvent::Gamepad(GamepadEvent::Button {
+                            id: event.id,
+                            button: b.into(),
+                            state: ElementState::Pressed,
+                        }))
+                } // TODO: do we want to treat repeated press differently?
+                EventType::ButtonReleased(b, _) => {
+                    engine
+                        .input_queue
+                        .push_back(InputEvent::Gamepad(GamepadEvent::Button {
+                            id: event.id,
+                            button: b.into(),
+                            state: ElementState::Released,
+                        }))
+                }
+                EventType::AxisChanged(a, v, _) => {
+                    engine
+                        .input_queue
+                        .push_back(InputEvent::Gamepad(GamepadEvent::Axis {
+                            id: event.id,
+                            axis: a.into(),
+                            value: v,
+                        }))
+                }
+                EventType::Connected => {
+                    engine
+                        .input_queue
+                        .push_back(InputEvent::Gamepad(GamepadEvent::Connected {
+                            id: event.id,
+                        }))
+                }
+                EventType::Disconnected => {
+                    engine
+                        .input_queue
+                        .push_back(InputEvent::Gamepad(GamepadEvent::Disconnected {
+                            id: event.id,
+                        }))
+                }
+                EventType::ForceFeedbackEffectCompleted => {
+                    engine.input_queue.push_back(InputEvent::Gamepad(
+                        GamepadEvent::ForceFeedbackEffectCompleted { id: event.id },
+                    ))
+                }
+                _ => {}
             }
         }
     }
@@ -56,59 +108,60 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
             // Keyboard keys
             InputEvent::Keyboard(KeyboardEvent::Key { key, state }) => {
                 input_component.set_key(key, state);
-            },
+            }
 
             // Mouse buttons
-            InputEvent::Mouse(MouseEvent::Button {key, state}) => {
+            InputEvent::Mouse(MouseEvent::Button { key, state }) => {
                 input_component.set_mouse_button(key, state);
-            },
+            }
 
             // Mouse scroll
-            InputEvent::Mouse(MouseEvent::Wheel { delta } ) => {
-                match delta {
-                    MouseScrollDelta::LineDelta(x, y) => {
-                        input_component.set_mouse_scroll_delta(Vector2f::new(x, y));
-                    },
+            InputEvent::Mouse(MouseEvent::Wheel { delta }) => match delta {
+                MouseScrollDelta::LineDelta(x, y) => {
+                    input_component.set_mouse_scroll_delta(Vector2f::new(x, y));
+                }
 
-                    MouseScrollDelta::PixelDelta(delta) => {
-                        input_component.set_mouse_scroll_pixel_delta(Vector2f::new(delta.x as f32, delta.y as f32));
-                    },
+                MouseScrollDelta::PixelDelta(delta) => {
+                    input_component.set_mouse_scroll_pixel_delta(Vector2f::new(
+                        delta.x as f32,
+                        delta.y as f32,
+                    ));
                 }
             },
 
             // Mouse delta
-            InputEvent::Mouse(MouseEvent::Delta { delta } ) => {
+            InputEvent::Mouse(MouseEvent::Delta { delta }) => {
                 input_component.set_mouse_delta(delta);
-            },
+            }
 
             // Mouse position
-            InputEvent::Mouse(MouseEvent::Position { position}  )=> {
+            InputEvent::Mouse(MouseEvent::Position { position }) => {
                 input_component.set_mouse_position(position);
-            },
+            }
 
             // Gamepad buttons
             InputEvent::Gamepad(GamepadEvent::Button { id, button, state }) => {
                 input_component.set_gamepad_button(id, button, state);
-            },
+            }
 
             // Gamepad axes
             InputEvent::Gamepad(GamepadEvent::Axis { id, axis, value }) => {
                 input_component.set_gamepad_axis(id, axis, value);
-            },
+            }
 
             // Gamepad connection events
-            InputEvent::Gamepad(GamepadEvent::Connected { id } ) => {
+            InputEvent::Gamepad(GamepadEvent::Connected { id }) => {
                 input_component.connect_gamepad(id);
-            },
+            }
 
             InputEvent::Gamepad(GamepadEvent::Disconnected { id }) => {
                 input_component.disconnect_gamepad(id);
-            },
+            }
 
             // Gamepad force feedback completion
             InputEvent::Gamepad(GamepadEvent::ForceFeedbackEffectCompleted { id }) => {
                 input_component.complete_force_feedback_effect(id);
-            },
+            }
         }
     }
 
@@ -124,9 +177,9 @@ pub fn haptics_system(engine: &mut Engine) -> Result<()> {
     // Remove any in-flight effects that have completed
     {
         let now = std::time::Instant::now();
-        input_component.in_flight_force_feedback.retain(|in_flight| {
-            now < in_flight.end_at
-        });
+        input_component
+            .in_flight_force_feedback
+            .retain(|in_flight| now < in_flight.end_at);
     }
 
     while let Some(command) = input_component.haptic_commands.pop_front() {
@@ -144,19 +197,42 @@ pub fn haptics_system(engine: &mut Engine) -> Result<()> {
         }
 
         match command {
-            HapticCommand::Rumble { player_id: _, weak, strong, duration_ms } => {
-                let effect = create_rumble_effect(&mut gamepad_input_system, &[*gamepad_id], weak, strong, duration_ms)?;
+            HapticCommand::Rumble {
+                player_id: _,
+                weak,
+                strong,
+                duration_ms,
+            } => {
+                let effect = create_rumble_effect(
+                    &mut gamepad_input_system,
+                    &[*gamepad_id],
+                    weak,
+                    strong,
+                    duration_ms,
+                )?;
                 effect.play()?;
                 let end_at = Instant::now() + Duration::from_millis(duration_ms as u64);
-                input_component.in_flight_force_feedback.push(InFlight { id: *gamepad_id, effect, end_at });
-            },
-            HapticCommand::PlayEffect { player_id: _, effect, duration_ms } => {
+                input_component.in_flight_force_feedback.push(InFlight {
+                    id: *gamepad_id,
+                    effect,
+                    end_at,
+                });
+            }
+            HapticCommand::PlayEffect {
+                player_id: _,
+                effect,
+                duration_ms,
+            } => {
                 let gamepad = gamepad_input_system.gamepad(*gamepad_id);
                 effect.add_gamepad(&gamepad)?;
                 effect.play()?;
                 let end_at = Instant::now() + Duration::from_millis(duration_ms as u64);
-                input_component.in_flight_force_feedback.push(InFlight { id: *gamepad_id, effect, end_at });
-            },
+                input_component.in_flight_force_feedback.push(InFlight {
+                    id: *gamepad_id,
+                    effect,
+                    end_at,
+                });
+            }
         }
     }
     Ok(())
@@ -165,23 +241,40 @@ pub fn haptics_system(engine: &mut Engine) -> Result<()> {
 #[inline]
 fn command_player_index(command: &HapticCommand) -> Result<usize> {
     let pid = match command {
-        HapticCommand::Rumble { player_id, .. } |
-        HapticCommand::PlayEffect { player_id, .. } => *player_id,
+        HapticCommand::Rumble { player_id, .. } | HapticCommand::PlayEffect { player_id, .. } => {
+            *player_id
+        }
     };
     Ok(pid as usize)
 }
 
-fn create_rumble_effect(gamepad_input_system: &mut Gilrs, recipients: &[GamepadId], weak: f32, strong: f32, duration_ms: u32) -> Result<Effect> {
+fn create_rumble_effect(
+    gamepad_input_system: &mut Gilrs,
+    recipients: &[GamepadId],
+    weak: f32,
+    strong: f32,
+    duration_ms: u32,
+) -> Result<Effect> {
     let dur = Ticks::from_ms(duration_ms);
     let effect = EffectBuilder::new()
         .add_effect(BaseEffect {
-            kind: BaseEffectType::Weak { magnitude: (weak.clamp(0.0, 1.0) * 65_535.0) as u16 },
-            scheduling: Replay { play_for: dur, ..Default::default() },
+            kind: BaseEffectType::Weak {
+                magnitude: (weak.clamp(0.0, 1.0) * 65_535.0) as u16,
+            },
+            scheduling: Replay {
+                play_for: dur,
+                ..Default::default()
+            },
             ..Default::default()
         })
         .add_effect(BaseEffect {
-            kind: BaseEffectType::Strong { magnitude: (strong.clamp(0.0, 1.0) * 65_535.0) as u16 },
-            scheduling: Replay { play_for: dur, ..Default::default() },
+            kind: BaseEffectType::Strong {
+                magnitude: (strong.clamp(0.0, 1.0) * 65_535.0) as u16,
+            },
+            scheduling: Replay {
+                play_for: dur,
+                ..Default::default()
+            },
             ..Default::default()
         })
         .gamepads(recipients)

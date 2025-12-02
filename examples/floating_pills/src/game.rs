@@ -1,8 +1,8 @@
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
-use std::time::Instant;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::time::Instant;
 
 pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
@@ -56,7 +56,7 @@ define_global_component!(BenchComponent {
     report_every_frames: u32,
 });
 
-pub struct Game { }
+pub struct Game {}
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
@@ -265,11 +265,13 @@ impl PillGame for Game {
         spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
 
         #[cfg(feature = "benchmark")]
-        if let Ok(mut fh) = OpenOptions::new().write(true).truncate(true).create(true).open("vec3_bench.csv") {
-            let _ = writeln!(
-                fh,
-                "LOG BEGIN",
-            );
+        if let Ok(mut fh) = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open("vec3_bench.csv")
+        {
+            let _ = writeln!(fh, "LOG BEGIN",);
             writeln!(fh, "fps | avg_math_ms | avg_frame_ms | worst_frame_ms");
         }
 
@@ -304,7 +306,9 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
     #[cfg(feature = "benchmark")]
     let mut moved_this_frame: u64 = 0;
 
-    for (_, floating_object_transform, floating_object_component) in engine.iterate_two_components_mut::<TransformComponent, FloatingObjectComponent>()? {
+    for (_, floating_object_transform, floating_object_component) in
+        engine.iterate_two_components_mut::<TransformComponent, FloatingObjectComponent>()?
+    {
         #[cfg(feature = "benchmark")]
         {
             moved_this_frame += 1;
@@ -312,13 +316,15 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Local rotation
         let rotation_speed = floating_object_component.rotation_speed;
-        floating_object_transform.rotate_around_axis(rotation_speed * delta_time, Vector3f::new(1.0,1.0,1.0));
+        floating_object_transform
+            .rotate_around_axis(rotation_speed * delta_time, Vector3f::new(1.0, 1.0, 1.0));
 
         // Local scale
         let scale_speed = floating_object_component.scale_speed;
         floating_object_component.scale_factor += scale_speed * delta_time;
         let scale_factor = floating_object_component.scale_factor;
-        floating_object_transform.set_scale(Vector3f::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5));
+        floating_object_transform
+            .set_scale(Vector3f::new(0.4, 0.4, 0.4) * (scale_factor.sin() / 1.5 + 1.5));
 
         // Radius
         let radius_speed = floating_object_component.radius_speed;
@@ -331,19 +337,17 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
         let angle = floating_object_component.angle;
         let radius = floating_object_component.radius_factor.sin() * 6.0 + 10.0;
 
-        floating_object_transform.set_position(
-            Vector3f::new(
-                angle.to_radians().cos() * radius,
-                floating_object_transform.position.y,
-                angle.to_radians().sin() * radius
+        floating_object_transform.set_position(Vector3f::new(
+            angle.to_radians().cos() * radius,
+            floating_object_transform.position.y,
+            angle.to_radians().sin() * radius,
         ));
 
         let y_axis_movement_speed = floating_object_component.y_axis_movement_speed;
         floating_object_component.y_axis_factor += y_axis_movement_speed * delta_time;
         let y_axis_factor = floating_object_component.y_axis_factor;
 
-        floating_object_transform.set_position(
-            Vector3f::new(
+        floating_object_transform.set_position(Vector3f::new(
             angle.to_radians().cos() * radius,
             y_axis_factor.sin() * 0.8 * radius,
             angle.to_radians().sin() * radius,
@@ -424,15 +428,18 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let mouse_delta = input_component.get_mouse_delta();
 
     // Get gamepad input
-    let gamepad_left_stick = input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::LeftStickX);
+    let gamepad_left_stick =
+        input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::LeftStickX);
 
     // Pressing left bumper causes rumble (Example of haptics usage)
-    let left_bumper = input_component.get_gamepad_button(PlayerId::Player1, GamepadButton::LeftBumper);
+    let left_bumper =
+        input_component.get_gamepad_button(PlayerId::Player1, GamepadButton::LeftBumper);
     if left_bumper {
         input_component.enqueue_rumble(PlayerId::Player1, 1.0, 1.0, 500);
     }
 
-    for (_, transform_transform, camera_movement_component) in engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
+    for (_, transform_transform, camera_movement_component) in
+        engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
     {
         // Zoom
         let zoom_speed = camera_movement_component.zoom_speed;
@@ -441,8 +448,16 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         // Orbit
         let mut change_value: f32 = 0.0;
         // TODO: make it progressive for gamepad
-        if d_key { change_value -= 1.0; } else if gamepad_left_stick < -0.1 { change_value += 1.0; }
-        if a_key { change_value += 1.0; } else if gamepad_left_stick > 0.1 { change_value -= 1.0; }
+        if d_key {
+            change_value -= 1.0;
+        } else if gamepad_left_stick < -0.1 {
+            change_value += 1.0;
+        }
+        if a_key {
+            change_value += 1.0;
+        } else if gamepad_left_stick > 0.1 {
+            change_value -= 1.0;
+        }
         let orbit_speed = camera_movement_component.orbit_speed;
         camera_movement_component.angle += change_value * orbit_speed * delta_time;
         let angle = camera_movement_component.angle;
@@ -495,13 +510,21 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
     let g_key = input_component.get_key(DECREASE_CAMERA_FOV_BUTTON);
 
     // Get gamepad input
-    let gamepad_right_stick = input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::RightStickY);
+    let gamepad_right_stick =
+        input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::RightStickY);
 
-    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()?
-    {
+    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()? {
         let mut change_value: f32 = 0.0;
-        if t_key { change_value += 1.0; } else if gamepad_right_stick > 0.1 { change_value -= 1.0; }
-        if g_key { change_value -= 1.0; } else if gamepad_right_stick < -0.1 { change_value += 1.0; }
+        if t_key {
+            change_value += 1.0;
+        } else if gamepad_right_stick > 0.1 {
+            change_value -= 1.0;
+        }
+        if g_key {
+            change_value -= 1.0;
+        } else if gamepad_right_stick < -0.1 {
+            change_value += 1.0;
+        }
 
         let new_fov = camera_component.fov + change_value * 100.0 * delta_time;
         if new_fov > 10.0 && new_fov < 120.0 {
@@ -615,7 +638,7 @@ fn bench_report_system(engine: &mut Engine) -> Result<()> {
 
     if s.frames >= s.report_every_frames as u64 {
         let f = s.frames as f64;
-        let avg_math_ms  = (s.acc_math_ns as f64 / 1_000_000.0) / f;
+        let avg_math_ms = (s.acc_math_ns as f64 / 1_000_000.0) / f;
         let avg_frame_ms = s.acc_frame_ms / f;
         let moved_per_frame = (s.moved_acc as f64 / f).round() as u64;
         let new_frame_time = delta_time * 1000.0;
@@ -627,7 +650,11 @@ fn bench_report_system(engine: &mut Engine) -> Result<()> {
             fps, moved_per_frame, avg_math_ms, avg_frame_ms, s.worst_frame_ms
         );
 
-        if let Ok(mut fh) = OpenOptions::new().append(true).create(true).open("vec3_bench.csv") {
+        if let Ok(mut fh) = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("vec3_bench.csv")
+        {
             let _ = writeln!(
                 fh,
                 "{},{:.3},{:.3},{:.3}",
@@ -646,4 +673,3 @@ fn bench_report_system(engine: &mut Engine) -> Result<()> {
 
     Ok(())
 }
-

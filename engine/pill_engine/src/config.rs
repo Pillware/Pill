@@ -1,13 +1,17 @@
 use crate::{
-    ecs::{ audio_system, deferred_update_system, input_system, haptics_system, rendering_system, time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent, InputComponent, SystemFunction, TimeComponent, UpdatePhase, PlayerId },
-    graphics::{ RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle },
-    resources::{ MaterialHandle, ShaderHandle, TextureHandle, TextureType }
+    ecs::{
+        audio_system, deferred_update_system, haptics_system, input_system, rendering_system,
+        time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent,
+        InputComponent, PlayerId, SystemFunction, TimeComponent, UpdatePhase,
+    },
+    graphics::{RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle},
+    resources::{MaterialHandle, ShaderHandle, TextureHandle, TextureType},
 };
 
 use pill_core::PillSlotMapKeyData;
 
-use std::any::TypeId;
 use lazy_static::lazy_static;
+use std::any::TypeId;
 
 // --- General ---
 
@@ -94,7 +98,6 @@ pub const DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS: (u32, u32) = (0, 1);
 pub const DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
 pub const DEFAULT_UNLIT_MATERIAL_NAME: &str = "pill_engine_default_unlit_material";
 
-
 // Render queue key
 pub type RenderQueueKeyType = u64; // Defines size of renderer queue key (Should be u8, u16, u32, or u64)
 
@@ -124,33 +127,71 @@ pub const RENDER_QUEUE_KEY_MESH_INDEX_IDX: u8 = 5;
 pub const RENDER_QUEUE_KEY_MESH_VERSION_IDX: u8 = 6;
 
 // Default resource handle - Color texture
-pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
-pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
+pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData {
+    index: 1,
+    version: std::num::NonZeroU32::new(1).unwrap(),
+});
+pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle =
+    RendererTextureHandle(PillSlotMapKeyData {
+        index: 1,
+        version: std::num::NonZeroU32::new(1).unwrap(),
+    });
 
 // Default resource handle - Normal texture
-pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData { index: 2, version: std::num::NonZeroU32::new(1).unwrap() });
-pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle = RendererTextureHandle(PillSlotMapKeyData { index: 2, version: std::num::NonZeroU32::new(1).unwrap() });
+pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData {
+    index: 2,
+    version: std::num::NonZeroU32::new(1).unwrap(),
+});
+pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle =
+    RendererTextureHandle(PillSlotMapKeyData {
+        index: 2,
+        version: std::num::NonZeroU32::new(1).unwrap(),
+    });
 
-pub fn get_default_texture_handles(texture_type: TextureType) -> (TextureHandle, RendererTextureHandle) {
+pub fn get_default_texture_handles(
+    texture_type: TextureType,
+) -> (TextureHandle, RendererTextureHandle) {
     match texture_type {
-        TextureType::Color => (DEFAULT_COLOR_TEXTURE_HANDLE, DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE),
-        TextureType::Normal => (DEFAULT_NORMAL_TEXTURE_HANDLE, DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE),
+        TextureType::Color => (
+            DEFAULT_COLOR_TEXTURE_HANDLE,
+            DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE,
+        ),
+        TextureType::Normal => (
+            DEFAULT_NORMAL_TEXTURE_HANDLE,
+            DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE,
+        ),
     }
 }
 
-
 // Default resource handle - Shader
-pub const DEFAULT_LIT_SHADER_HANDLE: ShaderHandle = ShaderHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
+pub const DEFAULT_LIT_SHADER_HANDLE: ShaderHandle = ShaderHandle(PillSlotMapKeyData {
+    index: 1,
+    version: std::num::NonZeroU32::new(1).unwrap(),
+});
 
-pub const DEFAULT_LIT_RENDERER_SHADER_HANDLE: RendererShaderHandle = RendererShaderHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
+pub const DEFAULT_LIT_RENDERER_SHADER_HANDLE: RendererShaderHandle =
+    RendererShaderHandle(PillSlotMapKeyData {
+        index: 1,
+        version: std::num::NonZeroU32::new(1).unwrap(),
+    });
 
 pub fn get_default_lit_shader_handles() -> (ShaderHandle, RendererShaderHandle) {
-    (DEFAULT_LIT_SHADER_HANDLE, DEFAULT_LIT_RENDERER_SHADER_HANDLE)
+    (
+        DEFAULT_LIT_SHADER_HANDLE,
+        DEFAULT_LIT_RENDERER_SHADER_HANDLE,
+    )
 }
 
 // Default resource handle - Material
-pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
-pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle = RendererMaterialHandle(PillSlotMapKeyData { index: 1, version: std::num::NonZeroU32::new(1).unwrap() });
+pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle(PillSlotMapKeyData {
+    index: 1,
+    version: std::num::NonZeroU32::new(1).unwrap(),
+});
+pub const DEFAULT_RENDERER_MATERIAL_HANDLE: RendererMaterialHandle =
+    RendererMaterialHandle(PillSlotMapKeyData {
+        index: 1,
+        version: std::num::NonZeroU32::new(1).unwrap(),
+    });
 
 pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle) {
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)

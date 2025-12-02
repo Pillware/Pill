@@ -1,14 +1,13 @@
-use crate::style::{PillStyle};
+use crate::style::PillStyle;
 
-use anyhow::{Context, Result, Error};
-use thiserror::Error;
+use anyhow::{Context, Error, Result};
 use colored::*;
-
+use thiserror::Error;
 
 // --- Renderer error ---
 
 #[derive(Error, Debug, Clone)]
-pub enum RendererError { 
+pub enum RendererError {
     #[error("Undefined {} error \n\nSource: ", "Renderer".general_object_style())]
     Other,
     #[error("{} {} not found \n\nSource: ", "Renderer".general_object_style(), "Resource".specific_object_style())]
@@ -25,10 +24,8 @@ pub enum RendererError {
     ShaderCompilationFailed(String, String, String),
 }
 
-
 #[derive(Error, Debug, Clone)]
 pub enum EngineError<'a> {
-
     // Config
     #[error("Invalid {} config file", "Game".module_object_style())]
     InvalidGameConfig(),
@@ -51,7 +48,7 @@ pub enum EngineError<'a> {
 
     // Camera
     #[error("There is no active {} set in active {}",  "Camera".general_object_style(), "Scene".general_object_style())]
-    NoActiveCamera,   
+    NoActiveCamera,
 
     // Component
     #[error("{} {} is already registered for {} {}", "Component".general_object_style(), .0.specific_object_style(), "Scene".general_object_style(), .1.name_style())]

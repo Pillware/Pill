@@ -1,12 +1,6 @@
-use crate::{
-    ecs::{
-        Component, ComponentStorage,
-    },
-};
-use pill_core::{
-    Direction, Matrix3f, Matrix3fA, Matrix4f, PillTypeMapKey, Vector3f
-};
-use serde::{ Serialize, Deserialize };
+use crate::ecs::{Component, ComponentStorage};
+use pill_core::{Direction, Matrix3f, Matrix3fA, Matrix4f, PillTypeMapKey, Vector3f};
+use serde::{Deserialize, Serialize};
 
 // Coordinate system:
 //
@@ -110,7 +104,7 @@ impl TransformComponent {
             Direction::WorldRight => self.position.x += delta,
             Direction::WorldLeft => self.position.x -= delta,
             Direction::WorldUp => self.position.y += delta,
-            Direction::WorldDown => self.position.y -= delta
+            Direction::WorldDown => self.position.y -= delta,
         }
         self.matrix_update_required = true;
     }
@@ -121,9 +115,9 @@ impl TransformComponent {
     }
 
     pub fn translate_local(&mut self, delta: Vector3f) {
-        self.position += self.get_forward_direction() * delta.z +
-                        self.get_right_direction() * delta.x +
-                        self.get_up_direction() * delta.y;
+        self.position += self.get_forward_direction() * delta.z
+            + self.get_right_direction() * delta.x
+            + self.get_up_direction() * delta.y;
         self.matrix_update_required = true;
     }
 
@@ -179,11 +173,14 @@ impl TransformComponent {
         self.scale = scale;
         self.matrix_update_required = true;
     }
-
 }
 
 pub fn update_transform_matrices(transform_component: &mut TransformComponent) {
-    let model = Matrix4f::model(transform_component.position, transform_component.rotation, transform_component.scale);
+    let model = Matrix4f::model(
+        transform_component.position,
+        transform_component.rotation,
+        transform_component.scale,
+    );
     let normal = Matrix3f::from_euler_angles(transform_component.rotation);
 
     transform_component.model_matrix = model;
@@ -202,9 +199,7 @@ impl PillTypeMapKey for TransformComponent {
     type Storage = ComponentStorage<TransformComponent>;
 }
 
-impl Component for TransformComponent {
-
-}
+impl Component for TransformComponent {}
 
 impl Default for TransformComponent {
     fn default() -> Self {
@@ -213,7 +208,7 @@ impl Default for TransformComponent {
 }
 
 pub trait Matrix3fAngleExt {
-    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix3f ;
+    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix3f;
 }
 
 pub trait Matrix4fModelExt {

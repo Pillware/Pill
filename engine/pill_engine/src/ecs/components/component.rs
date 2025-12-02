@@ -1,35 +1,52 @@
 use crate::{
+    ecs::{ComponentStorage, EntityHandle, SceneHandle},
     engine::Engine,
-    ecs::{ SceneHandle, EntityHandle, ComponentStorage },
 };
 
-use pill_core::{ PillTypeMapKey, PillSlotMapKey };
+use pill_core::{PillSlotMapKey, PillTypeMapKey};
 
-use std::marker::PhantomData;
 use anyhow::Result;
 use dyn_clone::DynClone;
-
+use std::marker::PhantomData;
 
 // --- Component ---
 
 // TypeMapKey trait gives handle to the ResourceStorage
 // PillSlotMapKey trait gives handle to the actual object in ResourceStorage
 
-pub trait Component : PillTypeMapKey + Send {
+pub trait Component: PillTypeMapKey + Send {
     // Optional to implement
-    fn initialize(&mut self, _engine: &mut Engine) -> Result<()> { Ok(()) } // Called when component is added to the engine, before adding it to storage
-    fn pass_handles(&mut self, _self_scene_handle: SceneHandle, _self_entity_handle: EntityHandle) {} // Called right after component is added to the engine
-    fn deferred_update(&mut self, _engine: &mut Engine, _request: usize) -> Result<()> { Ok(()) } // Called by DeferredUpdateSystem when request related to the component is being processed
-    fn destroy(&mut self, _engine: &mut Engine, _self_scene_handle: SceneHandle, _self_entity_handle: EntityHandle) -> Result<()> { Ok(()) } // Called when component is being removed from the engine
+    fn initialize(&mut self, _engine: &mut Engine) -> Result<()> {
+        Ok(())
+    } // Called when component is added to the engine, before adding it to storage
+    fn pass_handles(&mut self, _self_scene_handle: SceneHandle, _self_entity_handle: EntityHandle) {
+    } // Called right after component is added to the engine
+    fn deferred_update(&mut self, _engine: &mut Engine, _request: usize) -> Result<()> {
+        Ok(())
+    } // Called by DeferredUpdateSystem when request related to the component is being processed
+    fn destroy(
+        &mut self,
+        _engine: &mut Engine,
+        _self_scene_handle: SceneHandle,
+        _self_entity_handle: EntityHandle,
+    ) -> Result<()> {
+        Ok(())
+    } // Called when component is being removed from the engine
 }
 
 // --- Global Component ---
 
-pub trait GlobalComponent : PillTypeMapKey + Send {
+pub trait GlobalComponent: PillTypeMapKey + Send {
     // Optional to implement
-    fn initialize(&mut self, _engine: &mut Engine) -> Result<()> { Ok(()) } // Called when component is added to the engine, before adding it to storage
-    fn deferred_update(&mut self, _engine: &mut Engine, _request: usize) -> Result<()> { Ok(()) } // Called by DeferredUpdateSystem when request related to the component is being processed
-    fn destroy(&mut self, _engine: &mut Engine) -> Result<()> { Ok(()) } // Called when component is being removed from the engine
+    fn initialize(&mut self, _engine: &mut Engine) -> Result<()> {
+        Ok(())
+    } // Called when component is added to the engine, before adding it to storage
+    fn deferred_update(&mut self, _engine: &mut Engine, _request: usize) -> Result<()> {
+        Ok(())
+    } // Called by DeferredUpdateSystem when request related to the component is being processed
+    fn destroy(&mut self, _engine: &mut Engine) -> Result<()> {
+        Ok(())
+    } // Called when component is being removed from the engine
 }
 
 // --- Component Destroyers ---
@@ -37,7 +54,12 @@ pub trait GlobalComponent : PillTypeMapKey + Send {
 // Approach that makes it possible to delete components by iterating over typemap of component storages and not knowing the types of the components
 // Use DynClone to be able to clone Boxed component destroyers
 pub trait ComponentDestroyer: DynClone {
-    fn destroy(&mut self, engine: &mut Engine, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()>;
+    fn destroy(
+        &mut self,
+        engine: &mut Engine,
+        scene_handle: SceneHandle,
+        entity_handle: EntityHandle,
+    ) -> Result<()>;
 }
 
 dyn_clone::clone_trait_object!(ComponentDestroyer);
@@ -54,16 +76,24 @@ impl<T> ConcreteComponentDestroyer<T> {
     }
 }
 
-impl <T> Clone for ConcreteComponentDestroyer<T> {
+impl<T> Clone for ConcreteComponentDestroyer<T> {
     fn clone(&self) -> Self {
-        Self { component_type: self.component_type }
+        Self {
+            component_type: self.component_type,
+        }
     }
 }
 
 impl<T> ComponentDestroyer for ConcreteComponentDestroyer<T>
-    where T: Component<Storage = ComponentStorage::<T>>
+where
+    T: Component<Storage = ComponentStorage<T>>,
 {
-    fn destroy(&mut self, engine: &mut Engine, scene_handle: SceneHandle, entity_handle: EntityHandle) -> Result<()> {
+    fn destroy(
+        &mut self,
+        engine: &mut Engine,
+        scene_handle: SceneHandle,
+        entity_handle: EntityHandle,
+    ) -> Result<()> {
         // Take component out of storage
         let component: Option<T>;
         {
@@ -72,12 +102,17 @@ impl<T> ComponentDestroyer for ConcreteComponentDestroyer<T>
 
             // Take component out of slot
             let component_storage = target_scene.components.get_mut::<T>().unwrap();
-            let component_slot = component_storage.data.get_mut(entity_handle.data().index as usize).expect("Critical: Vector not initialized");
+            let component_slot = component_storage
+                .data
+                .get_mut(entity_handle.data().index as usize)
+                .expect("Critical: Vector not initialized");
             component = Some(component_slot.take().unwrap());
         }
 
         // Call destroy function on component
-        component.unwrap().destroy(engine, scene_handle, entity_handle)?;
+        component
+            .unwrap()
+            .destroy(engine, scene_handle, entity_handle)?;
 
         Ok(())
     }

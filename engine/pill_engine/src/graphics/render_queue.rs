@@ -1,20 +1,19 @@
 use crate::{
-    config::*, resources::{
-        Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, Shader,
-    }
+    config::*,
+    resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, Shader},
 };
 
 use pill_core::PillSlotMapKey;
 
+use anyhow::Result;
+use core::fmt::{self, Debug};
+use lazy_static::lazy_static;
 use std::{
     cmp::Ordering,
-    fmt::{Binary, Display},
-    ops::{Add, Not, Shl, Sub, Range},
     convert::TryInto,
+    fmt::{Binary, Display},
+    ops::{Add, Not, Range, Shl, Sub},
 };
-use core::fmt::{Debug, self};
-use anyhow::Result;
-use lazy_static::lazy_static;
 
 // --- Render queue
 
@@ -47,7 +46,7 @@ impl PartialEq for RenderQueueItem {
     }
 }
 
-impl Eq for RenderQueueItem { }
+impl Eq for RenderQueueItem {}
 
 impl Display for RenderQueueItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -63,7 +62,7 @@ impl Debug for RenderQueueItem {
 
 // --- Render queue field ---
 
-pub struct RenderQueueField<T>  {
+pub struct RenderQueueField<T> {
     pub mask_range: core::ops::Range<T>,
     pub mask_shift: T,
     pub mask: T,
@@ -76,9 +75,21 @@ pub trait Pow {
 
 impl<T> RenderQueueField<T>
 where
-    T: Copy + Default + Pow + Binary + Debug + From<u8> + From<u32> + Ord + Shl<Output = T> + Sub<Output = T> + Add<Output = T> + Not<Output = T>,
+    T: Copy
+        + Default
+        + Pow
+        + Binary
+        + Debug
+        + From<u8>
+        + From<u32>
+        + Ord
+        + Shl<Output = T>
+        + Sub<Output = T>
+        + Add<Output = T>
+        + Not<Output = T>,
 {
-    pub fn new(mask_range: core::ops::Range<T>) -> Self { // Compile-time evaluable function
+    pub fn new(mask_range: core::ops::Range<T>) -> Self {
+        // Compile-time evaluable function
         let one: T = T::from(1_u8);
         let two: T = T::from(2_u8);
         let mask_range_length = mask_range.end - mask_range.start + one; //if mask_range.start == zero { mask_range.end + one } else { mask_range.end - mask_range.start };
@@ -97,13 +108,16 @@ where
 }
 
 // Creates pill engine render queue composed from order, material index, material version, mesh index, mesh version
-pub fn compose_render_queue_key(resource_manager: &ResourceManager, material_handle: &MaterialHandle, mesh_handle: &MeshHandle) -> Result<RenderQueueKey> {
+pub fn compose_render_queue_key(
+    resource_manager: &ResourceManager,
+    material_handle: &MaterialHandle,
+    mesh_handle: &MeshHandle,
+) -> Result<RenderQueueKey> {
     let material = resource_manager.get_resource::<Material>(material_handle)?;
     let shader = resource_manager.get_resource::<Shader>(&material.shader_handle)?;
     let mesh = resource_manager.get_resource::<Mesh>(mesh_handle)?;
 
-    let render_queue_key: RenderQueueKey =
-        ((RENDER_QUEUE_KEY_ORDER.max - material.rendering_order as RenderQueueKey) << RENDER_QUEUE_KEY_ORDER.mask_shift) | // Order has to be inverted for proper sorting
+    let render_queue_key: RenderQueueKey = ((RENDER_QUEUE_KEY_ORDER.max - material.rendering_order as RenderQueueKey) << RENDER_QUEUE_KEY_ORDER.mask_shift) | // Order has to be inverted for proper sorting
 
         // 1. Shader - defining rendering pipeline
         ((shader.renderer_resource_handle.unwrap().data().index as RenderQueueKey) << RENDER_QUEUE_KEY_SHADER_INDEX.mask_shift) |
@@ -132,15 +146,21 @@ pub struct RenderQueueKeyFields {
 
 // Decomposes pill engine render queue key into separate fields
 pub fn decompose_render_queue_key(render_queue_key: RenderQueueKey) -> RenderQueueKeyFields {
-
     // [TODO] What if render queue key is not valid
-    let order: u8 = ((render_queue_key & RENDER_QUEUE_KEY_ORDER.mask as RenderQueueKey) >> RENDER_QUEUE_KEY_ORDER.mask_shift as RenderQueueKey) as u8;
-    let shader_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_SHADER_INDEX.mask) >> RENDER_QUEUE_KEY_SHADER_INDEX.mask_shift) as u8;
-    let shader_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_SHADER_VERSION.mask) >> RENDER_QUEUE_KEY_SHADER_VERSION.mask_shift) as u8;
-    let material_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MATERIAL_INDEX.mask) >> RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift) as u8;
-    let material_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MATERIAL_VERSION.mask) >> RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift) as u8;
-    let mesh_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MESH_INDEX.mask) >> RENDER_QUEUE_KEY_MESH_INDEX.mask_shift) as u8;
-    let mesh_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MESH_VERSION.mask) >> RENDER_QUEUE_KEY_MESH_VERSION.mask_shift) as u8;
+    let order: u8 = ((render_queue_key & RENDER_QUEUE_KEY_ORDER.mask as RenderQueueKey)
+        >> RENDER_QUEUE_KEY_ORDER.mask_shift as RenderQueueKey) as u8;
+    let shader_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_SHADER_INDEX.mask)
+        >> RENDER_QUEUE_KEY_SHADER_INDEX.mask_shift) as u8;
+    let shader_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_SHADER_VERSION.mask)
+        >> RENDER_QUEUE_KEY_SHADER_VERSION.mask_shift) as u8;
+    let material_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MATERIAL_INDEX.mask)
+        >> RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift) as u8;
+    let material_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MATERIAL_VERSION.mask)
+        >> RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift) as u8;
+    let mesh_index: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MESH_INDEX.mask)
+        >> RENDER_QUEUE_KEY_MESH_INDEX.mask_shift) as u8;
+    let mesh_version: u8 = ((render_queue_key & RENDER_QUEUE_KEY_MESH_VERSION.mask)
+        >> RENDER_QUEUE_KEY_MESH_VERSION.mask_shift) as u8;
 
     RenderQueueKeyFields {
         order,
@@ -166,9 +186,12 @@ impl Pow for RenderQueueKey {
 fn get_render_queue_key_item_range(render_queue_item_index: u8) -> Range<RenderQueueKey> {
     let mut start: RenderQueueKey = 0;
     let mut end: RenderQueueKey = 0;
-    for i in 0..render_queue_item_index + 1
-    {
-        start += if i.ne(&0) { RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize - 1] } else { 0 };
+    for i in 0..render_queue_item_index + 1 {
+        start += if i.ne(&0) {
+            RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize - 1]
+        } else {
+            0
+        };
         end += RENDER_QUEUE_KEY_ITEMS_LENGTH[i as usize];
     }
     start..(end - 1)

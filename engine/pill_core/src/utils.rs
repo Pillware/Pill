@@ -1,8 +1,8 @@
-use crate::{EngineError, define_new_pill_slotmap_key};
+use crate::{define_new_pill_slotmap_key, EngineError};
 
-use anyhow::{ Context, Result, Error };
+use anyhow::{Context, Error, Result};
 use boolinator::Boolinator;
-use std::{ any::type_name, collections::HashMap, hash::Hash, path::Path };
+use std::{any::type_name, collections::HashMap, hash::Hash, path::Path};
 
 // --- Type to string utils ---
 
@@ -37,22 +37,32 @@ pub fn get_enum_variant_type_name<T: core::fmt::Debug>(a: &T) -> String {
 
 // Check if path to asset is correct (exists and has supported format)
 pub fn validate_asset_path(path: &Path, allowed_formats: &'static [&'static str]) -> Result<()> {
-    path.exists().ok_or(Error::new(EngineError::InvalidAssetPath(path.display().to_string())))?;
+    path.exists()
+        .ok_or(Error::new(EngineError::InvalidAssetPath(
+            path.display().to_string(),
+        )))?;
 
     match path.extension() {
-        Some(v) => match allowed_formats.contains(&v.to_str().unwrap()) { //} v.eq(allowed_format) {
+        Some(v) => match allowed_formats.contains(&v.to_str().unwrap()) {
+            //} v.eq(allowed_format) {
             true => Ok(()),
-            false => Err(Error::new(EngineError::InvalidAssetFormat(allowed_formats, v.to_str().unwrap().to_string()))),
+            false => Err(Error::new(EngineError::InvalidAssetFormat(
+                allowed_formats,
+                v.to_str().unwrap().to_string(),
+            ))),
         },
-        None => Err(Error::new(EngineError::InvalidAssetPath(path.display().to_string()))),
+        None => Err(Error::new(EngineError::InvalidAssetPath(
+            path.display().to_string(),
+        ))),
     }
 }
 
 // --- PillSlotMap utils ---
 
-#[macro_export] macro_rules! define_component_handle {
+#[macro_export]
+macro_rules! define_component_handle {
     ( $(#[$outer:meta])* $vis:vis struct $name:ident; $($rest:tt)* ) => {
-        pill_core::define_new_pill_slotmap_key! { }
+        pill_core::define_new_pill_slotmap_key! {}
     };
 }
 
@@ -70,8 +80,7 @@ pub fn get_game_error_message(result: Result<()>) -> Option<String> {
             message.push_str(message_part.as_str());
         }
         Some(message)
-    }
-    else {
+    } else {
         None
     }
 }
