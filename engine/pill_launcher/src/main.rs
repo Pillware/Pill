@@ -495,7 +495,7 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
 
     // Game dev docs
-    let arguments = vec!["doc", "--no-deps", "--features", "game", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
+    let arguments = vec!["doc", "--no-deps", "--features", "game,internal", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
