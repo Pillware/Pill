@@ -1,16 +1,17 @@
 use crate::{
-    engine::Engine,
-    graphics::{ RendererMeshHandle },
-    resources::{ ResourceStorage, Resource },
     ecs::MeshRenderingComponent,
+    engine::Engine,
+    graphics::RendererMeshHandle,
+    resources::{Resource, ResourceStorage},
 };
 
-use pill_core::{ EngineError, PillSlotMapKey, PillTypeMapKey, Vector2f, Vector3f, PillStyle, get_type_name };
+use pill_core::{
+    get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey, Vector2f, Vector3f,
+};
 
-use std::path::{ Path, PathBuf };
+use anyhow::{Context, Error, Result};
+use std::path::{Path, PathBuf};
 use tobj::LoadOptions;
-use anyhow::{Result, Context, Error};
-
 
 pill_core::define_new_pill_slotmap_key! {
     pub struct MeshHandle;
@@ -38,7 +39,7 @@ impl Mesh {
             path,
             renderer_resource_handle: None,
             mesh_data: None,
-            flip_uv_y: false
+            flip_uv_y: false,
         }
     }
 
@@ -60,7 +61,11 @@ impl Resource for Mesh {
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
+        let error_message = format!(
+            "Initializing {} {} failed",
+            "Resource".general_object_style(),
+            get_type_name::<Self>().specific_object_style()
+        );
 
         // Check if path to asset is correct
         let resource_file_path = engine.game_resources_directory_path.join(&self.path);
@@ -70,18 +75,23 @@ impl Resource for Mesh {
         // Create mesh data
         let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
             .context(error_message.clone())
-            .context(format!("Failed to create mesh data from {} file", resource_file_path.file_name().unwrap().to_string_lossy()))?;
+            .context(format!(
+                "Failed to create mesh data from {} file",
+                resource_file_path.file_name().unwrap().to_string_lossy()
+            ))?;
         self.mesh_data = Some(mesh_data);
 
         // Create new renderer mesh resource
-        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
+        let renderer_resource_handle = engine
+            .renderer
+            .create_mesh(&self.name, self.mesh_data.as_ref().unwrap())
+            .context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
-
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_mesh(v).unwrap();
@@ -89,12 +99,16 @@ impl Resource for Mesh {
 
         // Find mesh rendering components that use this mesh and update them
         for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            for (_entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
+            for (_entity_handle, mesh_rendering_component) in
+                scene.get_one_component_iterator_mut::<MeshRenderingComponent>()?
+            {
                 if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
                     // If mesh rendering component has handle to this mesh
                     if mesh_handle.data() == self_handle.data() {
                         mesh_rendering_component.set_mesh_handle(Option::<MeshHandle>::None);
-                        mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
+                        mesh_rendering_component
+                            .update_render_queue_key(&engine.resource_manager)
+                            .unwrap();
                     }
                 }
             }
@@ -135,11 +149,15 @@ impl MeshData {
 
         // Check data validity
         if models.len() > 1 {
-            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(path.to_path_buf().into_os_string().into_string().unwrap())));
+            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(
+                path.to_path_buf().into_os_string().into_string().unwrap(),
+            )));
         }
 
         if models.is_empty() {
-            return Err(Error::new(EngineError::InvalidModelFile(path.to_path_buf().into_os_string().into_string().unwrap())));
+            return Err(Error::new(EngineError::InvalidModelFile(
+                path.to_path_buf().into_os_string().into_string().unwrap(),
+            )));
         }
 
         // Load vertex data from model
@@ -157,9 +175,10 @@ impl MeshData {
                     mesh.positions[i * 3 + 1],
                     mesh.positions[i * 3 + 2],
                 ],
-                texture_coordinates: [ // Blender uses V coordinate flipped
+                texture_coordinates: [
+                    // Blender uses V coordinate flipped
                     *mesh.texcoords.get(i * 2).unwrap_or(&0.0),
-                    final_uv_y
+                    final_uv_y,
                 ],
                 normal: [
                     mesh.normals[i * 3],
@@ -203,12 +222,18 @@ impl MeshData {
             let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
 
             // Assign same tangent/bitangent to each vertex in the triangle
-            vertices[c[0] as usize].tangent = (tangent + Vector3f::from(vertices[c[0] as usize].tangent)).into();
-            vertices[c[1] as usize].tangent = (tangent + Vector3f::from(vertices[c[1] as usize].tangent)).into();
-            vertices[c[2] as usize].tangent = (tangent + Vector3f::from(vertices[c[2] as usize].tangent)).into();
-            vertices[c[0] as usize].bitangent = (bitangent + Vector3f::from(vertices[c[0] as usize].bitangent)).into();
-            vertices[c[1] as usize].bitangent = (bitangent + Vector3f::from(vertices[c[1] as usize].bitangent)).into();
-            vertices[c[2] as usize].bitangent = (bitangent + Vector3f::from(vertices[c[2] as usize].bitangent)).into();
+            vertices[c[0] as usize].tangent =
+                (tangent + Vector3f::from(vertices[c[0] as usize].tangent)).into();
+            vertices[c[1] as usize].tangent =
+                (tangent + Vector3f::from(vertices[c[1] as usize].tangent)).into();
+            vertices[c[2] as usize].tangent =
+                (tangent + Vector3f::from(vertices[c[2] as usize].tangent)).into();
+            vertices[c[0] as usize].bitangent =
+                (bitangent + Vector3f::from(vertices[c[0] as usize].bitangent)).into();
+            vertices[c[1] as usize].bitangent =
+                (bitangent + Vector3f::from(vertices[c[1] as usize].bitangent)).into();
+            vertices[c[2] as usize].bitangent =
+                (bitangent + Vector3f::from(vertices[c[2] as usize].bitangent)).into();
 
             // Prepare data for averaging tangents and bitangents
             triangles_included[c[0] as usize] += 1;
@@ -221,7 +246,9 @@ impl MeshData {
             let denom = 1.0 / n as f32;
             let vertex = &mut vertices[i];
             vertex.tangent = (Vector3f::from(vertex.tangent) * denom).normalize().into();
-            vertex.bitangent = (Vector3f::from(vertex.bitangent) * denom).normalize().into();
+            vertex.bitangent = (Vector3f::from(vertex.bitangent) * denom)
+                .normalize()
+                .into();
         }
 
         let mesh_data = MeshData {

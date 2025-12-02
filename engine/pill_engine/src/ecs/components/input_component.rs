@@ -1,22 +1,19 @@
 use crate::{
-    engine::{ KeyboardKey, MouseButton },
-    ecs::{ GlobalComponent, GlobalComponentStorage },
+    ecs::{GlobalComponent, GlobalComponentStorage},
+    engine::{KeyboardKey, MouseButton},
     internal::NUM_SUPPORTED_GAMEPADS,
 };
 
-use pill_core::{ PillTypeMapKey, Vector2f };
 use bitvec::prelude::*;
+use pill_core::{PillTypeMapKey, Vector2f};
 
+use anyhow::{Error, Result};
+use gilrs::{ff::Effect, GamepadId};
 use std::{
     collections::{HashMap, VecDeque},
     time::Instant,
 };
-use winit::event::{ ElementState, MouseScrollDelta };
-use gilrs::{
-    GamepadId,
-    ff::Effect,
-};
-use anyhow::{ Result, Error };
+use winit::event::{ElementState, MouseScrollDelta};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -50,31 +47,55 @@ pub const MOUSE_BUTTON_COUNT: usize = 3; // Left, Middle, Right
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
 pub enum GamepadButton {
-    A = 0, B, X, Y,
-    LeftBumper, RightBumper,
-    LeftTrigger, RightTrigger, // listed twice for convenience
-    Back, Start, Mode,
-    LeftStick, RightStick,
-    DPadUp, DPadDown, DPadLeft, DPadRight,
+    A = 0,
+    B,
+    X,
+    Y,
+    LeftBumper,
+    RightBumper,
+    LeftTrigger,
+    RightTrigger, // listed twice for convenience
+    Back,
+    Start,
+    Mode,
+    LeftStick,
+    RightStick,
+    DPadUp,
+    DPadDown,
+    DPadLeft,
+    DPadRight,
 }
 pub const GAMEPAD_BUTTON_COUNT: usize = GamepadButton::DPadRight as usize + 1;
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
 pub enum GamepadAxis {
-    LeftStickX = 0, LeftStickY,
-    RightStickX, RightStickY,
-    LeftTrigger, RightTrigger,
-    DPadX, DPadY,
+    LeftStickX = 0,
+    LeftStickY,
+    RightStickX,
+    RightStickY,
+    LeftTrigger,
+    RightTrigger,
+    DPadX,
+    DPadY,
 }
 pub const GAMEPAD_AXIS_COUNT: usize = GamepadAxis::DPadY as usize + 1;
 
 #[derive(Clone)]
 pub enum HapticCommand {
     /// Simple dual-rumble (weak/strong in [0.0, 1.0]) for a duration in milliseconds
-    Rumble { player_id: PlayerId, weak: f32, strong: f32, duration_ms: u32 },
+    Rumble {
+        player_id: PlayerId,
+        weak: f32,
+        strong: f32,
+        duration_ms: u32,
+    },
     /// Play a prebuilt gilrs::ff::Effect on the given player_id
-    PlayEffect { player_id: PlayerId, effect: Effect, duration_ms: u32 },
+    PlayEffect {
+        player_id: PlayerId,
+        effect: Effect,
+        duration_ms: u32,
+    },
 }
 
 pub struct InFlight {
@@ -85,24 +106,50 @@ pub struct InFlight {
 
 #[derive(Copy, Clone, Debug)]
 pub enum KeyboardEvent {
-    Key { key: KeyboardKey, state: ElementState },
+    Key {
+        key: KeyboardKey,
+        state: ElementState,
+    },
 }
 
 #[derive(Copy, Clone, Debug)]
 pub enum MouseEvent {
-    Button { key: MouseButton, state: ElementState },
-    Wheel { delta: MouseScrollDelta },
-    Delta { delta: Vector2f },
-    Position { position: Vector2f },
+    Button {
+        key: MouseButton,
+        state: ElementState,
+    },
+    Wheel {
+        delta: MouseScrollDelta,
+    },
+    Delta {
+        delta: Vector2f,
+    },
+    Position {
+        position: Vector2f,
+    },
 }
 
 #[derive(Copy, Clone, Debug)]
 pub enum GamepadEvent {
-    Button { id: GamepadId, button: GamepadButton, state: ElementState },
-    Axis { id: GamepadId, axis: GamepadAxis, value: f32 },
-    Connected { id: GamepadId },
-    Disconnected { id: GamepadId },
-    ForceFeedbackEffectCompleted { id: GamepadId },
+    Button {
+        id: GamepadId,
+        button: GamepadButton,
+        state: ElementState,
+    },
+    Axis {
+        id: GamepadId,
+        axis: GamepadAxis,
+        value: f32,
+    },
+    Connected {
+        id: GamepadId,
+    },
+    Disconnected {
+        id: GamepadId,
+    },
+    ForceFeedbackEffectCompleted {
+        id: GamepadId,
+    },
 }
 
 pub enum InputEvent {
@@ -220,16 +267,15 @@ impl InputComponent {
             ElementState::Pressed => {
                 if self.keyboard_keys[i] {
                     self.pressed_keyboard_keys.set(i, false);
-                }
-                else {
+                } else {
                     self.pressed_keyboard_keys.set(i, true);
                     self.keyboard_keys.set(i, true);
                 }
-            },
+            }
             ElementState::Released => {
                 self.released_keyboard_keys.set(i, true);
                 self.keyboard_keys.set(i, false);
-            },
+            }
         }
     }
 
@@ -251,19 +297,18 @@ impl InputComponent {
             MouseButton::Left => 0,
             MouseButton::Middle => 1,
             MouseButton::Right => 2,
-            _ => return
+            _ => return,
         };
 
         match state {
             ElementState::Pressed => {
                 if self.mouse_buttons[index] {
                     self.pressed_mouse_buttons[index] = false;
-                }
-                else {
+                } else {
                     self.pressed_mouse_buttons[index] = true;
                     self.mouse_buttons[index] = true;
                 }
-            },
+            }
             ElementState::Released => {
                 self.released_mouse_buttons[index] = true;
                 self.mouse_buttons[index] = false;
@@ -274,18 +319,18 @@ impl InputComponent {
     pub fn get_mouse_button_pressed(&self, button: MouseButton) -> bool {
         match button {
             MouseButton::Left => self.pressed_mouse_buttons[0],
-            MouseButton::Middle =>  self.pressed_mouse_buttons[1],
+            MouseButton::Middle => self.pressed_mouse_buttons[1],
             MouseButton::Right => self.pressed_mouse_buttons[2],
-            _ => false
+            _ => false,
         }
     }
 
     pub fn get_mouse_button(&self, button: MouseButton) -> bool {
         match button {
-            MouseButton::Left =>  self.mouse_buttons[0],
+            MouseButton::Left => self.mouse_buttons[0],
             MouseButton::Middle => self.mouse_buttons[1],
-            MouseButton::Right =>  self.mouse_buttons[2],
-            _ => false
+            MouseButton::Right => self.mouse_buttons[2],
+            _ => false,
         }
     }
 
@@ -294,7 +339,7 @@ impl InputComponent {
             MouseButton::Left => self.released_mouse_buttons[0],
             MouseButton::Middle => self.released_mouse_buttons[1],
             MouseButton::Right => self.released_mouse_buttons[2],
-            _ => false
+            _ => false,
         }
     }
 
@@ -334,7 +379,12 @@ impl InputComponent {
     }
 
     // Gamepad buttons (get by PlayerId, set by Gamepad's Id)
-    pub fn set_gamepad_button(&mut self, gamepad_id: GamepadId, button: GamepadButton, state: ElementState) {
+    pub fn set_gamepad_button(
+        &mut self,
+        gamepad_id: GamepadId,
+        button: GamepadButton,
+        state: ElementState,
+    ) {
         let player_id = match self.gamepad_id_to_player.get(&gamepad_id) {
             Some(&pid) => pid,
             None => return, // gamepad not recognized
@@ -344,16 +394,15 @@ impl InputComponent {
             ElementState::Pressed => {
                 if self.gamepad_buttons[i] {
                     self.pressed_gamepad_buttons.set(i, false);
-                }
-                else {
+                } else {
                     self.pressed_gamepad_buttons.set(i, true);
                     self.gamepad_buttons.set(i, true);
                 }
-            },
+            }
             ElementState::Released => {
                 self.released_gamepad_buttons.set(i, true);
                 self.gamepad_buttons.set(i, false);
-            },
+            }
         }
     }
 
@@ -378,7 +427,11 @@ impl InputComponent {
             None => return, // gamepad not recognized
         };
 
-        let v = if raw.abs() < GAMEPAD_DEADZONE { 0.0 } else { raw };
+        let v = if raw.abs() < GAMEPAD_DEADZONE {
+            0.0
+        } else {
+            raw
+        };
         let i = axis as usize + (player_id as usize * GAMEPAD_AXIS_COUNT);
         println!("Gamepad {:?} axis {:?} set to {}", gamepad_id, axis, v);
         self.gamepad_axes[i] = v;
@@ -400,19 +453,26 @@ impl InputComponent {
                 // Player Ids are assigned in order of connection
                 let pid = PlayerId::try_from(i as u8).unwrap();
                 self.gamepad_id_to_player.insert(gamepad_id, pid);
-                println!("Gamepad connected: id {}, assigned to player {:?}", gamepad_id, pid);
+                println!(
+                    "Gamepad connected: id {}, assigned to player {:?}",
+                    gamepad_id, pid
+                );
                 return;
             }
         }
 
-        println!("Gamepad connected: id {}, but no free slots available", gamepad_id);
+        println!(
+            "Gamepad connected: id {}, but no free slots available",
+            gamepad_id
+        );
     }
 
     pub fn disconnect_gamepad(&mut self, gamepad_id: GamepadId) {
         if let Some(player_id) = self.gamepad_id_to_player.remove(&gamepad_id) {
             let index = player_id as usize;
             self.gamepad_ids[index] = None;
-            self.in_flight_force_feedback.retain(|ff| ff.id != gamepad_id);
+            self.in_flight_force_feedback
+                .retain(|ff| ff.id != gamepad_id);
 
             // Reset buttons and axes for this gamepad
             let base = index * u32::BITS as usize;
@@ -426,23 +486,45 @@ impl InputComponent {
             for j in 0..GAMEPAD_AXIS_COUNT {
                 self.gamepad_axes[base_ax + j] = 0.0;
             }
-            println!("Gamepad disconnected: id {}, was player {:?}", gamepad_id, player_id);
+            println!(
+                "Gamepad disconnected: id {}, was player {:?}",
+                gamepad_id, player_id
+            );
         } else {
-            println!("Gamepad disconnected: id {}, but was not recognized", gamepad_id);
+            println!(
+                "Gamepad disconnected: id {}, but was not recognized",
+                gamepad_id
+            );
         }
     }
 
     // Haptics functions
-    pub fn enqueue_rumble(&mut self, player_id: PlayerId, weak: f32, strong: f32, duration_ms: u32) {
-        self.haptic_commands.push_back(HapticCommand::Rumble { player_id, weak, strong, duration_ms });
+    pub fn enqueue_rumble(
+        &mut self,
+        player_id: PlayerId,
+        weak: f32,
+        strong: f32,
+        duration_ms: u32,
+    ) {
+        self.haptic_commands.push_back(HapticCommand::Rumble {
+            player_id,
+            weak,
+            strong,
+            duration_ms,
+        });
     }
 
     pub fn enqueue_effect(&mut self, player_id: PlayerId, effect: Effect, duration_ms: u32) {
-        self.haptic_commands.push_back(HapticCommand::PlayEffect { player_id, effect, duration_ms });
+        self.haptic_commands.push_back(HapticCommand::PlayEffect {
+            player_id,
+            effect,
+            duration_ms,
+        });
     }
 
     pub fn complete_force_feedback_effect(&mut self, gamepad_id: GamepadId) {
-        self.in_flight_force_feedback.retain(|ff| ff.id != gamepad_id);
+        self.in_flight_force_feedback
+            .retain(|ff| ff.id != gamepad_id);
     }
 }
 
@@ -450,4 +532,4 @@ impl PillTypeMapKey for InputComponent {
     type Storage = GlobalComponentStorage<InputComponent>;
 }
 
-impl GlobalComponent for InputComponent { }
+impl GlobalComponent for InputComponent {}

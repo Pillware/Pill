@@ -24,11 +24,20 @@
 //! See also: `pill_core::networking` (packet format, transports, send/receive) and
 //! `pill_engine::systems::networking` for details on networking implementation.
 
+use crate::{
+    ecs::{
+        Component, EntityHandle, GlobalComponent, GlobalComponentStorage, NetworkStateComponent,
+        TransformComponent,
+    },
+    engine::Engine,
+};
 use anyhow::Result;
 use egui::util::id_type_map::TypeId;
-use std::{collections::{HashMap, HashSet}, time::Instant};
-use pill_core::{PillTypeMapKey, server_start, client_connect, NetworkClient, NetworkServer};
-use crate::{ecs::{EntityHandle, Component, GlobalComponent, GlobalComponentStorage, NetworkStateComponent, TransformComponent}, engine::Engine};
+use pill_core::{client_connect, server_start, NetworkClient, NetworkServer, PillTypeMapKey};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 
 /// Client-side connection lifecycle.
 ///
@@ -73,7 +82,7 @@ pub enum OfflinePolicy {
     /// Keep entities in place and stop simulating.
     Freeze,
     /// Hand control over to AI systems.
-    AI
+    AI,
 }
 
 /// Per-server runtime state kept by the engine.
@@ -228,13 +237,19 @@ impl NetworkManagerComponent {
     /// Get mutable access to the **server** state if this instance is a server.
     #[inline]
     pub fn server_mut(&mut self) -> Option<&mut ServerState> {
-        match &mut self.side { NetworkSide::Server(s) => Some(s), _ => None }
+        match &mut self.side {
+            NetworkSide::Server(s) => Some(s),
+            _ => None,
+        }
     }
 
     /// Get mutable access to the **client** state if this instance is a client.
     #[inline]
     pub fn client_mut(&mut self) -> Option<&mut ClientState> {
-        match &mut self.side { NetworkSide::Client(c) => Some(c), _ => None }
+        match &mut self.side {
+            NetworkSide::Client(c) => Some(c),
+            _ => None,
+        }
     }
 
     /// Returns `true` if this engine instance is running as a **server**.
@@ -249,4 +264,3 @@ impl NetworkManagerComponent {
         matches!(&self.side, NetworkSide::Client(_))
     }
 }
-

@@ -1,39 +1,26 @@
 use crate::{
     config::MAX_INSTANCE_PER_DRAWCALL_COUNT,
-    instance::Instance,
-    drawers::mesh_drawer::MeshDrawer,
     drawers::egui_drawer::EguiDrawer,
+    drawers::mesh_drawer::MeshDrawer,
+    instance::Instance,
     resources::{
-        RendererResourceStorage,
-        RendererCamera,
-        RendererMaterial,
-        RendererMesh,
-        RendererShader,
-        RendererTexture,
-        Vertex
-    }
+        RendererCamera, RendererMaterial, RendererMesh, RendererResourceStorage, RendererShader,
+        RendererTexture, Vertex,
+    },
 };
 
 use indexmap::IndexMap;
 
 use pill_engine::internal::{
-    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent,
+    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage,
+    EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem,
+    RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle,
+    RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent,
 };
 
-use pill_core::{
-    debug,
-    info,
-    LogContext,
-    PillSlotMapKey,
-    PillStyle,
-    RendererError,
-    Timer
-};
+use pill_core::{debug, info, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer};
 
-use std::{
-    collections::HashMap,
-    sync::Arc
-};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{Context, Error, Ok, Result};
 
@@ -46,9 +33,7 @@ impl PillRenderer for Renderer {
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
         let state: State = pollster::block_on(State::new(window, config))?;
 
-        Ok(Self {
-            state,
-        })
+        Ok(Self { state })
     }
 
     // --- Create ---
@@ -68,15 +53,22 @@ impl PillRenderer for Renderer {
             &self.state.device,
             self.state.color_format,
             Some(self.state.depth_format),
-            &[RendererMesh::data_layout_descriptor(), Instance::data_layout_descriptor()],
+            &[
+                RendererMesh::data_layout_descriptor(),
+                Instance::data_layout_descriptor(),
+            ],
             vertex_shader_bytes,
             fragment_shader_bytes,
             parameter_slots,
             texture_slots,
-            &self.state.renderer_resource_storage.engine_parameters.bind_group_layout,
+            &self
+                .state
+                .renderer_resource_storage
+                .engine_parameters
+                .bind_group_layout,
             &self.state.camera_bind_group_layout,
             pass_engine_parameters,
-            pass_camera_parameters
+            pass_camera_parameters,
         )?;
         let handle = self.state.renderer_resource_storage.shaders.insert(shader);
 
@@ -88,7 +80,7 @@ impl PillRenderer for Renderer {
         name: &str,
         renderer_shader_handle: RendererShaderHandle,
         textures: &IndexMap<String, MaterialTexture>,
-        parameters: &HashMap<String, MaterialParameter>
+        parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle> {
         let material = RendererMaterial::new(
             &self.state.device,
@@ -99,13 +91,32 @@ impl PillRenderer for Renderer {
             textures,
             parameters,
         )?;
-        let handle = self.state.renderer_resource_storage.materials.insert(material);
+        let handle = self
+            .state
+            .renderer_resource_storage
+            .materials
+            .insert(material);
         Ok(handle)
     }
 
-    fn create_texture(&mut self, name: &str, image_data: &image::DynamicImage, texture_type: TextureType) -> Result<RendererTextureHandle> {
-        let texture = RendererTexture::new_texture(&self.state.device, &self.state.queue, Some(name), image_data, texture_type)?;
-        let handle = self.state.renderer_resource_storage.textures.insert(texture);
+    fn create_texture(
+        &mut self,
+        name: &str,
+        image_data: &image::DynamicImage,
+        texture_type: TextureType,
+    ) -> Result<RendererTextureHandle> {
+        let texture = RendererTexture::new_texture(
+            &self.state.device,
+            &self.state.queue,
+            Some(name),
+            image_data,
+            texture_type,
+        )?;
+        let handle = self
+            .state
+            .renderer_resource_storage
+            .textures
+            .insert(texture);
         Ok(handle)
     }
 
@@ -116,58 +127,89 @@ impl PillRenderer for Renderer {
     }
 
     fn create_camera(&mut self) -> Result<RendererCameraHandle> {
-        let camera = RendererCamera::new(&self.state.device, self.state.camera_bind_group_layout.clone())?;
+        let camera = RendererCamera::new(
+            &self.state.device,
+            self.state.camera_bind_group_layout.clone(),
+        )?;
         let handle = self.state.renderer_resource_storage.cameras.insert(camera);
         Ok(handle)
     }
 
     // --- Update ---
 
-    fn update_material_textures(&mut self, renderer_material_handle: RendererMaterialHandle, textures: &IndexMap<String, MaterialTexture>) -> Result<()> {
+    fn update_material_textures(
+        &mut self,
+        renderer_material_handle: RendererMaterialHandle,
+        textures: &IndexMap<String, MaterialTexture>,
+    ) -> Result<()> {
         RendererMaterial::update_textures(
             &self.state.device,
             renderer_material_handle,
             &mut self.state.renderer_resource_storage,
-            textures
+            textures,
         )
     }
 
-    fn update_material_parameters(&mut self, renderer_material_handle: RendererMaterialHandle, parameters: &HashMap<String, MaterialParameter>) -> Result<()> {
+    fn update_material_parameters(
+        &mut self,
+        renderer_material_handle: RendererMaterialHandle,
+        parameters: &HashMap<String, MaterialParameter>,
+    ) -> Result<()> {
         RendererMaterial::update_parameters(
             &self.state.device,
             &self.state.queue,
             renderer_material_handle,
             &mut self.state.renderer_resource_storage,
-            parameters
+            parameters,
         )
     }
 
     // --- Destroy ---
 
     fn destroy_shader(&mut self, renderer_shader_handle: RendererShaderHandle) -> Result<()> {
-        self.state.renderer_resource_storage.shaders.remove(renderer_shader_handle).unwrap();
+        self.state
+            .renderer_resource_storage
+            .shaders
+            .remove(renderer_shader_handle)
+            .unwrap();
 
         // TODO: Check if there are no materials using this shader (engine should replace them with default shader), if there are prevent shader destruction
         Ok(())
     }
 
     fn destroy_material(&mut self, renderer_material_handle: RendererMaterialHandle) -> Result<()> {
-        self.state.renderer_resource_storage.materials.remove(renderer_material_handle).unwrap();
+        self.state
+            .renderer_resource_storage
+            .materials
+            .remove(renderer_material_handle)
+            .unwrap();
         Ok(())
     }
 
     fn destroy_texture(&mut self, renderer_texture_handle: RendererTextureHandle) -> Result<()> {
-        self.state.renderer_resource_storage.textures.remove(renderer_texture_handle).unwrap();
+        self.state
+            .renderer_resource_storage
+            .textures
+            .remove(renderer_texture_handle)
+            .unwrap();
         Ok(())
     }
 
     fn destroy_mesh(&mut self, renderer_mesh_handle: RendererMeshHandle) -> Result<()> {
-        self.state.renderer_resource_storage.meshes.remove(renderer_mesh_handle).unwrap();
+        self.state
+            .renderer_resource_storage
+            .meshes
+            .remove(renderer_mesh_handle)
+            .unwrap();
         Ok(())
     }
 
     fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
-        self.state.renderer_resource_storage.cameras.remove(renderer_camera_handle).unwrap();
+        self.state
+            .renderer_resource_storage
+            .cameras
+            .remove(renderer_camera_handle)
+            .unwrap();
         Ok(())
     }
 
@@ -191,7 +233,7 @@ impl PillRenderer for Renderer {
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
-        timer: &mut Timer
+        timer: &mut Timer,
     ) -> Result<()> {
         self.state.render(
             active_camera_entity_handle,
@@ -200,7 +242,7 @@ impl PillRenderer for Renderer {
             transform_component_storage,
             egui_ui,
             delta_time,
-            timer
+            timer,
         )
     }
 }
@@ -235,22 +277,24 @@ impl State {
         // 1. Create instance and surface
         let (instance, surface) = {
             let backends = match std::env::var("WGPU_BACKENDS").as_deref() {
-            std::result::Result::Ok("VULKAN") => wgpu::Backends::VULKAN,
-            std::result::Result::Ok("DX12") => wgpu::Backends::DX12,
-            std::result::Result::Ok("METAL") => wgpu::Backends::METAL,
-            std::result::Result::Ok("GL") => wgpu::Backends::GL,
-            std::result::Result::Ok("BROWSER_WEBGPU") => wgpu::Backends::BROWSER_WEBGPU,
-            _ => wgpu::Backends::all(),
-        };
+                std::result::Result::Ok("VULKAN") => wgpu::Backends::VULKAN,
+                std::result::Result::Ok("DX12") => wgpu::Backends::DX12,
+                std::result::Result::Ok("METAL") => wgpu::Backends::METAL,
+                std::result::Result::Ok("GL") => wgpu::Backends::GL,
+                std::result::Result::Ok("BROWSER_WEBGPU") => wgpu::Backends::BROWSER_WEBGPU,
+                _ => wgpu::Backends::all(),
+            };
 
-        let instance_descriptor = wgpu::InstanceDescriptor {
-            backends,
-            flags: wgpu::InstanceFlags::from_build_config().with_env(),
-            backend_options: wgpu::BackendOptions::default(),
-        };
+            let instance_descriptor = wgpu::InstanceDescriptor {
+                backends,
+                flags: wgpu::InstanceFlags::from_build_config().with_env(),
+                backend_options: wgpu::BackendOptions::default(),
+            };
 
-        let instance = wgpu::Instance::new(&instance_descriptor);
-            let surface = instance.create_surface(window).context("Failed to create surface")?;
+            let instance = wgpu::Instance::new(&instance_descriptor);
+            let surface = instance
+                .create_surface(window)
+                .context("Failed to create surface")?;
             (instance, surface)
         };
 
@@ -310,28 +354,26 @@ impl State {
         };
 
         // 5. Depth texture
-        let depth_texture = RendererTexture::new_depth_texture(
-                &device,
-                &surface_configuration,
-                "depth_texture",
-            )
-            .context("Failed to create depth texture")?;
+        let depth_texture =
+            RendererTexture::new_depth_texture(&device, &surface_configuration, "depth_texture")
+                .context("Failed to create depth texture")?;
 
         // 6. Define camera bind group layout
         // Each camera instance has the same bind group layout is we define it here once
-        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("camera_parameters_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0, // (set = X, binding = 0)
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
-                    min_binding_size: None,
-                },
-                count: None,
-            }]
-        });
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("camera_parameters_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0, // (set = X, binding = 0)
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         // 7. Resource storage
         let renderer_resource_storage = RendererResourceStorage::new(&device, &config)?;
@@ -339,13 +381,8 @@ impl State {
         // 8. Drawers
         let (mesh_drawer, egui_drawer) = {
             let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
-            let egui_drawer = EguiDrawer::new(
-                &device,
-                surface_configuration.format,
-                None,
-                1,
-                window_ref,
-            );
+            let egui_drawer =
+                EguiDrawer::new(&device, surface_configuration.format, None, 1, window_ref);
             (mesh_drawer, egui_drawer)
         };
 
@@ -382,7 +419,7 @@ impl State {
             // Other
             camera_bind_group_layout,
             config,
-           // profiler
+            // profiler
         };
 
         Ok(renderer)
@@ -393,12 +430,14 @@ impl State {
             self.window_size = new_window_size;
             self.surface_configuration.width = new_window_size.width;
             self.surface_configuration.height = new_window_size.height;
-            self.surface.configure(&self.device, &self.surface_configuration);
+            self.surface
+                .configure(&self.device, &self.surface_configuration);
             self.depth_texture = RendererTexture::new_depth_texture(
                 &self.device,
                 &self.surface_configuration,
                 "depth_texture",
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
 
@@ -410,9 +449,8 @@ impl State {
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
-        timer: &mut Timer
+        timer: &mut Timer,
     ) -> Result<()> {
-
         debug!(LogContext::Frame => "Starting frame render");
 
         timer.record("Get frame");
@@ -424,36 +462,65 @@ impl State {
             std::result::Result::Ok(frame) => frame,
             std::result::Result::Err(error) => match error {
                 wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
-                wgpu::SurfaceError::OutOfMemory => return Err(RendererError::SurfaceOutOfMemory.into()),
+                wgpu::SurfaceError::OutOfMemory => {
+                    return Err(RendererError::SurfaceOutOfMemory.into())
+                }
                 _ => return Err(RendererError::SurfaceOther.into()),
             },
         };
 
-        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         timer.record("Update engine parameters");
 
-        self.renderer_resource_storage.engine_parameters.update(&self.queue, delta_time);
+        self.renderer_resource_storage
+            .engine_parameters
+            .update(&self.queue, delta_time);
 
         timer.record("Update camera parameters");
 
         // Get active camera and update it
-        let camera_storage = camera_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
+        let camera_storage = camera_component_storage
+            .data
+            .get(active_camera_entity_handle.data().index as usize)
+            .unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
-        let renderer_camera = self.renderer_resource_storage.cameras.get_mut(get_renderer_resource_handle_from_camera_component(active_camera_component)).ok_or(Error::new(RendererError::RendererResourceNotFound))?;
-        let camera_transform_storage = transform_component_storage.data.get(active_camera_entity_handle.data().index as usize).unwrap();
+        let renderer_camera = self
+            .renderer_resource_storage
+            .cameras
+            .get_mut(get_renderer_resource_handle_from_camera_component(
+                active_camera_component,
+            ))
+            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+        let camera_transform_storage = transform_component_storage
+            .data
+            .get(active_camera_entity_handle.data().index as usize)
+            .unwrap();
         let active_camera_transform_component = camera_transform_storage.as_ref().unwrap();
-        renderer_camera.update(&self.queue, active_camera_component, active_camera_transform_component);
-        let renderer_camera = self.renderer_resource_storage.cameras.get(get_renderer_resource_handle_from_camera_component(active_camera_component)).unwrap();
+        renderer_camera.update(
+            &self.queue,
+            active_camera_component,
+            active_camera_transform_component,
+        );
+        let renderer_camera = self
+            .renderer_resource_storage
+            .cameras
+            .get(get_renderer_resource_handle_from_camera_component(
+                active_camera_component,
+            ))
+            .unwrap();
         let clear_color = active_camera_component.clear_color;
 
         // Build a command buffer that can be sent to the GPU
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("render_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("render_encoder"),
+            });
 
-
- // let _timestamp_query_start = self.profiler.write_timestamp(&mut encoder, "Start Render Pass");
+        // let _timestamp_query_start = self.profiler.write_timestamp(&mut encoder, "Start Render Pass");
 
         // Render meshes
         {
@@ -461,10 +528,16 @@ impl State {
 
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
-                view: &view, // Specifies what texture to save the colors to
+                view: &view,          // Specifies what texture to save the colors to
                 resolve_target: None, // Specifies what texture will receive the resolved output
-                ops: wgpu::Operations { // Specifies what to do with the colors on the screen
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: clear_color.x as f64, g: clear_color.y as f64, b: clear_color.z as f64, a: 1.0, } ), // Specifies how to handle colors stored from the previous frame
+                ops: wgpu::Operations {
+                    // Specifies what to do with the colors on the screen
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: clear_color.x as f64,
+                        g: clear_color.y as f64,
+                        b: clear_color.z as f64,
+                        a: 1.0,
+                    }), // Specifies how to handle colors stored from the previous frame
                     store: wgpu::StoreOp::Store,
                 },
                 //depth_slice: None,
@@ -511,16 +584,19 @@ impl State {
                 &mut encoder,
                 &view,
                 egui_wgpu::ScreenDescriptor {
-                    size_in_pixels: [self.surface_configuration.width, self.surface_configuration.height],
+                    size_in_pixels: [
+                        self.surface_configuration.width,
+                        self.surface_configuration.height,
+                    ],
                     pixels_per_point: self.egui_drawer.window_scale_factor,
                 },
                 egui_ui,
-                timer
+                timer,
             )?;
 
             timer.end_context()?; // End Egui Draw context
         }
- // let _timestamp_query_end = self.profiler.write_timestamp(&mut encoder, "End Render Pass");
+        // let _timestamp_query_end = self.profiler.write_timestamp(&mut encoder, "End Render Pass");
 
         // Resolve queries recorded this frame
         // self.profiler.resolve_timestamp_queries(&self.device, &mut encoder);
@@ -534,7 +610,7 @@ impl State {
 
         timer.record("Read profiling data");
 
-      //  self.profiler.end_frame();
+        //  self.profiler.end_frame();
 
         // Read profiling data
         //self.profiler.summarize_all_blocking(&self.device);

@@ -1,18 +1,14 @@
-
 // --- PillTypeMap
 // This is typemap_rev crate modified by changing names of types
 // Original crate: https://crates.io/crates/typemap_rev
 
 //! A hashmap whose keys are defined by types.
 
-
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
 use std::collections::hash_map::{
-    Entry as HashMapEntry,
-    OccupiedEntry as HashMapOccupiedEntry,
-    VacantEntry as HashMapVacantEntry,
+    Entry as HashMapEntry, OccupiedEntry as HashMapOccupiedEntry, VacantEntry as HashMapVacantEntry,
 };
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 /// PillTypeMapKey is used to declare key types that are eligible for use
@@ -32,7 +28,6 @@ pub trait PillTypeMapKey: Any {
 //pub struct PillTypeMap(HashMap<TypeId, Box<(dyn Any + Send + Sync)>>);
 #[derive(Default)]
 pub struct PillTypeMap(HashMap<TypeId, Box<dyn Any + Send>>);
-
 
 impl PillTypeMap {
     /// Creates a new instance of `PillTypeMap`.
@@ -60,7 +55,7 @@ impl PillTypeMap {
     #[inline]
     pub fn contains_key<T>(&self) -> bool
     where
-        T: PillTypeMapKey
+        T: PillTypeMapKey,
     {
         self.0.contains_key(&TypeId::of::<T>())
     }
@@ -88,7 +83,7 @@ impl PillTypeMap {
     #[inline]
     pub fn insert<T>(&mut self, value: T::Storage)
     where
-        T: PillTypeMapKey
+        T: PillTypeMapKey,
     {
         self.0.insert(TypeId::of::<T>(), Box::new(value));
     }
@@ -99,7 +94,7 @@ impl PillTypeMap {
     #[inline]
     pub fn entry<T>(&mut self) -> Entry<'_, T>
     where
-        T: PillTypeMapKey
+        T: PillTypeMapKey,
     {
         match self.0.entry(TypeId::of::<T>()) {
             HashMapEntry::Occupied(entry) => Entry::Occupied(OccupiedEntry {
@@ -109,7 +104,7 @@ impl PillTypeMap {
             HashMapEntry::Vacant(entry) => Entry::Vacant(VacantEntry {
                 entry,
                 _marker: PhantomData,
-            })
+            }),
         }
     }
 
@@ -135,7 +130,7 @@ impl PillTypeMap {
     #[inline]
     pub fn get<T>(&self) -> Option<&T::Storage>
     where
-        T: PillTypeMapKey
+        T: PillTypeMapKey,
     {
         self.0
             .get(&TypeId::of::<T>())
@@ -166,7 +161,7 @@ impl PillTypeMap {
     #[inline]
     pub fn get_mut<T>(&mut self) -> Option<&mut T::Storage>
     where
-        T: PillTypeMapKey
+        T: PillTypeMapKey,
     {
         self.0
             .get_mut(&TypeId::of::<T>())
@@ -193,7 +188,7 @@ impl PillTypeMap {
     #[inline]
     pub fn remove<T>(&mut self) -> Option<T::Storage>
     where
-        T: PillTypeMapKey
+        T: PillTypeMapKey,
     {
         self.0
             .remove(&TypeId::of::<T>())
@@ -201,7 +196,6 @@ impl PillTypeMap {
             .map(|b| *b)
     }
 }
-
 
 /// A view into a single entry in the [`PillTypeMap`],
 /// which may either be vacant or occupied.
@@ -235,7 +229,7 @@ where
     #[inline]
     pub fn or_insert_with<F>(self, f: F) -> &'a mut K::Storage
     where
-        F: FnOnce() -> K::Storage
+        F: FnOnce() -> K::Storage,
     {
         match self {
             Entry::Occupied(entry) => entry.into_mut(),
@@ -246,13 +240,13 @@ where
     #[inline]
     pub fn and_modify<F>(self, f: F) -> Self
     where
-        F: FnOnce(&mut K::Storage)
+        F: FnOnce(&mut K::Storage),
     {
         match self {
             Entry::Occupied(mut entry) => {
                 f(entry.get_mut());
                 Entry::Occupied(entry)
-            },
+            }
             Entry::Vacant(entry) => Entry::Vacant(entry),
         }
     }
@@ -261,7 +255,7 @@ where
 impl<'a, K> Entry<'a, K>
 where
     K: PillTypeMapKey,
-    K::Storage: Default
+    K::Storage: Default,
 {
     #[inline]
     pub fn or_default(self) -> &'a mut K::Storage {

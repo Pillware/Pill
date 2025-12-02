@@ -1,4 +1,3 @@
-
 pub const DISTINCT_COLOR_PALETTE: &[(f32, f32, f32)] = &[
     (0.894, 0.102, 0.110), // Red
     (0.215, 0.494, 0.721), // Blue
@@ -10,7 +9,6 @@ pub const DISTINCT_COLOR_PALETTE: &[(f32, f32, f32)] = &[
     (0.969, 0.506, 0.749), // Pink
     (0.600, 0.600, 0.600), // Gray
     (0.100, 0.100, 0.100), // Near-black
-
     (0.000, 0.447, 0.698), // Deep blue
     (0.800, 0.475, 0.655), // Mauve
     (0.337, 0.705, 0.913), // Sky blue
@@ -24,10 +22,12 @@ pub const DISTINCT_COLOR_PALETTE: &[(f32, f32, f32)] = &[
 ];
 
 pub fn generate_color_palette() -> Vec<(f32, f32, f32)> {
-    (0..100).map(|i| {
-        let hue = i as f32 / 100.0; // Evenly spaced hues
-        hsl_to_rgb(hue, 0.6, 0.5)   // Saturation and lightness fixed
-    }).collect()
+    (0..100)
+        .map(|i| {
+            let hue = i as f32 / 100.0; // Evenly spaced hues
+            hsl_to_rgb(hue, 0.6, 0.5) // Saturation and lightness fixed
+        })
+        .collect()
 }
 
 // Convert HSL to RGB
@@ -39,4 +39,3 @@ pub fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
     };
     (f(0.0), f(8.0), f(4.0))
 }
-

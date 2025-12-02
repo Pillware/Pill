@@ -1,8 +1,7 @@
 use crate::{
+    ecs::{Component, ComponentStorage, SceneHandle},
     engine::Engine,
-    ecs::{ SceneHandle, Component, ComponentStorage },
 };
-
 
 pill_core::define_new_pill_slotmap_key! {
     pub struct EntityHandle;
@@ -13,12 +12,14 @@ pill_core::define_new_pill_slotmap_key! {
 pub struct EntityBuilder<'a> {
     pub engine: &'a mut Engine,
     pub entity_handle: EntityHandle,
-    pub scene_handle: SceneHandle
+    pub scene_handle: SceneHandle,
 }
 
 impl<'a> EntityBuilder<'a> {
-    pub fn with_component<T: Component<Storage = ComponentStorage::<T>>>(self, component: T) -> Self {
-        self.engine.add_component_to_entity(self.scene_handle, self.entity_handle, component).unwrap();
+    pub fn with_component<T: Component<Storage = ComponentStorage<T>>>(self, component: T) -> Self {
+        self.engine
+            .add_component_to_entity(self.scene_handle, self.entity_handle, component)
+            .unwrap();
         self
     }
 
@@ -31,7 +32,7 @@ impl<'a> EntityBuilder<'a> {
 
 pub struct Entity {
     pub(crate) bitmask: u16,
-    pub(crate) scene_handle: SceneHandle
+    pub(crate) scene_handle: SceneHandle,
 }
 
 impl Entity {

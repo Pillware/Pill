@@ -1,7 +1,4 @@
-use crate::{
-    engine::Engine,
-    ecs::TimeComponent,
-};
+use crate::{ecs::TimeComponent, engine::Engine};
 
 use anyhow::Result;
 

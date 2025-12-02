@@ -1,19 +1,18 @@
 use crate::{
-    engine::Engine,
-    resources::{ ResourceStorage, Resource },
     ecs::AudioSourceComponent,
+    engine::Engine,
+    resources::{Resource, ResourceStorage},
 };
 
-use pill_core::{ get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey };
+use pill_core::{get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
-use std::{
-    io::{ Read, Cursor},
-    path::PathBuf,
-    fs::File,
-};
-use anyhow::{ Result, Context, Error };
+use anyhow::{Context, Error, Result};
 use rodio::Decoder;
-
+use std::{
+    fs::File,
+    io::{Cursor, Read},
+    path::PathBuf,
+};
 
 pill_core::define_new_pill_slotmap_key! {
     pub struct SoundHandle;
@@ -25,7 +24,7 @@ pub struct Sound {
     pub name: String,
     #[readonly]
     pub path: PathBuf,
-    pub(crate) sound_data: Option<SoundData>
+    pub(crate) sound_data: Option<SoundData>,
 }
 
 impl Sound {
@@ -33,7 +32,7 @@ impl Sound {
         Self {
             name: name.to_string(),
             path,
-            sound_data: None
+            sound_data: None,
         }
     }
 }
@@ -46,11 +45,16 @@ impl Resource for Sound {
     type Handle = SoundHandle;
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
+        let error_message = format!(
+            "Initializing {} {} failed",
+            "Resource".general_object_style(),
+            get_type_name::<Self>().specific_object_style()
+        );
 
         // Check if path to asset is correct
         let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-        pill_core::validate_asset_path(&resource_file_path, &["mp3", "wav"]).context(error_message.clone())?;
+        pill_core::validate_asset_path(&resource_file_path, &["mp3", "wav"])
+            .context(error_message.clone())?;
 
         // Create sound data
         let sound_data = SoundData::new(&resource_file_path).context(error_message.clone())?;
@@ -66,7 +70,9 @@ impl Resource for Sound {
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Find audio source components that use this sound and update them
         for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            for (_entity_handle, audio_source_component) in scene.get_one_component_iterator_mut::<AudioSourceComponent>()? {
+            for (_entity_handle, audio_source_component) in
+                scene.get_one_component_iterator_mut::<AudioSourceComponent>()?
+            {
                 if let Some(sound_handle) = audio_source_component.sound_handle {
                     // If audio source component has handle to this sound
                     if sound_handle.data() == self_handle.data() {
@@ -80,17 +86,20 @@ impl Resource for Sound {
     }
 }
 
-
 pub struct SoundData {
-    pub(crate) source_buffer: Vec<u8>
+    pub(crate) source_buffer: Vec<u8>,
 }
 
 impl SoundData {
     pub fn new(path: &PathBuf) -> Result<Self> {
         // Open sound file
         let mut sound_file = match File::open(path) {
-            Err(_err) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
-            file => file?
+            Err(_err) => {
+                return Err(Error::new(EngineError::InvalidAssetPath(
+                    path.clone().into_os_string().into_string().unwrap(),
+                )))
+            }
+            file => file?,
         };
 
         // Read bytes to vector
@@ -99,7 +108,7 @@ impl SoundData {
 
         // Create SoundData
         let sound_data = SoundData {
-            source_buffer: sound_data
+            source_buffer: sound_data,
         };
 
         Ok(sound_data)

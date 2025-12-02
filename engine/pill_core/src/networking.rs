@@ -17,19 +17,19 @@
 //! This module uses the **reliable, ordered** channel by default. The constants
 //! [`RELIABLE_CHANNEL_ID`] and [`UNRELIABLE_CHANNEL_ID`] mirror `renet::DefaultChannel`.
 
-use anyhow::{Context, Result};
-use renet::{ ConnectionConfig, DefaultChannel, RenetClient, RenetServer, ServerEvent };
-use renet_netcode::{
-    ClientAuthentication, NetcodeClientTransport, NetcodeServerTransport, ServerAuthentication,
-    ServerConfig, NetcodeError, NetcodeTransportError
-};
-use std::{
-    net::{UdpSocket, SocketAddr, IpAddr, Ipv4Addr, Ipv6Addr},
-    time::{Duration, SystemTime},
-    io::ErrorKind,
-};
-use serde::{Serialize, Deserialize};
 use crate::EngineError;
+use anyhow::{Context, Result};
+use renet::{ConnectionConfig, DefaultChannel, RenetClient, RenetServer, ServerEvent};
+use renet_netcode::{
+    ClientAuthentication, NetcodeClientTransport, NetcodeError, NetcodeServerTransport,
+    NetcodeTransportError, ServerAuthentication, ServerConfig,
+};
+use serde::{Deserialize, Serialize};
+use std::{
+    io::ErrorKind,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
+    time::{Duration, SystemTime},
+};
 
 /// Logical tag prefixed to every reliable message on the wire (1 byte).
 ///
@@ -41,9 +41,9 @@ pub enum NetworkAction {
     /// Gameplay/state update payload.
     Update = 0,
     /// A client has joined (emitted by server events).
-    Join   = 1,
+    Join = 1,
     /// A client/server is exiting; may include an [`ExitNotice`] payload.
-    Exit   = 2,
+    Exit = 2,
 }
 
 /// Graceful-shutdown/exit metadata broadcast by the server.
@@ -91,14 +91,14 @@ pub const UNRELIABLE_CHANNEL_ID: u8 = DefaultChannel::Unreliable as u8;
 #[derive(Debug)]
 pub struct NetworkServer {
     pub server: RenetServer,
-    pub transport: NetcodeServerTransport
+    pub transport: NetcodeServerTransport,
 }
 
 /// Client wrapper (renet + Netcode) used by PillEngine subsystems.
 #[derive(Debug)]
 pub struct NetworkClient {
     pub client: RenetClient,
-    pub transport: NetcodeClientTransport
+    pub transport: NetcodeClientTransport,
 }
 
 /// Monotonic-ish time source for Netcode (UNIX epoch fallback to zero).
@@ -118,9 +118,9 @@ pub fn is_not_ready(err: &anyhow::Error) -> bool {
     if let Some(e) = err.downcast_ref::<NetcodeTransportError>() {
         return match e {
             NetcodeTransportError::Netcode(ne) => {
-                matches!(ne,
-                    NetcodeError::ClientNotConnected |
-                    NetcodeError::Disconnected(_)
+                matches!(
+                    ne,
+                    NetcodeError::ClientNotConnected | NetcodeError::Disconnected(_)
                 )
             }
             NetcodeTransportError::IO(ioe) => {
@@ -131,9 +131,9 @@ pub fn is_not_ready(err: &anyhow::Error) -> bool {
     }
 
     if let Some(ne) = err.downcast_ref::<NetcodeError>() {
-        return matches!(ne,
-            NetcodeError::ClientNotConnected |
-            NetcodeError::Disconnected(_)
+        return matches!(
+            ne,
+            NetcodeError::ClientNotConnected | NetcodeError::Disconnected(_)
         );
     }
     false
@@ -204,7 +204,7 @@ pub fn server_start(bind: &str, max_clients: usize) -> Result<NetworkServer> {
 ///    // send own updates to the server
 ///    // client_send(&mut client, &my_packet)?;
 ///    for pkt in client_get_events(&mut client)? {
-    ///    // handle server updates...
+///    // handle server updates...
 ///    }
 ///    client_flush(&mut client)?;
 /// }
@@ -276,11 +276,23 @@ pub fn server_get_events(net: &mut NetworkServer) -> Result<Vec<(u64, NetworkPac
         match e {
             ServerEvent::ClientConnected { client_id } => {
                 log::info!("Client {client_id} connected");
-                inbox.push((client_id, NetworkPacket { tag: NetworkAction::Join, data: Vec::new() }));
-            },
+                inbox.push((
+                    client_id,
+                    NetworkPacket {
+                        tag: NetworkAction::Join,
+                        data: Vec::new(),
+                    },
+                ));
+            }
             ServerEvent::ClientDisconnected { client_id, reason } => {
                 log::info!("Client {client_id} disconnected: {reason:?}");
-                inbox.push((client_id, NetworkPacket { tag: NetworkAction::Exit, data: Vec::new() }));
+                inbox.push((
+                    client_id,
+                    NetworkPacket {
+                        tag: NetworkAction::Exit,
+                        data: Vec::new(),
+                    },
+                ));
             }
         }
     }
@@ -330,7 +342,8 @@ pub fn server_send_one(net: &mut NetworkServer, client_id: u64, msg: &NetworkPac
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
-    net.server.send_message(client_id, RELIABLE_CHANNEL_ID, bytes);
+    net.server
+        .send_message(client_id, RELIABLE_CHANNEL_ID, bytes);
     Ok(())
 }
 
@@ -344,11 +357,16 @@ pub fn server_broadcast(net: &mut NetworkServer, msg: &NetworkPacket) -> Result<
 }
 
 /// Broadcast a reliable message to **all except** `client_id`.
-pub fn server_broadcast_except(net: &mut NetworkServer, client_id: u64, msg: &NetworkPacket) -> Result<()> {
+pub fn server_broadcast_except(
+    net: &mut NetworkServer,
+    client_id: u64,
+    msg: &NetworkPacket,
+) -> Result<()> {
     let mut bytes = Vec::with_capacity(1 + msg.data.len());
     bytes.push(msg.tag as u8);
     bytes.extend_from_slice(&msg.data);
-    net.server.broadcast_message_except(client_id, RELIABLE_CHANNEL_ID, bytes);
+    net.server
+        .broadcast_message_except(client_id, RELIABLE_CHANNEL_ID, bytes);
     Ok(())
 }
 
@@ -362,7 +380,10 @@ pub fn server_broadcast_exit(net: &mut NetworkServer, reason: &str) -> Result<()
         when_ms: now().as_millis() as u64,
     };
     let data = bincode::serialize(&notice)?;
-    let msg = NetworkPacket { tag: NetworkAction::Exit, data };
+    let msg = NetworkPacket {
+        tag: NetworkAction::Exit,
+        data,
+    };
     server_broadcast(net, &msg)?;
     server_flush(net)?;
     Ok(())
@@ -421,6 +442,8 @@ fn decode_wire(buf: &[u8]) -> Result<NetworkPacket> {
         anyhow::bail!("Received empty message")
     };
     let tag = NetworkAction::try_from(*tag_byte)?;
-    Ok(NetworkPacket { tag, data: data.to_vec() })
+    Ok(NetworkPacket {
+        tag,
+        data: data.to_vec(),
+    })
 }
-

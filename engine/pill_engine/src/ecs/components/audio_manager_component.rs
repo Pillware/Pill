@@ -1,13 +1,9 @@
-use crate::{
-    ecs::{ GlobalComponent, GlobalComponentStorage },
-};
+use crate::ecs::{GlobalComponent, GlobalComponentStorage};
 
-use pill_core::{ PillTypeMapKey, Vector3f };
+use pill_core::{PillTypeMapKey, Vector3f};
 
-use std::{
-    collections::VecDeque,
-};
-use rodio::{ OutputStream, OutputStreamHandle, Sink, SpatialSink };
+use rodio::{OutputStream, OutputStreamHandle, Sink, SpatialSink};
+use std::collections::VecDeque;
 
 const DEFAULT_LEFT_EAR_POSITION: Vector3f = Vector3f::new(-1.0, 0.0, 0.0);
 const DEFAULT_RIGHT_EAR_POSITION: Vector3f = Vector3f::new(1.0, 0.0, 0.0);
@@ -16,7 +12,7 @@ const DEFAULT_SOUND_SOURCE_POSITION: Vector3f = Vector3f::new(0.0, 0.0, 0.0);
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SoundType {
     Sound2D,
-    Sound3D
+    Sound3D,
 }
 
 pub struct AudioManagerComponent {
@@ -51,7 +47,8 @@ impl AudioManagerComponent {
                 DEFAULT_SOUND_SOURCE_POSITION.into(),
                 DEFAULT_LEFT_EAR_POSITION.into(),
                 DEFAULT_RIGHT_EAR_POSITION.into(),
-            ).unwrap();
+            )
+            .unwrap();
             spatial_sink_pool.push(new_sink);
         }
 
@@ -97,27 +94,33 @@ impl AudioManagerComponent {
             Some(v) => {
                 self.get_busy_sink_handle_queue(sound_type).push_back(v);
                 Some(v)
-            },
+            }
             None => None,
         }
     }
 
     // Give back the free handle
     pub(crate) fn return_sink(&mut self, sink_handle: usize, sound_type: &SoundType) {
-        if let Some(_handle) = self.get_busy_sink_handle_queue(sound_type).iter().position(|x| *x == sink_handle) {
-            self.get_busy_sink_handle_queue(sound_type).remove(sink_handle);
-            self.get_free_sink_handle_queue(sound_type).push_back(sink_handle);
+        if let Some(_handle) = self
+            .get_busy_sink_handle_queue(sound_type)
+            .iter()
+            .position(|x| *x == sink_handle)
+        {
+            self.get_busy_sink_handle_queue(sound_type)
+                .remove(sink_handle);
+            self.get_free_sink_handle_queue(sound_type)
+                .push_back(sink_handle);
         }
     }
 
-    fn get_free_sink_handle_queue(&mut self, sound_type: &SoundType) -> &mut VecDeque::<usize> {
+    fn get_free_sink_handle_queue(&mut self, sound_type: &SoundType) -> &mut VecDeque<usize> {
         match sound_type {
             SoundType::Sound2D => &mut self.free_ambient_sink_handles,
             SoundType::Sound3D => &mut self.free_spatial_sink_handles,
         }
     }
 
-    fn get_busy_sink_handle_queue(&mut self, sound_type: &SoundType) -> &mut VecDeque::<usize> {
+    fn get_busy_sink_handle_queue(&mut self, sound_type: &SoundType) -> &mut VecDeque<usize> {
         match sound_type {
             SoundType::Sound2D => &mut self.busy_ambient_sink_handles,
             SoundType::Sound3D => &mut self.busy_spatial_sink_handles,
@@ -129,7 +132,6 @@ impl PillTypeMapKey for AudioManagerComponent {
     type Storage = GlobalComponentStorage<AudioManagerComponent>;
 }
 
-unsafe impl Send for AudioManagerComponent { }
+unsafe impl Send for AudioManagerComponent {}
 
-impl GlobalComponent for AudioManagerComponent { }
-
+impl GlobalComponent for AudioManagerComponent {}

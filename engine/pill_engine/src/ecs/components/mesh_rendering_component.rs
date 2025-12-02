@@ -1,15 +1,17 @@
 use crate::{
-    engine::Engine,
-    graphics::{ RenderQueueKey, compose_render_queue_key },
-    resources::{ Material, MaterialHandle, Mesh, MeshHandle, ResourceManager },
-    ecs::{ EntityHandle, ComponentStorage, Component, SceneHandle, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer, DeferredUpdateComponent },
     config::DEFAULT_MATERIAL_HANDLE,
+    ecs::{
+        Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest,
+        DeferredUpdateManagerPointer, EntityHandle, SceneHandle,
+    },
+    engine::Engine,
+    graphics::{compose_render_queue_key, RenderQueueKey},
+    resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
 };
 
-use pill_core::{ PillTypeMapKey, PillStyle, get_type_name };
+use pill_core::{get_type_name, PillStyle, PillTypeMapKey};
 
-use anyhow::{ Result, Context };
-
+use anyhow::{Context, Result};
 
 const DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE: usize = 0;
 const DEFERRED_REQUEST_VARIANT_SET_MATERIAL: usize = 1;
@@ -108,7 +110,10 @@ impl MeshRenderingComponent {
         self.mesh_handle = mesh_handle;
     }
 
-    pub(crate) fn update_render_queue_key(&mut self, resource_manager: &ResourceManager) -> Result<()> {
+    pub(crate) fn update_render_queue_key(
+        &mut self,
+        resource_manager: &ResourceManager,
+    ) -> Result<()> {
         if self.mesh_handle.is_some() {
             // Use default material if no material is set
             let material_handle = match self.material_handle {
@@ -117,16 +122,16 @@ impl MeshRenderingComponent {
             };
 
             // Compose render queue key and set it
-            if let Ok(render_queue_key) = compose_render_queue_key(resource_manager, &material_handle, &self.mesh_handle.unwrap())
-            {
+            if let Ok(render_queue_key) = compose_render_queue_key(
+                resource_manager,
+                &material_handle,
+                &self.mesh_handle.unwrap(),
+            ) {
                 self.render_queue_key = Some(render_queue_key);
-            }
-            else {
+            } else {
                 self.render_queue_key = None;
             }
-        }
-        else
-        {
+        } else {
             self.render_queue_key = None;
         }
 
@@ -135,10 +140,21 @@ impl MeshRenderingComponent {
 
     fn post_deferred_update_request(&mut self, request_variant: usize) {
         if self.deferred_update_manager.is_some() {
-            let entity_handle = self.entity_handle.expect("Critical: Cannot post deferred update request. No EntityHandle set in Component");
-            let scene_handle = self.scene_handle.expect("Critical: Cannot post deferred update request. No SceneHandle set in Component");
-            let request = DeferredUpdateComponentRequest::<MeshRenderingComponent>::new(entity_handle, scene_handle, request_variant);
-            self.deferred_update_manager.as_mut().expect("Critical: No DeferredUpdateManager").post_update_request(request);
+            let entity_handle = self.entity_handle.expect(
+                "Critical: Cannot post deferred update request. No EntityHandle set in Component",
+            );
+            let scene_handle = self.scene_handle.expect(
+                "Critical: Cannot post deferred update request. No SceneHandle set in Component",
+            );
+            let request = DeferredUpdateComponentRequest::<MeshRenderingComponent>::new(
+                entity_handle,
+                scene_handle,
+                request_variant,
+            );
+            self.deferred_update_manager
+                .as_mut()
+                .expect("Critical: No DeferredUpdateManager")
+                .post_update_request(request);
         }
     }
 }
@@ -150,19 +166,32 @@ impl PillTypeMapKey for MeshRenderingComponent {
 impl Component for MeshRenderingComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
-        let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
-        self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
+        let deferred_update_component = engine
+            .get_global_component_mut::<DeferredUpdateComponent>()
+            .expect("Critical: No DeferredUpdateComponent");
+        self.deferred_update_manager =
+            Some(deferred_update_component.borrow_deferred_update_manager());
 
         // Check if material handle is valid
         if self.material_handle.is_some() {
-            engine.get_resource::<Material>(&self.material_handle.unwrap())
-                .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
+            engine
+                .get_resource::<Material>(&self.material_handle.unwrap())
+                .context(format!(
+                    "Creating {} {} failed",
+                    "Component".general_object_style(),
+                    get_type_name::<Self>().specific_object_style()
+                ))?;
         }
 
         // Check if mesh handle is valid
         if self.mesh_handle.is_some() {
-            engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
-                .context(format!("Creating {} {} failed", "Component".general_object_style(), get_type_name::<Self>().specific_object_style()))?;
+            engine
+                .get_resource::<Mesh>(&self.mesh_handle.unwrap())
+                .context(format!(
+                    "Creating {} {} failed",
+                    "Component".general_object_style(),
+                    get_type_name::<Self>().specific_object_style()
+                ))?;
         }
 
         // Update mesh rendering queue
@@ -178,29 +207,35 @@ impl Component for MeshRenderingComponent {
 
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> {
         match request {
-            DEFERRED_REQUEST_VARIANT_SET_MATERIAL =>
-            {
+            DEFERRED_REQUEST_VARIANT_SET_MATERIAL => {
                 // Check if material handle is valid
-                engine.get_resource::<Material>(&self.material_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Material".specific_object_style()))?;
+                engine
+                    .get_resource::<Material>(&self.material_handle.unwrap())
+                    .context(format!(
+                        "Setting {} {} failed",
+                        "Resource".general_object_style(),
+                        "Material".specific_object_style()
+                    ))?;
 
                 self.update_render_queue_key(&engine.resource_manager)?;
-            },
-            DEFERRED_REQUEST_VARIANT_SET_MESH =>
-            {
+            }
+            DEFERRED_REQUEST_VARIANT_SET_MESH => {
                 // Check if mesh handle is valid
-                engine.get_resource::<Mesh>(&self.mesh_handle.unwrap())
-                    .context(format!("Setting {} {} failed", "Resource".general_object_style(), "Mesh".specific_object_style()))?;
+                engine
+                    .get_resource::<Mesh>(&self.mesh_handle.unwrap())
+                    .context(format!(
+                        "Setting {} {} failed",
+                        "Resource".general_object_style(),
+                        "Mesh".specific_object_style()
+                    ))?;
 
                 self.update_render_queue_key(&engine.resource_manager)?;
-            },
-            DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE =>
-            {
+            }
+            DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE => {
                 // Update mesh rendering queue
                 self.update_render_queue_key(&engine.resource_manager)?;
-            },
-            _ =>
-            {
+            }
+            _ => {
                 panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
             }
         }

@@ -1,4 +1,4 @@
-use anyhow::{ Result };
+use anyhow::Result;
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -15,9 +15,7 @@ impl Default for EngineParametersData {
 
 impl EngineParametersData {
     pub fn new() -> Self {
-        Self {
-            delta_time: 0.0,
-        }
+        Self { delta_time: 0.0 }
     }
 
     pub fn update_data(&mut self, delta_time: f32) {
@@ -37,14 +35,14 @@ pub struct EngineParameters {
 
 impl EngineParameters {
     pub fn new(device: &wgpu::Device) -> Result<Self> {
-
         let parameters_data = EngineParametersData::new();
 
-        let parameters_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("engine_parameters_buffer"),
-            contents: bytemuck::cast_slice(&[parameters_data]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let parameters_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("engine_parameters_buffer"),
+                contents: bytemuck::cast_slice(&[parameters_data]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         // Define engine bind group layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -58,7 +56,7 @@ impl EngineParameters {
                     min_binding_size: None,
                 },
                 count: None,
-            }]
+            }],
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -82,7 +80,10 @@ impl EngineParameters {
 
     pub fn update(&mut self, queue: &wgpu::Queue, delta_time: f32) {
         self.parameters_data.update_data(delta_time);
-        queue.write_buffer(&self.parameters_uniform_buffer, 0, bytemuck::cast_slice(&[self.parameters_data]));
+        queue.write_buffer(
+            &self.parameters_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.parameters_data]),
+        );
     }
 }
-

@@ -10,12 +10,10 @@
 //! - `pill_core::networking` (wire format, client/server wrappers).
 //! - `pill_engine::ecs::systems::networking_system.rs` (networking systems implementation).
 
-use crate::{
-    ecs::{ Component, ComponentStorage, TransformComponent },
-};
+use crate::ecs::{Component, ComponentStorage, TransformComponent};
 
-use pill_core::{ PillTypeMap, PillTypeMapKey };
-use serde::{Serialize, Deserialize};
+use pill_core::{PillTypeMap, PillTypeMapKey};
+use serde::{Deserialize, Serialize};
 
 /// High-level lifecycle marker for a networked entity.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,7 +32,7 @@ pub enum NetworkEntityState {
 /// Game-specific data lives in your own components; you can mirror pieces
 /// here as needed for replication (e.g., position/orientation via `transform`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct NetworkStateComponent{
+pub struct NetworkStateComponent {
     /// Logical **owner** of the entity (client ID). `0` is reserved for server.
     ///
     /// Ownership is used for authority decisions and for routing inputs/updates.
@@ -66,7 +64,6 @@ pub struct NetworkStateComponent{
     ///
     /// This is used to look up spawn/despawn handlers in the network manager.
     pub entity_type: String,
-
     // TODO: add more components (Health etc.) — either mirror here or reference by ID.
 }
 
@@ -75,4 +72,3 @@ impl Component for NetworkStateComponent {}
 impl PillTypeMapKey for NetworkStateComponent {
     type Storage = ComponentStorage<NetworkStateComponent>;
 }
-

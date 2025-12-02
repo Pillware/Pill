@@ -70,8 +70,7 @@ impl RendererTexture {
         //     size,
         // );
 
-
-                // Write data to texture
+        // Write data to texture
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -80,7 +79,7 @@ impl RendererTexture {
                 aspect: wgpu::TextureAspect::All,
             },
             &rgba,
-            wgpu::TexelCopyBufferLayout  {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * dimensions.0),
                 rows_per_image: Some(dimensions.1),
@@ -99,13 +98,13 @@ impl RendererTexture {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            lod_min_clamp: 0.0,  // Fix: Must be 0.0 or greater
+            lod_min_clamp: 0.0,   // Fix: Must be 0.0 or greater
             lod_max_clamp: 100.0, // You can set this based on your texture's mipmap levels
             ..Default::default()
         });
 
         // Create final texture
-        let texture  = Self {
+        let texture = Self {
             texture,
             texture_view,
             sampler,
@@ -119,15 +118,15 @@ impl RendererTexture {
         surface_configuration: &wgpu::SurfaceConfiguration,
         label: &str,
     ) -> Result<Self> {
-
         // Get size
-        let size = wgpu::Extent3d { // Depth texture needs to be the same size as window
+        let size = wgpu::Extent3d {
+            // Depth texture needs to be the same size as window
             width: surface_configuration.width,
             height: surface_configuration.height,
             depth_or_array_layers: 1,
         };
 
-         // Create texture
+        // Create texture
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
             size,
@@ -157,7 +156,7 @@ impl RendererTexture {
         });
 
         // Create final texture
-        let texture  = Self {
+        let texture = Self {
             texture,
             texture_view,
             sampler,

@@ -1,7 +1,7 @@
+use anyhow::{Error, Result};
 use pill_core::{debug, LogContext, PillStyle, RendererError};
 use pill_engine::internal::{ShaderParameterSlot, ShaderTextureSlot};
 use std::collections::HashMap;
-use anyhow::{Error, Result};
 
 pub enum ShaderBindGroupLayout {
     Parameters,
@@ -22,8 +22,8 @@ pub struct RendererShader {
     pub pass_camera_parameters: bool,
 }
 
-use naga::front::glsl;
 use naga::back::wgsl;
+use naga::front::glsl;
 
 impl RendererShader {
     pub fn new(
@@ -41,7 +41,6 @@ impl RendererShader {
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<Self> {
-
         // Print shader information
         {
             let mut shader_info = format!(
@@ -53,10 +52,7 @@ impl RendererShader {
 
             shader_info.push_str("\n - Parameter slots:");
             for (slot_name, slot) in parameter_slots {
-                shader_info.push_str(&format!(
-                    "\n   - {}: {:?}",
-                    slot_name, slot.parameter_type
-                ));
+                shader_info.push_str(&format!("\n   - {}: {:?}", slot_name, slot.parameter_type));
             }
 
             shader_info.push_str("\n - Texture slots:");
@@ -72,19 +68,42 @@ impl RendererShader {
         }
 
         // Convert bytes to string
-        let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes)
-            .map_err(|e| Error::new(RendererError::InvalidShaderData("Vertex".to_string(), name.to_string(), e.to_string())))?;
-        let fragment_shader_source = std::str::from_utf8(fragment_shader_bytes)
-            .map_err(|e| Error::new(RendererError::InvalidShaderData("Fragment".to_string(), name.to_string(), e.to_string())))?;
+        let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes).map_err(|e| {
+            Error::new(RendererError::InvalidShaderData(
+                "Vertex".to_string(),
+                name.to_string(),
+                e.to_string(),
+            ))
+        })?;
+        let fragment_shader_source = std::str::from_utf8(fragment_shader_bytes).map_err(|e| {
+            Error::new(RendererError::InvalidShaderData(
+                "Fragment".to_string(),
+                name.to_string(),
+                e.to_string(),
+            ))
+        })?;
 
         // Convert GLSL to WGSL
         let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex)
-            .map_err(|e| Error::new(RendererError::ShaderCompilationFailed("Vertex".to_string(), name.to_string(), e.to_string())))?;
-        let fragment_wgsl = compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment)
-            .map_err(|e| Error::new(RendererError::ShaderCompilationFailed("Fragment".to_string(), name.to_string(), e.to_string())))?;
+            .map_err(|e| {
+                Error::new(RendererError::ShaderCompilationFailed(
+                    "Vertex".to_string(),
+                    name.to_string(),
+                    e.to_string(),
+                ))
+            })?;
+        let fragment_wgsl =
+            compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).map_err(
+                |e| {
+                    Error::new(RendererError::ShaderCompilationFailed(
+                        "Fragment".to_string(),
+                        name.to_string(),
+                        e.to_string(),
+                    ))
+                },
+            )?;
 
         debug!(LogContext::Rendering => "Shader modules created");
-
 
         // Create shader modules with WGSL
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -109,10 +128,12 @@ impl RendererShader {
                     count: None,
                 };
 
-                Some(device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some(&format!("{}_parameters_bind_group_layout", name)),
-                    entries: &[bind_group_layout_entry],
-                }))
+                Some(
+                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some(&format!("{}_parameters_bind_group_layout", name)),
+                        entries: &[bind_group_layout_entry],
+                    }),
+                )
             } else {
                 None
             }
@@ -147,10 +168,12 @@ impl RendererShader {
                     });
                 }
 
-                Some(device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some(&format!("{}_textures_bind_group_layout", name)),
-                    entries: &entries,
-                }))
+                Some(
+                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some(&format!("{}_textures_bind_group_layout", name)),
+                        entries: &entries,
+                    }),
+                )
             } else {
                 None
             }
@@ -208,7 +231,8 @@ impl RendererShader {
                 targets: color_target_states,
                 compilation_options: Default::default(),
             }),
-            primitive: wgpu::PrimitiveState { // Specifies how to interpret vertices when converting them into triangles
+            primitive: wgpu::PrimitiveState {
+                // Specifies how to interpret vertices when converting them into triangles
                 topology: wgpu::PrimitiveTopology::TriangleList, // Each three vertices will correspond to one triangle
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw, // Specifies how to determine whether a given triangle is facing forward or not (FrontFace::Ccw means that a triangle is facing forward if the vertices are arranged in a counter clockwise direction)

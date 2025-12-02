@@ -1,26 +1,16 @@
 use crate::{
-    engine::Engine,
     ecs::DeferredUpdateManagerPointer,
-    resources::{
-        Resource,
-        ResourceStorage,
-        TextureType,
-        ResourceLoader
-    },
+    engine::Engine,
+    resources::{Resource, ResourceLoader, ResourceStorage, TextureType},
 };
 
 use crate::internal::RendererShaderHandle;
 
-use pill_core::{
-    get_type_name,
-    PillSlotMapKey,
-    PillStyle,
-    PillTypeMapKey
-};
+use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
 use std::collections::HashMap;
 
-use anyhow::{ Result, Context };
+use anyhow::{Context, Result};
 
 #[derive(Debug, Clone)]
 pub enum ShaderParameterType {
@@ -44,10 +34,10 @@ impl ShaderTextureSlot {
     // NOTE: Textures have to have unique sampler bindings (since they are always passed in their own bind group)
     pub fn new(texture_type: TextureType, (texture_binding, sampler_binding): (u32, u32)) -> Self {
         Self {
-           // name: name.to_string(),
+            // name: name.to_string(),
             texture_type,
             texture_binding,
-            sampler_binding
+            sampler_binding,
         }
     }
 }
@@ -107,7 +97,7 @@ impl Shader {
         parameter_slots: HashMap<String, ShaderParameterSlot>,
         texture_slots: HashMap<String, ShaderTextureSlot>,
         enable_engine_binding: bool, // If true, the engine uniform data will be accessible to the shader at (set = 0, binding = 0)
-        enable_camera_binding: bool  // If true, the engine uniform data will be accessible to the shader at (set = 1, binding = 0)
+        enable_camera_binding: bool, // If true, the engine uniform data will be accessible to the shader at (set = 1, binding = 0)
     ) -> Self {
         Self {
             name: name.to_string(),
@@ -140,7 +130,11 @@ impl Resource for Shader {
     }
 
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
+        let error_message = format!(
+            "Initializing {} {} failed",
+            "Resource".general_object_style(),
+            get_type_name::<Self>().specific_object_style()
+        );
 
         // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
         //let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
@@ -155,47 +149,56 @@ impl Resource for Shader {
                 pill_core::validate_asset_path(&resource_file_path, &["glsl"])?;
 
                 // Load data
-                vertex_shader_bytes_vec = std::fs::read(&resource_file_path)
-                    .with_context(|| format!("Failed to read vertex shader file: {:?}", &resource_file_path))?;
+                vertex_shader_bytes_vec =
+                    std::fs::read(&resource_file_path).with_context(|| {
+                        format!(
+                            "Failed to read vertex shader file: {:?}",
+                            &resource_file_path
+                        )
+                    })?;
 
                 vertex_shader_bytes_vec.as_slice()
-            },
-            ResourceLoader::Bytes(bytes) => {
-                bytes
-            },
+            }
+            ResourceLoader::Bytes(bytes) => bytes,
         };
 
         // Read fragment shader data
         let fragment_shader_bytes_vec: Vec<u8>;
-        let fragment_shader_bytes: &[u8]  = match &self.fragment_shader_resource_loader {
+        let fragment_shader_bytes: &[u8] = match &self.fragment_shader_resource_loader {
             ResourceLoader::Path(path) => {
                 // Check if path to asset is correct
                 let resource_file_path = engine.game_resources_directory_path.join(path);
                 pill_core::validate_asset_path(&resource_file_path, &["glsl"])?;
 
                 // Load data
-                fragment_shader_bytes_vec = std::fs::read(&resource_file_path)
-                    .with_context(|| format!("Failed to read fragment shader file: {:?}", &resource_file_path))?;
+                fragment_shader_bytes_vec =
+                    std::fs::read(&resource_file_path).with_context(|| {
+                        format!(
+                            "Failed to read fragment shader file: {:?}",
+                            &resource_file_path
+                        )
+                    })?;
 
                 fragment_shader_bytes_vec.as_slice()
-            },
-            ResourceLoader::Bytes(bytes) => {
-                bytes
-            },
+            }
+            ResourceLoader::Bytes(bytes) => bytes,
         };
 
         // TODO: Parse shader files and validate texture and parameter slots, or create them automatically here, so the user does not have to do it manually
 
         // Load data
-        let renderer_resource_handle = engine.renderer.create_shader(
-            &self.name,
-            vertex_shader_bytes,
-            fragment_shader_bytes,
-            &self.texture_slots,
-            &self.parameter_slots,
-            self.enable_engine_binding,
-            self.enable_camera_binding
-        ).context(error_message)?;
+        let renderer_resource_handle = engine
+            .renderer
+            .create_shader(
+                &self.name,
+                vertex_shader_bytes,
+                fragment_shader_bytes,
+                &self.texture_slots,
+                &self.parameter_slots,
+                self.enable_engine_binding,
+                self.enable_camera_binding,
+            )
+            .context(error_message)?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())

@@ -1,13 +1,8 @@
 use crate::{
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     graphics::{
-        RenderQueueItem,
-        PillRenderer,
-        RendererCameraHandle,
-        RendererMaterialHandle,
-        RendererMeshHandle,
-        RendererShaderHandle,
-        RendererTextureHandle,
+        PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle,
+        RendererMeshHandle, RendererShaderHandle, RendererTextureHandle,
     },
     internal::{MaterialParameter, MaterialTexture},
     resources::{MeshData, ShaderParameterSlot, ShaderTextureSlot, TextureType},
@@ -61,11 +56,7 @@ impl PillRenderer for DummyRenderer {
         Ok(RendererTextureHandle::default())
     }
 
-    fn create_mesh(
-        &mut self,
-        _name: &str,
-        _mesh_data: &MeshData,
-    ) -> Result<RendererMeshHandle> {
+    fn create_mesh(&mut self, _name: &str, _mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         Ok(RendererMeshHandle::default())
     }
 
@@ -97,7 +88,10 @@ impl PillRenderer for DummyRenderer {
         Ok(())
     }
 
-    fn destroy_material(&mut self, _renderer_material_handle: RendererMaterialHandle) -> Result<()> {
+    fn destroy_material(
+        &mut self,
+        _renderer_material_handle: RendererMaterialHandle,
+    ) -> Result<()> {
         Ok(())
     }
 
@@ -136,4 +130,3 @@ impl PillRenderer for DummyRenderer {
         Ok(())
     }
 }
-
