@@ -22,6 +22,9 @@ jobs:
           components: rustfmt
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
 
       - name: Build PillLauncher (release)
         run: cargo build --release --manifest-path engine/pill_launcher/Cargo.toml
@@ -72,6 +75,8 @@ jobs:
           toolchain: stable
 
       - uses: Swatinem/rust-cache@v2
+          workspaces: |
+            engine -> target
 
       - name: Download PillLauncher artifact
         uses: actions/download-artifact@v4
@@ -95,6 +100,9 @@ jobs:
       matrix:
         example:
           - examples/floating_pills/
+          - examples/italian_brainrot
+          - examples/net_minimal/client
+          - examples/net_minimal/server
 
     steps:
       - uses: actions/checkout@v4
@@ -107,6 +115,13 @@ jobs:
           rustflags: ''
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
+            examples/floating_pills -> target
+            examples/italian_brainrot -> target
+            examples/net_minimal/client -> target
+            examples/net_minimal/server -> target
 
       - name: Download PillLauncher artifact
         uses: actions/download-artifact@v4
