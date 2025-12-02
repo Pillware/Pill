@@ -6,9 +6,9 @@ use crate::{
     config::DEFAULT_MATERIAL_HANDLE,
 };
 
-use pill_core::{ PillTypeMap, PillTypeMapKey, PillStyle, get_type_name, PillSlotMapKey };
+use pill_core::{ PillTypeMapKey, PillStyle, get_type_name };
 
-use anyhow::{ Result, Context, Error };
+use anyhow::{ Result, Context };
 
 
 const DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE: usize = 0;
@@ -29,12 +29,12 @@ impl MeshRenderingComponentBuilder {
     }
 
     pub fn mesh(mut self, mesh_handle: &MeshHandle) -> Self {
-        self.component.mesh_handle = Some(mesh_handle.clone());
+        self.component.mesh_handle = Some(*mesh_handle);
         self
     }
 
     pub fn material(mut self, material_handle: &MaterialHandle) -> Self {
-        self.component.material_handle = Some(material_handle.clone());
+        self.component.material_handle = Some(*material_handle);
         self
     }
 
@@ -58,6 +58,12 @@ pub struct MeshRenderingComponent {
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
 
+impl Default for MeshRenderingComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MeshRenderingComponent {
     pub fn builder() -> MeshRenderingComponentBuilder {
         MeshRenderingComponentBuilder::default()
@@ -75,12 +81,12 @@ impl MeshRenderingComponent {
     }
 
     pub fn set_material(&mut self, material_handle: &MaterialHandle) {
-        self.material_handle = Some(material_handle.clone());
+        self.material_handle = Some(*material_handle);
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_MATERIAL);
     }
 
     pub fn set_mesh(&mut self, mesh_handle: &MeshHandle) {
-        self.mesh_handle = Some(mesh_handle.clone());
+        self.mesh_handle = Some(*mesh_handle);
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_SET_MESH);
     }
 

@@ -1,21 +1,18 @@
 use crate::{
     engine::Engine,
-    graphics::{ RendererTextureHandle },
-    resources::{ ResourceStorage, Resource, ResourceLoader, Material },
-    ecs::{ DeferredUpdateManagerPointer, AudioSourceComponent, SoundType, AudioManagerComponent },
-    config::*,
+    resources::{ ResourceStorage, Resource },
+    ecs::AudioSourceComponent,
 };
 
-use pill_core::{ debug, get_type_name, EngineError, LogContext, PillSlotMapKey, PillStyle, PillTypeMapKey };
+use pill_core::{ get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey };
 
 use std::{
-    collections::HashSet,
-    io::{ BufRead, Read, Cursor},
-    path::{ Path, PathBuf },
+    io::{ Read, Cursor},
+    path::PathBuf,
     fs::File,
 };
 use anyhow::{ Result, Context, Error };
-use rodio::{ Source, source::Buffered, Decoder };
+use rodio::Decoder;
 
 
 pill_core::define_new_pill_slotmap_key! {
@@ -68,8 +65,8 @@ impl Resource for Sound {
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Find audio source components that use this sound and update them
-        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            for (entity_handle, audio_source_component) in scene.get_one_component_iterator_mut::<AudioSourceComponent>()? {
+        for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            for (_entity_handle, audio_source_component) in scene.get_one_component_iterator_mut::<AudioSourceComponent>()? {
                 if let Some(sound_handle) = audio_source_component.sound_handle {
                     // If audio source component has handle to this sound
                     if sound_handle.data() == self_handle.data() {
@@ -92,7 +89,7 @@ impl SoundData {
     pub fn new(path: &PathBuf) -> Result<Self> {
         // Open sound file
         let mut sound_file = match File::open(path) {
-            Err(err) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
+            Err(_err) => return Err(Error::new(EngineError::InvalidAssetPath(path.clone().into_os_string().into_string().unwrap()))),
             file => file?
         };
 
@@ -113,7 +110,7 @@ impl SoundData {
 
         // Read bytes from the buffer
         for buffer in self.source_buffer.iter() {
-            sound_source.push(buffer.clone());
+            sound_source.push(*buffer);
         }
 
         // Return decoded bytes as the sound, which can be played

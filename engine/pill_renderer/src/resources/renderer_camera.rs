@@ -7,11 +7,6 @@ use anyhow::{ Result };
 use wgpu::util::DeviceExt;
 use pill_core::{Matrix3f, Matrix4f, Vector3f, Vector4f};
 
-use crate::config::{
-    CAMERA_PARAMETERS_BIND_GROUP_LAYOUT_INDEX,
-    MATERIAL_PARAMETERS_BIND_GROUP_LAYOUT_INDEX
-};
-
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: Matrix4f = Matrix4f::from_cols_array(&[
     1.0, 0.0, 0.0, 0.0, // column 1
@@ -27,6 +22,12 @@ pub const OPENGL_TO_WGPU_MATRIX: Matrix4f = Matrix4f::from_cols_array(&[
 pub struct CameraParametersData {
     pub position: Vector4f, // Camera position
     pub view_projection_matrix: Matrix4f, // Perspective manipulation
+}
+
+impl Default for CameraParametersData {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CameraParametersData {
@@ -47,7 +48,7 @@ impl CameraParametersData {
         );
 
         // Update view-projection
-        self.view_projection_matrix = (CameraParametersData::calculate_projection_matrix(camera_component) * CameraParametersData::calculate_view_matrix(transform_component));
+        self.view_projection_matrix = CameraParametersData::calculate_projection_matrix(camera_component) * CameraParametersData::calculate_view_matrix(transform_component);
     }
 
     fn calculate_view_matrix(transform_component: &TransformComponent) -> Matrix4f {

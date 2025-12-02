@@ -59,7 +59,6 @@ use crate::ecs::{
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use std::collections::HashSet;
-use bincode;
 use rand::{rng, Rng, SeedableRng};
 
 /// High-level action for an entity update.
@@ -429,7 +428,7 @@ fn send_existing_entities(engine: &mut Engine, join_cids: Vec<u64>) -> Result<()
             entity_updates.push(EntityUpdate {
                 action:    NetworkEntityAction::Spawn,
                 net_state: net_state.clone(),
-                transform: Some(transform.clone()),
+                transform: Some(*transform),
             });
         }
 
@@ -526,7 +525,7 @@ fn run_update_for_existing_entity(engine: &mut Engine, entity_update: &EntityUpd
         in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
     {
         if nid == net_state.network_entity_id {
-            net_state.transform = entity_update.transform.clone();
+            net_state.transform = entity_update.transform;
             if let Some(tr) = &entity_update.transform {
                 *transform = *tr; // authoritative change
             }
@@ -539,7 +538,7 @@ fn run_update_for_existing_entity(engine: &mut Engine, entity_update: &EntityUpd
 
 /// Look up and run the **spawn handler** for this entity type (if present).
 fn run_spawn_hooks(engine: &mut Engine, entity_update: &EntityUpdate) -> Result<()> {
-    let tr = entity_update.transform.clone().unwrap_or_else(TransformComponent::default);
+    let tr = entity_update.transform.unwrap_or_default();
     let spawn_fn = {
         let network_manager = engine.get_global_component::<NetworkManagerComponent>()?;
         network_manager.spawn_handlers.get(&entity_update.net_state.entity_type).copied()
@@ -590,15 +589,15 @@ fn send_client_updates(engine: &mut Engine) -> Result<()> {
             updates.push(EntityUpdate {
                 action: NetworkEntityAction::Spawn,
                 net_state: net_state.clone(),
-                transform: Some(transform.clone()),
+                transform: Some(*transform),
             });
             net_state.state = NetworkEntityState::Alive;
-            net_state.last_transform = Some(transform.clone());
+            net_state.last_transform = Some(*transform);
             continue;
         }
 
         let need_send = match &net_state.last_transform {
-            Some(previous) => changed_enough(&transform, previous),
+            Some(previous) => changed_enough(transform, previous),
             None => true,
         };
 
@@ -606,9 +605,9 @@ fn send_client_updates(engine: &mut Engine) -> Result<()> {
             updates.push(EntityUpdate {
                 action: NetworkEntityAction::Update,
                 net_state: net_state.clone(),
-                transform: Some(transform.clone()),
+                transform: Some(*transform),
             });
-            net_state.last_transform = Some(transform.clone());
+            net_state.last_transform = Some(*transform);
         }
     }
 
@@ -696,7 +695,7 @@ pub fn networking_system_server(engine: &mut Engine) -> Result<()> {
                                     in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
                                 {
                                     if entity_update.net_state.network_entity_id == net_state.network_entity_id {
-                                        net_state.transform = Some(tr.clone());
+                                        net_state.transform = Some(*tr);
                                         *transform = *tr; // authoritative
                                         break;
                                     }
@@ -768,7 +767,7 @@ pub fn networking_system_client(engine: &mut Engine) -> Result<()> {
                                     in engine.iterate_two_components_mut::<TransformComponent, NetworkStateComponent>()?
                                 {
                                     if entity_update.net_state.network_entity_id == net_state.network_entity_id {
-                                        net_state.transform = Some(tr.clone());
+                                        net_state.transform = Some(*tr);
                                         debug!(
                                             "▸ Updating nid={:?} for cid={} net_state={:?} tr={:?}",
                                             net_state.network_entity_id, update.client_id, net_state, tr

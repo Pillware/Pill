@@ -14,9 +14,9 @@ use crate::{
     },
 };
 
-use pill_core::{ PillTypeMapKey, get_type_name, warn, LogContext, PillStyle, Vector3f, get_enum_variant_type_name };
+use pill_core::{ PillTypeMapKey, get_type_name, warn, LogContext, PillStyle, get_enum_variant_type_name };
 
-use anyhow::{ Result, Context, Error };
+use anyhow::{ Result, Context };
 
 const DEFERRED_REQUEST_VARIANT_SET_SOUND: usize = 0;
 const DEFERRED_REQUEST_VARIANT_SET_VOLUME: usize = 1;
@@ -81,6 +81,12 @@ pub struct AudioSourceComponent {
     entity_handle: Option<EntityHandle>,
     scene_handle: Option<SceneHandle>,
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
+}
+
+impl Default for AudioSourceComponent {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AudioSourceComponent {
@@ -218,7 +224,7 @@ impl Component for AudioSourceComponent {
             },
             DEFERRED_REQUEST_VARIANT_SET_VOLUME =>
             {
-                let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                let audio_manager = engine.get_global_component::<AudioManagerComponent>()?;
                 match self.sound_type {
                     SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_handle.unwrap()).set_volume(self.volume),
                     SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_handle.unwrap()).set_volume(self.volume),
@@ -228,7 +234,7 @@ impl Component for AudioSourceComponent {
             {
                 // Get data from sound resource
                 let sound_handle = self.sound_handle.unwrap();
-                let sound = (&*engine).get_resource::<Sound>(&sound_handle)?;
+                let sound = engine.get_resource::<Sound>(&sound_handle)?;
                 let sound_data = sound.sound_data.as_ref().unwrap().get_source_sound();
 
                 // Get free sink, set its volume and play
@@ -258,7 +264,7 @@ impl Component for AudioSourceComponent {
             },
             DEFERRED_REQUEST_VARIANT_PAUSE_SOUND  =>
             {
-                let audio_manager = (&*engine).get_global_component::<AudioManagerComponent>()?;
+                let audio_manager = engine.get_global_component::<AudioManagerComponent>()?;
                 match self.sound_type {
                     SoundType::Sound3D => audio_manager.get_spatial_sink(self.sink_handle.unwrap()).pause(),
                     SoundType::Sound2D => audio_manager.get_ambient_sink(self.sink_handle.unwrap()).pause(),
@@ -277,7 +283,7 @@ impl Component for AudioSourceComponent {
         Ok(())
     }
 
-    fn destroy(&mut self, engine: &mut Engine, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) -> Result<()> {
+    fn destroy(&mut self, engine: &mut Engine, _self_scene_handle: SceneHandle, _self_entity_handle: EntityHandle) -> Result<()> {
         if self.sink_handle.is_some() {
             self.stop_playing(engine)?;
         }

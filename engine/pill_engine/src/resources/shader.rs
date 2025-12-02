@@ -1,49 +1,26 @@
 use crate::{
-    config::*, 
-    ecs::{ 
-        DeferredUpdateComponent,
-        DeferredUpdateManagerPointer, 
-        DeferredUpdateResourceRequest, 
-        MeshRenderingComponent 
-    }, 
-    engine::Engine, 
-    graphics::{ 
-        RendererMaterialHandle, 
-        RendererShaderHandle, 
-        RendererTextureHandle, 
-        RENDER_QUEUE_KEY_ORDER 
-    }, 
-    resources::{ 
-        texture, 
-        Resource, 
-        ResourceStorage, 
-        Texture, 
-        TextureHandle, 
+    engine::Engine,
+    ecs::DeferredUpdateManagerPointer,
+    resources::{
+        Resource,
+        ResourceStorage,
         TextureType,
         ResourceLoader
-    }
+    },
 };
 
-use pill_core::{ 
-    debug, 
-    enum_variant_eq, 
-    get_enum_variant_type_name, 
-    get_type_name, 
-    Color, 
-    EngineError, 
-    LogContext, 
-    PillSlotMapKey, 
-    PillStyle, 
-    PillTypeMapKey 
+use crate::internal::RendererShaderHandle;
+
+use pill_core::{
+    get_type_name,
+    PillSlotMapKey,
+    PillStyle,
+    PillTypeMapKey
 };
 
-use anyhow::{ Result, Context, Error };
-use boolinator::*;
-use std::{ 
-    path::{ Path, PathBuf },
-    collections::HashMap, 
-    ops::{Range, RangeInclusive} 
-};
+use std::collections::HashMap;
+
+use anyhow::{ Result, Context };
 
 #[derive(Debug, Clone)]
 pub enum ShaderParameterType {
@@ -59,7 +36,7 @@ pub struct ShaderTextureSlot {
     pub texture_type: TextureType,
 
     // NOTE: Each texture in a shader requires two resources for sampling in GLSL/WGSL:
-    pub texture_binding: u32, 
+    pub texture_binding: u32,
     pub sampler_binding: u32,
 }
 
@@ -93,7 +70,7 @@ impl ShaderParameterSlot {
 
 // --- Shader ---
 
-pill_core::define_new_pill_slotmap_key! { 
+pill_core::define_new_pill_slotmap_key! {
     pub struct ShaderHandle;
 }
 
@@ -124,8 +101,8 @@ impl Shader {
     // TODO: Parse shader files and create slots automatically as well as pass_engine_parameters and pass_camera_parameters options
 
     pub fn new(
-        name: &str, 
-        vertex_shader_resource_loader: ResourceLoader, 
+        name: &str,
+        vertex_shader_resource_loader: ResourceLoader,
         fragment_shader_resource_loader: ResourceLoader,
         parameter_slots: HashMap<String, ShaderParameterSlot>,
         texture_slots: HashMap<String, ShaderTextureSlot>,
@@ -152,7 +129,7 @@ impl Shader {
 }
 
 impl PillTypeMapKey for Shader {
-    type Storage = ResourceStorage<Shader>; 
+    type Storage = ResourceStorage<Shader>;
 }
 
 impl Resource for Shader {
@@ -211,9 +188,9 @@ impl Resource for Shader {
 
         // Load data
         let renderer_resource_handle = engine.renderer.create_shader(
-            &self.name, 
-            &vertex_shader_bytes, 
-            &fragment_shader_bytes,
+            &self.name,
+            vertex_shader_bytes,
+            fragment_shader_bytes,
             &self.texture_slots,
             &self.parameter_slots,
             self.enable_engine_binding,
@@ -224,11 +201,11 @@ impl Resource for Shader {
         Ok(())
     }
 
-    fn pass_handle<H: PillSlotMapKey>(&mut self, self_handle: H) { 
+    fn pass_handle<H: PillSlotMapKey>(&mut self, self_handle: H) {
         self.handle = Some(ShaderHandle::from(self_handle.data()));
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_shader(v).unwrap();
@@ -240,7 +217,7 @@ impl Resource for Shader {
 
         //     // for (entity_handle, mesh_rendering_component) in engine.iterate_one_component::<MeshRenderingComponent>()? {
         //     //     if let Some(material_handle) = mesh_rendering_component.material_handle {
-        //     //         // If mesh rendering component has handle to this material 
+        //     //         // If mesh rendering component has handle to this material
         //     //         if material_handle.data() == self_handle.data() {
         //     //             mesh_rendering_component.set_material_handle(Option::<MaterialHandle>::None);
         //     //             mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();

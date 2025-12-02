@@ -6,13 +6,15 @@ use crate::{
 };
 
 use pill_core::{
-    debug, error, get_enum_variant_type_name, get_game_error_message, get_type_name,
-    get_value_type_name, info, warn, EngineError, LogContext, PillSlotMapKey, PillStyle,
+    debug, error, get_game_error_message, get_type_name,
+    info, EngineError, LogContext, PillSlotMapKey, PillStyle,
     PillTypeMap, Timer, Vector2f,
 };
 
-use std::{ any::type_name, any::Any, any::TypeId, collections::VecDeque, cell::RefCell, ops::RangeBounds };
-use anyhow::{Context, Result, Error};
+use anyhow::{Context, Error, Result};
+use std::{
+    any::TypeId, collections::VecDeque
+};
 use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
 // -------------------------------------------------------------------------------
@@ -72,7 +74,7 @@ impl Engine {
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path,
-            frame_delta_time: 0.0.into(),
+            frame_delta_time: 0.0,
         }
     }
 
@@ -103,7 +105,6 @@ impl Engine {
     fn create_default_resources(&mut self) -> Result<()> {
         // Register resources and their limits
 
-        use bincode::de;
         use pill_core::Color;
         let max_shader_count = self
             .config
@@ -374,7 +375,7 @@ impl Engine {
                 if system_name != RENDERING_SYSTEM.name {
 
                     let mut timer = Timer::new();
-                    timer.begin_context(&format!("{} system update", system_name));
+                    timer.begin_context(format!("{} system update", system_name));
                     self.system_manager
                         .update_system_timer(system_name.as_str(), update_phase.clone(), timer)
                         .unwrap();
@@ -429,7 +430,7 @@ impl Engine {
         // Update FPS counter
         let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps = 1000.0 / new_frame_time;
-        self.frame_delta_time = new_frame_time.into();
+        self.frame_delta_time = new_frame_time;
         debug!(
             "Frame finished (Time: {:.3}ms, FPS {:.0})",
             new_frame_time, fps
@@ -452,7 +453,7 @@ impl Engine {
             winit::keyboard::PhysicalKey::Code(key_code) => {
                 let input_event = InputEvent::Keyboard(KeyboardEvent::Key{
                     key: key_code,
-                    state: state,
+                    state,
                 });
                 self.input_queue.push_back(input_event);
                 debug!(LogContext::Input => "Got new keyboard key input: {:?} {:?}", key_code, state);
@@ -985,7 +986,7 @@ impl Engine {
         // Get entity handles
         let mut entity_handles = Vec::<EntityHandle>::new();
         for (entity_handle, _) in scene.entities.iter() {
-            entity_handles.push(entity_handle.clone());
+            entity_handles.push(entity_handle);
         }
 
         // Remove entities
@@ -1075,7 +1076,7 @@ impl Engine {
     where
         T: Resource<Storage = ResourceStorage<T>>,
     {
-        Ok(self.resource_manager.get_resource::<T>(resource_handle)?)
+        self.resource_manager.get_resource::<T>(resource_handle)
     }
 
     /// Returns resource specified by its name
@@ -1083,7 +1084,7 @@ impl Engine {
     where
         T: Resource<Storage = ResourceStorage<T>>,
     {
-        Ok(self.resource_manager.get_resource_by_name::<T>(name)?)
+        self.resource_manager.get_resource_by_name::<T>(name)
     }
 
     /// Returns handle to resource specified by the name of this resource
@@ -1091,7 +1092,7 @@ impl Engine {
     where
         T: Resource<Storage = ResourceStorage<T>>,
     {
-        Ok(self.resource_manager.get_resource_handle::<T>(name)?)
+        self.resource_manager.get_resource_handle::<T>(name)
     }
 
     // Returns mutable resource associated with resource handle
@@ -1102,9 +1103,9 @@ impl Engine {
     where
         T: Resource<Storage = ResourceStorage<T>>,
     {
-        Ok(self
+        self
             .resource_manager
-            .get_resource_mut::<T>(resource_handle)?)
+            .get_resource_mut::<T>(resource_handle)
     }
 
     /// Returns mutable resource specified by its name
@@ -1112,7 +1113,7 @@ impl Engine {
     where
         T: Resource<Storage = ResourceStorage<T>>,
     {
-        Ok(self.resource_manager.get_resource_by_name_mut::<T>(name)?)
+        self.resource_manager.get_resource_by_name_mut::<T>(name)
     }
 
     // Removes resource associated with resource handle from the engine

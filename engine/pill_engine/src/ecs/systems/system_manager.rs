@@ -3,9 +3,8 @@ use crate::engine::Engine;
 use pill_core::{EngineError, Timer};
 
 use core::fmt;
-use std::{collections::HashMap, fmt::Display};
-use anyhow::{Result, Context, Error};
-use boolinator::Boolinator;
+use std::fmt::Display;
+use anyhow::{Result, Error};
 use indexmap::IndexMap;
 
 pub type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
@@ -44,7 +43,7 @@ impl SystemManager {
         update_phases.insert(UpdatePhase::Game, IndexMap::<String, System>::new());
         update_phases.insert(UpdatePhase::PostGame, IndexMap::<String, System>::new());
 
-        Self { 
+        Self {
             update_phases
         }
     }
@@ -69,7 +68,7 @@ impl SystemManager {
         // Create system object
         let system_object = System {
             name: name.to_string(),
-            update_phase, 
+            update_phase,
             system_function,
             enabled: true,
             timer: Some(Timer::new()),
@@ -81,7 +80,7 @@ impl SystemManager {
         Ok(())
     }
 
-    pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> { 
+    pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
         // Find collection of systems for given update phase
         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
 
@@ -96,7 +95,7 @@ impl SystemManager {
         Ok(())
     }
 
-    pub fn toggle_system(&mut self, name: &str, update_phase: UpdatePhase, enabled: bool) -> Result<()> { 
+    pub fn toggle_system(&mut self, name: &str, update_phase: UpdatePhase, enabled: bool) -> Result<()> {
         // Find collection of systems for given update phase
         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase))))?;
 

@@ -2,14 +2,12 @@ use crate::{
     engine::Engine,
     graphics::{ RendererMeshHandle },
     resources::{ ResourceStorage, Resource },
-    ecs::{ DeferredUpdateManagerPointer, MeshRenderingComponent },
-    config::*,
+    ecs::MeshRenderingComponent,
 };
 
-use pill_core::{ EngineError, PillSlotMapKey, PillTypeMap, PillTypeMapKey, Vector2f, Vector3f, PillStyle, get_type_name };
+use pill_core::{ EngineError, PillSlotMapKey, PillTypeMapKey, Vector2f, Vector3f, PillStyle, get_type_name };
 
 use std::path::{ Path, PathBuf };
-use boolinator::Boolinator;
 use tobj::LoadOptions;
 use anyhow::{Result, Context, Error};
 
@@ -76,7 +74,7 @@ impl Resource for Mesh {
         self.mesh_data = Some(mesh_data);
 
         // Create new renderer mesh resource
-        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, &self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
+        let renderer_resource_handle = engine.renderer.create_mesh(&self.name, self.mesh_data.as_ref().unwrap()).context(error_message.clone())?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -90,8 +88,8 @@ impl Resource for Mesh {
         }
 
         // Find mesh rendering components that use this mesh and update them
-        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            for (entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
+        for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            for (_entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
                 if let Some(mesh_handle) = mesh_rendering_component.mesh_handle {
                     // If mesh rendering component has handle to this mesh
                     if mesh_handle.data() == self_handle.data() {
@@ -124,7 +122,7 @@ pub struct MeshData {
 }
 
 impl MeshData {
-    pub fn new(path: &PathBuf, flip_uv_y: bool) -> Result<Self> {
+    pub fn new(path: &Path, flip_uv_y: bool) -> Result<Self> {
         // Load model from path using tinyobjloader crate
         let load_options = LoadOptions {
             triangulate: true,
@@ -133,15 +131,15 @@ impl MeshData {
         };
 
         // Load data
-        let (models, _materials) = tobj::load_obj(path.as_path(), &load_options)?;
+        let (models, _materials) = tobj::load_obj(path, &load_options)?;
 
         // Check data validity
         if models.len() > 1 {
-            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(path.clone().into_os_string().into_string().unwrap())));
+            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(path.to_path_buf().into_os_string().into_string().unwrap())));
         }
 
-        if models.len() < 1 {
-            return Err(Error::new(EngineError::InvalidModelFile(path.clone().into_os_string().into_string().unwrap())));
+        if models.is_empty() {
+            return Err(Error::new(EngineError::InvalidModelFile(path.to_path_buf().into_os_string().into_string().unwrap())));
         }
 
         // Load vertex data from model
@@ -168,8 +166,8 @@ impl MeshData {
                     mesh.normals[i * 3 + 1],
                     mesh.normals[i * 3 + 2],
                 ],
-                tangent: [0.0; 3].into(),
-                bitangent: [0.0; 3].into(),
+                tangent: [0.0; 3],
+                bitangent: [0.0; 3],
             });
         }
 
@@ -227,7 +225,7 @@ impl MeshData {
         }
 
         let mesh_data = MeshData {
-            vertices: vertices,
+            vertices,
             indices: mesh.indices.clone(),
         };
 

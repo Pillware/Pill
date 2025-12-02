@@ -14,6 +14,12 @@ pub struct PillTwinMap<K: Eq + Hash + Clone, V: Eq + Hash + Clone> {
     value_key_map: HashMap<V, K>,
 }
 
+impl<K: Eq + Hash + Clone, V: Eq + Hash + Clone> Default for PillTwinMap<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K: Eq + Hash + Clone, V: Eq + Hash + Clone> PillTwinMap<K, V> {
     pub fn new() -> Self {
         Self {
@@ -36,17 +42,11 @@ impl<K: Eq + Hash + Clone, V: Eq + Hash + Clone> PillTwinMap<K, V> {
     }
 
     pub fn remove_by_key(&mut self, key: &K) {
-        match self.key_value_map.remove_entry(key) {
-            Some(v) => { self.value_key_map.remove_entry(&v.1); },
-            None => {},
-        };
+        if let Some(v) = self.key_value_map.remove_entry(key) { self.value_key_map.remove_entry(&v.1); };
     }
 
     pub fn remove_by_value(&mut self, value: &V) {
-        match self.value_key_map.remove_entry(value) {
-            Some(v) => { self.key_value_map.remove_entry(&v.1); },
-            None => {},
-        };
+        if let Some(v) = self.value_key_map.remove_entry(value) { self.key_value_map.remove_entry(&v.1); };
     }
 
     pub fn contains_key(&self, key: &K) -> bool {

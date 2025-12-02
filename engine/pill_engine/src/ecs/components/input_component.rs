@@ -8,18 +8,15 @@ use pill_core::{ PillTypeMapKey, Vector2f };
 use bitvec::prelude::*;
 
 use std::{
-    any::Any,
-    cell::RefCell,
     collections::{HashMap, VecDeque},
     time::Instant,
 };
-use winit::dpi::PhysicalPosition;
 use winit::event::{ ElementState, MouseScrollDelta };
 use gilrs::{
     GamepadId,
     ff::Effect,
 };
-use anyhow::{ Result, Context, Error };
+use anyhow::{ Result, Error };
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -149,6 +146,12 @@ pub struct InputComponent {
     // Haptics commands queue and in-flight effects
     pub(crate) haptic_commands: VecDeque<HapticCommand>,
     pub(crate) in_flight_force_feedback: Vec<InFlight>,
+}
+
+impl Default for InputComponent {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InputComponent {

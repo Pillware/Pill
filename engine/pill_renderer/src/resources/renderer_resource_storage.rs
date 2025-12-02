@@ -1,22 +1,22 @@
 use crate::resources::{
-    EngineParameters, 
-    RendererCamera, 
-    RendererMaterial, 
-    RendererMesh, 
-    RendererShader, 
+    EngineParameters,
+    RendererCamera,
+    RendererMaterial,
+    RendererMesh,
+    RendererShader,
     RendererTexture
 };
 
 use pill_engine::internal::{
-    RendererCameraHandle, 
-    RendererMaterialHandle, 
-    RendererMeshHandle, 
-    RendererShaderHandle, 
-    RendererTextureHandle 
+    RendererCameraHandle,
+    RendererMaterialHandle,
+    RendererMeshHandle,
+    RendererShaderHandle,
+    RendererTextureHandle
 };
 
 use pill_core::PillSlotMap;
-use anyhow::{Context, Error, Ok, Result};
+use anyhow::{Ok, Result};
 
 
 pub const MAX_SHADERS: usize = 10;

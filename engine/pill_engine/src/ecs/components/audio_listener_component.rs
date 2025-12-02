@@ -1,4 +1,4 @@
-use crate::ecs::{ Component, ComponentStorage, GlobalComponentStorage };
+use crate::ecs::{ Component, ComponentStorage };
 
 use pill_core::PillTypeMapKey;
 
@@ -28,6 +28,12 @@ impl AudioListenerComponentBuilder {
 // --- Audio Listener Component ---
 pub struct AudioListenerComponent {
     pub enabled: bool
+}
+
+impl Default for AudioListenerComponent {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AudioListenerComponent {

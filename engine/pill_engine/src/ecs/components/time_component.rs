@@ -1,10 +1,10 @@
 use crate::{
-    define_global_component, ecs::components::{ Component, GlobalComponent, GlobalComponentStorage } 
+    ecs::components::{ GlobalComponent, GlobalComponentStorage }
 };
 
 use pill_core::PillTypeMapKey;
 
-use anyhow::{Result, Error, Context};
+use anyhow::Result;
 
 #[readonly::make]
 pub struct TimeComponent {
@@ -14,9 +14,15 @@ pub struct TimeComponent {
     pub delta_time: f32, // Time of last frame in seconds
 }
 
+impl Default for TimeComponent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimeComponent {
     pub fn new() -> Self {
-        Self { 
+        Self {
             time: 0.0,
             delta_time: 0.0,
         }
@@ -25,15 +31,15 @@ impl TimeComponent {
     pub(crate) fn update(&mut self, delta_time: f32) -> Result<()> {
         self.time += delta_time / 1000.0;
         self.delta_time = delta_time / 1000.0;
-        
+
         Ok(())
     }
 }
 
 impl PillTypeMapKey for TimeComponent {
-    type Storage = GlobalComponentStorage<TimeComponent>; 
+    type Storage = GlobalComponentStorage<TimeComponent>;
 }
 
 impl GlobalComponent for TimeComponent {
-   
+
 }

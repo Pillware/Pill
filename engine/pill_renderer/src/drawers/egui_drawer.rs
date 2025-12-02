@@ -1,8 +1,7 @@
 use std::sync::Arc;
 use pill_core::Timer;
 use winit::event::WindowEvent;
-use winit::window::Window;
-use anyhow::{Error, Result};
+use anyhow::Result;
 
 const BORDER_RADIUS: f32 = 2.0;
 
@@ -34,10 +33,10 @@ impl EguiDrawer {
         context.set_visuals(visuals);
 
         let state = egui_winit::State::new(
-            context.clone(), 
-            id, 
-            &window, 
-            None, 
+            context.clone(),
+            id,
+            &window,
+            None,
             None,
             None
         );
@@ -77,7 +76,7 @@ impl EguiDrawer {
         timer.record("Prepare window and input");
 
         let window = &self.window;
-        let raw_input = self.state.take_egui_input(&window);
+        let raw_input = self.state.take_egui_input(window);
 
         // let full_output = self.context.run(raw_input, |ctx| {
         //     (&mut run_ui)(ctx);
@@ -88,22 +87,22 @@ impl EguiDrawer {
 
         timer.record("Handle platform output");
 
-        self.state.handle_platform_output(&window, full_output.platform_output);
+        self.state.handle_platform_output(window, full_output.platform_output);
 
         timer.record("Tesselate and update textures");
 
         let tris = self.context.tessellate(full_output.shapes, full_output.pixels_per_point);
         for (id, image_delta) in &full_output.textures_delta.set {
-            self.renderer.update_texture(device, queue, *id, &image_delta);
+            self.renderer.update_texture(device, queue, *id, image_delta);
         }
 
         timer.record("Update buffers and record render pass");
 
-        self.renderer.update_buffers(&device, &queue, encoder, &tris, &screen_descriptor);
+        self.renderer.update_buffers(device, queue, encoder, &tris, &screen_descriptor);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &window_surface_view,
+                view: window_surface_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
@@ -121,7 +120,7 @@ impl EguiDrawer {
 
         let render_pass: &mut wgpu::RenderPass<'static> = unsafe { std::mem::transmute(&mut render_pass) };
 
-        self.renderer.render(&mut *render_pass, &tris, &screen_descriptor); 
+        self.renderer.render(&mut *render_pass, &tris, &screen_descriptor);
 
        // let _ = drop(render_pass);
 

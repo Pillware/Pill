@@ -18,29 +18,23 @@ use crate::{
         Shader,
         ShaderHandle,
         Texture,
-        TextureHandle,
-        TextureType }
+        TextureHandle}
 };
 
 use pill_core::{
-    debug,
     enum_variant_eq,
     get_enum_variant_type_name,
     get_type_name,
     Color,
     EngineError,
-    LogContext,
     PillSlotMapKey,
     PillStyle,
     PillTypeMapKey
 };
 
 use anyhow::{ Result, Context, Error };
-use boolinator::*;
 use std::{
-    collections::{hash_map::Entry, HashMap},
-    ops::{Range, RangeInclusive},
-    path::{ Path, PathBuf }
+    collections::{HashMap},
 };
 use indexmap::IndexMap;
 
@@ -231,7 +225,7 @@ impl Material {
     // }
 
     pub fn set_rendering_order(&mut self, order: u8) -> Result<()> {
-        let error = EngineError::WrongRenderingOrder(order.to_string(), format!("{}-{}", 0, RENDER_QUEUE_KEY_ORDER.max.to_string()));
+        let error = EngineError::WrongRenderingOrder(order.to_string(), format!("{}-{}", 0, RENDER_QUEUE_KEY_ORDER.max));
         if order < RENDER_QUEUE_KEY_ORDER.max as u8 {
             self.rendering_order = order;
             // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
@@ -407,8 +401,8 @@ impl Resource for Material {
             DEFERRED_REQUEST_VARIANT_RENDERING_ORDER =>
             {
                 // Find mesh rendering components that use this material and update them
-                for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-                    for (entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
+                for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+                    for (_entity_handle, mesh_rendering_component) in scene.get_one_component_iterator_mut::<MeshRenderingComponent>()? {
                         if let Some(material_handle) = mesh_rendering_component.material_handle {
                             // If mesh rendering component has handle to this material
                             if material_handle.data() == self.handle.unwrap().data() {
@@ -427,7 +421,7 @@ impl Resource for Material {
             {
                 // Check if assigned texture is of correct type
                 let (texture_slot_name, texture_slot) = self.textures.get_index(request - DEFERRED_REQUEST_VARIANT_TEXTURE_START).unwrap();
-                self.validate_texture(engine, texture_slot_name, &texture_slot)?;
+                self.validate_texture(engine, texture_slot_name, texture_slot)?;
 
                 // Assign renderer resource handle to texture slot
                 let (texture_slot_name, texture_slot) = self.textures.get_index_mut(request - DEFERRED_REQUEST_VARIANT_TEXTURE_START).unwrap();
@@ -447,7 +441,7 @@ impl Resource for Material {
         Ok(())
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_material(v).unwrap();
@@ -457,8 +451,8 @@ impl Resource for Material {
 
 
 
-        for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-            let x = &engine.resource_manager;
+        //for (_scene_handle, _scene) in engine.scene_manager.scenes.iter_mut() {
+        //    let x = &engine.resource_manager;
 
             // for (entity_handle, mesh_rendering_component) in engine.iterate_one_component::<MeshRenderingComponent>()? {
             //     if let Some(material_handle) = mesh_rendering_component.material_handle {
@@ -469,7 +463,7 @@ impl Resource for Material {
             //         }
             //     }
             // }
-        }
+        //}
 
         Ok(())
     }

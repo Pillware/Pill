@@ -3,7 +3,6 @@ use crate::file_watcher::FileWatcher;
 use config::Config;
 use pill_core::{ info, set_log_levels, warn, EngineError, LogContext, PillStyle };
 use pill_engine::internal::*;
-use pill_renderer;
 use anyhow::{ Context, Ok, Result };
 use winit::{
     event::{ Event, WindowEvent, DeviceEvent },
@@ -121,7 +120,7 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
 
     // Init window
     let window_event_loop = winit::event_loop::EventLoop::new().unwrap();
-   
+
     // Initialize other window parameters
     let window_size = winit::dpi::PhysicalSize::<u32>::new(window_width, window_height);
     let window_min_size = winit::dpi::PhysicalSize::<u32>::new(100, 100);
@@ -170,7 +169,7 @@ fn build_standalone_and_game_crates(project_paths: &ProjectPaths) -> Result<()> 
         .join("Cargo.toml");
 
     let output = std::process::Command::new("cargo")
-        .args(&[
+        .args([
             "run", "--quiet",
             "--manifest-path", launcher_manifest.to_str().unwrap(),
             "--",
@@ -220,7 +219,7 @@ fn check_and_reload_game(
     }
 
     // Check for game dynamic library changes
-    if let Some(_) = file_watchers.game_dynamic_library_files_watcher.get_changes() {
+    if file_watchers.game_dynamic_library_files_watcher.get_changes().is_some() {
         info!(LogContext::HotReload => "Reloading game project...");
 
         // Shutdown and drop engine
@@ -236,7 +235,7 @@ fn check_and_reload_game(
 
         // Load new game dynamic library
         let (game_library, game) = load_game_dynamic_library(&project_paths.game_dynamic_library_path);
-        let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(&window), config.clone()).unwrap());
+        let renderer: Box<dyn PillRenderer> = Box::new(<pill_renderer::Renderer as PillRenderer>::new(Arc::clone(window), config.clone()).unwrap());
         let mut new_engine = Engine::new(game, project_paths.game_resources_directory_path.clone(), renderer, config.clone());
         new_engine.initialize(Some(*window_size)).unwrap();
         *engine = Some(new_engine);
@@ -294,15 +293,12 @@ fn main_loop(
                 ref event,
                 ..
             } => {
-                match event {
-                    DeviceEvent::MouseMotion {
+                if let DeviceEvent::MouseMotion {
                         delta,
-                    } => {
-                        if let Some(ref mut engine) = engine {
-                            engine.pass_mouse_delta_input(delta);
-                        }
-                    },
-                    _ => {}
+                    } = event {
+                    if let Some(ref mut engine) = engine {
+                        engine.pass_mouse_delta_input(delta);
+                    }
                 }
             }
 
@@ -341,22 +337,22 @@ fn main_loop(
                     }
                     WindowEvent::KeyboardInput { event, .. } => {
                         if let Some(ref mut e) = engine {
-                            e.pass_keyboard_key_input(&event);
+                            e.pass_keyboard_key_input(event);
                         }
                     }
                     WindowEvent::MouseInput { button, state, .. } => {
                         if let Some(ref mut e) = engine {
-                            e.pass_mouse_key_input(&button, &state);
+                            e.pass_mouse_key_input(button, state);
                         }
                     }
                     WindowEvent::MouseWheel { delta, .. } => {
                         if let Some(ref mut e) = engine {
-                            e.pass_mouse_wheel_input(&delta);
+                            e.pass_mouse_wheel_input(delta);
                         }
                     }
                     WindowEvent::CursorMoved { position, .. } => {
                         if let Some(ref mut e) = engine {
-                            e.pass_mouse_position_input(&position);
+                            e.pass_mouse_position_input(position);
                         }
                     }
                     WindowEvent::CloseRequested => {
@@ -425,10 +421,10 @@ fn main() {
     let game_dynamic_library_hot_reloaded_path = build_data_directory_path.join(dylib("pill_game_hot_reloaded"));
 
     let project_paths = ProjectPaths {
-        build_data_directory_path: build_data_directory_path,
-        game_project_directory_path: game_project_directory_path,
+        build_data_directory_path,
+        game_project_directory_path,
         game_source_directory_path,
-        game_resources_directory_path: game_resources_directory_path,
+        game_resources_directory_path,
         config_path,
         game_dynamic_library_path,
         game_dynamic_library_hot_reloaded_path,
@@ -440,7 +436,7 @@ fn main() {
 
     // Configure logging context and levels
     configure_logging(&config);
-  
+
     info!("Initializing {}", "Standalone".module_object_style());
 
     // Create windows

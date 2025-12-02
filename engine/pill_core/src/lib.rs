@@ -1,5 +1,5 @@
 #![allow(unused_imports, dead_code)]
-#[macro_use]
+#![macro_use]
 
 mod error;
 mod math;

@@ -17,12 +17,12 @@ where
     let range_length: T = mask_range.end - mask_range.start + T::from(1);
     let mask_shift = mask_size - mask_range.end - T::from(1);
 
-    let mask = match range_length == mask_size {
+    
+
+    match range_length == mask_size {
         true => !(T::from(0)) << mask_shift,  // Prevent overflow (when shifting by same value as number of bits in type)
         false => !(!T::from(0) << range_length) << mask_shift,
-    };
-
-    mask
+    }
 }
 
 // From 0 to 15 (16 in total)
@@ -33,9 +33,9 @@ pub fn create_bitmask_with_one(index: u16) -> u16 {
     pub const FIRST_BIT: u16 = 0b1000_0000_0000_0000;    
     let mut mask: u16 = 0b0000_0000_0000_0000;
     if (0_u16..=15_u16).contains(&index) {
-        mask = mask | FIRST_BIT;
+        mask |= FIRST_BIT;
         for _ in 0..index {
-            mask = mask >> 1;
+            mask >>= 1;
         }
     }
     mask
@@ -52,7 +52,7 @@ pub fn get_indices_of_set_elements(bitmask: u16) -> Vec::<usize> {
         if bitmask & test_mask > 0 {
             indices.push(i);
         }
-        test_mask = test_mask >> 1;
+        test_mask >>= 1;
     }
     indices
 }

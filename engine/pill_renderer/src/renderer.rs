@@ -17,7 +17,7 @@ use crate::{
 use indexmap::IndexMap;
 
 use pill_engine::internal::{
-    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent, RENDER_QUEUE_KEY_ORDER
+    get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent,
 };
 
 use pill_core::{
@@ -25,7 +25,6 @@ use pill_core::{
     info,
     LogContext,
     PillSlotMapKey,
-    PillSlotMapKeyData,
     PillStyle,
     RendererError,
     Timer
@@ -33,15 +32,8 @@ use pill_core::{
 
 use std::{
     collections::HashMap,
-    iter,
-    mem::size_of,
-    num::NonZeroU32,
-    ops::Range,
     sync::Arc
 };
-
-use naga::front::glsl;
-use naga::back::wgsl;
 
 use anyhow::{Context, Error, Ok, Result};
 
@@ -194,7 +186,7 @@ impl PillRenderer for Renderer {
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>,
+        render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
@@ -413,7 +405,7 @@ impl State {
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        render_queue: &Vec<RenderQueueItem>,
+        render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
@@ -497,9 +489,9 @@ impl State {
                 &self.renderer_resource_storage,
                 color_attachment,
                 depth_stencil_attachment,
-                &renderer_camera,
-                &render_queue,
-                &transform_component_storage,
+                renderer_camera,
+                render_queue,
+                transform_component_storage,
                 timer,
                 //&mut self.profiler
             )?;

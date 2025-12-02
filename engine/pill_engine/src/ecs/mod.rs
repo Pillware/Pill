@@ -44,7 +44,6 @@ pub use components::egui_manager_component::{
 
 pub use components::deferred_update_component::{
     DeferredUpdateComponent,
-    DeferredUpdateManager,
     DeferredUpdateManagerPointer,
     DeferredUpdateRequest,
     DeferredUpdateComponentRequest,

@@ -4,7 +4,7 @@ use crate::{
 };
 use pill_core::Vector2f;
 
-use anyhow::{ Result, Context, Error };
+use anyhow::Result;
 use winit::event::{ ElementState, MouseScrollDelta };
 
 // use a lazy static GILRS instance
@@ -43,7 +43,7 @@ pub fn input_system(engine: &mut Engine) -> Result<()> {
         // If the input component has just been created, initialize the gamepad states
         if input_component.gamepad_id_to_player.is_empty() {
             let gamepad_input_system = GILRS.lock().unwrap();
-            for (id, gamepad) in gamepad_input_system.gamepads() {
+            for (id, _gamepad) in gamepad_input_system.gamepads() {
                 input_component.connect_gamepad(id);
             }
         }
@@ -125,11 +125,7 @@ pub fn haptics_system(engine: &mut Engine) -> Result<()> {
     {
         let now = std::time::Instant::now();
         input_component.in_flight_force_feedback.retain(|in_flight| {
-            if now >= in_flight.end_at {
-                false
-            } else {
-                true
-            }
+            now < in_flight.end_at
         });
     }
 

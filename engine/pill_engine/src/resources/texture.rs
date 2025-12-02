@@ -2,17 +2,11 @@ use crate::{
     engine::Engine,
     graphics::{ RendererTextureHandle },
     resources::{ ResourceStorage, Resource, ResourceLoader, Material },
-    ecs::{ DeferredUpdateManagerPointer },
-    config::*,
 };
 
-use pill_core::{ debug, get_type_name, LogContext, PillSlotMapKey, PillStyle, PillTypeMapKey };
+use pill_core::{ get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey };
 
-use std::collections::HashSet;
-use std::path::{ Path, PathBuf };
-use anyhow::{ Result, Context, Error };
-use bytemuck::{Pod, Zeroable}; // For derive macros to work
-use readonly::make;            // For #[readonly::make] to resolve
+use anyhow::{ Result, Context };
 pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }
@@ -36,13 +30,13 @@ pub struct Texture {
 
 impl Texture {
     pub fn new(
-        name: &str, 
-        texture_type: TextureType, 
+        name: &str,
+        texture_type: TextureType,
         resource_loader: ResourceLoader
     ) -> Self {
         Self {
             name: name.to_string(),
-            resource_loader: resource_loader,
+            resource_loader,
             texture_type,
             renderer_resource_handle: None,
         }
@@ -60,7 +54,7 @@ impl Resource for Texture {
         self.name.clone()
     }
 
-    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {        
+    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!("Initializing {} {} failed", "Resource".general_object_style(), get_type_name::<Self>().specific_object_style());
 
         // Create new renderer texture resource
