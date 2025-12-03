@@ -134,5 +134,5 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x engine/pill_launcher/target/release/PillLauncher
-          ./engine/pill_launcher/target/release/PillLauncher -a cargo -p "${{ matrix.example }}" -- build
+          ./engine/pill_launcher/target/release/PillLauncher -a build -p "${{ matrix.example }}"
 
