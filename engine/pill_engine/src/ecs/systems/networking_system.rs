@@ -21,11 +21,23 @@
 //! ## Diagrams
 //! ### Connect / message flow:
 //!
-#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/connection_operation.svg"))]
+#![cfg_attr(
+    doc,
+    doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/uml_out/connection_operation.svg"
+    ))
+)]
 //!
 //! ### Disconnect / reconnect flow:
 //!
-#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/dis_reconnection.svg"))]
+#![cfg_attr(
+    doc,
+    doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/uml_out/dis_reconnection.svg"
+    ))
+)]
 //!
 //! ## Usage (high level)
 //! - **Server loop:** call [`networking_system_server`] once per frame.
