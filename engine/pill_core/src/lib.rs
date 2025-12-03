@@ -20,7 +20,7 @@ pub use math::{
     Color, Direction, Matrix3f, Matrix3fA, Matrix4f, Vector2f, Vector2i, Vector3f, Vector4f,
 };
 
-pub use error::{EngineError, RendererError};
+pub use error::{CoreError, EngineError, RendererError};
 
 pub use pill_slotmap::{PillSlotMap, PillSlotMapKey, PillSlotMapKeyData};
 
