@@ -75,6 +75,7 @@ jobs:
           toolchain: stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
           workspaces: |
             engine -> target
 
