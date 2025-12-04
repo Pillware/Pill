@@ -120,7 +120,7 @@ impl PillRenderer for DummyRenderer {
     fn render(
         &mut self,
         _active_camera_entity_handle: EntityHandle,
-        _render_queue: &Vec<RenderQueueItem>,
+        _render_queue: &[RenderQueueItem],
         _camera_component_storage: &ComponentStorage<CameraComponent>,
         _transform_component_storage: &ComponentStorage<TransformComponent>,
         _egui_ui: Box<dyn FnMut(&egui::Context)>,
