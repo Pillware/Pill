@@ -205,6 +205,7 @@ impl MeshDrawer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn record_draw_commands(
         &mut self,
         // Resources
