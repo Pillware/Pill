@@ -16,10 +16,10 @@
 //! - Drive update cadence via [`NetworkManagerComponent::tick`], [`NetworkManagerComponent::accumulator`], and [`NetworkManagerComponent::timeout`].
 //!
 //! ## Typical usage
-//! - **Server:** [`NetworkManagerComponent::new_server`] →  create the server object with given
-//! address and max clients, then per-frame drive the server side.
+//! - **Server:** [`NetworkManagerComponent::new_server`] → create the server object with given
+//!   address and max clients, then per-frame drive the server side.
 //! - **Client:** [`NetworkManagerComponent::new_client`] → create the client object with given
-//! client ID and server address to connect to, then per-frame drive the client side.
+//!   client ID and server address to connect to, then per-frame drive the client side.
 //!
 //! See also: `pill_core::networking` (packet format, transports, send/receive) and
 //! `pill_engine::systems::networking` for details on networking implementation.
@@ -97,6 +97,7 @@ pub struct ServerState {
 }
 
 /// Which side this engine instance is currently running on.
+#[allow(clippy::large_enum_variant)]
 pub enum NetworkSide {
     /// Dedicated or authoritative server.
     Server(ServerState),

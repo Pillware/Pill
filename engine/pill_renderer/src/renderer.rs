@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 use crate::{
     config::MAX_INSTANCE_PER_DRAWCALL_COUNT,
     drawers::egui_drawer::EguiDrawer,
