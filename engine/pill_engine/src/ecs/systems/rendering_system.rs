@@ -278,6 +278,11 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     tex_logo_rt,
                     fmt,
                 )),
+                Box::new(crate::graphics::PassVignette::new(
+                    "vignette",
+                    offscreen_color_texture,
+                    fmt,
+                )),
                 Box::new(crate::graphics::PassEgui::new(
                     "egui",
                     engine.window.clone(),
