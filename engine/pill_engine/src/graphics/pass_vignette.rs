@@ -5,17 +5,32 @@ use crate::graphics::RendererTextureHandle;
 use anyhow::Result;
 use wgpu::CommandEncoder;
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct VignetteParams {
+    intensity: f32,
+    smoothness: f32,
+    radius: f32,
+    _padding: f32,
+}
+
 pub struct PassVignette {
     label: String,
     input_texture: RendererTextureHandle,
     format: wgpu::TextureFormat,
     pipeline: Option<PipelineV2>,
-    bind_group: Option<wgpu::BindGroup>,
+    texture_bind_group: Option<wgpu::BindGroup>,
+    params_bind_group: Option<wgpu::BindGroup>,
+    params_buffer: Option<wgpu::Buffer>,
     sampler: Option<wgpu::Sampler>,
 
     // Vignette parameters
     pub intensity: f32, // How strong the vignette effect is (0.0 = none, 1.0 = max)
     pub smoothness: f32, // How smooth the falloff is (higher = smoother)
+    pub radius: f32,    // Vignette radius (0.0 = very small, 1.0 = full screen)
+
+    // Reference to egui client for parameter updates
+    egui_client: Option<std::sync::Arc<crate::ecs::EguiClient>>,
 }
 
 impl PassVignette {
@@ -29,11 +44,19 @@ impl PassVignette {
             input_texture,
             format,
             pipeline: None,
-            bind_group: None,
+            texture_bind_group: None,
+            params_bind_group: None,
+            params_buffer: None,
             sampler: None,
-            intensity: 0.5,
-            smoothness: 0.5,
+            intensity: 0.8,
+            smoothness: 0.25,
+            radius: 1.15,
+            egui_client: None,
         }
+    }
+
+    pub fn set_egui_client(&mut self, client: std::sync::Arc<crate::ecs::EguiClient>) {
+        self.egui_client = Some(client);
     }
 }
 
@@ -60,9 +83,9 @@ impl Pass for PassVignette {
             ..Default::default()
         });
 
-        // Bind group layout
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("vignette_bgl"),
+        // Texture bind group layout (set 0)
+        let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("vignette_texture_bgl"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -83,6 +106,29 @@ impl Pass for PassVignette {
             ],
         });
 
+        // Params bind group layout (set 1)
+        let params_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("vignette_params_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        // Create params buffer
+        let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("vignette_params_ubo"),
+            size: std::mem::size_of::<VignetteParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         // Get input texture
         let input_tex = resources
             .gpu()
@@ -90,10 +136,10 @@ impl Pass for PassVignette {
             .get(self.input_texture)
             .expect("vignette input texture");
 
-        // Create bind group
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("vignette_bg"),
-            layout: &bgl,
+        // Create texture bind group (set 0)
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("vignette_texture_bg"),
+            layout: &texture_bgl,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -104,6 +150,16 @@ impl Pass for PassVignette {
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
+        });
+
+        // Create params bind group (set 1)
+        let params_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("vignette_params_bg"),
+            layout: &params_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params_buffer.as_entire_binding(),
+            }],
         });
 
         // Shaders
@@ -131,6 +187,14 @@ impl Pass for PassVignette {
         let fs_src = r#"
             @group(0) @binding(0) var texInput: texture_2d<f32>;
             @group(0) @binding(1) var smpInput: sampler;
+            
+            struct VignetteParams {
+              intensity: f32,
+              smoothness: f32,
+              radius: f32,
+              _padding: f32,
+            }
+            @group(1) @binding(0) var<uniform> UVignette: VignetteParams;
 
             @fragment
             fn main(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
@@ -140,18 +204,17 @@ impl Pass for PassVignette {
               let center = vec2<f32>(0.5, 0.5);
               let dist = distance(uv, center);
               
-              // Vignette parameters
-              let intensity = 0.7;   // How dark the edges get
-              let smoothness = 0.5;  // Falloff smoothness
-              
               // Calculate vignette factor
               // The max distance from center to corner is ~0.707 (sqrt(0.5^2 + 0.5^2))
               let maxDist = 0.707;
               let normalizedDist = dist / maxDist;
               
+              // Apply radius parameter to control vignette size
+              let adjustedDist = normalizedDist / max(UVignette.radius, 0.1);
+              
               // Smooth vignette falloff
-              let vignette = smoothstep(smoothness, smoothness * 2.0, 1.0 - normalizedDist);
-              let vignetteAmount = mix(1.0 - intensity, 1.0, vignette);
+              let vignette = smoothstep(UVignette.smoothness, UVignette.smoothness * 2.0, 1.0 - adjustedDist);
+              let vignetteAmount = mix(1.0 - UVignette.intensity, 1.0, vignette);
               
               let finalColor = color * vignetteAmount;
               
@@ -162,7 +225,7 @@ impl Pass for PassVignette {
         // Create pipeline
         let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("vignette_pl"),
-            bind_group_layouts: &[&bgl],
+            bind_group_layouts: &[&texture_bgl, &params_bgl],
             push_constant_ranges: &[],
         });
 
@@ -203,9 +266,11 @@ impl Pass for PassVignette {
 
         self.pipeline = Some(PipelineV2 {
             pipeline: rp,
-            bind_group_layouts: vec![bgl],
+            bind_group_layouts: vec![texture_bgl, params_bgl],
         });
-        self.bind_group = Some(bind_group);
+        self.texture_bind_group = Some(texture_bind_group);
+        self.params_bind_group = Some(params_bind_group);
+        self.params_buffer = Some(params_buffer);
         self.sampler = Some(sampler);
 
         Ok(())
@@ -214,12 +279,32 @@ impl Pass for PassVignette {
     fn draw(
         &mut self,
         encoder: &mut CommandEncoder,
-        _renderer: &mut dyn EnginePillRenderer,
+        renderer: &mut dyn EnginePillRenderer,
         _resources: &mut crate::resources::ResourceManager,
         _frame: &wgpu::SurfaceTexture,
         view: &wgpu::TextureView,
         _world: &WorldQuery,
     ) -> Result<()> {
+        // Update parameters from egui_client if available
+        if let Some(ref client) = self.egui_client {
+            self.intensity = *client.vignette_intensity.lock().unwrap();
+            self.smoothness = *client.vignette_smoothness.lock().unwrap();
+            self.radius = *client.vignette_radius.lock().unwrap();
+        }
+
+        // Update uniform buffer with current parameters
+        let params = VignetteParams {
+            intensity: self.intensity,
+            smoothness: self.smoothness,
+            radius: self.radius,
+            _padding: 0.0,
+        };
+        renderer.get_queue().write_buffer(
+            self.params_buffer.as_ref().unwrap(),
+            0,
+            bytemuck::bytes_of(&params),
+        );
+
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some(&self.label),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -236,7 +321,8 @@ impl Pass for PassVignette {
         });
 
         rpass.set_pipeline(&self.pipeline.as_ref().unwrap().pipeline);
-        rpass.set_bind_group(0, self.bind_group.as_ref().unwrap(), &[]);
+        rpass.set_bind_group(0, self.texture_bind_group.as_ref().unwrap(), &[]);
+        rpass.set_bind_group(1, self.params_bind_group.as_ref().unwrap(), &[]);
         rpass.draw(0..3, 0..1);
         drop(rpass);
 

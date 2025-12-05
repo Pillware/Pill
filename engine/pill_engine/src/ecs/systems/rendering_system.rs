@@ -278,11 +278,15 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     tex_logo_rt,
                     fmt,
                 )),
-                Box::new(crate::graphics::PassVignette::new(
-                    "vignette",
-                    offscreen_color_texture,
-                    fmt,
-                )),
+                {
+                    let mut vignette_pass = crate::graphics::PassVignette::new(
+                        "vignette",
+                        offscreen_color_texture,
+                        fmt,
+                    );
+                    vignette_pass.set_egui_client(egui_client.clone());
+                    Box::new(vignette_pass)
+                },
                 Box::new(crate::graphics::PassEgui::new(
                     "egui",
                     engine.window.clone(),
@@ -462,7 +466,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     timer.record("Get component storages");
 
-    let egui_ui: Box<dyn Fn(&egui::Context) + Send> = EguiManagerComponent::get_ui(engine); // egui_manager_component.get_ui(engine)
+    let egui_ui: Box<dyn Fn(&egui::Context) + Send> = EguiManagerComponent::get_ui(engine);
+
     if let Ok(rs) = engine.get_global_component_mut::<RenderStateComponent>() {
         if let Some(ref client) = rs.egui_client {
             client.set_ui(egui_ui);

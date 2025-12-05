@@ -3,6 +3,11 @@ use std::sync::{Arc, Mutex};
 pub struct EguiClient {
     events: Mutex<Vec<winit::event::WindowEvent>>,
     ui: Mutex<Option<Box<dyn Fn(&egui::Context) + Send>>>,
+
+    // Vignette parameters (mutable from UI)
+    pub vignette_intensity: Mutex<f32>,
+    pub vignette_smoothness: Mutex<f32>,
+    pub vignette_radius: Mutex<f32>,
 }
 
 impl EguiClient {
@@ -10,6 +15,9 @@ impl EguiClient {
         Arc::new(Self {
             events: Mutex::new(Vec::new()),
             ui: Mutex::new(None),
+            vignette_intensity: Mutex::new(0.7),
+            vignette_smoothness: Mutex::new(0.5),
+            vignette_radius: Mutex::new(0.8),
         })
     }
 

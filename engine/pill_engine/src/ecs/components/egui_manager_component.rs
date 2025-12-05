@@ -81,6 +81,12 @@ impl EguiManagerComponent {
             .and_then(|t| t)
             .and_then(|t| t.get_counter("draw_calls"));
 
+        // Get egui_client for vignette parameter control
+        let egui_client = engine
+            .get_global_component::<crate::ecs::RenderStateComponent>()
+            .ok()
+            .and_then(|rs| rs.egui_client.clone());
+
         let ui = Box::new(move |ui: &egui::Context| {
             egui::Window::new("PillEngine")
                 .default_open(true)
@@ -106,6 +112,41 @@ impl EguiManagerComponent {
                                 ui.add(egui::Label::new(format!("Draw calls: {}", dc)));
                             }
                             ui.separator();
+
+                            // Vignette controls
+                            if let Some(ref client) = egui_client {
+                                ui.label("Vignette Post-Processing:");
+                                let mut intensity = *client.vignette_intensity.lock().unwrap();
+                                let mut smoothness = *client.vignette_smoothness.lock().unwrap();
+                                let mut radius = *client.vignette_radius.lock().unwrap();
+
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut intensity, 0.0..=1.0)
+                                            .text("Intensity"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.vignette_intensity.lock().unwrap() = intensity;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut smoothness, 0.0..=1.0)
+                                            .text("Smoothness"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.vignette_smoothness.lock().unwrap() = smoothness;
+                                }
+                                if ui
+                                    .add(egui::Slider::new(&mut radius, 0.1..=2.0).text("Radius"))
+                                    .changed()
+                                {
+                                    *client.vignette_radius.lock().unwrap() = radius;
+                                }
+                                ui.separator();
+                            }
+
                             ui.add(egui::Label::new(format!(
                                 "Systems: {}, Total delta time: {:.3} ms",
                                 system_count, total_systems_delta_time
