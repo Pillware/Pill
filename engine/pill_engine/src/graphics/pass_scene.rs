@@ -329,6 +329,32 @@ impl Pass for PassScene {
               return vec2<f32>(fract(u), clamp(v, 0.0, 1.0));
             }
 
+            // Compute tangent-space to world-space transform using screen-space derivatives
+            fn computeTBN(worldPos: vec3<f32>, worldNormal: vec3<f32>, uv: vec2<f32>) -> mat3x3<f32> {
+              // Get edge vectors of the pixel triangle
+              let dp1 = dpdx(worldPos);
+              let dp2 = dpdy(worldPos);
+              let duv1 = dpdx(uv);
+              let duv2 = dpdy(uv);
+              
+              // Solve the linear system
+              let N = normalize(worldNormal);
+              let dp2perp = cross(dp2, N);
+              let dp1perp = cross(N, dp1);
+              let T = normalize(dp2perp * duv1.x + dp1perp * duv2.x);
+              let B = normalize(dp2perp * duv1.y + dp1perp * duv2.y);
+              
+              return mat3x3<f32>(T, B, N);
+            }
+            
+            // Sample and apply normal map
+            fn getNormalFromMap(normalMap: vec3<f32>, TBN: mat3x3<f32>) -> vec3<f32> {
+              // Normal map is in [0,1] range, convert to [-1,1]
+              let tangentNormal = normalMap * 2.0 - 1.0;
+              // Transform from tangent space to world space
+              return normalize(TBN * tangentNormal);
+            }
+
             // Directional light accumulator (white light scaled by intensity).
             fn accumulateDirLight(
               N: vec3<f32>, V: vec3<f32>, F0: vec3<f32>,
@@ -371,8 +397,12 @@ impl Pass for PassScene {
               // Robustness: keep roughness in a sane range to preserve highlight and stability.
               roughness = clamp(roughness, 0.045, 0.99);
               let metallic = clamp(mr.y * UMaterial.metallicFactor, 0.0, 1.0);
-              // TODO: Support normal mapping (tangent space) and AO texture.
-              let N = normalize(NormalIn);
+              
+              // Apply normal mapping using derivative-based TBN
+              let TBN = computeTBN(WorldPos, NormalIn, tiledUV);
+              let normalMapSample = textureSample(texNormal, smpNormal, tiledUV).rgb;
+              let N = getNormalFromMap(normalMapSample, TBN);
+              
               let V = normalize(UCamera.position.xyz - WorldPos);
 
               var F0 = vec3<f32>(0.04, 0.04, 0.04);
