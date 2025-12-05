@@ -2,6 +2,7 @@ use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 
 use crate::resources::{create_resources};
+use crate::curl_noise_system::{curl_noise_system};
 
 pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100000;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
@@ -28,6 +29,13 @@ define_component!(FloatingObjectComponent {
 
 define_global_component!(DemoStateComponent {
     floating_objects_movement_enabled: bool,
+});
+
+// Curl noise component tag
+define_component!(CurlNoiseComponent {
+    velocity: Vector3f,
+    curl_strength: f32,
+    noise_scale: f32,
 });
 
 define_component!(CameraMovementComponent {
@@ -70,12 +78,14 @@ impl PillGame for Game {
         engine.register_component::<AudioSourceComponent>(active_scene)?;
         engine.register_component::<CameraMovementComponent>(active_scene)?;
         engine.register_component::<FloatingObjectComponent>(active_scene)?;
+        engine.register_component::<CurlNoiseComponent>(active_scene)?;
 
 
         // Add systems
         engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
         engine.add_system("delete_floating_objects", floating_objects_remove_system)?;
         engine.add_system("fps_camera", fps_camera_system)?;
+        engine.add_system("curl_noise", curl_noise_system)?;
         //engine.add_system("objects_movement", floating_objects_movement_system)?;
         //engine.add_system("camera_movement", camera_movement_system)?;
         //engine.add_system("camera_fov", camera_fov_changing_system)?;
@@ -304,19 +314,24 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
 
         engine
             .build_entity(active_scene)
-            .with_component(FloatingObjectComponent {
-                angle: rng.gen_range(0.0..359.0),
-                radius_factor: rng.gen_range(20.0..180.0),
-                scale_factor: rng.gen_range(0.5..1.5),
-                y_axis_factor: rng.gen_range(0.0..6.0),
-
-                orbital_movement_speed: rng.gen_range(40.0..80.0),
-                y_axis_movement_speed: rng.gen_range(-0.6..0.6),
-                rotation_speed: rng.gen_range(-45.0..45.0),
-                scale_speed: rng.gen_range(0.06..1.2),
-                radius_speed: rng.gen_range(0.1..1.2),
+            .with_component(CurlNoiseComponent {
+                velocity: Vector3f::new(0.0, 0.0, 0.0),
+                curl_strength: rng.gen_range(40.0..80.0),
+                noise_scale: rng.gen_range(0.1..0.5),
             })
-            .with_component(TransformComponent::new())
+            .with_component(TransformComponent::builder()
+                .position(Vector3f::new(
+                    rng.gen_range(-20.0..20.0),
+                    rng.gen_range(0.0..40.0),
+                    rng.gen_range(-20.0..20.0),
+                ))
+                .rotation(Vector3f::new(
+                    rng.gen_range(0.0..360.0),
+                    rng.gen_range(0.0..360.0),
+                    rng.gen_range(0.0..360.0),
+                ))
+                .scale(Vector3f::new(1.0, 1.0, 1.0) * rng.gen_range(0.2..1.5))
+                .build())
             .with_component(
                 MeshRenderingComponent::builder()
                     .material(&material_handle)
@@ -364,7 +379,7 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
         .build_entity(scene_handle)
         .with_component(
             TransformComponent::builder()
-                .position(Vector3f::new(0.0, 0.0, 0.0))
+                .position(Vector3f::new(5.0, 0.0, 0.0))
                 .scale(Vector3f::new(1.0, 1.0, 1.0))
                 .build(),
         )
@@ -375,6 +390,9 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
                 .build(),
         )
         .build();
+
+    // Spawn curl entities
+    spawn_floating_objects(engine, 100)?;
 
     Ok(())
 }

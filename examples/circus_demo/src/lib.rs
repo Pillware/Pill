@@ -1,3 +1,4 @@
+mod curl_noise_system;
 mod game;
 mod resources;
 use pill_engine::game::create_game;
