@@ -153,15 +153,13 @@ impl PillGame for Game {
         // Setup demo state component
         let demo_state = DemoStateComponent {
             floating_objects_movement_enabled: true,
-            curl_epsilon: 0.002,
-            curl_scale: 0.03,
-            curl_attraction: 50.0,
+            curl_epsilon: 0.0038,
+            curl_scale: 0.036,
+            curl_attraction: 230.0,
             curl_damping: 0.99,
         };
         engine.add_global_component(demo_state)?;
 
-
-        
 
         // Spawn certain number of floating objects
         //spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
@@ -400,7 +398,7 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
         .build();
 
     // Spawn curl entities
-    spawn_floating_objects(engine, 30000)?;
+    spawn_floating_objects(engine, 50000)?;
 
     Ok(())
 }
