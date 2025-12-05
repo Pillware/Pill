@@ -123,11 +123,11 @@ impl PillGame for Game {
                     .build(),
             )
             .with_component(CameraMovementComponent {
-                move_speed: 10.0,
+                move_speed: 25.0,
                 sprint_multiplier: 2.0,
-                lerp_speed: 10.0,
-                mouse_sensitivity: 0.15,
-                rotation_lerp_speed: 15.0,
+                lerp_speed: 8.0,
+                mouse_sensitivity: 0.1,
+                rotation_lerp_speed: 25.0,
                 current_velocity: Vector3f::new(0.0, 0.0, 0.0),
                 target_velocity: Vector3f::new(0.0, 0.0, 0.0),
                 current_rotation: Vector3f::new(0.0, 0.0, 0.0),
@@ -220,77 +220,6 @@ fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-// Old orbital camera system - kept for reference (incompatible with new CameraMovementComponent)
-/*
-fn camera_movement_system(engine: &mut Engine) -> Result<()> {
-    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let input_component = engine.get_global_component::<InputComponent>()?;
-
-    // Get input
-    let a_key = input_component.get_key(KeyboardKey::KeyA);
-    let d_key = input_component.get_key(KeyboardKey::KeyD);
-    let right_mouse_button = input_component.get_mouse_button(MouseButton::Right);
-    let mouse_scroll_delta = input_component.get_mouse_scroll_delta();
-    let mouse_delta = input_component.get_mouse_delta();
-
-    for (_, transform_transform, camera_movement_component) in
-        engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
-    {
-        // Zoom
-        let zoom_speed = camera_movement_component.zoom_speed;
-        camera_movement_component.radius -= mouse_scroll_delta.y * zoom_speed;
-
-        // Orbit
-        let mut change_value: f32 = 0.0;
-        if d_key {
-            change_value -= 1.0;
-        }
-        if a_key {
-            change_value += 1.0;
-        }
-        let orbit_speed = camera_movement_component.orbit_speed;
-        camera_movement_component.angle += change_value * orbit_speed * delta_time;
-        let angle = camera_movement_component.angle;
-        let radius = camera_movement_component.radius;
-
-        let x_position = angle.to_radians().cos() * radius;
-        let z_position = angle.to_radians().sin() * radius;
-
-        // Mouse movement
-        let mut z_change_value = 0.0;
-        if mouse_delta.x > 0.0 {
-            z_change_value -= 0.2;
-        }
-        if mouse_delta.x < 0.0 {
-            z_change_value += 0.2;
-        }
-
-        let mut y_change_value = 0.0;
-        if mouse_delta.y > 0.0 {
-            y_change_value -= 0.2;
-        }
-        if mouse_delta.y < 0.0 {
-            y_change_value += 0.2;
-        }
-
-        if right_mouse_button {
-            camera_movement_component.delta_z += z_change_value;
-            camera_movement_component.delta_y += y_change_value;
-        }
-
-        let delta_y = camera_movement_component.delta_y;
-        let delta_z = camera_movement_component.delta_z;
-
-        // Set position
-        transform_transform.set_position(Vector3f::new(x_position, delta_y, z_position + delta_z));
-
-        // Set rotation
-        transform_transform.set_rotation(Vector3f::new(0.0, -angle - 90.0, 0.0));
-    }
-
-    Ok(())
-}
-*/
 
 fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
@@ -460,9 +389,9 @@ fn fps_camera_system(engine: &mut Engine) -> Result<()> {
     let s_key = input_component.get_key(KeyboardKey::KeyS);
     let a_key = input_component.get_key(KeyboardKey::KeyA);
     let d_key = input_component.get_key(KeyboardKey::KeyD);
-    let space_key = input_component.get_key(KeyboardKey::Space);
+    let e_key = input_component.get_key(KeyboardKey::KeyE);
     let shift_key = input_component.get_key(KeyboardKey::ShiftLeft);
-    let ctrl_key = input_component.get_key(KeyboardKey::ControlLeft);
+    let q_key = input_component.get_key(KeyboardKey::KeyQ);
     
     let mouse_delta = input_component.get_mouse_delta();
 
@@ -514,10 +443,10 @@ fn fps_camera_system(engine: &mut Engine) -> Result<()> {
         if a_key {
             movement = movement + right; // A moves right
         }
-        if space_key {
+        if e_key {
             movement.y += 1.0;
         }
-        if ctrl_key {
+        if q_key {
             movement.y -= 1.0;
         }
 

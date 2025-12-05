@@ -11,13 +11,13 @@ pub struct RendererMaterialTextures<'a> {
 #[repr(C)]
 #[derive(Copy, Clone)]
 // HOT(ish): per-material UBO bound during draws; keep compact (<= 64B ideal).
-// Layout is 3x vec3+pads → 48 bytes total, 16-byte aligned to match WGSL/std140 rules.
+// Layout is 3x vec3+pads + uvTiling vec2 → 56 bytes total, 16-byte aligned to match WGSL/std140 rules.
 pub struct RendererMaterialParamsStd140 {
     pub albedo: [f32; 3],
     pub _pad0: f32,
     pub metallic: f32,
     pub roughness: f32,
-    pub _pad1: [f32; 2],
+    pub uv_tiling: [f32; 2], // UV tiling parameter
     pub emissive: [f32; 3],
     pub _pad2: f32,
 }

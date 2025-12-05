@@ -446,7 +446,7 @@ impl PillRenderer for Renderer {
             _pad0: 0.0,
             metallic: desc.metallic,
             roughness: desc.roughness,
-            _pad1: [0.0, 0.0],
+            uv_tiling: desc.uv_tiling,
             emissive: desc.emissive,
             _pad2: 0.0,
         };
@@ -561,7 +561,7 @@ impl PillRenderer for Renderer {
             _pad0: 0.0,
             metallic: desc.metallic,
             roughness: desc.roughness,
-            _pad1: [0.0, 0.0],
+            uv_tiling: desc.uv_tiling,
             emissive: desc.emissive,
             _pad2: 0.0,
         };

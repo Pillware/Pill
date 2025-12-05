@@ -325,8 +325,8 @@ impl Pass for PassSkyboxEquirect {
             transform.rotation.z.to_radians(),
         );
         let q = Quat::from_euler(glam::EulerRot::YXZ, rot_rad.x, rot_rad.y, rot_rad.z);
-        // Engine forward is -Z; use -Z so that camera forward maps to center of the equirect
-        let dir = q * -Vec3::Z;
+        // Engine forward is +Z (matches scene pass)
+        let dir = q * Vec3::Z;
         let view = Mat4::look_to_rh(eye, dir, Vec3::Y);
         const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols_array(&[
             1.0, 0.0, 0.0, 0.0, //

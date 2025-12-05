@@ -367,6 +367,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                                 albedo: [mat.albedo.x, mat.albedo.y, mat.albedo.z],
                                 metallic: mat.metallic,
                                 roughness: mat.roughness,
+                                uv_tiling: [mat.uv_tiling.0, mat.uv_tiling.1],
                                 emissive: [mat.emissive.x, mat.emissive.y, mat.emissive.z],
                                 albedo_tex: map_tex(&mat.albedo_texture),
                                 normal_tex: map_tex(&mat.normal_texture),

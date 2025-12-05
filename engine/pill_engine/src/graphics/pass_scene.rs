@@ -88,7 +88,7 @@ struct MaterialParamsStd140 {
     _pad0: f32,
     metallic: f32,
     roughness: f32,
-    _pad1: [f32; 2],
+    uv_tiling: [f32; 2], // UV tiling parameter
     emissive_factor: [f32; 3],
     _pad2: f32,
 }
@@ -258,7 +258,7 @@ impl Pass for PassScene {
             // PBR params UBO (set 2)
             struct MaterialParams {
               baseColorFactor: vec3<f32>, _pad0: f32,
-              metallicFactor: f32, roughnessFactor: f32, _pad1: vec2<f32>,
+              metallicFactor: f32, roughnessFactor: f32, uvTiling: vec2<f32>,
               emissiveFactor: vec3<f32>, _pad2: f32,
             }
             @group(2) @binding(0) var<uniform> UMaterial: MaterialParams;
@@ -361,9 +361,12 @@ impl Pass for PassScene {
               @location(1) WorldPos: vec3<f32>,
               @location(2) NormalIn: vec3<f32>
             ) -> @location(0) vec4<f32> {
+              // Apply UV tiling
+              let tiledUV = uv * UMaterial.uvTiling;
+              
               // Surface parameters
-              var albedo = textureSample(texBaseColor, smpBaseColor, uv).rgb * UMaterial.baseColorFactor;
-              let mr = textureSample(texMetallicRoughness, smpMetallicRoughness, uv).gb;
+              var albedo = textureSample(texBaseColor, smpBaseColor, tiledUV).rgb * UMaterial.baseColorFactor;
+              let mr = textureSample(texMetallicRoughness, smpMetallicRoughness, tiledUV).gb;
               var roughness = clamp(mr.x * UMaterial.roughnessFactor, 0.0, 1.0);
               // Robustness: keep roughness in a sane range to preserve highlight and stability.
               roughness = clamp(roughness, 0.045, 0.99);

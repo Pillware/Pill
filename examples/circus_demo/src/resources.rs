@@ -135,7 +135,9 @@ pub fn create_resources(engine: &mut Engine) -> Result<()> {
 
     let mut grid_material = PBRMaterial::new("grid");
     grid_material.set_albedo_texture(grid_texture_handle);
-    let grid_material_handle: PBRMaterialHandle = engine.add_resource::<PBRMaterial>(grid_material)?;
+    grid_material.set_uv_tiling(40.0, 40.0);
+    let grid_material_handle: PBRMaterialHandle =
+        engine.add_resource::<PBRMaterial>(grid_material)?;
 
     let mut wood_material = PBRMaterial::new("wood");
     wood_material.set_albedo_texture(wood_diffuse_texture_handle);

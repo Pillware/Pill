@@ -27,6 +27,9 @@ pub struct PBRMaterial {
     pub metallic: f32,
     pub roughness: f32,
     pub emissive: Color, // vec3
+    
+    // UV tiling
+    pub uv_tiling: (f32, f32), // vec2
 
     // PBR textures
     pub albedo_texture: Option<TextureHandle>, // Color
@@ -47,6 +50,7 @@ impl PBRMaterial {
             metallic: 0.0,
             roughness: 0.5,
             emissive: Color::new(0.0, 0.0, 0.0),
+            uv_tiling: (1.0, 1.0),
             albedo_texture: None,
             normal_texture: None,
             metallic_roughness_texture: None,
@@ -63,6 +67,11 @@ impl PBRMaterial {
             value.y.clamp(0.0, 1.0),
             value.z.clamp(0.0, 1.0),
         );
+        self.is_dirty = true;
+    }
+
+    pub fn set_uv_tiling(&mut self, x: f32, y: f32) {
+        self.uv_tiling = (x.max(0.001), y.max(0.001)); // Prevent division by zero
         self.is_dirty = true;
     }
 
@@ -137,6 +146,7 @@ impl Resource for PBRMaterial {
                 metallic: self.metallic,
                 roughness: self.roughness,
                 emissive: [self.emissive.x, self.emissive.y, self.emissive.z],
+                uv_tiling: [self.uv_tiling.0, self.uv_tiling.1],
                 albedo_tex: to_renderer(&self.albedo_texture),
                 normal_tex: to_renderer(&self.normal_texture),
                 metallic_roughness_tex: to_renderer(&self.metallic_roughness_texture),

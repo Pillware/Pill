@@ -66,6 +66,7 @@ pub struct MaterialDesc<'a> {
     pub metallic: f32,
     pub roughness: f32,
     pub emissive: [f32; 3],
+    pub uv_tiling: [f32; 2], // UV tiling parameter
     // Textures (optional; renderer will fallback to defaults if None)
     pub albedo_tex: Option<RendererTextureHandle>,
     pub normal_tex: Option<RendererTextureHandle>,
