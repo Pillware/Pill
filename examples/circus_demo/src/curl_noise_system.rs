@@ -43,52 +43,67 @@ fn noise3d(p: Vector3f) -> f32 {
     nxy0 * (1.0 - u.z) + nxy1 * u.z
 }
 
-// Calculate curl of a 3D noise field
+// Bridson & Kim Curl Noise Implementation (SIGGRAPH 2007)
+// "Curl-Noise for Procedural Fluid Flow"
+//
+// The algorithm works by:
+// 1. Create a 3D vector potential field Ψ(x,y,z) = (ψ1, ψ2, ψ3)
+// 2. Compute the curl: v = ∇ × Ψ
+// 3. Result is automatically divergence-free (∇ · v = 0)
+
+// Create vector potential field Ψ from Perlin noise
+// Each component uses different offsets to decorrelate them
+fn potential_psi(p: Vector3f) -> Vector3f {
+    Vector3f::new(
+        noise3d(p),
+        noise3d(p + Vector3f::new(31.416, 0.0, 0.0)),
+        noise3d(p + Vector3f::new(0.0, 67.254, 0.0)),
+    )
+}
+
+// Compute curl of potential field using finite differences
+// ∇ × Ψ = (∂ψ3/∂y - ∂ψ2/∂z, ∂ψ1/∂z - ∂ψ3/∂x, ∂ψ2/∂x - ∂ψ1/∂y)
 fn curl_noise(p: Vector3f, time: f32) -> Vector3f {
-    let epsilon = 0.1;
-    let scale = 0.05;
+    let epsilon = 0.002; // Small step for numerical derivatives
+    let scale = 0.03;
 
     // Animate the noise field
     let animated_p = Vector3f::new(
-        p.x * scale + time * 1.5,
-        p.y * scale + time * 1.5,
-        p.z * scale + time * 1.5,
+        p.x * scale + time * 0.4,
+        p.y * scale + time * 0.4,
+        p.z * scale + time * 0.4,
     );
 
-    // Sample noise at offset positions to compute derivatives
-    let dx = Vector3f::new(epsilon, 0.0, 0.0);
-    let dy = Vector3f::new(0.0, epsilon, 0.0);
-    let dz = Vector3f::new(0.0, 0.0, epsilon);
+    // Compute derivatives using central differences
+    // For each axis, sample Ψ at ±epsilon
+    let eps_x = Vector3f::new(epsilon, 0.0, 0.0);
+    let eps_y = Vector3f::new(0.0, epsilon, 0.0);
+    let eps_z = Vector3f::new(0.0, 0.0, epsilon);
 
-    // Potential field samples
-    let px_pos = noise3d(animated_p + dx);
-    let px_neg = noise3d(animated_p - dx);
-    let py_pos = noise3d(animated_p + dy);
-    let py_neg = noise3d(animated_p - dy);
-    let pz_pos = noise3d(animated_p + dz);
-    let pz_neg = noise3d(animated_p - dz);
+    // Sample potential field at all required positions
+    let psi_px = potential_psi(animated_p + eps_x);
+    let psi_nx = potential_psi(animated_p - eps_x);
+    let psi_py = potential_psi(animated_p + eps_y);
+    let psi_ny = potential_psi(animated_p - eps_y);
+    let psi_pz = potential_psi(animated_p + eps_z);
+    let psi_nz = potential_psi(animated_p - eps_z);
 
-    // Second potential field (offset in w-dimension via different scale)
-    let offset = Vector3f::new(100.0, 100.0, 100.0);
-    let qx_pos = noise3d(animated_p + dx + offset);
-    let qx_neg = noise3d(animated_p - dx + offset);
-    let qy_pos = noise3d(animated_p + dy + offset);
-    let qy_neg = noise3d(animated_p - dy + offset);
-    let qz_pos = noise3d(animated_p + dz + offset);
-    let qz_neg = noise3d(animated_p - dz + offset);
+    // Compute partial derivatives: ∂ψi/∂xj
+    let d_psi1_dy = (psi_py.x - psi_ny.x) / (2.0 * epsilon);
+    let d_psi1_dz = (psi_pz.x - psi_nz.x) / (2.0 * epsilon);
 
-    // Compute gradients
-    let dpdy = (py_pos - py_neg) / (2.0 * epsilon);
-    let dpdz = (pz_pos - pz_neg) / (2.0 * epsilon);
-    let dqdx = (qx_pos - qx_neg) / (2.0 * epsilon);
-    let dqdz = (qz_pos - qz_neg) / (2.0 * epsilon);
+    let d_psi2_dx = (psi_px.y - psi_nx.y) / (2.0 * epsilon);
+    let d_psi2_dz = (psi_pz.y - psi_nz.y) / (2.0 * epsilon);
 
-    // Additional gradient for z component
-    let dpdx = (px_pos - px_neg) / (2.0 * epsilon);
-    let dqdy = (qy_pos - qy_neg) / (2.0 * epsilon);
+    let d_psi3_dx = (psi_px.z - psi_nx.z) / (2.0 * epsilon);
+    let d_psi3_dy = (psi_py.z - psi_ny.z) / (2.0 * epsilon);
 
-    // Curl = ∇ × (P, Q, 0)
-    Vector3f::new(dpdy - dqdz, dqdz - dpdx, dqdx - dqdy)
+    // Compute curl: v = ∇ × Ψ
+    Vector3f::new(
+        d_psi3_dy - d_psi2_dz, // v_x = ∂ψ3/∂y - ∂ψ2/∂z
+        d_psi1_dz - d_psi3_dx, // v_y = ∂ψ1/∂z - ∂ψ3/∂x
+        d_psi2_dx - d_psi1_dy, // v_z = ∂ψ2/∂x - ∂ψ1/∂y
+    )
 }
 
 pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
@@ -96,8 +111,8 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
     let time = engine.get_global_component::<TimeComponent>()?.time;
 
     // Curl noise box bounds
-    let box_min = Vector3f::new(-20.0, 0.0, -20.0);
-    let box_max = Vector3f::new(20.0, 40.0, 20.0);
+    let box_min = Vector3f::new(-120.0, 0.0, -120.0);
+    let box_max = Vector3f::new(120.0, 140.0, 120.0);
 
     for (_, transform, curl_component) in
         engine.iterate_two_components_mut::<TransformComponent, CurlNoiseComponent>()?
@@ -114,16 +129,34 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
         {
             // Calculate curl noise force
             let curl = curl_noise(position, time);
-            let force = curl * curl_component.curl_strength;
+            let mut force = curl * curl_component.curl_strength;
+
+            // Add attraction to center of the box
+            let box_center = Vector3f::new(
+                (box_min.x + box_max.x) / 12.0,
+                (box_min.y + box_max.y) / 12.0,
+                (box_min.z + box_max.z) / 12.0,
+            );
+            let to_center = box_center - position;
+            let distance_to_center =
+                (to_center.x * to_center.x + to_center.y * to_center.y + to_center.z * to_center.z)
+                    .sqrt();
+
+            // Apply center attraction force (stronger when farther from center)
+            if distance_to_center > 0.1 {
+                let attraction_strength = 50.0; // Adjust for stronger/weaker attraction
+                let center_force = to_center * (attraction_strength / distance_to_center);
+                force = force + center_force;
+            }
 
             // Apply force to velocity (integrate acceleration)
             curl_component.velocity = curl_component.velocity + force * delta_time;
 
-            // Apply stronger damping for stability
-            curl_component.velocity = curl_component.velocity * 0.98;
+            // Apply lighter damping for more flowy motion
+            curl_component.velocity = curl_component.velocity * 0.99;
 
             // Clamp velocity to prevent extreme speeds
-            let max_speed = 100.0;
+            let max_speed = 200.0;
             let speed = (curl_component.velocity.x * curl_component.velocity.x
                 + curl_component.velocity.y * curl_component.velocity.y
                 + curl_component.velocity.z * curl_component.velocity.z)

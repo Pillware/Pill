@@ -316,8 +316,8 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
             .build_entity(active_scene)
             .with_component(CurlNoiseComponent {
                 velocity: Vector3f::new(0.0, 0.0, 0.0),
-                curl_strength: rng.gen_range(40.0..80.0),
-                noise_scale: rng.gen_range(0.1..0.5),
+                curl_strength: rng.gen_range(70.0..100.0),
+                noise_scale: rng.gen_range(0.1..0.2),
             })
             .with_component(TransformComponent::builder()
                 .position(Vector3f::new(
@@ -330,7 +330,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
                     rng.gen_range(0.0..360.0),
                     rng.gen_range(0.0..360.0),
                 ))
-                .scale(Vector3f::new(1.0, 1.0, 1.0) * rng.gen_range(0.2..1.5))
+                .scale(Vector3f::new(1.0, 1.0, 1.0))// * rng.gen_range(0.2..1.5))
                 .build())
             .with_component(
                 MeshRenderingComponent::builder()
@@ -392,7 +392,7 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
         .build();
 
     // Spawn curl entities
-    spawn_floating_objects(engine, 100)?;
+    spawn_floating_objects(engine, 10000)?;
 
     Ok(())
 }
