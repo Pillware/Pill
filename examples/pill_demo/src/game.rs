@@ -19,8 +19,8 @@ pub struct Game {}
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         let _scene_benchmark = create_scene_benchmark(engine, "Benchmark 60k pills")?;
-        let scene_pbr_grid: SceneHandle = create_scene_pbr_grid(engine, "PBR Grid")?;
-        engine.set_active_scene(scene_pbr_grid)?;
+        //let scene_pbr_grid: SceneHandle = create_scene_pbr_grid(engine, "PBR Grid")?;
+        engine.set_active_scene(_scene_benchmark)?;
         Ok(())
     }
 }
@@ -87,7 +87,7 @@ fn create_scene_benchmark(engine: &mut Engine, name: &str) -> Result<SceneHandle
     engine.add_component_to_entity(scene, camera, camera_component)?;
 
     // Create pill entity
-    for i in 0..60000 {
+    for i in 0..100000 {
         let pill = engine.create_entity(scene)?;
         let posx = rng.gen_range(-10.0..=20.0);
         let posy = rng.gen_range(-10.0..=10.0);

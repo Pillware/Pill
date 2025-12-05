@@ -4,12 +4,10 @@ members = [
     "pill_core",
     "pill_engine",
     "pill_standalone",
-    "/Users/mk/dev/demo/pill_demo", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
+    "D:/Programming/Pill-Engine/examples/circus_demo", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
 ]
 
-exclude = [
-    "pill_launcher",
-]
+exclude = ["pill_launcher"]
 
 [profile.dev]
 opt-level = 3

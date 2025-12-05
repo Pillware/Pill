@@ -107,7 +107,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                         let tex = Texture::new(
                             "ibl_env_equirect",
                             TextureType::Linear,
-                            ResourceLoadType::Path("ibl/HDR_111_Parking_Lot_2_Env.hdr".into()),
+                            ResourceLoadType::Path("textures/HDR_111_Parking_Lot_2_Env.hdr".into()),
                         );
                         engine.add_resource::<Texture>(tex)?
                     }
