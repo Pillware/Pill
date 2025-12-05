@@ -1,4 +1,5 @@
 use pill_engine::game::*;
+use rayon::prelude::*;
 
 use crate::game::CurlNoiseComponent;
 
@@ -113,13 +114,21 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
     // Curl noise box bounds
     let box_min = Vector3f::new(-120.0, 0.0, -120.0);
     let box_max = Vector3f::new(120.0, 140.0, 120.0);
+    let box_center = Vector3f::new(
+        (box_min.x + box_max.x) / 12.0,
+        (box_min.y + box_max.y) / 12.0,
+        (box_min.z + box_max.z) / 12.0,
+    );
+
+    // Step 1: Collect all entity data that needs processing
+    let mut entities_data: Vec<(Vector3f, f32, Vector3f)> = Vec::new();
 
     for (_, transform, curl_component) in
         engine.iterate_two_components_mut::<TransformComponent, CurlNoiseComponent>()?
     {
         let position = transform.position;
 
-        // Check if position is within the curl noise box
+        // Only process entities within the box
         if position.x >= box_min.x
             && position.x <= box_max.x
             && position.y >= box_min.y
@@ -127,86 +136,112 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
             && position.z >= box_min.z
             && position.z <= box_max.z
         {
-            // Calculate curl noise force
-            let curl = curl_noise(position, time);
-            let mut force = curl * curl_component.curl_strength;
+            entities_data.push((
+                position,
+                curl_component.curl_strength,
+                curl_component.velocity,
+            ));
+        }
+    }
 
-            // Add attraction to center of the box
-            let box_center = Vector3f::new(
-                (box_min.x + box_max.x) / 12.0,
-                (box_min.y + box_max.y) / 12.0,
-                (box_min.z + box_max.z) / 12.0,
-            );
-            let to_center = box_center - position;
+    // Step 2: Process all entities in parallel using Rayon
+    let results: Vec<(Vector3f, Vector3f)> = entities_data
+        .par_iter()
+        .map(|(position, curl_strength, velocity)| {
+            // Calculate curl noise force
+            let curl = curl_noise(*position, time);
+            let mut force = curl * (*curl_strength);
+
+            // Add attraction to center
+            let to_center = box_center - *position;
             let distance_to_center =
                 (to_center.x * to_center.x + to_center.y * to_center.y + to_center.z * to_center.z)
                     .sqrt();
 
-            // Apply center attraction force (stronger when farther from center)
             if distance_to_center > 0.1 {
-                let attraction_strength = 50.0; // Adjust for stronger/weaker attraction
+                let attraction_strength = 50.0;
                 let center_force = to_center * (attraction_strength / distance_to_center);
                 force = force + center_force;
             }
 
-            // Apply force to velocity (integrate acceleration)
-            curl_component.velocity = curl_component.velocity + force * delta_time;
+            // Apply force to velocity
+            let mut new_velocity = *velocity + force * delta_time;
 
-            // Apply lighter damping for more flowy motion
-            curl_component.velocity = curl_component.velocity * 0.99;
+            // Apply damping
+            new_velocity = new_velocity * 0.99;
 
-            // Clamp velocity to prevent extreme speeds
+            // Clamp velocity
             let max_speed = 200.0;
-            let speed = (curl_component.velocity.x * curl_component.velocity.x
-                + curl_component.velocity.y * curl_component.velocity.y
-                + curl_component.velocity.z * curl_component.velocity.z)
+            let speed = (new_velocity.x * new_velocity.x
+                + new_velocity.y * new_velocity.y
+                + new_velocity.z * new_velocity.z)
                 .sqrt();
 
             if speed > max_speed {
                 let scale = max_speed / speed;
-                curl_component.velocity = curl_component.velocity * scale;
+                new_velocity = new_velocity * scale;
             }
 
-            // Update position
-            let new_position = position + curl_component.velocity * delta_time;
+            // Calculate new position
+            let mut new_position = *position + new_velocity * delta_time;
 
-            // Soft boundary constraints - push objects back toward center if they go too far
-            let mut bounded_position = new_position;
+            // Boundary constraints
             let boundary_softness = 5.0;
 
-            if bounded_position.x < box_min.x + boundary_softness {
-                let push = (box_min.x + boundary_softness - bounded_position.x) / boundary_softness;
-                curl_component.velocity.x += push * 10.0 * delta_time;
-            } else if bounded_position.x > box_max.x - boundary_softness {
-                let push =
-                    (bounded_position.x - (box_max.x - boundary_softness)) / boundary_softness;
-                curl_component.velocity.x -= push * 10.0 * delta_time;
+            if new_position.x < box_min.x + boundary_softness {
+                let push = (box_min.x + boundary_softness - new_position.x) / boundary_softness;
+                new_velocity.x += push * 10.0 * delta_time;
+            } else if new_position.x > box_max.x - boundary_softness {
+                let push = (new_position.x - (box_max.x - boundary_softness)) / boundary_softness;
+                new_velocity.x -= push * 10.0 * delta_time;
             }
 
-            if bounded_position.y < box_min.y + boundary_softness {
-                let push = (box_min.y + boundary_softness - bounded_position.y) / boundary_softness;
-                curl_component.velocity.y += push * 10.0 * delta_time;
-            } else if bounded_position.y > box_max.y - boundary_softness {
-                let push =
-                    (bounded_position.y - (box_max.y - boundary_softness)) / boundary_softness;
-                curl_component.velocity.y -= push * 10.0 * delta_time;
+            if new_position.y < box_min.y + boundary_softness {
+                let push = (box_min.y + boundary_softness - new_position.y) / boundary_softness;
+                new_velocity.y += push * 10.0 * delta_time;
+            } else if new_position.y > box_max.y - boundary_softness {
+                let push = (new_position.y - (box_max.y - boundary_softness)) / boundary_softness;
+                new_velocity.y -= push * 10.0 * delta_time;
             }
 
-            if bounded_position.z < box_min.z + boundary_softness {
-                let push = (box_min.z + boundary_softness - bounded_position.z) / boundary_softness;
-                curl_component.velocity.z += push * 10.0 * delta_time;
-            } else if bounded_position.z > box_max.z - boundary_softness {
-                let push =
-                    (bounded_position.z - (box_max.z - boundary_softness)) / boundary_softness;
-                curl_component.velocity.z -= push * 10.0 * delta_time;
+            if new_position.z < box_min.z + boundary_softness {
+                let push = (box_min.z + boundary_softness - new_position.z) / boundary_softness;
+                new_velocity.z += push * 10.0 * delta_time;
+            } else if new_position.z > box_max.z - boundary_softness {
+                let push = (new_position.z - (box_max.z - boundary_softness)) / boundary_softness;
+                new_velocity.z -= push * 10.0 * delta_time;
             }
 
-            // Hard clamp to ensure objects never leave the box
-            bounded_position.x = bounded_position.x.clamp(box_min.x, box_max.x);
-            bounded_position.y = bounded_position.y.clamp(box_min.y, box_max.y);
-            bounded_position.z = bounded_position.z.clamp(box_min.z, box_max.z);
+            // Hard clamp
+            new_position.x = new_position.x.clamp(box_min.x, box_max.x);
+            new_position.y = new_position.y.clamp(box_min.y, box_max.y);
+            new_position.z = new_position.z.clamp(box_min.z, box_max.z);
 
-            transform.set_position(bounded_position);
+            (new_position, new_velocity)
+        })
+        .collect();
+
+    // Step 3: Apply results back to entities
+    let mut result_idx = 0;
+    for (_, transform, curl_component) in
+        engine.iterate_two_components_mut::<TransformComponent, CurlNoiseComponent>()?
+    {
+        let position = transform.position;
+
+        // Only apply to entities that were processed
+        if position.x >= box_min.x
+            && position.x <= box_max.x
+            && position.y >= box_min.y
+            && position.y <= box_max.y
+            && position.z >= box_min.z
+            && position.z <= box_max.z
+        {
+            if result_idx < results.len() {
+                let (new_position, new_velocity) = results[result_idx];
+                transform.set_position(new_position);
+                curl_component.velocity = new_velocity;
+                result_idx += 1;
+            }
         }
     }
 

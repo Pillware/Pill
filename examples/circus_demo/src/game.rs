@@ -392,7 +392,7 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
         .build();
 
     // Spawn curl entities
-    spawn_floating_objects(engine, 10000)?;
+    spawn_floating_objects(engine, 1000)?;
 
     Ok(())
 }
