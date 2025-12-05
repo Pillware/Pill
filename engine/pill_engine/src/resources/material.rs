@@ -27,7 +27,7 @@ pub struct PBRMaterial {
     pub metallic: f32,
     pub roughness: f32,
     pub emissive: Color, // vec3
-    
+
     // UV tiling
     pub uv_tiling: (f32, f32), // vec2
 
