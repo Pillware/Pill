@@ -398,6 +398,9 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
         .build();
 
     // Spawn curl entities
+    // No rendering - 50k - 5ms, 500k - 50ms
+    // Rendering, no matrix calculation - 50k - 5ms 26ms total 
+    // Rendering, with matrix calculation - 50k - 5ms 32ms total 
     spawn_floating_objects(engine, 50000)?;
 
     Ok(())
