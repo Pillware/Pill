@@ -1,7 +1,7 @@
 use pill_engine::game::*;
 use rayon::prelude::*;
 
-use crate::game::CurlNoiseComponent;
+use crate::game::{CurlNoiseComponent, DemoStateComponent};
 
 // 3D Perlin-like noise function (simplified gradient noise)
 fn hash(x: f32, y: f32, z: f32) -> f32 {
@@ -64,10 +64,7 @@ fn potential_psi(p: Vector3f) -> Vector3f {
 
 // Compute curl of potential field using finite differences
 // ∇ × Ψ = (∂ψ3/∂y - ∂ψ2/∂z, ∂ψ1/∂z - ∂ψ3/∂x, ∂ψ2/∂x - ∂ψ1/∂y)
-fn curl_noise(p: Vector3f, time: f32) -> Vector3f {
-    let epsilon = 0.002; // Small step for numerical derivatives
-    let scale = 0.03;
-
+fn curl_noise(p: Vector3f, time: f32, epsilon: f32, scale: f32) -> Vector3f {
     // Animate the noise field
     let animated_p = Vector3f::new(
         p.x * scale + time * 0.4,
@@ -108,6 +105,12 @@ fn curl_noise(p: Vector3f, time: f32) -> Vector3f {
 }
 
 pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
+    let demo_state_component = engine.get_global_component::<DemoStateComponent>()?;
+    let curl_epsilon = demo_state_component.curl_epsilon;
+    let curl_scale = demo_state_component.curl_scale;
+    let curl_attraction = demo_state_component.curl_attraction;
+    let curl_damping = demo_state_component.curl_damping;
+
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
     let time = engine.get_global_component::<TimeComponent>()?.time;
 
@@ -141,7 +144,7 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
         .par_iter()
         .map(|(position, curl_strength, velocity)| {
             // Calculate curl noise force
-            let curl = curl_noise(*position, time);
+            let curl = curl_noise(*position, time, curl_epsilon, curl_scale);
             let mut force = curl * (*curl_strength);
 
             // Add attraction to center
@@ -151,7 +154,7 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
                     .sqrt();
 
             if distance_to_center > 0.1 {
-                let attraction_strength = 50.0;
+                let attraction_strength = curl_attraction;
                 let center_force = to_center * (attraction_strength / distance_to_center);
                 force = force + center_force;
             }
@@ -160,7 +163,7 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
             let mut new_velocity = *velocity + force * delta_time;
 
             // Apply damping
-            new_velocity = new_velocity * 0.99;
+            new_velocity = new_velocity * curl_damping;
 
             // Clamp velocity
             let max_speed = 100.0;

@@ -29,6 +29,10 @@ define_component!(FloatingObjectComponent {
 
 define_global_component!(DemoStateComponent {
     floating_objects_movement_enabled: bool,
+    curl_scale: f32,
+    curl_epsilon: f32,
+    curl_attraction: f32,
+    curl_damping: f32,
 });
 
 // Curl noise component tag
@@ -82,8 +86,8 @@ impl PillGame for Game {
 
 
         // Add systems
-        engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
-        engine.add_system("delete_floating_objects", floating_objects_remove_system)?;
+        //engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
+       // engine.add_system("delete_floating_objects", floating_objects_remove_system)?;
         engine.add_system("fps_camera", fps_camera_system)?;
         engine.add_system("curl_noise", curl_noise_system)?;
         //engine.add_system("objects_movement", floating_objects_movement_system)?;
@@ -149,6 +153,10 @@ impl PillGame for Game {
         // Setup demo state component
         let demo_state = DemoStateComponent {
             floating_objects_movement_enabled: true,
+            curl_epsilon: 0.002,
+            curl_scale: 0.03,
+            curl_attraction: 50.0,
+            curl_damping: 0.99,
         };
         engine.add_global_component(demo_state)?;
 
@@ -166,20 +174,20 @@ impl PillGame for Game {
 
 // --- Systems ---
 
-fn demo_control_system(engine: &mut Engine) -> Result<()> {
-    let input_component = engine.get_global_component::<InputComponent>()?;
-    let system_toggle_key = input_component.get_key_pressed(TOGGLE_FLOATING_OBJECTS_SYSTEM);
+// fn demo_control_system(engine: &mut Engine) -> Result<()> {
+//     let input_component = engine.get_global_component::<InputComponent>()?;
+//     let system_toggle_key = input_component.get_key_pressed(TOGGLE_FLOATING_OBJECTS_SYSTEM);
 
-    let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
-    if system_toggle_key {
-        demo_state.floating_objects_movement_enabled =
-            !demo_state.floating_objects_movement_enabled;
-        let enabled = demo_state.floating_objects_movement_enabled;
-        engine.toggle_system("objects_movement", UpdatePhase::Game, enabled)?;
-    }
+//     let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
+//     if system_toggle_key {
+//         demo_state.floating_objects_movement_enabled =
+//             !demo_state.floating_objects_movement_enabled;
+//         let enabled = demo_state.floating_objects_movement_enabled;
+//         engine.toggle_system("objects_movement", UpdatePhase::Game, enabled)?;
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
@@ -310,7 +318,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
 
     for _ in 0..object_count {
         let mesh_handle = engine.get_resource_handle::<Mesh>("pill")?;
-        let material_handle = engine.get_resource_handle::<PBRMaterial>("grid")?;
+        let material_handle: PBRMaterialHandle = engine.get_resource_handle::<PBRMaterial>("dark")?;
 
         engine
             .build_entity(active_scene)
@@ -392,10 +400,67 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
         .build();
 
     // Spawn curl entities
-    spawn_floating_objects(engine, 1000)?;
+    spawn_floating_objects(engine, 30000)?;
 
     Ok(())
 }
+
+fn demo_control_system(engine: &mut Engine) -> Result<()> {
+    let input_component = engine.get_global_component::<InputComponent>()?;
+
+    let o_key = input_component.get_key(KeyboardKey::KeyO);
+    let p_key = input_component.get_key(KeyboardKey::KeyP);
+
+    let l_key = input_component.get_key(KeyboardKey::KeyL);
+    let k_key = input_component.get_key(KeyboardKey::KeyK);
+
+    let m_key = input_component.get_key(KeyboardKey::KeyM);
+    let n_key = input_component.get_key(KeyboardKey::KeyN);
+
+    let v_key = input_component.get_key(KeyboardKey::KeyV);
+    let b_key = input_component.get_key(KeyboardKey::KeyB);
+
+    let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
+    
+    if o_key {
+        demo_state.curl_scale += 0.0005;
+    }
+    if p_key {
+        demo_state.curl_scale -= 0.0005;
+    }
+
+    if l_key {
+        demo_state.curl_attraction += 5.0;
+    }
+    if k_key {
+        demo_state.curl_attraction -= 5.0;
+    }
+
+    if m_key {
+        demo_state.curl_damping += 0.01;
+    }
+    if n_key {
+        demo_state.curl_damping -= 0.01;
+    }
+
+    if v_key {
+        demo_state.curl_epsilon += 0.001;
+    }
+    if b_key {
+        demo_state.curl_epsilon -= 0.001;
+    }
+
+    println!(
+        "Curl Scale: {:.4}, Attraction: {:.2}, Damping: {:.4}, Epsilon: {:.4}",
+        demo_state.curl_scale,
+        demo_state.curl_attraction,
+        demo_state.curl_damping,
+        demo_state.curl_epsilon
+    );
+
+    Ok(())
+}
+
 
 // Advanced FPS camera system with WASD movement, mouse look, and smooth lerping
 fn fps_camera_system(engine: &mut Engine) -> Result<()> {

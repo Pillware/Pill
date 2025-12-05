@@ -133,9 +133,15 @@ pub fn create_resources(engine: &mut Engine) -> Result<()> {
     white_material.set_roughness_factor(0.7);
     let white_material_handle = engine.add_resource::<PBRMaterial>(white_material)?;
 
+    let mut dark_material = PBRMaterial::new("dark");
+    dark_material.set_base_color_factor(Color::new(0.1, 0.1, 0.1));
+    dark_material.set_metallic_factor(0.0);
+    dark_material.set_roughness_factor(0.9);
+    let dark_material_handle = engine.add_resource::<PBRMaterial>(dark_material)?;
+
     let mut grid_material = PBRMaterial::new("grid");
     grid_material.set_albedo_texture(grid_texture_handle);
-    grid_material.set_uv_tiling(40.0, 40.0);
+    grid_material.set_uv_tiling(60.0, 60.0);
     let grid_material_handle: PBRMaterialHandle =
         engine.add_resource::<PBRMaterial>(grid_material)?;
 
