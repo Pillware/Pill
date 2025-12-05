@@ -88,7 +88,7 @@ impl PillGame for Game {
         engine.add_system("curl_noise", curl_noise_system)?;
         //engine.add_system("objects_movement", floating_objects_movement_system)?;
         //engine.add_system("camera_movement", camera_movement_system)?;
-        //engine.add_system("camera_fov", camera_fov_changing_system)?;
+        engine.add_system("camera_fov", camera_fov_changing_system)?;
         //engine.add_system("mesh_changing", object_appearance_changing_system)?;
         engine.add_system("demo_control", demo_control_system)?;
 

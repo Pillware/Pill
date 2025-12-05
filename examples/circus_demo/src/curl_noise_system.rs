@@ -129,19 +129,11 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
         let position = transform.position;
 
         // Only process entities within the box
-        if position.x >= box_min.x
-            && position.x <= box_max.x
-            && position.y >= box_min.y
-            && position.y <= box_max.y
-            && position.z >= box_min.z
-            && position.z <= box_max.z
-        {
-            entities_data.push((
-                position,
-                curl_component.curl_strength,
-                curl_component.velocity,
-            ));
-        }
+        entities_data.push((
+            position,
+            curl_component.curl_strength,
+            curl_component.velocity,
+        ));
     }
 
     // Step 2: Process all entities in parallel using Rayon
@@ -171,7 +163,7 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
             new_velocity = new_velocity * 0.99;
 
             // Clamp velocity
-            let max_speed = 200.0;
+            let max_speed = 100.0;
             let speed = (new_velocity.x * new_velocity.x
                 + new_velocity.y * new_velocity.y
                 + new_velocity.z * new_velocity.z)
@@ -184,33 +176,6 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
 
             // Calculate new position
             let mut new_position = *position + new_velocity * delta_time;
-
-            // Boundary constraints
-            let boundary_softness = 5.0;
-
-            if new_position.x < box_min.x + boundary_softness {
-                let push = (box_min.x + boundary_softness - new_position.x) / boundary_softness;
-                new_velocity.x += push * 10.0 * delta_time;
-            } else if new_position.x > box_max.x - boundary_softness {
-                let push = (new_position.x - (box_max.x - boundary_softness)) / boundary_softness;
-                new_velocity.x -= push * 10.0 * delta_time;
-            }
-
-            if new_position.y < box_min.y + boundary_softness {
-                let push = (box_min.y + boundary_softness - new_position.y) / boundary_softness;
-                new_velocity.y += push * 10.0 * delta_time;
-            } else if new_position.y > box_max.y - boundary_softness {
-                let push = (new_position.y - (box_max.y - boundary_softness)) / boundary_softness;
-                new_velocity.y -= push * 10.0 * delta_time;
-            }
-
-            if new_position.z < box_min.z + boundary_softness {
-                let push = (box_min.z + boundary_softness - new_position.z) / boundary_softness;
-                new_velocity.z += push * 10.0 * delta_time;
-            } else if new_position.z > box_max.z - boundary_softness {
-                let push = (new_position.z - (box_max.z - boundary_softness)) / boundary_softness;
-                new_velocity.z -= push * 10.0 * delta_time;
-            }
 
             // Hard clamp
             new_position.x = new_position.x.clamp(box_min.x, box_max.x);
@@ -229,19 +194,11 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
         let position = transform.position;
 
         // Only apply to entities that were processed
-        if position.x >= box_min.x
-            && position.x <= box_max.x
-            && position.y >= box_min.y
-            && position.y <= box_max.y
-            && position.z >= box_min.z
-            && position.z <= box_max.z
-        {
-            if result_idx < results.len() {
-                let (new_position, new_velocity) = results[result_idx];
-                transform.set_position(new_position);
-                curl_component.velocity = new_velocity;
-                result_idx += 1;
-            }
+        if result_idx < results.len() {
+            let (new_position, new_velocity) = results[result_idx];
+            transform.set_position(new_position);
+            curl_component.velocity = new_velocity;
+            result_idx += 1;
         }
     }
 
