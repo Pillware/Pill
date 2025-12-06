@@ -1,0 +1,13 @@
+# Blender 4.5.5 LTS MTL File: 'circus.blend'
+# www.blender.org
+
+newmtl rocks_ground_02
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd -o 2.6 0.59999996 0 -s 3 3 3 C:/Users/mateu/Downloads/rocks_ground_02_4k/textures/rocks_ground_02_col_4k.jpg
+map_Ns -o 2.6 0.59999996 0 -s 3 3 3 C:/Users/mateu/Downloads/rocks_ground_02_4k/textures/rocks_ground_02_rough_4k.jpg
+map_Bump -o 2.6 0.59999996 0 -s 3 3 3 -bm 1.000000 C:/Users/mateu/Downloads/rocks_ground_02_4k/textures/rocks_ground_02_nor_gl_4k.exr

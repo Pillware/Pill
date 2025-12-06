@@ -357,51 +357,90 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
     // Get active scene handle
     let scene_handle = engine.get_active_scene_handle()?;
 
-    // Create plane mesh
-    let plane_mesh_handle = engine.get_resource_handle::<Mesh>("plane")?;
-    let grid_material_handle = engine.get_resource_handle::<PBRMaterial>("grid")?;
-   
-    // Spawn plane
-    let _plane_entity = engine
+    // Spawn pillars
+    let pillars_mesh_handle = engine.get_resource_handle::<Mesh>("pillars")?;
+    let pillars_material_handle = engine.get_resource_handle::<PBRMaterial>("pillars")?;
+    let _pillars_entity = engine
         .build_entity(scene_handle)
         .with_component(
             TransformComponent::builder()
-                .position(Vector3f::new(0.0, -5.0, 0.0))
-                .scale(Vector3f::new(50.0, 1.0, 50.0))
-                .build(),
-        )
-        .with_component(
-            MeshRenderingComponent::builder()
-                .mesh(&plane_mesh_handle)
-                .material(&grid_material_handle)
-                .build(),
-        )
-        .build();
-
-    let pill_mesh_handle = engine.get_resource_handle::<Mesh>("pill")?;
-    let wood_material_handle = engine.get_resource_handle::<PBRMaterial>("wood")?;
-
-    let _pill_entity = engine
-        .build_entity(scene_handle)
-        .with_component(
-            TransformComponent::builder()
-                .position(Vector3f::new(5.0, 0.0, 0.0))
+                .position(Vector3f::new(0.0, 0.0, 0.0))
                 .scale(Vector3f::new(1.0, 1.0, 1.0))
                 .build(),
         )
         .with_component(
             MeshRenderingComponent::builder()
-                .mesh(&pill_mesh_handle)
-                .material(&wood_material_handle)
+                .mesh(&pillars_mesh_handle)
+                .material(&pillars_material_handle)
                 .build(),
         )
         .build();
+
+    // Spawn ground
+    let ground_mesh_handle = engine.get_resource_handle::<Mesh>("ground")?;
+    let ground_material_handle = engine.get_resource_handle::<PBRMaterial>("ground")?;
+
+    let _ground_entity = engine
+        .build_entity(scene_handle)
+        .with_component(
+            TransformComponent::builder()
+                .position(Vector3f::new(0.0, 0.0, 0.0))
+                .scale(Vector3f::new(1.0, 1.0, 1.0))
+                .build(),
+        )
+        .with_component(
+            MeshRenderingComponent::builder()
+                .mesh(&ground_mesh_handle)
+                .material(&ground_material_handle)
+                .build(),
+        )
+        .build();
+
+    // Create plane mesh
+    // let plane_mesh_handle = engine.get_resource_handle::<Mesh>("plane")?;
+    // let grid_material_handle = engine.get_resource_handle::<PBRMaterial>("grid")?;
+   
+    // // Spawn plane
+    // let _plane_entity = engine
+    //     .build_entity(scene_handle)
+    //     .with_component(
+    //         TransformComponent::builder()
+    //             .position(Vector3f::new(0.0, -5.0, 0.0))
+    //             .scale(Vector3f::new(50.0, 1.0, 50.0))
+    //             .build(),
+    //     )
+    //     .with_component(
+    //         MeshRenderingComponent::builder()
+    //             .mesh(&plane_mesh_handle)
+    //             .material(&grid_material_handle)
+    //             .build(),
+    //     )
+    //     .build();
+
+    // let pill_mesh_handle = engine.get_resource_handle::<Mesh>("pill")?;
+    // let wood_material_handle = engine.get_resource_handle::<PBRMaterial>("wood")?;
+
+    // let _pill_entity = engine
+    //     .build_entity(scene_handle)
+    //     .with_component(
+    //         TransformComponent::builder()
+    //             .position(Vector3f::new(5.0, 0.0, 0.0))
+    //             .scale(Vector3f::new(1.0, 1.0, 1.0))
+    //             .build(),
+    //     )
+    //     .with_component(
+    //         MeshRenderingComponent::builder()
+    //             .mesh(&pill_mesh_handle)
+    //             .material(&wood_material_handle)
+    //             .build(),
+    //     )
+    //     .build();
 
     // Spawn curl entities
     // No rendering - 50k - 5ms, 500k - 50ms
     // Rendering, no matrix calculation - 50k - 5ms 26ms total 
     // Rendering, with matrix calculation - 50k - 5ms 32ms total 
-    spawn_floating_objects(engine, 50000)?;
+    //spawn_floating_objects(engine, 50000)?;
 
     Ok(())
 }
