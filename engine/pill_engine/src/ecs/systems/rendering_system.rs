@@ -113,6 +113,14 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                 height: engine.window_size.height,
             })?;
 
+            // Color grade output render target
+            let color_grade_output_rt = engine.renderer.create_render_target(RendererTargetDesc {
+                name: "color_grade_output".to_string(),
+                format: fmt,
+                width: engine.window_size.width,
+                height: engine.window_size.height,
+            })?;
+
             // Build passes as an array with elements, then convert to Vec
             // Load equirectangular HDR environment map (as 2D)
             let env_tex_handle = {
@@ -307,10 +315,20 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     Box::new(dof_pass)
                 },
                 {
+                    let mut color_grade_pass = crate::graphics::PassColorGrade::new(
+                        "color_grade",
+                        dof_output_rt,         // Use DOF output as input
+                        color_grade_output_rt, // Output to color grade RT
+                        fmt,
+                    );
+                    color_grade_pass.set_egui_client(egui_client.clone());
+                    Box::new(color_grade_pass)
+                },
+                {
                     let mut chroma_pass = crate::graphics::PassChromaticAberration::new(
                         "chromatic_aberration",
-                        dof_output_rt,      // Use DOF output as input
-                        vignette_output_rt, // Output to vignette input
+                        color_grade_output_rt, // Use color grade output as input
+                        vignette_output_rt,    // Output to vignette input
                         fmt,
                     );
                     chroma_pass.set_egui_client(egui_client.clone());

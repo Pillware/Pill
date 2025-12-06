@@ -19,6 +19,12 @@ pub struct EguiClient {
     // Chromatic Aberration parameters (mutable from UI)
     pub chromatic_aberration_intensity: Mutex<f32>,
     pub chromatic_aberration_radial_falloff: Mutex<f32>,
+
+    // Color Grading parameters (mutable from UI)
+    pub color_grade_contrast: Mutex<f32>,
+    pub color_grade_brightness: Mutex<f32>,
+    pub color_grade_saturation: Mutex<f32>,
+    pub color_grade_curve: Mutex<f32>,
 }
 
 impl EguiClient {
@@ -36,6 +42,10 @@ impl EguiClient {
             dof_enabled: Mutex::new(true),
             chromatic_aberration_intensity: Mutex::new(0.02),
             chromatic_aberration_radial_falloff: Mutex::new(3.9),
+            color_grade_contrast: Mutex::new(1.0),
+            color_grade_brightness: Mutex::new(0.0),
+            color_grade_saturation: Mutex::new(1.0),
+            color_grade_curve: Mutex::new(1.0),
         })
     }
 

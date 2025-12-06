@@ -217,6 +217,51 @@ impl EguiManagerComponent {
                                     *client.chromatic_aberration_radial_falloff.lock().unwrap() = chroma_falloff;
                                 }
                                 ui.separator();
+
+                                // Color Grading controls
+                                ui.label("Color Grading:");
+                                let mut contrast = *client.color_grade_contrast.lock().unwrap();
+                                let mut brightness = *client.color_grade_brightness.lock().unwrap();
+                                let mut saturation = *client.color_grade_saturation.lock().unwrap();
+                                let mut curve = *client.color_grade_curve.lock().unwrap();
+
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut contrast, 0.0..=2.0)
+                                            .text("Contrast"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.color_grade_contrast.lock().unwrap() = contrast;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut brightness, -0.5..=0.5)
+                                            .text("Brightness"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.color_grade_brightness.lock().unwrap() = brightness;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut saturation, 0.0..=2.0)
+                                            .text("Saturation"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.color_grade_saturation.lock().unwrap() = saturation;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut curve, 0.5..=2.0)
+                                            .text("Tone Curve"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.color_grade_curve.lock().unwrap() = curve;
+                                }
+                                ui.separator();
                             }
 
                             ui.add(egui::Label::new(format!(

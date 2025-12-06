@@ -51,3 +51,5 @@ pub mod pass_dof;
 pub use pass_dof::PassDof;
 pub mod pass_chromatic_aberration;
 pub use pass_chromatic_aberration::PassChromaticAberration;
+pub mod pass_color_grade;
+pub use pass_color_grade::PassColorGrade;
