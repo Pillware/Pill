@@ -299,7 +299,7 @@ impl Pass for PassColorGrade {
 
         // Update uniform buffer with current parameters
         let params = ColorGradeParams {
-            contrast: self.contrast,
+            contrast: (self.contrast + 4.0) / 4.0, // Scale contrast down for finer control
             brightness: self.brightness,
             saturation: self.saturation,
             curve: self.curve,

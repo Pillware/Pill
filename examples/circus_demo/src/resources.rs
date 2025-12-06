@@ -222,6 +222,7 @@ pub fn create_resources(engine: &mut Engine) -> Result<()> {
     ground_material.set_normal_texture(ground_texture_normal_handle);
     ground_material.set_uv_tiling(3.0, 3.0);
     ground_material.set_roughness_factor(0.9);
+    ground_material.set_base_color_factor(Color::new(0.7, 0.7, 0.7));
     ground_material.set_metallic_roughness_texture(ground_texture_roughness_handle);
     let ground_material_handle = engine.add_resource::<PBRMaterial>(ground_material)?;
 

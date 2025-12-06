@@ -155,7 +155,7 @@ impl PillGame for Game {
             floating_objects_movement_enabled: true,
             curl_epsilon: 0.0038,
             curl_scale: 0.1005,
-            curl_attraction: 135.0,
+            curl_attraction: 155.0,
             curl_damping:2.91,
         };
         engine.add_global_component(demo_state)?;
