@@ -115,7 +115,7 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
     let time = engine.get_global_component::<TimeComponent>()?.time;
 
     // Curl noise box bounds
-    let box_min = Vector3f::new(-120.0, 0.0, -120.0);
+    let box_min = Vector3f::new(-120.0, -50.0, -120.0);
     let box_max = Vector3f::new(120.0, 140.0, 120.0);
     let box_center = Vector3f::new(
         (box_min.x + box_max.x) / 12.0,
@@ -166,7 +166,7 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
             new_velocity = new_velocity * curl_damping;
 
             // Clamp velocity
-            let max_speed = 100.0;
+            let max_speed = 40.0;
             let speed = (new_velocity.x * new_velocity.x
                 + new_velocity.y * new_velocity.y
                 + new_velocity.z * new_velocity.z)

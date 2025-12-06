@@ -155,7 +155,7 @@ impl PillGame for Game {
             floating_objects_movement_enabled: true,
             curl_epsilon: 0.0038,
             curl_scale: 0.036,
-            curl_attraction: 230.0,
+            curl_attraction: 260.0,
             curl_damping: 0.99,
         };
         engine.add_global_component(demo_state)?;
@@ -336,7 +336,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
                     rng.gen_range(0.0..360.0),
                     rng.gen_range(0.0..360.0),
                 ))
-                .scale(Vector3f::new(1.0, 1.0, 1.0))// * rng.gen_range(0.2..1.5))
+                .scale(Vector3f::new(0.3, 0.3, 0.3))// * rng.gen_range(0.2..1.5))
                 .build())
             .with_component(
                 MeshRenderingComponent::builder()
@@ -440,7 +440,7 @@ fn spawn_level(engine: &mut Engine) -> Result<()> {
     // No rendering - 50k - 5ms, 500k - 50ms
     // Rendering, no matrix calculation - 50k - 5ms 26ms total 
     // Rendering, with matrix calculation - 50k - 5ms 32ms total 
-    //spawn_floating_objects(engine, 50000)?;
+    spawn_floating_objects(engine, 50000)?;
 
     Ok(())
 }
