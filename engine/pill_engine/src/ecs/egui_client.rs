@@ -25,6 +25,11 @@ pub struct EguiClient {
     pub color_grade_brightness: Mutex<f32>,
     pub color_grade_saturation: Mutex<f32>,
     pub color_grade_curve: Mutex<f32>,
+
+    // Bloom parameters (mutable from UI)
+    pub bloom_threshold: Mutex<f32>,
+    pub bloom_intensity: Mutex<f32>,
+    pub bloom_radius: Mutex<f32>,
 }
 
 impl EguiClient {
@@ -46,6 +51,9 @@ impl EguiClient {
             color_grade_brightness: Mutex::new(0.0),
             color_grade_saturation: Mutex::new(1.0),
             color_grade_curve: Mutex::new(1.0),
+            bloom_threshold: Mutex::new(0.37),
+            bloom_intensity: Mutex::new(1.0),
+            bloom_radius: Mutex::new(3.1),
         })
     }
 

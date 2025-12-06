@@ -53,3 +53,5 @@ pub mod pass_chromatic_aberration;
 pub use pass_chromatic_aberration::PassChromaticAberration;
 pub mod pass_color_grade;
 pub use pass_color_grade::PassColorGrade;
+pub mod pass_bloom;
+pub use pass_bloom::PassBloom;

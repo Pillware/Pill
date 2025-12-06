@@ -262,6 +262,41 @@ impl EguiManagerComponent {
                                     *client.color_grade_curve.lock().unwrap() = curve;
                                 }
                                 ui.separator();
+
+                                // Bloom controls
+                                ui.label("Bloom:");
+                                let mut bloom_threshold = *client.bloom_threshold.lock().unwrap();
+                                let mut bloom_intensity = *client.bloom_intensity.lock().unwrap();
+                                let mut bloom_radius = *client.bloom_radius.lock().unwrap();
+
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut bloom_threshold, 0.0..=1.5)
+                                            .text("Threshold"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.bloom_threshold.lock().unwrap() = bloom_threshold;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut bloom_intensity, 0.0..=1.0)
+                                            .text("Intensity"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.bloom_intensity.lock().unwrap() = bloom_intensity;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut bloom_radius, 0.5..=4.0)
+                                            .text("Radius"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.bloom_radius.lock().unwrap() = bloom_radius;
+                                }
+                                ui.separator();
                             }
 
                             ui.add(egui::Label::new(format!(
