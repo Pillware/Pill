@@ -25,7 +25,7 @@ pub struct PassChromaticAberration {
     sampler: Option<wgpu::Sampler>,
 
     // Chromatic aberration parameters
-    pub intensity: f32,       // Strength of the aberration effect (0.0 = none, larger = more offset)
+    pub intensity: f32, // Strength of the aberration effect (0.0 = none, larger = more offset)
     pub radial_falloff: f32, // How much the effect increases toward screen edges (0.0 = uniform, 1.0 = strong edge effect)
 
     // Reference to egui client for parameter updates
