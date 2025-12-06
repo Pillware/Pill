@@ -49,3 +49,5 @@ pub mod pass_vignette;
 pub use pass_vignette::PassVignette;
 pub mod pass_dof;
 pub use pass_dof::PassDof;
+pub mod pass_chromatic_aberration;
+pub use pass_chromatic_aberration::PassChromaticAberration;

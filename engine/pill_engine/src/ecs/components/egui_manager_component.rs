@@ -192,6 +192,31 @@ impl EguiManagerComponent {
                                     *client.dof_samples.lock().unwrap() = samples;
                                 }
                                 ui.separator();
+
+                                // Chromatic Aberration controls
+                                ui.label("Chromatic Aberration:");
+                                let mut chroma_intensity = *client.chromatic_aberration_intensity.lock().unwrap();
+                                let mut chroma_falloff = *client.chromatic_aberration_radial_falloff.lock().unwrap();
+
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut chroma_intensity, 0.0..=0.02)
+                                            .text("Intensity"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.chromatic_aberration_intensity.lock().unwrap() = chroma_intensity;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut chroma_falloff, 0.5..=4.0)
+                                            .text("Radial Falloff"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.chromatic_aberration_radial_falloff.lock().unwrap() = chroma_falloff;
+                                }
+                                ui.separator();
                             }
 
                             ui.add(egui::Label::new(format!(

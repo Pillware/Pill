@@ -15,6 +15,10 @@ pub struct EguiClient {
     pub dof_blur_strength: Mutex<f32>,
     pub dof_samples: Mutex<i32>,
     pub dof_enabled: Mutex<bool>,
+
+    // Chromatic Aberration parameters (mutable from UI)
+    pub chromatic_aberration_intensity: Mutex<f32>,
+    pub chromatic_aberration_radial_falloff: Mutex<f32>,
 }
 
 impl EguiClient {
@@ -30,6 +34,8 @@ impl EguiClient {
             dof_blur_strength: Mutex::new(3.0),
             dof_samples: Mutex::new(64),
             dof_enabled: Mutex::new(true),
+            chromatic_aberration_intensity: Mutex::new(0.02),
+            chromatic_aberration_radial_falloff: Mutex::new(3.9),
         })
     }
 
