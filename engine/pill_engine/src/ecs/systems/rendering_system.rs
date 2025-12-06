@@ -400,6 +400,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     // Use static preallocated dirty_entities Vec
     unsafe {
+        timer.begin_context("Prepare render queue - transform updates");
+        timer.record("xxx");
         DIRTY_ENTITIES.clear(); // Clear and reuse preallocated Vec
 
         // Phase 1: Sweep components; route transforms needing matrix update to a batch, push clean directly
@@ -427,11 +429,13 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                 engine.render_queue.push(render_queue_item);
             }
         }
+        timer.end_context();
 
         // Phase 2: Batch update transforms with matrix_update_required
         // [RECOMMENDED] Consolidate transform matrix updates in one batch outside of pass
+        timer.begin_context(&format!("Batch update {} transforms", DIRTY_ENTITIES.len()));
+        timer.record("xxx");
         if !DIRTY_ENTITIES.is_empty() {
-            timer.begin_context(&format!("Batch update {} transforms", DIRTY_ENTITIES.len()));
             for entity_handle in DIRTY_ENTITIES.iter() {
                 // Pull the transform component mutably and update matrices
                 if let Ok(transform_component) = engine
@@ -444,9 +448,11 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     }
                 }
             }
-            timer.end_context()?;
         }
+        timer.end_context()?;
 
+        timer.begin_context("Prepare render queue - mesh updates");
+        timer.record("add to queue");
         // Phase 3: Add updated (previously dirty) items to the render queue
         for entity_handle in DIRTY_ENTITIES.iter() {
             if let Ok(mesh_rendering_component) = engine
@@ -462,8 +468,11 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                 }
             }
         }
+        timer.end_context()?;
     }
 
+    timer.end_context();
+    timer.begin_context("Sort render queue");
     timer.record("Get component storages");
 
     let egui_ui: Box<dyn Fn(&egui::Context) + Send> = EguiManagerComponent::get_ui(engine);
@@ -477,6 +486,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     // Storages fetched inside renderer via immutable Engine
 
     timer.begin_context("Render");
+    timer.end_context();
 
     // Build WorldView with raw pointers to avoid borrow conflicts
     let world_view = {
