@@ -123,7 +123,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                         let tex = Texture::new(
                             "ibl_env_equirect",
                             TextureType::Linear,
-                            ResourceLoadType::Path("textures/HDR_111_Parking_Lot_2_Env.hdr".into()),
+                            ResourceLoadType::Path("textures/rogland_clear_night_2k.hdr".into()),
+                            // ResourceLoadType::Path("textures/HDR_111_Parking_Lot_2_Env.hdr".into()),
                         );
                         engine.add_resource::<Texture>(tex)?
                     }
@@ -308,7 +309,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                 {
                     let mut chroma_pass = crate::graphics::PassChromaticAberration::new(
                         "chromatic_aberration",
-                        dof_output_rt, // Use DOF output as input
+                        dof_output_rt,      // Use DOF output as input
                         vignette_output_rt, // Output to vignette input
                         fmt,
                     );

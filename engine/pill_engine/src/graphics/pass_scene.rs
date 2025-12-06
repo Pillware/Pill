@@ -285,7 +285,7 @@ impl Pass for PassScene {
             const LIGHT_DIR0: vec3<f32> = vec3<f32>(-0.5, -1.0, -0.2);
             const LIGHT_DIR1: vec3<f32> = vec3<f32>( 0.5, -0.5,  0.2);
             const LIGHT_DIR2: vec3<f32> = vec3<f32>( 0.0,  1.0,  0.0);
-            const LIGHT_COL0: vec4<f32> = vec4<f32>( 1.0,  0.5,  0.5, 10.0); // Key
+            const LIGHT_COL0: vec4<f32> = vec4<f32>( 0.8,  0.5,  0.5, 10.0); // Key
             const LIGHT_COL1: vec4<f32> = vec4<f32>( 0.5,  0.5,  1.0, 3.0); // Fill
             const LIGHT_COL2: vec4<f32> = vec4<f32>( 0.1,  0.1,  1.0, 0.2); // Rim
 
@@ -410,8 +410,8 @@ impl Pass for PassScene {
 
               var Lo = vec3<f32>(0.0, 0.0, 0.0);
               Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR0, LIGHT_COL0);
-              Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR1, LIGHT_COL1);
-              Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR2, LIGHT_COL2);
+              //Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR1, LIGHT_COL1);
+              //Lo = Lo + accumulateDirLight(N, V, F0, albedo, roughness, metallic, LIGHT_DIR2, LIGHT_COL2);
 
               var color = Lo;
               // Diffuse IBL ambient (equirect irradiance)
