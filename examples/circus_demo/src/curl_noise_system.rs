@@ -160,13 +160,13 @@ pub fn curl_noise_system(engine: &mut Engine) -> Result<()> {
             }
 
             // Apply force to velocity
-            let mut new_velocity = *velocity + force * delta_time;
+            let mut new_velocity = *velocity / 3.0 + force * delta_time;
 
             // Apply damping
             new_velocity = new_velocity * curl_damping;
 
             // Clamp velocity
-            let max_speed = 40.0;
+            let max_speed = 20.0;
             let speed = (new_velocity.x * new_velocity.x
                 + new_velocity.y * new_velocity.y
                 + new_velocity.z * new_velocity.z)

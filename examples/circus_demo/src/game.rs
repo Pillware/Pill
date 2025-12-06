@@ -154,13 +154,17 @@ impl PillGame for Game {
         let demo_state = DemoStateComponent {
             floating_objects_movement_enabled: true,
             curl_epsilon: 0.0038,
-            curl_scale: 0.036,
-            curl_attraction: 260.0,
-            curl_damping: 0.99,
+            curl_scale: 0.1005,
+            curl_attraction: 135.0,
+            curl_damping:2.91,
         };
         engine.add_global_component(demo_state)?;
 
-
+        // for velocity not divided by 3.0
+// curl_epsilon: 0.0038,
+//             curl_scale: 0.036,
+//             curl_attraction: 260.0,
+//             curl_damping: 0.99,
         // Spawn certain number of floating objects
         //spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
 

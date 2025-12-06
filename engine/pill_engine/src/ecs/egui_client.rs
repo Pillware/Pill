@@ -15,8 +15,8 @@ impl EguiClient {
         Arc::new(Self {
             events: Mutex::new(Vec::new()),
             ui: Mutex::new(None),
-            vignette_intensity: Mutex::new(0.8),
-            vignette_smoothness: Mutex::new(0.25),
+            vignette_intensity: Mutex::new(0.85),
+            vignette_smoothness: Mutex::new(0.23),
             vignette_radius: Mutex::new(1.15),
         })
     }

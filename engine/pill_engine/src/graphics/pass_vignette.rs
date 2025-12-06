@@ -48,8 +48,8 @@ impl PassVignette {
             params_bind_group: None,
             params_buffer: None,
             sampler: None,
-            intensity: 0.8,
-            smoothness: 0.25,
+            intensity: 0.85,
+            smoothness: 0.23,
             radius: 1.15,
             egui_client: None,
         }

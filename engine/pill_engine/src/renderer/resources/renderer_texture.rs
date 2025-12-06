@@ -37,10 +37,13 @@ impl RendererTexture {
             TextureType::Linear => wgpu::TextureFormat::Rgba8Unorm,
         };
 
+        // Calculate mip levels (log2(max(width, height)) + 1)
+        let mip_level_count = (dimensions.0.max(dimensions.1) as f32).log2().floor() as u32 + 1;
+
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: name,
             size,
-            mip_level_count: 1,
+            mip_level_count,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
@@ -101,14 +104,88 @@ impl RendererTexture {
             );
         }
 
+        // Generate mipmaps using a simple box filter on CPU
+        // This is done by repeatedly downsampling the image
+        if mip_level_count > 1 {
+            let mut current_image = image_data.clone();
+            for mip_level in 1..mip_level_count {
+                // Calculate mip dimensions
+                let mip_width = (dimensions.0 >> mip_level).max(1);
+                let mip_height = (dimensions.1 >> mip_level).max(1);
+
+                // Downsample using bilinear filtering
+                current_image = current_image.resize_exact(
+                    mip_width,
+                    mip_height,
+                    image::imageops::FilterType::Triangle, // High quality downsampling
+                );
+                let mip_rgba = current_image.to_rgba8();
+
+                // Calculate padded size for this mip level
+                let bpp: u32 = 4;
+                let unpadded_bytes_per_row = (mip_width * bpp) as usize;
+                let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize;
+                let padded_bytes_per_row = ((unpadded_bytes_per_row + align - 1) / align) * align;
+
+                let mip_size = wgpu::Extent3d {
+                    width: mip_width,
+                    height: mip_height,
+                    depth_or_array_layers: 1,
+                };
+
+                if padded_bytes_per_row == unpadded_bytes_per_row {
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &texture,
+                            mip_level,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &mip_rgba,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(unpadded_bytes_per_row as u32),
+                            rows_per_image: Some(mip_height),
+                        },
+                        mip_size,
+                    );
+                } else {
+                    let mut padded = vec![0u8; padded_bytes_per_row * mip_height as usize];
+                    let src = mip_rgba.as_raw();
+                    for row in 0..mip_height as usize {
+                        let src_offset = row * unpadded_bytes_per_row;
+                        let dst_offset = row * padded_bytes_per_row;
+                        padded[dst_offset..dst_offset + unpadded_bytes_per_row]
+                            .copy_from_slice(&src[src_offset..src_offset + unpadded_bytes_per_row]);
+                    }
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &texture,
+                            mip_level,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        &padded,
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(padded_bytes_per_row as u32),
+                            rows_per_image: Some(mip_height),
+                        },
+                        mip_size,
+                    );
+                }
+            }
+        }
+
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            anisotropy_clamp: 16, // Enable 16x anisotropic filtering for much sharper textures at angles
             ..Default::default()
         });
 

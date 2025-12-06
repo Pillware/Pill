@@ -17,8 +17,8 @@ impl RenderStateComponent {
         Self {
             boot_done: false,
             egui_client: None,
-            vignette_intensity: 0.8,
-            vignette_smoothness: 0.25,
+            vignette_intensity: 0.85,
+            vignette_smoothness: 0.23,
             vignette_radius: 1.15,
         }
     }
