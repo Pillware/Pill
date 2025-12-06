@@ -38,7 +38,14 @@ impl RendererTexture {
         };
 
         // Calculate mip levels (log2(max(width, height)) + 1)
-        let mip_level_count = (dimensions.0.max(dimensions.1) as f32).log2().floor() as u32 + 1;
+        // Skip mipmaps for equirectangular/panoramic textures (2:1 aspect ratio)
+        // as they can create visible seams at poles
+        let is_equirect = dimensions.0 == dimensions.1 * 2;
+        let mip_level_count = if is_equirect {
+            1 // No mipmaps for equirect textures
+        } else {
+            (dimensions.0.max(dimensions.1) as f32).log2().floor() as u32 + 1
+        };
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: name,
