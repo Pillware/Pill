@@ -114,12 +114,13 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
             })?;
 
             // Color grade output render target
-            let color_grade_output_rt = engine.renderer.create_render_target(RendererTargetDesc {
-                name: "color_grade_output".to_string(),
-                format: fmt,
-                width: engine.window_size.width,
-                height: engine.window_size.height,
-            })?;
+            let color_grade_output_rt =
+                engine.renderer.create_render_target(RendererTargetDesc {
+                    name: "color_grade_output".to_string(),
+                    format: fmt,
+                    width: engine.window_size.width,
+                    height: engine.window_size.height,
+                })?;
 
             // Build passes as an array with elements, then convert to Vec
             // Load equirectangular HDR environment map (as 2D)
