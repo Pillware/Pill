@@ -47,3 +47,5 @@ pub mod pass_ibl_specular_equirect;
 pub use pass_ibl_specular_equirect::PassIblSpecularEquirect;
 pub mod pass_vignette;
 pub use pass_vignette::PassVignette;
+pub mod pass_dof;
+pub use pass_dof::PassDof;

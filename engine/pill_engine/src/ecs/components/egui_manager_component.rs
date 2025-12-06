@@ -145,6 +145,53 @@ impl EguiManagerComponent {
                                     *client.vignette_radius.lock().unwrap() = radius;
                                 }
                                 ui.separator();
+
+                                // Depth of Field controls
+                                ui.label("Depth of Field:");
+                                let mut dof_enabled = *client.dof_enabled.lock().unwrap();
+                                let mut focus_distance = *client.dof_focus_distance.lock().unwrap();
+                                let mut focus_range = *client.dof_focus_range.lock().unwrap();
+                                let mut blur_strength = *client.dof_blur_strength.lock().unwrap();
+                                let mut samples = *client.dof_samples.lock().unwrap();
+
+                                if ui.checkbox(&mut dof_enabled, "Enable DOF").changed() {
+                                    *client.dof_enabled.lock().unwrap() = dof_enabled;
+                                }
+
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut focus_distance, 0.0..=2.0)
+                                            .text("Focus Distance"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.dof_focus_distance.lock().unwrap() = focus_distance;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut focus_range, 0.01..=2.5)
+                                            .text("Focus Range"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.dof_focus_range.lock().unwrap() = focus_range;
+                                }
+                                if ui
+                                    .add(
+                                        egui::Slider::new(&mut blur_strength, 0.0..=3.0)
+                                            .text("Blur Strength"),
+                                    )
+                                    .changed()
+                                {
+                                    *client.dof_blur_strength.lock().unwrap() = blur_strength;
+                                }
+                                if ui
+                                    .add(egui::Slider::new(&mut samples, 8..=128).text("Samples"))
+                                    .changed()
+                                {
+                                    *client.dof_samples.lock().unwrap() = samples;
+                                }
+                                ui.separator();
                             }
 
                             ui.add(egui::Label::new(format!(

@@ -97,6 +97,14 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                 height: engine.window_size.height,
             })?;
 
+            // DOF output render target
+            let dof_output_rt = engine.renderer.create_render_target(RendererTargetDesc {
+                name: "dof_output".to_string(),
+                format: fmt,
+                width: engine.window_size.width,
+                height: engine.window_size.height,
+            })?;
+
             // Build passes as an array with elements, then convert to Vec
             // Load equirectangular HDR environment map (as 2D)
             let env_tex_handle = {
@@ -279,9 +287,20 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
                     fmt,
                 )),
                 {
+                    let mut dof_pass = crate::graphics::PassDof::new(
+                        "dof",
+                        offscreen_color_texture,
+                        linear_depth_rt,
+                        dof_output_rt,
+                        fmt,
+                    );
+                    dof_pass.set_egui_client(egui_client.clone());
+                    Box::new(dof_pass)
+                },
+                {
                     let mut vignette_pass = crate::graphics::PassVignette::new(
                         "vignette",
-                        offscreen_color_texture,
+                        dof_output_rt, // Use DOF output as input
                         fmt,
                     );
                     vignette_pass.set_egui_client(egui_client.clone());

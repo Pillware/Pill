@@ -8,6 +8,13 @@ pub struct EguiClient {
     pub vignette_intensity: Mutex<f32>,
     pub vignette_smoothness: Mutex<f32>,
     pub vignette_radius: Mutex<f32>,
+
+    // Depth of Field parameters (mutable from UI)
+    pub dof_focus_distance: Mutex<f32>,
+    pub dof_focus_range: Mutex<f32>,
+    pub dof_blur_strength: Mutex<f32>,
+    pub dof_samples: Mutex<i32>,
+    pub dof_enabled: Mutex<bool>,
 }
 
 impl EguiClient {
@@ -18,6 +25,11 @@ impl EguiClient {
             vignette_intensity: Mutex::new(0.85),
             vignette_smoothness: Mutex::new(0.23),
             vignette_radius: Mutex::new(1.15),
+            dof_focus_distance: Mutex::new(0.35),
+            dof_focus_range: Mutex::new(1.35),
+            dof_blur_strength: Mutex::new(3.0),
+            dof_samples: Mutex::new(64),
+            dof_enabled: Mutex::new(true),
         })
     }
 
