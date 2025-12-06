@@ -195,8 +195,10 @@ impl EguiManagerComponent {
 
                                 // Chromatic Aberration controls
                                 ui.label("Chromatic Aberration:");
-                                let mut chroma_intensity = *client.chromatic_aberration_intensity.lock().unwrap();
-                                let mut chroma_falloff = *client.chromatic_aberration_radial_falloff.lock().unwrap();
+                                let mut chroma_intensity =
+                                    *client.chromatic_aberration_intensity.lock().unwrap();
+                                let mut chroma_falloff =
+                                    *client.chromatic_aberration_radial_falloff.lock().unwrap();
 
                                 if ui
                                     .add(
@@ -205,7 +207,8 @@ impl EguiManagerComponent {
                                     )
                                     .changed()
                                 {
-                                    *client.chromatic_aberration_intensity.lock().unwrap() = chroma_intensity;
+                                    *client.chromatic_aberration_intensity.lock().unwrap() =
+                                        chroma_intensity;
                                 }
                                 if ui
                                     .add(
@@ -214,7 +217,8 @@ impl EguiManagerComponent {
                                     )
                                     .changed()
                                 {
-                                    *client.chromatic_aberration_radial_falloff.lock().unwrap() = chroma_falloff;
+                                    *client.chromatic_aberration_radial_falloff.lock().unwrap() =
+                                        chroma_falloff;
                                 }
                                 ui.separator();
 
@@ -254,8 +258,7 @@ impl EguiManagerComponent {
                                 }
                                 if ui
                                     .add(
-                                        egui::Slider::new(&mut curve, 0.5..=2.0)
-                                            .text("Tone Curve"),
+                                        egui::Slider::new(&mut curve, 0.5..=2.0).text("Tone Curve"),
                                     )
                                     .changed()
                                 {

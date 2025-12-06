@@ -26,9 +26,9 @@ pub struct PassBloom {
     sampler: Option<wgpu::Sampler>,
 
     // Bloom parameters
-    pub threshold: f32,  // Brightness threshold for bloom (0.0 = all pixels, 1.0 = only very bright)
-    pub intensity: f32,  // Bloom intensity/strength (0.0 = no bloom, higher = more bloom)
-    pub radius: f32,     // Bloom blur radius (higher = wider glow)
+    pub threshold: f32, // Brightness threshold for bloom (0.0 = all pixels, 1.0 = only very bright)
+    pub intensity: f32, // Bloom intensity/strength (0.0 = no bloom, higher = more bloom)
+    pub radius: f32,    // Bloom blur radius (higher = wider glow)
 
     // Reference to egui client for parameter updates
     egui_client: Option<std::sync::Arc<crate::ecs::EguiClient>>,
