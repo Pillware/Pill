@@ -1,7 +1,7 @@
-<p align="left">
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="media/logo/pill_logo_white.png">
-    <img src="media/logo/pill_logo_black.png"  width="400">
+    <img src="media/logo/pill_logo_black.png"  width="300">
   </picture>
 </p>
 
