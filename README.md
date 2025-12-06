@@ -1,12 +1,12 @@
 <p align="left">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="media/logo/pill_logo_white.png">
-    <img src="media/logo/pill_logo_black.png">
+    <img src="media/logo/pill_logo_black.png"  width="600">
   </picture>
 </p>
 
 Modern, free and performance-first game engine.  
-Built for developers who refuse to compromise, Pill that delivers the raw speed and creative freedom needed to bring even the wildest ideas to life.
+Built for developers who refuse to compromise, Pill that delivers the raw speed and creative freedom needed to bring even the wildest ideas to life.  
 Designed from the ground up to empower both teams and solo creators, it simplifies the complex while unlocking performance far beyond traditional engines.
 
 <!-- **For more info please visit: [PillEngine.org](https://pillengine.org)**
