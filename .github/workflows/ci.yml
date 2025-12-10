@@ -138,7 +138,7 @@ jobs:
 
           if [[ "${{ matrix.example }}" == "examples/net_minimal/server" ]]; then
             # Build the server as a normal Rust binary (headless)
-            cargo build --manifest-path "${{ matrix.example }}/Cargo.toml" --locked
+            cargo build --manifest-path "${{ matrix.example }}/Cargo.toml"
           else
             ./engine/pill_launcher/target/release/PillLauncher -a build -p "${{ matrix.example }}"
           fi
