@@ -1,8 +1,8 @@
 [package]
-name = "pill_game"
+name = "pill_server"
 version = "0.1.0"
 edition = "2021"
-workspace = "NO_PATH"
+workspace = "../../../engine"
 
 [dependencies]
 anyhow     = "1"

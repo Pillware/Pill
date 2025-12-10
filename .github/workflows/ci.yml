@@ -130,10 +130,16 @@ jobs:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release
 
-      - name: Build example via PillLauncher
+      - name: Build example (PillLauncher or cargo for headless server)
         shell: bash
         run: |
           set -euo pipefail
           chmod +x engine/pill_launcher/target/release/PillLauncher
-          ./engine/pill_launcher/target/release/PillLauncher -a build -p "${{ matrix.example }}"
+
+          if [[ "${{ matrix.example }}" == "examples/net_minimal/server" ]]; then
+            # Build the server as a normal Rust binary (headless)
+            cargo build --manifest-path "${{ matrix.example }}/Cargo.toml" --locked
+          else
+            ./engine/pill_launcher/target/release/PillLauncher -a build -p "${{ matrix.example }}"
+          fi
 
