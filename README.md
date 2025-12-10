@@ -5,15 +5,15 @@
   </picture>
 </p>
 
-Modern, free and performance-first game engine.  
+Modern, free and blazingly fast game engine.  
 Built for developers who refuse to compromise, Pill that delivers the raw speed and creative freedom needed to bring even the wildest ideas to life.  
 Designed from the ground up to empower both teams and solo creators, it simplifies the complex while unlocking performance far beyond traditional engines.
 
-<!-- **For more info please visit: [PillEngine.org](https://pillengine.org)**
+**For more info please visit: [PillEngine.org](https://pillengine.org)**
 
 ## Getting Started
 
-For detailed instructions visit Pill Guide's [getting started page](https://pillengine.org/guide). -->
+For detailed instructions visit Pill Guide's [getting started page](https://pillengine.org/guide).
 
 ## Showcase
 <p align="center">
@@ -26,11 +26,11 @@ For detailed instructions visit Pill Guide's [getting started page](https://pill
   <img src="examples/italian_brainrot/media/italian_brainrot_1.gif" img width=100%>
 </p>
 
-<!-- ## Documentation
+## Documentation
 - [Pill Guide](https://pillengine.org/guide)
 - [API documentation for engine users](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/game_dev/doc/pill_engine/game/index.html "Docs")  
 - [API documentation for engine developers](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/engine_dev/doc/pill_engine/index.html "Docs")
 
-<p align="center">
+<!-- <p align="center">
   <img src="media/logo/pill_pile.png" img width=100%>
 </p> -->
