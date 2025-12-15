@@ -37,6 +37,7 @@ pub fn get_enum_variant_type_name<T: core::fmt::Debug>(a: &T) -> String {
 
 // Check if path to asset is correct (exists and has supported format)
 pub fn validate_asset_path(path: &Path, allowed_formats: &'static [&'static str]) -> Result<()> {
+    #[allow(unstable_name_collisions)]
     path.exists()
         .ok_or(Error::new(EngineError::InvalidAssetPath(
             path.display().to_string(),

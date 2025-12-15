@@ -26,6 +26,7 @@ use naga::back::wgsl;
 use naga::front::glsl;
 
 impl RendererShader {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: &str,
         device: &wgpu::Device,

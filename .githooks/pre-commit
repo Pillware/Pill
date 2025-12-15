@@ -1,13 +1,20 @@
+# This githook will format all changed files using rustfmt formatter. Runs on every commit.
 #!/usr/bin/bash
 
+# Exit on errors
 set -euo pipefail
 
+# Change to root directory of git repo
 cd "$(git rev-parse --show-toplevel)"
 
+# Filter all added/changed/modified/removed files and store them in Array called RS
 mapfile -t RS < <(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.rs$' || true)
 [[ ${#RS[@]} -eq 0 ]] && exit 0
 
+# Check for existence of rustfmt command
 command -v rustfmt >/dev/null || { echo "rustfmt missing: rustup componend add rustfmt"  >&2; exit 1; }
 
+# Run the rustfmt on all files present in RS array
 rustfmt --edition 2021 "${RS[@]}"
+# Add the changes to working tree
 git add -- "${RS[@]}"

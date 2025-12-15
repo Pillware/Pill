@@ -5,8 +5,10 @@ use config::Config;
 use pill_core::{info, set_log_levels, warn, EngineError, LogContext, PillStyle};
 use pill_engine::internal::*;
 use winit::{
-    event::{DeviceEvent, Event, WindowEvent},
-    window::Icon,
+    application::ApplicationHandler,
+    event::{DeviceEvent, WindowEvent},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    window::{Fullscreen, Icon, Window, WindowAttributes},
 };
 
 use libloading::{Library, Symbol};
@@ -17,15 +19,13 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-#[cfg(target_os = "windows")]
-use winit::platform::windows::IconExtWindows;
 
 const RELOAD_COOLDOWN: Duration = Duration::from_millis(1000);
 
-struct WindowData {
-    window: Arc<winit::window::Window>,
+struct WindowInit {
+    attributes: WindowAttributes,
     size: winit::dpi::PhysicalSize<u32>,
-    event_loop: winit::event_loop::EventLoop<()>,
+    fullscreen: bool,
 }
 
 struct FileWatchers {
@@ -113,54 +113,34 @@ pub fn load_window_icon(path: &Path) -> Option<Icon> {
     Icon::from_rgba(image.into_raw(), width, height).ok()
 }
 
-fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> WindowData {
+fn make_window_init(config: &Config, game_resources_directory_path: PathBuf) -> WindowInit {
     let window_title = config
         .get_str("WINDOW_TITLE")
         .context(EngineError::InvalidGameConfig())
         .unwrap();
+
     let window_width = config.get_int("WINDOW_WIDTH").unwrap_or(1280) as u32;
     let window_height = config.get_int("WINDOW_HEIGHT").unwrap_or(720) as u32;
-    let window_fullscreen = config.get_bool("WINDOW_FULLSCREEN").unwrap_or(false);
+    let fullscreen = config.get_bool("WINDOW_FULLSCREEN").unwrap_or(false);
 
     let default_icon_bytes = include_bytes!("../res/icon.raw");
-    let game_icon_path = game_resources_directory_path.join("icon.ico"); // Icon has to in res folder of the game and has to be named icon.ico
+    let game_icon_path = game_resources_directory_path.join("icon.ico");
     let window_icon = load_window_icon(&game_icon_path)
         .or_else(|| Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128).ok());
 
-    // Init window
-    let window_event_loop = winit::event_loop::EventLoop::new().unwrap();
+    let size = winit::dpi::PhysicalSize::new(window_width, window_height);
+    let min_size = winit::dpi::PhysicalSize::new(100, 100);
 
-    // Initialize other window parameters
-    let window_size = winit::dpi::PhysicalSize::<u32>::new(window_width, window_height);
-    let window_min_size = winit::dpi::PhysicalSize::<u32>::new(100, 100);
-
-    let window_attributes = winit::window::WindowAttributes::default()
+    let attributes = WindowAttributes::default()
         .with_title(window_title)
-        .with_min_inner_size(window_min_size)
+        .with_min_inner_size(min_size)
         .with_window_icon(window_icon)
         .with_visible(false);
 
-    let window: Arc<winit::window::Window> = Arc::new(
-        window_event_loop
-            .create_window(window_attributes)
-            .context("Failed to create window")
-            .unwrap(),
-    );
-
-    // Possibly set window to fullscreen
-    let window_fullscreen_mode = match window_fullscreen {
-        true => {
-            let monitor_handle = window.current_monitor();
-            Some(winit::window::Fullscreen::Borderless(monitor_handle))
-        }
-        false => None,
-    };
-    window.set_fullscreen(window_fullscreen_mode);
-
-    WindowData {
-        window,
-        event_loop: window_event_loop,
-        size: window_size,
+    WindowInit {
+        attributes,
+        size,
+        fullscreen,
     }
 }
 
@@ -218,6 +198,7 @@ fn build_standalone_and_game_crates(project_paths: &ProjectPaths) -> Result<()> 
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_and_reload_game(
     engine: &mut Option<Engine>,
     game_dynamic_library: &mut Option<Library>,
@@ -319,115 +300,198 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     }
 }
 
-fn main_loop(
-    engine: &mut Option<Engine>,
-    game_dynamic_library: &mut Option<Library>,
+struct App {
     project_paths: ProjectPaths,
-    window_data: WindowData,
     config: Config,
     development_mode: bool,
-) -> Result<()> {
-    // Create a file watcher to monitor game project file changes as well as game output file changes
-    let mut file_watchers: Option<FileWatchers> = if development_mode {
-        Some(create_file_watchers(&project_paths))
-    } else {
-        None
-    };
+    window_init: Option<WindowInit>,
 
-    let mut last_render_time = Instant::now();
-    let mut last_reload_time = Instant::now();
+    // runtime state
+    window: Option<Arc<Window>>,
+    window_size: winit::dpi::PhysicalSize<u32>,
+    engine: Option<Engine>,
+    game_dynamic_library: Option<Library>,
+    file_watchers: Option<FileWatchers>,
+    last_render_time: Instant,
+    last_reload_time: Instant,
+}
 
-    // Main program loop
-    let _ = window_data
-        .event_loop
-        .run(move |event, event_loop_window_target| {
-            // Run function takes closure
-            match event {
-                Event::AboutToWait => {
-                    window_data.window.request_redraw();
-                }
+impl App {
+    fn new(
+        project_paths: ProjectPaths,
+        config: Config,
+        development_mode: bool,
+        window_init: WindowInit,
+    ) -> Self {
+        Self {
+            project_paths,
+            config,
+            development_mode,
+            window_init: Some(window_init),
 
-                // Handle device events
-                Event::DeviceEvent { ref event, .. } => {
-                    if let DeviceEvent::MouseMotion { delta } = event {
-                        if let Some(ref mut engine) = engine {
-                            engine.pass_mouse_delta_input(delta);
-                        }
-                    }
-                }
+            window: None,
+            window_size: winit::dpi::PhysicalSize::new(0, 0),
+            engine: None,
+            game_dynamic_library: None,
+            file_watchers: None,
+            last_render_time: Instant::now(),
+            last_reload_time: Instant::now(),
+        }
+    }
+}
 
-                // Handle window events
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == window_data.window.id() => {
-                    if let Some(ref mut engine) = engine {
-                        engine.pass_input_to_egui(event);
-                    }
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        // resumed() can be called again on some platforms; don’t recreate everything
+        if self.window.is_some() {
+            return;
+        }
 
-                    match event {
-                        WindowEvent::RedrawRequested => {
-                            let now = std::time::Instant::now();
-                            let delta_time = now - last_render_time;
-                            last_render_time = now;
+        let init = self.window_init.take().expect("WindowInit missing");
+        self.window_size = init.size;
 
-                            if let Some(ref mut e) = engine {
-                                e.update(delta_time);
-                            }
+        let window = Arc::new(
+            event_loop
+                .create_window(init.attributes)
+                .expect("Failed to create window"),
+        );
 
-                            if development_mode {
-                                check_and_reload_game(
-                                    engine,
-                                    game_dynamic_library,
-                                    &project_paths,
-                                    &mut last_reload_time,
-                                    &window_data.size,
-                                    &window_data.window,
-                                    &config,
-                                    file_watchers.as_mut().unwrap(),
-                                )
-                                .unwrap();
-                            }
-                        }
-                        WindowEvent::KeyboardInput { event, .. } => {
-                            if let Some(ref mut e) = engine {
-                                e.pass_keyboard_key_input(event);
-                            }
-                        }
-                        WindowEvent::MouseInput { button, state, .. } => {
-                            if let Some(ref mut e) = engine {
-                                e.pass_mouse_key_input(button, state);
-                            }
-                        }
-                        WindowEvent::MouseWheel { delta, .. } => {
-                            if let Some(ref mut e) = engine {
-                                e.pass_mouse_wheel_input(delta);
-                            }
-                        }
-                        WindowEvent::CursorMoved { position, .. } => {
-                            if let Some(ref mut e) = engine {
-                                e.pass_mouse_position_input(position);
-                            }
-                        }
-                        WindowEvent::CloseRequested => {
-                            if let Some(mut e) = engine.take() {
-                                e.shutdown();
-                            }
-                            event_loop_window_target.exit();
-                        }
-                        WindowEvent::Resized(physical_size) => {
-                            if let Some(ref mut e) = engine {
-                                e.resize(*physical_size);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
+        if init.fullscreen {
+            let mh = window.current_monitor();
+            window.set_fullscreen(Some(Fullscreen::Borderless(mh)));
+        }
+
+        // dev watchers
+        self.file_watchers = if self.development_mode {
+            Some(create_file_watchers(&self.project_paths))
+        } else {
+            None
+        };
+
+        // Load game dylib + create engine (now we have a window)
+        let (game_library, game) =
+            load_game_dynamic_library(&self.project_paths.game_dynamic_library_path);
+        self.game_dynamic_library = Some(game_library);
+
+        let renderer: Box<dyn PillRenderer> = Box::new(
+            <pill_renderer::Renderer as PillRenderer>::new(
+                Arc::clone(&window),
+                self.config.clone(),
+            )
+            .unwrap(),
+        );
+
+        let mut engine = Engine::new(
+            game,
+            self.project_paths.game_resources_directory_path.clone(),
+            renderer,
+            self.config.clone(),
+        );
+        engine.initialize(Some(self.window_size)).unwrap();
+        self.engine = Some(engine);
+
+        window.set_visible(true);
+        self.window = Some(window);
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(w) = &self.window {
+            w.request_redraw();
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if let Some(e) = self.engine.as_mut() {
+                e.pass_mouse_delta_input(&delta);
             }
-        });
+        }
+    }
 
-    Ok(())
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        let Some(window) = &self.window else {
+            return;
+        };
+        if window_id != window.id() {
+            return;
+        }
+
+        if let Some(e) = self.engine.as_mut() {
+            e.pass_input_to_egui(&event);
+        }
+
+        match event {
+            WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                let delta = now - self.last_render_time;
+                self.last_render_time = now;
+
+                if let Some(e) = self.engine.as_mut() {
+                    e.update(delta);
+                }
+
+                if self.development_mode {
+                    if let Some(watchers) = self.file_watchers.as_mut() {
+                        check_and_reload_game(
+                            &mut self.engine,
+                            &mut self.game_dynamic_library,
+                            &self.project_paths,
+                            &mut self.last_reload_time,
+                            &self.window_size,
+                            window,
+                            &self.config,
+                            watchers,
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let Some(e) = self.engine.as_mut() {
+                    e.pass_keyboard_key_input(&event);
+                }
+            }
+            WindowEvent::MouseInput { button, state, .. } => {
+                if let Some(e) = self.engine.as_mut() {
+                    e.pass_mouse_key_input(&button, &state);
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                if let Some(e) = self.engine.as_mut() {
+                    e.pass_mouse_wheel_input(&delta);
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(e) = self.engine.as_mut() {
+                    e.pass_mouse_position_input(&position);
+                }
+            }
+            WindowEvent::Resized(size) => {
+                self.window_size = size;
+                if let Some(e) = self.engine.as_mut() {
+                    e.resize(size);
+                }
+            }
+            WindowEvent::CloseRequested => {
+                if let Some(mut e) = self.engine.take() {
+                    e.shutdown();
+                }
+                event_loop.exit();
+            }
+            _ => {}
+        }
+    }
 }
 
 fn main() {
@@ -512,54 +576,14 @@ fn main() {
     info!("Initializing {}", "Standalone".module_object_style());
 
     // Create windows
-    let window_data = create_window(&config, project_paths.game_resources_directory_path.clone());
+    let window_init =
+        make_window_init(&config, project_paths.game_resources_directory_path.clone());
 
-    // Load game dynamic library
-    let mut game_dynamic_library: Option<Library>;
-    let (game_library, game) = load_game_dynamic_library(&project_paths.game_dynamic_library_path);
-    game_dynamic_library = Some(game_library);
+    let event_loop = EventLoop::new().unwrap();
 
-    // Initialize renderer and engine
-    let renderer: Box<dyn PillRenderer> = Box::new(
-        <pill_renderer::Renderer as PillRenderer>::new(
-            Arc::clone(&window_data.window),
-            config.clone(),
-        )
-        .unwrap(),
-    );
-    let mut engine: Option<Engine> = Some(Engine::new(
-        game,
-        project_paths.game_resources_directory_path.clone(),
-        renderer,
-        config.clone(),
-    ));
-    engine
-        .as_mut()
-        .unwrap()
-        .initialize(Some(window_data.size))
-        .context("Failed to initialize engine")
-        .unwrap();
+    event_loop.set_control_flow(ControlFlow::Poll);
 
-    // Run loop
-    window_data
-        .event_loop
-        .set_control_flow(winit::event_loop::ControlFlow::Poll);
-    window_data
-        .event_loop
-        .set_control_flow(winit::event_loop::ControlFlow::Wait);
+    let mut app = App::new(project_paths, config, development_mode, window_init);
 
-    // Show window (now the taskbar icon will be set correctly)
-    window_data.window.set_visible(true);
-
-    // Main program loop
-    main_loop(
-        &mut engine,
-        &mut game_dynamic_library,
-        project_paths,
-        window_data,
-        config,
-        development_mode,
-    )
-    .context("Main loop failed")
-    .unwrap();
+    event_loop.run_app(&mut app).unwrap();
 }
