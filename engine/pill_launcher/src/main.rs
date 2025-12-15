@@ -524,12 +524,6 @@ fn build_game_project(
     let engine_workspace_directory_path =
         prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
 
-    // Pre-render all PUML in the engine crate
-    // TODO: just regenerate ones that changed
-    let pill_engine_dir = get_path(Location::PillEngineCrate);
-    render_puml_for_crate(&pill_engine_dir)
-        .context("Failed to render PlantUML diagrams for pill_engine")?;
-
     // Build standalone executable along with game dynamic library
     let mut arguments = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
     if *compile_mode == CompileMode::Release {
