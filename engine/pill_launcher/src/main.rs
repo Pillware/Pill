@@ -1,13 +1,18 @@
 #![allow(non_snake_case, dead_code)]
 
-use std::{
-    env, fs::{self, File}, io::{ BufRead, BufReader, Write }, path::{ PathBuf }, process::{Command, Stdio}, ffi::OsStr
-};
+use anyhow::*;
+use clap::{App, AppSettings, Arg};
 use config::Config;
 use fs_extra::dir::CopyOptions;
-use anyhow::*;
-use clap::{ Arg, App, AppSettings };
 use path_absolutize::Absolutize;
+use std::{
+    env,
+    ffi::OsStr,
+    fs::{self, File},
+    io::{BufRead, BufReader, Write},
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 // - Cargo commands
 
@@ -24,7 +29,7 @@ enum Location {
 enum CompileMode {
     Debug,
     Release,
-    HotReload
+    HotReload,
 }
 
 // --- Platform helpers -------------------------------------------------------
@@ -32,12 +37,12 @@ enum CompileMode {
 #[cfg(target_os = "windows")]
 const EXEC_SUFFIX: &str = ".exe";
 #[cfg(not(target_os = "windows"))]
-const EXEC_SUFFIX: &str = "";            // Linux, macOS, etc. – no extension
+const EXEC_SUFFIX: &str = ""; // Linux, macOS, etc. – no extension
 
 #[cfg(target_os = "windows")]
-const DYLIB_PREFIX: &str = "";           //  pill_game.dll
+const DYLIB_PREFIX: &str = ""; //  pill_game.dll
 #[cfg(not(target_os = "windows"))]
-const DYLIB_PREFIX: &str = "lib";        //  libpill_game.so / .dylib
+const DYLIB_PREFIX: &str = "lib"; //  libpill_game.so / .dylib
 
 #[cfg(target_os = "windows")]
 const DYLIB_SUFFIX: &str = ".dll";
@@ -59,26 +64,44 @@ fn target_dir_for(mode: &CompileMode) -> &'static str {
 
 // Returns absolute paths
 fn get_path(location: Location) -> PathBuf {
-    let main_engine_directory = env::current_exe().unwrap().parent().unwrap().to_path_buf()
-        .join("..").join("..").join("..").join("..")
-        .absolutize().unwrap().to_path_buf();
+    let main_engine_directory = env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+        .join("..")
+        .join("..")
+        .join("..")
+        .join("..")
+        .absolutize()
+        .unwrap()
+        .to_path_buf();
 
     match location {
         Location::EngineProjectRoot => main_engine_directory,
         Location::EngineCrates => main_engine_directory.join("engine"),
         Location::PillEngineCrate => main_engine_directory.join("engine").join("pill_engine"),
         Location::PillCoreCrate => main_engine_directory.join("engine").join("pill_core"),
-        Location::PillStandaloneCrate => main_engine_directory.join("engine").join("pill_standalone"),
+        Location::PillStandaloneCrate => {
+            main_engine_directory.join("engine").join("pill_standalone")
+        }
         Location::PillLauncherCrate => main_engine_directory.join("engine").join("pill_launcher"),
     }
 }
 
-fn modify_file<A: FnMut(String) -> String>(input_path: &PathBuf, output_path: &PathBuf, mut action: A) -> Result<()> {
+fn modify_file<A: FnMut(String) -> String>(
+    input_path: &PathBuf,
+    output_path: &PathBuf,
+    mut action: A,
+) -> Result<()> {
     // Open files from path
     let input_file = File::open(input_path).unwrap();
 
     // Read lines from input file
-    let lines = BufReader::new(input_file).lines().map(|v| v.unwrap()).collect::<Vec<String>>();
+    let lines = BufReader::new(input_file)
+        .lines()
+        .map(|v| v.unwrap())
+        .collect::<Vec<String>>();
 
     // Create new file (overwrite if input and output paths are the same)
     let mut output_file = File::create(output_path).unwrap();
@@ -96,7 +119,10 @@ fn parse_file_lines<A: FnMut(String)>(input_path: &PathBuf, mut action: A) -> Re
     let input_file = File::open(input_path).unwrap();
 
     // Read lines from input file
-    let lines = BufReader::new(input_file).lines().map(|v| v.unwrap()).collect::<Vec<String>>();
+    let lines = BufReader::new(input_file)
+        .lines()
+        .map(|v| v.unwrap())
+        .collect::<Vec<String>>();
 
     // Write files to output file
     for line in lines {
@@ -108,7 +134,10 @@ fn parse_file_lines<A: FnMut(String)>(input_path: &PathBuf, mut action: A) -> Re
 
 // --- Utilities ---
 
-fn get_game_build_path(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf) -> Result<PathBuf> {
+fn get_game_build_path(
+    game_project_directory_path: &PathBuf,
+    output_directory_path: &PathBuf,
+) -> Result<PathBuf> {
     let game_project_build_path = if output_directory_path.as_os_str() == "." {
         game_project_directory_path
             .join("build")
@@ -127,24 +156,35 @@ fn get_game_title(game_project_directory_path: &PathBuf) -> Result<String> {
     // Get game title
     let config_path = game_project_directory_path.join("res").join("config.ini");
     let mut config = Config::default();
-    config.merge(config::File::with_name(config_path.to_str().unwrap())).context("Failed to find config.ini file in game project \"res\" folder")?;
-    let game_title = config.get_str("TITLE").context("Failed to get game config.ini")?.replace(' ', "");
+    config
+        .merge(config::File::with_name(config_path.to_str().unwrap()))
+        .context("Failed to find config.ini file in game project \"res\" folder")?;
+    let game_title = config
+        .get_str("TITLE")
+        .context("Failed to get game config.ini")?
+        .replace(' ', "");
 
     Ok(game_title)
 }
 
 fn check_if_game_project_validity(game_project_directory_path: &PathBuf) -> Result<()> {
     if !game_project_directory_path.join("Cargo.toml").exists() {
-        return Err(Error::msg("Missing Cargo.toml file in game project folder"))
+        return Err(Error::msg("Missing Cargo.toml file in game project folder"));
     }
     if !game_project_directory_path.join("res").exists() {
-        return Err(Error::msg("Missing \"res\" folder in game project folder"))
+        return Err(Error::msg("Missing \"res\" folder in game project folder"));
     }
     if !game_project_directory_path.join("src").exists() {
-        return Err(Error::msg("Missing \"src\" folder in game project folder"))
+        return Err(Error::msg("Missing \"src\" folder in game project folder"));
     }
-    if !game_project_directory_path.join("res").join("config.ini").exists() {
-        return Err(Error::msg("Missing \"config.ini\" file in game project folder"))
+    if !game_project_directory_path
+        .join("res")
+        .join("config.ini")
+        .exists()
+    {
+        return Err(Error::msg(
+            "Missing \"config.ini\" file in game project folder",
+        ));
     }
 
     Ok(())
@@ -161,7 +201,8 @@ fn remove_files_starting_with(directory_path: &PathBuf, file_name_prefix: &str) 
         if path.is_file() {
             if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
                 if name.starts_with(file_name_prefix) {
-                    fs::remove_file(&path).with_context(|| format!("Failed to remove file: {}", path.display()))?;
+                    fs::remove_file(&path)
+                        .with_context(|| format!("Failed to remove file: {}", path.display()))?;
                 }
             }
         }
@@ -182,7 +223,9 @@ fn render_puml_for_crate(crate_dir: &PathBuf) -> Result<()> {
 
     // Collect input files
     let mut inputs = Vec::new();
-    for entry in fs::read_dir(&in_dir).with_context(|| format!("Failed to read directory: {}", in_dir.display()))? {
+    for entry in fs::read_dir(&in_dir)
+        .with_context(|| format!("Failed to read directory: {}", in_dir.display()))?
+    {
         let path = entry?.path();
         println!("Checking file: {}", path.display());
         if path.extension() == Some(OsStr::new("puml")) {
@@ -190,13 +233,22 @@ fn render_puml_for_crate(crate_dir: &PathBuf) -> Result<()> {
         }
     }
 
-    println!("Found {} PlantUML files to render in {}", inputs.len(), in_dir.display());
+    println!(
+        "Found {} PlantUML files to render in {}",
+        inputs.len(),
+        in_dir.display()
+    );
 
     if inputs.is_empty() {
         return Ok(());
     }
 
-    let have_cli = Command::new("plantuml").arg("-version").stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok();
+    let have_cli = Command::new("plantuml")
+        .arg("-version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok();
 
     // Prefer "plantuml" CLI tool if available
     if !have_cli {
@@ -204,7 +256,9 @@ fn render_puml_for_crate(crate_dir: &PathBuf) -> Result<()> {
     }
 
     for puml in &inputs {
-        let svg_path = out_dir.join(puml.file_stem().unwrap()).with_extension("svg");
+        let svg_path = out_dir
+            .join(puml.file_stem().unwrap())
+            .with_extension("svg");
 
         let mut child = Command::new("plantuml")
             .arg("-tsvg")
@@ -216,7 +270,8 @@ fn render_puml_for_crate(crate_dir: &PathBuf) -> Result<()> {
 
         {
             let mut stdin = child.stdin.take().unwrap();
-            let bytes = fs::read(puml).with_context(|| format!("Read PUML file {}", puml.display()))?;
+            let bytes =
+                fs::read(puml).with_context(|| format!("Read PUML file {}", puml.display()))?;
             stdin.write_all(&bytes)?;
         }
 
@@ -224,16 +279,21 @@ fn render_puml_for_crate(crate_dir: &PathBuf) -> Result<()> {
         if !out.status.success() {
             bail!("plantuml failed with code {}", out.status);
         }
-        fs::write(&svg_path, &out.stdout).with_context(|| format!("Write SVG file {}", svg_path.display()))?;
+        fs::write(&svg_path, &out.stdout)
+            .with_context(|| format!("Write SVG file {}", svg_path.display()))?;
     }
 
     // TODO: either distribute plantuml or download it automatically
     Ok(())
 }
 
-fn prepare_workspace_for_game(game_project_directory_path: &PathBuf, compile_mode: &CompileMode) -> Result<PathBuf> {
+fn prepare_workspace_for_game(
+    game_project_directory_path: &PathBuf,
+    compile_mode: &CompileMode,
+) -> Result<PathBuf> {
     // Check if it is valid game project directory
-    check_if_game_project_validity(&game_project_directory_path).context("Game project is invalid")?;
+    check_if_game_project_validity(&game_project_directory_path)
+        .context("Game project is invalid")?;
 
     // Compilation has to be done together on pill_standalone and pill_game together in the same context.
     // For that compilation through Cargo workspace is required.
@@ -246,55 +306,96 @@ fn prepare_workspace_for_game(game_project_directory_path: &PathBuf, compile_mod
     }
 
     // If game project has changed changed then previous compilation artifacts have to be removed
-    let compilation_artifacts_folder_path = get_path(Location::EngineCrates).join("target").join(target_dir_for(compile_mode));
+    let compilation_artifacts_folder_path = get_path(Location::EngineCrates)
+        .join("target")
+        .join(target_dir_for(compile_mode));
     let engine_workspace_manifest_game_project_directory_path = format!("    \"{}\", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)", game_project_directory_path.to_str().unwrap().replace('\\', "/"));
     let mut game_project_directory_already_linked = false;
     parse_file_lines(&workspace_manifest_path, |line: String| {
-        if line.contains(engine_workspace_manifest_game_project_directory_path.clone().as_str()) {
+        if line.contains(
+            engine_workspace_manifest_game_project_directory_path
+                .clone()
+                .as_str(),
+        ) {
             game_project_directory_already_linked = true;
         }
     })?;
 
     if !game_project_directory_already_linked {
         // Remove previous compilation artifacts
-        let artifact_prefix = if cfg!(target_os = "windows") { "pill_game" } else { "libpill_game" };
+        let artifact_prefix = if cfg!(target_os = "windows") {
+            "pill_game"
+        } else {
+            "libpill_game"
+        };
         remove_files_starting_with(&compilation_artifacts_folder_path, artifact_prefix)?;
-        remove_files_starting_with(&compilation_artifacts_folder_path.join("deps"), artifact_prefix)?;
+        remove_files_starting_with(
+            &compilation_artifacts_folder_path.join("deps"),
+            artifact_prefix,
+        )?;
     }
 
     // Update workspace manifest file to include game project crate
-    modify_file(&workspace_manifest_path, &workspace_manifest_path,  |line: String| -> String {
-        if line.contains("### Game project crate") {
-            return engine_workspace_manifest_game_project_directory_path.clone();
-        }
-        line
-    })?;
+    modify_file(
+        &workspace_manifest_path,
+        &workspace_manifest_path,
+        |line: String| -> String {
+            if line.contains("### Game project crate") {
+                return engine_workspace_manifest_game_project_directory_path.clone();
+            }
+            line
+        },
+    )?;
 
     // Update workspace path in game project manifest
-    modify_file(&game_project_directory_path.join("Cargo.toml"), &game_project_directory_path.join("Cargo.toml"),  |line: String| -> String {
-        if line.contains("workspace") { return format!("workspace = \"{}\"", get_path(Location::EngineCrates).to_str().unwrap().replace("\\", "/")) }
-        line
-    })?;
+    modify_file(
+        &game_project_directory_path.join("Cargo.toml"),
+        &game_project_directory_path.join("Cargo.toml"),
+        |line: String| -> String {
+            if line.contains("workspace") {
+                return format!(
+                    "workspace = \"{}\"",
+                    get_path(Location::EngineCrates)
+                        .to_str()
+                        .unwrap()
+                        .replace("\\", "/")
+                );
+            }
+            line
+        },
+    )?;
 
     Ok(engine_workspace_directory_path)
 }
 
 // --- Actions ---
 
-fn create_game_project(game_project_parent_directory_path: &PathBuf, game_name: &String) -> Result<()> {
+fn create_game_project(
+    game_project_parent_directory_path: &PathBuf,
+    game_name: &String,
+) -> Result<()> {
     const TEMPLATE_NAME: &str = "Pill-Default";
 
     let game_project_directory_path = game_project_parent_directory_path.join(game_name);
     if game_project_directory_path.exists() {
-        return Err(Error::msg(format!("Game project directory {} already exists", game_project_directory_path.display())));
+        return Err(Error::msg(format!(
+            "Game project directory {} already exists",
+            game_project_directory_path.display()
+        )));
     }
 
     let game_resource_directory_path = game_project_directory_path.join("res");
 
-    println!("Creating new game project {} in directory {}", game_name, game_project_directory_path.display());
+    println!(
+        "Creating new game project {} in directory {}",
+        game_name,
+        game_project_directory_path.display()
+    );
 
     // Get templates (assuming that they are stored in res folder of pill_launcher crate)
-    let template_game_project_directory_path = get_path(Location::PillLauncherCrate).join("res").join("templates");
+    let template_game_project_directory_path = get_path(Location::PillLauncherCrate)
+        .join("res")
+        .join("templates");
 
     // Copy template
     println!("Copying project template...");
@@ -302,7 +403,7 @@ fn create_game_project(game_project_parent_directory_path: &PathBuf, game_name: 
     fs_extra::dir::copy(
         template_game_project_directory_path.join(TEMPLATE_NAME),
         game_project_parent_directory_path,
-        &CopyOptions::new().overwrite(true)
+        &CopyOptions::new().overwrite(true),
     )
     .context("Cannot copy template directory")?;
 
@@ -311,23 +412,55 @@ fn create_game_project(game_project_parent_directory_path: &PathBuf, game_name: 
 
     // Setup config file
     println!("Setting up config file...");
-    modify_file(&game_resource_directory_path.join("config.ini"), &game_resource_directory_path.join("config.ini"), |line: String| -> String {
-        if line.starts_with("TITLE") { return format!("TITLE={}", game_name) }
-        if line.starts_with("WINDOW_TITLE") { return format!("WINDOW_TITLE={}", game_name) }
-        line
-    })?;
+    modify_file(
+        &game_resource_directory_path.join("config.ini"),
+        &game_resource_directory_path.join("config.ini"),
+        |line: String| -> String {
+            if line.starts_with("TITLE") {
+                return format!("TITLE={}", game_name);
+            }
+            if line.starts_with("WINDOW_TITLE") {
+                return format!("WINDOW_TITLE={}", game_name);
+            }
+            line
+        },
+    )?;
 
     // Setup cargo.toml file
     println!("Setting up manifest file...");
-    modify_file(&game_project_directory_path.join("Cargo.toml"), &game_project_directory_path.join("Cargo.toml"), |line: String| -> String {
-        if line.contains("pill_engine") { return format!("pill_engine = {{ path = \"{}\", features = [\"game\"] }}", get_path(Location::PillEngineCrate).to_str().unwrap().replace("\\", "/")) }
-        line
-    })?;
+    modify_file(
+        &game_project_directory_path.join("Cargo.toml"),
+        &game_project_directory_path.join("Cargo.toml"),
+        |line: String| -> String {
+            if line.contains("pill_engine") {
+                return format!(
+                    "pill_engine = {{ path = \"{}\", features = [\"game\"] }}",
+                    get_path(Location::PillEngineCrate)
+                        .to_str()
+                        .unwrap()
+                        .replace("\\", "/")
+                );
+            }
+            line
+        },
+    )?;
 
-    modify_file(&game_project_directory_path.join("Cargo.toml"), &game_project_directory_path.join("Cargo.toml"), |line: String| -> String {
-        if line.contains("workspace") { return format!("workspace = \"{}\"", get_path(Location::EngineCrates).to_str().unwrap().replace("\\", "/")) }
-        line
-    })?;
+    modify_file(
+        &game_project_directory_path.join("Cargo.toml"),
+        &game_project_directory_path.join("Cargo.toml"),
+        |line: String| -> String {
+            if line.contains("workspace") {
+                return format!(
+                    "workspace = \"{}\"",
+                    get_path(Location::EngineCrates)
+                        .to_str()
+                        .unwrap()
+                        .replace("\\", "/")
+                );
+            }
+            line
+        },
+    )?;
 
     // Success
     println!("Game project creation completed!");
@@ -335,14 +468,28 @@ fn create_game_project(game_project_parent_directory_path: &PathBuf, game_name: 
     Ok(())
 }
 
-fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode, game_args: &[String]) -> Result<()> {
+fn run_game_project(
+    game_project_directory_path: &PathBuf,
+    output_directory_path: &PathBuf,
+    compile_mode: &CompileMode,
+    game_args: &[String],
+) -> Result<()> {
     // Build game project
-    build_game_project(game_project_directory_path, output_directory_path, compile_mode)?;
+    build_game_project(
+        game_project_directory_path,
+        output_directory_path,
+        compile_mode,
+    )?;
 
     // Run game project
-    println!("Running game project from {}...", output_directory_path.display());
-    let game_title = get_game_title(&game_project_directory_path).context("Failed to get game title")?;
-    let standalone_executable_path = output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
+    println!(
+        "Running game project from {}...",
+        output_directory_path.display()
+    );
+    let game_title =
+        get_game_title(&game_project_directory_path).context("Failed to get game title")?;
+    let standalone_executable_path =
+        output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
 
     // Run exe (capture potential IO error here)
     let status = Command::new(&standalone_executable_path)
@@ -356,28 +503,38 @@ fn run_game_project(game_project_directory_path: &PathBuf, output_directory_path
 
     if !status.success() {
         // Game ran and exited with an error — don't say "failed to run" - just return Ok
-        eprintln!("Game exited with error code: {}", status.code().map_or("unknown".into(), |c| c.to_string()));
+        eprintln!(
+            "Game exited with error code: {}",
+            status.code().map_or("unknown".into(), |c| c.to_string())
+        );
     }
 
     Ok(())
 }
 
-fn build_game_project(game_project_directory_path: &PathBuf, output_directory_path: &PathBuf, compile_mode: &CompileMode) -> Result<()> {
-    println!("Building game project from {}...", game_project_directory_path.display());
+fn build_game_project(
+    game_project_directory_path: &PathBuf,
+    output_directory_path: &PathBuf,
+    compile_mode: &CompileMode,
+) -> Result<()> {
+    println!(
+        "Building game project from {}...",
+        game_project_directory_path.display()
+    );
 
-    let engine_workspace_directory_path = prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
+    let engine_workspace_directory_path =
+        prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
 
     // Pre-render all PUML in the engine crate
     // TODO: just regenerate ones that changed
     let pill_engine_dir = get_path(Location::PillEngineCrate);
-    render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
+    if *compile_mode != CompileMode::HotReload {
+        render_puml_for_crate(&pill_engine_dir)
+            .context("Failed to render PlantUML diagrams for pill_engine")?;
+    }
 
     // Build standalone executable along with game dynamic library
-	let mut arguments = vec![
-        "build",
-        "-p", "pill_game",
-        "-p", "pill_standalone",
-    ];
+    let mut arguments = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
     if *compile_mode == CompileMode::Release {
         arguments.push("--release");
     }
@@ -391,51 +548,68 @@ fn build_game_project(game_project_directory_path: &PathBuf, output_directory_pa
         .ok_or_else(|| Error::msg("build failed"))?;
 
     // Create build directory if does not exist
-    fs::create_dir_all(output_directory_path.join("data").as_path()).context("Failed to create build output directories")?;
+    fs::create_dir_all(output_directory_path.join("data").as_path())
+        .context("Failed to create build output directories")?;
 
-    let compilation_artifacts_folder_path = get_path(Location::EngineCrates).join("target").join(target_dir_for(compile_mode));
+    let compilation_artifacts_folder_path = get_path(Location::EngineCrates)
+        .join("target")
+        .join(target_dir_for(compile_mode));
     // Get game title
-    let game_title = get_game_title(game_project_directory_path).context("Failed to get game title")?;
+    let game_title =
+        get_game_title(game_project_directory_path).context("Failed to get game title")?;
 
-	if *compile_mode != CompileMode::HotReload {
-		// Copy built standalone executable to build directory
-		let standalone_output_path = compilation_artifacts_folder_path.join(format!("pill_standalone{EXEC_SUFFIX}"));
-		if !standalone_output_path.exists() {
-			return Err(Error::msg("Standalone executable was not built successfully"));
-		}
+    if *compile_mode != CompileMode::HotReload {
+        // Copy built standalone executable to build directory
+        let standalone_output_path =
+            compilation_artifacts_folder_path.join(format!("pill_standalone{EXEC_SUFFIX}"));
+        if !standalone_output_path.exists() {
+            return Err(Error::msg(
+                "Standalone executable was not built successfully",
+            ));
+        }
 
-		let destination_executable_path = output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
-		fs::copy(&standalone_output_path, &destination_executable_path)
-			.with_context(|| format!(
-				"Can't copy standalone executable from {} to {}",
-				standalone_output_path.display(),
-				destination_executable_path.display()
-			))?;
+        let destination_executable_path =
+            output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
+        fs::copy(&standalone_output_path, &destination_executable_path).with_context(|| {
+            format!(
+                "Can't copy standalone executable from {} to {}",
+                standalone_output_path.display(),
+                destination_executable_path.display()
+            )
+        })?;
 
-		// ensure executable bit on Unix
-		#[cfg(unix)]
-		{
-			use std::os::unix::fs::PermissionsExt;
-			let mut perms = fs::metadata(&destination_executable_path)?.permissions();
-			perms.set_mode(0o755);
-			fs::set_permissions(&destination_executable_path, perms)?;
-		}
-	}
+        // ensure executable bit on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&destination_executable_path)?.permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&destination_executable_path, perms)?;
+        }
+    }
 
     // Copy built dynamic library to build directory
     let game_library_output_path = compilation_artifacts_folder_path.join(dylib("pill_game"));
     if !game_library_output_path.exists() {
-        return Err(Error::msg(format!("Game dynamic library was not built successfully in {}", game_library_output_path.display())));
+        return Err(Error::msg(format!(
+            "Game dynamic library was not built successfully in {}",
+            game_library_output_path.display()
+        )));
     }
 
     let game_dynamic_library_name = if *compile_mode == CompileMode::HotReload {
-		dylib("pill_game_hot_reloaded")
-	} else {
-		dylib("pill_game")
-	};
-    let output_game_library_path = output_directory_path.join("data").join(game_dynamic_library_name);
-    fs::copy(&game_library_output_path, &output_game_library_path)
-        .context(format!("Can't copy game dynamic library from {} to {}", game_library_output_path.display(), output_game_library_path.display()))?;
+        dylib("pill_game_hot_reloaded")
+    } else {
+        dylib("pill_game")
+    };
+    let output_game_library_path = output_directory_path
+        .join("data")
+        .join(game_dynamic_library_name);
+    fs::copy(&game_library_output_path, &output_game_library_path).context(format!(
+        "Can't copy game dynamic library from {} to {}",
+        game_library_output_path.display(),
+        output_game_library_path.display()
+    ))?;
 
     // Success
     println!("Game built successfully!");
@@ -446,22 +620,47 @@ fn build_game_project(game_project_directory_path: &PathBuf, output_directory_pa
 // Runs "cargo doc" command for engine
 fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     // Set empty project as dependency
-    let empty_example_game_path = get_path(Location::EngineProjectRoot).join("examples").join("Empty");
+    let empty_example_game_path = get_path(Location::EngineProjectRoot)
+        .join("examples")
+        .join("Empty");
     if !empty_example_game_path.exists() {
-        return Err(Error::msg("Cannot find Empty project in examples directory"));
+        return Err(Error::msg(
+            "Cannot find Empty project in examples directory",
+        ));
     }
 
     // Update engine project dependency in game's cargo.toml
-    modify_file(&empty_example_game_path.join("Cargo.toml"), &empty_example_game_path.join("Cargo.toml"), |line: String| -> String {
-        if line.contains("pill_engine") { return format!("pill_engine = {{path = \"{}\", features = [\"game\"]}}", get_path(Location::PillEngineCrate).to_str().unwrap().replace("\\", "/")) }
-        line
-    })?;
+    modify_file(
+        &empty_example_game_path.join("Cargo.toml"),
+        &empty_example_game_path.join("Cargo.toml"),
+        |line: String| -> String {
+            if line.contains("pill_engine") {
+                return format!(
+                    "pill_engine = {{path = \"{}\", features = [\"game\"]}}",
+                    get_path(Location::PillEngineCrate)
+                        .to_str()
+                        .unwrap()
+                        .replace("\\", "/")
+                );
+            }
+            line
+        },
+    )?;
 
     // Update game project dependency in standalone's cargo.toml
-    modify_file(&get_path(Location::PillStandaloneCrate).join("Cargo.toml"), &get_path(Location::PillStandaloneCrate).join("Cargo.toml"), |line: String| -> String {
-        if line.contains("pill_game") { return format!("pill_game = {{path = \"{}\"}}", empty_example_game_path.to_str().unwrap().replace("\\", "/")) }
-        line
-    })?;
+    modify_file(
+        &get_path(Location::PillStandaloneCrate).join("Cargo.toml"),
+        &get_path(Location::PillStandaloneCrate).join("Cargo.toml"),
+        |line: String| -> String {
+            if line.contains("pill_game") {
+                return format!(
+                    "pill_game = {{path = \"{}\"}}",
+                    empty_example_game_path.to_str().unwrap().replace("\\", "/")
+                );
+            }
+            line
+        },
+    )?;
 
     let output_path = if output_directory_path.as_os_str() == "." {
         env::current_dir().context("Failed to get current directory")?
@@ -492,55 +691,95 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Pre-render all PUML in the engine crate
     let pill_engine_dir = get_path(Location::PillEngineCrate);
-    render_puml_for_crate(&pill_engine_dir).context("Failed to render PlantUML diagrams for pill_engine")?;
+    render_puml_for_crate(&pill_engine_dir)
+        .context("Failed to render PlantUML diagrams for pill_engine")?;
 
     // Game dev docs
-    let arguments = vec!["doc", "--no-deps", "--features", "game,internal", "--manifest-path", full_engine_manifest_path.to_str().unwrap(), "--target-dir", output_game_dev_path.to_str().unwrap(), "--release"];
+    let arguments = vec![
+        "doc",
+        "--no-deps",
+        "--features",
+        "game,internal",
+        "--manifest-path",
+        full_engine_manifest_path.to_str().unwrap(),
+        "--target-dir",
+        output_game_dev_path.to_str().unwrap(),
+        "--release",
+    ];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
         .context("Failed to execute command for generating game dev docs")?;
 
-	if status.success() {
+    if status.success() {
         println!("Game dev docs generated successfully!");
     }
 
     // Engine dev docs
     // Generate pill_core before pill_engine and don't generate other dependencies
     let core_crate_manifest_path = get_path(Location::PillCoreCrate).join("Cargo.toml");
-    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--manifest-path", core_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
+    let arguments = vec![
+        "doc",
+        "--no-deps",
+        "--document-private-items",
+        "--manifest-path",
+        core_crate_manifest_path.to_str().unwrap(),
+        "--target-dir",
+        output_engine_dev_path.to_str().unwrap(),
+        "--release",
+    ];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
         .context("Failed to execute command for generating core dev docs")?;
 
     // Success
-	if status.success() {
+    if status.success() {
         println!("Core dev docs generated successfully!");
     }
 
-    let arguments = vec!["doc", "--no-deps", "--document-private-items", "--features", "all", "--manifest-path", engine_crate_manifest_path.to_str().unwrap(), "--target-dir", output_engine_dev_path.to_str().unwrap(), "--release"];
+    let arguments = vec![
+        "doc",
+        "--no-deps",
+        "--document-private-items",
+        "--features",
+        "all",
+        "--manifest-path",
+        engine_crate_manifest_path.to_str().unwrap(),
+        "--target-dir",
+        output_engine_dev_path.to_str().unwrap(),
+        "--release",
+    ];
     let status = Command::new("cargo")
         .args(arguments)
         .status()
         .context("Failed to execute command for generating engine dev docs")?;
 
     // Success
-	if status.success() {
+    if status.success() {
         println!("Engine dev docs generated successfully!");
     }
 
     Ok(())
 }
 
-fn cargo_passthrough(game_project_directory_path: &PathBuf, compile_mode: &CompileMode, cargo_args: &[String]) -> Result<()> {
+fn cargo_passthrough(
+    game_project_directory_path: &PathBuf,
+    compile_mode: &CompileMode,
+    cargo_args: &[String],
+) -> Result<()> {
     if cargo_args.is_empty() {
         bail!("Must call cargo with at least one argument");
     }
 
-    let engine_workspace_directory_path = prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
+    let engine_workspace_directory_path =
+        prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
 
-    println!("Running cargo {:?} in workspace {}...", cargo_args, engine_workspace_directory_path.display());
+    println!(
+        "Running cargo {:?} in workspace {}...",
+        cargo_args,
+        engine_workspace_directory_path.display()
+    );
 
     let status = Command::new("cargo")
         .args(cargo_args)
@@ -549,7 +788,10 @@ fn cargo_passthrough(game_project_directory_path: &PathBuf, compile_mode: &Compi
         .context("Failed to run cargo passthrough")?;
 
     if !status.success() {
-        println!("Cargo command failed: cargo {:?} (exit {})", cargo_args, status);
+        println!(
+            "Cargo command failed: cargo {:?} (exit {})",
+            cargo_args, status
+        );
     }
 
     Ok(())
@@ -599,14 +841,15 @@ fn main() {
         .default_value("debug")
         .required(false);
 
-   let game_args = Arg::with_name("game-args")
+    let game_args = Arg::with_name("game-args")
         .help("Arguments passed through to cargo/game (use `--` to separate them)")
         .multiple(true)
         .last(true)
         .allow_hyphen_values(true);
 
     // Addition of the options to the CLI
-    let app = app.arg(action_option)
+    let app = app
+        .arg(action_option)
         .arg(name_option)
         .arg(path_option)
         .arg(output_path_option)
@@ -618,8 +861,13 @@ fn main() {
     let matches = app.get_matches();
 
     // Arguments
-    let passthrough_args: Vec<String> = matches.values_of("game-args").map(|vals| vals.map(|s| s.to_string()).collect()).unwrap_or_default();
-    let action_argument = matches.value_of("action").expect("Action has to be specified");
+    let passthrough_args: Vec<String> = matches
+        .values_of("game-args")
+        .map(|vals| vals.map(|s| s.to_string()).collect())
+        .unwrap_or_default();
+    let action_argument = matches
+        .value_of("action")
+        .expect("Action has to be specified");
     let directory_path_argument = matches.value_of("path");
     let game_name_argument = matches.value_of("name");
     let output_directory_path_argument = matches.value_of("output-path");
@@ -638,41 +886,70 @@ fn main() {
                 .to_path_buf();
             let game_name = String::from(game_name_argument.expect("Game name has to be specified using --name flag. For example: --name <MY_GAME_NAME>"));
 
-            create_game_project(&game_parent_directory_path, &game_name).context("Failed to create new game project").unwrap();
-        },
+            create_game_project(&game_parent_directory_path, &game_name)
+                .context("Failed to create new game project")
+                .unwrap();
+        }
         "run" => {
             let game_project_directory_path = PathBuf::from(directory_path_argument.expect("Game project directory path has to be specified using --path flag. For example: --path <GAME_PROJECT_DIR>"))
                 .absolutize().context("Failed to absolutize game project directory path").unwrap()
                 .to_path_buf();
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
-            output_directory_path = get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
-            run_game_project(&game_project_directory_path, &output_directory_path, &compile_mode, &passthrough_args).context("Failed to run game project").unwrap();
-        },
+            output_directory_path =
+                get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
+            run_game_project(
+                &game_project_directory_path,
+                &output_directory_path,
+                &compile_mode,
+                &passthrough_args,
+            )
+            .context("Failed to run game project")
+            .unwrap();
+        }
         "build" => {
             let game_project_directory_path = PathBuf::from(directory_path_argument.expect("Game project directory path has to be specified using --path flag. For example: --path <GAME_PROJECT_DIR>"))
                 .absolutize().context("Failed to absolutize game project directory path").unwrap()
                 .to_path_buf();
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
-            output_directory_path = get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
-            build_game_project(&game_project_directory_path, &output_directory_path, &compile_mode).context("Failed to build game project").unwrap();
-        },
+            output_directory_path =
+                get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
+            build_game_project(
+                &game_project_directory_path,
+                &output_directory_path,
+                &compile_mode,
+            )
+            .context("Failed to build game project")
+            .unwrap();
+        }
         "docs" => {
             let output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"))
                 .absolutize().context("Failed to absolutize output directory path").unwrap()
                 .to_path_buf();
 
-            generate_docs(&output_directory_path).context("Failed to generate docs").unwrap();
-        },
+            generate_docs(&output_directory_path)
+                .context("Failed to generate docs")
+                .unwrap();
+        }
         "cargo" => {
-            let game_project_directory_path = PathBuf::from(directory_path_argument.expect("Game project must be specified when running cargo commands."))
-                .absolutize()
-                .context("Failed to absolutize game project directory path").unwrap()
-                .to_path_buf();
+            let game_project_directory_path = PathBuf::from(
+                directory_path_argument
+                    .expect("Game project must be specified when running cargo commands."),
+            )
+            .absolutize()
+            .context("Failed to absolutize game project directory path")
+            .unwrap()
+            .to_path_buf();
 
-            cargo_passthrough(&game_project_directory_path, &compile_mode, &passthrough_args).context("Cargo passthrough failed").unwrap();
-        },
+            cargo_passthrough(
+                &game_project_directory_path,
+                &compile_mode,
+                &passthrough_args,
+            )
+            .context("Cargo passthrough failed")
+            .unwrap();
+        }
         _ => {
             println!("Undefined action");
         }

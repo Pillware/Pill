@@ -233,18 +233,18 @@ fn check_and_reload_game(
     engine: &mut Option<Engine>,
     game_dynamic_library: &mut Option<Library>,
     project_paths: &ProjectPaths,
-    last_reload_time: &mut Instant,
+    last_reload_poll: &mut Instant,
     window_size: &winit::dpi::PhysicalSize<u32>,
     window: &Arc<winit::window::Window>,
     config: &Config,
     file_watchers: &mut FileWatchers,
 ) -> Result<()> {
     let now: Instant = Instant::now();
-    let reload_cooldown = RELOAD_COOLDOWN; // Duration::from_millis(1000);
 
-    if now.duration_since(*last_reload_time) < reload_cooldown {
+    if now.duration_since(*last_reload_poll) < RELOAD_COOLDOWN {
         return Ok(());
     }
+    *last_reload_poll = Instant::now();
 
     let mut paths_changed = Vec::<PathBuf>::new();
 
@@ -291,6 +291,8 @@ fn check_and_reload_game(
     if !paths_changed.is_empty() {
         build_standalone_and_game_crates(project_paths)?;
     }
+    let t1 = std::time::Instant::now();
+    warn!("Build took: {:?} time", t1 - t0);
 
     // Check for game dynamic library changes
     if file_watchers
@@ -299,6 +301,7 @@ fn check_and_reload_game(
         .is_some()
     {
         info!(LogContext::HotReload => "Reloading game project...");
+        let t2 = std::time::Instant::now();
 
         // Shutdown and drop engine
         // TODO: serialize here?
@@ -323,6 +326,9 @@ fn check_and_reload_game(
         )
         .unwrap();
 
+        let t3 = std::time::Instant::now();
+        warn!("Unloading took: {:?} time", t3 - t2);
+        let t4 = std::time::Instant::now();
         // Load new game dynamic library
         let (game_library, game) =
             load_game_dynamic_library(&project_paths.game_dynamic_library_path);
@@ -340,16 +346,19 @@ fn check_and_reload_game(
         // TODO: deserialize the saved scene(s) state
         *engine = Some(new_engine);
         *game_dynamic_library = Some(game_library);
+        let t5 = std::time::Instant::now();
 
+        warn!("Loading took: {:?} time", t5 - t4);
+        let t5 = std::time::Instant::now();
         // Run again to clear changes (otherwise it will trigger reload again since file was renamed)
         // TODO: remove this once we ignore that in the reloading - no need for extra ops
         file_watchers
             .game_dynamic_library_files_watcher
             .get_changes();
 
-        *last_reload_time = now;
-        let t1 = std::time::Instant::now();
-        warn!("Reload took: {:?} time", t1 - t0);
+        let t6 = std::time::Instant::now();
+        warn!("File watchers took: {:?} time", t6 - t5);
+        warn!("Reload took: {:?} time", t6 - t0);
     }
 
     Ok(())
@@ -404,7 +413,7 @@ fn main_loop(
     };
 
     let mut last_render_time = Instant::now();
-    let mut last_reload_time = Instant::now();
+    let mut last_reload_poll = Instant::now();
 
     // Main program loop
     let _ = window_data
@@ -449,7 +458,7 @@ fn main_loop(
                                     engine,
                                     game_dynamic_library,
                                     &project_paths,
-                                    &mut last_reload_time,
+                                    &mut last_reload_poll,
                                     &window_data.size,
                                     &window_data.window,
                                     &config,
