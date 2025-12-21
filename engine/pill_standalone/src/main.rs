@@ -6,7 +6,7 @@ use pill_abi::*;
 use pill_core::{info, set_log_levels, warn, EngineError, LogContext, PillStyle};
 use winit::{
     event::{DeviceEvent, Event, WindowEvent},
-    window::Icon,
+    window::{self, Icon},
 };
 
 use libloading::{Library, Symbol};
@@ -33,7 +33,7 @@ struct FileWatchers {
     engine_core_source_files_watcher: FileWatcher,
     engine_engine_source_files_watcher: FileWatcher,
     engine_renderer_source_files_watcher: FileWatcher,
-    game_dynamic_library_files_watcher: FileWatcher,
+    dynamic_libraries_files_watcher: FileWatcher,
     game_project_source_files_watcher: FileWatcher,
     game_project_resources_files_watcher: FileWatcher,
 }
@@ -45,7 +45,10 @@ struct ProjectPaths {
     game_resources_directory_path: PathBuf,
     game_source_directory_path: PathBuf,
     config_path: PathBuf,
+
     runtime_dynamic_library_path: PathBuf,
+    runtime_dynamic_library_hot_reloaded_path: PathBuf,
+
     game_dynamic_library_path: PathBuf,
     game_dynamic_library_hot_reloaded_path: PathBuf,
 }
@@ -68,7 +71,14 @@ fn dylib(name: &str) -> String {
     format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
 }
 
-fn next_loaded_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
+fn next_loaded_runtime_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
+    let gen = RELOAD_GEN.fetch_add(1, Ordering::Relaxed);
+    project_paths
+        .build_data_directory_path
+        .join(dylib(&format!("pill_runtime_loaded_{gen}")))
+}
+
+fn next_loaded_game_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
     let gen = RELOAD_GEN.fetch_add(1, Ordering::Relaxed);
     project_paths
         .build_data_directory_path
@@ -88,6 +98,31 @@ fn encode_mouse_button(button: &winit::event::MouseButton) -> u32 {
 }
 
 // --- Hot Reloading and Engine ABI ---
+
+struct RuntimeCreateContext {
+    game_dylib_path: CString,
+    game_resources_dir: CString,
+    config_path: CString,
+    window: Arc<window::Window>,
+    initial_w: u32,
+    initial_h: u32,
+}
+
+impl RuntimeCreateContext {
+    fn make_args(&self) -> PillEngineCreateArgsV1 {
+        // Pass one cloned Arc<Window> ref and let runtime take the ownership via Arc::from_raw
+        let window_raw = Arc::into_raw(Arc::clone(&self.window)) as *const c_void;
+        PillEngineCreateArgsV1 {
+            struct_size: std::mem::size_of::<PillEngineCreateArgsV1>() as u32,
+            window_ptr: window_raw,
+            game_dylib_path: self.game_dylib_path.as_ptr(),
+            game_resources_dir: self.game_resources_dir.as_ptr(),
+            config_path: self.config_path.as_ptr(),
+            initial_w: self.initial_w,
+            initial_h: self.initial_h,
+        }
+    }
+}
 
 struct RuntimeHost {
     _lib: Library,
@@ -377,17 +412,16 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
     Ok(())
 }
 
-/// This function will reload game whenever any source file in <pill_engine_root>engine/* changes
-/// It won't however reflect changes in standalone because it is the executable that is running the
-/// hot-reload.
-fn check_and_reload_game(
+/// This function will reload engine or the entire runtime depending on files in <pill_engine_root>engine/* changes
+/// It won't however reflect changes in standalone because it is the executable that is running the hot-reload.
+fn check_and_reload(
     runtime_host: &mut Option<RuntimeHost>,
+    runtime_context: &RuntimeCreateContext,
     project_paths: &ProjectPaths,
     last_reload_poll: &mut Instant,
     file_watchers: &mut FileWatchers,
 ) -> Result<()> {
     let now: Instant = Instant::now();
-
     if now.duration_since(*last_reload_poll) < RELOAD_COOLDOWN {
         return Ok(());
     }
@@ -442,37 +476,59 @@ fn check_and_reload_game(
         return Ok(());
     }
 
-    // Engine changed => prepared path, but not hot-reloading yet
-    if !engine_source_changed.is_empty() {
-        warn!(LogContext::HotReload =>
-            "Engine changed (not hot-reloaded yet). Restart required. Changed: {:?}",
-            engine_source_changed
-        );
-        return Ok(());
-    }
-
     let t0 = std::time::Instant::now();
-    // Game src changed => build game only
-    if !game_source_changed.is_empty() {
-        let t_build = std::time::Instant::now();
+    // Game or Engine src changed => build
+    if !game_source_changed.is_empty() || !engine_source_changed.is_empty() {
         build_hot_reload_via_launcher(project_paths)?;
-        warn!("Build took: {:?} time", t_build.elapsed());
+        warn!("Build took: {:?} time", t0.elapsed());
     }
 
     // detect change in build output
-    let mut should_reload = false;
-    if let Some(paths) = file_watchers
-        .game_dynamic_library_files_watcher
-        .get_changes()
-    {
-        let hot_name = dylib("pill_game_hot_reloaded");
-        should_reload = paths
-            .iter()
-            .any(|p| p.file_name().and_then(|s| s.to_str()) == Some(&hot_name));
+    let mut runtime_hot_reload = false;
+    let mut game_hot_reload = false;
+    if let Some(paths) = file_watchers.dynamic_libraries_files_watcher.get_changes() {
+        let game_hot_name = dylib("pill_game_hot_reloaded");
+        let runtime_hot_name = dylib("pill_runtime_hot_reloaded");
+        for path in paths {
+            let filename = path.file_name().and_then(|s| s.to_str());
+            if filename == Some(&runtime_hot_name) {
+                runtime_hot_reload = true;
+            } else if filename == Some(&game_hot_name) {
+                game_hot_reload = true;
+            }
+        }
     }
 
-    if should_reload {
+    // Do a runtime reload when both have changed
+    if runtime_hot_reload {
+        info!(LogContext::HotReload => "Reloading runtime (engine hot-reload)...");
+        let t_runtime_reload = std::time::Instant::now();
+
+        // Drop the old runtime
+        drop(runtime_host.take());
+
+        // Copy hot dylib to unique path (Windows-safe)
+        let loaded_path = next_loaded_runtime_dylib_path(project_paths);
+        std::fs::copy(
+            &project_paths.runtime_dynamic_library_hot_reloaded_path,
+            &loaded_path,
+        )
+        .context("Failed to copy hot-reloaded dylib to unique loaded dylib")?;
+
+        // Reload runtime dynamic Library
+        let mut new_runtime =
+            RuntimeHost::load(&project_paths.runtime_dynamic_library_hot_reloaded_path)?;
+        let args = runtime_context.make_args();
+        new_runtime.create(&args)?;
+
+        *runtime_host = Some(new_runtime);
+
+        warn!("Runtime reload took: {:?} time", t_runtime_reload.elapsed());
+        warn!("Total reload took: {:?} time", t0.elapsed());
+    } else if game_hot_reload {
+        // Game-only hot-reload
         info!(LogContext::HotReload => "Reloading game project...");
+        let t_game_reload = std::time::Instant::now();
 
         // Shutdown and drop runtime
         // TODO: serialize here?
@@ -485,7 +541,7 @@ fn check_and_reload_game(
         //   overwrite it randomly with a new memory layout?!)
 
         // Copy hot dylib to unique path (Windows-safe)
-        let loaded_path = next_loaded_dylib_path(project_paths);
+        let loaded_path = next_loaded_game_dylib_path(project_paths);
         std::fs::copy(
             &project_paths.game_dynamic_library_hot_reloaded_path,
             &loaded_path,
@@ -498,7 +554,8 @@ fn check_and_reload_game(
             bail!("Engine not initialized");
         }
 
-        warn!("Reload took: {:?} time", t0.elapsed());
+        warn!("Game hot-reload took: {:?} time", t_game_reload.elapsed());
+        warn!("Total reload took: {:?} time", t0.elapsed());
     }
 
     Ok(())
@@ -520,7 +577,7 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     let engine_renderer_source_files_watcher =
         FileWatcher::new(renderer_source_path).set_recursive(true);
 
-    let game_dynamic_library_files_watcher =
+    let dynamic_libraries_files_watcher =
         FileWatcher::new(project_paths.build_data_directory_path.clone());
     let game_project_source_files_watcher =
         FileWatcher::new(project_paths.game_source_directory_path.clone()).set_recursive(true);
@@ -531,7 +588,7 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
         engine_core_source_files_watcher,
         engine_engine_source_files_watcher,
         engine_renderer_source_files_watcher, // TODO: resources as well? also track standalone?
-        game_dynamic_library_files_watcher,
+        dynamic_libraries_files_watcher,
         game_project_source_files_watcher,
         game_project_resources_files_watcher,
     }
@@ -539,9 +596,9 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
 
 fn main_loop(
     runtime_host: &mut Option<RuntimeHost>,
+    runtime_context: RuntimeCreateContext,
     project_paths: ProjectPaths,
     window_data: WindowData,
-    config: Config,
     development_mode: bool,
 ) -> Result<()> {
     // Create a file watcher to monitor game project file changes as well as game output file changes
@@ -593,8 +650,9 @@ fn main_loop(
                             }
 
                             if development_mode {
-                                check_and_reload_game(
+                                check_and_reload(
                                     runtime_host,
+                                    &runtime_context,
                                     &project_paths,
                                     &mut last_reload_poll,
                                     file_watchers.as_mut().unwrap(),
@@ -616,11 +674,8 @@ fn main_loop(
                         }
                         WindowEvent::MouseWheel { delta, .. } => {
                             if let Some(ref mut runtime) = runtime_host {
-                                match delta {
-                                    winit::event::MouseScrollDelta::LineDelta(dx, dy) => {
-                                        runtime.mouse_wheel_line(*dx, *dy)
-                                    }
-                                    _ => (),
+                                if let winit::event::MouseScrollDelta::LineDelta(dx, dy) = delta {
+                                    runtime.mouse_wheel_line(*dx, *dy)
                                 }
                             }
                         }
@@ -705,6 +760,8 @@ fn main() {
         .join("src"); // <GAME_PROJECT_ROOT>/src
     let config_path = game_resources_directory_path.join("config.ini");
     let runtime_dynamic_library_path = build_data_directory_path.join(dylib("pill_runtime"));
+    let runtime_dynamic_library_hot_reloaded_path =
+        build_data_directory_path.join(dylib("pill_runtime_hot_reloaded"));
     let game_dynamic_library_path = build_data_directory_path.join(dylib("pill_game"));
     let game_dynamic_library_hot_reloaded_path =
         build_data_directory_path.join(dylib("pill_game_hot_reloaded"));
@@ -744,6 +801,7 @@ fn main() {
         game_resources_directory_path,
         config_path,
         runtime_dynamic_library_path,
+        runtime_dynamic_library_hot_reloaded_path,
         game_dynamic_library_path,
         game_dynamic_library_hot_reloaded_path,
     };
@@ -765,39 +823,33 @@ fn main() {
     // Load runtime dynamic Library
     let mut runtime_host = RuntimeHost::load(&project_paths.runtime_dynamic_library_path).unwrap();
 
-    // Create cstring paths
-    let game_dylib_path_c = CString::new(
-        project_paths
-            .game_dynamic_library_path
-            .to_string_lossy()
-            .as_bytes(),
-    )
-    .unwrap();
-    let resource_path_c = CString::new(
-        project_paths
-            .game_resources_directory_path
-            .to_string_lossy()
-            .as_bytes(),
-    )
-    .unwrap();
-    let config_path_c =
-        CString::new(project_paths.config_path.to_string_lossy().as_bytes()).unwrap();
-
-    // Pass one cloned Arc<Window> ref and let runtime take the ownership via Arc::from_raw
-    let window_raw = Arc::into_raw(Arc::clone(&window_data.window)) as *const c_void;
-
-    let args = PillEngineCreateArgsV1 {
-        struct_size: std::mem::size_of::<PillEngineCreateArgsV1>() as u32,
-        game_dylib_path: game_dylib_path_c.as_ptr(),
-        game_resources_dir: resource_path_c.as_ptr(),
-        config_path: config_path_c.as_ptr(),
-        window_ptr: window_raw,
+    // Save the context data for future reloads
+    // window::Window will be leaked to the runtime DLL every time make_args is called
+    let runtime_context = RuntimeCreateContext {
+        game_dylib_path: CString::new(
+            project_paths
+                .game_dynamic_library_path
+                .to_string_lossy()
+                .as_bytes(),
+        )
+        .unwrap(),
+        game_resources_dir: CString::new(
+            project_paths
+                .game_resources_directory_path
+                .to_string_lossy()
+                .as_bytes(),
+        )
+        .unwrap(),
+        config_path: CString::new(project_paths.config_path.to_string_lossy().as_bytes()).unwrap(),
+        window: Arc::clone(&window_data.window),
         initial_w: window_data.size.width,
         initial_h: window_data.size.height,
     };
 
+    let args = runtime_context.make_args();
+
     if let Err(e) = runtime_host.create(&args) {
-        panic!("RuntimeHost.create failed");
+        panic!("RuntimeHost.create failed {e:#}");
     }
 
     // Run loop
@@ -814,9 +866,9 @@ fn main() {
     // Main program loop
     main_loop(
         &mut Some(runtime_host),
+        runtime_context,
         project_paths,
         window_data,
-        config,
         development_mode,
     )
     .context("Main loop failed")
