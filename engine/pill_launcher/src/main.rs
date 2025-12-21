@@ -117,14 +117,12 @@ fn get_path(location: Location) -> PathBuf {
     let repo_root = engine_ws.parent().unwrap().to_path_buf();
 
     match location {
-        Location::EngineProjectRoot => main_engine_directory,
-        Location::EngineCrates => main_engine_directory.join("engine"),
-        Location::PillEngineCrate => main_engine_directory.join("engine").join("pill_engine"),
-        Location::PillCoreCrate => main_engine_directory.join("engine").join("pill_core"),
-        Location::PillStandaloneCrate => {
-            main_engine_directory.join("engine").join("pill_standalone")
-        }
-        Location::PillLauncherCrate => main_engine_directory.join("engine").join("pill_launcher"),
+        Location::EngineProjectRoot => repo_root,
+        Location::EngineCrates => engine_ws,
+        Location::PillEngineCrate => engine_ws.join("pill_engine"),
+        Location::PillCoreCrate => engine_ws.join("pill_core"),
+        Location::PillStandaloneCrate => engine_ws.join("pill_standalone"),
+        Location::PillLauncherCrate => engine_ws.join("pill_launcher"),
     }
 }
 
@@ -621,15 +619,21 @@ fn run_game_project(
     let standalone_executable_path =
         output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
 
-    // Run exe (capture potential IO error here)
+    let launcher_bin = std::env::current_exe().context("current_exe failed")?;
+    let engine_ws = find_engine_workspace_dir()?; // .../Pill-Engine/engine
+
     let status = Command::new(&standalone_executable_path)
         .current_dir(output_directory_path)
+        .env("PILL_LAUNCHER_BIN", &launcher_bin) // <--- key
+        .env("PILL_ENGINE_WORKSPACE_DIR", &engine_ws) // <--- key
         .args(game_args)
         .status()
-        .context(format!(
-            "Failed to launch game project executable: {}",
-            standalone_executable_path.display()
-        ))?;
+        .with_context(|| {
+            format!(
+                "Failed to launch game project executable: {}",
+                standalone_executable_path.display()
+            )
+        })?;
 
     if !status.success() {
         // Game ran and exited with an error — don't say "failed to run" - just return Ok
@@ -671,14 +675,7 @@ fn build_game_project(
             .context("Failed to render PlantUML diagrams for pill_engine")?;
     }
 
-    // Build:
-    // - HotReload: ONLY pill_game
-    // - Debug/Release: pill_game + pill_standalone
-    let mut arguments = vec!["build", "-p", "pill_game"];
-    if *compile_mode != CompileMode::HotReload {
-        arguments.push("-p");
-        arguments.push("pill_standalone");
-    }
+    let mut arguments = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
     if *compile_mode == CompileMode::Release {
         arguments.push("--release");
     }

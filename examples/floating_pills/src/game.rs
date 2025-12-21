@@ -27,6 +27,8 @@ define_component!(FloatingObjectComponent {
     radius_speed: f32,
 });
 
+struct dupa {}
+
 define_global_component!(DemoStateComponent {
     floating_objects_movement_enabled: bool,
     current_mesh: usize,

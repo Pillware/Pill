@@ -201,68 +201,28 @@ fn load_game_dynamic_library(library_path: &PathBuf) -> (Library, Box<dyn PillGa
     (game_dynamic_library, game)
 }
 
-fn ensure_launcher_binary(engine_workspace_dir: &Path) -> Result<PathBuf> {
-    // engine_workspace_dir == .../Pill-Engine/engine
-    let launcher_crate_dir = engine_workspace_dir.join("pill_launcher");
-    let launcher_manifest = launcher_crate_dir.join("Cargo.toml");
-
-    if !launcher_manifest.exists() {
-        anyhow::bail!(
-            "pill_launcher Cargo.toml not found at {}",
-            launcher_manifest.display()
-        );
+fn ensure_launcher_binary() -> Result<PathBuf> {
+    let v = std::env::var("PILL_LAUNCHER_BIN").context(
+        "PILL_LAUNCHER_BIN not set (pill_launcher should set it when spawning standalone)",
+    )?;
+    let p = PathBuf::from(v);
+    if !p.exists() {
+        anyhow::bail!("PILL_LAUNCHER_BIN points to missing file: {}", p.display());
     }
-
-    // Prefer a shared target dir (faster after first build)
-    let target_dir = engine_workspace_dir.join("target_tools"); // pick any name you like
-    let debug_dir = target_dir.join("debug");
-
-    let candidates = [
-        debug_dir.join(format!("pill_launcher{EXEC_SUFFIX}")),
-        debug_dir.join(format!("PillLauncher{EXEC_SUFFIX}")),
-    ];
-
-    for c in &candidates {
-        if c.exists() {
-            return Ok(c.clone());
-        }
-    }
-
-    // Build it once (as a standalone crate)
-    let status = std::process::Command::new("cargo")
-        .args([
-            "build",
-            "--quiet",
-            "--manifest-path",
-            launcher_manifest.to_str().unwrap(),
-            "--target-dir",
-            target_dir.to_str().unwrap(),
-        ])
-        .status()
-        .context("Failed to build pill_launcher")?;
-
-    if !status.success() {
-        anyhow::bail!("cargo build pill_launcher failed");
-    }
-
-    for c in &candidates {
-        if c.exists() {
-            return Ok(c.clone());
-        }
-    }
-
-    anyhow::bail!(
-        "pill_launcher binary not found after build. Looked for: {} and {}",
-        candidates[0].display(),
-        candidates[1].display()
-    );
+    Ok(p)
 }
 
 fn build_game_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
-    let engine_workspace_dir = &project_paths.engine_source_directory_path;
-    let launcher_bin = ensure_launcher_binary(engine_workspace_dir)?;
+    let launcher_bin = ensure_launcher_binary()?;
 
-    let status = std::process::Command::new(launcher_bin)
+    // output dir must be the folder containing the exe + data/
+    // build_data_directory_path = <build>/data  => parent is <build>
+    let out_dir = project_paths
+        .build_data_directory_path
+        .parent()
+        .context("build_data_directory_path has no parent")?;
+
+    let status = std::process::Command::new(&launcher_bin)
         .args([
             "-a",
             "build",
@@ -270,15 +230,19 @@ fn build_game_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()
             project_paths.game_project_directory_path.to_str().unwrap(),
             "-c",
             "hot-reload",
+            "-o",
+            out_dir.to_str().unwrap(),
         ])
-        .current_dir(engine_workspace_dir)
+        .env(
+            "PILL_ENGINE_WORKSPACE_DIR",
+            &project_paths.engine_source_directory_path,
+        ) // launcher will use this if you keep that logic
         .status()
-        .context("Failed to invoke pill_launcher binary")?;
+        .context("Failed to invoke pill_launcher for hot reload")?;
 
     if !status.success() {
         anyhow::bail!("pill_launcher build hot-reload failed");
     }
-
     Ok(())
 }
 
@@ -360,11 +324,12 @@ fn check_and_reload_game(
         return Ok(());
     }
 
+    let t0 = std::time::Instant::now();
     // Game src changed => build game only
     if !game_source_changed.is_empty() {
-        let t0 = std::time::Instant::now();
+        let t_build = std::time::Instant::now();
         build_game_hot_reload_via_launcher(project_paths)?;
-        warn!("Build took: {:?} time", t0.elapsed());
+        warn!("Build took: {:?} time", t_build.elapsed());
     }
 
     // detect change in build output
@@ -381,7 +346,7 @@ fn check_and_reload_game(
 
     if should_reload {
         info!(LogContext::HotReload => "Reloading game project...");
-        let t2 = std::time::Instant::now();
+        let t_unload = std::time::Instant::now();
 
         // Shutdown and drop engine
         // TODO: serialize here?
@@ -398,8 +363,7 @@ fn check_and_reload_game(
 
         drop(game_dynamic_library.take()); // unload old
 
-        let t3 = std::time::Instant::now();
-        warn!("Unloading took: {:?} time", t3 - t2);
+        warn!("Unloading took: {:?} time", t_unload.elapsed());
 
         // copy hot-reloaded dylib to a unique filename and load that
         let loaded_path = next_loaded_dylib_path(project_paths);
@@ -409,7 +373,7 @@ fn check_and_reload_game(
         )
         .context("Failed to copy hot-reloaded dylib to unique loaded dylib")?;
 
-        let t4 = std::time::Instant::now();
+        let t_load = std::time::Instant::now();
 
         let (game_library, game) = load_game_dynamic_library(&loaded_path);
 
@@ -430,9 +394,8 @@ fn check_and_reload_game(
         *engine = Some(new_engine);
         *game_dynamic_library = Some(game_library);
 
-        let t5 = std::time::Instant::now();
-        warn!("Loading took: {:?} time", t5 - t4);
-        warn!("Reload took: {:?} time", t5 - t2);
+        warn!("Loading took: {:?} time", t_load.elapsed());
+        warn!("Reload took: {:?} time", t0.elapsed());
     }
 
     Ok(())
@@ -644,26 +607,30 @@ fn main() {
 
     // For engine files they are under <pill_engine_root>/engine
     // Two options - some examples are nested deeper because they have sub_examples
-    let mut engine_source_directory_path;
-    let mut pill_engine_root = current_directory_path
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    if pill_engine_root.ends_with("Pill-Engine") {
-        engine_source_directory_path = pill_engine_root.join("engine")
-    } else {
-        pill_engine_root = pill_engine_root.parent().unwrap().to_path_buf();
-        if !pill_engine_root.ends_with("Pill-Engine") {
-            panic!("Wrong project paths detected! Please follow proper convention when creating examples");
+    let engine_source_directory_path = std::env::var("PILL_ENGINE_WORKSPACE_DIR")
+    .ok()
+    .map(PathBuf::from)
+    .unwrap_or_else(|| {
+        let mut pill_engine_root = current_directory_path
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        if pill_engine_root.ends_with("Pill-Engine") {
+            pill_engine_root.join("engine")
+        } else {
+            pill_engine_root = pill_engine_root.parent().unwrap().to_path_buf();
+            if !pill_engine_root.ends_with("Pill-Engine") {
+                panic!("Wrong project paths detected! Please follow proper convention when creating examples");
+            }
+            pill_engine_root
         }
-        engine_source_directory_path = pill_engine_root;
-    }
+    });
 
     let project_paths = ProjectPaths {
         build_data_directory_path,
