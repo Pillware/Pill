@@ -763,16 +763,19 @@ fn build_game_project(
         bail!("Runtime dylib missing: {}", runtime_src.display());
     }
 
-    // Always ensure base dylibs exist (standalone loads these initially)
-    if copy_if_newer(&game_src, &data_dir.join(dylib("pill_game")))? {
-        println!("Copied game dylib");
-    } else {
-        println!("Skipping copying of game dylib");
-    }
-    if copy_if_newer(&runtime_src, &data_dir.join(dylib("pill_runtime")))? {
-        println!("Copied runtime dylib");
-    } else {
-        println!("Skipping copying of runtime dylib");
+    // Copy the dylibs for the initial build only (not consecutive hot-reloads, otherwise we
+    // overwrite loaded libs and crash!)
+    if *compile_mode != CompileMode::HotReload || !hot_reload_child {
+        if copy_if_newer(&game_src, &data_dir.join(dylib("pill_game")))? {
+            println!("Copied game dylib");
+        } else {
+            println!("Skipping copying of game dylib");
+        }
+        if copy_if_newer(&runtime_src, &data_dir.join(dylib("pill_runtime")))? {
+            println!("Copied runtime dylib");
+        } else {
+            println!("Skipping copying of runtime dylib");
+        }
     }
 
     // In hot-reload mode, also update the hot names (watcher looks for these)
