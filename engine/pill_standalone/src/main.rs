@@ -53,11 +53,6 @@ struct ProjectPaths {
 // --- Platform helpers ---
 
 #[cfg(target_os = "windows")]
-const EXEC_SUFFIX: &str = ".exe";
-#[cfg(not(target_os = "windows"))]
-const EXEC_SUFFIX: &str = "";
-
-#[cfg(target_os = "windows")]
 const DYLIB_PREFIX: &str = "";
 #[cfg(not(target_os = "windows"))]
 const DYLIB_PREFIX: &str = "lib";

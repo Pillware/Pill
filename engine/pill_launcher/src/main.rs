@@ -77,7 +77,7 @@ fn find_engine_workspace_dir() -> Result<PathBuf> {
     }
 
     // 2) Search upward from current_exe and current_dir
-    fn search_up(mut start: PathBuf) -> Option<PathBuf> {
+    fn search_up(start: PathBuf) -> Option<PathBuf> {
         for a in start.ancestors() {
             let cand = a.join("engine").join("Cargo.toml");
             if cand.exists() {
@@ -676,6 +676,11 @@ fn build_game_project(
     }
 
     let mut arguments = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
+    if *compile_mode == CompileMode::HotReload {
+        arguments.push("--profile");
+        arguments.push("hot-reload");
+        arguments.push("--quiet");
+    }
     if *compile_mode == CompileMode::Release {
         arguments.push("--release");
     }
@@ -683,7 +688,7 @@ fn build_game_project(
     Command::new("cargo")
         .args(&arguments)
         .current_dir(&engine_workspace_directory_path)
-        .env("CARGO_TARGET_DIR", &cargo_target_dir) // <-- IMPORTANT
+        .env("CARGO_TARGET_DIR", &cargo_target_dir)
         .status()
         .context("failed to run cargo build")?
         .success()
