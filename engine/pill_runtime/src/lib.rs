@@ -14,7 +14,6 @@ use pill_engine::internal::*;
 use pill_renderer::Renderer;
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
-    event::MouseScrollDelta,
     window::Window,
 };
 

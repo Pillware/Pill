@@ -733,25 +733,23 @@ fn build_game_project(
     }
 
     // Copy dynamic libraries (skip if they weren't rebuilt)
-    let game_library_output_path = compilation_artifacts_folder_path.join(dylib("pill_game"));
-    if !game_library_output_path.exists() {
+    let game_artifacts_path = compilation_artifacts_folder_path.join(dylib("pill_game"));
+    if !game_artifacts_path.exists() {
         bail!(
             "Game dynamic library was not built successfully in {}",
-            game_library_output_path.display()
+            game_artifacts_path.display()
         );
     }
 
-    let game_dynamic_library_name = if *compile_mode == CompileMode::HotReload {
+    let game_output_name = if *compile_mode == CompileMode::HotReload {
         dylib("pill_game_hot_reloaded")
     } else {
         dylib("pill_game")
     };
 
-    let output_game_library_path = output_directory_path
-        .join("data")
-        .join(game_dynamic_library_name);
+    let game_output_path = output_directory_path.join("data").join(&game_output_name);
 
-    let copied = copy_if_newer(&game_library_output_path, &output_game_library_path)?;
+    let copied = copy_if_newer(&game_artifacts_path, &game_output_path)?;
 
     if copied {
         println!("Game built successfully!");
@@ -759,27 +757,25 @@ fn build_game_project(
         println!("Game already up-to-date (no artifact copy).");
     }
 
-    let runtime_output_path = compilation_artifacts_folder_path.join(dylib("pill_runtime"));
-    if !runtime_output_path.exists() {
+    let runtime_artifacts_path = compilation_artifacts_folder_path.join(dylib("pill_runtime"));
+    if !runtime_artifacts_path.exists() {
         bail!(
             "Runtime dynamic library was not built successfully in {}",
-            runtime_output_path.display()
+            runtime_artifacts_path.display()
         );
     }
-    // TODO: no hot-reload for engine for now
-    //let runtime_dynamic_library_name = if *compile_mode == CompileMode::HotReload {
-    //    dylib("runtime_game_hot_reloaded")
-    //} else {
-    //    dylib("pill_game")
-    //};
 
-    // TODO: fix this quirky naming lol
-    // TODO: also decide whether runtime or engine!?
-    let output_runtime_path = output_directory_path
+    let runtime_output_name = if *compile_mode == CompileMode::HotReload {
+        dylib("pill_runtime_hot_reloaded")
+    } else {
+        dylib("pill_runtime")
+    };
+
+    let runtime_output_path = output_directory_path
         .join("data")
-        .join(dylib("pill_runtime"));
+        .join(&runtime_output_name);
 
-    let copied = copy_if_newer(&runtime_output_path, &output_runtime_path)?;
+    let copied = copy_if_newer(&runtime_artifacts_path, &runtime_output_path)?;
 
     if copied {
         println!("Runtime built successfully!");

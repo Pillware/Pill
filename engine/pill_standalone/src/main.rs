@@ -41,12 +41,11 @@ struct FileWatchers {
 struct ProjectPaths {
     build_data_directory_path: PathBuf,
     engine_source_directory_path: PathBuf, // TODO: what when the user just uses the precompiled
-    // binary? Probably not a case tho - they they would use scripting and stuff
     game_project_directory_path: PathBuf,
     game_resources_directory_path: PathBuf,
     game_source_directory_path: PathBuf,
     config_path: PathBuf,
-    engine_dynamic_library_path: PathBuf,
+    runtime_dynamic_library_path: PathBuf,
     game_dynamic_library_path: PathBuf,
     game_dynamic_library_hot_reloaded_path: PathBuf,
 }
@@ -90,18 +89,18 @@ fn encode_mouse_button(button: &winit::event::MouseButton) -> u32 {
 
 // --- Hot Reloading and Engine ABI ---
 
-struct EngineHost {
+struct RuntimeHost {
     _lib: Library,
     api: *const PillEngineApiV1,
     handle: EngineHandle,
 }
 
-impl EngineHost {
-    fn load(engine_dylib_path: &Path) -> Result<Self> {
-        let lib = unsafe { Library::new(engine_dylib_path) }.with_context(|| {
+impl RuntimeHost {
+    fn load(runtime_dylib_path: &Path) -> Result<Self> {
+        let lib = unsafe { Library::new(runtime_dylib_path) }.with_context(|| {
             format!(
-                "Failed to load engine dynamic library at {}",
-                engine_dylib_path.display()
+                "Failed to load runtime dynamic library at {}",
+                runtime_dylib_path.display()
             )
         })?;
 
@@ -117,7 +116,7 @@ impl EngineHost {
         let a = unsafe { &*api };
         if a.abi_version != PILL_ENGINE_ABI_VERSION {
             bail!(
-                "Engine ABI version mismatch engine {} host {}",
+                "Engine ABI version mismatch runtime {} host {}",
                 a.abi_version,
                 PILL_ENGINE_ABI_VERSION
             );
@@ -225,7 +224,7 @@ impl EngineHost {
     }
 }
 
-impl Drop for EngineHost {
+impl Drop for RuntimeHost {
     fn drop(&mut self) {
         self.destroy();
     }
@@ -344,7 +343,7 @@ fn ensure_launcher_binary() -> Result<PathBuf> {
     Ok(p)
 }
 
-fn build_game_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
+fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
     let launcher_bin = ensure_launcher_binary()?;
 
     // output dir must be the folder containing the exe + data/
@@ -382,7 +381,7 @@ fn build_game_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()
 /// It won't however reflect changes in standalone because it is the executable that is running the
 /// hot-reload.
 fn check_and_reload_game(
-    engine_host: &mut Option<EngineHost>,
+    runtime_host: &mut Option<RuntimeHost>,
     project_paths: &ProjectPaths,
     last_reload_poll: &mut Instant,
     file_watchers: &mut FileWatchers,
@@ -456,7 +455,7 @@ fn check_and_reload_game(
     // Game src changed => build game only
     if !game_source_changed.is_empty() {
         let t_build = std::time::Instant::now();
-        build_game_hot_reload_via_launcher(project_paths)?;
+        build_hot_reload_via_launcher(project_paths)?;
         warn!("Build took: {:?} time", t_build.elapsed());
     }
 
@@ -475,14 +474,14 @@ fn check_and_reload_game(
     if should_reload {
         info!(LogContext::HotReload => "Reloading game project...");
 
-        // Shutdown and drop engine
+        // Shutdown and drop runtime
         // TODO: serialize here?
         // Two options:
         // - either serialize and shutown - reload the new dll and load + deserialize
-        // - don't shutdown / replace the engine in memory? Not sure if can be achieved
+        // - don't shutdown / replace the runtime in memory? Not sure if can be achieved
         //   this might be nasty towards memory if user modifies significant portions of
         //   the layout of the new library. (I think it's quite unsafe to do because we
-        //   have allocated specific amount of memory for the engine and then start to
+        //   have allocated specific amount of memory for the runtime and then start to
         //   overwrite it randomly with a new memory layout?!)
 
         // Copy hot dylib to unique path (Windows-safe)
@@ -493,8 +492,8 @@ fn check_and_reload_game(
         )
         .context("Failed to copy hot-reloaded dylib to unique loaded dylib")?;
 
-        if let Some(ref mut engine) = engine_host {
-            engine.reload_game(&loaded_path)?;
+        if let Some(ref mut runtime) = runtime_host {
+            runtime.reload_game(&loaded_path)?;
         } else {
             bail!("Engine not initialized");
         }
@@ -539,7 +538,7 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
 }
 
 fn main_loop(
-    engine_host: &mut Option<EngineHost>,
+    runtime_host: &mut Option<RuntimeHost>,
     project_paths: ProjectPaths,
     window_data: WindowData,
     config: Config,
@@ -568,8 +567,8 @@ fn main_loop(
                 // Handle device events
                 Event::DeviceEvent { ref event, .. } => {
                     if let DeviceEvent::MouseMotion { delta } = event {
-                        if let Some(ref mut engine) = engine_host {
-                            engine.mouse_delta(delta.0, delta.1);
+                        if let Some(ref mut runtime) = runtime_host {
+                            runtime.mouse_delta(delta.0, delta.1);
                         }
                     }
                 }
@@ -579,8 +578,8 @@ fn main_loop(
                     ref event,
                     window_id,
                 } if window_id == window_data.window.id() => {
-                    if let Some(ref mut engine) = engine_host {
-                        engine.window_event(event);
+                    if let Some(ref mut runtime) = runtime_host {
+                        runtime.window_event(event);
                     }
 
                     match event {
@@ -589,13 +588,13 @@ fn main_loop(
                             let delta_time = now - last_render_time;
                             last_render_time = now;
 
-                            if let Some(ref mut engine) = engine_host {
-                                engine.update(delta_time);
+                            if let Some(ref mut runtime) = runtime_host {
+                                runtime.update(delta_time);
                             }
 
                             if development_mode {
                                 check_and_reload_game(
-                                    engine_host,
+                                    runtime_host,
                                     &project_paths,
                                     &mut last_reload_poll,
                                     file_watchers.as_mut().unwrap(),
@@ -604,39 +603,39 @@ fn main_loop(
                             }
                         }
                         WindowEvent::KeyboardInput { event, .. } => {
-                            if let Some(ref mut engine) = engine_host {
-                                engine.key_event(event);
+                            if let Some(ref mut runtime) = runtime_host {
+                                runtime.key_event(event);
                             }
                         }
                         WindowEvent::MouseInput { button, state, .. } => {
-                            if let Some(ref mut engine) = engine_host {
+                            if let Some(ref mut runtime) = runtime_host {
                                 let code = encode_mouse_button(button);
                                 let pressed = *state == winit::event::ElementState::Pressed;
-                                engine.mouse_button(code, pressed);
+                                runtime.mouse_button(code, pressed);
                             }
                         }
                         WindowEvent::MouseWheel { delta, .. } => {
-                            if let Some(ref mut engine) = engine_host {
+                            if let Some(ref mut runtime) = runtime_host {
                                 match delta {
                                     winit::event::MouseScrollDelta::LineDelta(dx, dy) => {
-                                        engine.mouse_wheel_line(*dx, *dy)
+                                        runtime.mouse_wheel_line(*dx, *dy)
                                     }
                                     _ => (),
                                 }
                             }
                         }
                         WindowEvent::CursorMoved { position, .. } => {
-                            if let Some(ref mut engine) = engine_host {
-                                engine.cursor_position(position.x, position.y);
+                            if let Some(ref mut runtime) = runtime_host {
+                                runtime.cursor_position(position.x, position.y);
                             }
                         }
                         WindowEvent::Resized(physical_size) => {
-                            if let Some(ref mut engine) = engine_host {
-                                engine.resize(physical_size.width, physical_size.height);
+                            if let Some(ref mut runtime) = runtime_host {
+                                runtime.resize(physical_size.width, physical_size.height);
                             }
                         }
                         WindowEvent::CloseRequested => {
-                            drop(engine_host.take());
+                            drop(runtime_host.take());
                             event_loop_window_target.exit();
                         }
                         _ => {}
@@ -705,7 +704,7 @@ fn main() {
         .unwrap()
         .join("src"); // <GAME_PROJECT_ROOT>/src
     let config_path = game_resources_directory_path.join("config.ini");
-    let engine_dynamic_library_path = build_data_directory_path.join(dylib("pill_runtime"));
+    let runtime_dynamic_library_path = build_data_directory_path.join(dylib("pill_runtime"));
     let game_dynamic_library_path = build_data_directory_path.join(dylib("pill_game"));
     let game_dynamic_library_hot_reloaded_path =
         build_data_directory_path.join(dylib("pill_game_hot_reloaded"));
@@ -744,7 +743,7 @@ fn main() {
         game_source_directory_path,
         game_resources_directory_path,
         config_path,
-        engine_dynamic_library_path,
+        runtime_dynamic_library_path,
         game_dynamic_library_path,
         game_dynamic_library_hot_reloaded_path,
     };
@@ -763,8 +762,8 @@ fn main() {
     // Create windows
     let window_data = create_window(&config, project_paths.game_resources_directory_path.clone());
 
-    // Load engine dynamic Library
-    let mut engine_host = EngineHost::load(&project_paths.engine_dynamic_library_path).unwrap();
+    // Load runtime dynamic Library
+    let mut runtime_host = RuntimeHost::load(&project_paths.runtime_dynamic_library_path).unwrap();
 
     // Create cstring paths
     let game_dylib_path_c = CString::new(
@@ -784,7 +783,7 @@ fn main() {
     let config_path_c =
         CString::new(project_paths.config_path.to_string_lossy().as_bytes()).unwrap();
 
-    // Pass one cloned Arc<Window> ref and let engine take the ownership via Arc::from_raw
+    // Pass one cloned Arc<Window> ref and let runtime take the ownership via Arc::from_raw
     let window_raw = Arc::into_raw(Arc::clone(&window_data.window)) as *const c_void;
 
     let args = PillEngineCreateArgsV1 {
@@ -797,8 +796,8 @@ fn main() {
         initial_h: window_data.size.height,
     };
 
-    if let Err(e) = engine_host.create(&args) {
-        panic!("EngineHost.create failed");
+    if let Err(e) = runtime_host.create(&args) {
+        panic!("RuntimeHost.create failed");
     }
 
     // Run loop
@@ -814,7 +813,7 @@ fn main() {
 
     // Main program loop
     main_loop(
-        &mut Some(engine_host),
+        &mut Some(runtime_host),
         project_paths,
         window_data,
         config,
