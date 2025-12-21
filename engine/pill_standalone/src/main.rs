@@ -12,8 +12,8 @@ use winit::{
 use libloading::{Library, Symbol};
 use std::ffi::c_void;
 use std::{
-    fs::{remove_file, rename},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -21,6 +21,7 @@ use std::{
 use winit::platform::windows::IconExtWindows;
 
 const RELOAD_COOLDOWN: Duration = Duration::from_millis(1000);
+static RELOAD_GEN: AtomicU64 = AtomicU64::new(0);
 
 struct WindowData {
     window: Arc<winit::window::Window>,
@@ -52,6 +53,11 @@ struct ProjectPaths {
 // --- Platform helpers ---
 
 #[cfg(target_os = "windows")]
+const EXEC_SUFFIX: &str = ".exe";
+#[cfg(not(target_os = "windows"))]
+const EXEC_SUFFIX: &str = "";
+
+#[cfg(target_os = "windows")]
 const DYLIB_PREFIX: &str = "";
 #[cfg(not(target_os = "windows"))]
 const DYLIB_PREFIX: &str = "lib";
@@ -65,6 +71,13 @@ const DYLIB_SUFFIX: &str = ".dylib";
 
 fn dylib(name: &str) -> String {
     format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
+}
+
+fn next_loaded_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
+    let gen = RELOAD_GEN.fetch_add(1, Ordering::Relaxed);
+    project_paths
+        .build_data_directory_path
+        .join(dylib(&format!("pill_game_loaded_{gen}")))
 }
 
 fn configure_logging(config: &Config) {
@@ -188,25 +201,69 @@ fn load_game_dynamic_library(library_path: &PathBuf) -> (Library, Box<dyn PillGa
     (game_dynamic_library, game)
 }
 
-fn build_standalone_and_game_crates(project_paths: &ProjectPaths) -> Result<()> {
-    // Locate Pill Launcher manifest directly
-    let launcher_manifest = project_paths
-        .game_project_directory_path
-        .parent()
-        .unwrap() // …/examples
-        .parent()
-        .unwrap() // …/<Pill-Engine>
-        .join("engine")
-        .join("pill_launcher")
-        .join("Cargo.toml");
+fn ensure_launcher_binary(engine_workspace_dir: &Path) -> Result<PathBuf> {
+    // engine_workspace_dir == .../Pill-Engine/engine
+    let launcher_crate_dir = engine_workspace_dir.join("pill_launcher");
+    let launcher_manifest = launcher_crate_dir.join("Cargo.toml");
 
-    let output = std::process::Command::new("cargo")
+    if !launcher_manifest.exists() {
+        anyhow::bail!(
+            "pill_launcher Cargo.toml not found at {}",
+            launcher_manifest.display()
+        );
+    }
+
+    // Prefer a shared target dir (faster after first build)
+    let target_dir = engine_workspace_dir.join("target_tools"); // pick any name you like
+    let debug_dir = target_dir.join("debug");
+
+    let candidates = [
+        debug_dir.join(format!("pill_launcher{EXEC_SUFFIX}")),
+        debug_dir.join(format!("PillLauncher{EXEC_SUFFIX}")),
+    ];
+
+    for c in &candidates {
+        if c.exists() {
+            return Ok(c.clone());
+        }
+    }
+
+    // Build it once (as a standalone crate)
+    let status = std::process::Command::new("cargo")
         .args([
-            "run",
+            "build",
             "--quiet",
             "--manifest-path",
             launcher_manifest.to_str().unwrap(),
-            "--",
+            "--target-dir",
+            target_dir.to_str().unwrap(),
+        ])
+        .status()
+        .context("Failed to build pill_launcher")?;
+
+    if !status.success() {
+        anyhow::bail!("cargo build pill_launcher failed");
+    }
+
+    for c in &candidates {
+        if c.exists() {
+            return Ok(c.clone());
+        }
+    }
+
+    anyhow::bail!(
+        "pill_launcher binary not found after build. Looked for: {} and {}",
+        candidates[0].display(),
+        candidates[1].display()
+    );
+}
+
+fn build_game_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
+    let engine_workspace_dir = &project_paths.engine_source_directory_path;
+    let launcher_bin = ensure_launcher_binary(engine_workspace_dir)?;
+
+    let status = std::process::Command::new(launcher_bin)
+        .args([
             "-a",
             "build",
             "-p",
@@ -214,13 +271,12 @@ fn build_standalone_and_game_crates(project_paths: &ProjectPaths) -> Result<()> 
             "-c",
             "hot-reload",
         ])
-        // run inside the engine workspace so relative paths in Cargo.toml work
-        .current_dir(launcher_manifest.parent().unwrap().parent().unwrap()) // …/<Pill-Engine>/engine
-        .output()
-        .context("failed to invoke PillLauncher via `cargo run`")?;
+        .current_dir(engine_workspace_dir)
+        .status()
+        .context("Failed to invoke pill_launcher binary")?;
 
-    if !output.status.success() {
-        warn!(LogContext::HotReload => "Rebuilding game project failed:\n{}", String::from_utf8_lossy(&output.stderr));
+    if !status.success() {
+        anyhow::bail!("pill_launcher build hot-reload failed");
     }
 
     Ok(())
@@ -246,60 +302,84 @@ fn check_and_reload_game(
     }
     *last_reload_poll = Instant::now();
 
-    let mut paths_changed = Vec::<PathBuf>::new();
+    let mut engine_source_changed = Vec::<PathBuf>::new();
+    let mut game_source_changed = Vec::<PathBuf>::new();
+    let mut game_resources_changed = Vec::<PathBuf>::new();
 
     // Check for engine source files changes
     if let Some(paths) = file_watchers.engine_core_source_files_watcher.get_changes() {
         info!(LogContext::HotReload => "Engine pill_core source file change detected: {:?}", paths);
-        paths_changed.extend(paths);
+        engine_source_changed.extend(paths);
     }
     if let Some(paths) = file_watchers
         .engine_engine_source_files_watcher
         .get_changes()
     {
         info!(LogContext::HotReload => "Engine pill_engine source file change detected: {:?}", paths);
-        paths_changed.extend(paths);
+        engine_source_changed.extend(paths);
     }
     if let Some(paths) = file_watchers
         .engine_renderer_source_files_watcher
         .get_changes()
     {
         info!(LogContext::HotReload => "Engine pill_renderer source file change detected: {:?}", paths);
-        paths_changed.extend(paths);
+        engine_source_changed.extend(paths);
     }
 
-    // Check for game project source files changes
+    // Game
+    if let Some(paths) = file_watchers
+        .game_project_resources_files_watcher
+        .get_changes()
+    {
+        info!(LogContext::HotReload => "Game project resources file change detected: {:?}", paths);
+        game_resources_changed.extend(paths);
+    }
     if let Some(paths) = file_watchers
         .game_project_source_files_watcher
         .get_changes()
     {
         info!(LogContext::HotReload => "Game project source file change detected: {:?}", paths);
-        paths_changed.extend(paths);
+        game_source_changed.extend(paths);
     }
 
-    // Check for game project resource files changes
-    if let Some(paths) = file_watchers
-        .game_project_resources_files_watcher
-        .get_changes()
+    // Resources only => no build
+    if !game_resources_changed.is_empty()
+        && game_source_changed.is_empty()
+        && engine_source_changed.is_empty()
     {
-        info!(LogContext::HotReload => "Game project resource file change detected: {:?}", paths);
-        paths_changed.extend(paths);
+        info!(LogContext::HotReload => "Game project resources changed (no rebuild): {:?}", game_resources_changed);
+        return Ok(());
     }
 
-    let t0 = std::time::Instant::now();
-
-    if !paths_changed.is_empty() {
-        build_standalone_and_game_crates(project_paths)?;
+    // Engine changed => prepared path, but not hot-reloading yet
+    if !engine_source_changed.is_empty() {
+        warn!(LogContext::HotReload =>
+            "Engine changed (not hot-reloaded yet). Restart required. Changed: {:?}",
+            engine_source_changed
+        );
+        return Ok(());
     }
-    let t1 = std::time::Instant::now();
-    warn!("Build took: {:?} time", t1 - t0);
 
-    // Check for game dynamic library changes
-    if file_watchers
+    // Game src changed => build game only
+    if !game_source_changed.is_empty() {
+        let t0 = std::time::Instant::now();
+        build_game_hot_reload_via_launcher(project_paths)?;
+        warn!("Build took: {:?} time", t0.elapsed());
+    }
+
+    // detect change in build output
+    let mut should_reload = false;
+    if let Some(paths) = file_watchers
         .game_dynamic_library_files_watcher
         .get_changes()
-        .is_some()
     {
+        let hot_name = dylib("pill_game_hot_reloaded");
+        should_reload = paths
+            .iter()
+            .any(|p| p.file_name().and_then(|s| s.to_str()) == Some(&hot_name));
+    }
+
+    if should_reload {
         info!(LogContext::HotReload => "Reloading game project...");
         let t2 = std::time::Instant::now();
 
@@ -312,30 +392,32 @@ fn check_and_reload_game(
         //   the layout of the new library. (I think it's quite unsafe to do because we
         //   have allocated specific amount of memory for the engine and then start to
         //   overwrite it randomly with a new memory layout?!)
-        if let Some(mut engine) = engine.take() {
-            engine.shutdown();
+        if let Some(mut e) = engine.take() {
+            e.shutdown();
         }
 
-        drop(game_dynamic_library.take()); // Unload current game dynamic library
-
-        // Remove old game dynamic library file and rename new one
-        remove_file(&project_paths.game_dynamic_library_path).unwrap();
-        rename(
-            &project_paths.game_dynamic_library_hot_reloaded_path,
-            &project_paths.game_dynamic_library_path,
-        )
-        .unwrap();
+        drop(game_dynamic_library.take()); // unload old
 
         let t3 = std::time::Instant::now();
         warn!("Unloading took: {:?} time", t3 - t2);
+
+        // copy hot-reloaded dylib to a unique filename and load that
+        let loaded_path = next_loaded_dylib_path(project_paths);
+        std::fs::copy(
+            &project_paths.game_dynamic_library_hot_reloaded_path,
+            &loaded_path,
+        )
+        .context("Failed to copy hot-reloaded dylib to unique loaded dylib")?;
+
         let t4 = std::time::Instant::now();
-        // Load new game dynamic library
-        let (game_library, game) =
-            load_game_dynamic_library(&project_paths.game_dynamic_library_path);
+
+        let (game_library, game) = load_game_dynamic_library(&loaded_path);
+
         let renderer: Box<dyn PillRenderer> = Box::new(
             <pill_renderer::Renderer as PillRenderer>::new(Arc::clone(window), config.clone())
                 .unwrap(),
         );
+
         let mut new_engine = Engine::new(
             game,
             project_paths.game_resources_directory_path.clone(),
@@ -343,22 +425,14 @@ fn check_and_reload_game(
             config.clone(),
         );
         new_engine.initialize(Some(*window_size)).unwrap();
+
         // TODO: deserialize the saved scene(s) state
         *engine = Some(new_engine);
         *game_dynamic_library = Some(game_library);
-        let t5 = std::time::Instant::now();
 
+        let t5 = std::time::Instant::now();
         warn!("Loading took: {:?} time", t5 - t4);
-        let t5 = std::time::Instant::now();
-        // Run again to clear changes (otherwise it will trigger reload again since file was renamed)
-        // TODO: remove this once we ignore that in the reloading - no need for extra ops
-        file_watchers
-            .game_dynamic_library_files_watcher
-            .get_changes();
-
-        let t6 = std::time::Instant::now();
-        warn!("File watchers took: {:?} time", t6 - t5);
-        warn!("Reload took: {:?} time", t6 - t0);
+        warn!("Reload took: {:?} time", t5 - t2);
     }
 
     Ok(())
