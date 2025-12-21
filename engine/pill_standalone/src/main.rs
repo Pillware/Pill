@@ -399,6 +399,7 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
             "-o",
             out_dir.to_str().unwrap(),
         ])
+        .env("PILL_HOT_RELOAD_CHILD", "1")
         .env(
             "PILL_ENGINE_WORKSPACE_DIR",
             &project_paths.engine_source_directory_path,
@@ -516,8 +517,7 @@ fn check_and_reload(
         .context("Failed to copy hot-reloaded dylib to unique loaded dylib")?;
 
         // Reload runtime dynamic Library
-        let mut new_runtime =
-            RuntimeHost::load(&project_paths.runtime_dynamic_library_hot_reloaded_path)?;
+        let mut new_runtime = RuntimeHost::load(&loaded_path)?;
         let args = runtime_context.make_args();
         new_runtime.create(&args)?;
 
@@ -599,10 +599,10 @@ fn main_loop(
     runtime_context: RuntimeCreateContext,
     project_paths: ProjectPaths,
     window_data: WindowData,
-    development_mode: bool,
+    hot_reload_enabled: bool,
 ) -> Result<()> {
     // Create a file watcher to monitor game project file changes as well as game output file changes
-    let mut file_watchers: Option<FileWatchers> = if development_mode {
+    let mut file_watchers: Option<FileWatchers> = if hot_reload_enabled {
         Some(create_file_watchers(&project_paths))
     } else {
         None
@@ -649,7 +649,7 @@ fn main_loop(
                                 runtime.update(delta_time);
                             }
 
-                            if development_mode {
+                            if hot_reload_enabled {
                                 check_and_reload(
                                     runtime_host,
                                     &runtime_context,
@@ -728,7 +728,7 @@ fn main() {
     // ├── Cargo.toml
     // └── Cargo.lock
 
-    let development_mode = true;
+    let hot_reload_enabled = std::env::var("PILL_ENABLE_HOT_RELOAD").ok().as_deref() == Some("1");
 
     let current_directory_path = std::env::current_exe()
         .unwrap()
@@ -742,7 +742,7 @@ fn main() {
         .unwrap()
         .to_path_buf();
     let build_data_directory_path = current_directory_path.join("data");
-    let game_resources_directory_path = if development_mode {
+    let game_resources_directory_path = if hot_reload_enabled {
         current_directory_path
             .parent()
             .unwrap()
@@ -869,7 +869,7 @@ fn main() {
         runtime_context,
         project_paths,
         window_data,
-        development_mode,
+        hot_reload_enabled,
     )
     .context("Main loop failed")
     .unwrap();

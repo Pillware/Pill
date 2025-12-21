@@ -58,7 +58,8 @@ fn dylib(name: &str) -> String {
 fn target_dir_for(mode: &CompileMode) -> &'static str {
     match mode {
         CompileMode::Release => "release",
-        _ => "debug",
+        CompileMode::Debug => "debug",
+        CompileMode::HotReload => "hot-reload",
     }
 }
 
@@ -228,22 +229,28 @@ fn parse_file_lines<A: FnMut(String)>(input_path: &PathBuf, mut action: A) -> Re
 
 // --- Utilities ---
 
+fn output_dir_for(mode: &CompileMode) -> &'static str {
+    match mode {
+        CompileMode::Debug => "dev",
+        CompileMode::Release => "release",
+        CompileMode::HotReload => "hot-reload",
+    }
+}
+
 fn get_game_build_path(
     game_project_directory_path: &PathBuf,
     output_directory_path: &PathBuf,
+    compile_mode: &CompileMode,
 ) -> Result<PathBuf> {
-    let game_project_build_path = if output_directory_path.as_os_str() == "." {
-        game_project_directory_path
+    if output_directory_path.as_os_str() == "." {
+        Ok(game_project_directory_path
             .join("build")
-            .join("dev")
-            .absolutize()
-            .context("Failed to absolutize directory path")?
-            .to_path_buf()
+            .join(output_dir_for(compile_mode))
+            .absolutize()?
+            .to_path_buf())
     } else {
-        output_directory_path.absolutize()?.to_path_buf()
-    };
-
-    Ok(game_project_build_path)
+        Ok(output_directory_path.absolutize()?.to_path_buf())
+    }
 }
 
 fn get_game_title(game_project_directory_path: &PathBuf) -> Result<String> {
@@ -615,7 +622,7 @@ fn run_game_project(
         output_directory_path.display()
     );
     let game_title =
-        get_game_title(&game_project_directory_path).context("Failed to get game title")?;
+        get_game_title(game_project_directory_path).context("Failed to get game title")?;
     let standalone_executable_path =
         output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
 
@@ -624,8 +631,16 @@ fn run_game_project(
 
     let status = Command::new(&standalone_executable_path)
         .current_dir(output_directory_path)
-        .env("PILL_LAUNCHER_BIN", &launcher_bin) // <--- key
-        .env("PILL_ENGINE_WORKSPACE_DIR", &engine_ws) // <--- key
+        .env("PILL_LAUNCHER_BIN", &launcher_bin)
+        .env("PILL_ENGINE_WORKSPACE_DIR", &engine_ws)
+        .env(
+            "PILL_ENABLE_HOT_RELOAD",
+            if *compile_mode == CompileMode::HotReload {
+                "1"
+            } else {
+                "0"
+            },
+        )
         .args(game_args)
         .status()
         .with_context(|| {
@@ -655,6 +670,9 @@ fn build_game_project(
         "Building game project from {}...",
         game_project_directory_path.display()
     );
+
+    let hot_reload_child = *compile_mode == CompileMode::HotReload
+        && std::env::var("PILL_HOT_RELOAD_CHILD").ok().as_deref() == Some("1");
 
     let engine_workspace_directory_path =
         prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
@@ -710,8 +728,8 @@ fn build_game_project(
     fs::create_dir_all(output_directory_path.join("data").as_path())
         .context("Failed to create build output directories")?;
 
-    // Copy standalone exe ONLY for non-hot-reload builds
-    if *compile_mode != CompileMode::HotReload {
+    // Copy standalone exe ONLY for non-hot-reload builds or hot-reload consequent reloads
+    if *compile_mode != CompileMode::HotReload || !hot_reload_child {
         let standalone_output_path =
             compilation_artifacts_folder_path.join(format!("pill_standalone{EXEC_SUFFIX}"));
         if !standalone_output_path.exists() {
@@ -732,55 +750,46 @@ fn build_game_project(
         }
     }
 
-    // Copy dynamic libraries (skip if they weren't rebuilt)
-    let game_artifacts_path = compilation_artifacts_folder_path.join(dylib("pill_game"));
-    if !game_artifacts_path.exists() {
-        bail!(
-            "Game dynamic library was not built successfully in {}",
-            game_artifacts_path.display()
-        );
+    let data_dir = output_directory_path.join("data");
+    fs::create_dir_all(&data_dir)?;
+
+    let game_src = compilation_artifacts_folder_path.join(dylib("pill_game"));
+    let runtime_src = compilation_artifacts_folder_path.join(dylib("pill_runtime"));
+
+    if !game_src.exists() {
+        bail!("Game dylib missing: {}", game_src.display());
+    }
+    if !runtime_src.exists() {
+        bail!("Runtime dylib missing: {}", runtime_src.display());
     }
 
-    let game_output_name = if *compile_mode == CompileMode::HotReload {
-        dylib("pill_game_hot_reloaded")
+    // Always ensure base dylibs exist (standalone loads these initially)
+    if copy_if_newer(&game_src, &data_dir.join(dylib("pill_game")))? {
+        println!("Copied game dylib");
     } else {
-        dylib("pill_game")
-    };
-
-    let game_output_path = output_directory_path.join("data").join(&game_output_name);
-
-    let copied = copy_if_newer(&game_artifacts_path, &game_output_path)?;
-
-    if copied {
-        println!("Game built successfully!");
+        println!("Skipping copying of game dylib");
+    }
+    if copy_if_newer(&runtime_src, &data_dir.join(dylib("pill_runtime")))? {
+        println!("Copied runtime dylib");
     } else {
-        println!("Game already up-to-date (no artifact copy).");
+        println!("Skipping copying of runtime dylib");
     }
 
-    let runtime_artifacts_path = compilation_artifacts_folder_path.join(dylib("pill_runtime"));
-    if !runtime_artifacts_path.exists() {
-        bail!(
-            "Runtime dynamic library was not built successfully in {}",
-            runtime_artifacts_path.display()
-        );
-    }
-
-    let runtime_output_name = if *compile_mode == CompileMode::HotReload {
-        dylib("pill_runtime_hot_reloaded")
-    } else {
-        dylib("pill_runtime")
-    };
-
-    let runtime_output_path = output_directory_path
-        .join("data")
-        .join(&runtime_output_name);
-
-    let copied = copy_if_newer(&runtime_artifacts_path, &runtime_output_path)?;
-
-    if copied {
-        println!("Runtime built successfully!");
-    } else {
-        println!("Runtime already up-to-date (no artifact copy).");
+    // In hot-reload mode, also update the hot names (watcher looks for these)
+    if *compile_mode == CompileMode::HotReload {
+        if copy_if_newer(&game_src, &data_dir.join(dylib("pill_game_hot_reloaded")))? {
+            println!("Copied game hot-reload dylib");
+        } else {
+            println!("Skipping copying of game hot-reload dylib");
+        }
+        if copy_if_newer(
+            &runtime_src,
+            &data_dir.join(dylib("pill_runtime_hot_reloaded")),
+        )? {
+            println!("Copied runtime hot-reload dylib");
+        } else {
+            println!("Skipping copying of runtime hot-reload dylib");
+        }
     }
 
     Ok(())
@@ -1065,8 +1074,12 @@ fn main() {
                 .to_path_buf();
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
-            output_directory_path =
-                get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
+            output_directory_path = get_game_build_path(
+                &game_project_directory_path,
+                &output_directory_path,
+                &compile_mode,
+            )
+            .unwrap();
             run_game_project(
                 &game_project_directory_path,
                 &output_directory_path,
@@ -1082,8 +1095,12 @@ fn main() {
                 .to_path_buf();
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
-            output_directory_path =
-                get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
+            output_directory_path = get_game_build_path(
+                &game_project_directory_path,
+                &output_directory_path,
+                &compile_mode,
+            )
+            .unwrap();
             build_game_project(
                 &game_project_directory_path,
                 &output_directory_path,
