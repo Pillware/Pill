@@ -675,7 +675,15 @@ fn build_game_project(
             .context("Failed to render PlantUML diagrams for pill_engine")?;
     }
 
-    let mut arguments = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
+    let mut arguments = vec![
+        "build",
+        "-p",
+        "pill_game",
+        "-p",
+        "pill_standalone",
+        "-p",
+        "pill_runtime",
+    ];
     if *compile_mode == CompileMode::HotReload {
         arguments.push("--profile");
         arguments.push("hot-reload");
@@ -724,7 +732,7 @@ fn build_game_project(
         }
     }
 
-    // Copy dynamic library (skip if it wasn't rebuilt)
+    // Copy dynamic libraries (skip if they weren't rebuilt)
     let game_library_output_path = compilation_artifacts_folder_path.join(dylib("pill_game"));
     if !game_library_output_path.exists() {
         bail!(
@@ -749,6 +757,34 @@ fn build_game_project(
         println!("Game built successfully!");
     } else {
         println!("Game already up-to-date (no artifact copy).");
+    }
+
+    let runtime_output_path = compilation_artifacts_folder_path.join(dylib("pill_runtime"));
+    if !runtime_output_path.exists() {
+        bail!(
+            "Runtime dynamic library was not built successfully in {}",
+            runtime_output_path.display()
+        );
+    }
+    // TODO: no hot-reload for engine for now
+    //let runtime_dynamic_library_name = if *compile_mode == CompileMode::HotReload {
+    //    dylib("runtime_game_hot_reloaded")
+    //} else {
+    //    dylib("pill_game")
+    //};
+
+    // TODO: fix this quirky naming lol
+    // TODO: also decide whether runtime or engine!?
+    let output_runtime_path = output_directory_path
+        .join("data")
+        .join(dylib("pill_runtime"));
+
+    let copied = copy_if_newer(&runtime_output_path, &output_runtime_path)?;
+
+    if copied {
+        println!("Runtime built successfully!");
+    } else {
+        println!("Runtime already up-to-date (no artifact copy).");
     }
 
     Ok(())

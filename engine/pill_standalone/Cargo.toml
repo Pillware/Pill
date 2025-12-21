@@ -5,8 +5,7 @@ edition = "2021"
 
 [dependencies]
 pill_core = {path = "../pill_core"}
-pill_engine = {path = "../pill_engine", features = ["internal"]}
-pill_renderer = {path = "../pill_renderer"}
+pill_abi = { path = "../pill_abi" }
 
 winit = "0.30.12"
 log = "0.4"

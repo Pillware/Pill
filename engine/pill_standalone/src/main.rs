@@ -1,16 +1,16 @@
 mod file_watcher;
 use crate::file_watcher::FileWatcher;
-use anyhow::{Context, Ok, Result};
+use anyhow::{bail, Context, Ok, Result};
 use config::Config;
+use pill_abi::*;
 use pill_core::{info, set_log_levels, warn, EngineError, LogContext, PillStyle};
-use pill_engine::internal::*;
 use winit::{
     event::{DeviceEvent, Event, WindowEvent},
     window::Icon,
 };
 
 use libloading::{Library, Symbol};
-use std::ffi::c_void;
+use std::ffi::{c_void, CString};
 use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -46,6 +46,7 @@ struct ProjectPaths {
     game_resources_directory_path: PathBuf,
     game_source_directory_path: PathBuf,
     config_path: PathBuf,
+    engine_dynamic_library_path: PathBuf,
     game_dynamic_library_path: PathBuf,
     game_dynamic_library_hot_reloaded_path: PathBuf,
 }
@@ -73,6 +74,161 @@ fn next_loaded_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
     project_paths
         .build_data_directory_path
         .join(dylib(&format!("pill_game_loaded_{gen}")))
+}
+
+fn encode_mouse_button(button: &winit::event::MouseButton) -> u32 {
+    use winit::event::MouseButton::*;
+    match button {
+        Left => 0,
+        Right => 1,
+        Middle => 2,
+        Back => 3,
+        Forward => 4,
+        Other(n) => 5u32.saturating_add(*n as u32),
+    }
+}
+
+// --- Hot Reloading and Engine ABI ---
+
+struct EngineHost {
+    _lib: Library,
+    api: *const PillEngineApiV1,
+    handle: EngineHandle,
+}
+
+impl EngineHost {
+    fn load(engine_dylib_path: &Path) -> Result<Self> {
+        let lib = unsafe { Library::new(engine_dylib_path) }.with_context(|| {
+            format!(
+                "Failed to load engine dynamic library at {}",
+                engine_dylib_path.display()
+            )
+        })?;
+
+        let get_api: Symbol<unsafe extern "C" fn() -> *const PillEngineApiV1> =
+            unsafe { lib.get(PILL_ENGINE_API_SYMBOL) }
+                .context("Missing symbol get_pill_engine_api_v1")?;
+
+        let api = unsafe { get_api() };
+        if api.is_null() {
+            bail!("pill_engine get_pill_engine_api_v1 returned null");
+        }
+
+        let a = unsafe { &*api };
+        if a.abi_version != PILL_ENGINE_ABI_VERSION {
+            bail!(
+                "Engine ABI version mismatch engine {} host {}",
+                a.abi_version,
+                PILL_ENGINE_ABI_VERSION
+            );
+        }
+        // TODO: the hash checking algo
+        Ok(Self {
+            _lib: lib,
+            api,
+            handle: std::ptr::null_mut(),
+        })
+    }
+
+    fn create(&mut self, args: &PillEngineCreateArgsV1) -> Result<()> {
+        let a = unsafe { &*self.api };
+        let ret = (a.create)(args as *const _, &mut self.handle as *mut _);
+        if ret != PILL_OK {
+            let c = unsafe { std::ffi::CStr::from_ptr((a.last_error_utf8)()) };
+            bail!("engine create failed: {}", c.to_string_lossy());
+        }
+        Ok(())
+    }
+
+    fn destroy(&mut self) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.destroy)(self.handle);
+        self.handle = std::ptr::null_mut();
+    }
+
+    fn update(&mut self, dt: Duration) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.update)(self.handle, dt.as_nanos() as u64);
+    }
+
+    fn resize(&mut self, w: u32, h: u32) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.resize)(self.handle, w, h);
+    }
+
+    fn window_event(&mut self, we: &winit::event::WindowEvent) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.window_event)(self.handle, we as *const _ as *const c_void);
+    }
+
+    fn key_event(&mut self, ke: &winit::event::KeyEvent) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.key_event)(self.handle, ke as *const _ as *const c_void);
+    }
+
+    fn mouse_button(&mut self, button: u32, pressed: bool) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.mouse_button)(self.handle, button, pressed);
+    }
+
+    fn mouse_delta(&mut self, dx: f64, dy: f64) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.mouse_delta)(self.handle, dx, dy);
+    }
+
+    fn cursor_position(&mut self, x: f64, y: f64) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.cursor_position)(self.handle, x, y);
+    }
+
+    fn mouse_wheel_line(&mut self, dx: f32, dy: f32) {
+        if self.handle.is_null() {
+            return;
+        }
+        let a = unsafe { &*self.api };
+        (a.mouse_wheel_line)(self.handle, dx, dy);
+    }
+
+    fn reload_game(&mut self, game_dylib_path: &Path) -> Result<()> {
+        let a = unsafe { &*self.api };
+        let path = CString::new(game_dylib_path.to_string_lossy().as_bytes())?;
+        let ret = (a.reload_game)(self.handle, path.as_ptr());
+        if ret != PILL_OK {
+            let c = unsafe { std::ffi::CStr::from_ptr((a.last_error_utf8)()) };
+            bail!("engine reload_game failed: {}", c.to_string_lossy());
+        }
+        Ok(())
+    }
+}
+
+impl Drop for EngineHost {
+    fn drop(&mut self) {
+        self.destroy();
+    }
 }
 
 fn configure_logging(config: &Config) {
@@ -177,25 +333,6 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
     }
 }
 
-fn load_game_dynamic_library(library_path: &PathBuf) -> (Library, Box<dyn PillGame>) {
-    // SAFETY:
-    // As long as the caller stops ALL functions running in the game + engine
-    // we are fine to unload + load a new Box<dyn PillGame>
-    type CreateGameFn = unsafe extern "C" fn() -> *mut c_void;
-    let game_dynamic_library = unsafe {
-        Library::new(library_path)
-            .context(format!(
-                "Failed to load game dynamic library at {}",
-                library_path.display()
-            ))
-            .unwrap()
-    };
-    let get_game_function: Symbol<CreateGameFn> =
-        unsafe { game_dynamic_library.get(b"get_game").unwrap() };
-    let game = unsafe { *Box::from_raw(get_game_function() as *mut Box<dyn PillGame>) };
-    (game_dynamic_library, game)
-}
-
 fn ensure_launcher_binary() -> Result<PathBuf> {
     let v = std::env::var("PILL_LAUNCHER_BIN").context(
         "PILL_LAUNCHER_BIN not set (pill_launcher should set it when spawning standalone)",
@@ -245,13 +382,9 @@ fn build_game_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()
 /// It won't however reflect changes in standalone because it is the executable that is running the
 /// hot-reload.
 fn check_and_reload_game(
-    engine: &mut Option<Engine>,
-    game_dynamic_library: &mut Option<Library>,
+    engine_host: &mut Option<EngineHost>,
     project_paths: &ProjectPaths,
     last_reload_poll: &mut Instant,
-    window_size: &winit::dpi::PhysicalSize<u32>,
-    window: &Arc<winit::window::Window>,
-    config: &Config,
     file_watchers: &mut FileWatchers,
 ) -> Result<()> {
     let now: Instant = Instant::now();
@@ -341,7 +474,6 @@ fn check_and_reload_game(
 
     if should_reload {
         info!(LogContext::HotReload => "Reloading game project...");
-        let t_unload = std::time::Instant::now();
 
         // Shutdown and drop engine
         // TODO: serialize here?
@@ -352,15 +484,8 @@ fn check_and_reload_game(
         //   the layout of the new library. (I think it's quite unsafe to do because we
         //   have allocated specific amount of memory for the engine and then start to
         //   overwrite it randomly with a new memory layout?!)
-        if let Some(mut e) = engine.take() {
-            e.shutdown();
-        }
 
-        drop(game_dynamic_library.take()); // unload old
-
-        warn!("Unloading took: {:?} time", t_unload.elapsed());
-
-        // copy hot-reloaded dylib to a unique filename and load that
+        // Copy hot dylib to unique path (Windows-safe)
         let loaded_path = next_loaded_dylib_path(project_paths);
         std::fs::copy(
             &project_paths.game_dynamic_library_hot_reloaded_path,
@@ -368,28 +493,12 @@ fn check_and_reload_game(
         )
         .context("Failed to copy hot-reloaded dylib to unique loaded dylib")?;
 
-        let t_load = std::time::Instant::now();
+        if let Some(ref mut engine) = engine_host {
+            engine.reload_game(&loaded_path)?;
+        } else {
+            bail!("Engine not initialized");
+        }
 
-        let (game_library, game) = load_game_dynamic_library(&loaded_path);
-
-        let renderer: Box<dyn PillRenderer> = Box::new(
-            <pill_renderer::Renderer as PillRenderer>::new(Arc::clone(window), config.clone())
-                .unwrap(),
-        );
-
-        let mut new_engine = Engine::new(
-            game,
-            project_paths.game_resources_directory_path.clone(),
-            renderer,
-            config.clone(),
-        );
-        new_engine.initialize(Some(*window_size)).unwrap();
-
-        // TODO: deserialize the saved scene(s) state
-        *engine = Some(new_engine);
-        *game_dynamic_library = Some(game_library);
-
-        warn!("Loading took: {:?} time", t_load.elapsed());
         warn!("Reload took: {:?} time", t0.elapsed());
     }
 
@@ -430,8 +539,7 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
 }
 
 fn main_loop(
-    engine: &mut Option<Engine>,
-    game_dynamic_library: &mut Option<Library>,
+    engine_host: &mut Option<EngineHost>,
     project_paths: ProjectPaths,
     window_data: WindowData,
     config: Config,
@@ -460,8 +568,8 @@ fn main_loop(
                 // Handle device events
                 Event::DeviceEvent { ref event, .. } => {
                     if let DeviceEvent::MouseMotion { delta } = event {
-                        if let Some(ref mut engine) = engine {
-                            engine.pass_mouse_delta_input(delta);
+                        if let Some(ref mut engine) = engine_host {
+                            engine.mouse_delta(delta.0, delta.1);
                         }
                     }
                 }
@@ -471,8 +579,8 @@ fn main_loop(
                     ref event,
                     window_id,
                 } if window_id == window_data.window.id() => {
-                    if let Some(ref mut engine) = engine {
-                        engine.pass_input_to_egui(event);
+                    if let Some(ref mut engine) = engine_host {
+                        engine.window_event(event);
                     }
 
                     match event {
@@ -481,54 +589,55 @@ fn main_loop(
                             let delta_time = now - last_render_time;
                             last_render_time = now;
 
-                            if let Some(ref mut e) = engine {
-                                e.update(delta_time);
+                            if let Some(ref mut engine) = engine_host {
+                                engine.update(delta_time);
                             }
 
                             if development_mode {
                                 check_and_reload_game(
-                                    engine,
-                                    game_dynamic_library,
+                                    engine_host,
                                     &project_paths,
                                     &mut last_reload_poll,
-                                    &window_data.size,
-                                    &window_data.window,
-                                    &config,
                                     file_watchers.as_mut().unwrap(),
                                 )
                                 .unwrap();
                             }
                         }
                         WindowEvent::KeyboardInput { event, .. } => {
-                            if let Some(ref mut e) = engine {
-                                e.pass_keyboard_key_input(event);
+                            if let Some(ref mut engine) = engine_host {
+                                engine.key_event(event);
                             }
                         }
                         WindowEvent::MouseInput { button, state, .. } => {
-                            if let Some(ref mut e) = engine {
-                                e.pass_mouse_key_input(button, state);
+                            if let Some(ref mut engine) = engine_host {
+                                let code = encode_mouse_button(button);
+                                let pressed = *state == winit::event::ElementState::Pressed;
+                                engine.mouse_button(code, pressed);
                             }
                         }
                         WindowEvent::MouseWheel { delta, .. } => {
-                            if let Some(ref mut e) = engine {
-                                e.pass_mouse_wheel_input(delta);
+                            if let Some(ref mut engine) = engine_host {
+                                match delta {
+                                    winit::event::MouseScrollDelta::LineDelta(dx, dy) => {
+                                        engine.mouse_wheel_line(*dx, *dy)
+                                    }
+                                    _ => (),
+                                }
                             }
                         }
                         WindowEvent::CursorMoved { position, .. } => {
-                            if let Some(ref mut e) = engine {
-                                e.pass_mouse_position_input(position);
+                            if let Some(ref mut engine) = engine_host {
+                                engine.cursor_position(position.x, position.y);
+                            }
+                        }
+                        WindowEvent::Resized(physical_size) => {
+                            if let Some(ref mut engine) = engine_host {
+                                engine.resize(physical_size.width, physical_size.height);
                             }
                         }
                         WindowEvent::CloseRequested => {
-                            if let Some(mut e) = engine.take() {
-                                e.shutdown();
-                            }
+                            drop(engine_host.take());
                             event_loop_window_target.exit();
-                        }
-                        WindowEvent::Resized(physical_size) => {
-                            if let Some(ref mut e) = engine {
-                                e.resize(*physical_size);
-                            }
                         }
                         _ => {}
                     }
@@ -596,6 +705,7 @@ fn main() {
         .unwrap()
         .join("src"); // <GAME_PROJECT_ROOT>/src
     let config_path = game_resources_directory_path.join("config.ini");
+    let engine_dynamic_library_path = build_data_directory_path.join(dylib("pill_runtime"));
     let game_dynamic_library_path = build_data_directory_path.join(dylib("pill_game"));
     let game_dynamic_library_hot_reloaded_path =
         build_data_directory_path.join(dylib("pill_game_hot_reloaded"));
@@ -634,6 +744,7 @@ fn main() {
         game_source_directory_path,
         game_resources_directory_path,
         config_path,
+        engine_dynamic_library_path,
         game_dynamic_library_path,
         game_dynamic_library_hot_reloaded_path,
     };
@@ -652,31 +763,43 @@ fn main() {
     // Create windows
     let window_data = create_window(&config, project_paths.game_resources_directory_path.clone());
 
-    // Load game dynamic library
-    let mut game_dynamic_library: Option<Library>;
-    let (game_library, game) = load_game_dynamic_library(&project_paths.game_dynamic_library_path);
-    game_dynamic_library = Some(game_library);
+    // Load engine dynamic Library
+    let mut engine_host = EngineHost::load(&project_paths.engine_dynamic_library_path).unwrap();
 
-    // Initialize renderer and engine
-    let renderer: Box<dyn PillRenderer> = Box::new(
-        <pill_renderer::Renderer as PillRenderer>::new(
-            Arc::clone(&window_data.window),
-            config.clone(),
-        )
-        .unwrap(),
-    );
-    let mut engine: Option<Engine> = Some(Engine::new(
-        game,
-        project_paths.game_resources_directory_path.clone(),
-        renderer,
-        config.clone(),
-    ));
-    engine
-        .as_mut()
-        .unwrap()
-        .initialize(Some(window_data.size))
-        .context("Failed to initialize engine")
-        .unwrap();
+    // Create cstring paths
+    let game_dylib_path_c = CString::new(
+        project_paths
+            .game_dynamic_library_path
+            .to_string_lossy()
+            .as_bytes(),
+    )
+    .unwrap();
+    let resource_path_c = CString::new(
+        project_paths
+            .game_resources_directory_path
+            .to_string_lossy()
+            .as_bytes(),
+    )
+    .unwrap();
+    let config_path_c =
+        CString::new(project_paths.config_path.to_string_lossy().as_bytes()).unwrap();
+
+    // Pass one cloned Arc<Window> ref and let engine take the ownership via Arc::from_raw
+    let window_raw = Arc::into_raw(Arc::clone(&window_data.window)) as *const c_void;
+
+    let args = PillEngineCreateArgsV1 {
+        struct_size: std::mem::size_of::<PillEngineCreateArgsV1>() as u32,
+        game_dylib_path: game_dylib_path_c.as_ptr(),
+        game_resources_dir: resource_path_c.as_ptr(),
+        config_path: config_path_c.as_ptr(),
+        window_ptr: window_raw,
+        initial_w: window_data.size.width,
+        initial_h: window_data.size.height,
+    };
+
+    if let Err(e) = engine_host.create(&args) {
+        panic!("EngineHost.create failed");
+    }
 
     // Run loop
     window_data
@@ -691,8 +814,7 @@ fn main() {
 
     // Main program loop
     main_loop(
-        &mut engine,
-        &mut game_dynamic_library,
+        &mut Some(engine_host),
         project_paths,
         window_data,
         config,
