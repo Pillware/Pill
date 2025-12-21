@@ -793,6 +793,16 @@ fn build_game_project(
         } else {
             println!("Skipping copying of runtime hot-reload dylib");
         }
+
+        // Also cleanup all previous hot_reload targets
+        remove_files_starting_with(
+            &data_dir,
+            format!("{DYLIB_PREFIX}pill_runtime_loaded").as_str(),
+        )?;
+        remove_files_starting_with(
+            &data_dir,
+            format!("{DYLIB_PREFIX}pill_game_loaded").as_str(),
+        )?;
     }
 
     Ok(())
