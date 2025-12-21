@@ -29,6 +29,9 @@ struct WindowData {
 }
 
 struct FileWatchers {
+    engine_core_source_files_watcher: FileWatcher,
+    engine_engine_source_files_watcher: FileWatcher,
+    engine_renderer_source_files_watcher: FileWatcher,
     game_dynamic_library_files_watcher: FileWatcher,
     game_project_source_files_watcher: FileWatcher,
     game_project_resources_files_watcher: FileWatcher,
@@ -36,6 +39,8 @@ struct FileWatchers {
 
 struct ProjectPaths {
     build_data_directory_path: PathBuf,
+    engine_source_directory_path: PathBuf, // TODO: what when the user just uses the precompiled
+    // binary? Probably not a case tho - they they would use scripting and stuff
     game_project_directory_path: PathBuf,
     game_resources_directory_path: PathBuf,
     game_source_directory_path: PathBuf,
@@ -66,7 +71,7 @@ fn configure_logging(config: &Config) {
     let (log_level, using_default_log_levels) = match config.get_str("LOG_LEVELS") {
         std::result::Result::Ok(val) => (val, false),
         Err(_) => {
-            info!("xzxxx");
+            info!("xzxxx"); // TODO: what XD?
             (pill_core::get_default_log_levels(), true)
         }
     };
@@ -165,6 +170,9 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
 }
 
 fn load_game_dynamic_library(library_path: &PathBuf) -> (Library, Box<dyn PillGame>) {
+    // SAFETY:
+    // As long as the caller stops ALL functions running in the game + engine
+    // we are fine to unload + load a new Box<dyn PillGame>
     type CreateGameFn = unsafe extern "C" fn() -> *mut c_void;
     let game_dynamic_library = unsafe {
         Library::new(library_path)
@@ -218,6 +226,9 @@ fn build_standalone_and_game_crates(project_paths: &ProjectPaths) -> Result<()> 
     Ok(())
 }
 
+/// This function will reload game whenever any source file in <pill_engine_root>engine/* changes
+/// It won't however reflect changes in standalone because it is the executable that is running the
+/// hot-reload.
 fn check_and_reload_game(
     engine: &mut Option<Engine>,
     game_dynamic_library: &mut Option<Library>,
@@ -235,13 +246,35 @@ fn check_and_reload_game(
         return Ok(());
     }
 
+    let mut paths_changed = Vec::<PathBuf>::new();
+
+    // Check for engine source files changes
+    if let Some(paths) = file_watchers.engine_core_source_files_watcher.get_changes() {
+        info!(LogContext::HotReload => "Engine pill_core source file change detected: {:?}", paths);
+        paths_changed.extend(paths);
+    }
+    if let Some(paths) = file_watchers
+        .engine_engine_source_files_watcher
+        .get_changes()
+    {
+        info!(LogContext::HotReload => "Engine pill_engine source file change detected: {:?}", paths);
+        paths_changed.extend(paths);
+    }
+    if let Some(paths) = file_watchers
+        .engine_renderer_source_files_watcher
+        .get_changes()
+    {
+        info!(LogContext::HotReload => "Engine pill_renderer source file change detected: {:?}", paths);
+        paths_changed.extend(paths);
+    }
+
     // Check for game project source files changes
     if let Some(paths) = file_watchers
         .game_project_source_files_watcher
         .get_changes()
     {
         info!(LogContext::HotReload => "Game project source file change detected: {:?}", paths);
-        build_standalone_and_game_crates(project_paths)?;
+        paths_changed.extend(paths);
     }
 
     // Check for game project resource files changes
@@ -250,6 +283,12 @@ fn check_and_reload_game(
         .get_changes()
     {
         info!(LogContext::HotReload => "Game project resource file change detected: {:?}", paths);
+        paths_changed.extend(paths);
+    }
+
+    let t0 = std::time::Instant::now();
+
+    if !paths_changed.is_empty() {
         build_standalone_and_game_crates(project_paths)?;
     }
 
@@ -262,6 +301,14 @@ fn check_and_reload_game(
         info!(LogContext::HotReload => "Reloading game project...");
 
         // Shutdown and drop engine
+        // TODO: serialize here?
+        // Two options:
+        // - either serialize and shutown - reload the new dll and load + deserialize
+        // - don't shutdown / replace the engine in memory? Not sure if can be achieved
+        //   this might be nasty towards memory if user modifies significant portions of
+        //   the layout of the new library. (I think it's quite unsafe to do because we
+        //   have allocated specific amount of memory for the engine and then start to
+        //   overwrite it randomly with a new memory layout?!)
         if let Some(mut engine) = engine.take() {
             engine.shutdown();
         }
@@ -290,21 +337,40 @@ fn check_and_reload_game(
             config.clone(),
         );
         new_engine.initialize(Some(*window_size)).unwrap();
+        // TODO: deserialize the saved scene(s) state
         *engine = Some(new_engine);
         *game_dynamic_library = Some(game_library);
 
         // Run again to clear changes (otherwise it will trigger reload again since file was renamed)
+        // TODO: remove this once we ignore that in the reloading - no need for extra ops
         file_watchers
             .game_dynamic_library_files_watcher
             .get_changes();
 
         *last_reload_time = now;
+        let t1 = std::time::Instant::now();
+        warn!("Reload took: {:?} time", t1 - t0);
     }
 
     Ok(())
 }
 
 fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
+    let core_source_path = project_paths
+        .engine_source_directory_path
+        .join("pill_core/src");
+    let engine_core_source_files_watcher = FileWatcher::new(core_source_path).set_recursive(true);
+    let engine_source_path = project_paths
+        .engine_source_directory_path
+        .join("pill_engine/src");
+    let engine_engine_source_files_watcher =
+        FileWatcher::new(engine_source_path).set_recursive(true);
+    let renderer_source_path = project_paths
+        .engine_source_directory_path
+        .join("pill_renderer/src");
+    let engine_renderer_source_files_watcher =
+        FileWatcher::new(renderer_source_path).set_recursive(true);
+
     let game_dynamic_library_files_watcher =
         FileWatcher::new(project_paths.build_data_directory_path.clone());
     let game_project_source_files_watcher =
@@ -313,6 +379,9 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
         FileWatcher::new(project_paths.game_resources_directory_path.clone()).set_recursive(true);
 
     FileWatchers {
+        engine_core_source_files_watcher,
+        engine_engine_source_files_watcher,
+        engine_renderer_source_files_watcher, // TODO: resources as well? also track standalone?
         game_dynamic_library_files_watcher,
         game_project_source_files_watcher,
         game_project_resources_files_watcher,
@@ -490,8 +559,32 @@ fn main() {
     let game_dynamic_library_hot_reloaded_path =
         build_data_directory_path.join(dylib("pill_game_hot_reloaded"));
 
+    // For engine files they are under <pill_engine_root>/engine
+    // Two options - some examples are nested deeper because they have sub_examples
+    let mut engine_source_directory_path;
+    let mut pill_engine_root = current_directory_path
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    if pill_engine_root.ends_with("Pill-Engine") {
+        engine_source_directory_path = pill_engine_root.join("engine")
+    } else {
+        pill_engine_root = pill_engine_root.parent().unwrap().to_path_buf();
+        if !pill_engine_root.ends_with("Pill-Engine") {
+            panic!("Wrong project paths detected! Please follow proper convention when creating examples");
+        }
+        engine_source_directory_path = pill_engine_root;
+    }
+
     let project_paths = ProjectPaths {
         build_data_directory_path,
+        engine_source_directory_path,
         game_project_directory_path,
         game_source_directory_path,
         game_resources_directory_path,
