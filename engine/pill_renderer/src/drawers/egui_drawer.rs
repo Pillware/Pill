@@ -55,6 +55,7 @@ impl EguiDrawer {
         let _ = self.state.on_window_event(&self.window, event);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn record_draw_commands(
         &mut self,
         device: &wgpu::Device,

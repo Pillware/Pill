@@ -162,6 +162,8 @@ impl Scene {
     }
 
     // -- Iterators ---
+    // TODO: this lint has to be removed when we refactor ECS!
+    #[allow(clippy::mut_from_ref)]
     #[inline]
     fn unsafe_mut_cast<T>(reference: &T) -> &mut T {
         #![allow(invalid_reference_casting)]

@@ -21,23 +21,35 @@
 //! ## Diagrams
 //! ### Connect / message flow:
 //!
-#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/connection_operation.svg"))]
+#![cfg_attr(
+    doc,
+    doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/uml_out/connection_operation.svg"
+    ))
+)]
 //!
 //! ### Disconnect / reconnect flow:
 //!
-#![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/uml_out/dis_reconnection.svg"))]
+#![cfg_attr(
+    doc,
+    doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/uml_out/dis_reconnection.svg"
+    ))
+)]
 //!
 //! ## Usage (high level)
 //! - **Server loop:** call [`networking_system_server`] once per frame.
 //! - **Client loop:** call [`networking_system_client`] once per frame.
-//! Both pump the transport every frame, but only perform update work when a
-//! fixed timeout elapses (see [`timeout_elapsed`]).
+//!   Both pump the transport every frame, but only perform update work when a
+//!   fixed timeout elapses (see [`timeout_elapsed`]).
 //!
 //! See also:
 //! - [`crate::ecs::components::network_manager_component::NetworkManagerComponent`]
 //!   for global networking state and hooks.
 //! - [`crate::ecs::components::network_state_component::NetworkStateComponent`] for entity
-//! replication metadata.
+//!   replication metadata.
 //! - `pill_core::networking` for transports and wire helpers.
 
 use anyhow::Result;
