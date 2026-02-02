@@ -119,6 +119,12 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
 
         let mut config = Config::default();
         let _ = config.merge(config::File::with_name(&config_path));
+        if config.get_int("WINDOW_WIDTH").is_err() {
+            let _ = config.set("WINDOW_WIDTH", a.initial_w as i64);
+        }
+        if config.get_int("WINDOW_HEIGHT").is_err() {
+            let _ = config.set("WINDOW_HEIGHT", a.initial_h as i64);
+        }
 
         let (game_library, game) = load_game(&game_library_path)?;
 

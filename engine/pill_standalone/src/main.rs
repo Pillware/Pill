@@ -1,16 +1,16 @@
 mod file_watcher;
 use crate::file_watcher::FileWatcher;
-use anyhow::{bail, Context, Ok, Result};
+use anyhow::{bail, Context, Result};
 use config::Config;
 use pill_abi::*;
-use pill_core::{info, set_log_levels, warn, EngineError, LogContext, PillStyle};
+use pill_core::{info, set_log_levels, warn, LogContext, PillStyle};
 use winit::{
     event::{DeviceEvent, Event, WindowEvent},
     window::{self, Icon},
 };
 
 use libloading::{Library, Symbol};
-use std::ffi::{c_void, CString};
+use std::ffi::{c_void, CString, OsString};
 use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -20,7 +20,7 @@ use std::{
 #[cfg(target_os = "windows")]
 use winit::platform::windows::IconExtWindows;
 
-const RELOAD_COOLDOWN: Duration = Duration::from_millis(1000);
+const RELOAD_COOLDOWN: Duration = Duration::from_millis(100);
 static RELOAD_GEN: AtomicU64 = AtomicU64::new(0);
 
 struct WindowData {
@@ -69,6 +69,172 @@ const DYLIB_SUFFIX: &str = ".dylib";
 
 fn dylib(name: &str) -> String {
     format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RuntimeLoadMode {
+    Dylib,
+    InProcess,
+}
+
+fn parse_runtime_load_mode(value: Option<String>) -> Option<RuntimeLoadMode> {
+    match value.as_deref() {
+        Some("dylib") => Some(RuntimeLoadMode::Dylib),
+        Some("in_process") => Some(RuntimeLoadMode::InProcess),
+        _ => None,
+    }
+}
+
+fn workspace_includes_game(
+    engine_source_directory_path: &Path,
+    game_project_directory_path: &Path,
+) -> bool {
+    let cargo_toml_path = engine_source_directory_path.join("Cargo.toml");
+    let Ok(contents) = std::fs::read_to_string(cargo_toml_path) else {
+        return false;
+    };
+    let Some(game_dir_name) = game_project_directory_path
+        .file_name()
+        .and_then(|name| name.to_str())
+    else {
+        return false;
+    };
+    contents.contains(game_dir_name)
+}
+
+fn engine_workspace_from_game_manifest(game_project_directory_path: &Path) -> Option<PathBuf> {
+    // KISS parser: we only need `workspace = "/abs/path/to/engine"` from the game's Cargo.toml.
+    // If it's not present or malformed, just fall back to the existing heuristics/env.
+    let manifest_path = game_project_directory_path.join("Cargo.toml");
+    let contents = std::fs::read_to_string(manifest_path).ok()?;
+    for line in contents.lines() {
+        let line = line.trim();
+        if !line.starts_with("workspace") {
+            continue;
+        }
+        let (_, rhs) = line.split_once('=')?;
+        let rhs = rhs.trim();
+        // Accept only the common `workspace = "..."` form.
+        let rhs = rhs.strip_prefix('"')?;
+        let rhs = rhs.strip_suffix('"')?;
+        let p = PathBuf::from(rhs);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn find_engine_source_directory(
+    current_directory_path: &Path,
+    game_project_directory_path: &Path,
+) -> Option<PathBuf> {
+    for ancestor in current_directory_path.ancestors() {
+        let engine_candidate = ancestor.join("engine");
+        if engine_candidate
+            .join("pill_engine")
+            .join("Cargo.toml")
+            .exists()
+        {
+            return Some(engine_candidate);
+        }
+        if ancestor.join("pill_engine").join("Cargo.toml").exists() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+
+    if let Some(parent) = game_project_directory_path.parent() {
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let engine_candidate = path.join("engine");
+                if engine_candidate
+                    .join("pill_engine")
+                    .join("Cargo.toml")
+                    .exists()
+                {
+                    return Some(engine_candidate);
+                }
+                if path.join("pill_engine").join("Cargo.toml").exists() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn resolve_runtime_dylib_candidates(
+    build_data_directory_path: &Path,
+    engine_source_directory_path: &Path,
+    name: &str,
+) -> Vec<PathBuf> {
+    let engine_workspace_root = engine_source_directory_path.parent().unwrap();
+    vec![
+        build_data_directory_path.join(dylib(name)),
+        engine_workspace_root
+            .join("target")
+            .join("debug")
+            .join(dylib(name)),
+        engine_workspace_root
+            .join("target")
+            .join("release")
+            .join(dylib(name)),
+        engine_source_directory_path
+            .join("target")
+            .join("debug")
+            .join(dylib(name)),
+        engine_source_directory_path
+            .join("target")
+            .join("release")
+            .join(dylib(name)),
+    ]
+}
+
+fn resolve_runtime_dylib(
+    build_data_directory_path: &Path,
+    engine_source_directory_path: &Path,
+    name: &str,
+) -> PathBuf {
+    let candidates = resolve_runtime_dylib_candidates(
+        build_data_directory_path,
+        engine_source_directory_path,
+        name,
+    );
+
+    for candidate in &candidates {
+        if candidate.exists() {
+            return candidate.clone();
+        }
+    }
+
+    let candidates_display = candidates
+        .iter()
+        .map(|candidate| candidate.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    panic!("Failed to find {name} runtime dylib. Checked: {candidates_display}");
+}
+
+fn resolve_runtime_dylib_optional(
+    build_data_directory_path: &Path,
+    engine_source_directory_path: &Path,
+    name: &str,
+) -> Option<PathBuf> {
+    let candidates = resolve_runtime_dylib_candidates(
+        build_data_directory_path,
+        engine_source_directory_path,
+        name,
+    );
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn next_loaded_runtime_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
@@ -125,13 +291,33 @@ impl RuntimeCreateContext {
 }
 
 struct RuntimeHost {
-    _lib: Library,
+    _lib: Option<Library>,
     api: *const PillEngineApiV1,
     handle: EngineHandle,
 }
 
 impl RuntimeHost {
-    fn load(runtime_dylib_path: &Path) -> Result<Self> {
+    fn load(runtime_dylib_path: &Path, load_mode: RuntimeLoadMode) -> Result<Self> {
+        if load_mode == RuntimeLoadMode::InProcess {
+            let api = pill_runtime::get_pill_engine_api_v1();
+            if api.is_null() {
+                bail!("pill_runtime get_pill_engine_api_v1 returned null");
+            }
+            let a = unsafe { &*api };
+            if a.abi_version != PILL_ENGINE_ABI_VERSION {
+                bail!(
+                    "Engine ABI version mismatch runtime {} host {}",
+                    a.abi_version,
+                    PILL_ENGINE_ABI_VERSION
+                );
+            }
+            return Ok(Self {
+                _lib: None,
+                api,
+                handle: std::ptr::null_mut(),
+            });
+        }
+
         let lib = unsafe { Library::new(runtime_dylib_path) }.with_context(|| {
             format!(
                 "Failed to load runtime dynamic library at {}",
@@ -158,7 +344,7 @@ impl RuntimeHost {
         }
         // TODO: the hash checking algo
         Ok(Self {
-            _lib: lib,
+            _lib: Some(lib),
             api,
             handle: std::ptr::null_mut(),
         })
@@ -319,10 +505,18 @@ pub fn load_window_icon(path: &Path) -> Option<Icon> {
 fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> WindowData {
     let window_title = config
         .get_str("WINDOW_TITLE")
-        .context(EngineError::InvalidGameConfig())
-        .unwrap();
-    let window_width = config.get_int("WINDOW_WIDTH").unwrap_or(1280) as u32;
-    let window_height = config.get_int("WINDOW_HEIGHT").unwrap_or(720) as u32;
+        .or_else(|_| config.get_str("TITLE"))
+        .unwrap_or_default();
+    let window_size_override = match (
+        config.get_int("WINDOW_WIDTH"),
+        config.get_int("WINDOW_HEIGHT"),
+    ) {
+        (Ok(width), Ok(height)) => Some(winit::dpi::PhysicalSize::<u32>::new(
+            width as u32,
+            height as u32,
+        )),
+        _ => None,
+    };
     let window_fullscreen = config.get_bool("WINDOW_FULLSCREEN").unwrap_or(false);
 
     let default_icon_bytes = include_bytes!("../res/icon.raw");
@@ -334,7 +528,6 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
     let window_event_loop = winit::event_loop::EventLoop::new().unwrap();
 
     // Initialize other window parameters
-    let window_size = winit::dpi::PhysicalSize::<u32>::new(window_width, window_height);
     let window_min_size = winit::dpi::PhysicalSize::<u32>::new(100, 100);
 
     let window_attributes = winit::window::WindowAttributes::default()
@@ -343,12 +536,19 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
         .with_window_icon(window_icon)
         .with_visible(false);
 
+    let window_attributes = if let Some(size) = window_size_override {
+        window_attributes.with_inner_size(size)
+    } else {
+        window_attributes
+    };
+
     let window: Arc<winit::window::Window> = Arc::new(
         window_event_loop
             .create_window(window_attributes)
             .context("Failed to create window")
             .unwrap(),
     );
+    let window_size = window.inner_size();
 
     // Possibly set window to fullscreen
     let window_fullscreen_mode = match window_fullscreen {
@@ -367,19 +567,54 @@ fn create_window(config: &Config, game_resources_directory_path: PathBuf) -> Win
     }
 }
 
-fn ensure_launcher_binary() -> Result<PathBuf> {
-    let v = std::env::var("PILL_LAUNCHER_BIN").context(
-        "PILL_LAUNCHER_BIN not set (pill_launcher should set it when spawning standalone)",
-    )?;
-    let p = PathBuf::from(v);
-    if !p.exists() {
-        anyhow::bail!("PILL_LAUNCHER_BIN points to missing file: {}", p.display());
+fn resolve_launcher_command(engine_source_directory_path: &Path) -> Result<OsString> {
+    if let Ok(v) = std::env::var("PILL_LAUNCHER_BIN") {
+        let p = PathBuf::from(v);
+        if !p.exists() {
+            anyhow::bail!("PILL_LAUNCHER_BIN points to missing file: {}", p.display());
+        }
+        return Ok(p.into_os_string());
     }
-    Ok(p)
+
+    if let Ok(v) = std::env::var("PILL_LAUNCHER_CMD") {
+        return Ok(OsString::from(v));
+    }
+
+    // `pill_launcher` is excluded from the workspace, so its build output lives under
+    // <engine>/pill_launcher/target/... rather than <workspace_root>/target/...
+    let launcher_candidates = [
+        engine_source_directory_path
+            .join("pill_launcher")
+            .join("target")
+            .join("debug")
+            .join("PillLauncher"),
+        engine_source_directory_path
+            .join("pill_launcher")
+            .join("target")
+            .join("release")
+            .join("PillLauncher"),
+        engine_source_directory_path
+            .join("pill_launcher")
+            .join("target")
+            .join("debug")
+            .join("PillLauncherUpstream"),
+        engine_source_directory_path
+            .join("pill_launcher")
+            .join("target")
+            .join("release")
+            .join("PillLauncherUpstream"),
+    ];
+    for candidate in launcher_candidates {
+        if candidate.exists() {
+            return Ok(candidate.into_os_string());
+        }
+    }
+
+    Ok(OsString::from("PillLauncherUpstream"))
 }
 
 fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
-    let launcher_bin = ensure_launcher_binary()?;
+    let launcher_cmd = resolve_launcher_command(&project_paths.engine_source_directory_path)?;
 
     // output dir must be the folder containing the exe + data/
     // build_data_directory_path = <build>/data  => parent is <build>
@@ -388,24 +623,46 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
         .parent()
         .context("build_data_directory_path has no parent")?;
 
-    let status = std::process::Command::new(&launcher_bin)
-        .args([
-            "-a",
-            "build",
-            "-p",
-            project_paths.game_project_directory_path.to_str().unwrap(),
-            "-c",
-            "hot-reload",
-            "-o",
-            out_dir.to_str().unwrap(),
-        ])
+    let args = [
+        "-a",
+        "build",
+        "-p",
+        project_paths.game_project_directory_path.to_str().unwrap(),
+        "-c",
+        "hot-reload",
+        "-o",
+        out_dir.to_str().unwrap(),
+    ];
+
+    let status = std::process::Command::new(&launcher_cmd)
+        .args(args)
         .env("PILL_HOT_RELOAD_CHILD", "1")
         .env(
             "PILL_ENGINE_WORKSPACE_DIR",
             &project_paths.engine_source_directory_path,
         ) // launcher will use this if you keep that logic
-        .status()
-        .context("Failed to invoke pill_launcher for hot reload")?;
+        .status();
+
+    let status = match status {
+        Ok(status) => status,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            let manifest = project_paths
+                .engine_source_directory_path
+                .join("pill_launcher")
+                .join("Cargo.toml");
+            std::process::Command::new("cargo")
+                .args(["run", "--manifest-path", manifest.to_str().unwrap(), "--"])
+                .args(args)
+                .env("PILL_HOT_RELOAD_CHILD", "1")
+                .env(
+                    "PILL_ENGINE_WORKSPACE_DIR",
+                    &project_paths.engine_source_directory_path,
+                )
+                .status()
+                .context("Failed to invoke pill_launcher via cargo for hot reload")?
+        }
+        Err(err) => return Err(err).context("Failed to invoke pill_launcher for hot reload"),
+    };
 
     if !status.success() {
         anyhow::bail!("pill_launcher build hot-reload failed");
@@ -421,6 +678,7 @@ fn check_and_reload(
     project_paths: &ProjectPaths,
     last_reload_poll: &mut Instant,
     file_watchers: &mut FileWatchers,
+    runtime_load_mode: RuntimeLoadMode,
 ) -> Result<()> {
     let now: Instant = Instant::now();
     if now.duration_since(*last_reload_poll) < RELOAD_COOLDOWN {
@@ -501,6 +759,11 @@ fn check_and_reload(
     }
 
     // Do a runtime reload when both have changed
+    if runtime_hot_reload && runtime_load_mode == RuntimeLoadMode::InProcess {
+        warn!(LogContext::HotReload => "Runtime hot-reload skipped for in-process runtime.");
+        runtime_hot_reload = false;
+    }
+
     if runtime_hot_reload {
         info!(LogContext::HotReload => "Reloading runtime (engine hot-reload)...");
         let t_runtime_reload = std::time::Instant::now();
@@ -517,7 +780,7 @@ fn check_and_reload(
         .context("Failed to copy hot-reloaded dylib to unique loaded dylib")?;
 
         // Reload runtime dynamic Library
-        let mut new_runtime = RuntimeHost::load(&loaded_path)?;
+        let mut new_runtime = RuntimeHost::load(&loaded_path, runtime_load_mode)?;
         let args = runtime_context.make_args();
         new_runtime.create(&args)?;
 
@@ -600,6 +863,7 @@ fn main_loop(
     project_paths: ProjectPaths,
     window_data: WindowData,
     hot_reload_enabled: bool,
+    runtime_load_mode: RuntimeLoadMode,
 ) -> Result<()> {
     // Create a file watcher to monitor game project file changes as well as game output file changes
     let mut file_watchers: Option<FileWatchers> = if hot_reload_enabled {
@@ -656,6 +920,7 @@ fn main_loop(
                                     &project_paths,
                                     &mut last_reload_poll,
                                     file_watchers.as_mut().unwrap(),
+                                    runtime_load_mode,
                                 )
                                 .unwrap();
                             }
@@ -728,7 +993,8 @@ fn main() {
     // ├── Cargo.toml
     // └── Cargo.lock
 
-    let hot_reload_enabled = std::env::var("PILL_ENABLE_HOT_RELOAD").ok().as_deref() == Some("1");
+    let mut hot_reload_enabled =
+        std::env::var("PILL_ENABLE_HOT_RELOAD").ok().as_deref() == Some("1");
 
     let current_directory_path = std::env::current_exe()
         .unwrap()
@@ -742,15 +1008,19 @@ fn main() {
         .unwrap()
         .to_path_buf();
     let build_data_directory_path = current_directory_path.join("data");
+    let project_resources_directory_path = current_directory_path
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("res"); // <GAME_PROJECT_ROOT>/res
+    let build_resources_directory_path = build_data_directory_path.join("res"); // <EXE_LOCATION>/data/res
     let game_resources_directory_path = if hot_reload_enabled {
-        current_directory_path
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("res") // <GAME_PROJECT_ROOT>/res
+        project_resources_directory_path
+    } else if build_resources_directory_path.exists() {
+        build_resources_directory_path
     } else {
-        build_data_directory_path.join("res") // <EXE_LOCATION>/data/res
+        project_resources_directory_path
     };
     let game_source_directory_path = current_directory_path
         .parent()
@@ -759,39 +1029,64 @@ fn main() {
         .unwrap()
         .join("src"); // <GAME_PROJECT_ROOT>/src
     let config_path = game_resources_directory_path.join("config.ini");
-    let runtime_dynamic_library_path = build_data_directory_path.join(dylib("pill_runtime"));
-    let runtime_dynamic_library_hot_reloaded_path =
-        build_data_directory_path.join(dylib("pill_runtime_hot_reloaded"));
     let game_dynamic_library_path = build_data_directory_path.join(dylib("pill_game"));
     let game_dynamic_library_hot_reloaded_path =
         build_data_directory_path.join(dylib("pill_game_hot_reloaded"));
 
-    // For engine files they are under <pill_engine_root>/engine
-    // Two options - some examples are nested deeper because they have sub_examples
-    let engine_source_directory_path = std::env::var("PILL_ENGINE_WORKSPACE_DIR")
-    .ok()
-    .map(PathBuf::from)
-    .unwrap_or_else(|| {
-        let mut pill_engine_root = current_directory_path
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        if pill_engine_root.ends_with("Pill-Engine") {
-            pill_engine_root.join("engine")
-        } else {
-            pill_engine_root = pill_engine_root.parent().unwrap().to_path_buf();
-            if !pill_engine_root.ends_with("Pill-Engine") {
-                panic!("Wrong project paths detected! Please follow proper convention when creating examples");
+    // For engine files they are under <engine_root>/engine or <engine_root>.
+    let engine_source_directory_path = engine_workspace_from_game_manifest(&game_project_directory_path)
+        .filter(|candidate| workspace_includes_game(candidate, &game_project_directory_path))
+        .or_else(|| {
+            std::env::var("PILL_ENGINE_WORKSPACE_DIR")
+                .ok()
+                .map(PathBuf::from)
+                .filter(|candidate| workspace_includes_game(candidate, &game_project_directory_path))
+        })
+        .or_else(|| {
+            find_engine_source_directory(&current_directory_path, &game_project_directory_path)
+        })
+        .filter(|candidate| workspace_includes_game(candidate, &game_project_directory_path))
+        .unwrap_or_else(|| {
+            panic!("Engine workspace not detected for this game. Set PILL_ENGINE_WORKSPACE_DIR to the engine directory that includes the game workspace member.");
+        });
+
+    let runtime_load_mode = parse_runtime_load_mode(std::env::var("PILL_RUNTIME_MODE").ok())
+        .or_else(|| {
+            (std::env::var("PILL_RUNTIME_IN_PROCESS").ok().as_deref() == Some("1"))
+                .then_some(RuntimeLoadMode::InProcess)
+        })
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "macos") {
+                RuntimeLoadMode::InProcess
+            } else {
+                RuntimeLoadMode::Dylib
             }
-            pill_engine_root
-        }
-    });
+        });
+
+    // Runtime dylibs: only required in dylib mode.
+    let runtime_dynamic_library_path = if runtime_load_mode == RuntimeLoadMode::Dylib {
+        resolve_runtime_dylib(
+            &build_data_directory_path,
+            &engine_source_directory_path,
+            "pill_runtime",
+        )
+    } else {
+        build_data_directory_path.join(dylib("pill_runtime"))
+    };
+    let runtime_dynamic_library_hot_reloaded_path =
+        if hot_reload_enabled && runtime_load_mode == RuntimeLoadMode::Dylib {
+            resolve_runtime_dylib_optional(
+                &build_data_directory_path,
+                &engine_source_directory_path,
+                "pill_runtime_hot_reloaded",
+            )
+            .unwrap_or_else(|| {
+                hot_reload_enabled = false;
+                runtime_dynamic_library_path.clone()
+            })
+        } else {
+            runtime_dynamic_library_path.clone()
+        };
 
     let project_paths = ProjectPaths {
         build_data_directory_path,
@@ -815,13 +1110,24 @@ fn main() {
     // Configure logging context and levels
     configure_logging(&config);
 
+    info!(
+        LogContext::HotReload => "Hot reload {} (watching src: {}, res: {})",
+        if hot_reload_enabled { "enabled" } else { "disabled" },
+        project_paths.game_source_directory_path.display(),
+        project_paths.game_resources_directory_path.display()
+    );
+
     info!("Initializing {}", "Standalone".module_object_style());
 
     // Create windows
     let window_data = create_window(&config, project_paths.game_resources_directory_path.clone());
 
     // Load runtime dynamic Library
-    let mut runtime_host = RuntimeHost::load(&project_paths.runtime_dynamic_library_path).unwrap();
+    let mut runtime_host = RuntimeHost::load(
+        &project_paths.runtime_dynamic_library_path,
+        runtime_load_mode,
+    )
+    .unwrap();
 
     // Save the context data for future reloads
     // window::Window will be leaked to the runtime DLL every time make_args is called
@@ -870,7 +1176,97 @@ fn main() {
         project_paths,
         window_data,
         hot_reload_enabled,
+        runtime_load_mode,
     )
     .context("Main loop failed")
     .unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_tmp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("pill_test_{name}_{nanos}"))
+    }
+
+    #[test]
+    fn prefers_game_manifest_workspace_over_env_and_sibling_scan() {
+        let root = unique_tmp_dir("hot_reload_workspace_pick");
+        let _ = fs::remove_dir_all(&root);
+
+        let game_dir = root.join("my_game");
+        fs::create_dir_all(game_dir.join("src")).unwrap();
+        fs::create_dir_all(game_dir.join("res")).unwrap();
+
+        let engine_a = root.join("Pill-Engine").join("engine");
+        let engine_b = root.join("Pill-Engine-Upstream").join("engine");
+        fs::create_dir_all(engine_a.join("pill_engine")).unwrap();
+        fs::create_dir_all(engine_b.join("pill_engine")).unwrap();
+
+        // Both "workspaces" include the game dir name to satisfy `workspace_includes_game`.
+        fs::write(
+            engine_a.join("Cargo.toml"),
+            r#"[workspace]
+members = ["my_game"]
+"#,
+        )
+        .unwrap();
+        fs::write(
+            engine_b.join("Cargo.toml"),
+            r#"[workspace]
+members = ["my_game"]
+"#,
+        )
+        .unwrap();
+
+        // Game manifest explicitly points at engine_b.
+        fs::write(
+            game_dir.join("Cargo.toml"),
+            format!(
+                r#"[package]
+name = "my_game"
+version = "0.1.0"
+edition = "2021"
+workspace = "{}"
+"#,
+                engine_b.display()
+            ),
+        )
+        .unwrap();
+
+        // Even if env points at the "wrong" engine, we should use the game manifest.
+        std::env::set_var("PILL_ENGINE_WORKSPACE_DIR", &engine_a);
+        let resolved = engine_workspace_from_game_manifest(&game_dir)
+            .filter(|p| workspace_includes_game(p, &game_dir))
+            .unwrap();
+        assert_eq!(resolved, engine_b);
+    }
+
+    #[test]
+    fn resolve_launcher_prefers_engine_pill_launcher_target_binary() {
+        let root = unique_tmp_dir("hot_reload_launcher_pick");
+        let _ = fs::remove_dir_all(&root);
+
+        let engine_dir = root.join("engine");
+        let launcher_bin = engine_dir
+            .join("pill_launcher")
+            .join("target")
+            .join("debug")
+            .join("PillLauncher");
+        fs::create_dir_all(launcher_bin.parent().unwrap()).unwrap();
+        fs::write(&launcher_bin, b"").unwrap();
+
+        std::env::remove_var("PILL_LAUNCHER_BIN");
+        std::env::remove_var("PILL_LAUNCHER_CMD");
+
+        let resolved = resolve_launcher_command(&engine_dir).unwrap();
+        assert_eq!(PathBuf::from(resolved), launcher_bin);
+    }
 }

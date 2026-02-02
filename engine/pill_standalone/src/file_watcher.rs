@@ -69,8 +69,11 @@ impl FileWatcher {
                                     {
                                         continue;
                                     }
-                                    // Store the file path and its modified time
-                                    file_metadata.insert(entry_path, modified);
+                                    // Store canonical path so comparison is stable across scans
+                                    let key = entry_path
+                                        .canonicalize()
+                                        .unwrap_or_else(|_| entry_path.clone());
+                                    file_metadata.insert(key, modified);
                                 }
                             }
                         }
@@ -127,5 +130,39 @@ impl FileWatcher {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    fn unique_tmp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("pill_filewatch_{name}_{nanos}"))
+    }
+
+    #[test]
+    fn detects_modified_file() {
+        let root = unique_tmp_dir("modify");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+
+        let file_path = root.join("game.rs");
+        fs::write(&file_path, "v1").unwrap();
+
+        let mut watcher = FileWatcher::new(root.clone()).set_recursive(true);
+
+        // Ensure filesystem mtime resolution advances.
+        std::thread::sleep(Duration::from_millis(1100));
+        fs::write(&file_path, "v2").unwrap();
+
+        let changes = watcher.get_changes().unwrap_or_default();
+        let canonical = file_path.canonicalize().unwrap_or(file_path);
+        assert!(changes.contains(&canonical));
     }
 }

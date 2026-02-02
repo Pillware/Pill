@@ -47,7 +47,7 @@ fn parse_log_level(level: &str) -> LevelFilter {
     }
 }
 
-/// Parse a string like "ecs: debug, renderer: info, resources: off"
+/// Parse a string like "ecs: debug, renderer: info" or "ecs=debug, renderer=info"
 fn parse_config_log_settings(log_levels_config_setting: &str) -> HashMap<String, LevelFilter> {
     let mut map = HashMap::new();
     for context_log_level in log_levels_config_setting.split(',') {
@@ -55,10 +55,11 @@ fn parse_config_log_settings(log_levels_config_setting: &str) -> HashMap<String,
         if context_log_level.is_empty() {
             continue;
         }
-
-        if let Some((context, level)) = context_log_level.split_once('=') {
-            map.insert(context.trim().to_string(), parse_log_level(level.trim()));
-        }
+        let (context, level) = context_log_level
+            .split_once('=')
+            .or_else(|| context_log_level.split_once(':'))
+            .unwrap_or((context_log_level, "info"));
+        map.insert(context.trim().to_string(), parse_log_level(level.trim()));
     }
     map
 }

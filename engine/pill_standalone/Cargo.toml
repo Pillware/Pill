@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 pill_core = {path = "../pill_core"}
 pill_abi = { path = "../pill_abi" }
+pill_runtime = { path = "../pill_runtime" }
 
 winit = "0.30.12"
 log = "0.4"

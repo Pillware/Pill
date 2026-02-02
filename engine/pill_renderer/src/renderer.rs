@@ -271,7 +271,13 @@ pub struct State {
 impl State {
     // Creating some of the wgpu types requires async code
     async fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> {
-        let window_size = window.inner_size();
+        let window_width = config
+            .get_int("WINDOW_WIDTH")
+            .context("WINDOW_WIDTH is missing from config")? as u32;
+        let window_height = config
+            .get_int("WINDOW_HEIGHT")
+            .context("WINDOW_HEIGHT is missing from config")? as u32;
+        let window_size = winit::dpi::PhysicalSize::new(window_width, window_height);
         let window_ref = window.clone();
 
         // 1. Create instance and surface
@@ -316,9 +322,8 @@ impl State {
 
         // 3. Device and queue
         let (device, queue) = {
-            let features = wgpu::Features::DEPTH_CLIP_CONTROL
-                | wgpu::Features::TIMESTAMP_QUERY
-                | wgpu::Features::PIPELINE_STATISTICS_QUERY;
+            let features = wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::TIMESTAMP_QUERY;
+            // PIPELINE_STATISTICS_QUERY omitted: not supported on all GPUs; profiler falls back when absent
 
             let device_descriptor = wgpu::DeviceDescriptor {
                 label: None,
@@ -336,14 +341,33 @@ impl State {
 
         // 4. Surface configuration
         let (surface_configuration, color_format, depth_format) = {
-            let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+            let surface_capabilities = surface.get_capabilities(&adapter);
+            let format = surface_capabilities
+                .formats
+                .iter()
+                .copied()
+                .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
+                .unwrap_or(surface_capabilities.formats[0]);
+            let present_mode = if surface_capabilities
+                .present_modes
+                .contains(&wgpu::PresentMode::Mailbox)
+            {
+                wgpu::PresentMode::Mailbox
+            } else if surface_capabilities
+                .present_modes
+                .contains(&wgpu::PresentMode::Immediate)
+            {
+                wgpu::PresentMode::Immediate
+            } else {
+                wgpu::PresentMode::Fifo
+            };
             let surface_configuration = wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format,
                 width: window_size.width,
                 height: window_size.height,
                 desired_maximum_frame_latency: 2,
-                present_mode: wgpu::PresentMode::Mailbox,
+                present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![format],
             };
