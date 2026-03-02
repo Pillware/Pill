@@ -370,10 +370,10 @@ fn prepare_workspace_for_game(
 // --- Actions ---
 
 fn create_game_project(
-    game_project_parent_directory_path: &PathBuf,
-    game_name: &String,
+    game_project_parent_directory_path: &PathBuf, 
+    game_name: &String
 ) -> Result<()> {
-    const TEMPLATE_NAME: &str = "Pill-Default";
+    const TEMPLATE_NAME: &str = "pill_default";
 
     let game_project_directory_path = game_project_parent_directory_path.join(game_name);
     if game_project_directory_path.exists() {
