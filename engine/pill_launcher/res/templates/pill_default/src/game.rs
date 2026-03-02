@@ -30,21 +30,21 @@ impl PillGame for Game {
         engine.add_system("PillRotation", pill_rotation_system)?;
 
         // Add meshes
-        let pill_mesh = Mesh::new("Pill", "models/Pill.obj".into());
+        let pill_mesh = Mesh::new("Pill", "models/pill.obj".into());
         let pill_mesh_handle = engine.add_resource(pill_mesh)?;
 
         // Add textures
-        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("textures/PillColor.png".into()));
+        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("textures/pill_color.png".into()));
         let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
-        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("textures/PillNormal.png".into()));
+        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("textures/pill_normal.png".into()));
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
         let mut pill_material = Material::new("Pill");
-        pill_material.set_texture("Color", pill_color_texture_handle)?;
-        pill_material.set_texture("Normal", pill_normal_texture_handle)?;
-        pill_material.set_color("Tint", Color::new( 1.0, 1.0, 1.0))?;
-        pill_material.set_scalar("Specularity", 0.5)?; 
+        pill_material.set_texture("color", pill_color_texture_handle)?;
+        pill_material.set_texture("normal", pill_normal_texture_handle)?;
+        pill_material.set_color("tint", Color::new( 1.0, 1.0, 1.0))?;
+        pill_material.set_scalar("specularity", 0.5)?; 
         let pill_material_handle = engine.add_resource::<Material>(pill_material)?; 
 
         // Create camera entity

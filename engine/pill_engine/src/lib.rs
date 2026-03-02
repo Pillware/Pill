@@ -1,15 +1,20 @@
-#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
-
-mod engine;
-mod resources;
-mod graphics;
-mod ecs;
+#![cfg_attr(
+    debug_assertions,
+    allow(dead_code, unused_imports, mismatched_lifetime_syntaxes)
+)]
 mod config;
+mod ecs;
+mod engine;
+mod graphics;
+mod resources;
 
 // --- Macros ---
 
+pub use ecs::{Component, ComponentStorage, GlobalComponent, GlobalComponentStorage};
 pub use pill_core::PillTypeMapKey;
-pub use ecs::{Component, GlobalComponent, ComponentStorage, GlobalComponentStorage};
+
+#[cfg(feature = "headless")]
+pub use graphics::DummyRenderer;
 
 #[macro_export]
 macro_rules! define_component {
@@ -54,127 +59,56 @@ macro_rules! define_global_component {
 #[cfg(feature = "game")]
 pub mod game {
     pub use crate::{
-        engine::{
-            Engine,
-            PillGame,
-            KeyboardKey,
-            MouseButton,
-        },
         ecs::{
-            SceneHandle,
-            MeshRenderingComponent,
-            TransformComponent,
-            InputComponent,
-            CameraComponent,
-            CameraAspectRatio,
-            EntityHandle,
-            AudioSourceComponent,
-            AudioListenerComponent,
-            TimeComponent,
-            UpdatePhase,
-            AudioManagerComponent,
-            EguiManagerComponent,
-            Component,
-            ComponentStorage,
-            GlobalComponent,
-            GlobalComponentStorage,
-            SoundType,
+            AudioListenerComponent, AudioManagerComponent, AudioSourceComponent, CameraAspectRatio,
+            CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle,
+            GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage, InputComponent,
+            MeshRenderingComponent, PlayerId, SceneHandle, SoundType, TimeComponent,
+            TransformComponent, UpdatePhase,
         },
+        engine::{Engine, KeyboardKey, MouseButton, PillGame},
         resources::{
-            Resource,
-            ResourceStorage,
-            Texture, 
-            TextureHandle,
-            TextureType,
-            Material,
-            MaterialHandle,
-            Mesh,
-            MeshHandle,
-            ResourceLoadType,
-            Sound
+            Material, MaterialHandle, Mesh, MeshHandle, Resource, ResourceLoader, ResourceStorage,
+            Shader, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot, Sound, Texture,
+            TextureHandle, TextureType,
         },
     };
-    
+
     extern crate pill_core;
-    pub use pill_core::{ 
-        PillTypeMapKey, 
-        Vector2f, 
-        Vector3f, 
-        Color, 
-        Vector2i, 
-        Vector3i,
-        Vector3fExt,
-        create_game,
-        define_new_pill_slotmap_key,
+    pub use pill_core::{
+        create_game, define_new_pill_slotmap_key, Color, PillTypeMapKey, Vector2f, Vector2i,
+        Vector3f, DISTINCT_COLOR_PALETTE,
     };
-  
+
     extern crate anyhow;
-    pub use anyhow::{ Context, Result, Error };
+    pub use anyhow::{Context, Error, Result};
 }
 
 #[cfg(feature = "internal")]
 pub mod internal {
     pub use crate::{
-        engine::{
-            Engine,
-            PillGame,
-        },
         config::*,
-        graphics::{
-            PillRenderer,
-            RenderQueueKey,
-            RenderQueueItem,
-            RenderQueueKeyFields,
-            decompose_render_queue_key,
-
-            RendererCameraHandle,
-            RendererMaterialHandle,
-            RendererMeshHandle,
-            RendererPipelineHandle,
-            RendererTextureHandle,
-            RENDER_QUEUE_KEY_ORDER
-        },
         ecs::{
-            Scene,
-            ComponentStorage,
-            MeshRenderingComponent,
-            TransformComponent,
-            CameraComponent,
-            EntityHandle,
-            InputComponent,
-            TimeComponent,
-            CameraAspectRatio,
-            AudioSourceComponent,
-            AudioListenerComponent,
-            AudioManagerComponent,
-            EguiManagerComponent,
-            get_renderer_resource_handle_from_camera_component,
-            update_transform_matrices,
-            get_model_matrix,
-            get_normal_matrix,
+            client_go_offline, get_model_matrix, get_normal_matrix,
+            get_renderer_resource_handle_from_camera_component, networking_system_client,
+            networking_system_server, update_transform_matrices, AudioListenerComponent,
+            AudioManagerComponent, AudioSourceComponent, CameraAspectRatio, CameraComponent,
+            ComponentStorage, EguiManagerComponent, EntityHandle, EntityUpdate, InputComponent,
+            MeshRenderingComponent, NetworkEntityAction, NetworkEntityState,
+            NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkUpdatePayload,
+            Scene, TimeComponent, TransformComponent,
+        },
+        engine::{Engine, PillGame},
+        graphics::{
+            decompose_render_queue_key, PillRenderer, RenderQueueItem, RenderQueueKey,
+            RenderQueueKeyFields, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+            RendererShaderHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER,
         },
         resources::{
-            Texture, 
-            TextureHandle,
-            TextureType,
-
-            Material,
-            MaterialHandle,
-
-            Mesh,
-            MeshHandle,
-            MeshData,
-            MeshVertex,    
-
-            ResourceLoadType,
-            ResourceManager,
-
-            MaterialTexture,
-            MaterialTextureMap,
-            MaterialParameter,
-            MaterialParameterMap,
-            get_renderer_texture_handle_from_material_texture,
+            get_renderer_texture_handle_from_material_texture, Material, MaterialHandle,
+            MaterialParameter, MaterialTexture, Mesh, MeshData, MeshHandle, MeshVertex,
+            ResourceLoader, ResourceManager, ShaderParameterSlot, ShaderParameterType,
+            ShaderTextureSlot, Texture, TextureHandle, TextureType,
         },
     };
 }
-

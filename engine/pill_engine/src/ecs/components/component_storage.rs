@@ -5,7 +5,7 @@ pub struct ComponentStorage<T> {
 }
 
 impl<T> ComponentStorage<T> {
-    pub fn new(max_entity_count: usize) -> Self {  
+    pub fn new(max_entity_count: usize) -> Self {
         // Create vector
         let mut data = Vec::<Option<T>>::with_capacity(max_entity_count);
 
@@ -14,9 +14,7 @@ impl<T> ComponentStorage<T> {
             data.push(None);
         }
 
-        Self { 
-            data,
-        }
+        Self { data }
     }
 }
 
@@ -27,9 +25,7 @@ pub struct GlobalComponentStorage<T> {
 }
 
 impl<T> GlobalComponentStorage<T> {
-    pub fn new(data: T) -> Self {  
-        Self { 
-            data: Some(data),
-        }
+    pub fn new(data: T) -> Self {
+        Self { data: Some(data) }
     }
 }

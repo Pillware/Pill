@@ -1,7 +1,11 @@
+#![allow(dead_code)]
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::time::Instant;
 
-pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100000;
+pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
 pub const SPAWN_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyO;
 pub const REMOVE_FLOATING_OBJECTS_BUTTON: KeyboardKey = KeyboardKey::KeyL;
@@ -42,11 +46,21 @@ define_component!(CameraMovementComponent {
     delta_z: f32,
 });
 
-pub struct Game { }
+#[cfg(feature = "benchmark")]
+define_global_component!(BenchComponent {
+    frames: u64,
+    acc_math_ns: u128,
+    acc_frame_ms: f64,
+    worst_frame_ms: f32,
+    moved_acc: u64,
+    last_report: Instant,
+    report_every_frames: u32,
+});
+
+pub struct Game {}
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
-
         // --- Basic setup ---
 
         // Disable build-in audio system
@@ -69,10 +83,12 @@ impl PillGame for Game {
         engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
         engine.add_system("delete_floating_objects", floating_objects_remove_system)?;
         engine.add_system("objects_movement", floating_objects_movement_system)?;
-        //engine.add_system("camera_movement", camera_movement_system)?;
-        //engine.add_system("camera_fov", camera_fov_changing_system)?;
+        engine.add_system("camera_movement", camera_movement_system)?;
+        engine.add_system("camera_fov", camera_fov_changing_system)?;
         //engine.add_system("mesh_changing", object_appearance_changing_system)?;
         engine.add_system("demo_control", demo_control_system)?;
+        #[cfg(feature = "benchmark")]
+        engine.add_system("bench_report", bench_report_system)?;
 
         // --- Create resources ---
 
@@ -91,89 +107,120 @@ impl PillGame for Game {
         let ambient_music_handle = engine.add_resource(ambient_music)?;
 
         // Add textures
-        let fabric_color_texture = Texture::new("fabric_color", TextureType::Color, ResourceLoadType::Path("textures/fabric_color.jpg".into()));
+        let fabric_color_texture = Texture::new(
+            "fabric_color",
+            TextureType::Color,
+            ResourceLoader::Path("textures/fabric_color.jpg".into()),
+        );
         let fabric_color_texture_handle = engine.add_resource::<Texture>(fabric_color_texture)?;
 
-        let fabric_normal_texture = Texture::new("fabric_normal", TextureType::Normal, ResourceLoadType::Path("textures/fabric_normal.jpg".into()));
+        let fabric_normal_texture = Texture::new(
+            "fabric_normal",
+            TextureType::Normal,
+            ResourceLoader::Path("textures/fabric_normal.jpg".into()),
+        );
         let fabric_normal_texture_handle = engine.add_resource::<Texture>(fabric_normal_texture)?;
 
-        let stones_color_texture = Texture::new("stones_color", TextureType::Color, ResourceLoadType::Path("textures/stones_color.jpg".into()));
+        let stones_color_texture = Texture::new(
+            "stones_color",
+            TextureType::Color,
+            ResourceLoader::Path("textures/stones_color.jpg".into()),
+        );
         let stones_color_texture_handle = engine.add_resource::<Texture>(stones_color_texture)?;
 
-        let stones_normal_texture = Texture::new("stones_normal", TextureType::Normal, ResourceLoadType::Path("textures/stones_normal.jpg".into()));
+        let stones_normal_texture = Texture::new(
+            "stones_normal",
+            TextureType::Normal,
+            ResourceLoader::Path("textures/stones_normal.jpg".into()),
+        );
         let stones_normal_texture_handle = engine.add_resource::<Texture>(stones_normal_texture)?;
 
-        let organic_color_texture = Texture::new("organic_color", TextureType::Color, ResourceLoadType::Path("textures/organic_color.jpg".into()));
+        let organic_color_texture = Texture::new(
+            "organic_color",
+            TextureType::Color,
+            ResourceLoader::Path("textures/organic_color.jpg".into()),
+        );
         let organic_color_texture_handle = engine.add_resource::<Texture>(organic_color_texture)?;
 
-        let organic_normal_texture = Texture::new("organic_normal", TextureType::Normal, ResourceLoadType::Path("textures/organic_normal.jpg".into()));
-        let organic_normal_texture_handle = engine.add_resource::<Texture>(organic_normal_texture)?;
+        let organic_normal_texture = Texture::new(
+            "organic_normal",
+            TextureType::Normal,
+            ResourceLoader::Path("textures/organic_normal.jpg".into()),
+        );
+        let organic_normal_texture_handle =
+            engine.add_resource::<Texture>(organic_normal_texture)?;
 
         // Add materials
         let fabric_material_handle = engine.add_resource::<Material>(
             Material::builder("fabric")
-            .texture("color", fabric_color_texture_handle)?
-            .texture("normal", fabric_normal_texture_handle)?
-            .color("tint", Color::new(1.0, 0.1, 0.1))?
-            .build()
+                .texture("color", fabric_color_texture_handle)?
+                .texture("normal", fabric_normal_texture_handle)?
+                .color_parameter("tint", Color::new(1.0, 0.1, 0.1))?
+                .build(),
         )?;
 
         let stones_material_handle = engine.add_resource::<Material>(
             Material::builder("stones")
-            .texture("color", stones_color_texture_handle)?
-            .texture("normal", stones_normal_texture_handle)?
-            .build()
+                .texture("color", stones_color_texture_handle)?
+                .texture("normal", stones_normal_texture_handle)?
+                .build(),
         )?;
 
         let organic_material_handle = engine.add_resource::<Material>(
             Material::builder("organic")
-            .texture("color", organic_color_texture_handle)?
-            .texture("normal", organic_normal_texture_handle)?
-            .color("tint", Color::new(0.26, 0.87, 0.9))?
-            .scalar("specularity", 3.0)?
-            .build()
+                .texture("color", organic_color_texture_handle)?
+                .texture("normal", organic_normal_texture_handle)?
+                .color_parameter("tint", Color::new(0.26, 0.87, 0.9))?
+                .scalar_parameter("specularity", 3.0)?
+                .build(),
         )?;
 
         let yellow_material_handle = engine.add_resource::<Material>(
             Material::builder("yellow")
-            .color("tint", Color::new(1.0, 0.88, 0.0))?
-            .build()
+                .color_parameter("tint", Color::new(1.0, 0.88, 0.0))?
+                .build(),
         )?;
 
         let blue_material_handle = engine.add_resource::<Material>(
             Material::builder("blue")
-            .color("tint", Color::new(0.26, 0.87, 0.9))?
-            .build()
+                .color_parameter("tint", Color::new(0.26, 0.87, 0.9))?
+                .build(),
         )?;
 
-        let white_material_handle = engine.add_resource::<Material>(
-            Material::builder("white")
-            .build()
-        )?;
+        let white_material_handle =
+            engine.add_resource::<Material>(Material::builder("white").build())?;
 
         // --- Create entities ---
 
         // Create ambient music player entity
-        engine.build_entity(active_scene)
-            .with_component(AudioSourceComponent::builder()
-                .sound_type(SoundType::Sound2D)
-                .sound(ambient_music_handle)
-                .volume(0.05)
-                .play_on_awake(false)
-                .build())
+        engine
+            .build_entity(active_scene)
+            .with_component(
+                AudioSourceComponent::builder()
+                    .sound_type(SoundType::Sound2D)
+                    .sound(ambient_music_handle)
+                    .volume(0.05)
+                    .play_on_awake(false)
+                    .build(),
+            )
             .build();
 
         // Create camera entity
-        engine.build_entity(active_scene)
-            .with_component(TransformComponent::builder()
-                .position(Vector3f::new(0.0, 0.0, -30.0))
-                .rotation(Vector3f::new(0.0, 0.0, 0.0))
-                .build())
-            .with_component(CameraComponent::builder()
-                .enabled(true)
-                .fov(60.0)
-                .clear_color(Color::new(0.35, 0.40, 0.50))
-                .build())
+        engine
+            .build_entity(active_scene)
+            .with_component(
+                TransformComponent::builder()
+                    .position(Vector3f::new(0.0, 0.0, -30.0))
+                    .rotation(Vector3f::new(0.0, 0.0, 0.0))
+                    .build(),
+            )
+            .with_component(
+                CameraComponent::builder()
+                    .enabled(true)
+                    .fov(60.0)
+                    .clear_color(Color::new(0.35, 0.40, 0.50))
+                    .build(),
+            )
             .with_component(CameraMovementComponent {
                 orbit_speed: 60.0,
                 zoom_speed: 5.0,
@@ -182,25 +229,52 @@ impl PillGame for Game {
                 delta_y: 0.0,
                 delta_z: 0.0,
             })
-            .with_component(AudioListenerComponent::builder()
-                .enabled(true)
-                .build())
+            .with_component(AudioListenerComponent::builder().enabled(true).build())
             .build();
 
+        #[cfg(feature = "benchmark")]
+        engine.add_global_component(BenchComponent {
+            frames: 0,
+            acc_math_ns: 0,
+            acc_frame_ms: 0.0,
+            worst_frame_ms: 0.0,
+            moved_acc: 0,
+            last_report: Instant::now(),
+            report_every_frames: 120,
+        })?;
 
         // Setup demo state component
         let demo_state = DemoStateComponent {
             floating_objects_movement_enabled: true,
             current_mesh: 0,
-            mesh_handles: vec!(pill_mesh_handle, cube_mesh_handle, torus_mesh_handle),
+            mesh_handles: vec![pill_mesh_handle, cube_mesh_handle, torus_mesh_handle],
             current_material_set: 0,
-            textured_material_handles: vec!(fabric_material_handle, stones_material_handle, organic_material_handle),
-            plain_color_material_handles: vec!(yellow_material_handle, blue_material_handle, white_material_handle),
+            textured_material_handles: vec![
+                fabric_material_handle,
+                stones_material_handle,
+                organic_material_handle,
+            ],
+            plain_color_material_handles: vec![
+                yellow_material_handle,
+                blue_material_handle,
+                white_material_handle,
+            ],
         };
         engine.add_global_component(demo_state)?;
 
         // Spawn certain number of floating objects
         spawn_floating_objects(engine, FLOATING_OBJECT_SPAWN_BATCH_COUNT)?;
+
+        #[cfg(feature = "benchmark")]
+        if let Ok(mut fh) = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open("vec3_bench.csv")
+        {
+            let _ = writeln!(fh, "LOG BEGIN",);
+            let _ = writeln!(fh, "fps | avg_math_ms | avg_frame_ms | worst_frame_ms");
+        }
 
         Ok(())
     }
@@ -212,9 +286,10 @@ fn demo_control_system(engine: &mut Engine) -> Result<()> {
     let input_component = engine.get_global_component::<InputComponent>()?;
     let system_toggle_key = input_component.get_key_pressed(TOGGLE_FLOATING_OBJECTS_SYSTEM);
 
-    let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
+    let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
     if system_toggle_key {
-        demo_state.floating_objects_movement_enabled = !demo_state.floating_objects_movement_enabled;
+        demo_state.floating_objects_movement_enabled =
+            !demo_state.floating_objects_movement_enabled;
         let enabled = demo_state.floating_objects_movement_enabled;
         engine.toggle_system("objects_movement", UpdatePhase::Game, enabled)?;
     }
@@ -225,46 +300,75 @@ fn demo_control_system(engine: &mut Engine) -> Result<()> {
 fn floating_objects_movement_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
 
-    for (_, floating_object_transform, floating_object_component) in engine.iterate_two_components_mut::<TransformComponent, FloatingObjectComponent>()? {
+    #[cfg(feature = "benchmark")]
+    let frame_t0 = Instant::now();
+    #[cfg(feature = "benchmark")]
+    let math_t0 = Instant::now();
+    #[cfg(feature = "benchmark")]
+    let mut moved_this_frame: u64 = 0;
+
+    for (_, floating_object_transform, floating_object_component) in
+        engine.iterate_two_components_mut::<TransformComponent, FloatingObjectComponent>()?
+    {
+        #[cfg(feature = "benchmark")]
+        {
+            moved_this_frame += 1;
+        }
 
         // Local rotation
-        let rotation_speed = floating_object_component.rotation_speed.clone();
-        floating_object_transform.rotate_around_axis(rotation_speed * delta_time, Vector3f::new(1.0,1.0,1.0));
+        let rotation_speed = floating_object_component.rotation_speed;
+        floating_object_transform
+            .rotate_around_axis(rotation_speed * delta_time, Vector3f::new(1.0, 1.0, 1.0));
 
         // Local scale
-        let scale_speed = floating_object_component.scale_speed.clone();
+        let scale_speed = floating_object_component.scale_speed;
         floating_object_component.scale_factor += scale_speed * delta_time;
-        let scale_factor = floating_object_component.scale_factor.clone();
-        floating_object_transform.set_scale(Vector3f::new(0.4,0.4,0.4) * (scale_factor.sin() / 1.5 + 1.5));
+        let scale_factor = floating_object_component.scale_factor;
+        floating_object_transform
+            .set_scale(Vector3f::new(0.4, 0.4, 0.4) * (scale_factor.sin() / 1.5 + 1.5));
 
         // Radius
-        let radius_speed = floating_object_component.radius_speed.clone();
+        let radius_speed = floating_object_component.radius_speed;
         floating_object_component.radius_factor += radius_speed * delta_time;
 
         // Movement
-        let orbital_movement_speed = floating_object_component.orbital_movement_speed.clone();
+        let orbital_movement_speed = floating_object_component.orbital_movement_speed;
         floating_object_component.angle += orbital_movement_speed * delta_time;
 
-        let angle = floating_object_component.angle.clone();
-        let radius = floating_object_component.radius_factor.clone().sin() * 6.0 + 10.0;
+        let angle = floating_object_component.angle;
+        let radius = floating_object_component.radius_factor.sin() * 6.0 + 10.0;
 
-        floating_object_transform.set_position(
-            Vector3f::new(
-                angle.to_radians().cos() * radius,
-                floating_object_transform.position.y,
-                angle.to_radians().sin() * radius
+        floating_object_transform.set_position(Vector3f::new(
+            angle.to_radians().cos() * radius,
+            floating_object_transform.position.y,
+            angle.to_radians().sin() * radius,
         ));
 
-        let y_axis_movement_speed = floating_object_component.y_axis_movement_speed.clone();
+        let y_axis_movement_speed = floating_object_component.y_axis_movement_speed;
         floating_object_component.y_axis_factor += y_axis_movement_speed * delta_time;
-        let y_axis_factor = floating_object_component.y_axis_factor.clone();
+        let y_axis_factor = floating_object_component.y_axis_factor;
 
-        floating_object_transform.set_position(
-            Vector3f::new(
+        floating_object_transform.set_position(Vector3f::new(
             angle.to_radians().cos() * radius,
             y_axis_factor.sin() * 0.8 * radius,
-            angle.to_radians().sin() * radius
+            angle.to_radians().sin() * radius,
         ));
+    }
+
+    #[cfg(feature = "benchmark")]
+    {
+        let math_ns = math_t0.elapsed().as_nanos();
+        let frame_ms = frame_t0.elapsed().as_secs_f64() * 1_000.0;
+
+        let s = engine.get_global_component_mut::<BenchComponent>()?;
+        s.frames += 1;
+        s.acc_math_ns += math_ns;
+        s.acc_frame_ms += frame_ms;
+        if frame_ms as f32 > s.worst_frame_ms {
+            s.worst_frame_ms = frame_ms as f32;
+        }
+
+        s.moved_acc += moved_this_frame;
     }
 
     Ok(())
@@ -279,17 +383,22 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
 
     // Set same mesh
     if mesh_key {
-        let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
+        let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
         demo_state.current_mesh = (demo_state.current_mesh + 1) % 3;
-        let mesh_handle = demo_state.mesh_handles.get(demo_state.current_mesh).unwrap().clone();
-        for (_, mesh_rendering_component) in engine.iterate_one_component_mut::<MeshRenderingComponent>()? {
+        let mesh_handle = *demo_state
+            .mesh_handles
+            .get(demo_state.current_mesh)
+            .unwrap();
+        for (_, mesh_rendering_component) in
+            engine.iterate_one_component_mut::<MeshRenderingComponent>()?
+        {
             mesh_rendering_component.set_mesh(&mesh_handle);
         }
     }
 
     // Set random material from set
     if material_key {
-        let demo_state =  engine.get_global_component_mut::<DemoStateComponent>()?;
+        let demo_state = engine.get_global_component_mut::<DemoStateComponent>()?;
         demo_state.current_material_set = (demo_state.current_material_set + 1) % 2;
 
         let current_material_set = match demo_state.current_material_set == 0 {
@@ -297,7 +406,9 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
             false => demo_state.plain_color_material_handles.clone(),
         };
 
-        for (_, mesh_rendering_component) in engine.iterate_one_component_mut::<MeshRenderingComponent>()? {
+        for (_, mesh_rendering_component) in
+            engine.iterate_one_component_mut::<MeshRenderingComponent>()?
+        {
             let material_handle = current_material_set[rng.gen_range(0..=2)];
             mesh_rendering_component.set_material(&material_handle);
         }
@@ -308,7 +419,7 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
 
 fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let input_component = engine.get_global_component::<InputComponent>()?;
+    let input_component = engine.get_global_component_mut::<InputComponent>()?;
 
     // Get input
     let a_key = input_component.get_key(KeyboardKey::KeyA);
@@ -317,7 +428,19 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     let mouse_scroll_delta = input_component.get_mouse_scroll_delta();
     let mouse_delta = input_component.get_mouse_delta();
 
-    for (_, transform_transform, camera_movement_component) in engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
+    // Get gamepad input
+    let gamepad_left_stick =
+        input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::LeftStickX);
+
+    // Pressing left bumper causes rumble (Example of haptics usage)
+    let left_bumper =
+        input_component.get_gamepad_button(PlayerId::Player1, GamepadButton::LeftBumper);
+    if left_bumper {
+        input_component.enqueue_rumble(PlayerId::Player1, 1.0, 1.0, 500);
+    }
+
+    for (_, transform_transform, camera_movement_component) in
+        engine.iterate_two_components_mut::<TransformComponent, CameraMovementComponent>()?
     {
         // Zoom
         let zoom_speed = camera_movement_component.zoom_speed;
@@ -325,8 +448,17 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Orbit
         let mut change_value: f32 = 0.0;
-        if d_key { change_value -= 1.0; }
-        if a_key { change_value += 1.0; }
+        // TODO: make it progressive for gamepad
+        if d_key {
+            change_value -= 1.0;
+        } else if gamepad_left_stick < -0.1 {
+            change_value += 1.0;
+        }
+        if a_key {
+            change_value += 1.0;
+        } else if gamepad_left_stick > 0.1 {
+            change_value -= 1.0;
+        }
         let orbit_speed = camera_movement_component.orbit_speed;
         camera_movement_component.angle += change_value * orbit_speed * delta_time;
         let angle = camera_movement_component.angle;
@@ -337,12 +469,20 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
 
         // Mouse movement
         let mut z_change_value = 0.0;
-        if mouse_delta.x > 0.0 { z_change_value -= 0.2; }
-        if mouse_delta.x < 0.0 { z_change_value += 0.2; }
+        if mouse_delta.x > 0.0 {
+            z_change_value -= 0.2;
+        }
+        if mouse_delta.x < 0.0 {
+            z_change_value += 0.2;
+        }
 
         let mut y_change_value = 0.0;
-        if mouse_delta.y > 0.0 { y_change_value -= 0.2; }
-        if mouse_delta.y < 0.0 { y_change_value += 0.2; }
+        if mouse_delta.y > 0.0 {
+            y_change_value -= 0.2;
+        }
+        if mouse_delta.y < 0.0 {
+            y_change_value += 0.2;
+        }
 
         if right_mouse_button {
             camera_movement_component.delta_z += z_change_value;
@@ -370,11 +510,22 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
     let t_key = input_component.get_key(INCREASE_CAMERA_FOV_BUTTON);
     let g_key = input_component.get_key(DECREASE_CAMERA_FOV_BUTTON);
 
-    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()?
-    {
+    // Get gamepad input
+    let gamepad_right_stick =
+        input_component.get_gamepad_axis(PlayerId::Player1, GamepadAxis::RightStickY);
+
+    for (_, camera_component) in engine.iterate_one_component_mut::<CameraComponent>()? {
         let mut change_value: f32 = 0.0;
-        if t_key { change_value += 1.0; }
-        if g_key { change_value -= 1.0; }
+        if t_key {
+            change_value += 1.0;
+        } else if gamepad_right_stick > 0.1 {
+            change_value -= 1.0;
+        }
+        if g_key {
+            change_value -= 1.0;
+        } else if gamepad_right_stick < -0.1 {
+            change_value += 1.0;
+        }
 
         let new_fov = camera_component.fov + change_value * 100.0 * delta_time;
         if new_fov > 10.0 && new_fov < 120.0 {
@@ -387,7 +538,7 @@ fn camera_fov_changing_system(engine: &mut Engine) -> Result<()> {
 
 fn floating_objects_spawn_system(engine: &mut Engine) -> Result<()> {
     // Get input component
-    let input_component = (&*engine).get_global_component::<InputComponent>()?;
+    let input_component = engine.get_global_component::<InputComponent>()?;
 
     // Create new objects
     if input_component.get_key_pressed(SPAWN_FLOATING_OBJECTS_BUTTON) {
@@ -404,7 +555,7 @@ fn floating_objects_remove_system(engine: &mut Engine) -> Result<()> {
     let scene_handle = engine.get_active_scene_handle()?;
 
     // Get input component
-    let input_component = (&*engine).get_global_component::<InputComponent>()?;
+    let input_component = engine.get_global_component::<InputComponent>()?;
 
     // Remove objects
     if input_component.get_key_pressed(REMOVE_FLOATING_OBJECTS_BUTTON) {
@@ -429,32 +580,30 @@ fn floating_objects_remove_system(engine: &mut Engine) -> Result<()> {
 // --- Functions ---
 
 fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()> {
-
     // Get active scene handle
     let active_scene = engine.get_active_scene_handle()?;
     let mut rng = thread_rng();
 
     // Get resources
-    let demo_state = (&*engine).get_global_component::<DemoStateComponent>()?;
+    let demo_state = engine.get_global_component::<DemoStateComponent>()?;
     let mesh_handles = demo_state.mesh_handles.clone();
     let textured_material_handles = demo_state.textured_material_handles.clone();
 
     for _ in 0..object_count {
+        let mesh_index = rng.gen_range(0..mesh_handles.len());
+        let mat_index = rng.gen_range(0..textured_material_handles.len());
 
-         let mesh_index = rng.gen_range(0..mesh_handles.len());
-    let mat_index = rng.gen_range(0..textured_material_handles.len());
+        let mesh_handle = mesh_handles[mesh_index];
+        let material_handle = textured_material_handles[mat_index];
 
+        // // Randommize mesh
+        //     let mesh_handle = mesh_handles[rng.gen_range(0..=2)];
 
-    let mesh_handle = mesh_handles[mesh_index];
-    let material_handle = textured_material_handles[mat_index];
+        //         // Randomize material
+        //     let material_handle = textured_material_handles[rng.gen_range(0..=2)];
 
-    // // Randommize mesh
-    //     let mesh_handle = mesh_handles[rng.gen_range(0..=2)];
-
-    //         // Randomize material
-    //     let material_handle = textured_material_handles[rng.gen_range(0..=2)];
-
-        engine.build_entity(active_scene)
+        engine
+            .build_entity(active_scene)
             .with_component(FloatingObjectComponent {
                 angle: rng.gen_range(0.0..359.0),
                 radius_factor: rng.gen_range(20.0..180.0),
@@ -468,15 +617,60 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
                 radius_speed: rng.gen_range(0.1..1.2),
             })
             .with_component(TransformComponent::new())
-            .with_component(MeshRenderingComponent::builder()
-                .material(&material_handle)
-                .mesh(&mesh_handle)
-                .build())
+            .with_component(
+                MeshRenderingComponent::builder()
+                    .material(&material_handle)
+                    .mesh(&mesh_handle)
+                    .build(),
+            )
             .build();
     }
 
     // Update initial positions once (in case movement system is disabled)
     floating_objects_movement_system(engine)?;
+
+    Ok(())
+}
+
+#[cfg(feature = "benchmark")]
+fn bench_report_system(engine: &mut Engine) -> Result<()> {
+    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
+    let s = engine.get_global_component_mut::<BenchComponent>()?;
+
+    if s.frames >= s.report_every_frames as u64 {
+        let f = s.frames as f64;
+        let avg_math_ms = (s.acc_math_ns as f64 / 1_000_000.0) / f;
+        let avg_frame_ms = s.acc_frame_ms / f;
+        let moved_per_frame = (s.moved_acc as f64 / f).round() as u64;
+        let new_frame_time = delta_time * 1000.0;
+        let fps = 1000.0 / new_frame_time;
+
+        // One-line, spreadsheet-friendly
+        println!(
+            "BENCH vec3 | fps={} | moved/frame={} | avg_math_ms={:.3} | avg_frame_ms={:.3} | worst_ms={:.3}",
+            fps, moved_per_frame, avg_math_ms, avg_frame_ms, s.worst_frame_ms
+        );
+
+        if let Ok(mut fh) = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("vec3_bench.csv")
+        {
+            let _ = writeln!(
+                fh,
+                "{},{:.3},{:.3},{:.3}",
+                fps, avg_math_ms, avg_frame_ms, s.worst_frame_ms
+            );
+        }
+
+        // reset rolling window
+        s.frames = 0;
+        s.acc_math_ns = 0;
+        s.acc_frame_ms = 0.0;
+        s.worst_frame_ms = 0.0;
+        s.moved_acc = 0;
+        s.last_report = Instant::now();
+    }
 
     Ok(())
 }

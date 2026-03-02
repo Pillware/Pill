@@ -3,17 +3,25 @@ name = "pill_core"
 version = "0.1.0"
 authors = [
     # Extend this list when submiting PR
-    "Mateusz Szymoński <mateusz.szymonski@gmail.com>"
+    "Mateusz Szymoński <mateusz.szymonski@gmail.com>",
+    "Jakub Duchniewicz <j.duchniewicz@gmail.com>"
     ]
 edition = "2021"
 
 [dependencies]
-cgmath = { version = "0.18", features = ["serde"] }
+glam = { version = "0.30.8", features = ["serde"] }
 anyhow = "1.0.45"
 thiserror = "1.0.30"
 colored = "2.0.0"
 boolinator = "2.4.0"
 log = "0.4"
-readonly = "0.2"
 indexmap = "1.7.0"
-serde = "1.0.219"
+config = "0.11"
+env_logger = "0.9.0"
+chrono = "0.4.19"
+strum_macros = "0.27.2"
+strum = "0.27.2"
+renet = "1.0.0"
+renet_netcode = "1.0.0"
+bincode = "1.0"
+serde = { version = "1.0.228", features = ["derive"] }

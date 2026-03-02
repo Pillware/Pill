@@ -1,20 +1,14 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
 
+pub mod config;
+pub mod drawers;
+pub mod instance;
 pub mod renderer;
 pub mod resources;
-pub mod renderer_resource_storage;
-pub mod instance;
-pub mod egui;
-pub mod mesh_drawer;
+//pub mod profiler;
 
 // --- Use ---
 
 pub use renderer::*;
 
-pub use instance::{ 
-    Instance, 
-};
-
-pub use renderer_resource_storage::{ 
-    RendererResourceStorage,
-};
+pub use instance::Instance;

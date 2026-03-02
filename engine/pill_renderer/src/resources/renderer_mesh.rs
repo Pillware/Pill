@@ -1,7 +1,7 @@
-use pill_engine::internal::{ MeshData, MeshVertex };
+use pill_engine::internal::{MeshData, MeshVertex};
 
-use wgpu::util::DeviceExt;
 use anyhow::*;
+use wgpu::util::DeviceExt;
 
 // --- Vertex ---
 
@@ -13,14 +13,14 @@ pub trait Vertex {
 // --- Mesh ---
 
 pub struct RendererMesh {
+    pub name: String,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
 }
 
 impl RendererMesh {
-    pub fn new(device: &wgpu::Device, name: &str, mesh_data: &MeshData) -> Result<Self> { 
-
+    pub fn new(device: &wgpu::Device, name: &str, mesh_data: &MeshData) -> Result<Self> {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("{:?}_vertex_buffer", name)),
             contents: bytemuck::cast_slice(&mesh_data.vertices),
@@ -28,12 +28,13 @@ impl RendererMesh {
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(&format!("{:?}_vertex_buffer", name)),
+            label: Some(&format!("{:?}_index_buffer", name)),
             contents: bytemuck::cast_slice(&mesh_data.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
 
         let renderer_mesh = Self {
+            name: name.to_string(),
             vertex_buffer,
             index_buffer,
             index_count: mesh_data.indices.len() as u32,
@@ -50,27 +51,32 @@ impl Vertex for RendererMesh {
             array_stride: mem::size_of::<MeshVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
-                wgpu::VertexAttribute { // Vertex position
-                    offset: 0,  
-                    shader_location: 0, 
-                    format: wgpu::VertexFormat::Float32x3, 
+                wgpu::VertexAttribute {
+                    // Vertex position
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
-                wgpu::VertexAttribute { // Vertex texture coordinates
+                wgpu::VertexAttribute {
+                    // Vertex texture coordinates
                     offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
                 },
-                wgpu::VertexAttribute { // Vertex normal
+                wgpu::VertexAttribute {
+                    // Vertex normal
                     offset: mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                wgpu::VertexAttribute { // Vertex tangent
+                wgpu::VertexAttribute {
+                    // Vertex tangent
                     offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
                     shader_location: 3,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                wgpu::VertexAttribute { // Vertex bitangent
+                wgpu::VertexAttribute {
+                    // Vertex bitangent
                     offset: mem::size_of::<[f32; 11]>() as wgpu::BufferAddress,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Float32x3,
@@ -79,5 +85,3 @@ impl Vertex for RendererMesh {
         }
     }
 }
-
-

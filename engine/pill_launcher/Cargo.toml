@@ -13,3 +13,6 @@ fs_extra = "1.2.0"
 anyhow = "1.0"
 path-absolutize = "3.0.11"
 config = "0.11"
+
+[profile.release]
+debug = 2

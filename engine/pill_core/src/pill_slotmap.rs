@@ -20,7 +20,6 @@
 
 //  3. This notice may not be removed or altered from any source distribution.
 
-
 // --- PillSlotMap
 // This is slotmap crate modified by changing names of types, adding public key variables, removing iterators and adding possibility to restrict version limit
 // Original crate: https://crates.io/crates/SlotMap
@@ -29,15 +28,16 @@
 #![allow(unused_unsafe)]
 
 //! Contains the slot map implementation.
+use crate::CoreError;
 use core::fmt;
+use core::fmt::Debug;
 use core::marker::PhantomData;
 #[allow(unused_imports)] // MaybeUninit is only used on nightly at the moment.
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::{Index, IndexMut};
 use std::fmt::Formatter;
-use core::fmt::Debug;
 use std::iter::Enumerate;
-use std::num::{ NonZeroU32};
+use std::num::NonZeroU32;
 
 // Storage inside a slot or metadata for the freelist when vacant.
 union SlotUnion<T> {
@@ -70,10 +70,10 @@ impl<T> Slot<T> {
     // Is this slot occupied?
     #[inline(always)]
     pub fn occupied(&self) -> bool {
-        self.version % 2 > 0
+        !self.version.is_multiple_of(2)
     }
 
-    pub fn get(&self) -> SlotContent<T> {
+    pub fn get(&self) -> SlotContent<'_, T> {
         unsafe {
             if self.occupied() {
                 Occupied(&*self.u.value)
@@ -83,7 +83,7 @@ impl<T> Slot<T> {
         }
     }
 
-    pub fn get_mut(&mut self) -> SlotContentMut<T> {
+    pub fn get_mut(&'_ mut self) -> SlotContentMut<'_, T> {
         unsafe {
             if self.occupied() {
                 OccupiedMut(&mut *self.u.value)
@@ -142,7 +142,6 @@ pub struct PillSlotMap<K: PillSlotMapKey, V> {
 }
 
 impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
-
     pub fn with_key() -> Self {
         Self::with_capacity_and_key(0)
     }
@@ -152,11 +151,14 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     }
 
     // Warning: Version limit has to be odd value
-    pub fn with_capacity_and_key_and_version_limit(capacity: usize, version_limit: u32) -> Result<Self, ()> {
-        if version_limit % 2 == 0 {
-            return Err(())
+    pub fn with_capacity_and_key_and_version_limit(
+        capacity: usize,
+        version_limit: u32,
+    ) -> Result<Self, CoreError> {
+        if version_limit.is_multiple_of(2) {
+            return Err(CoreError::NotMultipleOf2);
         }
-        
+
         let mut slots = Vec::with_capacity(capacity + 1);
         slots.push(Slot {
             u: SlotUnion { next_free: 0 },
@@ -170,7 +172,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             version_limit,
             _k: PhantomData,
         };
-        
+
         Ok(slotmap)
     }
 
@@ -197,13 +199,12 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         let kd = key.data();
         self.slots
             .get(kd.index as usize)
-            .map_or(false, |slot| slot.version == kd.version.get())
+            .is_some_and(|slot| slot.version == kd.version.get())
     }
 
     pub fn get_next_free_slot_handle(&self) -> K {
-
         let new_num_elems = self.num_elems + 1;
-        if new_num_elems == core::u32::MAX {
+        if new_num_elems == u32::MAX {
             panic!("PillSlotMap number of elements overflow");
         }
 
@@ -218,7 +219,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         let version = 1;
         let kd = PillSlotMapKeyData::new(self.slots.len() as u32, version);
 
-        return kd.into();
+        kd.into()
     }
 
     pub fn insert_and_get_mut(&mut self, value: V) -> (K, &mut V) {
@@ -237,7 +238,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     {
         // In case f panics, we don't make any changes until we have the value.
         let new_num_elems = self.num_elems + 1;
-        if new_num_elems == core::u32::MAX {
+        if new_num_elems == u32::MAX {
             panic!("PillSlotMap number of elements overflow");
         }
 
@@ -290,8 +291,11 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         self.free_head = index as u32;
         self.num_elems -= 1;
 
-
-        slot.version = if slot.version >= self.version_limit { 0 } else { slot.version + 1 };
+        slot.version = if slot.version >= self.version_limit {
+            0
+        } else {
+            slot.version + 1
+        };
 
         value
     }
@@ -329,11 +333,17 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         }
     }
 
-    pub fn get_version_unchecked(&self, key: K) -> Option<&V> {
+    /// Returns a reference to the value in the slot at `key.index` if the index is in-bounds,
+    /// without checking the key's version.
+    ///
+    /// # Safety
+    /// If this function returns `Some`, the caller must ensure that the referenced slot is currently
+    /// **occupied** (contains a valid `V`). Passing a key whose slot is vacant (e.g. removed element,
+    /// reused index, or never inserted) can cause undefined behavior by interpreting freelist metadata
+    /// as a `V`.
+    pub unsafe fn get_version_unchecked(&self, key: K) -> Option<&V> {
         let kd = key.data();
-        self.slots
-            .get(kd.index as usize)
-            .map(|slot| unsafe { &*slot.u.value })
+        self.slots.get(kd.index as usize).map(|slot| &*slot.u.value)
     }
 
     pub fn get(&self, key: K) -> Option<&V> {
@@ -344,6 +354,12 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .map(|slot| unsafe { &*slot.u.value })
     }
 
+    /// Returns a reference to the value for `key` without checking that `key` is valid.
+    ///
+    /// # Safety
+    /// The caller must ensure `self.contains_key(key)` is `true` (i.e. `key` was produced by
+    /// this `PillSlotMap` and has not been removed/reused). If the key is stale or from a
+    /// different map, this may read a vacant slot and cause undefined behavior.
     pub unsafe fn get_unchecked(&self, key: K) -> &V {
         debug_assert!(self.contains_key(key));
         &self.slots.get_unchecked(key.data().index as usize).u.value
@@ -357,6 +373,12 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .map(|slot| unsafe { &mut *slot.u.value })
     }
 
+    /// Returns a mutable reference to the value for `key` without checking that `key` is valid.
+    ///
+    /// # Safety
+    /// The caller must ensure `self.contains_key(key)` is `true` (i.e. the slot is currently
+    /// occupied by the same element/version). Otherwise this may create a mutable reference to
+    /// uninitialized / non-`V` data and cause undefined behavior.
     pub unsafe fn get_unchecked_mut(&mut self, key: K) -> &mut V {
         debug_assert!(self.contains_key(key));
         &mut self
@@ -366,7 +388,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .value
     }
 
-    pub fn iter(&self) -> Iter<K, V> {
+    pub fn iter(&'_ self) -> Iter<'_, K, V> {
         let mut it = self.slots.iter().enumerate();
         it.next(); // Skip sentinel.
         Iter {
@@ -376,7 +398,7 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         }
     }
 
-    pub fn iter_mut(&mut self) -> IterMut<K, V> {
+    pub fn iter_mut(&'_ mut self) -> IterMut<'_, K, V> {
         let len = self.len();
         let mut it = self.slots.iter_mut().enumerate();
         it.next(); // Skip sentinel.
@@ -426,7 +448,7 @@ impl<'a, K: PillSlotMapKey, V> Iterator for Iter<'a, K, V> {
     type Item = (K, &'a V);
 
     fn next(&mut self) -> Option<(K, &'a V)> {
-        while let Some((idx, slot)) = self.slots.next() {
+        for (idx, slot) in self.slots.by_ref() {
             if let Occupied(value) = slot.get() {
                 let kd = PillSlotMapKeyData::new(idx as u32, slot.version);
                 self.num_left -= 1;
@@ -446,7 +468,7 @@ impl<'a, K: PillSlotMapKey, V> Iterator for IterMut<'a, K, V> {
     type Item = (K, &'a mut V);
 
     fn next(&mut self) -> Option<(K, &'a mut V)> {
-        while let Some((idx, slot)) = self.slots.next() {
+        for (idx, slot) in self.slots.by_ref() {
             let version = slot.version;
             if let OccupiedMut(value) = slot.get_mut() {
                 let kd = PillSlotMapKeyData::new(idx as u32, version);
@@ -482,11 +504,11 @@ impl PillSlotMapKeyData {
     }
 
     fn null() -> Self {
-        Self::new(core::u32::MAX, 1)
+        Self::new(u32::MAX, 1)
     }
 
     fn is_null(self) -> bool {
-        self.index == core::u32::MAX
+        self.index == u32::MAX
     }
 
     /// Returns the key data as a 64-bit integer. No guarantees about its value
@@ -528,8 +550,34 @@ impl Default for PillSlotMapKeyData {
     }
 }
 
-pub unsafe trait PillSlotMapKey: 
-    From<PillSlotMapKeyData> + Copy + Clone + Default + Eq + PartialEq + Ord + PartialOrd + core::hash::Hash + core::fmt::Debug {
+/// Key type for [`PillSlotMap`].
+///
+/// The map trusts that the key can round-trip to and from [`PillSlotMapKeyData`] without
+/// changing the contained `index/version` bits.
+///
+/// # Safety
+/// Implementations must uphold all of the following:
+/// - `From<PillSlotMapKeyData>` must preserve the `index` and `version`.
+/// - `data()` must return the exact same `PillSlotMapKeyData` that the key was created from
+///   (i.e. `PillSlotMapKeyData::from_ffi(k.data().as_ffi())` must be equivalent, and
+///   `K::from(k.data()).data() == k.data()` should hold).
+/// - `data().version` must be non-zero (already enforced by `NonZeroU32`) and should represent
+///   the version used by the map.
+///
+/// Breaking this contract can make keys point at the wrong slot/version, and in combination with
+/// `get_unchecked(_mut)` can lead to undefined behavior.
+pub unsafe trait PillSlotMapKey:
+    From<PillSlotMapKeyData>
+    + Copy
+    + Clone
+    + Default
+    + Eq
+    + PartialEq
+    + Ord
+    + PartialOrd
+    + core::hash::Hash
+    + core::fmt::Debug
+{
     fn null() -> Self {
         PillSlotMapKeyData::null().into()
     }

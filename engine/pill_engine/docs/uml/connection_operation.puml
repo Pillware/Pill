@@ -1,0 +1,142 @@
+
+     ┌────────┐                                   ┌──────┐                                     ┌────────┐                                  ┌────────┐
+     │Client_1│                                   │Server│                                     │Client_2│                                  │Client_3│
+     └───┬────┘                                   └──┬───┘                                     └───┬────┘                                  └───┬────┘
+        Starts up and listens for connections        │                                             │                                           │
+ ────────────────────────────────────────────────────>                                             │                                           │
+         │                                           │                                             │                                           │
+         │    Connects with player spawn location    │                                             │                                           │
+         │ ──────────────────────────────────────────>                                             │                                           │
+         │                                           │                                             │                                           │
+         │          Sends state of the world         │                                             │                                           │
+         │ <─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─                                              │                                           │
+         │                                           │                                             │                                           │
+         │────┐                                                                                    │                                           │
+         │    │ Spawns entities not yet in their world                                             │                                           │
+         │<───┘                                                                                    │                                           │
+         │                                           │                                             │                                           │
+         │                                           │     Connects with player spawn location     │                                           │
+         │                                           │ <────────────────────────────────────────────                                           │
+         │                                           │                                             │                                           │
+         │                                           │           Sends state of the world          │                                           │
+         │                                           │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─>                                           │
+         │                                           │                                             │                                           │
+         │                                           │                                             │────┐
+         │                                           │                                             │    │ Spawns entities not yet in their world
+         │                                           │                                             │<───┘
+         │                                           │                                             │                                           │
+         │  Send Spawn command for Client_2s entity  │                                             │                                           │
+         │ <──────────────────────────────────────────                                             │                                           │
+         │                                           │                                             │                                           │
+         │────┐                                      │                                             │                                           │
+         │    │ Spawns Client_2's entity             │                                             │                                           │
+         │<───┘                                      │                                             │                                           │
+         │                                           │                                             │                                           │
+         │                                           │                                             │                                           │
+         │                                           │                             ╔═══════════════╧═══╗                                       │
+═════════╪═══════════════════════════════════════════╪═════════════════════════════╣ Spawn a new entity╠═══════════════════════════════════════╪════════════════════════════════════════════
+         │                                           │                             ╚═══════════════╤═══╝                                       │
+         │                                           │                                             │                                           │
+         │────┐                                      │                                             │                                           │
+         │    │ Spawn new entity                     │                                             │                                           │
+         │<───┘                                      │                                             │                                           │
+         │                                           │                                             │                                           │
+         │        Notify server of new entity        │                                             │                                           │
+         │ ──────────────────────────────────────────>                                             │                                           │
+         │                                           │                                             │                                           │
+         │                                           │ Send Spawn command for Client_1's new entity│                                           │
+         │                                           │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─>                                           │
+         │                                           │                                             │                                           │
+         │                                           │                                             │────┐                                      │
+         │                                           │                                             │    │ Spawns Client_1's new entity         │
+         │                                           │                                             │<───┘                                      │
+         │                                           │                                             │                                           │
+         │                                           │                                             │                                           │
+         │                                           │                             ╔═══════════════╧════╗                                      │
+═════════╪═══════════════════════════════════════════╪═════════════════════════════╣ Players move around╠══════════════════════════════════════╪════════════════════════════════════════════
+         │                                           │                             ╚═══════════════╤════╝                                      │
+         │                                           │                                             │                                           │
+         │────┐                                      │                                             │                                           │
+         │    │ Changed Player_1 Transform           │                                             │                                           │
+         │<───┘                                      │                                             │                                           │
+         │                                           │                                             │                                           │
+         │       Send Update with new Transform      │                                             │                                           │
+         │ ──────────────────────────────────────────>                                             │                                           │
+         │                                           │                                             │                                           │
+         │                                           │ Send Update with new Transform for Player_1 │                                           │
+         │                                           │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─>                                           │
+         │                                           │                                             │                                           │
+         │                                           │                                             │────┐                                      │
+         │                                           │                                             │    │ Interpolate Player_1 to new Transform│
+         │                                           │                                             │<───┘                                      │
+         │                                           │                                             │                                           │
+         │                                           │                                             │                                           │
+         │                                           │                              ╔══════════════╧══╗                                        │
+═════════╪═══════════════════════════════════════════╪══════════════════════════════╣ New Client joins╠════════════════════════════════════════╪════════════════════════════════════════════
+         │                                           │                              ╚══════════════╤══╝                                        │
+         │                                           │                                             │                                           │
+         │                                           │                           Connects with player spawn location                           │
+         │                                           │ <────────────────────────────────────────────────────────────────────────────────────────
+         │                                           │                                             │                                           │
+         │                                           │                                 Sends state of the world                                │
+         │                                           │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─>
+         │                                           │                                             │                                           │
+         │                                           │                                             │                                           │────┐
+         │                                           │                                             │                                           │    │ Spawns entities not yet in their world
+         │                                           │                                             │                                           │<───┘
+         │                                           │                                             │                                           │
+         │  Send Spawn command for Client_3's entity │                                             │                                           │
+         │ <──────────────────────────────────────────                                             │                                           │
+         │                                           │                                             │                                           │
+         │────┐                                      │                                             │                                           │
+         │    │ Spawns Client_3's entity             │                                             │                                           │
+         │<───┘                                      │                                             │                                           │
+         │                                           │                                             │                                           │
+         │                                           │   Send Spawn command for Client_3's entity  │                                           │
+         │                                           │ ────────────────────────────────────────────>                                           │
+         │                                           │                                             │                                           │
+         │                                           │                                             │────┐                                      │
+         │                                           │                                             │    │ Spawns Client_3's entity             │
+         │                                           │                                             │<───┘                                      │
+     ┌───┴────┐                                   ┌──┴───┐                                     ┌───┴────┐                                  ┌───┴────┐
+     │Client_1│                                   │Server│                                     │Client_2│                                  │Client_3│
+     └────────┘                                   └──────┘                                     └────────┘                                  └────────┘
+
+@startuml
+participant Server order 2
+participant Client_1 order 1
+participant Client_2 order 3
+participant Client_3 order 4
+
+-> Server: Starts up and listens for connections
+Client_1 -> Server: Connects with player spawn location
+Client_1 <-- Server: Sends state of the world
+Client_1 -> Client_1: Spawns entities not yet in their world
+Client_2 -> Server: Connects with player spawn location
+Client_2 <-- Server: Sends state of the world
+Client_2 -> Client_2: Spawns entities not yet in their world
+Server -> Client_1: Send Spawn command for Client_2s entity
+Client_1 -> Client_1: Spawns Client_2's entity
+
+...Spawn a new entity...
+Client_1 -> Client_1: Spawn new entity
+Client_1 -> Server: Notify server of new entity
+Server --> Client_2: Send Spawn command for Client_1's new entity
+Client_2 -> Client_2: Spawns Client_1's new entity
+
+...Players move around...
+Client_1 -> Client_1: Changed Player_1 Transform
+Client_1 -> Server: Send Update with new Transform
+Server --> Client_2: Send Update with new Transform for Player_1
+Client_2 -> Client_2: Interpolate Player_1 to new Transform
+
+...New Client joins...
+Client_3 -> Server: Connects with player spawn location
+Server --> Client_3: Sends state of the world
+Client_3 -> Client_3: Spawns entities not yet in their world
+Server -> Client_1: Send Spawn command for Client_3's entity
+Client_1 -> Client_1: Spawns Client_3's entity
+Server -> Client_2: Send Spawn command for Client_3's entity
+Client_2 -> Client_2: Spawns Client_3's entity
+
+@enduml

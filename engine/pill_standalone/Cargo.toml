@@ -8,12 +8,8 @@ pill_core = {path = "../pill_core"}
 pill_engine = {path = "../pill_engine", features = ["internal"]}
 pill_renderer = {path = "../pill_renderer"}
 
-winit = "0.29"
-env_logger = "0.9.0"
-pretty_env_logger = "0.4.0"
+winit = "0.30.12"
 log = "0.4"
-chrono = "0.4.19"
-colored = "2.0.0"
 config = "0.11"
 anyhow = "1.0.45"
 libloading = "0.8.8"

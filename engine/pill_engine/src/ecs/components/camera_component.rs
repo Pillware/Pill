@@ -1,20 +1,18 @@
 use crate::{
-    engine::Engine, 
-    graphics::{ RenderQueueKey, compose_render_queue_key, RendererCameraHandle }, 
-    resources::{ Material, MaterialHandle, Mesh, MeshHandle },
-    ecs::{ Component, ComponentStorage, EntityHandle, SceneHandle, DeferredUpdateManagerPointer, DeferredUpdateComponentRequest },
+    ecs::{Component, ComponentStorage, EntityHandle, SceneHandle},
+    engine::Engine,
+    graphics::RendererCameraHandle,
 };
 
-use pill_core::{ PillSlotMapKey, Color, PillStyle, get_type_name };
+use pill_core::{get_type_name, PillStyle, Vector3f};
 
-use anyhow::{Result, Context, Error};
-use pill_core::{ PillTypeMap, PillTypeMapKey };
+use anyhow::{Context, Result};
+use pill_core::PillTypeMapKey;
 use std::ops::Range;
-
 
 pub enum CameraAspectRatio {
     Automatic(f32),
-    Manual(f32)
+    Manual(f32),
 }
 
 impl CameraAspectRatio {
@@ -38,7 +36,7 @@ impl CameraComponentBuilder {
             component: CameraComponent::new(),
         }
     }
-    
+
     pub fn aspect(mut self, aspect: CameraAspectRatio) -> Self {
         self.component.aspect = aspect;
         self
@@ -54,7 +52,7 @@ impl CameraComponentBuilder {
         self
     }
 
-    pub fn clear_color(mut self, clear_color: Color) -> Self {
+    pub fn clear_color(mut self, clear_color: Vector3f) -> Self {
         self.component.clear_color = clear_color;
         self
     }
@@ -75,9 +73,15 @@ pub struct CameraComponent {
     pub aspect: CameraAspectRatio,
     pub fov: f32,
     pub range: Range<f32>,
-    pub clear_color: Color,
+    pub clear_color: Vector3f,
     pub enabled: bool,
     pub(crate) renderer_resource_handle: Option<RendererCameraHandle>,
+}
+
+impl Default for CameraComponent {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CameraComponent {
@@ -86,11 +90,11 @@ impl CameraComponent {
     }
 
     pub fn new() -> Self {
-        Self { 
+        Self {
             aspect: CameraAspectRatio::Automatic(1.0),
             fov: 60.0,
             range: 0.1..100.0,
-            clear_color: Color::new(0.15, 0.15, 0.15),
+            clear_color: Vector3f::new(0.15, 0.15, 0.15),
             renderer_resource_handle: None,
             enabled: false,
         }
@@ -98,17 +102,25 @@ impl CameraComponent {
 }
 
 // This needed so that renderer can get renderer camera handle from camera component while it is still hidden in game API
-pub fn get_renderer_resource_handle_from_camera_component(camera_component: &CameraComponent) -> RendererCameraHandle {
-    camera_component.renderer_resource_handle.expect("Critical: No renderer resource handle")
+pub fn get_renderer_resource_handle_from_camera_component(
+    camera_component: &CameraComponent,
+) -> RendererCameraHandle {
+    camera_component
+        .renderer_resource_handle
+        .expect("Critical: No renderer resource handle")
 }
 
 impl PillTypeMapKey for CameraComponent {
-    type Storage = ComponentStorage<CameraComponent>; 
+    type Storage = ComponentStorage<CameraComponent>;
 }
 
 impl Component for CameraComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!("Initializing {} {} failed", "Component".gobj_style(), get_type_name::<Self>().sobj_style());
+        let error_message = format!(
+            "Initializing {} {} failed",
+            "Component".general_object_style(),
+            get_type_name::<Self>().specific_object_style()
+        );
 
         // Create new renderer camera resource
         let renderer_resource_handle = engine.renderer.create_camera().context(error_message)?;
@@ -117,7 +129,12 @@ impl Component for CameraComponent {
         Ok(())
     }
 
-    fn destroy(&mut self, engine: &mut Engine, self_scene_handle: SceneHandle, self_entity_handle: EntityHandle) -> Result<()> {
+    fn destroy(
+        &mut self,
+        engine: &mut Engine,
+        _self_scene_handle: SceneHandle,
+        _self_entity_handle: EntityHandle,
+    ) -> Result<()> {
         // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_camera(v).unwrap();
@@ -126,4 +143,3 @@ impl Component for CameraComponent {
         Ok(())
     }
 }
-

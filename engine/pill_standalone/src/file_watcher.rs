@@ -7,8 +7,8 @@ use std::{
 
 // Struct to watch a directory for file changes.
 pub struct FileWatcher {
-    path: PathBuf, // The directory path being watched
-    recursive: bool, // Whether to watch subfolders recursively
+    path: PathBuf,                                   // The directory path being watched
+    recursive: bool,                                 // Whether to watch subfolders recursively
     previous_metadata: HashMap<PathBuf, SystemTime>, // Tracks file paths and their last modified time
 }
 
@@ -17,15 +17,19 @@ impl FileWatcher {
     pub fn new(path: PathBuf) -> Self {
         // Initialize with the current metadata of files in the directory
         let previous_metadata = Self::get_file_metadata(&path, false);
-        Self { path, previous_metadata, recursive: false }
+        Self {
+            path,
+            previous_metadata,
+            recursive: false,
+        }
     }
 
     pub fn set_recursive(mut self, recursive: bool) -> Self {
         self.recursive = recursive;
-        self.previous_metadata =  Self::get_file_metadata(&self.path, recursive);
+        self.previous_metadata = Self::get_file_metadata(&self.path, recursive);
         self
     }
-    
+
     // Retrieve metadata (modified times) for all files in a given directory.
     fn get_file_metadata(path: &Path, recursive: bool) -> HashMap<PathBuf, SystemTime> {
         let mut file_metadata = HashMap::new();
@@ -34,13 +38,17 @@ impl FileWatcher {
     }
 
     // Recursively scan directory and collect file metadata
-    fn scan_directory(path: &Path, recursive: bool, file_metadata: &mut HashMap<PathBuf, SystemTime>) {
+    fn scan_directory(
+        path: &Path,
+        recursive: bool,
+        file_metadata: &mut HashMap<PathBuf, SystemTime>,
+    ) {
         // Attempt to read the directory entries
         if let Ok(entries) = fs::read_dir(path) {
             // Iterate through each directory entry
             for entry in entries.filter_map(Result::ok) {
                 let entry_path = entry.path();
-                
+
                 // If it's a directory and we're in recursive mode, scan it
                 if entry_path.is_dir() && recursive {
                     Self::scan_directory(&entry_path, recursive, file_metadata);
@@ -53,7 +61,10 @@ impl FileWatcher {
                             if let Some(file_name) = entry_path.file_name() {
                                 if let Some(file_name_str) = file_name.to_str() {
                                     // Skip hidden or temp files
-                                    if file_name_str.starts_with('.') || file_name_str.ends_with("~") || file_name_str.ends_with(".swp") {
+                                    if file_name_str.starts_with('.')
+                                        || file_name_str.ends_with("~")
+                                        || file_name_str.ends_with(".swp")
+                                    {
                                         continue;
                                     }
                                     // Store the file path and its modified time
