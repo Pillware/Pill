@@ -11,7 +11,6 @@ use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
 // -------------------------------------------------------------------------------
 
-struct dupa {}
 pub type Game = Box<dyn PillGame>;
 pub type KeyboardKey = winit::keyboard::KeyCode;
 pub type MouseButton = winit::event::MouseButton;
