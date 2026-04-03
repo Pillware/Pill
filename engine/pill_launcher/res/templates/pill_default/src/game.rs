@@ -1,16 +1,16 @@
 use pill_engine::game::*;
 
 // Define custom component
-pub struct PillComponent { }
+pub struct PillComponent {}
 
-impl Component for PillComponent { }
+impl Component for PillComponent {}
 
 impl PillTypeMapKey for PillComponent {
     type Storage = ComponentStorage<Self>;
 }
 
 // Game
-pub struct Game { } 
+pub struct Game {}
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
@@ -25,33 +25,41 @@ impl PillGame for Game {
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
         engine.register_component::<PillComponent>(active_scene)?;
-        
+
         // Add systems
         engine.add_system("PillRotation", pill_rotation_system)?;
 
         // Add meshes
-        let pill_mesh = Mesh::new("Pill", "models/Pill.obj".into());
+        let pill_mesh = Mesh::new("Pill", "models/pill.obj".into());
         let pill_mesh_handle = engine.add_resource(pill_mesh)?;
 
         // Add textures
-        let pill_color_texture = Texture::new("PillColor", TextureType::Color, ResourceLoadType::Path("textures/PillColor.png".into()));
+        let pill_color_texture = Texture::new(
+            "PillColor",
+            TextureType::Color,
+            ResourceLoadType::Path("textures/pill_color.png".into()),
+        );
         let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
-        let pill_normal_texture = Texture::new("PillNormal", TextureType::Normal, ResourceLoadType::Path("textures/PillNormal.png".into()));
+        let pill_normal_texture = Texture::new(
+            "PillNormal",
+            TextureType::Normal,
+            ResourceLoadType::Path("textures/pill_normal.png".into()),
+        );
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
         let mut pill_material = Material::new("Pill");
-        pill_material.set_texture("Color", pill_color_texture_handle)?;
-        pill_material.set_texture("Normal", pill_normal_texture_handle)?;
-        pill_material.set_color("Tint", Color::new( 1.0, 1.0, 1.0))?;
-        pill_material.set_scalar("Specularity", 0.5)?; 
-        let pill_material_handle = engine.add_resource::<Material>(pill_material)?; 
+        pill_material.set_texture("color", pill_color_texture_handle)?;
+        pill_material.set_texture("normal", pill_normal_texture_handle)?;
+        pill_material.set_color("tint", Color::new(1.0, 1.0, 1.0))?;
+        pill_material.set_scalar("specularity", 0.5)?;
+        let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
 
         // Create camera entity
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .position(Vector3f::new(0.0,0.0,-8.0))
-            .rotation(Vector3f::new(0.0,0.0,-20.0))
+            .position(Vector3f::new(0.0, 0.0, -8.0))
+            .rotation(Vector3f::new(0.0, 0.0, -20.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
         let camera_component = CameraComponent::builder().enabled(true).build();
@@ -60,15 +68,15 @@ impl PillGame for Game {
         // Create pill entity
         let pill = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .rotation(Vector3f::new(-210.0,0.0,0.0))
+            .rotation(Vector3f::new(-210.0, 0.0, 0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component)?;
         let mesh_rendering_component = MeshRenderingComponent::builder()
             .mesh(&pill_mesh_handle)
             .material(&pill_material_handle)
             .build();
-        engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;  
-        engine.add_component_to_entity(active_scene, pill, PillComponent {})?; 
+        engine.add_component_to_entity(active_scene, pill, mesh_rendering_component)?;
+        engine.add_component_to_entity(active_scene, pill, PillComponent {})?;
 
         Ok(())
     }
@@ -80,7 +88,9 @@ fn pill_rotation_system(engine: &mut Engine) -> Result<()> {
 
     // Rotate pill if spacebar is not pressed
     if !input_component.get_key_pressed(KeyboardKey::Space) {
-        for (_, transform_component, _) in engine.iterate_two_components_mut::<TransformComponent, PillComponent>()? {
+        for (_, transform_component, _) in
+            engine.iterate_two_components_mut::<TransformComponent, PillComponent>()?
+        {
             transform_component.rotate_around_axis(90.0 * delta_time, Vector3f::new(0.0, 1.0, 0.0));
         }
     }

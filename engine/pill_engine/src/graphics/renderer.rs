@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 use crate::{
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     graphics::RenderQueueItem,
