@@ -668,7 +668,6 @@ fn try_remove_files_starting_with(directory_path: &Path, file_name_prefix: &str)
 
 struct App {
     project_paths: ProjectPaths,
-    config: Config,
     hot_reload_enabled: bool,
     window_init: Option<WindowInit>,
 
@@ -682,15 +681,9 @@ struct App {
 }
 
 impl App {
-    fn new(
-        project_paths: ProjectPaths,
-        config: Config,
-        hot_reload_enabled: bool,
-        window_init: WindowInit,
-    ) -> Self {
+    fn new(project_paths: ProjectPaths, hot_reload_enabled: bool, window_init: WindowInit) -> Self {
         Self {
             project_paths,
-            config,
             hot_reload_enabled,
             window_init: Some(window_init),
             window: None,
@@ -951,7 +944,7 @@ fn run_app() -> Result<()> {
     let event_loop = EventLoop::new().context("Failed to create event loop")?;
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = App::new(project_paths, config, hot_reload_enabled, window_init);
+    let mut app = App::new(project_paths, hot_reload_enabled, window_init);
     event_loop.run_app(&mut app).context("run_app failed")?;
 
     Ok(())
