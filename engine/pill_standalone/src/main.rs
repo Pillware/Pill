@@ -41,7 +41,7 @@ struct FileWatchers {
 
 struct ProjectPaths {
     build_data_directory_path: PathBuf,
-    engine_source_directory_path: PathBuf,
+    engine_source_directory_path: Option<PathBuf>,
     game_project_directory_path: PathBuf,
     game_resources_directory_path: PathBuf,
     game_source_directory_path: PathBuf,
@@ -66,6 +66,49 @@ const DYLIB_SUFFIX: &str = ".dylib";
 
 fn dylib(name: &str) -> String {
     format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunLayout {
+    Development,
+    Packaged,
+}
+
+fn game_project_exists(path: &Path) -> bool {
+    path.join("Cargo.toml").exists()
+        && path.join("res").join("config.ini").exists()
+        && path.join("src").exists()
+}
+
+fn infer_game_project_directory(current_directory_path: &Path) -> Result<PathBuf> {
+    if let Ok(value) = std::env::var("PILL_GAME_PROJECT_DIR") {
+        let path = PathBuf::from(value);
+        if game_project_exists(&path) {
+            return Ok(path);
+        }
+        bail!(
+            "PILL_GAME_PROJECT_DIR was set but {} is not a valid game project",
+            path.display()
+        );
+    }
+
+    let path = current_directory_path
+        .parent()
+        .context("Build directory has no parent")?
+        .parent()
+        .context("Game project directory resolution failed")?
+        .to_path_buf();
+
+    Ok(path)
+}
+
+fn resolve_run_layout(game_project_directory_path: &Path) -> RunLayout {
+    match std::env::var("PILL_STANDALONE_LAYOUT").ok().as_deref() {
+        Some("development") => RunLayout::Development,
+        Some("packaged") => RunLayout::Packaged,
+        _ if game_project_exists(game_project_directory_path) => RunLayout::Development,
+        _ => RunLayout::Packaged,
+    }
 }
 
 fn next_loaded_runtime_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
@@ -359,7 +402,10 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
         .env("PILL_HOT_RELOAD_CHILD", "1")
         .env(
             "PILL_ENGINE_WORKSPACE_DIR",
-            &project_paths.engine_source_directory_path,
+            project_paths
+                .engine_source_directory_path
+                .as_ref()
+                .context("engine_source_directory_path missing for hot reload")?,
         )
         .status()
         .context("Failed to invoke pill_launcher for hot reload")?;
@@ -517,20 +563,19 @@ fn check_and_reload(
 }
 
 fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
-    let core_source_path = project_paths
+    let engine_workspace_directory_path = project_paths
         .engine_source_directory_path
-        .join("pill_core/src");
+        .as_ref()
+        .expect("engine_source_directory_path missing for hot reload");
+
+    let core_source_path = engine_workspace_directory_path.join("pill_core/src");
     let engine_core_source_files_watcher = FileWatcher::new(core_source_path).set_recursive(true);
 
-    let engine_source_path = project_paths
-        .engine_source_directory_path
-        .join("pill_engine/src");
+    let engine_source_path = engine_workspace_directory_path.join("pill_engine/src");
     let engine_engine_source_files_watcher =
         FileWatcher::new(engine_source_path).set_recursive(true);
 
-    let renderer_source_path = project_paths
-        .engine_source_directory_path
-        .join("pill_renderer/src");
+    let renderer_source_path = engine_workspace_directory_path.join("pill_renderer/src");
     let engine_renderer_source_files_watcher =
         FileWatcher::new(renderer_source_path).set_recursive(true);
 
@@ -582,6 +627,43 @@ fn find_engine_workspace_dir(current_directory_path: &Path) -> Result<PathBuf> {
     }
 
     bail!("Wrong project paths detected! Could not locate engine workspace directory")
+}
+
+fn try_remove_files_starting_with(directory_path: &Path, file_name_prefix: &str) {
+    if !directory_path.exists() || !directory_path.is_dir() {
+        return;
+    }
+
+    let entries = match fs::read_dir(directory_path) {
+        Ok(entries) => entries,
+        Err(error) => {
+            warn!(
+                LogContext::HotReload => "Failed to read directory {} during cleanup: {}",
+                directory_path.display(),
+                error
+            );
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+
+        if !path.is_file() || !name.starts_with(file_name_prefix) {
+            continue;
+        }
+
+        if let Err(error) = fs::remove_file(&path) {
+            warn!(
+                LogContext::HotReload => "Ignoring cleanup failure for {}: {}",
+                path.display(),
+                error
+            );
+        }
+    }
 }
 
 struct App {
@@ -793,21 +875,20 @@ fn run_app() -> Result<()> {
         .context("Executable has no parent directory")?
         .to_path_buf();
 
-    let game_project_directory_path = current_directory_path
-        .parent()
-        .context("Build directory has no parent")?
-        .parent()
-        .context("Game project directory resolution failed")?
-        .to_path_buf();
+    let game_project_directory_path = infer_game_project_directory(&current_directory_path)?;
+    let run_layout = resolve_run_layout(&game_project_directory_path);
 
     let build_data_directory_path = current_directory_path.join("data");
-    let game_resources_directory_path = if hot_reload_enabled {
-        game_project_directory_path.join("res")
-    } else {
-        build_data_directory_path.join("res")
+    let game_resources_directory_path = match run_layout {
+        RunLayout::Development => game_project_directory_path.join("res"),
+        RunLayout::Packaged => build_data_directory_path.join("res"),
     };
     let game_source_directory_path = game_project_directory_path.join("src");
     let config_path = game_resources_directory_path.join("config.ini");
+
+    if hot_reload_enabled && run_layout != RunLayout::Development {
+        bail!("Hot reload requires development layout paths");
+    }
 
     let runtime_dynamic_library_path = build_data_directory_path.join(dylib("pill_runtime"));
     let runtime_dynamic_library_hot_reloaded_path =
@@ -816,7 +897,11 @@ fn run_app() -> Result<()> {
     let game_dynamic_library_hot_reloaded_path =
         build_data_directory_path.join(dylib("pill_game_hot_reloaded"));
 
-    let engine_source_directory_path = find_engine_workspace_dir(&current_directory_path)?;
+    let engine_source_directory_path = if hot_reload_enabled {
+        Some(find_engine_workspace_dir(&current_directory_path)?)
+    } else {
+        None
+    };
 
     let project_paths = ProjectPaths {
         build_data_directory_path,
@@ -831,13 +916,35 @@ fn run_app() -> Result<()> {
         game_dynamic_library_hot_reloaded_path,
     };
 
+    if hot_reload_enabled {
+        try_remove_files_starting_with(
+            &project_paths.build_data_directory_path,
+            &format!("{DYLIB_PREFIX}pill_runtime_loaded"),
+        );
+        try_remove_files_starting_with(
+            &project_paths.build_data_directory_path,
+            &format!("{DYLIB_PREFIX}pill_game_loaded"),
+        );
+    }
+
     let mut config = Config::default();
-    let _ = config.merge(config::File::with_name(
-        project_paths.config_path.to_str().unwrap(),
-    ));
+    config
+        .merge(config::File::with_name(
+            project_paths.config_path.to_str().unwrap(),
+        ))
+        .with_context(|| {
+            format!(
+                "Failed to load config from {}",
+                project_paths.config_path.display()
+            )
+        })?;
 
     configure_logging(&config);
-    info!("Initializing {}", "Standalone".module_object_style());
+    info!(
+        "Initializing {} ({:?} layout)",
+        "Standalone".module_object_style(),
+        run_layout
+    );
 
     let window_init = make_window_init(&config, &project_paths.game_resources_directory_path);
 

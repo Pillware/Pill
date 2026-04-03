@@ -12,6 +12,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    result::Result::Ok,
 };
 
 // - Cargo commands
@@ -209,6 +210,85 @@ fn copy_if_newer(source: &PathBuf, destination: &PathBuf) -> Result<bool> {
     Ok(true)
 }
 
+fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<()> {
+    if !source.exists() {
+        bail!("Source directory does not exist: {}", source.display());
+    }
+    if !source.is_dir() {
+        bail!("Source path is not a directory: {}", source.display());
+    }
+
+    fs::create_dir_all(destination)
+        .with_context(|| format!("Failed to create directory {}", destination.display()))?;
+
+    for entry in fs::read_dir(source)
+        .with_context(|| format!("Failed to read directory {}", source.display()))?
+    {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+
+        if entry_path.is_dir() {
+            copy_directory_recursive(&entry_path, &destination_path)?;
+        } else if entry_path.is_file() {
+            if let Some(parent) = destination_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&entry_path, &destination_path).with_context(|| {
+                format!(
+                    "copy {} -> {}",
+                    entry_path.display(),
+                    destination_path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn stage_packaged_resources(game_project_directory_path: &Path, data_dir: &Path) -> Result<()> {
+    let source_resources_dir = game_project_directory_path.join("res");
+    let destination_resources_dir = data_dir.join("res");
+
+    if !source_resources_dir.exists() {
+        bail!(
+            "Game resources directory does not exist: {}",
+            source_resources_dir.display()
+        );
+    }
+
+    fs::create_dir_all(data_dir)
+        .with_context(|| format!("Failed to create data directory {}", data_dir.display()))?;
+    if destination_resources_dir.exists() {
+        fs::remove_dir_all(&destination_resources_dir).with_context(|| {
+            format!(
+                "Failed to clear destination resources directory {}",
+                destination_resources_dir.display()
+            )
+        })?;
+    }
+
+    copy_directory_recursive(&source_resources_dir, &destination_resources_dir)?;
+
+    let staged_config_path = destination_resources_dir.join("config.ini");
+    if !staged_config_path.exists() {
+        bail!(
+            "Failed to stage resources into {} (missing {})",
+            destination_resources_dir.display(),
+            staged_config_path.display()
+        );
+    }
+
+    println!(
+        "Staged resources from {} to {}",
+        source_resources_dir.display(),
+        destination_resources_dir.display()
+    );
+
+    Ok(())
+}
+
 fn parse_file_lines<A: FnMut(String)>(input_path: &PathBuf, mut action: A) -> Result<()> {
     // Open files from path
     let input_file = File::open(input_path).unwrap();
@@ -234,6 +314,13 @@ fn output_dir_for(mode: &CompileMode) -> &'static str {
         CompileMode::Debug => "dev",
         CompileMode::Release => "release",
         CompileMode::HotReload => "hot-reload",
+    }
+}
+
+fn standalone_layout_for(mode: &CompileMode) -> &'static str {
+    match mode {
+        CompileMode::Release => "packaged",
+        CompileMode::Debug | CompileMode::HotReload => "development",
     }
 }
 
@@ -310,6 +397,17 @@ fn remove_files_starting_with(directory_path: &PathBuf, file_name_prefix: &str) 
     }
 
     Ok(())
+}
+
+fn try_remove_files_starting_with(directory_path: &PathBuf, file_name_prefix: &str) {
+    if let Err(error) = remove_files_starting_with(directory_path, file_name_prefix) {
+        eprintln!(
+            "Non-fatal cleanup failure for prefix '{}' in {}: {:#}",
+            file_name_prefix,
+            directory_path.display(),
+            error
+        );
+    }
 }
 
 // Render all *.puml under <crate>/docs/uml into <crate>/docs/uml_out as SVGs
@@ -633,6 +731,11 @@ fn run_game_project(
         .current_dir(output_directory_path)
         .env("PILL_LAUNCHER_BIN", &launcher_bin)
         .env("PILL_ENGINE_WORKSPACE_DIR", &engine_ws)
+        .env("PILL_GAME_PROJECT_DIR", game_project_directory_path)
+        .env(
+            "PILL_STANDALONE_LAYOUT",
+            standalone_layout_for(compile_mode),
+        )
         .env(
             "PILL_ENABLE_HOT_RELOAD",
             if *compile_mode == CompileMode::HotReload {
@@ -754,6 +857,12 @@ fn build_game_project(
     let data_dir = output_directory_path.join("data");
     fs::create_dir_all(&data_dir)?;
 
+    // Only packaged release builds stage resources into <build>/data/res.
+    // Debug and hot-reload both use the game project directory directly.
+    if *compile_mode == CompileMode::Release {
+        stage_packaged_resources(game_project_directory_path, &data_dir)?;
+    }
+
     let game_src = compilation_artifacts_folder_path.join(dylib("pill_game"));
     let runtime_src = compilation_artifacts_folder_path.join(dylib("pill_runtime"));
 
@@ -800,16 +909,6 @@ fn build_game_project(
         } else {
             println!("Skipping copying of runtime hot-reload dylib");
         }
-
-        // Also cleanup all previous hot_reload targets
-        remove_files_starting_with(
-            &data_dir,
-            format!("{DYLIB_PREFIX}pill_runtime_loaded").as_str(),
-        )?;
-        remove_files_starting_with(
-            &data_dir,
-            format!("{DYLIB_PREFIX}pill_game_loaded").as_str(),
-        )?;
     }
 
     // Success
