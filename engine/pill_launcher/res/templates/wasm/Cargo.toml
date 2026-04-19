@@ -1,0 +1,34 @@
+# This crate is built only via `PillLauncher -a build -t wasm -p <game>`.
+# The launcher copies this Cargo.toml into <game>/build/wasm/.build/pill_web/,
+# rewrites the engine path-deps to absolute paths, appends the `pill_game`
+# dependency pointing at the -p game directory, then runs wasm-pack.
+# Building this crate directly with `cargo build` will fail — no pill_game dep.
+
+[package]
+name = "pill_web"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pill_engine = { path = "../pill_engine", features = ["game", "internal"] }
+pill_renderer = { path = "../pill_renderer" }
+pill_core = { path = "../pill_core" }
+
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Document",
+    "HtmlCanvasElement",
+    "Element",
+    "Performance",
+] }
+console_error_panic_hook = "0.1"
+console_log = "1"
+log = "0.4"
+winit = { version = "0.30.12" }
+config = "0.11"
+getrandom = { version = "0.3", features = ["wasm_js"] }
