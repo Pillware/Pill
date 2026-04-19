@@ -159,6 +159,7 @@ jobs:
       matrix:
         example:
           - examples/cube
+          - examples/pill_tunel
     steps:
       - uses: actions/checkout@v4
 
@@ -174,6 +175,7 @@ jobs:
         with:
           workspaces: |
             examples/cube/build/wasm/.build/pill_web -> target
+            examples/pill_tunel/build/wasm/.build/pill_web -> target
 
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
