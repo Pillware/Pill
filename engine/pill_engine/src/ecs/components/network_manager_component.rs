@@ -25,19 +25,12 @@
 //! `pill_engine::systems::networking` for details on networking implementation.
 
 use crate::{
-    ecs::{
-        Component, EntityHandle, GlobalComponent, GlobalComponentStorage, NetworkStateComponent,
-        TransformComponent,
-    },
+    ecs::{GlobalComponent, GlobalComponentStorage, NetworkStateComponent, TransformComponent},
     engine::Engine,
 };
 use anyhow::Result;
-use egui::util::id_type_map::TypeId;
 use pill_core::{client_connect, server_start, NetworkClient, NetworkServer, PillTypeMapKey};
-use std::{
-    collections::{HashMap, HashSet},
-    time::Instant,
-};
+use std::collections::HashMap;
 
 /// Client-side connection lifecycle.
 ///

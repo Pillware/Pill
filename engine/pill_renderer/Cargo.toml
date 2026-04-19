@@ -24,7 +24,6 @@ wgpu = { version = "25.0.0", features = [ "spirv" ] }
 glam = { version = "0.30.8", features = ["serde", "bytemuck"] }
 winit = "0.30.12"
 cgmath = "0.18"
-pollster = "0.2"
 bytemuck = { version = "1.4", features = [ "derive" ] }
 config = "0.11"
 naga = { version = "0.19", features = ["glsl-in", "wgsl-out"] }
@@ -32,4 +31,12 @@ naga = { version = "0.19", features = ["glsl-in", "wgsl-out"] }
 # egui
 egui = "0.32.1"
 egui-wgpu = { version = "0.32.1", features = ["winit"] }
-egui-winit = "0.32.1"
+
+# Native-only dependencies
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.2"
+egui-winit = { version = "0.32.1", features = ["clipboard"] }
+
+# WASM dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+egui-winit = { version = "0.32.1", default-features = false }

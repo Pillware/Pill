@@ -37,6 +37,7 @@ impl Texture {
             renderer_resource_handle: None,
         }
     }
+
 }
 
 impl PillTypeMapKey for Texture {

@@ -29,12 +29,30 @@ pub struct Renderer {
     pub state: State,
 }
 
+impl Renderer {
+    /// Async constructor for WASM - call this instead of PillRenderer::new on web
+    pub async fn new_async(
+        window: Arc<winit::window::Window>,
+        config: config::Config,
+    ) -> Result<Self> {
+        info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
+        let state: State = State::new(window, config).await?;
+        Ok(Self { state })
+    }
+}
+
 impl PillRenderer for Renderer {
+    #[cfg(not(target_arch = "wasm32"))]
     fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> {
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
         let state: State = pollster::block_on(State::new(window, config))?;
 
         Ok(Self { state })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn new(_window: Arc<winit::window::Window>, _config: config::Config) -> Result<Self> {
+        panic!("Use Renderer::new_async on WASM")
     }
 
     // --- Create ---
@@ -45,7 +63,7 @@ impl PillRenderer for Renderer {
         vertex_shader_bytes: &[u8],
         fragment_shader_bytes: &[u8],
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        parameter_slots: &IndexMap<String, ShaderParameterSlot>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -265,7 +283,6 @@ pub struct State {
     egui_drawer: EguiDrawer,
     // Other
     camera_bind_group_layout: wgpu::BindGroupLayout,
-    config: config::Config,
     //profiler: Profiler,
 }
 
@@ -346,6 +363,13 @@ impl State {
 
             // Get supported present modes and choose the best one
             let surface_capabilities = surface.get_capabilities(&adapter);
+
+            // Present mode: on wasm, Mailbox/Immediate aren't universally
+            // supported — stick to Fifo. On native, prefer Mailbox → Immediate
+            // → Fifo based on what the surface advertises.
+            #[cfg(target_arch = "wasm32")]
+            let present_mode = wgpu::PresentMode::Fifo;
+            #[cfg(not(target_arch = "wasm32"))]
             let present_mode = if surface_capabilities
                 .present_modes
                 .contains(&wgpu::PresentMode::Mailbox)
@@ -385,7 +409,7 @@ impl State {
                 desired_maximum_frame_latency: 2,
                 present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![format],
+                view_formats: vec![],
             };
             surface.configure(&device, &surface_configuration);
             let color_format = surface_configuration.format;
@@ -458,7 +482,6 @@ impl State {
             egui_drawer,
             // Other
             camera_bind_group_layout,
-            config,
             // profiler
         };
 
@@ -493,6 +516,20 @@ impl State {
     ) -> Result<()> {
         debug!(LogContext::Frame => "Starting frame render");
 
+        #[cfg(target_arch = "wasm32")]
+        {
+            static FRAME_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let frame_num = FRAME_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if frame_num < 5 || frame_num % 60 == 0 {
+                log::info!(
+                    "Render frame {} - surface {}x{}",
+                    frame_num,
+                    self.surface_configuration.width,
+                    self.surface_configuration.height
+                );
+            }
+        }
+
         timer.record("Get frame");
         // self.profiler.begin_frame();
 
@@ -513,12 +550,6 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        timer.record("Update engine parameters");
-
-        self.renderer_resource_storage
-            .engine_parameters
-            .update(&self.queue, delta_time);
-
         timer.record("Update camera parameters");
 
         // Get active camera and update it
@@ -527,6 +558,12 @@ impl State {
             .get(active_camera_entity_handle.data().index as usize)
             .unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
+
+        timer.record("Update engine parameters");
+
+        self.renderer_resource_storage
+            .engine_parameters
+            .update(&self.queue, delta_time);
         let renderer_camera = self
             .renderer_resource_storage
             .cameras

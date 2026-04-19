@@ -1,5 +1,8 @@
+// On wasm the native-only subsystems (gamepad/haptics/audio) aren't compiled,
+// so their imports and private items appear dead. Silence crate-wide ONLY for
+// the wasm target — native builds still flag real dead code.
 #![cfg_attr(
-    debug_assertions,
+    target_arch = "wasm32",
     allow(dead_code, unused_imports, mismatched_lifetime_syntaxes)
 )]
 mod config;
@@ -60,19 +63,26 @@ macro_rules! define_global_component {
 pub mod game {
     pub use crate::{
         ecs::{
-            AudioListenerComponent, AudioManagerComponent, AudioSourceComponent, CameraAspectRatio,
-            CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle,
-            GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage, InputComponent,
-            MeshRenderingComponent, PlayerId, SceneHandle, SoundType, TimeComponent,
+            CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent,
+            EntityHandle, GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage,
+            InputComponent, MeshRenderingComponent, PlayerId, SceneHandle, TimeComponent,
             TransformComponent, UpdatePhase,
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
         resources::{
             Material, MaterialHandle, Mesh, MeshHandle, Resource, ResourceLoader, ResourceStorage,
-            Shader, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot, Sound, Texture,
+            Shader, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot, Texture,
             TextureHandle, TextureType,
         },
     };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use crate::ecs::{
+        AudioListenerComponent, AudioManagerComponent, AudioSourceComponent, SoundType,
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use crate::resources::Sound;
 
     extern crate pill_core;
     pub use pill_core::{
@@ -84,6 +94,7 @@ pub mod game {
     pub use anyhow::{Context, Error, Result};
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 mod internal_mod {
     pub use crate::{
         config::*,
@@ -96,6 +107,32 @@ mod internal_mod {
             MeshRenderingComponent, NetworkEntityAction, NetworkEntityState,
             NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkUpdatePayload,
             Scene, TimeComponent, TransformComponent,
+        },
+        engine::{Engine, PillGame},
+        graphics::{
+            decompose_render_queue_key, PillRenderer, RenderQueueItem, RenderQueueKey,
+            RenderQueueKeyFields, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+            RendererShaderHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER,
+        },
+        resources::{
+            get_renderer_texture_handle_from_material_texture, Material, MaterialHandle,
+            MaterialParameter, MaterialTexture, Mesh, MeshData, MeshHandle, MeshVertex,
+            ResourceLoader, ResourceManager, ShaderParameterSlot, ShaderParameterType,
+            ShaderTextureSlot, Texture, TextureHandle, TextureType,
+        },
+    };
+}
+
+#[cfg(target_arch = "wasm32")]
+mod internal_mod {
+    pub use crate::{
+        config::*,
+        ecs::{
+            get_model_matrix, get_normal_matrix,
+            get_renderer_resource_handle_from_camera_component, update_transform_matrices,
+            CameraAspectRatio, CameraComponent, ComponentStorage, EguiManagerComponent,
+            EntityHandle, InputComponent, MeshRenderingComponent, Scene, TimeComponent,
+            TransformComponent,
         },
         engine::{Engine, PillGame},
         graphics::{

@@ -6,6 +6,7 @@ mod resource;
 mod resource_manager;
 mod resource_storage;
 mod shader;
+#[cfg(not(target_arch = "wasm32"))]
 mod sound;
 mod texture;
 
@@ -17,6 +18,7 @@ pub use resource::{Resource, ResourceLoader};
 
 pub use resource_storage::ResourceStorage;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use sound::{Sound, SoundHandle};
 
 pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};

@@ -12,7 +12,7 @@
 
 use crate::ecs::{Component, ComponentStorage, TransformComponent};
 
-use pill_core::{PillTypeMap, PillTypeMapKey};
+use pill_core::PillTypeMapKey;
 use serde::{Deserialize, Serialize};
 
 /// High-level lifecycle marker for a networked entity.

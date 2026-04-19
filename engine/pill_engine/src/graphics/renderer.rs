@@ -49,7 +49,7 @@ pub trait PillRenderer {
         vertex_shader_bytes: &[u8],
         fragment_shader_bytes: &[u8],
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        parameter_slots: &IndexMap<String, ShaderParameterSlot>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle>;

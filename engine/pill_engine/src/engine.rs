@@ -113,6 +113,7 @@ impl Engine {
             .config
             .get_int("MAX_MESHES")
             .unwrap_or(MAX_MESHES as i64) as usize;
+        #[cfg(not(target_arch = "wasm32"))]
         let max_sound_count = self
             .config
             .get_int("MAX_SOUNDS")
@@ -122,6 +123,7 @@ impl Engine {
         self.register_resource_type::<Material>(max_material_count)?;
         self.register_resource_type::<Texture>(max_texture_count)?;
         self.register_resource_type::<Mesh>(max_mesh_count)?;
+        #[cfg(not(target_arch = "wasm32"))]
         self.register_resource_type::<Sound>(max_sound_count)?;
 
         debug!(LogContext::Engine => "Resource types registered");
@@ -309,6 +311,10 @@ impl Engine {
         #[cfg(not(feature = "headless"))]
         {
             self.add_global_component(InputComponent::new())?;
+        }
+
+        #[cfg(all(not(feature = "headless"), not(target_arch = "wasm32")))]
+        {
             let max_ambient_sink_count =
                 self.config
                     .get_int("MAX_CONCURRENT_2D_SOUNDS")
@@ -343,14 +349,18 @@ impl Engine {
                 INPUT_SYSTEM.update_phase,
             )?;
             self.system_manager.add_system(
-                AUDIO_SYSTEM.name,
-                AUDIO_SYSTEM.system_function,
-                AUDIO_SYSTEM.update_phase,
-            )?;
-            self.system_manager.add_system(
                 RENDERING_SYSTEM.name,
                 RENDERING_SYSTEM.system_function,
                 RENDERING_SYSTEM.update_phase,
+            )?;
+        }
+
+        #[cfg(all(not(feature = "headless"), not(target_arch = "wasm32")))]
+        {
+            self.system_manager.add_system(
+                AUDIO_SYSTEM.name,
+                AUDIO_SYSTEM.system_function,
+                AUDIO_SYSTEM.update_phase,
             )?;
         }
 
@@ -368,6 +378,28 @@ impl Engine {
     ///
     /// Runs all systems in order: PreGame -> Game -> PostGame
     pub fn update(&mut self, delta_time: std::time::Duration) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            static UPDATE_COUNT: std::sync::atomic::AtomicU32 =
+                std::sync::atomic::AtomicU32::new(0);
+            let count = UPDATE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if count < 3 {
+                let num_phases = self.system_manager.update_phases.len();
+                let total_systems: usize = self
+                    .system_manager
+                    .update_phases
+                    .iter()
+                    .map(|p| p.1.len())
+                    .sum();
+                log::info!(
+                    "Engine.update #{} - {} phases, {} systems total",
+                    count,
+                    num_phases,
+                    total_systems
+                );
+            }
+        }
+
         let stop_on_game_errors = self
             .config
             .get_bool("PANIC_ON_GAME_ERRORS")
@@ -613,7 +645,7 @@ impl Engine {
     // --- Entity API ---
 
     /// Returns EntityBuilder, allowing for handy entity creation
-    pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
+    pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder<'_> {
         let entity_handle = self.create_entity(scene_handle).unwrap();
         EntityBuilder {
             engine: self,

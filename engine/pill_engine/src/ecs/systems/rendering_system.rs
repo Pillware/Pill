@@ -11,7 +11,7 @@ use crate::{
 use pill_core::{warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer};
 
 use anyhow::{Context, Error, Result};
-use std::time::Instant;
+use web_time::Instant;
 
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let mut timer = Timer::new();

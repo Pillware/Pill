@@ -19,10 +19,13 @@ pub use components::camera_component::{
     get_renderer_resource_handle_from_camera_component, CameraAspectRatio, CameraComponent,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use components::audio_manager_component::{AudioManagerComponent, SoundType};
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use components::audio_listener_component::AudioListenerComponent;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use components::audio_source_component::AudioSourceComponent;
 
 pub use components::egui_manager_component::EguiManagerComponent;
@@ -45,10 +48,12 @@ pub use components::mesh_rendering_component::MeshRenderingComponent;
 
 pub use components::time_component::TimeComponent;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use components::network_manager_component::{
     ClientState, ConnectionState, NetworkManagerComponent, NetworkSide,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use components::network_state_component::{NetworkEntityState, NetworkStateComponent};
 
 // - Systems
@@ -63,8 +68,10 @@ pub use systems::input_system::{haptics_system, input_system};
 
 pub use systems::time_system::time_system;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use systems::audio_system::audio_system;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use systems::networking_system::{
     client_go_offline, networking_system_client, networking_system_server, EntityUpdate,
     NetworkEntityAction, NetworkUpdatePayload,

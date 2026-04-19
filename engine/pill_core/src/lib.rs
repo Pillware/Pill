@@ -6,6 +6,7 @@ mod color;
 mod error;
 mod log;
 mod math;
+#[cfg(not(target_arch = "wasm32"))]
 mod networking;
 mod pill_slotmap;
 mod pill_twinmap;
@@ -41,6 +42,7 @@ pub use color::{generate_color_palette, hsl_to_rgb, DISTINCT_COLOR_PALETTE};
 
 pub use timer::{Timer, TimerRecord};
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use networking::{
     client_connect, client_disconnect, client_flush, client_get_events, client_send, client_update,
     is_not_ready, server_broadcast, server_broadcast_except, server_broadcast_exit,
