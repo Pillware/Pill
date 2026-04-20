@@ -1,10 +1,20 @@
 use anyhow::Result;
 use wgpu::util::DeviceExt;
 
+// Layout must match the GLSL `engine` uniform block (std140):
+//   float delta_time;      // offset 0
+//   float fog_density;     // offset 4
+//   // vec3 must align to 16 → 8 bytes of padding here
+//   vec3  fog_color;       // offset 16
+//   // struct size rounded up to 16 → 4 bytes tail padding → 32 bytes total
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct EngineParametersData {
     pub delta_time: f32,
+    pub fog_density: f32,
+    pub _pad0: [f32; 2],
+    pub fog_color: [f32; 3],
+    pub _pad1: f32,
 }
 
 impl Default for EngineParametersData {
@@ -15,11 +25,19 @@ impl Default for EngineParametersData {
 
 impl EngineParametersData {
     pub fn new() -> Self {
-        Self { delta_time: 0.0 }
+        Self {
+            delta_time: 0.0,
+            fog_density: 0.0,
+            _pad0: [0.0; 2],
+            fog_color: [0.0; 3],
+            _pad1: 0.0,
+        }
     }
 
-    pub fn update_data(&mut self, delta_time: f32) {
+    pub fn update_data(&mut self, delta_time: f32, fog_density: f32, fog_color: [f32; 3]) {
         self.delta_time = delta_time;
+        self.fog_density = fog_density;
+        self.fog_color = fog_color;
     }
 }
 
@@ -78,8 +96,15 @@ impl EngineParameters {
         Ok(camera)
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue, delta_time: f32) {
-        self.parameters_data.update_data(delta_time);
+    pub fn update(
+        &mut self,
+        queue: &wgpu::Queue,
+        delta_time: f32,
+        fog_density: f32,
+        fog_color: [f32; 3],
+    ) {
+        self.parameters_data
+            .update_data(delta_time, fog_density, fog_color);
         queue.write_buffer(
             &self.parameters_uniform_buffer,
             0,

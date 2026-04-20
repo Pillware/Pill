@@ -68,6 +68,16 @@ impl Mesh {
     pub fn cube(name: &str, size: f32) -> Self {
         Self::from_data(name, MeshData::cube(size))
     }
+
+    /// Build a mesh from raw OBJ bytes (e.g. `include_bytes!(...)`). Use on
+    /// targets without a filesystem (wasm), or to bundle assets into the
+    /// binary. Companion to [`Self::new`] which loads from a path.
+    pub fn from_obj_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
+        Ok(Self::from_data(
+            name,
+            MeshData::from_obj_bytes(bytes, false)?,
+        ))
+    }
 }
 
 impl PillTypeMapKey for Mesh {
@@ -161,6 +171,16 @@ impl MeshData {
     pub fn new(path: &Path, flip_uv_y: bool) -> Result<Self> {
         let (models, _materials) = tobj::load_obj(path, &obj_load_options())?;
         Self::from_tobj_models(models, &path.display().to_string(), flip_uv_y)
+    }
+
+    /// Parse OBJ data from bytes (e.g. `include_bytes!(...)`). MTL references
+    /// inside the OBJ are ignored — materials have to be set up separately.
+    pub fn from_obj_bytes(bytes: &[u8], flip_uv_y: bool) -> Result<Self> {
+        let mut reader = std::io::Cursor::new(bytes);
+        let (models, _materials) = tobj::load_obj_buf(&mut reader, &obj_load_options(), |_| {
+            Err(tobj::LoadError::OpenFileFailed)
+        })?;
+        Self::from_tobj_models(models, "<in-memory>", flip_uv_y)
     }
 
     fn from_tobj_models(models: Vec<tobj::Model>, source: &str, flip_uv_y: bool) -> Result<Self> {

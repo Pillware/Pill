@@ -6,10 +6,13 @@ layout(location=1) in vec2 in_vertex_texture_coordinates;
 layout(location=2) in vec3 in_TBN_tangent;
 layout(location=3) in vec3 in_TBN_bitangent;
 layout(location=4) in vec3 in_TBN_normal;
+layout(location=5) in vec3 in_world_position;
 
 // Input engine parameters
 layout(set=0, binding=0) uniform engine {
-    float delta_time; 
+    float delta_time;
+    float fog_density;
+    vec3  fog_color;
 };
 
 // Input camera parameters
@@ -65,5 +68,11 @@ void main() {
 
     // Final color
     vec3 final_color = (ambient_light_factor + diffuse_light_factor + specular_light_factor) * object_color.xyz * tint;
-    out_final_color = vec4(final_color, 1.0); 
+
+    // Exponential-squared depth fog. density = 0 → no fog, bit-identical output.
+    float fog_dist = length(camera_position - in_world_position);
+    float fog_factor = clamp(1.0 - exp(-fog_density * fog_density * fog_dist * fog_dist), 0.0, 1.0);
+    final_color = mix(final_color, fog_color, fog_factor);
+
+    out_final_color = vec4(final_color, 1.0);
 }
