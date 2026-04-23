@@ -195,10 +195,6 @@ pub fn get_normal_matrix(transform_component: &TransformComponent) -> Matrix3fA 
     transform_component.normal_matrix
 }
 
-impl PillTypeMapKey for TransformComponent {
-    type Storage = ComponentStorage<TransformComponent>;
-}
-
 impl Component for TransformComponent {}
 
 impl Default for TransformComponent {

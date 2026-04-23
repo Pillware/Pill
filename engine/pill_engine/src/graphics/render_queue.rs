@@ -1,6 +1,6 @@
 use crate::{
     config::*,
-    resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, Shader},
+    assets::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager, Shader},
 };
 
 use pill_core::PillSlotMapKey;

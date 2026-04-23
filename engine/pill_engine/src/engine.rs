@@ -1,8 +1,8 @@
-use crate::{config::*, ecs::*, graphics::*, resources::*};
+use crate::{config::*, ecs::*, graphics::*, assets::*};
 
 use pill_core::{
     debug, error, get_game_error_message, get_type_name, info, EngineError, LogContext,
-    PillSlotMapKey, PillStyle, PillTypeMap, Timer, Vector2f,
+    PillSlotMapKey, PillStyle, Timer, Vector2f,
 };
 
 use anyhow::{Context, Error, Result};
@@ -27,15 +27,26 @@ pub struct Engine {
     pub(crate) config: config::Config,
     pub(crate) game: Option<Game>,
     pub(crate) renderer: Box<dyn PillRenderer>,
-    pub(crate) scene_manager: SceneManager,
+    //pub(crate) scene_manager: SceneManager,
     pub(crate) system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
-    pub(crate) global_components: PillTypeMap,
+    // pub(crate) global_components: PillTypeMap,
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
     pub(crate) game_resources_directory_path: std::path::PathBuf,
     pub(crate) frame_delta_time: f32, // In milliseconds
+
+    /// All registered systems with their names and states
+    pub(crate) systems: Vec<RegisteredSystem>,
+    /// Command queue for deferred operations
+    pub(crate) queue: CommandQueue,
+    /// The ECS world
+    pub(crate) world: World,
+    /// System scheduler for parallel execution
+    pub(crate) scheduler: SystemScheduler,
+    /// Whether parallel execution is enabled
+    pub(crate) parallel_execution: bool,
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -604,373 +615,6 @@ impl Engine {
             .get_system_timer(name, UpdatePhase::Game)
             .unwrap()
             .unwrap()
-    }
-
-    // --- Entity API ---
-
-    /// Returns EntityBuilder, allowing for handy entity creation
-    pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
-        let entity_handle = self.create_entity(scene_handle).unwrap();
-        EntityBuilder {
-            engine: self,
-            entity_handle,
-            scene_handle,
-        }
-    }
-
-    // Creates new entity to scene specified with scene handle
-    pub fn create_entity(&mut self, scene_handle: SceneHandle) -> Result<EntityHandle> {
-        debug!(
-            "Creating {} in {} {}",
-            "Entity".general_object_style(),
-            "Scene".general_object_style(),
-            self.scene_manager
-                .get_scene(scene_handle)
-                .unwrap()
-                .name
-                .name_style()
-        );
-
-        self.scene_manager
-            .create_entity(scene_handle)
-            .context(format!(
-                "Creating {} failed",
-                "Entity".general_object_style()
-            ))
-    }
-
-    // Removes entity specified with entity handle from scene specified with scene handle
-    pub fn remove_entity(
-        &mut self,
-        entity_handle: EntityHandle,
-        scene_handle: SceneHandle,
-    ) -> Result<()> {
-        debug!(
-            "Removing {} from {} {}",
-            "Entity".general_object_style(),
-            "Scene".general_object_style(),
-            self.scene_manager
-                .get_scene(scene_handle)
-                .unwrap()
-                .name
-                .name_style()
-        );
-
-        let component_destroyers = self
-            .scene_manager
-            .remove_entity(scene_handle, entity_handle)
-            .context(format!(
-                "Creating {} failed",
-                "Entity".general_object_style()
-            ))?;
-
-        // Destroy components using destroyers
-        for mut component_destroyer in component_destroyers {
-            component_destroyer.destroy(self, scene_handle, entity_handle)?;
-        }
-
-        Ok(())
-    }
-
-    // Removes entity specified with entity handle from its scene
-    pub fn remove_entity_default_scene(&mut self, entity_handle: EntityHandle) -> Result<()> {
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-        debug!(
-            "Removing {} from {} {}",
-            "Entity".general_object_style(),
-            "Scene".general_object_style(),
-            self.scene_manager
-                .get_scene(scene_handle)
-                .unwrap()
-                .name
-                .name_style()
-        );
-
-        let component_destroyers = self
-            .scene_manager
-            .remove_entity(scene_handle, entity_handle)
-            .context(format!(
-                "Creating {} failed",
-                "Entity".general_object_style()
-            ))?;
-
-        // Destroy components using destroyers
-        for mut component_destroyer in component_destroyers {
-            component_destroyer.destroy(self, scene_handle, entity_handle)?;
-        }
-
-        Ok(())
-    }
-
-    // --- Component API ---
-
-    /// Registers new component type in scene specified with scene handle
-    pub fn register_component<T>(&mut self, scene_handle: SceneHandle) -> Result<()>
-    where
-        T: Component<Storage = ComponentStorage<T>>,
-    {
-        debug!(LogContext::ECS => "Registering {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Scene".specific_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-
-        self.scene_manager
-            .register_component::<T>(scene_handle)
-            .context(format!(
-                "Registering {} failed",
-                "Component".general_object_style()
-            ))
-    }
-
-    /// Adds new component to the entity specified with scene and entity handle
-    pub fn add_component_to_entity<T>(
-        &mut self,
-        scene_handle: SceneHandle,
-        entity_handle: EntityHandle,
-        mut component: T,
-    ) -> Result<()>
-    where
-        T: Component<Storage = ComponentStorage<T>>,
-    {
-        debug!(LogContext::ECS => "Adding {} {} to {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Entity".general_object_style(), entity_handle.data().index, "Scene".general_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-
-        // Check if already added
-        let target_scene = self.scene_manager.get_scene(scene_handle)?;
-
-        if target_scene.entity_has_component::<T>(entity_handle)? {
-            return Err(Error::new(EngineError::ComponentAlreadyExists(
-                get_type_name::<T>(),
-            )));
-        }
-
-        // Initialize component
-        component.initialize(self).context(format!(
-            "Adding {} {} failed",
-            "Component".general_object_style(),
-            get_type_name::<T>().specific_object_style()
-        ))?;
-
-        // Add component
-        self.scene_manager
-            .add_component_to_entity::<T>(scene_handle, entity_handle, component)
-            .context(format!(
-                "Adding {} to {} failed",
-                "Component".general_object_style(),
-                "Entity".general_object_style()
-            ))?;
-        let component = self
-            .scene_manager
-            .get_entity_component::<T>(entity_handle, scene_handle)?;
-
-        // Pass handles to entity and scene to this component so it can store it if needed
-        component.pass_handles(scene_handle, entity_handle);
-
-        Ok(())
-    }
-
-    /// Removes component from the entity specified with scene and entity handle
-    pub fn remove_component_from_entity<T>(
-        &mut self,
-        scene_handle: SceneHandle,
-        entity_handle: EntityHandle,
-    ) -> Result<()>
-    where
-        T: Component<Storage = ComponentStorage<T>>,
-    {
-        debug!(LogContext::ECS => "Removing {} {} from {} {} in {} {}", "Component".general_object_style(), get_type_name::<T>().specific_object_style(), "Entity".general_object_style(), entity_handle.data().index, "Scene".general_object_style(), self.scene_manager.get_scene(scene_handle).unwrap().name.name_style());
-
-        let mut component = self
-            .scene_manager
-            .remove_component_from_entity::<T>(scene_handle, entity_handle)
-            .context("Removing component from entity failed")
-            .unwrap();
-
-        // Destroy component
-        component.destroy(self, scene_handle, entity_handle)?;
-
-        Ok(())
-    }
-
-    // --- Global Component API ---
-
-    /// Adds global component to engine
-    pub fn add_global_component<T>(&mut self, mut component: T) -> Result<()>
-    where
-        T: GlobalComponent<Storage = GlobalComponentStorage<T>>,
-    {
-        // Check if component of this type is not already added
-        if self.global_components.contains_key::<T>() {
-            return Err(Error::new(EngineError::GlobalComponentAlreadyExists(
-                get_type_name::<T>(),
-            )));
-        }
-
-        // Initialize component
-        component.initialize(self)?;
-
-        // Add component
-        self.global_components
-            .insert::<T>(GlobalComponentStorage::<T>::new(component));
-
-        Ok(())
-    }
-
-    /// Returns global component
-    pub fn get_global_component<T>(&self) -> Result<&T>
-    where
-        T: GlobalComponent<Storage = GlobalComponentStorage<T>>,
-    {
-        // Get component
-        let component = self
-            .global_components
-            .get::<T>()
-            .ok_or(Error::new(EngineError::GlobalComponentNotFound(
-                get_type_name::<T>(),
-            )))?
-            .data
-            .as_ref()
-            .unwrap();
-
-        Ok(component)
-    }
-
-    /// Returns global mutable component
-    pub fn get_global_component_mut<T>(&mut self) -> Result<&mut T>
-    where
-        T: GlobalComponent<Storage = GlobalComponentStorage<T>>,
-    {
-        // Get component
-        let component = self
-            .global_components
-            .get_mut::<T>()
-            .ok_or(Error::new(EngineError::GlobalComponentNotFound(
-                get_type_name::<T>(),
-            )))?
-            .data
-            .as_mut()
-            .unwrap();
-
-        Ok(component)
-    }
-
-    /// Removes global component from the engine
-    pub fn remove_global_component<T>(&mut self) -> Result<()>
-    where
-        T: GlobalComponent<Storage = GlobalComponentStorage<T>>,
-    {
-        // Check if the type of the component is the same as of the ones, which cannot be removed
-        if ENGINE_GLOBAL_COMPONENTS.contains(&TypeId::of::<T>()) {
-            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(
-                get_type_name::<T>(),
-            )));
-        }
-
-        // Remove and destroy component
-        let global_component_storage = self
-            .global_components
-            .remove::<T>()
-            .ok_or(EngineError::GlobalComponentNotFound(get_type_name::<T>()))?;
-        let mut global_component = global_component_storage.data.unwrap();
-        global_component.destroy(self)?;
-
-        Ok(())
-    }
-
-    // --- Iterator API ---
-
-    /// Returns iterator for specified component
-    ///
-    /// Additionally returns entity handle to matching entities
-    pub fn iterate_one_component<A>(&self) -> Result<impl Iterator<Item = (EntityHandle, &A)>>
-    where
-        A: Component<Storage = ComponentStorage<A>>,
-    {
-        // Get scene handle and iterator
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-        self.scene_manager
-            .get_one_component_iterator::<A>(scene_handle)
-    }
-
-    /// Returns iterator for specified component mutable
-    ///
-    /// Additionally returns entity handle to matching entities
-    pub fn iterate_one_component_mut<A>(
-        &mut self,
-    ) -> Result<impl Iterator<Item = (EntityHandle, &mut A)>>
-    where
-        A: Component<Storage = ComponentStorage<A>>,
-    {
-        // Get scene handle and iterator
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-        self.scene_manager
-            .get_one_component_iterator_mut::<A>(scene_handle)
-    }
-
-    /// Returns iterator for specified component pair
-    ///
-    /// Iterator fetches specified components only for those entities which have them all
-    /// Additionally returns entity handle to matching entities
-    pub fn iterate_two_components<A, B>(
-        &self,
-    ) -> Result<impl Iterator<Item = (EntityHandle, &A, &B)>>
-    where
-        A: Component<Storage = ComponentStorage<A>>,
-        B: Component<Storage = ComponentStorage<B>>,
-    {
-        // Get scene handle and iterator
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-        self.scene_manager
-            .get_two_component_iterator::<A, B>(scene_handle)
-    }
-
-    /// Returns iterator for specified component pair mutable
-    ///
-    /// Iterator fetches specified components only for those entities which have them all
-    /// Additionally returns entity handle to matching entities
-    pub fn iterate_two_components_mut<A, B>(
-        &mut self,
-    ) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B)>>
-    where
-        A: Component<Storage = ComponentStorage<A>>,
-        B: Component<Storage = ComponentStorage<B>>,
-    {
-        // Get scene handle and iterator
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-        self.scene_manager
-            .get_two_component_iterator_mut::<A, B>(scene_handle)
-    }
-
-    /// Returns iterator for specified component triple
-    ///
-    /// Iterator fetches specified components only for those entities which have them all
-    /// Additionally returns entity handle to matching entities
-    pub fn iterate_three_components<A, B, C>(
-        &self,
-    ) -> Result<impl Iterator<Item = (EntityHandle, &A, &B, &C)>>
-    where
-        A: Component<Storage = ComponentStorage<A>>,
-        B: Component<Storage = ComponentStorage<B>>,
-        C: Component<Storage = ComponentStorage<C>>,
-    {
-        // Get scene handle and iterator
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-        self.scene_manager
-            .get_three_component_iterator::<A, B, C>(scene_handle)
-    }
-
-    /// Returns iterator for specified component triple mutable
-    ///
-    /// Iterator fetches specified components only for those entities which have them all
-    /// Additionally returns entity handle to matching entities
-    pub fn iterate_three_components_mut<A, B, C>(
-        &mut self,
-    ) -> Result<impl Iterator<Item = (EntityHandle, &mut A, &mut B, &mut C)>>
-    where
-        A: Component<Storage = ComponentStorage<A>>,
-        B: Component<Storage = ComponentStorage<B>>,
-        C: Component<Storage = ComponentStorage<C>>,
-    {
-        // Get scene handle and iterator
-        let scene_handle = self.scene_manager.get_active_scene_handle()?;
-        self.scene_manager
-            .get_three_component_iterator_mut::<A, B, C>(scene_handle)
     }
 
     // --- Scene API ---

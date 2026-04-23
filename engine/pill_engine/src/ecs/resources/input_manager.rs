@@ -5,7 +5,7 @@ use crate::{
 };
 
 use bitvec::prelude::*;
-use pill_core::{PillTypeMapKey, Vector2f};
+use pill_core::{Vector2f};
 
 use anyhow::{Error, Result};
 use gilrs::{ff::Effect, GamepadId};
@@ -526,10 +526,6 @@ impl InputComponent {
         self.in_flight_force_feedback
             .retain(|ff| ff.id != gamepad_id);
     }
-}
-
-impl PillTypeMapKey for InputComponent {
-    type Storage = GlobalComponentStorage<InputComponent>;
 }
 
 impl GlobalComponent for InputComponent {}

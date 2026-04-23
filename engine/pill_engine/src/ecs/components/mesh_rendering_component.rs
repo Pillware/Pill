@@ -6,7 +6,7 @@ use crate::{
     },
     engine::Engine,
     graphics::{compose_render_queue_key, RenderQueueKey},
-    resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
+    assets::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
 };
 
 use pill_core::{get_type_name, PillStyle, PillTypeMapKey};
@@ -157,10 +157,6 @@ impl MeshRenderingComponent {
                 .post_update_request(request);
         }
     }
-}
-
-impl PillTypeMapKey for MeshRenderingComponent {
-    type Storage = ComponentStorage<MeshRenderingComponent>;
 }
 
 impl Component for MeshRenderingComponent {

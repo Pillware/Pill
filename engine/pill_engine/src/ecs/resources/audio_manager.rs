@@ -1,6 +1,6 @@
 use crate::ecs::{GlobalComponent, GlobalComponentStorage};
 
-use pill_core::{PillTypeMapKey, Vector3f};
+use pill_core::Vector3f;
 
 use rodio::{OutputStream, OutputStreamHandle, Sink, SpatialSink};
 use std::collections::VecDeque;
@@ -126,10 +126,6 @@ impl AudioManagerComponent {
             SoundType::Sound3D => &mut self.busy_spatial_sink_handles,
         }
     }
-}
-
-impl PillTypeMapKey for AudioManagerComponent {
-    type Storage = GlobalComponentStorage<AudioManagerComponent>;
 }
 
 unsafe impl Send for AudioManagerComponent {}

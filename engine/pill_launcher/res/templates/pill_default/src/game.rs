@@ -5,10 +5,6 @@ pub struct PillComponent { }
 
 impl Component for PillComponent { }
 
-impl PillTypeMapKey for PillComponent {
-    type Storage = ComponentStorage<Self>;
-}
-
 // Game
 pub struct Game { } 
 

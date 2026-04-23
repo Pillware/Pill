@@ -5,7 +5,7 @@ use crate::{
         InputComponent, PlayerId, SystemFunction, TimeComponent, UpdatePhase,
     },
     graphics::{RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle},
-    resources::{MaterialHandle, ShaderHandle, TextureHandle, TextureType},
+    assets::{MaterialHandle, ShaderHandle, TextureHandle, TextureType},
 };
 
 use pill_core::PillSlotMapKeyData;

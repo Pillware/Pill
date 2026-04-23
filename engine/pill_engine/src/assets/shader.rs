@@ -1,7 +1,7 @@
 use crate::{
     ecs::DeferredUpdateManagerPointer,
     engine::Engine,
-    resources::{Resource, ResourceLoader, ResourceStorage, TextureType},
+    assets::{Resource, ResourceLoader, ResourceStorage, TextureType},
 };
 
 use crate::internal::RendererShaderHandle;

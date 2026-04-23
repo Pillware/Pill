@@ -26,8 +26,6 @@ pub use pill_slotmap::{PillSlotMap, PillSlotMapKey, PillSlotMapKeyData};
 
 pub use pill_twinmap::PillTwinMap;
 
-pub use pill_typemap::{PillTypeMap, PillTypeMapKey};
-
 pub use bitmask_utils::{
     create_bitmask_from_range, create_bitmask_with_one, get_indices_of_set_elements,
 };

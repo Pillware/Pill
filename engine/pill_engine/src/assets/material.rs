@@ -6,12 +6,12 @@ use crate::{
     },
     engine::Engine,
     graphics::{RendererMaterialHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER},
-    resources::{Resource, ResourceStorage, Shader, ShaderHandle, Texture, TextureHandle},
+    assets::{Resource, ResourceStorage, Shader, ShaderHandle, Texture, TextureHandle},
 };
 
 use pill_core::{
     enum_variant_eq, get_enum_variant_type_name, get_type_name, Color, EngineError, PillSlotMapKey,
-    PillStyle, PillTypeMapKey,
+    PillStyle,
 };
 
 use anyhow::{Context, Error, Result};
@@ -394,10 +394,6 @@ impl Material {
             .expect("Critical: No DeferredUpdateManager")
             .post_update_request(request);
     }
-}
-
-impl PillTypeMapKey for Material {
-    type Storage = ResourceStorage<Material>;
 }
 
 impl Resource for Material {

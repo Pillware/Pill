@@ -4,7 +4,7 @@ use pill_core::{PillSlotMapKey, PillTypeMapKey};
 
 use anyhow::Result;
 use std::path::PathBuf;
-
+ 
 // --- Resource ---
 
 // PillTypeMapKey trait gives handle to the ResourceStorage

@@ -9,7 +9,7 @@ use crate::{
 };
 
 use egui::Ui;
-use pill_core::{PillTypeMapKey, Timer, TimerRecord};
+use pill_core::{Timer, TimerRecord};
 
 use anyhow::{Context, Result};
 
@@ -170,10 +170,6 @@ impl EguiManagerComponent {
     pub(crate) fn update(&mut self, _delta_time: f32) -> Result<()> {
         Ok(())
     }
-}
-
-impl PillTypeMapKey for EguiManagerComponent {
-    type Storage = GlobalComponentStorage<EguiManagerComponent>;
 }
 
 impl GlobalComponent for EguiManagerComponent {}

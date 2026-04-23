@@ -1,4 +1,4 @@
-use crate::{config::RESOURCE_VERSION_LIMIT, resources::Resource};
+use crate::{config::RESOURCE_VERSION_LIMIT, assets::Resource};
 
 use pill_core::{PillSlotMap, PillTwinMap};
 

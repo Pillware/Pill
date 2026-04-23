@@ -1,9 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 use crate::{
-    ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
+    ecs::{CameraComponent, Entity, TransformComponent},
     graphics::RenderQueueItem,
     internal::{MaterialParameter, MaterialTexture, MeshData},
-    resources::{ShaderParameterSlot, ShaderTextureSlot, TextureType},
+    assets::{ShaderParameterSlot, ShaderTextureSlot, TextureType},
 };
 
 use indexmap::IndexMap;
@@ -107,7 +107,7 @@ pub trait PillRenderer {
 
     fn render(
         &mut self,
-        active_camera_entity_handle: EntityHandle,
+        active_camera_entity_handle: Entity,
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,

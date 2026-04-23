@@ -1,8 +1,8 @@
 use crate::{
     config::RENDERING_SYSTEM,
     ecs::{
-        CameraAspectRatio, CameraComponent, EguiManagerComponent, EntityHandle,
-        MeshRenderingComponent, TransformComponent,
+        CameraAspectRatio, CameraComponent, EguiManagerComponent, MeshRenderingComponent,
+        TransformComponent,
     },
     engine::Engine,
     graphics::RenderQueueItem,

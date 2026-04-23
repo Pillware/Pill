@@ -2,12 +2,10 @@ use crate::{
     ecs::MeshRenderingComponent,
     engine::Engine,
     graphics::RendererMeshHandle,
-    resources::{Resource, ResourceStorage},
+    assets::{Resource, ResourceStorage},
 };
 
-use pill_core::{
-    get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey, Vector2f, Vector3f,
-};
+use pill_core::{get_type_name, EngineError, PillSlotMapKey, PillStyle, Vector2f, Vector3f};
 
 use anyhow::{Context, Error, Result};
 use std::path::{Path, PathBuf};
@@ -47,10 +45,6 @@ impl Mesh {
         self.flip_uv_y = flip;
         self
     }
-}
-
-impl PillTypeMapKey for Mesh {
-    type Storage = ResourceStorage<Mesh>;
 }
 
 impl Resource for Mesh {

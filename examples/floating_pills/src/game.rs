@@ -79,6 +79,8 @@ impl PillGame for Game {
         engine.register_component::<CameraMovementComponent>(active_scene)?;
         engine.register_component::<FloatingObjectComponent>(active_scene)?;
 
+        CameraMovementComponentHandle = engine.get_component_handle::<CameraMovementComponent>()?;
+
         // Add systems
         engine.add_system("spawn_floating_objects", floating_objects_spawn_system)?;
         engine.add_system("delete_floating_objects", floating_objects_remove_system)?;

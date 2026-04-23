@@ -1,10 +1,10 @@
 use crate::{
     ecs::AudioSourceComponent,
     engine::Engine,
-    resources::{Resource, ResourceStorage},
+    assets::{Resource, ResourceStorage},
 };
 
-use pill_core::{get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey};
+use pill_core::{get_type_name, EngineError, PillSlotMapKey, PillStyle};
 
 use anyhow::{Context, Error, Result};
 use rodio::Decoder;
@@ -35,10 +35,6 @@ impl Sound {
             sound_data: None,
         }
     }
-}
-
-impl PillTypeMapKey for Sound {
-    type Storage = ResourceStorage<Sound>;
 }
 
 impl Resource for Sound {

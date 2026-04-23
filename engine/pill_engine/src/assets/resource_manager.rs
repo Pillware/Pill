@@ -1,4 +1,4 @@
-use crate::resources::{Resource, ResourceStorage};
+use crate::assets::{Resource, ResourceStorage};
 
 use pill_core::{get_type_name, EngineError, PillTypeMap};
 

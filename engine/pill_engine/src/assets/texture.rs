@@ -1,10 +1,10 @@
 use crate::{
     engine::Engine,
     graphics::RendererTextureHandle,
-    resources::{Material, Resource, ResourceLoader, ResourceStorage},
+    assets::{Material, Resource, ResourceLoader, ResourceStorage},
 };
 
-use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
+use pill_core::{get_type_name, PillSlotMapKey, PillStyle};
 
 use anyhow::{Context, Result};
 pill_core::define_new_pill_slotmap_key! {
@@ -37,10 +37,6 @@ impl Texture {
             renderer_resource_handle: None,
         }
     }
-}
-
-impl PillTypeMapKey for Texture {
-    type Storage = ResourceStorage<Texture>;
 }
 
 impl Resource for Texture {

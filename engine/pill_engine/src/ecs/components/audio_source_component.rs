@@ -5,11 +5,11 @@ use crate::{
         SoundType,
     },
     engine::Engine,
-    resources::{Sound, SoundHandle},
+    assets::{Sound, SoundHandle},
 };
 
 use pill_core::{
-    get_enum_variant_type_name, get_type_name, warn, LogContext, PillStyle, PillTypeMapKey,
+    get_enum_variant_type_name, get_type_name, warn, LogContext, PillStyle,
 };
 
 use anyhow::{Context, Result};
@@ -191,10 +191,6 @@ impl AudioSourceComponent {
                 .post_update_request(request);
         }
     }
-}
-
-impl PillTypeMapKey for AudioSourceComponent {
-    type Storage = ComponentStorage<AudioSourceComponent>;
 }
 
 impl Component for AudioSourceComponent {
