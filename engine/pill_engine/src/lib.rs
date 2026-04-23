@@ -1,8 +1,8 @@
-// On wasm the native-only subsystems (gamepad/haptics/audio) aren't compiled,
-// so their imports and private items appear dead. Silence crate-wide ONLY for
-// the wasm target — native builds still flag real dead code.
+// Silence crate-wide dead-code noise in debug builds (pre-existing behavior)
+// and additionally on wasm, where the native-only subsystems
+// (gamepad/haptics/audio) are cfg'd out and legitimately appear dead.
 #![cfg_attr(
-    target_arch = "wasm32",
+    any(debug_assertions, target_arch = "wasm32"),
     allow(dead_code, unused_imports, mismatched_lifetime_syntaxes)
 )]
 mod config;

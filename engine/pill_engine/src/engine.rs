@@ -348,19 +348,16 @@ impl Engine {
                 INPUT_SYSTEM.system_function,
                 INPUT_SYSTEM.update_phase,
             )?;
-            self.system_manager.add_system(
-                RENDERING_SYSTEM.name,
-                RENDERING_SYSTEM.system_function,
-                RENDERING_SYSTEM.update_phase,
-            )?;
-        }
-
-        #[cfg(all(not(feature = "headless"), not(target_arch = "wasm32")))]
-        {
+            #[cfg(not(target_arch = "wasm32"))]
             self.system_manager.add_system(
                 AUDIO_SYSTEM.name,
                 AUDIO_SYSTEM.system_function,
                 AUDIO_SYSTEM.update_phase,
+            )?;
+            self.system_manager.add_system(
+                RENDERING_SYSTEM.name,
+                RENDERING_SYSTEM.system_function,
+                RENDERING_SYSTEM.update_phase,
             )?;
         }
 
@@ -378,28 +375,6 @@ impl Engine {
     ///
     /// Runs all systems in order: PreGame -> Game -> PostGame
     pub fn update(&mut self, delta_time: std::time::Duration) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            static UPDATE_COUNT: std::sync::atomic::AtomicU32 =
-                std::sync::atomic::AtomicU32::new(0);
-            let count = UPDATE_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if count < 3 {
-                let num_phases = self.system_manager.update_phases.len();
-                let total_systems: usize = self
-                    .system_manager
-                    .update_phases
-                    .iter()
-                    .map(|p| p.1.len())
-                    .sum();
-                log::info!(
-                    "Engine.update #{} - {} phases, {} systems total",
-                    count,
-                    num_phases,
-                    total_systems
-                );
-            }
-        }
-
         let stop_on_game_errors = self
             .config
             .get_bool("PANIC_ON_GAME_ERRORS")
