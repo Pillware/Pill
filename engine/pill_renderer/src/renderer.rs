@@ -516,20 +516,6 @@ impl State {
     ) -> Result<()> {
         debug!(LogContext::Frame => "Starting frame render");
 
-        #[cfg(target_arch = "wasm32")]
-        {
-            static FRAME_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-            let frame_num = FRAME_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if frame_num < 5 || frame_num % 60 == 0 {
-                log::info!(
-                    "Render frame {} - surface {}x{}",
-                    frame_num,
-                    self.surface_configuration.width,
-                    self.surface_configuration.height
-                );
-            }
-        }
-
         timer.record("Get frame");
         // self.profiler.begin_frame();
 

@@ -77,12 +77,10 @@ pub mod game {
     };
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub use crate::ecs::{
-        AudioListenerComponent, AudioManagerComponent, AudioSourceComponent, SoundType,
+    pub use crate::{
+        ecs::{AudioListenerComponent, AudioManagerComponent, AudioSourceComponent, SoundType},
+        resources::Sound,
     };
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub use crate::resources::Sound;
 
     extern crate pill_core;
     pub use pill_core::{
