@@ -457,6 +457,9 @@ impl MeshData {
             },
         ];
 
+        // Triangle-list index buffer: each face is two triangles (a,b,c) + (a,c,d)
+        // over its 4 vertices, sharing the a-c diagonal — 6 indices per face, 36 total.
+        // See: https://learnopengl.com/Getting-started/Hello-Triangle
         let indices = vec![
             0, 1, 2, 0, 2, 3, // front
             4, 5, 6, 4, 6, 7, // back
