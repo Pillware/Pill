@@ -25,6 +25,10 @@ pub fn print(build_wasm_dir: &Path, preopt_wasm: &Path) {
         None => println!("wasm size: pre-opt {}", fmt_bytes(preopt_size)),
     }
 
+    // `twiggy top` lists items by retained size. `-n 15000` returns effectively
+    // the full symbol table (typical wasm bundles have a few thousand symbols);
+    // we aggregate downstream in `classify_crate` / `parse_twiggy`, so we want
+    // the whole list, not just the biggest N.
     let output = match Command::new("twiggy")
         .args(["top", "-n", "15000"])
         .arg(preopt_wasm)
@@ -129,7 +133,10 @@ fn fmt_bytes(n: u64) -> String {
     }
 }
 
-// Coarse bucketing of twiggy item names into crate families.
+// Coarse bucketing of twiggy item names into crate families. Heuristic —
+// relies on stable twiggy section-name output + the wasm-bindgen symbol
+// prefix contract. Unknowns fall through to `[other]`; not used for
+// correctness, only for the per-family rollup in the printed report.
 fn classify_crate(name: &str) -> String {
     if name.contains(".rodata") || name.contains("data segment") {
         return "[rodata]".into();

@@ -196,15 +196,16 @@ fn run_wasm_pack(
 
     println!("Running wasm-pack in scratch crate {scratch_pill_web_dir:?}...");
 
-    // Prefer rustup's toolchain over Homebrew's rustc — Homebrew's doesn't ship
-    // the wasm32-unknown-unknown target.
+    // Prefer rustup's toolchain over other rustc installs on PATH — Homebrew,
+    // distro packages, etc. may ship a rustc without the wasm32-unknown-unknown
+    // target. Prepending ~/.cargo/bin is enough to shadow them.
     let mut cmd = Command::new("wasm-pack");
     cmd.args(&args).current_dir(scratch_pill_web_dir);
     if let Some(home) = env::var_os("HOME") {
         let cargo_bin = PathBuf::from(home).join(".cargo").join("bin");
         let existing = env::var_os("PATH").unwrap_or_default();
         let mut parts: Vec<PathBuf> = vec![cargo_bin];
-        parts.extend(env::split_paths(&existing).filter(|p| p != Path::new("/opt/homebrew/bin")));
+        parts.extend(env::split_paths(&existing));
         if let Ok(joined) = env::join_paths(parts) {
             cmd.env("PATH", joined);
         }
@@ -239,7 +240,7 @@ fn copy_build_outputs(
             .with_context(|| format!("Failed to copy {src:?} to {dst:?}"))?;
     }
 
-    // Default chrome from the engine template (index.html + logo + ...).
+    // Default web shell from the engine template (index.html + logo + ...).
     copy_dir_files(web_template_dir, build_wasm_dir, "template")?;
     // Overlay per-game customizations; each file individually overrides the default.
     if user_web_dir.is_dir() {
