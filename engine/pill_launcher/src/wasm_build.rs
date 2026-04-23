@@ -18,10 +18,7 @@ use fs_extra::dir::CopyOptions;
 use crate::{get_path, modify_file, size_report, CompileMode, Location};
 
 pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode) -> Result<()> {
-    println!(
-        "Building WASM/WebGPU target for game project at {}...",
-        game_project_directory_path.display()
-    );
+    println!("Building WASM/WebGPU target for game project at {game_project_directory_path:?}...");
     if *compile_mode == CompileMode::HotReload {
         println!("Note: hot-reload is not meaningful for WASM; using --dev mode.");
     }
@@ -59,14 +56,8 @@ pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode) -> 
 
     println!();
     println!("Done! Serve with:");
-    println!(
-        "  PillLauncher -a run -t wasm -p {}",
-        game_project_directory_path.display()
-    );
-    println!(
-        "  (or any static server pointed at {})",
-        build_wasm_dir.display()
-    );
+    println!("  PillLauncher -a run -t wasm -p {game_project_directory_path:?}");
+    println!("  (or any static server pointed at {build_wasm_dir:?})");
     Ok(())
 }
 
@@ -78,12 +69,8 @@ fn template_dir(name: &str) -> PathBuf {
 }
 
 fn prepare_scratch_crate(wasm_template_dir: &Path, scratch_pill_web_dir: &Path) -> Result<()> {
-    fs::create_dir_all(scratch_pill_web_dir).with_context(|| {
-        format!(
-            "Failed to create scratch dir {}",
-            scratch_pill_web_dir.display()
-        )
-    })?;
+    fs::create_dir_all(scratch_pill_web_dir)
+        .with_context(|| format!("Failed to create scratch dir {scratch_pill_web_dir:?}"))?;
 
     fs::copy(
         wasm_template_dir.join("Cargo.toml"),
@@ -121,18 +108,12 @@ fn embed_game_config(game_dir: &Path, scratch_pill_web_dir: &Path) -> Result<()>
     let src = game_dir.join("res").join("config.ini");
     let dst = scratch_pill_web_dir.join("config.ini");
     if src.is_file() {
-        fs::copy(&src, &dst).with_context(|| {
-            format!(
-                "Failed to embed game config {} → {}",
-                src.display(),
-                dst.display()
-            )
-        })?;
+        fs::copy(&src, &dst)
+            .with_context(|| format!("Failed to embed game config {src:?} → {dst:?}"))?;
     } else {
         // Write an empty file so the template's include_str! compiles.
-        fs::write(&dst, "").with_context(|| {
-            format!("Failed to write empty scratch config.ini at {}", dst.display())
-        })?;
+        fs::write(&dst, "")
+            .with_context(|| format!("Failed to write empty scratch config.ini at {dst:?}"))?;
     }
     Ok(())
 }
@@ -213,10 +194,7 @@ fn run_wasm_pack(
         args.push("--dev".into());
     }
 
-    println!(
-        "Running wasm-pack in scratch crate {}...",
-        scratch_pill_web_dir.display()
-    );
+    println!("Running wasm-pack in scratch crate {scratch_pill_web_dir:?}...");
 
     // Prefer rustup's toolchain over Homebrew's rustc — Homebrew's doesn't ship
     // the wasm32-unknown-unknown target.
@@ -252,13 +230,13 @@ fn copy_build_outputs(
     build_wasm_dir: &Path,
 ) -> Result<()> {
     fs::create_dir_all(build_wasm_dir)
-        .with_context(|| format!("Failed to create {}", build_wasm_dir.display()))?;
+        .with_context(|| format!("Failed to create {build_wasm_dir:?}"))?;
 
     for file in ["pill_web.js", "pill_web_bg.wasm"] {
         let src = scratch_pkg_dir.join(file);
         let dst = build_wasm_dir.join(file);
         fs::copy(&src, &dst)
-            .with_context(|| format!("Failed to copy {} to {}", src.display(), dst.display()))?;
+            .with_context(|| format!("Failed to copy {src:?} to {dst:?}"))?;
     }
 
     // Default chrome from the engine template (index.html + logo + ...).
@@ -279,41 +257,31 @@ fn copy_game_assets(src_res: &Path, dst_res: &Path) -> Result<()> {
         return Ok(());
     }
     if dst_res.exists() {
-        fs::remove_dir_all(dst_res).with_context(|| {
-            format!("Failed to clean previous res/ at {}", dst_res.display())
-        })?;
+        fs::remove_dir_all(dst_res)
+            .with_context(|| format!("Failed to clean previous res/ at {dst_res:?}"))?;
     }
     let dst_parent = dst_res
         .parent()
         .ok_or_else(|| Error::msg("invalid res/ destination path"))?;
     fs::create_dir_all(dst_parent)?;
     fs_extra::dir::copy(src_res, dst_parent, &CopyOptions::new().overwrite(true))
-        .with_context(|| {
-            format!(
-                "Failed to copy game res/ from {} to {}",
-                src_res.display(),
-                dst_res.display()
-            )
-        })?;
+        .with_context(|| format!("Failed to copy game res/ from {src_res:?} to {dst_res:?}"))?;
     Ok(())
 }
 
 // Flat-copy files from `src` into `dst`, following symlinks. `label` is used
 // in error messages to distinguish template vs user-overlay copies.
 fn copy_dir_files(src: &Path, dst: &Path, label: &str) -> Result<()> {
-    for entry in fs::read_dir(src)
-        .with_context(|| format!("Failed to read {label} dir {}", src.display()))?
+    for entry in
+        fs::read_dir(src).with_context(|| format!("Failed to read {label} dir {src:?}"))?
     {
         let entry = entry?;
         // path().metadata() follows symlinks so symlinked assets are copied as files.
         if entry.path().metadata()?.is_file() {
             let target = dst.join(entry.file_name());
-            fs::copy(entry.path(), &target).with_context(|| {
-                format!(
-                    "Failed to {label}-copy {} to {}",
-                    entry.path().display(),
-                    target.display()
-                )
+            let entry_path = entry.path();
+            fs::copy(&entry_path, &target).with_context(|| {
+                format!("Failed to {label}-copy {entry_path:?} to {target:?}")
             })?;
         }
     }

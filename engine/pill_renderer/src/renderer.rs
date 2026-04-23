@@ -409,7 +409,7 @@ impl State {
                 desired_maximum_frame_latency: 2,
                 present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![],
+                view_formats: vec![format],
             };
             surface.configure(&device, &surface_configuration);
             let color_format = surface_configuration.format;
@@ -536,6 +536,12 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        timer.record("Update engine parameters");
+
+        self.renderer_resource_storage
+            .engine_parameters
+            .update(&self.queue, delta_time);
+
         timer.record("Update camera parameters");
 
         // Get active camera and update it
@@ -544,12 +550,6 @@ impl State {
             .get(active_camera_entity_handle.data().index as usize)
             .unwrap();
         let active_camera_component = camera_storage.as_ref().unwrap();
-
-        timer.record("Update engine parameters");
-
-        self.renderer_resource_storage
-            .engine_parameters
-            .update(&self.queue, delta_time);
         let renderer_camera = self
             .renderer_resource_storage
             .cameras
