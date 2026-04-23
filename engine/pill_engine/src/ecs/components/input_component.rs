@@ -4,44 +4,114 @@ use crate::{
     internal::NUM_SUPPORTED_GAMEPADS,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use bitvec::prelude::*;
 use pill_core::{PillTypeMapKey, Vector2f};
 
 use anyhow::{Error, Result};
 use std::collections::{HashMap, VecDeque};
 use winit::event::{ElementState, MouseScrollDelta};
 
+// Native has gilrs for gamepads + bitvec for compact key/button state +
+// std::time::Instant for force-feedback deadlines. Wasm has none of
+// those (no process-wide input, no std::time on wasm32), so we stub
+// the types with the same shapes. Module-level cfg-gating keeps the
+// scattered attributes out of the rest of the file — mirrors how
+// `input_system.rs` splits native/wasm into sub-modules.
 #[cfg(not(target_arch = "wasm32"))]
-pub use gilrs::{ff::Effect, GamepadId};
+mod native {
+    use super::*;
+    use bitvec::prelude::*;
+    pub use gilrs::{ff::Effect, GamepadId};
+    pub use std::time::Instant;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
+    // 256 bits — actually we have less but this is fine
+    pub type KeyState = BitArray<[u64; 4], Lsb0>;
+    // we have 17 buttons
+    pub type GamepadButtonState = BitArray<[u32; NUM_SUPPORTED_GAMEPADS], Lsb0>;
 
-#[cfg(target_arch = "wasm32")]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct GamepadId(pub usize);
+    pub const fn key_state_zero() -> KeyState {
+        BitArray::ZERO
+    }
+    pub const fn gamepad_button_state_zero() -> GamepadButtonState {
+        BitArray::ZERO
+    }
 
-#[cfg(target_arch = "wasm32")]
-impl std::fmt::Display for GamepadId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GamepadId({})", self.0)
+    pub fn set_key_state(state: &mut KeyState, i: usize, v: bool) {
+        state.set(i, v);
+    }
+    pub fn set_gamepad_state(state: &mut GamepadButtonState, i: usize, v: bool) {
+        state.set(i, v);
+    }
+
+    pub struct InFlight {
+        pub(crate) id: GamepadId,
+        pub(crate) effect: Effect,
+        pub(crate) end_at: Instant,
     }
 }
 
 #[cfg(target_arch = "wasm32")]
-#[derive(Clone)]
-pub struct Effect;
+mod wasm {
+    use super::*;
 
-#[cfg(target_arch = "wasm32")]
-impl Effect {
-    pub fn add_gamepad(&self, _gamepad: &()) -> Result<()> {
-        Ok(())
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+    pub struct GamepadId(pub usize);
+
+    impl std::fmt::Display for GamepadId {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "GamepadId({})", self.0)
+        }
     }
-    pub fn play(&self) -> Result<()> {
-        Ok(())
+
+    #[derive(Clone)]
+    pub struct Effect;
+
+    impl Effect {
+        pub fn add_gamepad(&self, _gamepad: &()) -> Result<()> {
+            Ok(())
+        }
+        pub fn play(&self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    pub type KeyState = [bool; KEYBOARD_KEY_MAX];
+    pub type GamepadButtonState = [bool; GAMEPAD_BUTTON_MAX];
+
+    pub const fn key_state_zero() -> KeyState {
+        [false; KEYBOARD_KEY_MAX]
+    }
+    pub const fn gamepad_button_state_zero() -> GamepadButtonState {
+        [false; GAMEPAD_BUTTON_MAX]
+    }
+
+    pub fn set_key_state(state: &mut KeyState, i: usize, v: bool) {
+        state[i] = v;
+    }
+    pub fn set_gamepad_state(state: &mut GamepadButtonState, i: usize, v: bool) {
+        state[i] = v;
+    }
+
+    // No force-feedback on wasm — InFlight just tags the id for reset tracking.
+    pub struct InFlight {
+        pub(crate) id: GamepadId,
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+use native::{
+    gamepad_button_state_zero, key_state_zero, set_gamepad_state, set_key_state,
+    GamepadButtonState, KeyState,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::{Effect, GamepadId, InFlight};
+
+#[cfg(target_arch = "wasm32")]
+use wasm::{
+    gamepad_button_state_zero, key_state_zero, set_gamepad_state, set_key_state,
+    GamepadButtonState, KeyState,
+};
+#[cfg(target_arch = "wasm32")]
+pub use wasm::{Effect, GamepadId, InFlight};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -66,11 +136,12 @@ impl TryFrom<u8> for PlayerId {
     }
 }
 
-pub const GAMEPAD_DEADZONE: f32 = 0.05;
+pub const GAMEPAD_DEADZONE: f32 = 0.05; // Deadzone for gamepad axes
 
-pub const KEYBOARD_KEY_COUNT: usize = KeyboardKey::F35 as usize + 1;
-pub const MOUSE_BUTTON_COUNT: usize = 3;
+pub const KEYBOARD_KEY_COUNT: usize = KeyboardKey::F35 as usize + 1; // Total number of keys in KeyboardKey enum
+pub const MOUSE_BUTTON_COUNT: usize = 3; // Left, Middle, Right
 
+/// Gamepad enums with more descriptive names
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
 pub enum GamepadButton {
@@ -121,18 +192,6 @@ pub enum HapticCommand {
         effect: Effect,
         duration_ms: u32,
     },
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub struct InFlight {
-    pub(crate) id: GamepadId,
-    pub(crate) effect: Effect,
-    pub(crate) end_at: Instant,
-}
-
-#[cfg(target_arch = "wasm32")]
-pub struct InFlight {
-    pub(crate) id: GamepadId,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -191,52 +250,6 @@ pub enum InputEvent {
 
 pub const KEYBOARD_KEY_MAX: usize = 256;
 pub const GAMEPAD_BUTTON_MAX: usize = GAMEPAD_BUTTON_COUNT * NUM_SUPPORTED_GAMEPADS;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub type KeyState = BitArray<[u64; 4], Lsb0>;
-#[cfg(not(target_arch = "wasm32"))]
-pub type GamepadButtonState = BitArray<[u32; NUM_SUPPORTED_GAMEPADS], Lsb0>;
-
-#[cfg(target_arch = "wasm32")]
-pub type KeyState = [bool; KEYBOARD_KEY_MAX];
-#[cfg(target_arch = "wasm32")]
-pub type GamepadButtonState = [bool; GAMEPAD_BUTTON_MAX];
-
-#[cfg(not(target_arch = "wasm32"))]
-const fn key_state_zero() -> KeyState {
-    BitArray::ZERO
-}
-#[cfg(not(target_arch = "wasm32"))]
-const fn gamepad_button_state_zero() -> GamepadButtonState {
-    BitArray::ZERO
-}
-
-#[cfg(target_arch = "wasm32")]
-const fn key_state_zero() -> KeyState {
-    [false; KEYBOARD_KEY_MAX]
-}
-#[cfg(target_arch = "wasm32")]
-const fn gamepad_button_state_zero() -> GamepadButtonState {
-    [false; GAMEPAD_BUTTON_MAX]
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn set_key_state(state: &mut KeyState, i: usize, v: bool) {
-    state.set(i, v);
-}
-#[cfg(not(target_arch = "wasm32"))]
-fn set_gamepad_state(state: &mut GamepadButtonState, i: usize, v: bool) {
-    state.set(i, v);
-}
-
-#[cfg(target_arch = "wasm32")]
-fn set_key_state(state: &mut KeyState, i: usize, v: bool) {
-    state[i] = v;
-}
-#[cfg(target_arch = "wasm32")]
-fn set_gamepad_state(state: &mut GamepadButtonState, i: usize, v: bool) {
-    state[i] = v;
-}
 
 pub struct InputComponent {
     pub(crate) pressed_keyboard_keys: KeyState,

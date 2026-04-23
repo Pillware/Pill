@@ -1,6 +1,6 @@
 use crate::{
     ecs::{
-        deferred_update_system, haptics_system, input_system, rendering_system, time_system,
+        deferred_update_system, input_system, rendering_system, time_system,
         DeferredUpdateComponent, EguiManagerComponent, InputComponent, PlayerId, SystemFunction,
         TimeComponent, UpdatePhase,
     },
@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::ecs::{audio_system, AudioManagerComponent};
+use crate::ecs::{audio_system, haptics_system, AudioManagerComponent};
 
 use pill_core::PillSlotMapKeyData;
 
@@ -40,6 +40,7 @@ pub const INPUT_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PreGame,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub const HAPTICS_SYSTEM: SystemConfig = SystemConfig {
     name: "haptics_system",
     system_function: haptics_system,

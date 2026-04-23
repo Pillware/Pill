@@ -64,7 +64,10 @@ pub use systems::rendering_system::rendering_system;
 
 pub use systems::deferred_update_system::deferred_update_system;
 
-pub use systems::input_system::{haptics_system, input_system};
+pub use systems::input_system::input_system;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use systems::input_system::haptics_system;
 
 pub use systems::time_system::time_system;
 

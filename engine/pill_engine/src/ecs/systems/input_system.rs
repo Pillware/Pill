@@ -14,6 +14,7 @@ use winit::event::{ElementState, MouseScrollDelta};
 mod native {
     use super::*;
     use crate::ecs::InFlight;
+    // use a lazy static GILRS instance
     use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Replay, Ticks};
     use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
     use once_cell::sync::Lazy;
@@ -26,6 +27,7 @@ mod native {
         Lazy::new(|| Mutex::new(Gilrs::new().expect("Failed to initialize Gilrs")));
 
     pub fn input_system(engine: &mut Engine) -> Result<()> {
+        // Poll GILRS first
         {
             let mut gamepad_input_system = GILRS.lock().unwrap();
             while let Some(event) = gamepad_input_system.next_event() {
@@ -47,7 +49,7 @@ mod native {
                                 button: b.into(),
                                 state: ElementState::Pressed,
                             }))
-                    }
+                    } // TODO: do we want to treat repeated press differently?
                     EventType::ButtonReleased(b, _) => {
                         engine
                             .input_queue
@@ -90,6 +92,7 @@ mod native {
             let input_component = engine.get_global_component_mut::<InputComponent>()?;
             input_component.clear_transient_states();
 
+            // If the input component has just been created, initialize the gamepad states
             if input_component.gamepad_id_to_player.is_empty() {
                 let gamepad_input_system = GILRS.lock().unwrap();
                 for (id, _gamepad) in gamepad_input_system.gamepads() {
@@ -265,9 +268,9 @@ mod wasm {
         process_input_queue(engine)
     }
 
-    pub fn haptics_system(_engine: &mut Engine) -> Result<()> {
-        Ok(())
-    }
+    // haptics_system: not supported on wasm — not re-exported. gilrs-backed
+    // force feedback has no browser equivalent yet; games that call it
+    // should `#[cfg(not(target_arch = "wasm32"))]` around the call site.
 }
 
 fn process_input_queue(engine: &mut Engine) -> Result<()> {
@@ -333,4 +336,4 @@ fn process_input_queue(engine: &mut Engine) -> Result<()> {
 pub use native::{haptics_system, input_system};
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{haptics_system, input_system};
+pub use wasm::input_system;
