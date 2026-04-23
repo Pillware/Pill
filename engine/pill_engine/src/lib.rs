@@ -1,5 +1,3 @@
-// Silence crate-wide dead-code noise in debug builds, and on wasm where
-// the native-only subsystems (gamepad/haptics/audio) are cfg'd out.
 #![cfg_attr(
     any(debug_assertions, target_arch = "wasm32"),
     allow(dead_code, unused_imports, mismatched_lifetime_syntaxes)
