@@ -10,7 +10,7 @@
         body {
             background: #fff;
             color: #222;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: system-ui, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -106,7 +106,7 @@
 
         async function checkWebGPU() {
             if (!navigator.gpu) {
-                showError('WebGPU is not supported in this browser. Try Chrome 113+ or Edge 113+');
+                showError('WebGPU is not supported in this browser. Try Chrome/Edge 113+, Safari 18+, or Firefox 141+.');
                 return false;
             }
             const adapter = await navigator.gpu.requestAdapter();

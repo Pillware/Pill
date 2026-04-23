@@ -38,6 +38,10 @@ async fn run() {
             .and_then(|el| el.dyn_into::<web_sys::HtmlCanvasElement>().ok())
             .expect("Failed to find canvas element with id 'canvas'");
 
+        // WebGPU surface creation requires non-zero dimensions. If the canvas
+        // hasn't been laid out by CSS yet (pre-layout / hidden parent), the
+        // attribute is 0 — clamp to 1 as a crash guard. The real 1280×720
+        // fallback a few lines below kicks in once winit surfaces the size.
         let width = canvas.width().max(1);
         let height = canvas.height().max(1);
 
