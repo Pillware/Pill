@@ -105,6 +105,7 @@ jobs:
       fail-fast: false
       matrix:
         example:
+          - examples/cube
           - examples/floating_pills/
           - examples/italian_brainrot
           - examples/net_minimal/client
@@ -123,6 +124,7 @@ jobs:
         with:
           workspaces: |
             engine -> target
+            examples/cube -> target
             examples/floating_pills -> target
             examples/italian_brainrot -> target
             examples/net_minimal/client -> target
