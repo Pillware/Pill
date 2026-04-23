@@ -340,8 +340,15 @@ impl State {
 
         // 3. Device and queue
         let (device, queue) = {
-            let features = wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::TIMESTAMP_QUERY;
-            // PIPELINE_STATISTICS_QUERY omitted: not supported on all GPUs; profiler falls back when absent
+            // Ask only for features the adapter actually supports. On Metal
+            // (macOS) PIPELINE_STATISTICS_QUERY isn't available; on some
+            // WebGPU adapters TIMESTAMP_QUERY isn't either. Downstream code
+            // (profiler.rs) checks `device.features().contains(...)` before
+            // using them, so narrowing here is safe.
+            let wanted = wgpu::Features::DEPTH_CLIP_CONTROL
+                | wgpu::Features::TIMESTAMP_QUERY
+                | wgpu::Features::PIPELINE_STATISTICS_QUERY;
+            let features = wanted & adapter.features();
 
             let device_descriptor = wgpu::DeviceDescriptor {
                 label: None,
