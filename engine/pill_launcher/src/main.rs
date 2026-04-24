@@ -26,7 +26,7 @@ pub(crate) enum Location {
     EngineCrates,
     PillEngineCrate,
     PillCoreCrate,
-    PillStandaloneCrate,
+    PillNativeCrate,
     PillLauncherCrate,
 }
 
@@ -133,7 +133,7 @@ fn get_path(location: Location) -> PathBuf {
         Location::EngineCrates => engine_ws,
         Location::PillEngineCrate => engine_ws.join("pill_engine"),
         Location::PillCoreCrate => engine_ws.join("pill_core"),
-        Location::PillStandaloneCrate => engine_ws.join("pill_standalone"),
+        Location::PillNativeCrate => engine_ws.join("pill_native"),
         Location::PillLauncherCrate => engine_ws.join("pill_launcher"),
     }
 }
@@ -522,6 +522,9 @@ fn prepare_workspace_for_game(
     check_if_game_project_validity(game_project_directory_path)
         .context("Game project is invalid")?;
 
+    // Compilation has to be done together on pill_native and pill_game together in the same context.
+    // For that compilation through Cargo workspace is required.
+    // Otherwise, typeids of types like "Mesh" will not match what will make all generic (templated) functions work improperly
     let engine_workspace_directory_path = get_path(Location::EngineCrates);
     let workspace_manifest_path = engine_workspace_directory_path.join("Cargo.toml");
     if !workspace_manifest_path.exists() {
@@ -811,7 +814,7 @@ fn build_game_project(
         "-p",
         "pill_game",
         "-p",
-        "pill_standalone",
+        "pill_native",
         "-p",
         "pill_runtime",
     ];
@@ -843,7 +846,7 @@ fn build_game_project(
     // Copy standalone exe ONLY for non-hot-reload builds or hot-reload consequent reloads
     if *compile_mode != CompileMode::HotReload || !hot_reload_child {
         let standalone_output_path =
-            compilation_artifacts_folder_path.join(format!("pill_standalone{EXEC_SUFFIX}"));
+            compilation_artifacts_folder_path.join(format!("pill_native{EXEC_SUFFIX}"));
         if !standalone_output_path.exists() {
             return Err(Error::msg(
                 "Standalone executable was not built successfully",
@@ -959,8 +962,8 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Update game project dependency in standalone's cargo.toml
     modify_file(
-        &get_path(Location::PillStandaloneCrate).join("Cargo.toml"),
-        &get_path(Location::PillStandaloneCrate).join("Cargo.toml"),
+        &get_path(Location::PillNativeCrate).join("Cargo.toml"),
+        &get_path(Location::PillNativeCrate).join("Cargo.toml"),
         |line: String| -> String {
             if line.contains("pill_game") {
                 return format!(
