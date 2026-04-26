@@ -64,6 +64,8 @@ impl FileWatcher {
                                     if file_name_str.starts_with('.')
                                         || file_name_str.ends_with("~")
                                         || file_name_str.ends_with(".swp")
+                                    //  TODO: skip also the
+                                    //  new dll file
                                     {
                                         continue;
                                     }

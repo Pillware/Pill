@@ -12,6 +12,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    result::Result::Ok,
 };
 
 // - Cargo commands
@@ -58,34 +59,72 @@ fn dylib(name: &str) -> String {
 fn target_dir_for(mode: &CompileMode) -> &'static str {
     match mode {
         CompileMode::Release => "release",
-        _ => "debug",
+        CompileMode::Debug => "debug",
+        CompileMode::HotReload => "hot-reload",
     }
+}
+
+fn find_engine_workspace_dir() -> Result<PathBuf> {
+    // 1) Explicit override (standalone will set this)
+    if let Ok(v) = std::env::var("PILL_ENGINE_WORKSPACE_DIR") {
+        let p = PathBuf::from(v);
+        let m = p.join("Cargo.toml");
+        if m.exists() {
+            return Ok(p);
+        }
+        bail!(
+            "PILL_ENGINE_WORKSPACE_DIR was set but {} does not exist",
+            m.display()
+        );
+    }
+
+    // 2) Search upward from current_exe and current_dir
+    fn search_up(start: PathBuf) -> Option<PathBuf> {
+        for a in start.ancestors() {
+            let cand = a.join("engine").join("Cargo.toml");
+            if cand.exists() {
+                return Some(a.join("engine")); // <- workspace dir
+            }
+            let cand2 = a.join("Cargo.toml");
+            // If someone starts from .../Pill-Engine/engine already
+            if cand2.exists() && a.file_name().and_then(|s| s.to_str()) == Some("engine") {
+                return Some(a.to_path_buf());
+            }
+        }
+        None
+    }
+
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+    if let Some(d) = exe_dir.and_then(search_up) {
+        return Ok(d);
+    }
+
+    let cwd = std::env::current_dir().context("current_dir failed")?;
+    if let Some(d) = search_up(cwd) {
+        return Ok(d);
+    }
+
+    bail!("Cannot locate engine workspace dir (tried env + walking up from exe/cwd)");
 }
 
 // Returns absolute paths
 fn get_path(location: Location) -> PathBuf {
-    let main_engine_directory = env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-        .join("..")
-        .join("..")
-        .join("..")
-        .join("..")
-        .absolutize()
-        .unwrap()
-        .to_path_buf();
+    // engine workspace dir = .../Pill-Engine/engine
+    let engine_ws =
+        find_engine_workspace_dir().expect("Failed to locate engine workspace directory");
+
+    // repo root = parent of engine/
+    let repo_root = engine_ws.parent().unwrap().to_path_buf();
 
     match location {
-        Location::EngineProjectRoot => main_engine_directory,
-        Location::EngineCrates => main_engine_directory.join("engine"),
-        Location::PillEngineCrate => main_engine_directory.join("engine").join("pill_engine"),
-        Location::PillCoreCrate => main_engine_directory.join("engine").join("pill_core"),
-        Location::PillStandaloneCrate => {
-            main_engine_directory.join("engine").join("pill_standalone")
-        }
-        Location::PillLauncherCrate => main_engine_directory.join("engine").join("pill_launcher"),
+        Location::EngineProjectRoot => repo_root,
+        Location::EngineCrates => engine_ws,
+        Location::PillEngineCrate => engine_ws.join("pill_engine"),
+        Location::PillCoreCrate => engine_ws.join("pill_core"),
+        Location::PillStandaloneCrate => engine_ws.join("pill_standalone"),
+        Location::PillLauncherCrate => engine_ws.join("pill_launcher"),
     }
 }
 
@@ -95,21 +134,157 @@ fn modify_file<A: FnMut(String) -> String>(
     mut action: A,
 ) -> Result<()> {
     // Open files from path
-    let input_file = File::open(input_path).unwrap();
+    let input = fs::read_to_string(input_path)
+        .with_context(|| format!("Failed to read {}", input_path.display()))?;
+
+    // Prevent overwriting the same files
+    let mut changed = false;
 
     // Read lines from input file
-    let lines = BufReader::new(input_file)
+    let lines = input
         .lines()
-        .map(|v| v.unwrap())
+        .map(|line| {
+            let new_line = action(line.to_string());
+            if new_line != line {
+                changed = true;
+            }
+            new_line
+        })
         .collect::<Vec<String>>();
 
-    // Create new file (overwrite if input and output paths are the same)
-    let mut output_file = File::create(output_path).unwrap();
+    let mut out = lines.join("\n");
+    if input.ends_with("\n") {
+        out.push('\n');
+    }
+
+    // If input is the same and we are writing in-place - ignore
+    if input_path == output_path && !changed && out == input {
+        return Ok(());
+    }
+
+    // Similarly we are writing to a different file and their outputs are identical - ignore
+    if input_path != output_path {
+        if let Ok(existing) = fs::read_to_string(output_path) {
+            if existing == out {
+                return Ok(());
+            }
+        }
+    }
 
     // Write files to output file
-    for line in lines {
-        writeln!(output_file, "{}", action(line)).unwrap();
+    fs::write(output_path, out)
+        .with_context(|| format!("Failed to write {}", output_path.display()))?;
+
+    Ok(())
+}
+
+fn copy_if_newer(source: &PathBuf, destination: &PathBuf) -> Result<bool> {
+    // returns true if copied
+    if !source.exists() {
+        bail!("Source does not exist: {}", source.display());
     }
+
+    let source_meta = fs::metadata(source)?;
+    let source_mtime = source_meta.modified().ok();
+    let source_len = source_meta.len();
+
+    if let Ok(destination_meta) = fs::metadata(destination) {
+        let destination_mtime = destination_meta.modified().ok();
+        let destination_len = destination_meta.len();
+
+        // If same size and destination is at least as new as source, skip copy.
+        if destination_len == source_len {
+            if let (Some(s), Some(d)) = (source_mtime, destination_mtime) {
+                if d >= s {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(source, destination)
+        .with_context(|| format!("copy {} -> {}", source.display(), destination.display()))?;
+    Ok(true)
+}
+
+fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<()> {
+    if !source.exists() {
+        bail!("Source directory does not exist: {}", source.display());
+    }
+    if !source.is_dir() {
+        bail!("Source path is not a directory: {}", source.display());
+    }
+
+    fs::create_dir_all(destination)
+        .with_context(|| format!("Failed to create directory {}", destination.display()))?;
+
+    for entry in fs::read_dir(source)
+        .with_context(|| format!("Failed to read directory {}", source.display()))?
+    {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+
+        if entry_path.is_dir() {
+            copy_directory_recursive(&entry_path, &destination_path)?;
+        } else if entry_path.is_file() {
+            if let Some(parent) = destination_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&entry_path, &destination_path).with_context(|| {
+                format!(
+                    "copy {} -> {}",
+                    entry_path.display(),
+                    destination_path.display()
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn stage_packaged_resources(game_project_directory_path: &Path, data_dir: &Path) -> Result<()> {
+    let source_resources_dir = game_project_directory_path.join("res");
+    let destination_resources_dir = data_dir.join("res");
+
+    if !source_resources_dir.exists() {
+        bail!(
+            "Game resources directory does not exist: {}",
+            source_resources_dir.display()
+        );
+    }
+
+    fs::create_dir_all(data_dir)
+        .with_context(|| format!("Failed to create data directory {}", data_dir.display()))?;
+    if destination_resources_dir.exists() {
+        fs::remove_dir_all(&destination_resources_dir).with_context(|| {
+            format!(
+                "Failed to clear destination resources directory {}",
+                destination_resources_dir.display()
+            )
+        })?;
+    }
+
+    copy_directory_recursive(&source_resources_dir, &destination_resources_dir)?;
+
+    let staged_config_path = destination_resources_dir.join("config.ini");
+    if !staged_config_path.exists() {
+        bail!(
+            "Failed to stage resources into {} (missing {})",
+            destination_resources_dir.display(),
+            staged_config_path.display()
+        );
+    }
+
+    println!(
+        "Staged resources from {} to {}",
+        source_resources_dir.display(),
+        destination_resources_dir.display()
+    );
 
     Ok(())
 }
@@ -134,22 +309,35 @@ fn parse_file_lines<A: FnMut(String)>(input_path: &PathBuf, mut action: A) -> Re
 
 // --- Utilities ---
 
+fn output_dir_for(mode: &CompileMode) -> &'static str {
+    match mode {
+        CompileMode::Debug => "dev",
+        CompileMode::Release => "release",
+        CompileMode::HotReload => "hot-reload",
+    }
+}
+
+fn standalone_layout_for(mode: &CompileMode) -> &'static str {
+    match mode {
+        CompileMode::Release => "packaged",
+        CompileMode::Debug | CompileMode::HotReload => "development",
+    }
+}
+
 fn get_game_build_path(
     game_project_directory_path: &Path,
     output_directory_path: &PathBuf,
+    compile_mode: &CompileMode,
 ) -> Result<PathBuf> {
-    let game_project_build_path = if output_directory_path.as_os_str() == "." {
-        game_project_directory_path
+    if output_directory_path.as_os_str() == "." {
+        Ok(game_project_directory_path
             .join("build")
-            .join("dev")
-            .absolutize()
-            .context("Failed to absolutize directory path")?
-            .to_path_buf()
+            .join(output_dir_for(compile_mode))
+            .absolutize()?
+            .to_path_buf())
     } else {
-        output_directory_path.absolutize()?.to_path_buf()
-    };
-
-    Ok(game_project_build_path)
+        Ok(output_directory_path.absolutize()?.to_path_buf())
+    }
 }
 
 fn get_game_title(game_project_directory_path: &Path) -> Result<String> {
@@ -211,6 +399,17 @@ fn remove_files_starting_with(directory_path: &PathBuf, file_name_prefix: &str) 
     Ok(())
 }
 
+fn try_remove_files_starting_with(directory_path: &PathBuf, file_name_prefix: &str) {
+    if let Err(error) = remove_files_starting_with(directory_path, file_name_prefix) {
+        eprintln!(
+            "Non-fatal cleanup failure for prefix '{}' in {}: {:#}",
+            file_name_prefix,
+            directory_path.display(),
+            error
+        );
+    }
+}
+
 // Render all *.puml under <crate>/docs/uml into <crate>/docs/uml_out as SVGs
 fn render_puml_for_crate(crate_dir: &Path) -> Result<()> {
     let in_dir = crate_dir.join("docs").join("uml");
@@ -245,9 +444,10 @@ fn render_puml_for_crate(crate_dir: &Path) -> Result<()> {
 
     let have_cli = Command::new("plantuml")
         .arg("-version")
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("PlantUML version"))
-        .unwrap_or(false);
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok();
 
     // Prefer "plantuml" CLI tool if available
     if !have_cli {
@@ -286,42 +486,67 @@ fn render_puml_for_crate(crate_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn normalize_path(p: &PathBuf) -> Result<String> {
+    Ok(p.absolutize()?
+        .to_path_buf()
+        .to_string_lossy()
+        .replace('\\', "/"))
+}
+
+fn extract_member_path_from_line(line: &str) -> Option<String> {
+    // expects:     "<path>", ### Game project crate ...
+    let trimmed = line.trim();
+    if !trimmed.contains("### Game project crate") {
+        return None;
+    }
+    let first_quote = trimmed.find('"')?;
+    let rest = &trimmed[first_quote + 1..];
+    let second_quote = rest.find('"')?;
+    Some(rest[..second_quote].to_string())
+}
+
 fn prepare_workspace_for_game(
-    game_project_directory_path: &Path,
+    game_project_directory_path: &PathBuf,
     compile_mode: &CompileMode,
 ) -> Result<PathBuf> {
-    // Check if it is valid game project directory
     check_if_game_project_validity(game_project_directory_path)
         .context("Game project is invalid")?;
 
-    // Compilation has to be done together on pill_standalone and pill_game together in the same context.
-    // For that compilation through Cargo workspace is required.
-    // Otherwise, typeids of types like "Mesh" will not match what will make all generic (templated) functions work improperly
     let engine_workspace_directory_path = get_path(Location::EngineCrates);
-
     let workspace_manifest_path = engine_workspace_directory_path.join("Cargo.toml");
     if !workspace_manifest_path.exists() {
         return Err(Error::msg("Cannot find engine workspace manifest file"));
     }
 
-    // If game project has changed changed then previous compilation artifacts have to be removed
-    let compilation_artifacts_folder_path = get_path(Location::EngineCrates)
-        .join("target")
-        .join(target_dir_for(compile_mode));
-    let engine_workspace_manifest_game_project_directory_path = format!("    \"{}\", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)", game_project_directory_path.to_str().unwrap().replace('\\', "/"));
-    let mut game_project_directory_already_linked = false;
-    parse_file_lines(&workspace_manifest_path, |line: String| {
-        if line.contains(
-            engine_workspace_manifest_game_project_directory_path
-                .clone()
-                .as_str(),
-        ) {
-            game_project_directory_already_linked = true;
-        }
-    })?;
+    let desired_game_path = normalize_path(game_project_directory_path)?;
+    let desired_line = format!(
+        "    \"{}\", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)",
+        desired_game_path
+    );
 
-    if !game_project_directory_already_linked {
-        // Remove previous compilation artifacts
+    // --- read current linked path (if any)
+    let manifest_text = fs::read_to_string(&workspace_manifest_path)
+        .with_context(|| format!("Failed to read {}", workspace_manifest_path.display()))?;
+
+    let mut current_linked: Option<String> = None;
+    for line in manifest_text.lines() {
+        if let Some(p) = extract_member_path_from_line(line) {
+            current_linked = Some(p);
+            break;
+        }
+    }
+
+    let switching_game = match &current_linked {
+        Some(cur) => cur != &desired_game_path,
+        None => true,
+    };
+
+    // --- only clean artifacts when switching projects
+    if switching_game {
+        let compilation_artifacts_folder_path = get_path(Location::EngineCrates)
+            .join("target")
+            .join(target_dir_for(compile_mode));
+
         let artifact_prefix = if cfg!(target_os = "windows") {
             "pill_game"
         } else {
@@ -334,35 +559,44 @@ fn prepare_workspace_for_game(
         )?;
     }
 
-    // Update workspace manifest file to include game project crate
-    modify_file(
-        &workspace_manifest_path,
-        &workspace_manifest_path,
-        |line: String| -> String {
-            if line.contains("### Game project crate") {
-                return engine_workspace_manifest_game_project_directory_path.clone();
-            }
-            line
-        },
-    )?;
+    // --- only rewrite workspace Cargo.toml if the line would change
+    if switching_game {
+        modify_file(
+            &workspace_manifest_path,
+            &workspace_manifest_path,
+            |line: String| -> String {
+                if line.contains("### Game project crate") {
+                    return desired_line.clone();
+                }
+                line
+            },
+        )?;
+    }
 
-    // Update workspace path in game project manifest
-    modify_file(
-        &game_project_directory_path.join("Cargo.toml"),
-        &game_project_directory_path.join("Cargo.toml"),
-        |line: String| -> String {
-            if line.contains("workspace") {
-                return format!(
-                    "workspace = \"{}\"",
-                    get_path(Location::EngineCrates)
-                        .to_str()
-                        .unwrap()
-                        .replace("\\", "/")
-                );
-            }
-            line
-        },
-    )?;
+    // --- only rewrite game Cargo.toml workspace line if needed
+    let game_manifest_path = game_project_directory_path.join("Cargo.toml");
+    let engine_ws_path = normalize_path(&get_path(Location::EngineCrates))?;
+    let game_manifest_text = fs::read_to_string(&game_manifest_path)
+        .with_context(|| format!("Failed to read {}", game_manifest_path.display()))?;
+
+    let workspace_line_expected = format!("workspace = \"{}\"", engine_ws_path);
+
+    let already_has_workspace_line = game_manifest_text
+        .lines()
+        .any(|l| l.trim_start().starts_with("workspace") && l.contains(&engine_ws_path));
+
+    if !already_has_workspace_line {
+        modify_file(
+            &game_manifest_path,
+            &game_manifest_path,
+            |line: String| -> String {
+                if line.trim_start().starts_with("workspace") {
+                    return workspace_line_expected.clone();
+                }
+                line
+            },
+        )?;
+    }
 
     Ok(engine_workspace_directory_path)
 }
@@ -370,8 +604,8 @@ fn prepare_workspace_for_game(
 // --- Actions ---
 
 fn create_game_project(
-    game_project_parent_directory_path: &PathBuf, 
-    game_name: &String
+    game_project_parent_directory_path: &PathBuf,
+    game_name: &String,
 ) -> Result<()> {
     const TEMPLATE_NAME: &str = "pill_default";
 
@@ -490,15 +724,34 @@ fn run_game_project(
     let standalone_executable_path =
         output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
 
-    // Run exe (capture potential IO error here)
+    let launcher_bin = std::env::current_exe().context("current_exe failed")?;
+    let engine_ws = find_engine_workspace_dir()?; // .../Pill-Engine/engine
+
     let status = Command::new(&standalone_executable_path)
         .current_dir(output_directory_path)
+        .env("PILL_LAUNCHER_BIN", &launcher_bin)
+        .env("PILL_ENGINE_WORKSPACE_DIR", &engine_ws)
+        .env("PILL_GAME_PROJECT_DIR", game_project_directory_path)
+        .env(
+            "PILL_STANDALONE_LAYOUT",
+            standalone_layout_for(compile_mode),
+        )
+        .env(
+            "PILL_ENABLE_HOT_RELOAD",
+            if *compile_mode == CompileMode::HotReload {
+                "1"
+            } else {
+                "0"
+            },
+        )
         .args(game_args)
         .status()
-        .context(format!(
-            "Failed to launch game project executable: {}",
-            standalone_executable_path.display()
-        ))?;
+        .with_context(|| {
+            format!(
+                "Failed to launch game project executable: {}",
+                standalone_executable_path.display()
+            )
+        })?;
 
     if !status.success() {
         // Game ran and exited with an error — don't say "failed to run" - just return Ok
@@ -512,8 +765,8 @@ fn run_game_project(
 }
 
 fn build_game_project(
-    game_project_directory_path: &Path,
-    output_directory_path: &Path,
+    game_project_directory_path: &PathBuf,
+    output_directory_path: &PathBuf,
     compile_mode: &CompileMode,
 ) -> Result<()> {
     println!(
@@ -521,36 +774,64 @@ fn build_game_project(
         game_project_directory_path.display()
     );
 
+    let hot_reload_child = *compile_mode == CompileMode::HotReload
+        && std::env::var("PILL_HOT_RELOAD_CHILD").ok().as_deref() == Some("1");
+
     let engine_workspace_directory_path =
         prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
 
-    // Build standalone executable along with game dynamic library
-    let mut arguments = vec!["build", "-p", "pill_game", "-p", "pill_standalone"];
+    // Get game title EARLY (we need it for per-game target dir)
+    let game_title =
+        get_game_title(game_project_directory_path).context("Failed to get game title")?;
+
+    // Use a per-game target dir so switching games doesn't invalidate everything
+    let cargo_target_dir = engine_workspace_directory_path
+        .join("target_games")
+        .join(&game_title);
+
+    // Pre-render PUML only for non-hot-reload builds
+    let pill_engine_dir = get_path(Location::PillEngineCrate);
+    if *compile_mode != CompileMode::HotReload {
+        render_puml_for_crate(&pill_engine_dir)
+            .context("Failed to render PlantUML diagrams for pill_engine")?;
+    }
+
+    let mut arguments = vec![
+        "build",
+        "-p",
+        "pill_game",
+        "-p",
+        "pill_standalone",
+        "-p",
+        "pill_runtime",
+    ];
+    if *compile_mode == CompileMode::HotReload {
+        arguments.push("--profile");
+        arguments.push("hot-reload");
+        arguments.push("--quiet");
+    }
     if *compile_mode == CompileMode::Release {
         arguments.push("--release");
     }
     Command::new("cargo")
         .args(&arguments)
         .current_dir(&engine_workspace_directory_path)
+        .env("CARGO_TARGET_DIR", &cargo_target_dir)
         .status()
         .context("failed to run cargo build")?
         .success()
         .then_some(())
         .ok_or_else(|| Error::msg("build failed"))?;
 
-    // Create build directory if does not exist
+    // Where cargo artifacts actually are now:
+    let compilation_artifacts_folder_path = cargo_target_dir.join(target_dir_for(compile_mode));
+
+    // Ensure build/data exists
     fs::create_dir_all(output_directory_path.join("data").as_path())
         .context("Failed to create build output directories")?;
 
-    let compilation_artifacts_folder_path = get_path(Location::EngineCrates)
-        .join("target")
-        .join(target_dir_for(compile_mode));
-    // Get game title
-    let game_title =
-        get_game_title(game_project_directory_path).context("Failed to get game title")?;
-
-    if *compile_mode != CompileMode::HotReload {
-        // Copy built standalone executable to build directory
+    // Copy standalone exe ONLY for non-hot-reload builds or hot-reload consequent reloads
+    if *compile_mode != CompileMode::HotReload || !hot_reload_child {
         let standalone_output_path =
             compilation_artifacts_folder_path.join(format!("pill_standalone{EXEC_SUFFIX}"));
         if !standalone_output_path.exists() {
@@ -561,15 +842,9 @@ fn build_game_project(
 
         let destination_executable_path =
             output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}"));
-        fs::copy(&standalone_output_path, &destination_executable_path).with_context(|| {
-            format!(
-                "Can't copy standalone executable from {} to {}",
-                standalone_output_path.display(),
-                destination_executable_path.display()
-            )
-        })?;
 
-        // ensure executable bit on Unix
+        let _copied = copy_if_newer(&standalone_output_path, &destination_executable_path)?;
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -579,28 +854,62 @@ fn build_game_project(
         }
     }
 
-    // Copy built dynamic library to build directory
-    let game_library_output_path = compilation_artifacts_folder_path.join(dylib("pill_game"));
-    if !game_library_output_path.exists() {
+    let data_dir = output_directory_path.join("data");
+    fs::create_dir_all(&data_dir)?;
+
+    // Only packaged release builds stage resources into <build>/data/res.
+    // Debug and hot-reload both use the game project directory directly.
+    if *compile_mode == CompileMode::Release {
+        stage_packaged_resources(game_project_directory_path, &data_dir)?;
+    }
+
+    let game_src = compilation_artifacts_folder_path.join(dylib("pill_game"));
+    let runtime_src = compilation_artifacts_folder_path.join(dylib("pill_runtime"));
+
+    if !game_src.exists() {
         return Err(Error::msg(format!(
-            "Game dynamic library was not built successfully in {}",
-            game_library_output_path.display()
+            "Game dylib missing: {}",
+            game_src.display()
+        )));
+    }
+    if !runtime_src.exists() {
+        return Err(Error::msg(format!(
+            "Runtime dylib missing: {}",
+            runtime_src.display()
         )));
     }
 
-    let game_dynamic_library_name = if *compile_mode == CompileMode::HotReload {
-        dylib("pill_game_hot_reloaded")
-    } else {
-        dylib("pill_game")
-    };
-    let output_game_library_path = output_directory_path
-        .join("data")
-        .join(game_dynamic_library_name);
-    fs::copy(&game_library_output_path, &output_game_library_path).context(format!(
-        "Can't copy game dynamic library from {} to {}",
-        game_library_output_path.display(),
-        output_game_library_path.display()
-    ))?;
+    // Copy the dylibs for the initial build only (not consecutive hot-reloads, otherwise we
+    // overwrite loaded libs and crash!)
+    if *compile_mode != CompileMode::HotReload || !hot_reload_child {
+        if copy_if_newer(&game_src, &data_dir.join(dylib("pill_game")))? {
+            println!("Copied game dylib");
+        } else {
+            println!("Skipping copying of game dylib");
+        }
+        if copy_if_newer(&runtime_src, &data_dir.join(dylib("pill_runtime")))? {
+            println!("Copied runtime dylib");
+        } else {
+            println!("Skipping copying of runtime dylib");
+        }
+    }
+
+    // In hot-reload mode, also update the hot names (watcher looks for these)
+    if *compile_mode == CompileMode::HotReload {
+        if copy_if_newer(&game_src, &data_dir.join(dylib("pill_game_hot_reloaded")))? {
+            println!("Copied game hot-reload dylib");
+        } else {
+            println!("Skipping copying of game hot-reload dylib");
+        }
+        if copy_if_newer(
+            &runtime_src,
+            &data_dir.join(dylib("pill_runtime_hot_reloaded")),
+        )? {
+            println!("Copied runtime hot-reload dylib");
+        } else {
+            println!("Skipping copying of runtime hot-reload dylib");
+        }
+    }
 
     // Success
     println!("Game built successfully!");
@@ -760,7 +1069,7 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 }
 
 fn cargo_passthrough(
-    game_project_directory_path: &Path,
+    game_project_directory_path: &PathBuf,
     compile_mode: &CompileMode,
     cargo_args: &[String],
 ) -> Result<()> {
@@ -892,8 +1201,12 @@ fn run_app() -> Result<()> {
                 .to_path_buf();
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
-            output_directory_path =
-                get_game_build_path(&game_project_directory_path, &output_directory_path).unwrap();
+            output_directory_path = get_game_build_path(
+                &game_project_directory_path,
+                &output_directory_path,
+                &compile_mode,
+            )
+            .unwrap();
             run_game_project(
                 &game_project_directory_path,
                 &output_directory_path,
@@ -908,8 +1221,11 @@ fn run_app() -> Result<()> {
                 .to_path_buf();
 
             let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
-            output_directory_path =
-                get_game_build_path(&game_project_directory_path, &output_directory_path)?;
+            output_directory_path = get_game_build_path(
+                &game_project_directory_path,
+                &output_directory_path,
+                &compile_mode,
+            )?;
             build_game_project(
                 &game_project_directory_path,
                 &output_directory_path,

@@ -457,7 +457,9 @@ impl Engine {
     }
 
     pub fn shutdown(&mut self) {
+        // TODO: pass the memory to serialize to
         info!(LogContext::Engine => "Shutting down {}", "Engine".module_object_style());
+        // TODO: can we serialize to some memory here?
     }
 
     pub fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {

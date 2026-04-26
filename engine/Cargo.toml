@@ -1,13 +1,24 @@
 [workspace]
 resolver = "2"
 members = [
+    "pill_abi",
     "pill_core",
     "pill_engine",
     "pill_renderer",
     "pill_standalone",
+    "pill_runtime",
     "NO_PATH", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
 ]
 
 exclude = [
     "pill_launcher",
 ]
+
+[profile.hot-reload]
+inherits = "dev"
+opt-level = 0
+debug = "line-tables-only"
+incremental = true
+codegen-units = 256
+lto = "off"
+panic = "abort"

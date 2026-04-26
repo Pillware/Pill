@@ -8,3 +8,4 @@ engine/Cargo.toml
 examples/*/Cargo.toml
 docs/*
 engine/pill_engine/docs/uml_out/*
+engine/target_*

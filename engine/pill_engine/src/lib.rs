@@ -84,8 +84,7 @@ pub mod game {
     pub use anyhow::{Context, Error, Result};
 }
 
-#[cfg(feature = "internal")]
-pub mod internal {
+mod internal_mod {
     pub use crate::{
         config::*,
         ecs::{
@@ -111,4 +110,14 @@ pub mod internal {
             ShaderTextureSlot, Texture, TextureHandle, TextureType,
         },
     };
+}
+
+#[cfg(feature = "internal")]
+pub mod internal {
+    pub use super::internal_mod::*;
+}
+
+#[cfg(not(feature = "internal"))]
+pub(crate) mod internal {
+    pub use super::internal_mod::*;
 }
