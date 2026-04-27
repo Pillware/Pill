@@ -469,14 +469,6 @@ fn check_and_reload(
         game_source_changed.extend(paths);
     }
 
-    if !game_resources_changed.is_empty()
-        && game_source_changed.is_empty()
-        && engine_source_changed.is_empty()
-    {
-        info!(LogContext::HotReload => "Game project resources changed (no rebuild): {:?}", game_resources_changed);
-        return Ok(());
-    }
-
     let build_start = Instant::now();
     if !game_source_changed.is_empty() || !engine_source_changed.is_empty() {
         build_hot_reload_via_launcher(project_paths)?;
@@ -497,6 +489,11 @@ fn check_and_reload(
                 game_hot_reload = true;
             }
         }
+    }
+
+    // If game resources have changed - reload just the game
+    if !game_resources_changed.is_empty() {
+        game_hot_reload = true;
     }
 
     if runtime_hot_reload {
