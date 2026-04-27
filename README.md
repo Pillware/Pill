@@ -1,11 +1,18 @@
-<p align="left">
+<p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="media/logo/pill_logo_horizontal_white.png">
-    <img src="media/logo/pill_logo_horizontal_white.png">
+    <source media="(prefers-color-scheme: dark)" srcset="media/logo/pill_logo_white.png">
+    <img src="media/logo/pill_logo_black.png"  width="300">
   </picture>
 </p>
 
-Data-driven game engine written in Rust
+Modern, free and blazingly fast game engine.
+
+Built for developers who refuse to compromise, Pill that delivers the raw speed and creative freedom needed to bring even the wildest ideas to life.
+
+Designed from the ground up to empower both teams and solo creators, it simplifies the complex while unlocking performance far beyond traditional engines.
+
+
+**For more info please visit: [PillEngine.org](https://pillengine.org)**
 
 ## Design Goals
 - Clean and simple
@@ -61,15 +68,15 @@ Check [demo](examples/Floating-Pills "demo")!
 
 ## Documentation
 [Repository](https://github.com/MattSzymonski/Pill-Engine-Docs "Repository")
+For detailed instructions visit Pill Guide's [getting started page](https://pillengine.org/guide).
 
 - For game developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/game_dev/doc/pill_engine/game/index.html "Docs")
 - For engine developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/engine_dev/doc/pill_engine/index.html "Docs")
 
 ## Showcase
 <p align="center">
-  <img src="examples/Floating-Pills/media/floating_pills_1.gif" img width=100%>
+  <img src="https://github.com/MattSzymonski/Pill-Engine/blob/circus_demo/examples/circus_demo/media/ancient_pills.gif" img width=100%>
 </p>
-
 <p align="center">
-  <img src="media/logo/pill_pile.png" img width=100%>
+  <img src="examples/italian_brainrot/media/italian_brainrot_1.gif" img width=100%>
 </p>
