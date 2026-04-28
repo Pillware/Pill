@@ -272,68 +272,69 @@ impl Engine {
         info!(LogContext::Engine => "Starting {}", "Game".module_object_style());
 
         // TODO: temporarilny loading .NET here
-        use netcorehost::pdcstring::PdCString;
-        use netcorehost::{nethost, pdcstr};
-        use std::path::PathBuf;
+        //use netcorehost::pdcstring::PdCString;
+        //use netcorehost::{nethost, pdcstr};
+        //use std::path::PathBuf;
 
-        let run_dir = std::env::var("PILL_RUN_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::env::current_dir().expect("failed to get current working directory")
-            });
+        //let run_dir = std::env::var("PILL_RUN_DIR")
+        //    .map(PathBuf::from)
+        //    .unwrap_or_else(|_| {
+        //        std::env::current_dir().expect("failed to get current working directory")
+        //    });
 
-        let managed_dir = run_dir.join("managed");
+        //let managed_dir = run_dir.join("managed");
 
-        let runtime_config = managed_dir.join("Pill.ManagedHost.runtimeconfig.json");
-        let managed_assembly = managed_dir.join("Pill.ManagedHost.dll");
+        //let runtime_config = managed_dir.join("Pill.ManagedHost.runtimeconfig.json");
+        //let managed_assembly = managed_dir.join("Pill.ManagedHost.dll");
 
-        println!(
-            "Loading managed runtime:\n  runtime_config: {}\n  assembly: {}",
-            runtime_config.display(),
-            managed_assembly.display(),
-        );
+        //println!(
+        //    "Loading managed runtime:\n  runtime_config: {}\n  assembly: {}",
+        //    runtime_config.display(),
+        //    managed_assembly.display(),
+        //);
 
-        if !runtime_config.exists() {
-            panic!(
-                "Missing managed runtime config: {}",
-                runtime_config.display()
-            );
-        }
+        //if !runtime_config.exists() {
+        //    panic!(
+        //        "Missing managed runtime config: {}",
+        //        runtime_config.display()
+        //    );
+        //}
 
-        if !managed_assembly.exists() {
-            panic!("Missing managed assembly: {}", managed_assembly.display());
-        }
+        //if !managed_assembly.exists() {
+        //    panic!("Missing managed assembly: {}", managed_assembly.display());
+        //}
 
-        let runtime_config_pdc = PdCString::from_os_str(runtime_config.as_os_str())
-            .expect("failed to convert runtime_config path");
+        //let runtime_config_pdc = PdCString::from_os_str(runtime_config.as_os_str())
+        //    .expect("failed to convert runtime_config path");
 
-        let managed_assembly_pdc = PdCString::from_os_str(managed_assembly.as_os_str())
-            .expect("failed to convert managed_assembly path");
+        //let managed_assembly_pdc = PdCString::from_os_str(managed_assembly.as_os_str())
+        //    .expect("failed to convert managed_assembly path");
 
-        let hostfxr = nethost::load_hostfxr().unwrap();
+        //let hostfxr = nethost::load_hostfxr().unwrap();
 
-        let context = hostfxr
-            .initialize_for_runtime_config(&runtime_config_pdc)
-            .unwrap();
+        //let context = hostfxr
+        //    .initialize_for_runtime_config(&runtime_config_pdc)
+        //    .unwrap();
 
-        let fn_loader = context
-            .get_delegate_loader_for_assembly(managed_assembly_pdc)
-            .unwrap();
+        //let fn_loader = context
+        //    .get_delegate_loader_for_assembly(managed_assembly_pdc)
+        //    .unwrap();
 
-        let hello = fn_loader
-            .get_function_with_default_signature(
-                pdcstr!("Pill.ManagedHost.ScriptHost, Pill.ManagedHost"),
-                pdcstr!("Initialize"),
-            )
-            .unwrap_or_else(|err| {
-                panic!(
-                    "Failed to load managed function:\n  type: Pill.ManagedHost.ScriptHost, Pill.ManagedHost\n  method: Initialize\n  expected signature: int Initialize(IntPtr args, int sizeBytes)\n  error: {err:?}"
-                )
-            });
+        //let hello = fn_loader
+        //    .get_function_with_default_signature(
+        //        pdcstr!("Pill.ManagedHost.ScriptHost, Pill.ManagedHost"),
+        //        pdcstr!("Initialize"),
+        //    )
+        //    .unwrap_or_else(|err| {
+        //        panic!(
+        //            "Failed to load managed function:\n  type: Pill.ManagedHost.ScriptHost, Pill.ManagedHost\n  method: Initialize\n  expected signature: int Initialize(IntPtr args, int sizeBytes)\n  error: {err:?}"
+        //        )
+        //    });
 
-        let result = unsafe { hello(std::ptr::null(), 0) };
+        //let result = unsafe { hello(std::ptr::null(), 0) };
 
-        assert_eq!(result, 2137);
+        //assert_eq!(result, 2137);
+
         let game = self
             .game
             .take()
@@ -496,13 +497,15 @@ impl Engine {
                     }
                 };
 
-                timer
-                    .end_context()
-                    .context(format!(
-                        "Failed to end timer context for {}",
-                        system_name.clone()
-                    ))
-                    .unwrap(); // End system update context
+                if system_name != RENDERING_SYSTEM.name {
+                    timer
+                        .end_context()
+                        .context(format!(
+                            "Failed to end timer context for {}",
+                            system_name.clone()
+                        ))
+                        .unwrap(); // End system update context
+                }
                 self.system_manager
                     .update_system_timer(system_name.as_str(), update_phase.clone(), timer)
                     .unwrap();
