@@ -714,6 +714,9 @@ fn run_game_project(
         compile_mode,
     )?;
 
+    // TODO: hack, we need to fix the path handling for .NET
+    std::env::set_var("PILL_RUN_DIR", output_directory_path);
+
     // Run game project
     println!(
         "Running game project from {}...",

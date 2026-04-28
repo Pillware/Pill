@@ -9,3 +9,6 @@ examples/*/Cargo.toml
 docs/*
 engine/pill_engine/docs/uml_out/*
 engine/target_*
+
+engine/managed/Pill.ManagedHost/obj/*
+engine/managed/Pill.ManagedHost/bin/*
