@@ -1,4 +1,4 @@
-use crate::{config::*, ecs::*, graphics::*, resources::*};
+use crate::{config::*, ecs::*, graphics::*, internal::ManagedRuntime, resources::*};
 
 use pill_core::{
     debug, error, get_game_error_message, get_type_name, info, EngineError, LogContext,
@@ -31,6 +31,7 @@ pub struct Engine {
     pub(crate) system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
     pub(crate) global_components: PillTypeMap,
+    pub(crate) managed_runtime: ManagedRuntime,
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
@@ -54,6 +55,55 @@ impl Engine {
             .get_int("MAX_ENTITIES")
             .unwrap_or(MAX_ENTITIES as i64) as usize;
 
+        // TODO: temporarily loading .NET here <- later refactor to run only when the `script`
+        // option is passed to game?
+        use netcorehost::{nethost, pdcstr};
+        use std::path::PathBuf;
+
+        use crate::internal::ManagedRuntime;
+
+        let run_dir = std::env::var("PILL_RUN_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::env::current_dir().expect("failed to get current working directory")
+            });
+
+        let managed_dir = run_dir.join("managed");
+        let runtime_config = managed_dir.join("Pill.ManagedHost.runtimeconfig.json");
+        let managed_assembly = managed_dir.join("Pill.ManagedHost.dll");
+
+        println!(
+            "Loading managed runtime:\n  runtime_config: {}\n  assembly: {}",
+            runtime_config.display(),
+            managed_assembly.display(),
+        );
+
+        if !runtime_config.exists() {
+            panic!(
+                "Missing managed runtime config: {}",
+                runtime_config.display()
+            );
+        }
+
+        if !managed_assembly.exists() {
+            panic!("Missing managed assembly: {}", managed_assembly.display());
+        }
+        let runtime = ManagedRuntime::init(&runtime_config, &managed_assembly).unwrap();
+
+        let path = std::path::PathBuf::new();
+        runtime.load_scripts(&path).unwrap();
+
+        let entity = 1_u64;
+        let script_name = "Pill.ManagedHost.RotateCube";
+        runtime.create_script(entity, script_name).unwrap();
+        runtime.start_script(entity).unwrap();
+
+        runtime.update_script(entity, 1.0 / 60.0).unwrap();
+        runtime.update_script(entity, 1.0 / 60.0).unwrap();
+        runtime.update_script(entity, 1.0 / 60.0).unwrap();
+
+        runtime.destroy_script(entity).unwrap();
+
         Self {
             config,
             game: Some(game),
@@ -62,6 +112,7 @@ impl Engine {
             system_manager: SystemManager::new(),
             resource_manager: ResourceManager::new(),
             global_components: PillTypeMap::new(),
+            managed_runtime: runtime,
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
@@ -270,70 +321,6 @@ impl Engine {
 
     fn start_game(&mut self) -> Result<()> {
         info!(LogContext::Engine => "Starting {}", "Game".module_object_style());
-
-        // TODO: temporarilny loading .NET here
-        //use netcorehost::pdcstring::PdCString;
-        //use netcorehost::{nethost, pdcstr};
-        //use std::path::PathBuf;
-
-        //let run_dir = std::env::var("PILL_RUN_DIR")
-        //    .map(PathBuf::from)
-        //    .unwrap_or_else(|_| {
-        //        std::env::current_dir().expect("failed to get current working directory")
-        //    });
-
-        //let managed_dir = run_dir.join("managed");
-
-        //let runtime_config = managed_dir.join("Pill.ManagedHost.runtimeconfig.json");
-        //let managed_assembly = managed_dir.join("Pill.ManagedHost.dll");
-
-        //println!(
-        //    "Loading managed runtime:\n  runtime_config: {}\n  assembly: {}",
-        //    runtime_config.display(),
-        //    managed_assembly.display(),
-        //);
-
-        //if !runtime_config.exists() {
-        //    panic!(
-        //        "Missing managed runtime config: {}",
-        //        runtime_config.display()
-        //    );
-        //}
-
-        //if !managed_assembly.exists() {
-        //    panic!("Missing managed assembly: {}", managed_assembly.display());
-        //}
-
-        //let runtime_config_pdc = PdCString::from_os_str(runtime_config.as_os_str())
-        //    .expect("failed to convert runtime_config path");
-
-        //let managed_assembly_pdc = PdCString::from_os_str(managed_assembly.as_os_str())
-        //    .expect("failed to convert managed_assembly path");
-
-        //let hostfxr = nethost::load_hostfxr().unwrap();
-
-        //let context = hostfxr
-        //    .initialize_for_runtime_config(&runtime_config_pdc)
-        //    .unwrap();
-
-        //let fn_loader = context
-        //    .get_delegate_loader_for_assembly(managed_assembly_pdc)
-        //    .unwrap();
-
-        //let hello = fn_loader
-        //    .get_function_with_default_signature(
-        //        pdcstr!("Pill.ManagedHost.ScriptHost, Pill.ManagedHost"),
-        //        pdcstr!("Initialize"),
-        //    )
-        //    .unwrap_or_else(|err| {
-        //        panic!(
-        //            "Failed to load managed function:\n  type: Pill.ManagedHost.ScriptHost, Pill.ManagedHost\n  method: Initialize\n  expected signature: int Initialize(IntPtr args, int sizeBytes)\n  error: {err:?}"
-        //        )
-        //    });
-
-        //let result = unsafe { hello(std::ptr::null(), 0) };
-
-        //assert_eq!(result, 2137);
 
         let game = self
             .game

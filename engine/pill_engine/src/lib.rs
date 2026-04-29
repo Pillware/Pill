@@ -7,6 +7,7 @@ mod ecs;
 mod engine;
 mod graphics;
 mod resources;
+mod scripting;
 
 // --- Macros ---
 
@@ -109,6 +110,7 @@ mod internal_mod {
             ResourceLoader, ResourceManager, ShaderParameterSlot, ShaderParameterType,
             ShaderTextureSlot, Texture, TextureHandle, TextureType,
         },
+        scripting::ManagedRuntime,
     };
 }
 
