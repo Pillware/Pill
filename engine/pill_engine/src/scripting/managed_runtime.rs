@@ -9,6 +9,12 @@ use std::net::Shutdown;
 use std::path::Path;
 
 #[repr(C)]
+struct LoadScriptsArgs {
+    scripts_assembly_path_ptr: *const u8,
+    scripts_assembly_path_len: i32,
+}
+
+#[repr(C)]
 struct EntityArgs {
     entity: u64,
 }
@@ -90,10 +96,18 @@ impl ManagedRuntime {
         })
     }
 
-    pub fn load_scripts(&self, _scripts_assembly: &Path) -> Result<()> {
-        // TODO: right now call with the managed directory -> later this loads the scripts in the
-        // game directory
-        let result = unsafe { (self.load_scripts)(std::ptr::null_mut(), 0) };
+    pub fn load_scripts(&self, scripts_assembly: &Path) -> Result<()> {
+        let scripts_assembly_s = scripts_assembly.to_str().unwrap();
+        let args = LoadScriptsArgs {
+            scripts_assembly_path_ptr: scripts_assembly_s.as_ptr(),
+            scripts_assembly_path_len: scripts_assembly_s.len() as i32,
+        };
+        let result = unsafe {
+            (self.load_scripts)(
+                (&args as *const LoadScriptsArgs).cast_mut().cast(),
+                std::mem::size_of::<LoadScriptsArgs>() as i32,
+            )
+        };
 
         if result != 0 {
             anyhow::bail!("LoadScripts failed with code {}", result);

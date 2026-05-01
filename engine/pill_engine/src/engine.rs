@@ -91,11 +91,11 @@ impl Engine {
         }
         let runtime = ManagedRuntime::init(&runtime_config, &managed_assembly).unwrap();
 
-        let path = std::path::PathBuf::new();
-        runtime.load_scripts(&path).unwrap();
+        let game_assemblies = run_dir.join("scripts/Game.Scripts.dll");
+        runtime.load_scripts(&game_assemblies).unwrap();
 
         let entity = 1_u64;
-        let script_name = "Pill.ManagedHost.RotateCube";
+        let script_name = "Game.Scripts.RotateCube";
         runtime.create_script(entity, script_name).unwrap();
         runtime.start_script(entity).unwrap();
 

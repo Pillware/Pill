@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace Pill.ManagedHost;
@@ -9,6 +10,16 @@ public static class ScriptHost
 {
     private static readonly Dictionary<ulong, PillScript> Instances = new();
     private static readonly Dictionary<string, Type> ScriptTypes = new();
+
+    private static Assembly? ScriptsAssembly = null;
+    private static bool AssemblyResolveInstalled = false; // TODO: later we will have to re-resolve that on hot-reload
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LoadScriptsArgs
+    {
+        public IntPtr ScriptAssemblyPtr;
+        public int ScriptAssemblyLen;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct EntityArgs
@@ -31,16 +42,62 @@ public static class ScriptHost
         public int ScriptTypeLen;
     }
 
+    private static void InstallAssemblyResolver()
+    {
+        if (AssemblyResolveInstalled)
+            return;
 
-    public static int LoadScripts(IntPtr args, int sizeBytes) // TODO: rename to LoadScripts? TODO: also args not used
+        AssemblyResolveInstalled = true;
+
+        AppDomain.CurrentDomain.AssemblyResolve += (_, args) =>
+        {
+            var requested = new AssemblyName(args.Name);
+
+            if (requested.Name == "Pill.ManagedHost")
+            {
+                return typeof(ScriptHost).Assembly;
+            }
+
+            return null;
+        };
+    }
+
+    public static int LoadScripts(IntPtr args, int sizeBytes)
     {
         Engine.Log("ScriptHost.LoadScripts");
 
+        InstallAssemblyResolver();
+
+        var data = Marshal.PtrToStructure<LoadScriptsArgs>(args);
+        var assemblyName = Marshal.PtrToStringUTF8(data.ScriptAssemblyPtr, data.ScriptAssemblyLen);
+
+        if (string.IsNullOrWhiteSpace(assemblyName))
+        {
+            Engine.Log($"LoadScripts failed: assembly name was null");
+            return -1;
+        }
+
+        if (!File.Exists(assemblyName))
+        {
+            Engine.Log($"LoadScripts failed: file does not exist {assemblyName}");
+            return -2;
+        }
+
         ScriptTypes.Clear();
 
-        var assembly = typeof(ScriptHost).Assembly;
+        ScriptsAssembly = Assembly.LoadFrom(assemblyName);
 
-        foreach (var type in assembly.GetTypes().Where(t => !t.IsAbstract && typeof(PillScript).IsAssignableFrom(t)))
+        foreach (var type in ScriptsAssembly.GetTypes())
+        {
+            Engine.Log(
+                $"Found type: {type.FullName}, " +
+                $"abstract={type.IsAbstract}, " +
+                $"base={type.BaseType?.FullName}, " +
+                $"assignableToPillScript={typeof(PillScript).IsAssignableFrom(type)}"
+            );
+        }
+
+        foreach (var type in ScriptsAssembly.GetTypes().Where(t => !t.IsAbstract && typeof(PillScript).IsAssignableFrom(t)))
         {
             ScriptTypes[type.FullName!] = type;
             Engine.Log($"Registered script type: {type.FullName}");
@@ -67,6 +124,7 @@ public static class ScriptHost
 
         Instances.Clear();
         ScriptTypes.Clear();
+        ScriptsAssembly = null;
 
         return 0;
     }
@@ -126,6 +184,7 @@ public static class ScriptHost
         }
     }
 
+    // TODO: could refactor to batch-update them
     public static int UpdateScript(IntPtr args, int sizeBytes)
     {
         var data = Marshal.PtrToStructure<UpdateScriptArgs>(args);

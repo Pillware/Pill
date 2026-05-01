@@ -1,4 +1,6 @@
-namespace Pill.ManagedHost;
+using Pill.ManagedHost;
+
+namespace Game.Scripts;
 
 public sealed class RotateCube : PillScript
 {

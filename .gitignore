@@ -12,3 +12,5 @@ engine/target_*
 
 engine/managed/Pill.ManagedHost/obj/*
 engine/managed/Pill.ManagedHost/bin/*
+examples/**/bin/*
+examples/**/obj/*
