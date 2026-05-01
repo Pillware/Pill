@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     ffi::{c_char, c_void, CStr, CString},
     path::PathBuf,
     sync::Arc,
@@ -19,6 +19,30 @@ use winit::{
 
 thread_local! {
     static LAST_ERR: RefCell<CString> = RefCell::new(CString::new("").unwrap());
+}
+
+// TODO: how to do that properly!? <- we don't really want to have a TLS reference to the engine
+thread_local! {
+    static CURRENT_RUNTIME: Cell<*mut Runtime> = const { Cell::new(std::ptr::null_mut()) }
+}
+
+struct CurrentRuntimeGuard {
+    previous: *mut Runtime,
+}
+
+impl CurrentRuntimeGuard {
+    unsafe fn enter(runtime: *mut Runtime) -> Self {
+        CURRENT_RUNTIME.with(|slot| {
+            let previous = slot.replace(runtime);
+            Self { previous }
+        })
+    }
+}
+
+impl Drop for CurrentRuntimeGuard {
+    fn drop(&mut self) {
+        CURRENT_RUNTIME.with(|slot| slot.set(self.previous));
+    }
 }
 
 fn set_err(msg: impl Into<String>) {
@@ -168,9 +192,14 @@ extern "C" fn update(engine: EngineHandle, dt_ns: u64) {
         return;
     }
     let rt = unsafe { &mut *(engine as *mut Runtime) };
+
+    let _curent_runtime_guard = unsafe { CurrentRuntimeGuard::enter(rt as *mut Runtime) };
+
     if let Some(e) = rt.engine.as_mut() {
         e.update(Duration::from_nanos(dt_ns));
     }
+
+    // guard drops here, update won't have the engine ptr to work with anymore
 }
 
 extern "C" fn resize(engine: EngineHandle, w: u32, h: u32) {
@@ -321,4 +350,61 @@ static API: PillEngineApiV1 = PillEngineApiV1 {
 #[no_mangle]
 pub extern "C" fn get_pill_engine_api_v1() -> *const PillEngineApiV1 {
     &API
+}
+
+// TODO: currently putting out of the engine API
+
+#[no_mangle]
+pub unsafe extern "C" fn pill_get_transform(
+    entity: u64,
+    out_transform: *mut PillTransform,
+) -> bool {
+    if out_transform.is_null() {
+        return false;
+    }
+
+    CURRENT_RUNTIME.with(|slot| {
+        let rt_ptr = slot.get();
+
+        if rt_ptr.is_null() {
+            return false;
+        }
+
+        let rt = unsafe { &mut *rt_ptr };
+
+        let Some(engine) = rt.engine.as_mut() else {
+            return false;
+        };
+
+        let out = unsafe { &mut *out_transform };
+
+        engine.scripting_get_transform(entity, out);
+        true
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn pill_set_transform(entity: u64, transform: *const PillTransform) -> bool {
+    if transform.is_null() {
+        return false;
+    }
+
+    CURRENT_RUNTIME.with(|slot| {
+        let rt_ptr = slot.get();
+
+        if rt_ptr.is_null() {
+            return false;
+        }
+
+        let rt = unsafe { &mut *rt_ptr };
+
+        let Some(engine) = rt.engine.as_mut() else {
+            return false;
+        };
+
+        let t = unsafe { &*transform };
+
+        engine.scripting_set_transform(entity, t);
+        true
+    })
 }

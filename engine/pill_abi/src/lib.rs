@@ -66,3 +66,20 @@ pub struct PillEngineApiV1 {
 }
 
 pub const PILL_ENGINE_API_SYMBOL: &[u8] = b"get_pill_engine_api_v1\0";
+
+// TODO: temporary for the demo!
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PillVec3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PillTransform {
+    pub position: PillVec3,
+    pub rotation: PillVec3,
+    pub scale: PillVec3,
+}

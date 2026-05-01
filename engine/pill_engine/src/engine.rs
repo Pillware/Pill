@@ -1,5 +1,6 @@
 use crate::{config::*, ecs::*, graphics::*, internal::ManagedRuntime, resources::*};
 
+use pill_abi::PillTransform;
 use pill_core::{
     debug, error, get_game_error_message, get_type_name, info, EngineError, LogContext,
     PillSlotMapKey, PillStyle, PillTypeMap, Timer, Vector2f,
@@ -31,7 +32,7 @@ pub struct Engine {
     pub(crate) system_manager: SystemManager,
     pub(crate) resource_manager: ResourceManager,
     pub(crate) global_components: PillTypeMap,
-    pub(crate) managed_runtime: ManagedRuntime,
+    pub(crate) managed_runtime: ManagedRuntime, // TODO: will be optional
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
@@ -97,12 +98,6 @@ impl Engine {
         let script_name = "Pill.ManagedHost.RotateCube";
         runtime.create_script(entity, script_name).unwrap();
         runtime.start_script(entity).unwrap();
-
-        runtime.update_script(entity, 1.0 / 60.0).unwrap();
-        runtime.update_script(entity, 1.0 / 60.0).unwrap();
-        runtime.update_script(entity, 1.0 / 60.0).unwrap();
-
-        runtime.destroy_script(entity).unwrap();
 
         Self {
             config,
@@ -499,6 +494,8 @@ impl Engine {
             }
         }
 
+        self.managed_runtime.update_script(1, 1.0 / 60.0).unwrap();
+
         // Update FPS counter
         let new_frame_time = delta_time.as_secs_f32() * 1000.0;
         let fps = 1000.0 / new_frame_time;
@@ -513,6 +510,16 @@ impl Engine {
         // TODO: pass the memory to serialize to
         info!(LogContext::Engine => "Shutting down {}", "Engine".module_object_style());
         // TODO: can we serialize to some memory here?
+        self.managed_runtime.destroy_script(1).unwrap();
+    }
+
+    pub fn scripting_get_transform(&mut self, entity: u64, out_transform: &mut PillTransform) {
+        // TODO: actually set the transform
+        error!(LogContext::Engine => "Called scripting get transform");
+    }
+
+    pub fn scripting_set_transform(&mut self, entity: u64, transform: &PillTransform) {
+        error!(LogContext::Engine => "Called scripting set transform with {:?}", transform);
     }
 
     pub fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {

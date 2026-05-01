@@ -1,6 +1,8 @@
-use pill_engine::game::*;
+use pill_engine::{define_component, game::*};
 
 pub struct Game {}
+
+define_component!(CubeComponent {});
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
@@ -16,6 +18,7 @@ impl PillGame for Game {
         engine.register_component::<CameraComponent>(active_scene)?;
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
+        engine.register_component::<CubeComponent>(active_scene)?;
 
         // Add systems
         engine.add_system("dummy_system", dummy_system)?;
@@ -66,6 +69,7 @@ impl PillGame for Game {
                     .clear_color(Color::new(0.35, 0.40, 0.50))
                     .build(),
             )
+            .with_component(CubeComponent {})
             .build();
 
         engine
