@@ -34,8 +34,4 @@ impl TimeComponent {
     }
 }
 
-impl PillTypeMapKey for TimeComponent {
-    type Storage = GlobalComponentStorage<TimeComponent>;
-}
-
 impl GlobalComponent for TimeComponent {}

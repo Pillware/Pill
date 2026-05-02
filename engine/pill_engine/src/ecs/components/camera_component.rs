@@ -110,10 +110,6 @@ pub fn get_renderer_resource_handle_from_camera_component(
         .expect("Critical: No renderer resource handle")
 }
 
-impl PillTypeMapKey for CameraComponent {
-    type Storage = ComponentStorage<CameraComponent>;
-}
-
 impl Component for CameraComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
         let error_message = format!(

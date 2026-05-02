@@ -153,9 +153,6 @@ pub struct NetworkManagerComponent {
     pub client_interpolation_hook: Option<InterpolationHookFn>,
 }
 
-impl PillTypeMapKey for NetworkManagerComponent {
-    type Storage = GlobalComponentStorage<NetworkManagerComponent>;
-}
 impl GlobalComponent for NetworkManagerComponent {}
 
 /// Target network **step frequency** (Hz) used by the engine systems.

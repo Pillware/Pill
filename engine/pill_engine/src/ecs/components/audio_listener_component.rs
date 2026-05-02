@@ -1,7 +1,5 @@
 use crate::ecs::{Component, ComponentStorage};
 
-use pill_core::PillTypeMapKey;
-
 // --- Builder ---
 
 pub struct AudioListenerComponentBuilder {
@@ -44,10 +42,6 @@ impl AudioListenerComponent {
     pub fn new() -> Self {
         Self { enabled: false }
     }
-}
-
-impl PillTypeMapKey for AudioListenerComponent {
-    type Storage = ComponentStorage<AudioListenerComponent>;
 }
 
 impl Component for AudioListenerComponent {}

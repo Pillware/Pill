@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pill_core = {path = "../pill_core"}
+pill_core = { path = "../pill_core" }
 
 # Data containers
 indexmap = "1.7.0"
+trait_type_map = { path = "../trait_type_map" }
+parking_lot = "0.12"
 
 # Errors
 anyhow = "1.0.45"
@@ -24,10 +26,11 @@ tobj = "3.0"
 rodio = { version = "0.20", features = ["wav", "mp3"] }
 
 # Other
+rayon = "1.10"
 readonly = "0.2"
 winit = "0.30.12"
 boolinator = "2.4.0"
-bytemuck = { version = "1.4", features = [ "derive" ] }
+bytemuck = { version = "1.4", features = ["derive"] }
 lazy_static = "1.4.0"
 config = "0.11"
 dyn-clone = "1.0.4"

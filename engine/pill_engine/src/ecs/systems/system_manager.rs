@@ -1,174 +1,174 @@
-use crate::engine::Engine;
+// use crate::engine::Engine;
 
-use pill_core::{EngineError, Timer};
+// use pill_core::{EngineError, Timer};
 
-use anyhow::{Error, Result};
-use core::fmt;
-use indexmap::IndexMap;
-use std::fmt::Display;
+// use anyhow::{Error, Result};
+// use core::fmt;
+// use indexmap::IndexMap;
+// use std::fmt::Display;
 
-pub type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
+// pub type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
 
-pub struct System {
-    pub(crate) name: String,
-    pub(crate) update_phase: UpdatePhase,
-    pub(crate) system_function: SystemFunction,
-    pub(crate) enabled: bool,
-    pub(crate) timer: Option<Timer>,
-}
+// pub struct System {
+//     pub(crate) name: String,
+//     pub(crate) update_phase: UpdatePhase,
+//     pub(crate) system_function: SystemFunction,
+//     pub(crate) enabled: bool,
+//     pub(crate) timer: Option<Timer>,
+// }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub enum UpdatePhase {
-    PreGame,
-    Game,
-    PostGame,
-}
+// #[derive(Debug, PartialEq, Eq, Hash, Clone)]
+// pub enum UpdatePhase {
+//     PreGame,
+//     Game,
+//     PostGame,
+// }
 
-impl Display for UpdatePhase {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
+// impl Display for UpdatePhase {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "{:?}", self)
+//     }
+// }
 
-pub struct SystemManager {
-    pub(crate) update_phases: IndexMap<UpdatePhase, IndexMap<String, System>>,
-}
+// pub struct SystemManager {
+//     pub(crate) update_phases: IndexMap<UpdatePhase, IndexMap<String, System>>,
+// }
 
-impl SystemManager {
-    pub fn new() -> Self {
-        let mut update_phases = IndexMap::<UpdatePhase, IndexMap<String, System>>::new();
+// impl SystemManager {
+//     pub fn new() -> Self {
+//         let mut update_phases = IndexMap::<UpdatePhase, IndexMap<String, System>>::new();
 
-        // Register phases
-        update_phases.insert(UpdatePhase::PreGame, IndexMap::<String, System>::new());
-        update_phases.insert(UpdatePhase::Game, IndexMap::<String, System>::new());
-        update_phases.insert(UpdatePhase::PostGame, IndexMap::<String, System>::new());
+//         // Register phases
+//         update_phases.insert(UpdatePhase::PreGame, IndexMap::<String, System>::new());
+//         update_phases.insert(UpdatePhase::Game, IndexMap::<String, System>::new());
+//         update_phases.insert(UpdatePhase::PostGame, IndexMap::<String, System>::new());
 
-        Self { update_phases }
-    }
+//         Self { update_phases }
+//     }
 
-    pub fn get_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<&mut System> {
-        // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
-            EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
-        ))?;
+//     pub fn get_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<&mut System> {
+//         // Find collection of systems for given update phase
+//         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
+//             EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
+//         ))?;
 
-        // Get system by name
-        system_collection
-            .get_mut(name)
-            .ok_or(Error::new(EngineError::SystemNotFound(
-                name.to_string(),
-                format!("{}", update_phase),
-            )))
-    }
+//         // Get system by name
+//         system_collection
+//             .get_mut(name)
+//             .ok_or(Error::new(EngineError::SystemNotFound(
+//                 name.to_string(),
+//                 format!("{}", update_phase),
+//             )))
+//     }
 
-    pub fn add_system(
-        &mut self,
-        name: &str,
-        system_function: SystemFunction,
-        update_phase: UpdatePhase,
-    ) -> Result<()> {
-        // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
-            EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
-        ))?;
+//     pub fn add_system(
+//         &mut self,
+//         name: &str,
+//         system_function: SystemFunction,
+//         update_phase: UpdatePhase,
+//     ) -> Result<()> {
+//         // Find collection of systems for given update phase
+//         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
+//             EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
+//         ))?;
 
-        // Check if system with that name already exists
-        if system_collection.contains_key(name) {
-            return Err(Error::new(EngineError::SystemAlreadyExists(
-                name.to_string(),
-                format!("{}", update_phase),
-            )));
-        }
+//         // Check if system with that name already exists
+//         if system_collection.contains_key(name) {
+//             return Err(Error::new(EngineError::SystemAlreadyExists(
+//                 name.to_string(),
+//                 format!("{}", update_phase),
+//             )));
+//         }
 
-        // Create system object
-        let system_object = System {
-            name: name.to_string(),
-            update_phase,
-            system_function,
-            enabled: true,
-            timer: Some(Timer::new()),
-        };
+//         // Create system object
+//         let system_object = System {
+//             name: name.to_string(),
+//             update_phase,
+//             system_function,
+//             enabled: true,
+//             timer: Some(Timer::new()),
+//         };
 
-        // Add system
-        system_collection.insert(name.to_string(), system_object);
+//         // Add system
+//         system_collection.insert(name.to_string(), system_object);
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
-        // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
-            EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
-        ))?;
+//     pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
+//         // Find collection of systems for given update phase
+//         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
+//             EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
+//         ))?;
 
-        // Check if system with that name exists
-        if !system_collection.contains_key(name) {
-            return Err(Error::new(EngineError::SystemNotFound(
-                name.to_string(),
-                format!("{}", update_phase),
-            )));
-        }
+//         // Check if system with that name exists
+//         if !system_collection.contains_key(name) {
+//             return Err(Error::new(EngineError::SystemNotFound(
+//                 name.to_string(),
+//                 format!("{}", update_phase),
+//             )));
+//         }
 
-        // Remove system
-        system_collection.remove(name);
+//         // Remove system
+//         system_collection.remove(name);
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    pub fn toggle_system(
-        &mut self,
-        name: &str,
-        update_phase: UpdatePhase,
-        enabled: bool,
-    ) -> Result<()> {
-        // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
-            EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
-        ))?;
+//     pub fn toggle_system(
+//         &mut self,
+//         name: &str,
+//         update_phase: UpdatePhase,
+//         enabled: bool,
+//     ) -> Result<()> {
+//         // Find collection of systems for given update phase
+//         let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
+//             EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
+//         ))?;
 
-        // Check if system with that name exists
-        let system =
-            system_collection
-                .get_mut(name)
-                .ok_or(Error::new(EngineError::SystemNotFound(
-                    name.to_string(),
-                    format!("{}", update_phase),
-                )))?;
+//         // Check if system with that name exists
+//         let system =
+//             system_collection
+//                 .get_mut(name)
+//                 .ok_or(Error::new(EngineError::SystemNotFound(
+//                     name.to_string(),
+//                     format!("{}", update_phase),
+//                 )))?;
 
-        // Set system state
-        system.enabled = enabled;
+//         // Set system state
+//         system.enabled = enabled;
 
-        Ok(())
-    }
+//         Ok(())
+//     }
 
-    // This function can be called in the system function to get the timer for the system
-    // It will pass the ownership of the timer to the requsting scope.
-    // This has to be returned back using update_system_timer function, otherwise engine will panic.
-    // NOTE: Before system function is called, engine already starts "System update" context in the timer
-    pub fn get_system_timer(
-        &mut self,
-        name: &str,
-        update_phase: UpdatePhase,
-    ) -> Result<Option<Timer>> {
-        // Get system by name
-        let system: &mut System = self.get_system(name, update_phase)?;
+//     // This function can be called in the system function to get the timer for the system
+//     // It will pass the ownership of the timer to the requsting scope.
+//     // This has to be returned back using update_system_timer function, otherwise engine will panic.
+//     // NOTE: Before system function is called, engine already starts "System update" context in the timer
+//     pub fn get_system_timer(
+//         &mut self,
+//         name: &str,
+//         update_phase: UpdatePhase,
+//     ) -> Result<Option<Timer>> {
+//         // Get system by name
+//         let system: &mut System = self.get_system(name, update_phase)?;
 
-        // Return timer
-        Ok(system.timer.take())
-    }
+//         // Return timer
+//         Ok(system.timer.take())
+//     }
 
-    pub fn update_system_timer(
-        &mut self,
-        name: &str,
-        update_phase: UpdatePhase,
-        timer: Timer,
-    ) -> Result<()> {
-        // Get system by name
-        let system = self.get_system(name, update_phase)?;
+//     pub fn update_system_timer(
+//         &mut self,
+//         name: &str,
+//         update_phase: UpdatePhase,
+//         timer: Timer,
+//     ) -> Result<()> {
+//         // Get system by name
+//         let system = self.get_system(name, update_phase)?;
 
-        // Update timer
-        system.timer = Some(timer);
+//         // Update timer
+//         system.timer = Some(timer);
 
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }

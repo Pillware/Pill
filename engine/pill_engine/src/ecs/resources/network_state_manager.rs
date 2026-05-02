@@ -12,7 +12,7 @@
 
 use crate::ecs::{Component, ComponentStorage, TransformComponent};
 
-use pill_core::{PillTypeMap, PillTypeMapKey};
+use pill_core::{PillTypeMap};
 use serde::{Deserialize, Serialize};
 
 /// High-level lifecycle marker for a networked entity.
@@ -69,6 +69,3 @@ pub struct NetworkStateComponent {
 
 impl Component for NetworkStateComponent {}
 
-impl PillTypeMapKey for NetworkStateComponent {
-    type Storage = ComponentStorage<NetworkStateComponent>;
-}
