@@ -28,6 +28,7 @@
 #![allow(unused_unsafe)]
 
 //! Contains the slot map implementation.
+use crate::CoreError;
 use core::fmt;
 use core::fmt::Debug;
 use core::marker::PhantomData;
@@ -72,7 +73,7 @@ impl<T> Slot<T> {
         !self.version.is_multiple_of(2)
     }
 
-    pub fn get(&self) -> SlotContent<T> {
+    pub fn get(&self) -> SlotContent<'_, T> {
         unsafe {
             if self.occupied() {
                 Occupied(&*self.u.value)
@@ -153,9 +154,9 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
     pub fn with_capacity_and_key_and_version_limit(
         capacity: usize,
         version_limit: u32,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, CoreError> {
         if version_limit.is_multiple_of(2) {
-            return Err(());
+            return Err(CoreError::NotMultipleOf2);
         }
 
         let mut slots = Vec::with_capacity(capacity + 1);
@@ -332,11 +333,17 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
         }
     }
 
-    pub fn get_version_unchecked(&self, key: K) -> Option<&V> {
+    /// Returns a reference to the value in the slot at `key.index` if the index is in-bounds,
+    /// without checking the key's version.
+    ///
+    /// # Safety
+    /// If this function returns `Some`, the caller must ensure that the referenced slot is currently
+    /// **occupied** (contains a valid `V`). Passing a key whose slot is vacant (e.g. removed element,
+    /// reused index, or never inserted) can cause undefined behavior by interpreting freelist metadata
+    /// as a `V`.
+    pub unsafe fn get_version_unchecked(&self, key: K) -> Option<&V> {
         let kd = key.data();
-        self.slots
-            .get(kd.index as usize)
-            .map(|slot| unsafe { &*slot.u.value })
+        self.slots.get(kd.index as usize).map(|slot| &*slot.u.value)
     }
 
     pub fn get(&self, key: K) -> Option<&V> {
@@ -347,6 +354,12 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .map(|slot| unsafe { &*slot.u.value })
     }
 
+    /// Returns a reference to the value for `key` without checking that `key` is valid.
+    ///
+    /// # Safety
+    /// The caller must ensure `self.contains_key(key)` is `true` (i.e. `key` was produced by
+    /// this `PillSlotMap` and has not been removed/reused). If the key is stale or from a
+    /// different map, this may read a vacant slot and cause undefined behavior.
     pub unsafe fn get_unchecked(&self, key: K) -> &V {
         debug_assert!(self.contains_key(key));
         &self.slots.get_unchecked(key.data().index as usize).u.value
@@ -360,6 +373,12 @@ impl<K: PillSlotMapKey, V> PillSlotMap<K, V> {
             .map(|slot| unsafe { &mut *slot.u.value })
     }
 
+    /// Returns a mutable reference to the value for `key` without checking that `key` is valid.
+    ///
+    /// # Safety
+    /// The caller must ensure `self.contains_key(key)` is `true` (i.e. the slot is currently
+    /// occupied by the same element/version). Otherwise this may create a mutable reference to
+    /// uninitialized / non-`V` data and cause undefined behavior.
     pub unsafe fn get_unchecked_mut(&mut self, key: K) -> &mut V {
         debug_assert!(self.contains_key(key));
         &mut self
@@ -531,6 +550,22 @@ impl Default for PillSlotMapKeyData {
     }
 }
 
+/// Key type for [`PillSlotMap`].
+///
+/// The map trusts that the key can round-trip to and from [`PillSlotMapKeyData`] without
+/// changing the contained `index/version` bits.
+///
+/// # Safety
+/// Implementations must uphold all of the following:
+/// - `From<PillSlotMapKeyData>` must preserve the `index` and `version`.
+/// - `data()` must return the exact same `PillSlotMapKeyData` that the key was created from
+///   (i.e. `PillSlotMapKeyData::from_ffi(k.data().as_ffi())` must be equivalent, and
+///   `K::from(k.data()).data() == k.data()` should hold).
+/// - `data().version` must be non-zero (already enforced by `NonZeroU32`) and should represent
+///   the version used by the map.
+///
+/// Breaking this contract can make keys point at the wrong slot/version, and in combination with
+/// `get_unchecked(_mut)` can lead to undefined behavior.
 pub unsafe trait PillSlotMapKey:
     From<PillSlotMapKeyData>
     + Copy

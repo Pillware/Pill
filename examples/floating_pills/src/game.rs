@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use pill_engine::{define_component, define_global_component, game::*};
 use rand::{thread_rng, Rng};
 use std::fs::OpenOptions;
@@ -26,8 +27,6 @@ define_component!(FloatingObjectComponent {
     scale_speed: f32,
     radius_speed: f32,
 });
-
-struct dupa {}
 
 define_global_component!(DemoStateComponent {
     floating_objects_movement_enabled: bool,
@@ -274,7 +273,7 @@ impl PillGame for Game {
             .open("vec3_bench.csv")
         {
             let _ = writeln!(fh, "LOG BEGIN",);
-            writeln!(fh, "fps | avg_math_ms | avg_frame_ms | worst_frame_ms");
+            let _ = writeln!(fh, "fps | avg_math_ms | avg_frame_ms | worst_frame_ms");
         }
 
         Ok(())

@@ -11,7 +11,6 @@ use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
 // -------------------------------------------------------------------------------
 
-struct dupa {}
 pub type Game = Box<dyn PillGame>;
 pub type KeyboardKey = winit::keyboard::KeyCode;
 pub type MouseButton = winit::event::MouseButton;
@@ -434,13 +433,15 @@ impl Engine {
                     }
                 };
 
-                timer
-                    .end_context()
-                    .context(format!(
-                        "Failed to end timer context for {}",
-                        system_name.clone()
-                    ))
-                    .unwrap(); // End system update context
+                if system_name != RENDERING_SYSTEM.name {
+                    timer
+                        .end_context()
+                        .context(format!(
+                            "Failed to end timer context for {}",
+                            system_name.clone()
+                        ))
+                        .unwrap(); // End system update context
+                }
                 self.system_manager
                     .update_system_timer(system_name.as_str(), update_phase.clone(), timer)
                     .unwrap();

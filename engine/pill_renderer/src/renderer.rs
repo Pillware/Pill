@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 use crate::{
     config::MAX_INSTANCE_PER_DRAWCALL_COUNT,
     drawers::egui_drawer::EguiDrawer,
@@ -341,13 +342,10 @@ impl State {
 
         // 4. Surface configuration
         let (surface_configuration, color_format, depth_format) = {
+            let preferred_format = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+            // Get supported present modes and choose the best one
             let surface_capabilities = surface.get_capabilities(&adapter);
-            let format = surface_capabilities
-                .formats
-                .iter()
-                .copied()
-                .find(|f| *f == wgpu::TextureFormat::Rgba8UnormSrgb)
-                .unwrap_or(surface_capabilities.formats[0]);
             let present_mode = if surface_capabilities
                 .present_modes
                 .contains(&wgpu::PresentMode::Mailbox)
@@ -361,6 +359,24 @@ impl State {
             } else {
                 wgpu::PresentMode::Fifo
             };
+
+            // Choose the best supported format
+            let format = if surface_capabilities.formats.contains(&preferred_format) {
+                preferred_format
+            } else if surface_capabilities
+                .formats
+                .contains(&wgpu::TextureFormat::Bgra8UnormSrgb)
+            {
+                wgpu::TextureFormat::Bgra8UnormSrgb
+            } else if surface_capabilities
+                .formats
+                .contains(&wgpu::TextureFormat::Bgra8Unorm)
+            {
+                wgpu::TextureFormat::Bgra8Unorm
+            } else {
+                surface_capabilities.formats[0] // Use first available format
+            };
+
             let surface_configuration = wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format,

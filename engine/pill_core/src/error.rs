@@ -4,6 +4,15 @@ use anyhow::{Context, Error, Result};
 use colored::*;
 use thiserror::Error;
 
+// --- Core error ---
+#[derive(Error, Debug, Clone)]
+pub enum CoreError {
+    #[error("{} version_limit has to be a power of 2\n\nSource: ", "Core".general_object_style())]
+    NotMultipleOf2,
+    #[error("{} Undefined error", "Core".general_object_style())]
+    Other,
+}
+
 // --- Renderer error ---
 
 #[derive(Error, Debug, Clone)]

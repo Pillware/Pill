@@ -1,13 +1,11 @@
 use pill_engine::game::*;
 
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 use pill_engine::internal::{
-    TransformComponent,
-    NetworkManagerComponent, NetworkStateComponent, NetworkEntityState,
-    networking_system_client,
-    client_go_offline,
+    client_go_offline, networking_system_client, NetworkEntityState, NetworkManagerComponent,
+    NetworkStateComponent, TransformComponent,
 };
 
 // ----- CONSTANTS -----------------------------------------------------------
@@ -81,7 +79,7 @@ impl PillGame for Game {
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
-        let mut pill_material = Material::builder("pill")
+        let pill_material = Material::builder("pill")
             .texture("color", pill_color_texture_handle)?
             .texture("normal", pill_normal_texture_handle)?
             .color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
@@ -102,7 +100,11 @@ impl PillGame for Game {
         // Create pill entity ------------------------------------------------
         let pill = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
-            .position(Vector3f::new(rand::rng().random_range(-2.0..=2.0), 0.0, 0.0))
+            .position(Vector3f::new(
+                rand::rng().random_range(-2.0..=2.0),
+                0.0,
+                0.0,
+            ))
             .rotation(Vector3f::new(-210.0, 0.0, 0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component.clone())?;
@@ -116,16 +118,20 @@ impl PillGame for Game {
         let client_id = {
             let args: Vec<String> = std::env::args().collect();
             if args.len() > 1 {
-               args[1].parse::<u64>().unwrap_or(0)
+                args[1].parse::<u64>().unwrap_or(0)
             } else {
                 rand::rng().random_range(1..=10_000_000)
             }
         };
-		let server_address = format!("{REMOTE_SERVER_ADDRESS}:{REMOTE_SERVER_PORT}");
+        let server_address = format!("{REMOTE_SERVER_ADDRESS}:{REMOTE_SERVER_PORT}");
 
         let mut network_manager = NetworkManagerComponent::new_client(&server_address, client_id)?;
-        network_manager.spawn_handlers.insert("player".into(), spawn_player);
-        network_manager.despawn_handlers.insert("player".into(), despawn_player);
+        network_manager
+            .spawn_handlers
+            .insert("player".into(), spawn_player);
+        network_manager
+            .despawn_handlers
+            .insert("player".into(), despawn_player);
         engine.add_global_component(network_manager)?;
 
         engine.add_global_component(CoolDownComponent {
@@ -133,22 +139,22 @@ impl PillGame for Game {
             interval: 3.0,
         })?;
 
-		println!("Client will connect to {server_address} with ID {client_id}");
+        println!("Client will connect to {server_address} with ID {client_id}");
 
-		// Add the network component marker so the server can identify us
-		let network_entity_id = rand::rng().random_range(1..=1000);
-		engine.add_component_to_entity(
-			active_scene,
-			pill,
-			NetworkStateComponent {
-				network_entity_id,
-				owner_id: client_id,
-				state: NetworkEntityState::Spawn,
-				transform: Some(transform_component),
+        // Add the network component marker so the server can identify us
+        let network_entity_id = rand::rng().random_range(1..=1000);
+        engine.add_component_to_entity(
+            active_scene,
+            pill,
+            NetworkStateComponent {
+                network_entity_id,
+                owner_id: client_id,
+                state: NetworkEntityState::Spawn,
+                transform: Some(transform_component),
                 last_transform: None,
                 entity_type: "player".into(),
-			},
-		)?;
+            },
+        )?;
 
         Ok(())
     }
@@ -159,7 +165,9 @@ impl PillGame for Game {
 // ───────────────────────────────────────────────────────────────────────────
 fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let owner_id = engine.get_global_component::<NetworkManagerComponent>()?.my_id;
+    let owner_id = engine
+        .get_global_component::<NetworkManagerComponent>()?
+        .my_id;
     let input = engine.get_global_component_mut::<InputComponent>()?;
 
     // Build a direction vector from arrow-key input ------------------------
@@ -193,11 +201,10 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
     dir.y *= inv;
     dir.z *= inv;
 
-    for (_, transform, _, net_state) in engine.iterate_three_components_mut::<
-        TransformComponent,
-        PillComponent,
-        NetworkStateComponent,
-    >()? {
+    for (_, transform, _, net_state) in engine
+        .iterate_three_components_mut::<TransformComponent, PillComponent, NetworkStateComponent>(
+        )?
+    {
         if net_state.owner_id != owner_id {
             continue; // only move entities we own
         }
@@ -213,40 +220,59 @@ fn pill_movement_system(engine: &mut Engine) -> Result<()> {
 }
 
 fn connectivity_simulation_system(engine: &mut Engine) -> Result<()> {
-    let reset_key_pressed = engine.get_global_component_mut::<InputComponent>()?.get_key(KeyboardKey::KeyC);
-    let timer = engine.get_global_component_mut::<CoolDownComponent>()?.timer;
-    let interval = engine.get_global_component_mut::<CoolDownComponent>()?.interval;
+    let reset_key_pressed = engine
+        .get_global_component_mut::<InputComponent>()?
+        .get_key(KeyboardKey::KeyC);
+    let timer = engine
+        .get_global_component_mut::<CoolDownComponent>()?
+        .timer;
+    let interval = engine
+        .get_global_component_mut::<CoolDownComponent>()?
+        .interval;
 
     if timer > interval {
         if reset_key_pressed {
             println!("Simulating connectivity loss");
             client_go_offline(engine, "Simulated loss of connection")?;
-            engine.get_global_component_mut::<CoolDownComponent>()?.timer = 0.0;
+            engine
+                .get_global_component_mut::<CoolDownComponent>()?
+                .timer = 0.0;
         }
     } else {
-        engine.get_global_component_mut::<CoolDownComponent>()?.timer += engine.get_global_component::<TimeComponent>()?.delta_time;
+        engine
+            .get_global_component_mut::<CoolDownComponent>()?
+            .timer += engine.get_global_component::<TimeComponent>()?.delta_time;
     }
 
     Ok(())
 }
 
-fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent, transform: &TransformComponent) -> Result<()> {
-    let my_id = engine.get_global_component_mut::<NetworkManagerComponent>()?.my_id;
+fn spawn_player(
+    engine: &mut Engine,
+    net_state_component: &NetworkStateComponent,
+    transform: &TransformComponent,
+) -> Result<()> {
+    let my_id = engine
+        .get_global_component_mut::<NetworkManagerComponent>()?
+        .my_id;
     let scene = engine.get_active_scene_handle()?;
-    println!("[SPAWN] Spawning player with nid{ } for cid {} with transform {:?}", net_state_component.network_entity_id, my_id, transform);
+    println!(
+        "[SPAWN] Spawning player with nid{ } for cid {} with transform {:?}",
+        net_state_component.network_entity_id, my_id, transform
+    );
 
     // randomness for capsules tint and transforms
     //let mut rng = rng();
     let network_entity_id = net_state_component.network_entity_id;
 
-	let mut rng = StdRng::seed_from_u64(network_entity_id as u64);
-	let index = rng.random_range(0..DISTINCT_COLOR_PALETTE.len());
-	let (r, g, b) = DISTINCT_COLOR_PALETTE[index];
-	// // Use network_entity_id as seed to generate a random color
-	// let mut rng = rand::rngs::StdRng::seed_from_u64(network_entity_id as u64);
-	// let r = rng.random_range(0.2..1.0);
-	// let g = rng.random_range(0.2..1.0);
-	// let b = rng.random_range(0.2..1.0);
+    let mut rng = StdRng::seed_from_u64(network_entity_id as u64);
+    let index = rng.random_range(0..DISTINCT_COLOR_PALETTE.len());
+    let (r, g, b) = DISTINCT_COLOR_PALETTE[index];
+    // // Use network_entity_id as seed to generate a random color
+    // let mut rng = rand::rngs::StdRng::seed_from_u64(network_entity_id as u64);
+    // let r = rng.random_range(0.2..1.0);
+    // let g = rng.random_range(0.2..1.0);
+    // let b = rng.random_range(0.2..1.0);
 
     let (mesh, mat) = {
         //let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("Truck") {
@@ -259,40 +285,52 @@ fn spawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent
 
         let mat = match engine.get_resource_handle::<Material>("pill_other") {
             Ok(h) => h,
-            Err(_) => {
-                engine.add_resource::<Material>(
-                    Material::builder("pill_other")
-                        .color_parameter("tint", Color::new(r, g, b))?
-                        .scalar_parameter("specularity", 0.5)?
-                        .build()
-                    )?
-            }
+            Err(_) => engine.add_resource::<Material>(
+                Material::builder("pill_other")
+                    .color_parameter("tint", Color::new(r, g, b))?
+                    .scalar_parameter("specularity", 0.5)?
+                    .build(),
+            )?,
         };
 
         (mesh, mat)
     };
 
-
     let ent = engine.create_entity(scene)?;
 
-	let mut ns = net_state_component.clone();
-	ns.state = NetworkEntityState::Alive;
+    let mut ns = net_state_component.clone();
+    ns.state = NetworkEntityState::Alive;
 
     engine.add_component_to_entity(scene, ent, ns)?;
 
-    engine.add_component_to_entity(scene, ent,*transform)?;
+    engine.add_component_to_entity(scene, ent, *transform)?;
 
     // TODO: missing playerTag and targetTransform components
 
-	engine.add_component_to_entity(scene, ent, MeshRenderingComponent::builder().mesh(&mesh).material(&mat).build())?;
+    engine.add_component_to_entity(
+        scene,
+        ent,
+        MeshRenderingComponent::builder()
+            .mesh(&mesh)
+            .material(&mat)
+            .build(),
+    )?;
 
-    println!("[SPAWN] finished with nid{ } for cid {} with transform {:?}", net_state_component.network_entity_id, my_id, transform);
+    println!(
+        "[SPAWN] finished with nid{ } for cid {} with transform {:?}",
+        net_state_component.network_entity_id, my_id, transform
+    );
     Ok(())
 }
 
 fn despawn_player(engine: &mut Engine, net_state_component: &NetworkStateComponent) -> Result<()> {
-    let my_id = engine.get_global_component_mut::<NetworkManagerComponent>()?.my_id;
-    println!("[DESPAWN] Despawning player with nid{ } for cid {}", net_state_component.network_entity_id, my_id);
+    let my_id = engine
+        .get_global_component_mut::<NetworkManagerComponent>()?
+        .my_id;
+    println!(
+        "[DESPAWN] Despawning player with nid{ } for cid {}",
+        net_state_component.network_entity_id, my_id
+    );
 
     let mut to_despawn = Vec::new();
     for (ent, ns) in engine.iterate_one_component::<NetworkStateComponent>()? {

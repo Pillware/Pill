@@ -173,7 +173,7 @@ impl AudioSourceComponent {
 
     // Post deferred update request
     fn post_deferred_update_request(&mut self, request_variant: usize) {
-        if self.deferred_update_manager.is_some() {
+        if let Some(manager) = self.deferred_update_manager.as_mut() {
             let entity_handle = self.entity_handle.expect(
                 "Critical: Cannot post deferred update request. No EntityHandle set in Component",
             );
@@ -185,10 +185,7 @@ impl AudioSourceComponent {
                 scene_handle,
                 request_variant,
             );
-            self.deferred_update_manager
-                .as_mut()
-                .expect("Critical: No DeferredUpdateManager")
-                .post_update_request(request);
+            manager.post_update_request(request);
         }
     }
 }
@@ -207,14 +204,12 @@ impl Component for AudioSourceComponent {
             Some(deferred_update_component.borrow_deferred_update_manager());
 
         // Check if sound handle is valid
-        if self.sound_handle.is_some() {
-            engine
-                .get_resource::<Sound>(&self.sound_handle.unwrap())
-                .context(format!(
-                    "Creating {} {} failed",
-                    "Component".general_object_style(),
-                    get_type_name::<Self>().specific_object_style()
-                ))?;
+        if let Some(handle) = &self.sound_handle {
+            engine.get_resource::<Sound>(handle).context(format!(
+                "Creating {} {} failed",
+                "Component".general_object_style(),
+                get_type_name::<Self>().specific_object_style()
+            ))?;
         }
 
         Ok(())
