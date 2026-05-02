@@ -1170,11 +1170,10 @@ fn run_app() -> Result<()> {
     let game_source_directory_path = game_project_directory_path.join("src");
     let config_path = game_resources_directory_path.join("config.ini");
 
+    let in_process = std::env::var("PILL_RUNTIME_IN_PROCESS").ok().as_deref() == Some("1");
+
     let runtime_load_mode = parse_runtime_load_mode(std::env::var("PILL_RUNTIME_MODE").ok())
-        .or_else(|| {
-            (std::env::var("PILL_RUNTIME_IN_PROCESS").ok().as_deref() == Some("1"))
-                .then_some(RuntimeLoadMode::InProcess)
-        })
+        .or(in_process.then_some(RuntimeLoadMode::InProcess))
         .unwrap_or_else(|| {
             if cfg!(target_os = "macos") {
                 RuntimeLoadMode::InProcess
