@@ -1,7 +1,7 @@
 use crate::{
     ecs::{
         audio_system, deferred_update_system, haptics_system, input_system, rendering_system,
-        time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent,
+        time_system, AudioManagerComponent, EguiManagerComponent,
         InputComponent, PlayerId, SystemFunction, TimeComponent, UpdatePhase,
     },
     graphics::{RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle},

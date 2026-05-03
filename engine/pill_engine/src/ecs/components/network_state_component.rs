@@ -10,9 +10,9 @@
 //! - `pill_core::networking` (wire format, client/server wrappers).
 //! - `pill_engine::ecs::systems::networking_system.rs` (networking systems implementation).
 
-use crate::ecs::{Component, ComponentStorage, TransformComponent};
+use crate::ecs::TransformComponent;
 
-use pill_core::{PillTypeMap};
+use pill_core::PillTypeMap;
 use serde::{Deserialize, Serialize};
 
 /// High-level lifecycle marker for a networked entity.
@@ -66,6 +66,3 @@ pub struct NetworkStateComponent {
     pub entity_type: String,
     // TODO: add more components (Health etc.) — either mirror here or reference by ID.
 }
-
-impl Component for NetworkStateComponent {}
-

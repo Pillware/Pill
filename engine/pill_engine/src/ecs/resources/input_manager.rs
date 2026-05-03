@@ -1,11 +1,10 @@
 use crate::{
-    ecs::{GlobalComponent, GlobalComponentStorage},
     engine::{KeyboardKey, MouseButton},
     internal::NUM_SUPPORTED_GAMEPADS,
 };
 
 use bitvec::prelude::*;
-use pill_core::{Vector2f};
+use pill_core::Vector2f;
 
 use anyhow::{Error, Result};
 use gilrs::{ff::Effect, GamepadId};
@@ -161,7 +160,7 @@ pub enum InputEvent {
 pub type KeyState = BitArray<[u64; 4]>; // actually we have less but this is fine
 pub type GamepadButtonState = BitArray<[u32; NUM_SUPPORTED_GAMEPADS]>; // we have 17 buttons
 
-pub struct InputComponent {
+pub struct InputManager {
     // Keyboard arrays
     pub(crate) pressed_keyboard_keys: KeyState,
     pub(crate) released_keyboard_keys: KeyState,
@@ -195,13 +194,13 @@ pub struct InputComponent {
     pub(crate) in_flight_force_feedback: Vec<InFlight>,
 }
 
-impl Default for InputComponent {
+impl Default for InputManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl InputComponent {
+impl InputManager {
     pub fn new() -> Self {
         Self {
             pressed_keyboard_keys: KeyState::ZERO,
@@ -527,5 +526,3 @@ impl InputComponent {
             .retain(|ff| ff.id != gamepad_id);
     }
 }
-
-impl GlobalComponent for InputComponent {}

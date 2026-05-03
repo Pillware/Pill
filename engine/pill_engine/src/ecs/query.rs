@@ -48,8 +48,8 @@
 use crate::ecs::archetype::{Archetype, ArchetypeId};
 use crate::ecs::component::{Component, ComponentId, ComponentMask};
 use crate::ecs::entity::Entity;
+use crate::ecs::resource::Resource;
 use crate::ecs::world::World;
-use crate::ecs::Resource;
 
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};

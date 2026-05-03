@@ -1,6 +1,6 @@
 //! # Network Manager
 //!
-//! `NetworkManagerComponent` is the global ECS component that owns all runtime
+//! `NetworkManager` is the global ECS component that owns all runtime
 //! **networking state** for the current engine instance (either server or client).
 //!
 //! It wraps the low-level networking primitives from `pill_core::networking`
@@ -13,22 +13,19 @@
 //! - Track connection lifecycle ([`ConnectionState`], reconnect intent/backoff),
 //! - Maintain world epoch and per-connection sequence,
 //! - Provide **typed hooks** for engine-level spawn/despawn/interpolation,
-//! - Drive update cadence via [`NetworkManagerComponent::tick`], [`NetworkManagerComponent::accumulator`], and [`NetworkManagerComponent::timeout`].
+//! - Drive update cadence via [`NetworkManager::tick`], [`NetworkManager::accumulator`], and [`NetworkManager::timeout`].
 //!
 //! ## Typical usage
-//! - **Server:** [`NetworkManagerComponent::new_server`] → create the server object with given
+//! - **Server:** [`NetworkManager::new_server`] → create the server object with given
 //!   address and max clients, then per-frame drive the server side.
-//! - **Client:** [`NetworkManagerComponent::new_client`] → create the client object with given
+//! - **Client:** [`NetworkManager::new_client`] → create the client object with given
 //!   client ID and server address to connect to, then per-frame drive the client side.
 //!
 //! See also: `pill_core::networking` (packet format, transports, send/receive) and
 //! `pill_engine::systems::networking` for details on networking implementation.
 
 use crate::{
-    ecs::{
-        Component, EntityHandle, GlobalComponent, GlobalComponentStorage, NetworkStateComponent,
-        TransformComponent,
-    },
+    ecs::{Component, EntityHandle, NetworkStateComponent, TransformComponent},
     engine::Engine,
 };
 use anyhow::Result;
@@ -107,7 +104,7 @@ pub enum NetworkSide {
 
 /// Function pointer type for spawning an entity of a given type.
 ///
-/// The string key in [`NetworkManagerComponent::spawn_handlers`] determines
+/// The string key in [`NetworkManager::spawn_handlers`] determines
 /// which handler to call (e.g. `"Player"`, `"Crate"`, …). The engine chooses
 /// the mapping and payload structure; this hook just performs the actual spawn.
 type SpawnFn = fn(&mut Engine, &NetworkStateComponent, &TransformComponent) -> Result<()>;
@@ -123,7 +120,7 @@ type InterpolationHookFn = fn(&mut Engine) -> Result<()>;
 /// Global ECS component holding all network management state.
 ///
 /// Insert one into the **global** component storage. It exposes helpers to
-/// determine side ([`NetworkManagerComponent::is_server`]/[`NetworkManagerComponent::is_client`]) and
+/// determine side ([`NetworkManager::is_server`]/[`NetworkManager::is_client`]) and
 /// provides mutable accessors to the underlying server/client states.
 ///
 /// The component also tracks **update cadence**:
@@ -134,7 +131,7 @@ type InterpolationHookFn = fn(&mut Engine) -> Result<()>;
 ///
 /// Handler maps let you register type-based spawn/despawn functions without
 /// coupling your networking systems to specific game types.
-pub struct NetworkManagerComponent {
+pub struct NetworkManager {
     /// Current side (server or client), with its state.
     pub side: NetworkSide,
     /// The local client ID; `0` is reserved for server.
@@ -153,8 +150,6 @@ pub struct NetworkManagerComponent {
     pub client_interpolation_hook: Option<InterpolationHookFn>,
 }
 
-impl GlobalComponent for NetworkManagerComponent {}
-
 /// Target network **step frequency** (Hz) used by the engine systems.
 ///
 /// This is separate from the render/frame rate.
@@ -162,7 +157,7 @@ const UPDATE_FREQUENCY_HZ: f32 = 3.0;
 /// Derived fixed-step duration (seconds) for network updates.
 const UPDATE_FREQUENCY_SEC: f32 = 1.0 / UPDATE_FREQUENCY_HZ;
 
-impl NetworkManagerComponent {
+impl NetworkManager {
     /// Create a new **server-side** network manager and bind the server.
     ///
     /// Calls `pill_core::networking::server_start(address, max_clients)` and
@@ -174,7 +169,7 @@ impl NetworkManagerComponent {
     /// # Example
     /// ```no_run
     /// # use pill_engine::ecs::components::network_manager_component::*;
-    /// let network_manager = NetworkManagerComponent::new_server("0.0.0.0:9000", 64)?;
+    /// let network_manager = NetworkManager::new_server("0.0.0.0:9000", 64)?;
     /// # Ok::<_, anyhow::Error>(())
     /// ```
     pub fn new_server(address: &str, max_clients: usize) -> Result<Self> {
@@ -206,7 +201,7 @@ impl NetworkManagerComponent {
     /// # Example
     /// ```no_run
     /// # use pill_engine::ecs::components::network_manager_component::*;
-    /// let network_manager = NetworkManagerComponent::new_client("127.0.0.1:9000", 42)?;
+    /// let network_manager = NetworkManager::new_client("127.0.0.1:9000", 42)?;
     /// # Ok::<_, anyhow::Error>(())
     /// ```
     pub fn new_client(address: &str, my_id: u64) -> Result<Self> {

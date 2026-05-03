@@ -1,12 +1,9 @@
 use crate::{
+    assets::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
     config::DEFAULT_MATERIAL_HANDLE,
-    ecs::{
-        Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest,
-        DeferredUpdateManagerPointer, EntityHandle, SceneHandle,
-    },
+    ecs::Component,
     engine::Engine,
     graphics::{compose_render_queue_key, RenderQueueKey},
-    assets::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
 };
 
 use pill_core::{get_type_name, PillStyle, PillTypeMapKey};

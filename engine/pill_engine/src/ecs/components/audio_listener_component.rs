@@ -1,4 +1,4 @@
-use crate::ecs::{Component, ComponentStorage};
+use crate::ecs::Component;
 
 // --- Builder ---
 

@@ -61,10 +61,9 @@ pub mod game {
     pub use crate::{
         ecs::{
             AudioListenerComponent, AudioManagerComponent, AudioSourceComponent, CameraAspectRatio,
-            CameraComponent, Component, ComponentStorage, EguiManagerComponent, EntityHandle,
-            GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage, InputComponent,
-            MeshRenderingComponent, PlayerId, SceneHandle, SoundType, TimeComponent,
-            TransformComponent, UpdatePhase,
+            CameraComponent, EguiManagerComponent, GamepadAxis, GamepadButton, InputComponent,
+            MeshRenderingComponent, PlayerId, SoundType, TimeComponent, TransformComponent,
+            UpdatePhase,
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
         resources::{
@@ -92,10 +91,9 @@ mod internal_mod {
             get_renderer_resource_handle_from_camera_component, networking_system_client,
             networking_system_server, update_transform_matrices, AudioListenerComponent,
             AudioManagerComponent, AudioSourceComponent, CameraAspectRatio, CameraComponent,
-            ComponentStorage, EguiManagerComponent, EntityHandle, EntityUpdate, InputComponent,
-            MeshRenderingComponent, NetworkEntityAction, NetworkEntityState,
-            NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkUpdatePayload,
-            Scene, TimeComponent, TransformComponent,
+            EguiManagerComponent, EntityUpdate, InputComponent, MeshRenderingComponent,
+            NetworkEntityAction, NetworkEntityState, NetworkManagerComponent, NetworkSide,
+            NetworkStateComponent, NetworkUpdatePayload, TimeComponent, TransformComponent,
         },
         engine::{Engine, PillGame},
         graphics::{

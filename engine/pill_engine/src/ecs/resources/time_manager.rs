@@ -1,24 +1,22 @@
-use crate::ecs::components::{GlobalComponent, GlobalComponentStorage};
-
 use pill_core::PillTypeMapKey;
 
 use anyhow::Result;
 
 #[readonly::make]
-pub struct TimeComponent {
+pub struct TimeManager {
     #[readonly]
     pub time: f32, // Time elapsed from the start of the engine/game in seconds
     #[readonly]
     pub delta_time: f32, // Time of last frame in seconds
 }
 
-impl Default for TimeComponent {
+impl Default for TimeManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TimeComponent {
+impl TimeManager {
     pub fn new() -> Self {
         Self {
             time: 0.0,
@@ -33,5 +31,3 @@ impl TimeComponent {
         Ok(())
     }
 }
-
-impl GlobalComponent for TimeComponent {}

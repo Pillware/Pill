@@ -22,9 +22,9 @@ pub use commands::CommandQueue;
 
 pub use world::World;
 
-pub use system::RegisteredSystem;
-
 pub use system_scheduler::SystemScheduler;
+
+pub use component::Component;
 
 // pub use components::{
 //     Component, ComponentDestroyer, ComponentStorage, ConcreteComponentDestroyer, GlobalComponent,

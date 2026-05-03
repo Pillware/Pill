@@ -15,7 +15,7 @@ pub enum SoundType {
     Sound3D,
 }
 
-pub struct AudioManagerComponent {
+pub struct AudioManager {
     pub(crate) audio_stream: OutputStream,
     pub(crate) audio_stream_handle: OutputStreamHandle,
     pub(crate) ambient_sink_pool: Vec<Sink>,
@@ -26,7 +26,7 @@ pub struct AudioManagerComponent {
     pub(crate) busy_spatial_sink_handles: VecDeque<usize>,
 }
 
-impl AudioManagerComponent {
+impl AudioManager {
     pub fn new(ambient_sink_pool_capacity: usize, spatial_sink_pool_capacity: usize) -> Self {
         // Get output audio stream and its handle
         let (audio_stream, audio_stream_handle) = OutputStream::try_default().unwrap();
@@ -128,6 +128,4 @@ impl AudioManagerComponent {
     }
 }
 
-unsafe impl Send for AudioManagerComponent {}
-
-impl GlobalComponent for AudioManagerComponent {}
+unsafe impl Send for AudioManager {}

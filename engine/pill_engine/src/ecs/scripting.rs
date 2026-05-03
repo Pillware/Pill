@@ -13,6 +13,7 @@ use crate::ecs::commands::CommandQueue;
 use crate::ecs::component::Component;
 use crate::ecs::entity::Entity;
 use crate::ecs::world::World;
+use crate::ecs::Resource;
 
 /// A restricted context for script components
 ///
@@ -98,9 +99,9 @@ impl<'a> ScriptContext<'a> {
         self.world.is_entity_valid(entity)
     }
 
-    /// Get immutable reference to a global component
-    pub fn get_global_component<T: Component>(&self) -> Option<&T> {
-        self.world.get_global_component::<T>()
+    /// Get immutable reference to a resource
+    pub fn get_resource<T: Resource>(&self) -> Option<&T> {
+        self.world.get_resource::<T>()
     }
 
     // ========================================================================

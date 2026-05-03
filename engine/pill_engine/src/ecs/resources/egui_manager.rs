@@ -1,29 +1,23 @@
 use std::collections::HashMap;
 
-use crate::{
-    ecs::{
-        components::{GlobalComponent, GlobalComponentStorage},
-        UpdatePhase,
-    },
-    engine::Engine,
-};
+use crate::{ecs::UpdatePhase, engine::Engine};
 
 use egui::Ui;
 use pill_core::{Timer, TimerRecord};
 
 use anyhow::{Context, Result};
 
-pub struct EguiManagerComponent {
+pub struct EguiManager {
     collapsing_state: HashMap<String, bool>,
 }
 
-impl Default for EguiManagerComponent {
+impl Default for EguiManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl EguiManagerComponent {
+impl EguiManager {
     pub fn new() -> Self {
         Self {
             collapsing_state: HashMap::new(),
@@ -171,5 +165,3 @@ impl EguiManagerComponent {
         Ok(())
     }
 }
-
-impl GlobalComponent for EguiManagerComponent {}

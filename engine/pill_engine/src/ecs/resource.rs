@@ -39,7 +39,7 @@
 use std::any::TypeId;
 use std::marker::PhantomData;
 
-use crate::world::World;
+use crate::ecs::world::World;
 
 /// Resource marker trait - resources are singleton data stored in the World.
 ///

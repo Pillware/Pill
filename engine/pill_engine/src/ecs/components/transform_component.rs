@@ -1,4 +1,4 @@
-use crate::ecs::{Component, ComponentStorage};
+use crate::ecs::Component;
 use pill_core::{Direction, Matrix3f, Matrix3fA, Matrix4f, PillTypeMapKey, Vector3f};
 use serde::{Deserialize, Serialize};
 

@@ -67,16 +67,10 @@
 
 use crate::ecs::commands::{CommandQueue, Commands};
 use crate::ecs::component::Component;
-use crate::ecs::query::{GlobalComponentQuery, Query, QueryTarget};
+use crate::ecs::query::{Query, QueryTarget, Res, ResMut};
+use crate::ecs::resource::{Resource, ResourceId};
 use crate::ecs::system_scheduler::SystemAccess;
 use crate::ecs::world::World;
-
-/// Wrapper for a registered system with its name
-pub struct RegisteredSystem {
-    name: &'static str,
-    system: Box<dyn System>,
-    enabled: bool,
-}
 
 /// Trait for systems that can be executed by the Engine
 ///
@@ -199,27 +193,53 @@ impl<Q: QueryTarget + 'static> SystemParam for Query<'static, Q> {
     }
 }
 
-/// Generic GlobalComponentQuery is a SystemParam - works for ANY Component type
+/// Res<T> is a SystemParam - provides immutable access to a Resource
 ///
-/// This allows accessing any global/singleton component in systems.
-impl<T: Component> SystemParam for GlobalComponentQuery<'static, T> {
+/// The scheduler tracks this as a resource read, allowing multiple systems
+/// to read the same resource in parallel.
+impl<T: Resource> SystemParam for Res<'static, T> {
     fn fetch(world: &mut World, _queue: &mut CommandQueue) -> Self {
         // SAFETY: Lifetime transmutation from actual borrow to 'static.
         //
         // This is sound IFF the caller upholds the SystemParam safety contract:
-        // - The GlobalComponentQuery<'static, T> must not escape the system function
-        // - The GlobalComponentQuery<'static, T> must not be stored in global/static state
-        // - The GlobalComponentQuery<'static, T> must be dropped before system returns
+        // - The Res<'static, T> must not escape the system function
+        // - The Res<'static, T> must not be stored in global/static state
+        // - The Res<'static, T> must be dropped before system returns
         //
-        // The Engine's system execution infrastructure ensures these invariants
-        // by calling systems as opaque functions that cannot return the parameter.
-        //
-        // UNDEFINED BEHAVIOR if GlobalComponentQuery escapes (e.g., stored in
-        // static variable, moved to another thread, or captured in an escaping closure).
+        // UNDEFINED BEHAVIOR if Res escapes.
         unsafe {
-            let query: GlobalComponentQuery<T> = GlobalComponentQuery::new(world);
-            std::mem::transmute(query)
+            let res: Res<T> = Res::new(&*world);
+            std::mem::transmute(res)
         }
+    }
+
+    fn report_access(access: &mut SystemAccess) {
+        access.add_resource_read(ResourceId::of::<T>());
+    }
+}
+
+/// ResMut<T> is a SystemParam - provides mutable access to a Resource
+///
+/// The scheduler tracks this as a resource write, preventing other systems
+/// from accessing the same resource in parallel.
+impl<T: Resource> SystemParam for ResMut<'static, T> {
+    fn fetch(world: &mut World, _queue: &mut CommandQueue) -> Self {
+        // SAFETY: Lifetime transmutation from actual borrow to 'static.
+        //
+        // This is sound IFF the caller upholds the SystemParam safety contract:
+        // - The ResMut<'static, T> must not escape the system function
+        // - The ResMut<'static, T> must not be stored in global/static state
+        // - The ResMut<'static, T> must be dropped before system returns
+        //
+        // UNDEFINED BEHAVIOR if ResMut escapes.
+        unsafe {
+            let res: ResMut<T> = ResMut::new(world);
+            std::mem::transmute(res)
+        }
+    }
+
+    fn report_access(access: &mut SystemAccess) {
+        access.add_resource_write(ResourceId::of::<T>());
     }
 }
 

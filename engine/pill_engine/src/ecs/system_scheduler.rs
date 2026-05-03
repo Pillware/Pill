@@ -16,6 +16,7 @@
 //!   are run in parallel, preventing data races and ensuring thread safety.
 
 use crate::ecs::component::ComponentId;
+use crate::ecs::resource::ResourceId;
 use std::collections::HashSet;
 
 /// Component access information for a system
@@ -27,6 +28,10 @@ pub struct SystemAccess {
     pub writes: HashSet<ComponentId>,
     /// Whether the system uses Commands (requires exclusive World access)
     pub uses_commands: bool,
+    /// Resources read immutably (Res<T>)
+    pub resource_reads: HashSet<ResourceId>,
+    /// Resources written mutably (ResMut<T>)
+    pub resource_writes: HashSet<ResourceId>,
 }
 
 impl SystemAccess {
@@ -44,6 +49,14 @@ impl SystemAccess {
 
     pub fn set_uses_commands(&mut self, uses: bool) {
         self.uses_commands = uses;
+    }
+
+    pub fn add_resource_read(&mut self, resource_id: ResourceId) {
+        self.resource_reads.insert(resource_id);
+    }
+
+    pub fn add_resource_write(&mut self, resource_id: ResourceId) {
+        self.resource_writes.insert(resource_id);
     }
 
     /// Check if this system conflicts with another
@@ -71,6 +84,20 @@ impl SystemAccess {
         }
 
         if !self.reads.is_disjoint(&other.writes) {
+            return true;
+        }
+
+        // Check for resource write-write conflicts
+        if !self.resource_writes.is_disjoint(&other.resource_writes) {
+            return true;
+        }
+
+        // Check for resource read-write conflicts
+        if !self.resource_writes.is_disjoint(&other.resource_reads) {
+            return true;
+        }
+
+        if !self.resource_reads.is_disjoint(&other.resource_writes) {
             return true;
         }
 
@@ -202,10 +229,12 @@ impl SystemScheduler {
                 let name = system_names.get(sys_idx).unwrap_or(&"<unknown>");
                 let access = &self.access_patterns[sys_idx];
                 println!(
-                    "  - {} (reads: {}, writes: {}, commands: {})",
+                    "  - {} (reads: {}, writes: {}, res_reads: {}, res_writes: {}, commands: {})",
                     name,
                     access.reads.len(),
                     access.writes.len(),
+                    access.resource_reads.len(),
+                    access.resource_writes.len(),
                     access.uses_commands
                 );
             }
@@ -611,5 +640,131 @@ mod tests {
         // All can run in parallel
         assert_eq!(scheduler.execution_graph().len(), 1);
         assert_eq!(scheduler.execution_graph()[0].len(), 5);
+    }
+
+    // ========================================================================
+    // Resource Conflict Tests
+    // ========================================================================
+
+    #[test]
+    fn test_resource_read_read_parallel() {
+        let mut scheduler = SystemScheduler::new();
+
+        // Two systems both reading the same resource
+        let mut access1 = SystemAccess::new();
+        access1.add_resource_read(ResourceId(TypeId::of::<i32>()));
+        scheduler.register_system(access1);
+
+        let mut access2 = SystemAccess::new();
+        access2.add_resource_read(ResourceId(TypeId::of::<i32>()));
+        scheduler.register_system(access2);
+
+        scheduler.build_execution_graph();
+
+        assert_no_batch_conflicts(&scheduler);
+        assert_all_systems_scheduled(&scheduler, 2);
+
+        // Both can run in parallel (read-read is OK)
+        assert_eq!(scheduler.execution_graph().len(), 1);
+        assert_eq!(scheduler.execution_graph()[0].len(), 2);
+    }
+
+    #[test]
+    fn test_resource_write_write_conflict() {
+        let mut scheduler = SystemScheduler::new();
+
+        // Two systems both writing the same resource
+        let mut access1 = SystemAccess::new();
+        access1.add_resource_write(ResourceId(TypeId::of::<i32>()));
+        scheduler.register_system(access1);
+
+        let mut access2 = SystemAccess::new();
+        access2.add_resource_write(ResourceId(TypeId::of::<i32>()));
+        scheduler.register_system(access2);
+
+        scheduler.build_execution_graph();
+
+        assert_no_batch_conflicts(&scheduler);
+        assert_all_systems_scheduled(&scheduler, 2);
+
+        // Must be in different batches (write-write conflict)
+        assert_eq!(scheduler.execution_graph().len(), 2);
+    }
+
+    #[test]
+    fn test_resource_read_write_conflict() {
+        let mut scheduler = SystemScheduler::new();
+
+        // System 1 reads a resource, System 2 writes same resource
+        let mut access1 = SystemAccess::new();
+        access1.add_resource_read(ResourceId(TypeId::of::<i32>()));
+        scheduler.register_system(access1);
+
+        let mut access2 = SystemAccess::new();
+        access2.add_resource_write(ResourceId(TypeId::of::<i32>()));
+        scheduler.register_system(access2);
+
+        scheduler.build_execution_graph();
+
+        assert_no_batch_conflicts(&scheduler);
+        assert_all_systems_scheduled(&scheduler, 2);
+
+        // Must be in different batches (read-write conflict)
+        assert_eq!(scheduler.execution_graph().len(), 2);
+    }
+
+    #[test]
+    fn test_resource_disjoint_writes_parallel() {
+        let mut scheduler = SystemScheduler::new();
+
+        // Two systems writing different resources
+        let mut access1 = SystemAccess::new();
+        access1.add_resource_write(ResourceId(TypeId::of::<i32>()));
+        scheduler.register_system(access1);
+
+        let mut access2 = SystemAccess::new();
+        access2.add_resource_write(ResourceId(TypeId::of::<f32>()));
+        scheduler.register_system(access2);
+
+        scheduler.build_execution_graph();
+
+        assert_no_batch_conflicts(&scheduler);
+        assert_all_systems_scheduled(&scheduler, 2);
+
+        // Can run in parallel (different resources)
+        assert_eq!(scheduler.execution_graph().len(), 1);
+        assert_eq!(scheduler.execution_graph()[0].len(), 2);
+    }
+
+    #[test]
+    fn test_resource_and_component_mixed() {
+        let mut scheduler = SystemScheduler::new();
+
+        // System 1: reads component A, writes resource X
+        let mut access1 = SystemAccess::new();
+        access1.add_read(ComponentId(TypeId::of::<i32>()));
+        access1.add_resource_write(ResourceId(TypeId::of::<u64>()));
+        scheduler.register_system(access1);
+
+        // System 2: reads component A, reads resource X
+        let mut access2 = SystemAccess::new();
+        access2.add_read(ComponentId(TypeId::of::<i32>()));
+        access2.add_resource_read(ResourceId(TypeId::of::<u64>()));
+        scheduler.register_system(access2);
+
+        // System 3: writes component B, reads resource Y (no conflicts with either)
+        let mut access3 = SystemAccess::new();
+        access3.add_write(ComponentId(TypeId::of::<f32>()));
+        access3.add_resource_read(ResourceId(TypeId::of::<u32>()));
+        scheduler.register_system(access3);
+
+        scheduler.build_execution_graph();
+
+        assert_no_batch_conflicts(&scheduler);
+        assert_all_systems_scheduled(&scheduler, 3);
+
+        // System 1 and 2 conflict on resource X (write vs read)
+        // System 3 doesn't conflict with either
+        assert!(scheduler.execution_graph().len() >= 2);
     }
 }
