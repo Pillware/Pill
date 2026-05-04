@@ -109,6 +109,8 @@ mod native {
 
         let input_component = engine.get_global_component_mut::<InputComponent>()?;
 
+        // Because some controllers (e.g. Xbox360) do not report when an effect has completed
+        // Remove any in-flight effects that have completed
         {
             let now = std::time::Instant::now();
             input_component
@@ -119,9 +121,10 @@ mod native {
         while let Some(command) = input_component.haptic_commands.pop_front() {
             let index = command_player_index(&command)?;
             let Some(gamepad_id) = input_component.gamepad_ids.get(index).unwrap() else {
-                continue;
+                continue; // No gamepad mapped for this player
             };
 
+            // Is the haptic feedback supported,
             {
                 let gamepad = gamepad_input_system.gamepad(*gamepad_id);
                 if !gamepad.is_ff_supported() {
@@ -214,27 +217,33 @@ mod native {
         Ok(effect)
     }
 
+    // GILRS -> input enum conversions
     impl From<Button> for GamepadButton {
         fn from(button: Button) -> Self {
             match button {
+                // ABXY
                 Button::South => GamepadButton::A,
                 Button::East => GamepadButton::B,
                 Button::North => GamepadButton::X,
                 Button::West => GamepadButton::Y,
+                // Triggers and bumpers
                 Button::LeftTrigger => GamepadButton::LeftBumper,
                 Button::LeftTrigger2 => GamepadButton::LeftTrigger,
                 Button::RightTrigger => GamepadButton::RightBumper,
                 Button::RightTrigger2 => GamepadButton::RightTrigger,
+                // Menus
                 Button::Select => GamepadButton::Back,
                 Button::Start => GamepadButton::Start,
                 Button::Mode => GamepadButton::Mode,
+                // DPad
                 Button::DPadUp => GamepadButton::DPadUp,
                 Button::DPadDown => GamepadButton::DPadDown,
                 Button::DPadLeft => GamepadButton::DPadLeft,
                 Button::DPadRight => GamepadButton::DPadRight,
+                // Sticks
                 Button::LeftThumb => GamepadButton::LeftStick,
                 Button::RightThumb => GamepadButton::RightStick,
-                _ => GamepadButton::Mode,
+                _ => GamepadButton::Mode, // Handle other buttons as Mode
             }
         }
     }
@@ -250,7 +259,7 @@ mod native {
                 Axis::RightZ => GamepadAxis::RightTrigger,
                 Axis::DPadX => GamepadAxis::DPadX,
                 Axis::DPadY => GamepadAxis::DPadY,
-                _ => GamepadAxis::LeftStickX,
+                _ => GamepadAxis::LeftStickX, // Handle other axes as LeftStickX
             }
         }
     }
@@ -278,14 +287,17 @@ fn process_input_queue(engine: &mut Engine) -> Result<()> {
         let input_component = engine.get_global_component_mut::<InputComponent>()?;
 
         match event {
+            // Keyboard keys
             InputEvent::Keyboard(KeyboardEvent::Key { key, state }) => {
                 input_component.set_key(key, state);
             }
 
+            // Mouse buttons
             InputEvent::Mouse(MouseEvent::Button { key, state }) => {
                 input_component.set_mouse_button(key, state);
             }
 
+            // Mouse scroll
             InputEvent::Mouse(MouseEvent::Wheel { delta }) => match delta {
                 MouseScrollDelta::LineDelta(x, y) => {
                     input_component.set_mouse_scroll_delta(Vector2f::new(x, y));
@@ -299,22 +311,27 @@ fn process_input_queue(engine: &mut Engine) -> Result<()> {
                 }
             },
 
+            // Mouse delta
             InputEvent::Mouse(MouseEvent::Delta { delta }) => {
                 input_component.set_mouse_delta(delta);
             }
 
+            // Mouse position
             InputEvent::Mouse(MouseEvent::Position { position }) => {
                 input_component.set_mouse_position(position);
             }
 
+            // Gamepad buttons
             InputEvent::Gamepad(GamepadEvent::Button { id, button, state }) => {
                 input_component.set_gamepad_button(id, button, state);
             }
 
+            // Gamepad axes
             InputEvent::Gamepad(GamepadEvent::Axis { id, axis, value }) => {
                 input_component.set_gamepad_axis(id, axis, value);
             }
 
+            // Gamepad connection events
             InputEvent::Gamepad(GamepadEvent::Connected { id }) => {
                 input_component.connect_gamepad(id);
             }
@@ -323,6 +340,7 @@ fn process_input_queue(engine: &mut Engine) -> Result<()> {
                 input_component.disconnect_gamepad(id);
             }
 
+            // Gamepad force feedback completion
             InputEvent::Gamepad(GamepadEvent::ForceFeedbackEffectCompleted { id }) => {
                 input_component.complete_force_feedback_effect(id);
             }

@@ -6,12 +6,14 @@ members = [
     "pill_engine",
     "pill_renderer",
     "pill_native",
+    "pill_web",
     "pill_runtime",
     "NO_PATH", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
 ]
 
-# pill_web is not a workspace member — it lives as a template at
+# The per-game wasm cdylib (pill_web_app) lives as a template at
 # pill_launcher/res/templates/wasm/ and is instantiated per-game by the launcher.
+# The shared web runtime is the workspace crate `pill_web`.
 exclude = [
     "pill_launcher",
 ]

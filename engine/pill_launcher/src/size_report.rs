@@ -11,7 +11,7 @@ pub fn print(build_wasm_dir: &Path, preopt_wasm: &Path) {
     let Ok(preopt_size) = fs::metadata(preopt_wasm).map(|m| m.len()) else {
         return;
     };
-    let final_size = fs::metadata(build_wasm_dir.join("pill_web_bg.wasm"))
+    let final_size = fs::metadata(build_wasm_dir.join("pill_web_app_bg.wasm"))
         .ok()
         .map(|m| m.len());
 

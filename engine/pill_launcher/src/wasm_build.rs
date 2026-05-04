@@ -26,13 +26,13 @@ pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode) -> 
     let wasm_template_dir = template_dir("wasm");
     let web_template_dir = template_dir("web");
     let build_wasm_dir = game_project_directory_path.join("build").join("wasm");
-    let scratch_pill_web_dir = build_wasm_dir.join(".build").join("pill_web");
+    let scratch_pill_web_app_dir = build_wasm_dir.join(".build").join("pill_web_app");
     let scratch_pkg_dir = build_wasm_dir.join(".build").join("pkg");
 
-    prepare_scratch_crate(&wasm_template_dir, &scratch_pill_web_dir)?;
-    embed_game_config(game_project_directory_path, &scratch_pill_web_dir)?;
-    rewrite_scratch_manifest(&scratch_pill_web_dir, game_project_directory_path)?;
-    run_wasm_pack(compile_mode, &scratch_pill_web_dir, &scratch_pkg_dir)?;
+    prepare_scratch_crate(&wasm_template_dir, &scratch_pill_web_app_dir)?;
+    embed_game_config(game_project_directory_path, &scratch_pill_web_app_dir)?;
+    rewrite_scratch_manifest(&scratch_pill_web_app_dir, game_project_directory_path)?;
+    run_wasm_pack(compile_mode, &scratch_pill_web_app_dir, &scratch_pkg_dir)?;
     copy_build_outputs(
         &scratch_pkg_dir,
         &web_template_dir,
@@ -46,11 +46,11 @@ pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode) -> 
 
     // Size report — only meaningful on release (debug wasm is dominated by debuginfo).
     if *compile_mode == CompileMode::Release {
-        let preopt_wasm = scratch_pill_web_dir
+        let preopt_wasm = scratch_pill_web_app_dir
             .join("target")
             .join("wasm32-unknown-unknown")
             .join("release")
-            .join("pill_web.wasm");
+            .join("pill_web_app.wasm");
         size_report::print(&build_wasm_dir, &preopt_wasm);
     }
 
@@ -68,35 +68,35 @@ fn template_dir(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn prepare_scratch_crate(wasm_template_dir: &Path, scratch_pill_web_dir: &Path) -> Result<()> {
-    fs::create_dir_all(scratch_pill_web_dir)
-        .with_context(|| format!("Failed to create scratch dir {scratch_pill_web_dir:?}"))?;
+fn prepare_scratch_crate(wasm_template_dir: &Path, scratch_pill_web_app_dir: &Path) -> Result<()> {
+    fs::create_dir_all(scratch_pill_web_app_dir)
+        .with_context(|| format!("Failed to create scratch dir {scratch_pill_web_app_dir:?}"))?;
 
     fs::copy(
         wasm_template_dir.join("Cargo.toml"),
-        scratch_pill_web_dir.join("Cargo.toml"),
+        scratch_pill_web_app_dir.join("Cargo.toml"),
     )
-    .context("Failed to copy pill_web Cargo.toml to scratch")?;
+    .context("Failed to copy pill_web_app Cargo.toml to scratch")?;
 
     // Share the engine workspace's Cargo.lock so the scratch build resolves
     // identical crate versions to an in-place engine build. Without this,
     // cargo picks newer wasm-bindgen/etc. which can break WebGPU rendering.
     let engine_lock = get_path(Location::EngineCrates).join("Cargo.lock");
     if engine_lock.exists() {
-        fs::copy(&engine_lock, scratch_pill_web_dir.join("Cargo.lock"))
+        fs::copy(&engine_lock, scratch_pill_web_app_dir.join("Cargo.lock"))
             .context("Failed to copy engine Cargo.lock into scratch")?;
     }
 
-    let scratch_src_dir = scratch_pill_web_dir.join("src");
+    let scratch_src_dir = scratch_pill_web_app_dir.join("src");
     if scratch_src_dir.exists() {
         fs::remove_dir_all(&scratch_src_dir).context("Failed to clean scratch src/")?;
     }
     fs_extra::dir::copy(
         wasm_template_dir.join("src"),
-        scratch_pill_web_dir,
+        scratch_pill_web_app_dir,
         &CopyOptions::new().overwrite(true),
     )
-    .context("Failed to copy pill_web src/ to scratch")?;
+    .context("Failed to copy pill_web_app src/ to scratch")?;
 
     Ok(())
 }
@@ -104,9 +104,9 @@ fn prepare_scratch_crate(wasm_template_dir: &Path, scratch_pill_web_dir: &Path) 
 // Copy the game's res/config.ini into the scratch crate at a known location
 // so the template's lib.rs can include_str! it. Needed because wasm has no
 // filesystem — the engine can't read config.ini at runtime.
-fn embed_game_config(game_dir: &Path, scratch_pill_web_dir: &Path) -> Result<()> {
+fn embed_game_config(game_dir: &Path, scratch_pill_web_app_dir: &Path) -> Result<()> {
     let src = game_dir.join("res").join("config.ini");
-    let dst = scratch_pill_web_dir.join("config.ini");
+    let dst = scratch_pill_web_app_dir.join("config.ini");
     if src.is_file() {
         fs::copy(&src, &dst)
             .with_context(|| format!("Failed to embed game config {src:?} → {dst:?}"))?;
@@ -118,14 +118,15 @@ fn embed_game_config(game_dir: &Path, scratch_pill_web_dir: &Path) -> Result<()>
     Ok(())
 }
 
-fn rewrite_scratch_manifest(scratch_pill_web_dir: &Path, game_dir: &Path) -> Result<()> {
+fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) -> Result<()> {
     let engine = get_path(Location::EngineCrates);
     let pill_engine = cargo_path(&engine.join("pill_engine"));
     let pill_renderer = cargo_path(&engine.join("pill_renderer"));
     let pill_core = cargo_path(&engine.join("pill_core"));
+    let pill_web = cargo_path(&engine.join("pill_web"));
     let pill_game = cargo_path(game_dir);
 
-    let manifest = scratch_pill_web_dir.join("Cargo.toml");
+    let manifest = scratch_pill_web_app_dir.join("Cargo.toml");
     modify_file(&manifest, &manifest, |line: String| -> String {
         let t = line.trim_start();
         if t.starts_with("pill_engine ") || t.starts_with("pill_engine=") {
@@ -136,6 +137,8 @@ fn rewrite_scratch_manifest(scratch_pill_web_dir: &Path, game_dir: &Path) -> Res
             format!("pill_renderer = {{ path = \"{pill_renderer}\" }}")
         } else if t.starts_with("pill_core ") || t.starts_with("pill_core=") {
             format!("pill_core = {{ path = \"{pill_core}\" }}")
+        } else if t.starts_with("pill_web ") || t.starts_with("pill_web=") {
+            format!("pill_web = {{ path = \"{pill_web}\" }}")
         } else {
             line
         }
@@ -180,7 +183,7 @@ fn cargo_path(p: &Path) -> String {
 
 fn run_wasm_pack(
     compile_mode: &CompileMode,
-    scratch_pill_web_dir: &Path,
+    scratch_pill_web_app_dir: &Path,
     scratch_pkg_dir: &Path,
 ) -> Result<()> {
     let mut args: Vec<String> = vec![
@@ -194,13 +197,13 @@ fn run_wasm_pack(
         args.push("--dev".into());
     }
 
-    println!("Running wasm-pack in scratch crate {scratch_pill_web_dir:?}...");
+    println!("Running wasm-pack in scratch crate {scratch_pill_web_app_dir:?}...");
 
     // Prefer rustup's toolchain over other rustc installs on PATH — Homebrew,
     // distro packages, etc. may ship a rustc without the wasm32-unknown-unknown
     // target. Prepending ~/.cargo/bin is enough to shadow them.
     let mut cmd = Command::new("wasm-pack");
-    cmd.args(&args).current_dir(scratch_pill_web_dir);
+    cmd.args(&args).current_dir(scratch_pill_web_app_dir);
     if let Some(home) = env::var_os("HOME") {
         let cargo_bin = PathBuf::from(home).join(".cargo").join("bin");
         let existing = env::var_os("PATH").unwrap_or_default();
@@ -233,7 +236,7 @@ fn copy_build_outputs(
     fs::create_dir_all(build_wasm_dir)
         .with_context(|| format!("Failed to create {build_wasm_dir:?}"))?;
 
-    for file in ["pill_web.js", "pill_web_bg.wasm"] {
+    for file in ["pill_web_app.js", "pill_web_app_bg.wasm"] {
         let src = scratch_pkg_dir.join(file);
         let dst = build_wasm_dir.join(file);
         fs::copy(&src, &dst)
@@ -280,11 +283,48 @@ fn copy_dir_files(src: &Path, dst: &Path, label: &str) -> Result<()> {
         // path().metadata() follows symlinks so symlinked assets are copied as files.
         if entry.path().metadata()?.is_file() {
             let target = dst.join(entry.file_name());
-            let entry_path = entry.path();
+            let entry_path = resolve_pseudo_symlink(&entry.path());
             fs::copy(&entry_path, &target).with_context(|| {
                 format!("Failed to {label}-copy {entry_path:?} to {target:?}")
             })?;
         }
     }
     Ok(())
+}
+
+// Resolve a "pseudo-symlink" — a regular text file whose contents are a
+// relative path to another file. Git on Windows checks out symlinks this way
+// when `core.symlinks` is unset (the default without admin/dev mode), so the
+// committed `templates/web/pill_logo.png` ends up as a 45-byte text file
+// containing `../../../../../media/logo/pill_logo_black.png` instead of the
+// PNG bytes. fs::copy on a real symlink follows it (reads through the
+// target), but on a pseudo-symlink it copies the path-text bytes — which the
+// browser then can't render.
+//
+// The check: small file (≤1KB), single-line content, target path resolves to
+// an existing file relative to the symlink's parent. If all match, return the
+// resolved path so the caller copies the actual asset bytes. This is purely
+// additive — real symlinks (Mac/Linux) and ordinary files pass through
+// unchanged via fs::copy.
+fn resolve_pseudo_symlink(path: &Path) -> PathBuf {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return path.to_path_buf();
+    };
+    if meta.file_type().is_symlink() || meta.len() > 1024 {
+        return path.to_path_buf();
+    }
+    let Ok(content) = fs::read_to_string(path) else {
+        return path.to_path_buf();
+    };
+    let trimmed = content.trim();
+    if trimmed.is_empty() || trimmed.contains('\n') {
+        return path.to_path_buf();
+    }
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let candidate = parent.join(trimmed);
+    if candidate.is_file() {
+        candidate
+    } else {
+        path.to_path_buf()
+    }
 }

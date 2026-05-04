@@ -152,7 +152,7 @@ pub enum GamepadButton {
     LeftBumper,
     RightBumper,
     LeftTrigger,
-    RightTrigger,
+    RightTrigger, // listed twice for convenience
     Back,
     Start,
     Mode,
@@ -181,12 +181,14 @@ pub const GAMEPAD_AXIS_COUNT: usize = GamepadAxis::DPadY as usize + 1;
 
 #[derive(Clone)]
 pub enum HapticCommand {
+    /// Simple dual-rumble (weak/strong in [0.0, 1.0]) for a duration in milliseconds
     Rumble {
         player_id: PlayerId,
         weak: f32,
         strong: f32,
         duration_ms: u32,
     },
+    /// Play a prebuilt gilrs::ff::Effect on the given player_id
     PlayEffect {
         player_id: PlayerId,
         effect: Effect,
@@ -252,28 +254,35 @@ pub const KEYBOARD_KEY_MAX: usize = 256;
 pub const GAMEPAD_BUTTON_MAX: usize = GAMEPAD_BUTTON_COUNT * NUM_SUPPORTED_GAMEPADS;
 
 pub struct InputComponent {
+    // Keyboard arrays
     pub(crate) pressed_keyboard_keys: KeyState,
     pub(crate) released_keyboard_keys: KeyState,
     pub(crate) keyboard_keys: KeyState,
 
+    // Mouse buttons arrays
     pub(crate) pressed_mouse_buttons: [bool; MOUSE_BUTTON_COUNT],
     pub(crate) released_mouse_buttons: [bool; MOUSE_BUTTON_COUNT],
     pub(crate) mouse_buttons: [bool; MOUSE_BUTTON_COUNT],
 
+    // Mouse motion
     pub(crate) current_mouse_delta: Vector2f,
     pub(crate) current_mouse_position: Vector2f,
 
+    // Mouse scroll wheels delta
     pub(crate) current_mouse_scroll_delta: Vector2f,
     pub(crate) current_mouse_scroll_pixel_delta: Vector2f,
 
+    // Gamepad buttons and axes
     pub(crate) pressed_gamepad_buttons: GamepadButtonState,
     pub(crate) released_gamepad_buttons: GamepadButtonState,
     pub(crate) gamepad_buttons: GamepadButtonState,
     pub(crate) gamepad_axes: [f32; GAMEPAD_AXIS_COUNT * NUM_SUPPORTED_GAMEPADS],
 
+    // Is gamepad Connected
     pub(crate) gamepad_ids: [Option<GamepadId>; NUM_SUPPORTED_GAMEPADS],
     pub(crate) gamepad_id_to_player: HashMap<GamepadId, PlayerId>,
 
+    // Haptics commands queue and in-flight effects
     pub(crate) haptic_commands: VecDeque<HapticCommand>,
     pub(crate) in_flight_force_feedback: Vec<InFlight>,
 }
@@ -314,6 +323,7 @@ impl InputComponent {
         }
     }
 
+    // frame-reset
     pub fn clear_transient_states(&mut self) {
         self.reset_keyboard();
         self.reset_mouse_buttons();
@@ -342,6 +352,7 @@ impl InputComponent {
         self.current_mouse_scroll_pixel_delta = Vector2f::new(0.0, 0.0);
     }
 
+    // Keyboard keys
     pub fn set_key(&mut self, key: KeyboardKey, state: ElementState) {
         let i = key as usize;
         match state {
@@ -372,6 +383,7 @@ impl InputComponent {
         self.released_keyboard_keys[key as usize]
     }
 
+    // Mouse buttons
     pub fn set_mouse_button(&mut self, button: MouseButton, state: ElementState) {
         let index = match button {
             MouseButton::Left => 0,
@@ -423,6 +435,7 @@ impl InputComponent {
         }
     }
 
+    // Mouse scroll
     pub fn get_mouse_scroll_delta(&self) -> Vector2f {
         self.current_mouse_scroll_delta
     }
@@ -438,6 +451,8 @@ impl InputComponent {
     pub fn set_mouse_scroll_pixel_delta(&mut self, delta: Vector2f) {
         self.current_mouse_scroll_pixel_delta = delta;
     }
+
+    // - Mouse motion
 
     pub fn get_mouse_delta(&self) -> Vector2f {
         self.current_mouse_delta
@@ -455,6 +470,7 @@ impl InputComponent {
         self.current_mouse_position = position;
     }
 
+    // Gamepad buttons (get by PlayerId, set by Gamepad's Id)
     pub fn set_gamepad_button(
         &mut self,
         gamepad_id: GamepadId,
@@ -463,7 +479,7 @@ impl InputComponent {
     ) {
         let player_id = match self.gamepad_id_to_player.get(&gamepad_id) {
             Some(&pid) => pid,
-            None => return,
+            None => return, // gamepad not recognized
         };
         let i = button as usize + (player_id as usize * GAMEPAD_BUTTON_COUNT);
         match state {
@@ -500,7 +516,7 @@ impl InputComponent {
     pub fn set_gamepad_axis(&mut self, gamepad_id: GamepadId, axis: GamepadAxis, raw: f32) {
         let player_id = match self.gamepad_id_to_player.get(&gamepad_id) {
             Some(&pid) => pid,
-            None => return,
+            None => return, // gamepad not recognized
         };
 
         let v = if raw.abs() < GAMEPAD_DEADZONE {
@@ -519,12 +535,13 @@ impl InputComponent {
 
     pub fn connect_gamepad(&mut self, gamepad_id: GamepadId) {
         if self.gamepad_id_to_player.contains_key(&gamepad_id) {
-            return;
+            return; // already connected
         }
 
         for i in 0..NUM_SUPPORTED_GAMEPADS {
             if self.gamepad_ids[i].is_none() {
                 self.gamepad_ids[i] = Some(gamepad_id);
+                // Player Ids are assigned in order of connection
                 let pid = PlayerId::try_from(i as u8).unwrap();
                 self.gamepad_id_to_player.insert(gamepad_id, pid);
                 return;
@@ -539,6 +556,7 @@ impl InputComponent {
             self.in_flight_force_feedback
                 .retain(|ff| ff.id != gamepad_id);
 
+            // Reset buttons and axes for this gamepad
             let base = index * GAMEPAD_BUTTON_COUNT;
             for j in 0..GAMEPAD_BUTTON_COUNT {
                 let k = base + j;
@@ -553,6 +571,7 @@ impl InputComponent {
         }
     }
 
+    // Haptics functions
     pub fn enqueue_rumble(
         &mut self,
         player_id: PlayerId,

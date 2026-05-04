@@ -1,6 +1,6 @@
 #![allow(non_snake_case, dead_code)]
 
-mod dev_server;
+mod web_dev_server;
 mod size_report;
 mod wasm_build;
 
@@ -39,8 +39,8 @@ pub(crate) enum CompileMode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum BuildTarget {
-    Standalone,
-    Wasm,
+    Native,
+    Web,
 }
 
 // --- Platform helpers -------------------------------------------------------
@@ -1164,8 +1164,8 @@ fn run_app() -> Result<()> {
         .short("t")
         .long("target")
         .takes_value(true)
-        .possible_values(&["standalone", "wasm"])
-        .default_value("standalone")
+        .possible_values(&["native", "web"])
+        .default_value("native")
         .required(false)
         .help("Build/run target: native standalone executable or WASM+WebGPU for the browser");
 
@@ -1208,9 +1208,9 @@ fn run_app() -> Result<()> {
         _ => CompileMode::Debug,
     };
 
-    let target: BuildTarget = match matches.value_of("target").unwrap_or("standalone") {
-        "wasm" => BuildTarget::Wasm,
-        _ => BuildTarget::Standalone,
+    let target: BuildTarget = match matches.value_of("target").unwrap_or("native") {
+        "web" => BuildTarget::Web,
+        _ => BuildTarget::Native,
     };
 
     match action_argument {
@@ -1229,7 +1229,7 @@ fn run_app() -> Result<()> {
                 .to_path_buf();
 
             match target {
-                BuildTarget::Standalone => {
+                BuildTarget::Native => {
                     let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
                     output_directory_path = get_game_build_path(
                         &game_project_directory_path,
@@ -1245,8 +1245,8 @@ fn run_app() -> Result<()> {
                     )
                     .context("Failed to run game project")?;
                 }
-                BuildTarget::Wasm => {
-                    dev_server::run(&game_project_directory_path, &compile_mode)
+                BuildTarget::Web => {
+                    web_dev_server::run(&game_project_directory_path, &compile_mode)
                         .context("Failed to run game project for wasm")?;
                 }
             }
@@ -1257,7 +1257,7 @@ fn run_app() -> Result<()> {
                 .to_path_buf();
 
             match target {
-                BuildTarget::Standalone => {
+                BuildTarget::Native => {
                     let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
                     output_directory_path = get_game_build_path(
                         &game_project_directory_path,
@@ -1271,7 +1271,7 @@ fn run_app() -> Result<()> {
                     )
                     .context("Failed to build game project")?;
                 }
-                BuildTarget::Wasm => {
+                BuildTarget::Web => {
                     if matches.occurrences_of("output-path") > 0 {
                         println!(
                             "Note: `-o/--output-path` is ignored with `-t wasm`; output is fixed at <game>/build/wasm/"

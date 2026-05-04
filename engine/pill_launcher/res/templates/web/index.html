@@ -120,7 +120,7 @@
         async function run() {
             if (!await checkWebGPU()) return;
             try {
-                const { default: init } = await import('./pill_web.js');
+                const { default: init } = await import('./pill_web_app.js');
                 await init();
             } catch (e) {
                 console.error('Failed to load WASM:', e);
