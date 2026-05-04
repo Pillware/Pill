@@ -1227,12 +1227,10 @@ fn run_app() -> Result<()> {
 
     let runtime_load_mode = parse_runtime_load_mode(std::env::var("PILL_RUNTIME_MODE").ok())
         .or(in_process.then_some(RuntimeLoadMode::InProcess))
-        .unwrap_or_else(|| {
-            if cfg!(target_os = "macos") {
-                RuntimeLoadMode::InProcess
-            } else {
-                RuntimeLoadMode::Dylib
-            }
+        .unwrap_or(if cfg!(target_os = "macos") {
+            RuntimeLoadMode::InProcess
+        } else {
+            RuntimeLoadMode::Dylib
         });
 
     let engine_source_directory_path = if hot_reload_enabled {

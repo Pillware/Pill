@@ -78,10 +78,7 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
     // no filesystem, so the launcher inlined the bytes via include_str! at
     // build time.
     let mut config = config::Config::default();
-    if let Err(e) = config.merge(config::File::from_str(
-        config_ini,
-        config::FileFormat::Ini,
-    )) {
+    if let Err(e) = config.merge(config::File::from_str(config_ini, config::FileFormat::Ini)) {
         log::warn!("Failed to parse embedded config.ini: {e}");
     }
     let _ = config.set("WINDOW_WIDTH", window_size.width as i64);

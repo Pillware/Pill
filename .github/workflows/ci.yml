@@ -193,8 +193,8 @@ jobs:
           set -euo pipefail
           chmod +x engine/pill_launcher/target/release/PillLauncher
 
-          # `-a run -t wasm` builds the bundle, then starts the dev server on :8080.
-          ./engine/pill_launcher/target/release/PillLauncher -a run -t wasm -p "$EXAMPLE" -c release &
+          # `-a run -t web` builds the bundle, then starts the dev server on :8080.
+          ./engine/pill_launcher/target/release/PillLauncher -a run -t web -p "$EXAMPLE" -c release &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 
@@ -207,7 +207,7 @@ jobs:
           done
 
           curl -sf -o /dev/null http://127.0.0.1:8080/
-          curl -sf -o /dev/null http://127.0.0.1:8080/pill_web.js
-          curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_bg.wasm
+          curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app.js
+          curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app_bg.wasm
           echo "Dev server smoke test OK for $EXAMPLE"
 
