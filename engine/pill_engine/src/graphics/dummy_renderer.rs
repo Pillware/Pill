@@ -30,7 +30,7 @@ impl PillRenderer for DummyRenderer {
         _vertex_shader_bytes: &[u8],
         _fragment_shader_bytes: &[u8],
         _texture_slots: &HashMap<String, ShaderTextureSlot>,
-        _parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        _parameter_slots: &IndexMap<String, ShaderParameterSlot>,
         _pass_engine_parameters: bool,
         _pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {

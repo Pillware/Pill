@@ -10,7 +10,7 @@ concurrency:
 
 env:
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-  RUSTFLAGS: -C link-arg=-fuse-ld=mold
+  # No workflow-level RUSTFLAGS: it overrides target-scoped .cargo/config.toml and leaks -fuse-ld=mold into wasm builds, which rust-lld rejects.
 
 jobs:
   build_launcher:
@@ -105,6 +105,7 @@ jobs:
       fail-fast: false
       matrix:
         example:
+          - examples/cube
           - examples/floating_pills/
           - examples/italian_brainrot
           - examples/net_minimal/client
@@ -123,6 +124,7 @@ jobs:
         with:
           workspaces: |
             engine -> target
+            examples/cube -> target
             examples/floating_pills -> target
             examples/italian_brainrot -> target
             examples/net_minimal/client -> target
@@ -136,13 +138,76 @@ jobs:
 
       - name: Build example (PillLauncher or cargo for headless server)
         shell: bash
+        env:
+          EXAMPLE: ${{ matrix.example }}
         run: |
           set -euo pipefail
           chmod +x engine/pill_launcher/target/release/PillLauncher
 
-          if [[ "${{ matrix.example }}" == "examples/net_minimal/server" ]]; then
+          if [[ "$EXAMPLE" == "examples/net_minimal/server" ]]; then
             # Build the server as a normal Rust binary (headless)
-            cargo build --manifest-path "${{ matrix.example }}/Cargo.toml"
+            cargo build --manifest-path "$EXAMPLE/Cargo.toml"
           else
-            ./engine/pill_launcher/target/release/PillLauncher -a build -p "${{ matrix.example }}"
+            ./engine/pill_launcher/target/release/PillLauncher -a build -p "$EXAMPLE"
           fi
+
+  build_wasm_example:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - examples/cube
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/linux-deps
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          rustflags: ''
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            examples/cube/build/wasm/.build/pill_web -> target
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+
+      - name: Download PillLauncher artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: engine/pill_launcher/target/release
+
+      - name: Smoke test — build wasm and serve via dev server
+        shell: bash
+        env:
+          EXAMPLE: ${{ matrix.example }}
+        run: |
+          set -euo pipefail
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+
+          # `-a run -t web` builds the bundle, then starts the dev server on :8080.
+          ./engine/pill_launcher/target/release/PillLauncher -a run -t web -p "$EXAMPLE" -c release &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          # Wait up to 180s for the server to bind (release wasm-pack + wasm-opt is slow).
+          for _ in $(seq 1 180); do
+            if curl -sf -o /dev/null http://127.0.0.1:8080/; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -sf -o /dev/null http://127.0.0.1:8080/
+          curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app.js
+          curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app_bg.wasm
+          echo "Dev server smoke test OK for $EXAMPLE"
+

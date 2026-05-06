@@ -13,6 +13,7 @@ fs_extra = "1.2.0"
 anyhow = "1.0"
 path-absolutize = "3.0.11"
 config = "0.11"
+tiny_http = "0.12"
 
 [profile.release]
 debug = 2

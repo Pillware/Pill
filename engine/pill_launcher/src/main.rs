@@ -1,5 +1,9 @@
 #![allow(non_snake_case, dead_code)]
 
+mod web_dev_server;
+mod size_report;
+mod wasm_build;
+
 use anyhow::*;
 use clap::{App, AppSettings, Arg};
 use config::Config;
@@ -17,20 +21,26 @@ use std::{
 
 // - Cargo commands
 
-enum Location {
+pub(crate) enum Location {
     EngineProjectRoot, // Main engine project directory (containing creates, examples, etc)
     EngineCrates,
     PillEngineCrate,
     PillCoreCrate,
-    PillStandaloneCrate,
+    PillNativeCrate,
     PillLauncherCrate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum CompileMode {
+pub(crate) enum CompileMode {
     Debug,
     Release,
     HotReload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BuildTarget {
+    Native,
+    Web,
 }
 
 // --- Platform helpers -------------------------------------------------------
@@ -123,12 +133,12 @@ fn get_path(location: Location) -> PathBuf {
         Location::EngineCrates => engine_ws,
         Location::PillEngineCrate => engine_ws.join("pill_engine"),
         Location::PillCoreCrate => engine_ws.join("pill_core"),
-        Location::PillStandaloneCrate => engine_ws.join("pill_standalone"),
+        Location::PillNativeCrate => engine_ws.join("pill_native"),
         Location::PillLauncherCrate => engine_ws.join("pill_launcher"),
     }
 }
 
-fn modify_file<A: FnMut(String) -> String>(
+pub(crate) fn modify_file<A: FnMut(String) -> String>(
     input_path: &PathBuf,
     output_path: &PathBuf,
     mut action: A,
@@ -512,6 +522,9 @@ fn prepare_workspace_for_game(
     check_if_game_project_validity(game_project_directory_path)
         .context("Game project is invalid")?;
 
+    // Compilation has to be done together on pill_native and pill_game together in the same context.
+    // For that compilation through Cargo workspace is required.
+    // Otherwise, typeids of types like "Mesh" will not match what will make all generic (templated) functions work improperly
     let engine_workspace_directory_path = get_path(Location::EngineCrates);
     let workspace_manifest_path = engine_workspace_directory_path.join("Cargo.toml");
     if !workspace_manifest_path.exists() {
@@ -801,7 +814,7 @@ fn build_game_project(
         "-p",
         "pill_game",
         "-p",
-        "pill_standalone",
+        "pill_native",
         "-p",
         "pill_runtime",
     ];
@@ -833,7 +846,7 @@ fn build_game_project(
     // Copy standalone exe ONLY for non-hot-reload builds or hot-reload consequent reloads
     if *compile_mode != CompileMode::HotReload || !hot_reload_child {
         let standalone_output_path =
-            compilation_artifacts_folder_path.join(format!("pill_standalone{EXEC_SUFFIX}"));
+            compilation_artifacts_folder_path.join(format!("pill_native{EXEC_SUFFIX}"));
         if !standalone_output_path.exists() {
             return Err(Error::msg(
                 "Standalone executable was not built successfully",
@@ -949,8 +962,8 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Update game project dependency in standalone's cargo.toml
     modify_file(
-        &get_path(Location::PillStandaloneCrate).join("Cargo.toml"),
-        &get_path(Location::PillStandaloneCrate).join("Cargo.toml"),
+        &get_path(Location::PillNativeCrate).join("Cargo.toml"),
+        &get_path(Location::PillNativeCrate).join("Cargo.toml"),
         |line: String| -> String {
             if line.contains("pill_game") {
                 return format!(
@@ -1147,6 +1160,15 @@ fn run_app() -> Result<()> {
         .default_value("debug")
         .required(false);
 
+    let target_option = Arg::with_name("target")
+        .short("t")
+        .long("target")
+        .takes_value(true)
+        .possible_values(&["native", "web"])
+        .default_value("native")
+        .required(false)
+        .help("Build/run target: native standalone executable or WASM+WebGPU for the browser");
+
     let game_args = Arg::with_name("game-args")
         .help("Arguments passed through to cargo/game (use `--` to separate them)")
         .multiple(true)
@@ -1160,6 +1182,7 @@ fn run_app() -> Result<()> {
         .arg(path_option)
         .arg(output_path_option)
         .arg(compile_mode_option)
+        .arg(target_option)
         .arg(game_args)
         .setting(AppSettings::TrailingVarArg);
 
@@ -1185,6 +1208,11 @@ fn run_app() -> Result<()> {
         _ => CompileMode::Debug,
     };
 
+    let target: BuildTarget = match matches.value_of("target").unwrap_or("native") {
+        "web" => BuildTarget::Web,
+        _ => BuildTarget::Native,
+    };
+
     match action_argument {
         "create" => {
             let game_parent_directory_path = PathBuf::from(directory_path_argument.expect("Game project parent directory path has to be specified using --path flag. For example: --path <PROJECT_DIR>"))
@@ -1200,38 +1228,59 @@ fn run_app() -> Result<()> {
                 .absolutize().context("Failed to absolutize game project directory path")?
                 .to_path_buf();
 
-            let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
-            output_directory_path = get_game_build_path(
-                &game_project_directory_path,
-                &output_directory_path,
-                &compile_mode,
-            )
-            .unwrap();
-            run_game_project(
-                &game_project_directory_path,
-                &output_directory_path,
-                &compile_mode,
-                &passthrough_args,
-            )
-            .context("Failed to run game project")?;
+            match target {
+                BuildTarget::Native => {
+                    let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
+                    output_directory_path = get_game_build_path(
+                        &game_project_directory_path,
+                        &output_directory_path,
+                        &compile_mode,
+                    )
+                    .unwrap();
+                    run_game_project(
+                        &game_project_directory_path,
+                        &output_directory_path,
+                        &compile_mode,
+                        &passthrough_args,
+                    )
+                    .context("Failed to run game project")?;
+                }
+                BuildTarget::Web => {
+                    web_dev_server::run(&game_project_directory_path, &compile_mode)
+                        .context("Failed to run game project for wasm")?;
+                }
+            }
         }
         "build" => {
             let game_project_directory_path = PathBuf::from(directory_path_argument.expect("Game project directory path has to be specified using --path flag. For example: --path <GAME_PROJECT_DIR>"))
                 .absolutize().context("Failed to absolutize game project directory path")?
                 .to_path_buf();
 
-            let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
-            output_directory_path = get_game_build_path(
-                &game_project_directory_path,
-                &output_directory_path,
-                &compile_mode,
-            )?;
-            build_game_project(
-                &game_project_directory_path,
-                &output_directory_path,
-                &compile_mode,
-            )
-            .context("Failed to build game project")?;
+            match target {
+                BuildTarget::Native => {
+                    let mut output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"));
+                    output_directory_path = get_game_build_path(
+                        &game_project_directory_path,
+                        &output_directory_path,
+                        &compile_mode,
+                    )?;
+                    build_game_project(
+                        &game_project_directory_path,
+                        &output_directory_path,
+                        &compile_mode,
+                    )
+                    .context("Failed to build game project")?;
+                }
+                BuildTarget::Web => {
+                    if matches.occurrences_of("output-path") > 0 {
+                        println!(
+                            "Note: `-o/--output-path` is ignored with `-t wasm`; output is fixed at <game>/build/wasm/"
+                        );
+                    }
+                    wasm_build::build(&game_project_directory_path, &compile_mode)
+                        .context("Failed to build game project for wasm")?;
+                }
+            }
         }
         "docs" => {
             let output_directory_path = PathBuf::from(output_directory_path_argument.expect("Output directory path has to be specified using --output-path flag. For example: --output-path <OUTPUT_DIR>"))

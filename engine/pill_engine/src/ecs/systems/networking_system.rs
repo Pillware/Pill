@@ -58,18 +58,16 @@ use pill_core::{
     client_connect, client_disconnect, client_flush, client_get_events, client_send, client_update,
     is_not_ready, server_broadcast, server_broadcast_except, server_disconnect_client,
     server_flush, server_get_events, server_send_one, server_update, ExitNotice, NetworkAction,
-    NetworkClient, NetworkPacket, Vector3f,
+    NetworkPacket, Vector3f,
 };
 
 use crate::ecs::components::network_manager_component::OfflinePolicy;
-use crate::ecs::components::transform_component;
 use crate::ecs::{
     ClientState, ConnectionState, EntityHandle, NetworkEntityState, NetworkManagerComponent,
     NetworkSide, NetworkStateComponent, TimeComponent, TransformComponent,
 };
 use crate::engine::Engine;
 
-use rand::{rng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::time::Duration;

@@ -11,7 +11,14 @@ use pill_core::{
 
 use anyhow::{Context, Error, Result};
 use std::path::{Path, PathBuf};
-use tobj::LoadOptions;
+
+fn obj_load_options() -> tobj::LoadOptions {
+    tobj::LoadOptions {
+        triangulate: true,
+        single_index: true,
+        ..Default::default()
+    }
+}
 
 pill_core::define_new_pill_slotmap_key! {
     pub struct MeshHandle;
@@ -47,6 +54,20 @@ impl Mesh {
         self.flip_uv_y = flip;
         self
     }
+
+    pub fn from_data(name: &str, mesh_data: MeshData) -> Self {
+        Self {
+            name: name.to_string(),
+            path: PathBuf::new(),
+            renderer_resource_handle: None,
+            mesh_data: Some(mesh_data),
+            flip_uv_y: false,
+        }
+    }
+
+    pub fn cube(name: &str, size: f32) -> Self {
+        Self::from_data(name, MeshData::cube(size))
+    }
 }
 
 impl PillTypeMapKey for Mesh {
@@ -67,19 +88,20 @@ impl Resource for Mesh {
             get_type_name::<Self>().specific_object_style()
         );
 
-        // Check if path to asset is correct
-        let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-        pill_core::validate_asset_path(&resource_file_path, &["obj"])
-            .context(error_message.clone())?;
+        // Load from file only if mesh_data not already set (procedural mesh)
+        if self.mesh_data.is_none() {
+            let resource_file_path = engine.game_resources_directory_path.join(&self.path);
+            pill_core::validate_asset_path(&resource_file_path, &["obj"])
+                .context(error_message.clone())?;
 
-        // Create mesh data
-        let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
-            .context(error_message.clone())
-            .context(format!(
-                "Failed to create mesh data from {} file",
-                resource_file_path.file_name().unwrap().to_string_lossy()
-            ))?;
-        self.mesh_data = Some(mesh_data);
+            let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
+                .context(error_message.clone())
+                .context(format!(
+                    "Failed to create mesh data from {} file",
+                    resource_file_path.file_name().unwrap().to_string_lossy()
+                ))?;
+            self.mesh_data = Some(mesh_data);
+        }
 
         // Create new renderer mesh resource
         let renderer_resource_handle = engine
@@ -137,26 +159,21 @@ pub struct MeshData {
 
 impl MeshData {
     pub fn new(path: &Path, flip_uv_y: bool) -> Result<Self> {
-        // Load model from path using tinyobjloader crate
-        let load_options = LoadOptions {
-            triangulate: true,
-            single_index: true,
-            ..Default::default()
-        };
+        let (models, _materials) = tobj::load_obj(path, &obj_load_options())?;
+        Self::from_tobj_models(models, &path.display().to_string(), flip_uv_y)
+    }
 
-        // Load data
-        let (models, _materials) = tobj::load_obj(path, &load_options)?;
-
+    fn from_tobj_models(models: Vec<tobj::Model>, source: &str, flip_uv_y: bool) -> Result<Self> {
         // Check data validity
         if models.len() > 1 {
             return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(
-                path.to_path_buf().into_os_string().into_string().unwrap(),
+                source.to_string(),
             )));
         }
 
         if models.is_empty() {
             return Err(Error::new(EngineError::InvalidModelFile(
-                path.to_path_buf().into_os_string().into_string().unwrap(),
+                source.to_string(),
             )));
         }
 
@@ -257,5 +274,201 @@ impl MeshData {
         };
 
         Ok(mesh_data)
+    }
+
+    pub fn cube(size: f32) -> Self {
+        let s = size / 2.0;
+
+        // 6 faces, 4 vertices each = 24 vertices (each face has unique normals)
+        let vertices = vec![
+            // Front face (Z+)
+            MeshVertex {
+                position: [-s, -s, s],
+                texture_coordinates: [0.0, 1.0],
+                normal: [0.0, 0.0, 1.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [s, -s, s],
+                texture_coordinates: [1.0, 1.0],
+                normal: [0.0, 0.0, 1.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [s, s, s],
+                texture_coordinates: [1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [-s, s, s],
+                texture_coordinates: [0.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            // Back face (Z-)
+            MeshVertex {
+                position: [s, -s, -s],
+                texture_coordinates: [0.0, 1.0],
+                normal: [0.0, 0.0, -1.0],
+                tangent: [-1.0, 0.0, 0.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [-s, -s, -s],
+                texture_coordinates: [1.0, 1.0],
+                normal: [0.0, 0.0, -1.0],
+                tangent: [-1.0, 0.0, 0.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [-s, s, -s],
+                texture_coordinates: [1.0, 0.0],
+                normal: [0.0, 0.0, -1.0],
+                tangent: [-1.0, 0.0, 0.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [s, s, -s],
+                texture_coordinates: [0.0, 0.0],
+                normal: [0.0, 0.0, -1.0],
+                tangent: [-1.0, 0.0, 0.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            // Top face (Y+)
+            MeshVertex {
+                position: [-s, s, s],
+                texture_coordinates: [0.0, 1.0],
+                normal: [0.0, 1.0, 0.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 0.0, -1.0],
+            },
+            MeshVertex {
+                position: [s, s, s],
+                texture_coordinates: [1.0, 1.0],
+                normal: [0.0, 1.0, 0.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 0.0, -1.0],
+            },
+            MeshVertex {
+                position: [s, s, -s],
+                texture_coordinates: [1.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 0.0, -1.0],
+            },
+            MeshVertex {
+                position: [-s, s, -s],
+                texture_coordinates: [0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 0.0, -1.0],
+            },
+            // Bottom face (Y-)
+            MeshVertex {
+                position: [-s, -s, -s],
+                texture_coordinates: [0.0, 1.0],
+                normal: [0.0, -1.0, 0.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 0.0, 1.0],
+            },
+            MeshVertex {
+                position: [s, -s, -s],
+                texture_coordinates: [1.0, 1.0],
+                normal: [0.0, -1.0, 0.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 0.0, 1.0],
+            },
+            MeshVertex {
+                position: [s, -s, s],
+                texture_coordinates: [1.0, 0.0],
+                normal: [0.0, -1.0, 0.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 0.0, 1.0],
+            },
+            MeshVertex {
+                position: [-s, -s, s],
+                texture_coordinates: [0.0, 0.0],
+                normal: [0.0, -1.0, 0.0],
+                tangent: [1.0, 0.0, 0.0],
+                bitangent: [0.0, 0.0, 1.0],
+            },
+            // Right face (X+)
+            MeshVertex {
+                position: [s, -s, s],
+                texture_coordinates: [0.0, 1.0],
+                normal: [1.0, 0.0, 0.0],
+                tangent: [0.0, 0.0, -1.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [s, -s, -s],
+                texture_coordinates: [1.0, 1.0],
+                normal: [1.0, 0.0, 0.0],
+                tangent: [0.0, 0.0, -1.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [s, s, -s],
+                texture_coordinates: [1.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                tangent: [0.0, 0.0, -1.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [s, s, s],
+                texture_coordinates: [0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                tangent: [0.0, 0.0, -1.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            // Left face (X-)
+            MeshVertex {
+                position: [-s, -s, -s],
+                texture_coordinates: [0.0, 1.0],
+                normal: [-1.0, 0.0, 0.0],
+                tangent: [0.0, 0.0, 1.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [-s, -s, s],
+                texture_coordinates: [1.0, 1.0],
+                normal: [-1.0, 0.0, 0.0],
+                tangent: [0.0, 0.0, 1.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [-s, s, s],
+                texture_coordinates: [1.0, 0.0],
+                normal: [-1.0, 0.0, 0.0],
+                tangent: [0.0, 0.0, 1.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+            MeshVertex {
+                position: [-s, s, -s],
+                texture_coordinates: [0.0, 0.0],
+                normal: [-1.0, 0.0, 0.0],
+                tangent: [0.0, 0.0, 1.0],
+                bitangent: [0.0, 1.0, 0.0],
+            },
+        ];
+
+        // Triangle-list index buffer: each face is two triangles (a,b,c) + (a,c,d)
+        // over its 4 vertices, sharing the a-c diagonal — 6 indices per face, 36 total.
+        // See: https://learnopengl.com/Getting-started/Hello-Triangle
+        let indices = vec![
+            0, 1, 2, 0, 2, 3, // front
+            4, 5, 6, 4, 6, 7, // back
+            8, 9, 10, 8, 10, 11, // top
+            12, 13, 14, 12, 14, 15, // bottom
+            16, 17, 18, 16, 18, 19, // right
+            20, 21, 22, 20, 22, 23, // left
+        ];
+
+        MeshData { vertices, indices }
     }
 }

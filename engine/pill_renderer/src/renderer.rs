@@ -29,12 +29,30 @@ pub struct Renderer {
     pub state: State,
 }
 
+impl Renderer {
+    /// Async constructor for WASM - call this instead of PillRenderer::new on web
+    pub async fn new_async(
+        window: Arc<winit::window::Window>,
+        config: config::Config,
+    ) -> Result<Self> {
+        info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
+        let state: State = State::new(window, config).await?;
+        Ok(Self { state })
+    }
+}
+
 impl PillRenderer for Renderer {
+    #[cfg(not(target_arch = "wasm32"))]
     fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> {
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
         let state: State = pollster::block_on(State::new(window, config))?;
 
         Ok(Self { state })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn new(_window: Arc<winit::window::Window>, _config: config::Config) -> Result<Self> {
+        panic!("Use Renderer::new_async on WASM")
     }
 
     // --- Create ---
@@ -45,7 +63,7 @@ impl PillRenderer for Renderer {
         vertex_shader_bytes: &[u8],
         fragment_shader_bytes: &[u8],
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        parameter_slots: &IndexMap<String, ShaderParameterSlot>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -265,7 +283,6 @@ pub struct State {
     egui_drawer: EguiDrawer,
     // Other
     camera_bind_group_layout: wgpu::BindGroupLayout,
-    config: config::Config,
     //profiler: Profiler,
 }
 
@@ -323,8 +340,15 @@ impl State {
 
         // 3. Device and queue
         let (device, queue) = {
-            let features = wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::TIMESTAMP_QUERY;
-            // PIPELINE_STATISTICS_QUERY omitted: not supported on all GPUs; profiler falls back when absent
+            // Ask only for features the adapter actually supports. On Metal
+            // (macOS) PIPELINE_STATISTICS_QUERY isn't available; on some
+            // WebGPU adapters TIMESTAMP_QUERY isn't either. Downstream code
+            // (profiler.rs) checks `device.features().contains(...)` before
+            // using them, so narrowing here is safe.
+            let wanted = wgpu::Features::DEPTH_CLIP_CONTROL
+                | wgpu::Features::TIMESTAMP_QUERY
+                | wgpu::Features::PIPELINE_STATISTICS_QUERY;
+            let features = wanted & adapter.features();
 
             let device_descriptor = wgpu::DeviceDescriptor {
                 label: None,
@@ -346,6 +370,13 @@ impl State {
 
             // Get supported present modes and choose the best one
             let surface_capabilities = surface.get_capabilities(&adapter);
+
+            // Present mode: on wasm, Mailbox/Immediate aren't universally
+            // supported — stick to Fifo. On native, prefer Mailbox → Immediate
+            // → Fifo based on what the surface advertises.
+            #[cfg(target_arch = "wasm32")]
+            let present_mode = wgpu::PresentMode::Fifo;
+            #[cfg(not(target_arch = "wasm32"))]
             let present_mode = if surface_capabilities
                 .present_modes
                 .contains(&wgpu::PresentMode::Mailbox)
@@ -458,7 +489,6 @@ impl State {
             egui_drawer,
             // Other
             camera_bind_group_layout,
-            config,
             // profiler
         };
 

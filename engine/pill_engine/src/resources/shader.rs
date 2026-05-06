@@ -10,6 +10,8 @@ use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
+
 use anyhow::{Context, Result};
 
 #[derive(Debug, Clone)]
@@ -73,7 +75,10 @@ pub struct Shader {
     #[readonly]
     pub fragment_shader_resource_loader: ResourceLoader,
     #[readonly]
-    pub parameter_slots: HashMap<String, ShaderParameterSlot>, // TODO: We dont need ShaderParameterSlot, just the type is enough
+    // IndexMap (not HashMap) — iteration order must match the shader's uniform struct field order,
+    // because write_parameters_to_buffer packs bytes into the buffer in iteration order.
+    // HashMap's randomized iteration order made tint/specularity get swapped, rendering the cube black.
+    pub parameter_slots: IndexMap<String, ShaderParameterSlot>,
     #[readonly]
     pub texture_slots: HashMap<String, ShaderTextureSlot>,
     #[readonly]
@@ -94,7 +99,7 @@ impl Shader {
         name: &str,
         vertex_shader_resource_loader: ResourceLoader,
         fragment_shader_resource_loader: ResourceLoader,
-        parameter_slots: HashMap<String, ShaderParameterSlot>,
+        parameter_slots: IndexMap<String, ShaderParameterSlot>,
         texture_slots: HashMap<String, ShaderTextureSlot>,
         enable_engine_binding: bool, // If true, the engine uniform data will be accessible to the shader at (set = 0, binding = 0)
         enable_camera_binding: bool, // If true, the engine uniform data will be accessible to the shader at (set = 1, binding = 0)

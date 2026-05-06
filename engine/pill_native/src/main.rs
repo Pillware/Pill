@@ -568,6 +568,35 @@ fn configure_logging(config: &Config) {
     if using_default_log_levels {
         warn!("Using default log levels: {}", log_level);
     }
+
+    // // Configure logging
+    // let log_level = config.get_str("LOG_LEVEL").unwrap_or("Info".to_string());
+    // let log_level = match log_level.as_str() {
+    //     "Info" => log::LevelFilter::Info,
+    //     "Warning" => log::LevelFilter::Warn,
+    //     "Debug" => log::LevelFilter::Debug,
+    //     "Error" => log::LevelFilter::Error,
+    //     "Off" => log::LevelFilter::Off,
+    //     _ => log::LevelFilter::Info,
+    // };
+
+    // #[cfg(debug_assertions)]
+    // env_logger::Builder::new()
+    //     .format(|buf, record| {
+    //         writeln!(buf, "[{}] {} {}:{}: {}",
+    //             record.level(),
+    //             chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
+    //             record.file().unwrap_or("unknown"),
+    //             record.line().unwrap_or(0),
+    //             record.args()
+    //         )
+    //     })
+    //     .filter_module("pill_core", log_level)
+    //     .filter_module("pill_native", log_level)
+    //     .filter_module("pill_engine", log_level)
+    //     .filter_module("pill_renderer", log_level)
+    //     .filter_module("pill_game",       log_level)
+    //     .init();
 }
 
 pub fn load_window_icon(path: &Path) -> Option<Icon> {
@@ -1139,6 +1168,30 @@ impl ApplicationHandler for App {
 }
 
 fn run_app() -> Result<()> {
+    // In the development build, standalone will look for the resource files in the "res" directory of the game project directory
+    // In the release build, "res" directory is copied to /build/release/data/res (TODO: pack all resources use by game into a single data file)
+
+    // /<game_project_root>
+    // ├── /build
+    // │   ├── /dev
+    // │   │   ├── pill_native.exe
+    // │   │   └── /data
+    // │   │       ├── pill_game.dll
+    // │   │       └── pill_game_hot_reload.dll
+    // │   └── /release
+    // │       ├── pill_native.exe
+    // │       └── /data
+    // │           ├── /res
+    // │           ├── pill_game.dll
+    // │           └── pill_game_hot_reload.dll
+    // ├── /src
+    // ├── /res
+    // │   ├── icon.raw
+    // │   ├── icon.ico
+    // │   └── config.ini
+    // ├── Cargo.toml
+    // └── Cargo.lock
+
     let mut hot_reload_enabled =
         std::env::var("PILL_ENABLE_HOT_RELOAD").ok().as_deref() == Some("1");
 
@@ -1174,12 +1227,10 @@ fn run_app() -> Result<()> {
 
     let runtime_load_mode = parse_runtime_load_mode(std::env::var("PILL_RUNTIME_MODE").ok())
         .or(in_process.then_some(RuntimeLoadMode::InProcess))
-        .unwrap_or_else(|| {
-            if cfg!(target_os = "macos") {
-                RuntimeLoadMode::InProcess
-            } else {
-                RuntimeLoadMode::Dylib
-            }
+        .unwrap_or(if cfg!(target_os = "macos") {
+            RuntimeLoadMode::InProcess
+        } else {
+            RuntimeLoadMode::Dylib
         });
 
     let engine_source_directory_path = if hot_reload_enabled {

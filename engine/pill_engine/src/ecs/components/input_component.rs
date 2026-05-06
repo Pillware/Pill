@@ -4,16 +4,114 @@ use crate::{
     internal::NUM_SUPPORTED_GAMEPADS,
 };
 
-use bitvec::prelude::*;
 use pill_core::{PillTypeMapKey, Vector2f};
 
 use anyhow::{Error, Result};
-use gilrs::{ff::Effect, GamepadId};
-use std::{
-    collections::{HashMap, VecDeque},
-    time::Instant,
-};
+use std::collections::{HashMap, VecDeque};
 use winit::event::{ElementState, MouseScrollDelta};
+
+// Native has gilrs for gamepads + bitvec for compact key/button state +
+// std::time::Instant for force-feedback deadlines. Wasm has none of
+// those (no process-wide input, no std::time on wasm32), so we stub
+// the types with the same shapes. Module-level cfg-gating keeps the
+// scattered attributes out of the rest of the file — mirrors how
+// `input_system.rs` splits native/wasm into sub-modules.
+#[cfg(not(target_arch = "wasm32"))]
+mod native {
+    use super::*;
+    use bitvec::prelude::*;
+    pub use gilrs::{ff::Effect, GamepadId};
+    pub use std::time::Instant;
+
+    // 256 bits — actually we have less but this is fine
+    pub type KeyState = BitArray<[u64; 4], Lsb0>;
+    // we have 17 buttons
+    pub type GamepadButtonState = BitArray<[u32; NUM_SUPPORTED_GAMEPADS], Lsb0>;
+
+    pub const fn key_state_zero() -> KeyState {
+        BitArray::ZERO
+    }
+    pub const fn gamepad_button_state_zero() -> GamepadButtonState {
+        BitArray::ZERO
+    }
+
+    pub fn set_key_state(state: &mut KeyState, i: usize, v: bool) {
+        state.set(i, v);
+    }
+    pub fn set_gamepad_state(state: &mut GamepadButtonState, i: usize, v: bool) {
+        state.set(i, v);
+    }
+
+    pub struct InFlight {
+        pub(crate) id: GamepadId,
+        pub(crate) effect: Effect,
+        pub(crate) end_at: Instant,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use super::*;
+
+    #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+    pub struct GamepadId(pub usize);
+
+    impl std::fmt::Display for GamepadId {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "GamepadId({})", self.0)
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct Effect;
+
+    impl Effect {
+        pub fn add_gamepad(&self, _gamepad: &()) -> Result<()> {
+            Ok(())
+        }
+        pub fn play(&self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    pub type KeyState = [bool; KEYBOARD_KEY_MAX];
+    pub type GamepadButtonState = [bool; GAMEPAD_BUTTON_MAX];
+
+    pub const fn key_state_zero() -> KeyState {
+        [false; KEYBOARD_KEY_MAX]
+    }
+    pub const fn gamepad_button_state_zero() -> GamepadButtonState {
+        [false; GAMEPAD_BUTTON_MAX]
+    }
+
+    pub fn set_key_state(state: &mut KeyState, i: usize, v: bool) {
+        state[i] = v;
+    }
+    pub fn set_gamepad_state(state: &mut GamepadButtonState, i: usize, v: bool) {
+        state[i] = v;
+    }
+
+    // No force-feedback on wasm — InFlight just tags the id for reset tracking.
+    pub struct InFlight {
+        pub(crate) id: GamepadId,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+use native::{
+    gamepad_button_state_zero, key_state_zero, set_gamepad_state, set_key_state,
+    GamepadButtonState, KeyState,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::{Effect, GamepadId, InFlight};
+
+#[cfg(target_arch = "wasm32")]
+use wasm::{
+    gamepad_button_state_zero, key_state_zero, set_gamepad_state, set_key_state,
+    GamepadButtonState, KeyState,
+};
+#[cfg(target_arch = "wasm32")]
+pub use wasm::{Effect, GamepadId, InFlight};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug)]
@@ -98,12 +196,6 @@ pub enum HapticCommand {
     },
 }
 
-pub struct InFlight {
-    pub(crate) id: GamepadId,
-    pub(crate) effect: Effect,
-    pub(crate) end_at: Instant,
-}
-
 #[derive(Copy, Clone, Debug)]
 pub enum KeyboardEvent {
     Key {
@@ -158,8 +250,8 @@ pub enum InputEvent {
     Gamepad(GamepadEvent),
 }
 
-pub type KeyState = BitArray<[u64; 4]>; // actually we have less but this is fine
-pub type GamepadButtonState = BitArray<[u32; NUM_SUPPORTED_GAMEPADS]>; // we have 17 buttons
+pub const KEYBOARD_KEY_MAX: usize = 256;
+pub const GAMEPAD_BUTTON_MAX: usize = GAMEPAD_BUTTON_COUNT * NUM_SUPPORTED_GAMEPADS;
 
 pub struct InputComponent {
     // Keyboard arrays
@@ -204,9 +296,9 @@ impl Default for InputComponent {
 impl InputComponent {
     pub fn new() -> Self {
         Self {
-            pressed_keyboard_keys: KeyState::ZERO,
-            released_keyboard_keys: KeyState::ZERO,
-            keyboard_keys: KeyState::ZERO,
+            pressed_keyboard_keys: key_state_zero(),
+            released_keyboard_keys: key_state_zero(),
+            keyboard_keys: key_state_zero(),
 
             pressed_mouse_buttons: [false; MOUSE_BUTTON_COUNT],
             released_mouse_buttons: [false; MOUSE_BUTTON_COUNT],
@@ -218,9 +310,9 @@ impl InputComponent {
             current_mouse_scroll_delta: Vector2f::new(0.0, 0.0),
             current_mouse_scroll_pixel_delta: Vector2f::new(0.0, 0.0),
 
-            pressed_gamepad_buttons: GamepadButtonState::ZERO,
-            released_gamepad_buttons: GamepadButtonState::ZERO,
-            gamepad_buttons: GamepadButtonState::ZERO,
+            pressed_gamepad_buttons: gamepad_button_state_zero(),
+            released_gamepad_buttons: gamepad_button_state_zero(),
+            gamepad_buttons: gamepad_button_state_zero(),
             gamepad_axes: [0.0; GAMEPAD_AXIS_COUNT * NUM_SUPPORTED_GAMEPADS],
 
             gamepad_ids: [None; NUM_SUPPORTED_GAMEPADS],
@@ -240,8 +332,8 @@ impl InputComponent {
     }
 
     fn reset_keyboard(&mut self) {
-        self.pressed_keyboard_keys = KeyState::ZERO;
-        self.released_keyboard_keys = KeyState::ZERO;
+        self.pressed_keyboard_keys = key_state_zero();
+        self.released_keyboard_keys = key_state_zero();
     }
 
     fn reset_mouse_buttons(&mut self) {
@@ -250,8 +342,8 @@ impl InputComponent {
     }
 
     fn reset_gamepad_buttons(&mut self) {
-        self.pressed_gamepad_buttons = GamepadButtonState::ZERO;
-        self.released_gamepad_buttons = GamepadButtonState::ZERO;
+        self.pressed_gamepad_buttons = gamepad_button_state_zero();
+        self.released_gamepad_buttons = gamepad_button_state_zero();
     }
 
     fn reset_mouse_motion(&mut self) {
@@ -266,15 +358,15 @@ impl InputComponent {
         match state {
             ElementState::Pressed => {
                 if self.keyboard_keys[i] {
-                    self.pressed_keyboard_keys.set(i, false);
+                    set_key_state(&mut self.pressed_keyboard_keys, i, false);
                 } else {
-                    self.pressed_keyboard_keys.set(i, true);
-                    self.keyboard_keys.set(i, true);
+                    set_key_state(&mut self.pressed_keyboard_keys, i, true);
+                    set_key_state(&mut self.keyboard_keys, i, true);
                 }
             }
             ElementState::Released => {
-                self.released_keyboard_keys.set(i, true);
-                self.keyboard_keys.set(i, false);
+                set_key_state(&mut self.released_keyboard_keys, i, true);
+                set_key_state(&mut self.keyboard_keys, i, false);
             }
         }
     }
@@ -389,35 +481,35 @@ impl InputComponent {
             Some(&pid) => pid,
             None => return, // gamepad not recognized
         };
-        let i = button as usize + (player_id as usize * u32::BITS as usize);
+        let i = button as usize + (player_id as usize * GAMEPAD_BUTTON_COUNT);
         match state {
             ElementState::Pressed => {
                 if self.gamepad_buttons[i] {
-                    self.pressed_gamepad_buttons.set(i, false);
+                    set_gamepad_state(&mut self.pressed_gamepad_buttons, i, false);
                 } else {
-                    self.pressed_gamepad_buttons.set(i, true);
-                    self.gamepad_buttons.set(i, true);
+                    set_gamepad_state(&mut self.pressed_gamepad_buttons, i, true);
+                    set_gamepad_state(&mut self.gamepad_buttons, i, true);
                 }
             }
             ElementState::Released => {
-                self.released_gamepad_buttons.set(i, true);
-                self.gamepad_buttons.set(i, false);
+                set_gamepad_state(&mut self.released_gamepad_buttons, i, true);
+                set_gamepad_state(&mut self.gamepad_buttons, i, false);
             }
         }
     }
 
     pub fn get_gamepad_button(&self, player_id: PlayerId, button: GamepadButton) -> bool {
-        let i = button as usize + (player_id as usize * u32::BITS as usize);
+        let i = button as usize + (player_id as usize * GAMEPAD_BUTTON_COUNT);
         self.gamepad_buttons[i]
     }
 
     pub fn get_gamepad_button_pressed(&self, player_id: PlayerId, button: GamepadButton) -> bool {
-        let i = button as usize + (player_id as usize * u32::BITS as usize);
+        let i = button as usize + (player_id as usize * GAMEPAD_BUTTON_COUNT);
         self.pressed_gamepad_buttons[i]
     }
 
     pub fn get_gamepad_button_released(&self, player_id: PlayerId, button: GamepadButton) -> bool {
-        let i = button as usize + (player_id as usize * u32::BITS as usize);
+        let i = button as usize + (player_id as usize * GAMEPAD_BUTTON_COUNT);
         self.released_gamepad_buttons[i]
     }
 
@@ -433,7 +525,6 @@ impl InputComponent {
             raw
         };
         let i = axis as usize + (player_id as usize * GAMEPAD_AXIS_COUNT);
-        println!("Gamepad {:?} axis {:?} set to {}", gamepad_id, axis, v);
         self.gamepad_axes[i] = v;
     }
 
@@ -453,18 +544,9 @@ impl InputComponent {
                 // Player Ids are assigned in order of connection
                 let pid = PlayerId::try_from(i as u8).unwrap();
                 self.gamepad_id_to_player.insert(gamepad_id, pid);
-                println!(
-                    "Gamepad connected: id {}, assigned to player {:?}",
-                    gamepad_id, pid
-                );
                 return;
             }
         }
-
-        println!(
-            "Gamepad connected: id {}, but no free slots available",
-            gamepad_id
-        );
     }
 
     pub fn disconnect_gamepad(&mut self, gamepad_id: GamepadId) {
@@ -475,26 +557,17 @@ impl InputComponent {
                 .retain(|ff| ff.id != gamepad_id);
 
             // Reset buttons and axes for this gamepad
-            let base = index * u32::BITS as usize;
+            let base = index * GAMEPAD_BUTTON_COUNT;
             for j in 0..GAMEPAD_BUTTON_COUNT {
                 let k = base + j;
-                self.gamepad_buttons.set(k, false);
-                self.pressed_gamepad_buttons.set(k, false);
-                self.released_gamepad_buttons.set(k, false);
+                set_gamepad_state(&mut self.gamepad_buttons, k, false);
+                set_gamepad_state(&mut self.pressed_gamepad_buttons, k, false);
+                set_gamepad_state(&mut self.released_gamepad_buttons, k, false);
             }
             let base_ax = index * GAMEPAD_AXIS_COUNT;
             for j in 0..GAMEPAD_AXIS_COUNT {
                 self.gamepad_axes[base_ax + j] = 0.0;
             }
-            println!(
-                "Gamepad disconnected: id {}, was player {:?}",
-                gamepad_id, player_id
-            );
-        } else {
-            println!(
-                "Gamepad disconnected: id {}, but was not recognized",
-                gamepad_id
-            );
         }
     }
 

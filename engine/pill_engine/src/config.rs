@@ -1,12 +1,15 @@
 use crate::{
     ecs::{
-        audio_system, deferred_update_system, haptics_system, input_system, rendering_system,
-        time_system, AudioManagerComponent, DeferredUpdateComponent, EguiManagerComponent,
-        InputComponent, PlayerId, SystemFunction, TimeComponent, UpdatePhase,
+        deferred_update_system, input_system, rendering_system, time_system,
+        DeferredUpdateComponent, EguiManagerComponent, InputComponent, PlayerId, SystemFunction,
+        TimeComponent, UpdatePhase,
     },
     graphics::{RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle},
     resources::{MaterialHandle, ShaderHandle, TextureHandle, TextureType},
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::ecs::{audio_system, haptics_system, AudioManagerComponent};
 
 use pill_core::PillSlotMapKeyData;
 
@@ -37,6 +40,7 @@ pub const INPUT_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PreGame,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub const HAPTICS_SYSTEM: SystemConfig = SystemConfig {
     name: "haptics_system",
     system_function: haptics_system,
@@ -49,6 +53,7 @@ pub const TIME_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PostGame,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub const AUDIO_SYSTEM: SystemConfig = SystemConfig {
     name: "audio_system",
     system_function: audio_system,
@@ -197,11 +202,22 @@ pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 lazy_static! {
     pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
         TypeId::of::<InputComponent>(),
         TypeId::of::<TimeComponent>(),
         TypeId::of::<AudioManagerComponent>(),
+        TypeId::of::<DeferredUpdateComponent>(),
+        TypeId::of::<EguiManagerComponent>()
+    );
+}
+
+#[cfg(target_arch = "wasm32")]
+lazy_static! {
+    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
+        TypeId::of::<InputComponent>(),
+        TypeId::of::<TimeComponent>(),
         TypeId::of::<DeferredUpdateComponent>(),
         TypeId::of::<EguiManagerComponent>()
     );

@@ -21,7 +21,11 @@ env_logger = "0.9.0"
 chrono = "0.4.19"
 strum_macros = "0.27.2"
 strum = "0.27.2"
+bincode = "1.0"
+web-time = "1.1"
+
+# Native-only networking (not available on WASM)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 renet = "1.0.0"
 renet_netcode = "1.0.0"
-bincode = "1.0"
 serde = { version = "1.0.228", features = ["derive"] }

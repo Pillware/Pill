@@ -113,6 +113,7 @@ impl Engine {
             .config
             .get_int("MAX_MESHES")
             .unwrap_or(MAX_MESHES as i64) as usize;
+        #[cfg(not(target_arch = "wasm32"))]
         let max_sound_count = self
             .config
             .get_int("MAX_SOUNDS")
@@ -122,6 +123,7 @@ impl Engine {
         self.register_resource_type::<Material>(max_material_count)?;
         self.register_resource_type::<Texture>(max_texture_count)?;
         self.register_resource_type::<Mesh>(max_mesh_count)?;
+        #[cfg(not(target_arch = "wasm32"))]
         self.register_resource_type::<Sound>(max_sound_count)?;
 
         debug!(LogContext::Engine => "Resource types registered");
@@ -309,6 +311,10 @@ impl Engine {
         #[cfg(not(feature = "headless"))]
         {
             self.add_global_component(InputComponent::new())?;
+        }
+
+        #[cfg(all(not(feature = "headless"), not(target_arch = "wasm32")))]
+        {
             let max_ambient_sink_count =
                 self.config
                     .get_int("MAX_CONCURRENT_2D_SOUNDS")
@@ -342,6 +348,7 @@ impl Engine {
                 INPUT_SYSTEM.system_function,
                 INPUT_SYSTEM.update_phase,
             )?;
+            #[cfg(not(target_arch = "wasm32"))]
             self.system_manager.add_system(
                 AUDIO_SYSTEM.name,
                 AUDIO_SYSTEM.system_function,
@@ -613,7 +620,7 @@ impl Engine {
     // --- Entity API ---
 
     /// Returns EntityBuilder, allowing for handy entity creation
-    pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder {
+    pub fn build_entity(&mut self, scene_handle: SceneHandle) -> EntityBuilder<'_> {
         let entity_handle = self.create_entity(scene_handle).unwrap();
         EntityBuilder {
             engine: self,

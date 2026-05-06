@@ -1,0 +1,23 @@
+# This crate is built only via `PillLauncher -a build -t web -p <game>`.
+# The launcher copies this Cargo.toml into <game>/build/wasm/.build/pill_web_app/,
+# rewrites the engine and pill_web path-deps to absolute paths, appends the
+# `pill_game` dependency pointing at the -p game directory, then runs wasm-pack.
+# Building this crate directly with `cargo build` will fail — no pill_game dep.
+#
+# Symmetry note: the bulk of the wasm runtime (panic hook, canvas, event loop)
+# lives in the workspace crate `pill_web`. This template is the per-game cdylib
+# that wasm-pack consumes — it provides only the bits that genuinely have to
+# be per-game (the WebGame struct and the embedded config.ini).
+
+[package]
+name = "pill_web_app"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pill_web = { path = "../pill_web" }
+
+wasm-bindgen = "0.2"

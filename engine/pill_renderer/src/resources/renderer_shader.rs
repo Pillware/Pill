@@ -1,18 +1,14 @@
 use anyhow::{Error, Result};
+use indexmap::IndexMap;
 use pill_core::{debug, LogContext, PillStyle, RendererError};
 use pill_engine::internal::{ShaderParameterSlot, ShaderTextureSlot};
 use std::collections::HashMap;
-
-pub enum ShaderBindGroupLayout {
-    Parameters,
-    Textures,
-}
 
 pub struct RendererShader {
     pub name: String,
     pub render_pipeline: wgpu::RenderPipeline,
 
-    pub parameter_slots: HashMap<String, ShaderParameterSlot>,
+    pub parameter_slots: IndexMap<String, ShaderParameterSlot>,
     pub parameters_bind_group_layout: Option<wgpu::BindGroupLayout>,
 
     pub texture_slots: HashMap<String, ShaderTextureSlot>,
@@ -35,7 +31,7 @@ impl RendererShader {
         vertex_layouts: &[wgpu::VertexBufferLayout],
         vertex_shader_bytes: &[u8],
         fragment_shader_bytes: &[u8],
-        parameter_slots: &HashMap<String, ShaderParameterSlot>,
+        parameter_slots: &IndexMap<String, ShaderParameterSlot>,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
         engine_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,

@@ -1,5 +1,3 @@
-#![cfg_attr(debug_assertions, allow(dead_code, unused_imports))]
-
 pub mod config;
 pub mod drawers;
 pub mod instance;

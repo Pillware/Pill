@@ -1,4 +1,4 @@
-use std::time::Instant;
+use web_time::Instant;
 
 use anyhow::{Context, Error, Result};
 use indexmap::IndexMap;
