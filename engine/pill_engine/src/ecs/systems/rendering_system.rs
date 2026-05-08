@@ -127,7 +127,6 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         camera_component_storage,
         transform_component_storage,
         egui_ui,
-        0.0,
         &mut timer,
     ) {
         Ok(_) => {

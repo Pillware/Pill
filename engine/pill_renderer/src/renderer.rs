@@ -251,7 +251,6 @@ impl PillRenderer for Renderer {
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
-        delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()> {
         self.state.render(
@@ -260,7 +259,6 @@ impl PillRenderer for Renderer {
             camera_component_storage,
             transform_component_storage,
             egui_ui,
-            delta_time,
             timer,
         )
     }
@@ -518,7 +516,6 @@ impl State {
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
-        delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()> {
         debug!(LogContext::Frame => "Starting frame render");
@@ -555,10 +552,9 @@ impl State {
         timer.record("Update engine parameters");
 
         // Engine uniform is updated AFTER the camera lookup so fog (carried on
-        // CameraComponent) can be forwarded into the `engine` UBO alongside delta_time.
+        // CameraComponent) can be forwarded into the `engine` UBO.
         self.renderer_resource_storage.engine_parameters.update(
             &self.queue,
-            delta_time,
             active_camera_component.fog_density,
             [
                 active_camera_component.fog_color.x,

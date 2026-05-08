@@ -124,7 +124,6 @@ impl PillRenderer for DummyRenderer {
         _camera_component_storage: &ComponentStorage<CameraComponent>,
         _transform_component_storage: &ComponentStorage<TransformComponent>,
         _egui_ui: Box<dyn FnMut(&egui::Context)>,
-        _delta_time: f32,
         _timer: &mut Timer,
     ) -> Result<()> {
         Ok(())

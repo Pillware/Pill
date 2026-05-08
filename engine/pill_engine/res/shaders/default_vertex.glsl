@@ -12,11 +12,6 @@ layout(location=5) in vec3 transform_position;
 layout(location=6) in vec3 transform_rotation;
 layout(location=7) in vec3 transform_scale;
 
-// Input engine parameters
-layout(set=0, binding=0) uniform engine {
-    float delta_time; 
-};
-
 // Input camera parameters
 layout(set=1, binding=0) uniform camera {
     vec3 camera_position; 
