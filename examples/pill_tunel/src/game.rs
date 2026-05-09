@@ -205,12 +205,12 @@ impl PillGame for WebGame {
         let color_tex = engine.add_resource::<Texture>(Texture::from_bytes(
             "pill_color",
             TextureType::Color,
-            include_bytes!("../res/textures/pill_color.png"),
+            include_bytes!("../res/textures/pill_color.rtex"),
         ))?;
         let normal_tex = engine.add_resource::<Texture>(Texture::from_bytes(
             "pill_normal",
             TextureType::Normal,
-            include_bytes!("../res/textures/pill_normal.png"),
+            include_bytes!("../res/textures/pill_normal.rtex"),
         ))?;
 
         let tunnel_materials: Vec<MaterialHandle> = PALETTE

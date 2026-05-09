@@ -110,8 +110,16 @@ fn load_rmesh(bytes: &[u8]) -> Result<MeshData> {
     }
     let vb = &bytes[16..16 + vertex_count * vertex_size];
     let ib = &bytes[16 + vertex_count * vertex_size..expected];
-    let vertices: Vec<MeshVertex> = bytemuck::cast_slice(vb).to_vec();
-    let indices: Vec<u32> = bytemuck::cast_slice(ib).to_vec();
+    // cast_slice requires the source pointer to be aligned to the target type.
+    // include_bytes! data is only 1-byte aligned, so collect through Vec<u32>
+    // (which allocates at 4-byte alignment) before casting to MeshVertex / u32.
+    let vb_u32: Vec<u32> = vb.chunks_exact(4)
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .collect();
+    let vertices: Vec<MeshVertex> = bytemuck::cast_slice(&vb_u32).to_vec();
+    let indices: Vec<u32> = ib.chunks_exact(4)
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .collect();
     Ok(MeshData { vertices, indices })
 }
 

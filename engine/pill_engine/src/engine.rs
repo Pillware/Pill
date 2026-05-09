@@ -209,7 +209,7 @@ impl Engine {
             DEFAULT_COLOR_TEXTURE_NAME,
             TextureType::Color,
             ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/textures/default_color.png"
+                "../res/textures/default_color.rtex"
             ))),
         ))?;
 
@@ -220,7 +220,7 @@ impl Engine {
             DEFAULT_NORMAL_TEXTURE_NAME,
             TextureType::Normal,
             ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/textures/default_normal.png"
+                "../res/textures/default_normal.rtex"
             ))),
         ))?;
 
