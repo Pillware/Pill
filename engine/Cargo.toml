@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "pill_abi",
+    "pill_assets",
     "pill_core",
     "pill_engine",
     "pill_renderer",

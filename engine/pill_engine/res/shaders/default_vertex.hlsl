@@ -1,18 +1,10 @@
-// Default vertex shader. Authored in HLSL; build.rs invokes slangc to emit
-// WGSL into $OUT_DIR/shaders/. Edit this file — never edit the generated WGSL.
+// Default vertex shader. Edit here — `pill_assets` regenerates the .wgsl.
 //
-// Convention notes:
-//  - Camera UBO is stored column-major in memory (matches GLSL std140 +
-//    Rust-side bytemuck `[[f32; 4]; 4]` column-by-column write).
-//  - HLSL `mul(M, v)` = matrix * column-vector, semantic-equivalent to
-//    GLSL's `M * v`. Matrix constructors take row-major arguments — values
-//    here are transposed from the original GLSL column-major constructors.
+// Convention: HLSL `mul(M, v)` = matrix * column-vector (same as GLSL `M * v`).
+// HLSL matrix constructors are row-major, so values here are transposed
+// from the original GLSL column-major constructors.
 
-struct CameraParams {
-    float3                camera_position;
-    column_major float4x4 camera_view_projection;
-};
-[[vk::binding(0, 1)]] ConstantBuffer<CameraParams> camera;
+#include "include/common.hlsl"
 
 struct VS_OUT {
     [[vk::location(0)]] float3 vertex_position       : TEXCOORD0;

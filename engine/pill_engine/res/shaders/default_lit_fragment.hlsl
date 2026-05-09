@@ -1,17 +1,7 @@
-// Default lit fragment shader. Authored in HLSL; slangc emits WGSL.
+// Default lit fragment shader. Edit here — `pill_assets` regenerates the .wgsl.
 // Diffuse + normal mapped, single point light, exp-squared depth fog.
 
-struct EngineParams {
-    float3 fog_color;
-    float  fog_density;
-};
-[[vk::binding(0, 0)]] ConstantBuffer<EngineParams> engine;
-
-struct CameraParams {
-    float3                camera_position;
-    column_major float4x4 camera_view_projection;
-};
-[[vk::binding(0, 1)]] ConstantBuffer<CameraParams> camera;
+#include "include/common.hlsl"
 
 struct MaterialParams {
     float3 tint;
