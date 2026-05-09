@@ -180,13 +180,13 @@ impl RendererShader {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &vertex_shader,
-                entry_point: Some("main"),
+                entry_point: Some("vs_main"),
                 buffers: vertex_layouts, // Specifies structure of vertices that will be passed to the vertex shader
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &fragment_shader,
-                entry_point: Some("main"),
+                entry_point: Some("fs_main"),
                 targets: color_target_states,
                 compilation_options: Default::default(),
             }),
