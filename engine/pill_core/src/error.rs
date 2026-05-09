@@ -1,6 +1,5 @@
 use crate::style::PillStyle;
 
-use colored::*;
 use thiserror::Error;
 
 // --- Core error ---
@@ -133,6 +132,6 @@ pub enum EngineError<'a> {
     Other(String),
 }
 
-pub fn err_prefix() -> ColoredString {
+pub fn err_prefix() -> String {
     "\nERROR".error_style()
 }

@@ -10,7 +10,7 @@ pill_core = {path = "../pill_core"}
 thiserror = "1.0.30"
 
 # Loggers
-log = "0.4"
+log = { version = "0.4", features = ["release_max_level_off"] }
 
 # Loaders
 tobj = { version = "3.0", optional = true }

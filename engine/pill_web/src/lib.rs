@@ -139,11 +139,7 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
                     last_time = now;
                     let dt = std::time::Duration::from_secs_f64(dt_ms / 1000.0);
 
-                    if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        engine.update(dt);
-                    })) {
-                        log::error!("engine.update() panicked: {:?}", e);
-                    }
+                    engine.update(dt);
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     engine.pass_keyboard_key_input(event);

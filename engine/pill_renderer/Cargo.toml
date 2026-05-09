@@ -8,7 +8,7 @@ pill_core = {path = "../pill_core"}
 pill_engine = {path = "../pill_engine", features = ["internal"]}
 
 # Logging
-log = "0.4"
+log = { version = "0.4", features = ["release_max_level_off"] }
 
 # Other
 wgpu = "25.0.0"

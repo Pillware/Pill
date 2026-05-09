@@ -805,8 +805,9 @@ fn build_game_project(
     // Pre-render PUML only for non-hot-reload builds
     let pill_engine_dir = get_path(Location::PillEngineCrate);
     if *compile_mode != CompileMode::HotReload {
-        render_puml_for_crate(&pill_engine_dir)
-            .context("Failed to render PlantUML diagrams for pill_engine")?;
+        if let Err(e) = render_puml_for_crate(&pill_engine_dir) {
+            eprintln!("Warning: skipping PlantUML render ({})", e);
+        }
     }
 
     let mut arguments = vec![
@@ -1004,8 +1005,9 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Pre-render all PUML in the engine crate
     let pill_engine_dir = get_path(Location::PillEngineCrate);
-    render_puml_for_crate(&pill_engine_dir)
-        .context("Failed to render PlantUML diagrams for pill_engine")?;
+    if let Err(e) = render_puml_for_crate(&pill_engine_dir) {
+        eprintln!("Warning: skipping PlantUML render ({})", e);
+    }
 
     // Game dev docs
     let arguments = vec![
