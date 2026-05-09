@@ -12,6 +12,7 @@ use pill_core::{
 use anyhow::{Context, Error, Result};
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "obj_loading")]
 fn obj_load_options() -> tobj::LoadOptions {
     tobj::LoadOptions {
         triangulate: true,
@@ -98,17 +99,24 @@ impl Resource for Mesh {
 
         // Load from file only if mesh_data not already set (procedural mesh)
         if self.mesh_data.is_none() {
-            let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-            pill_core::validate_asset_path(&resource_file_path, &["obj"])
-                .context(error_message.clone())?;
+            #[cfg(feature = "obj_loading")]
+            {
+                let resource_file_path = engine.game_resources_directory_path.join(&self.path);
+                pill_core::validate_asset_path(&resource_file_path, &["obj"])
+                    .context(error_message.clone())?;
 
-            let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
-                .context(error_message.clone())
-                .context(format!(
-                    "Failed to create mesh data from {} file",
-                    resource_file_path.file_name().unwrap().to_string_lossy()
-                ))?;
-            self.mesh_data = Some(mesh_data);
+                let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
+                    .context(error_message.clone())
+                    .context(format!(
+                        "Failed to create mesh data from {} file",
+                        resource_file_path.file_name().unwrap().to_string_lossy()
+                    ))?;
+                self.mesh_data = Some(mesh_data);
+            }
+            #[cfg(not(feature = "obj_loading"))]
+            return Err(anyhow::anyhow!(
+                "OBJ loading is disabled (enable the obj_loading feature)"
+            ));
         }
 
         // Create new renderer mesh resource
@@ -166,6 +174,7 @@ pub struct MeshData {
 }
 
 impl MeshData {
+    #[cfg(feature = "obj_loading")]
     pub fn new(path: &Path, flip_uv_y: bool) -> Result<Self> {
         let (models, _materials) = tobj::load_obj(path, &obj_load_options())?;
         Self::from_tobj_models(models, &path.display().to_string(), flip_uv_y)
@@ -180,6 +189,7 @@ impl MeshData {
         Self::from_tobj_models(models, "<in-memory>", flip_uv_y)
     }
 
+    #[cfg(feature = "obj_loading")]
     fn from_tobj_models(models: Vec<tobj::Model>, source: &str, flip_uv_y: bool) -> Result<Self> {
         // Check data validity
         if models.len() > 1 {

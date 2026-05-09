@@ -10,6 +10,7 @@ pub(crate) mod camera_component;
 mod component;
 mod component_storage;
 pub(crate) mod deferred_update_component;
+#[cfg(feature = "debug_ui")]
 pub(crate) mod egui_manager_component;
 pub(crate) mod input_component;
 pub(crate) mod mesh_rendering_component;

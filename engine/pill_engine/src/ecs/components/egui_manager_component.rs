@@ -1,3 +1,5 @@
+#![cfg(feature = "debug_ui")]
+
 use std::collections::HashMap;
 
 use crate::{

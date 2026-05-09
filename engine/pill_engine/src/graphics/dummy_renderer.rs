@@ -1,4 +1,5 @@
 use crate::{
+    app_config::EngineConfig,
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     graphics::{
         PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle,
@@ -18,7 +19,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 pub struct DummyRenderer;
 
 impl PillRenderer for DummyRenderer {
-    fn new(_window: Arc<Window>, _config: config::Config) -> Result<Self> {
+    fn new(_window: Arc<Window>, _config: EngineConfig) -> Result<Self> {
         Ok(DummyRenderer)
     }
 
@@ -113,10 +114,12 @@ impl PillRenderer for DummyRenderer {
         // no-op for dummy
     }
 
+    #[cfg(feature = "debug_ui")]
     fn pass_input_to_egui(&mut self, _event: &WindowEvent) -> Result<()> {
         Ok(())
     }
 
+    #[cfg(feature = "debug_ui")]
     fn render(
         &mut self,
         _active_camera_entity_handle: EntityHandle,
@@ -125,6 +128,18 @@ impl PillRenderer for DummyRenderer {
         _transform_component_storage: &ComponentStorage<TransformComponent>,
         _egui_ui: Box<dyn FnMut(&egui::Context)>,
         _delta_time: f32,
+        _timer: &mut Timer,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(not(feature = "debug_ui"))]
+    fn render(
+        &mut self,
+        _active_camera_entity_handle: EntityHandle,
+        _render_queue: &[RenderQueueItem],
+        _camera_component_storage: &ComponentStorage<CameraComponent>,
+        _transform_component_storage: &ComponentStorage<TransformComponent>,
         _timer: &mut Timer,
     ) -> Result<()> {
         Ok(())

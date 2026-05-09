@@ -4,8 +4,8 @@ use crate::resources::{
 };
 
 use pill_engine::internal::{
-    RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle,
-    RendererTextureHandle,
+    EngineConfig, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+    RendererShaderHandle, RendererTextureHandle,
 };
 
 use anyhow::{Ok, Result};
@@ -27,7 +27,7 @@ pub struct RendererResourceStorage {
 }
 
 impl RendererResourceStorage {
-    pub fn new(device: &wgpu::Device, config: &config::Config) -> Result<Self> {
+    pub fn new(device: &wgpu::Device, config: &EngineConfig) -> Result<Self> {
         let max_shader_count = config.get_int("MAX_SHADERS").unwrap_or(MAX_SHADERS as i64) as usize;
         let max_texture_count = config
             .get_int("MAX_TEXTURES")

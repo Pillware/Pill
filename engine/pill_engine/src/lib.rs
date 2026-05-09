@@ -2,6 +2,7 @@
     any(debug_assertions, target_arch = "wasm32"),
     allow(dead_code, unused_imports, mismatched_lifetime_syntaxes)
 )]
+mod app_config;
 mod config;
 mod ecs;
 mod engine;
@@ -60,7 +61,7 @@ macro_rules! define_global_component {
 pub mod game {
     pub use crate::{
         ecs::{
-            CameraAspectRatio, CameraComponent, Component, ComponentStorage, EguiManagerComponent,
+            CameraAspectRatio, CameraComponent, Component, ComponentStorage,
             EntityHandle, GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage,
             InputComponent, MeshRenderingComponent, PlayerId, SceneHandle, TimeComponent,
             TransformComponent, UpdatePhase,
@@ -91,6 +92,7 @@ pub mod game {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod internal_mod {
+    pub use crate::app_config::EngineConfig;
     pub use crate::{
         config::*,
         ecs::{
@@ -98,7 +100,7 @@ mod internal_mod {
             get_renderer_resource_handle_from_camera_component, networking_system_client,
             networking_system_server, update_transform_matrices, AudioListenerComponent,
             AudioManagerComponent, AudioSourceComponent, CameraAspectRatio, CameraComponent,
-            ComponentStorage, EguiManagerComponent, EntityHandle, EntityUpdate, InputComponent,
+            ComponentStorage, EntityHandle, EntityUpdate, InputComponent,
             MeshRenderingComponent, NetworkEntityAction, NetworkEntityState,
             NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkUpdatePayload,
             Scene, TimeComponent, TransformComponent,
@@ -120,12 +122,13 @@ mod internal_mod {
 
 #[cfg(target_arch = "wasm32")]
 mod internal_mod {
+    pub use crate::app_config::EngineConfig;
     pub use crate::{
         config::*,
         ecs::{
             get_model_matrix, get_normal_matrix,
             get_renderer_resource_handle_from_camera_component, update_transform_matrices,
-            CameraAspectRatio, CameraComponent, ComponentStorage, EguiManagerComponent,
+            CameraAspectRatio, CameraComponent, ComponentStorage,
             EntityHandle, InputComponent, MeshRenderingComponent, Scene, TimeComponent,
             TransformComponent,
         },

@@ -25,7 +25,9 @@ use pill_renderer::Renderer;
 /// embeds it into the per-game crate via `include_str!` because wasm has no
 /// filesystem at runtime.
 pub fn run(game: Box<dyn PillGame>, config_ini: &'static str) {
+    #[cfg(debug_assertions)]
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    #[cfg(debug_assertions)]
     console_log::init_with_level(log::Level::Debug).expect("Failed to init logger");
 
     log::info!(
@@ -77,12 +79,9 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
     // Parse the embedded config.ini provided by the per-game shim. Wasm has
     // no filesystem, so the launcher inlined the bytes via include_str! at
     // build time.
-    let mut config = config::Config::default();
-    if let Err(e) = config.merge(config::File::from_str(config_ini, config::FileFormat::Ini)) {
-        log::warn!("Failed to parse embedded config.ini: {e}");
-    }
-    let _ = config.set("WINDOW_WIDTH", window_size.width as i64);
-    let _ = config.set("WINDOW_HEIGHT", window_size.height as i64);
+    let mut config = pill_engine::internal::EngineConfig::from_ini(config_ini);
+    config.set("WINDOW_WIDTH", window_size.width as i64);
+    config.set("WINDOW_HEIGHT", window_size.height as i64);
 
     log::info!("Creating renderer...");
     let renderer: Box<dyn PillRenderer> = Box::new(

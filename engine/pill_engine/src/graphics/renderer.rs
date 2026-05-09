@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 use crate::{
+    app_config::EngineConfig,
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     graphics::RenderQueueItem,
     internal::{MaterialParameter, MaterialTexture, MeshData},
@@ -37,7 +38,7 @@ pill_core::define_new_pill_slotmap_key! {
 // --- Renderer trait definition ---
 
 pub trait PillRenderer {
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self>
+    fn new(window: Arc<winit::window::Window>, config: EngineConfig) -> Result<Self>
     where
         Self: Sized;
 
@@ -103,8 +104,10 @@ pub trait PillRenderer {
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
+    #[cfg(feature = "debug_ui")]
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;
 
+    #[cfg(feature = "debug_ui")]
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
@@ -113,6 +116,16 @@ pub trait PillRenderer {
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
+        timer: &mut Timer,
+    ) -> Result<()>;
+
+    #[cfg(not(feature = "debug_ui"))]
+    fn render(
+        &mut self,
+        active_camera_entity_handle: EntityHandle,
+        render_queue: &[RenderQueueItem],
+        camera_component_storage: &ComponentStorage<CameraComponent>,
+        transform_component_storage: &ComponentStorage<TransformComponent>,
         timer: &mut Timer,
     ) -> Result<()>;
 }

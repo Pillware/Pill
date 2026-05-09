@@ -1,7 +1,7 @@
 use crate::{
     ecs::{
         deferred_update_system, input_system, rendering_system, time_system,
-        DeferredUpdateComponent, EguiManagerComponent, InputComponent, PlayerId, SystemFunction,
+        DeferredUpdateComponent, InputComponent, PlayerId, SystemFunction,
         TimeComponent, UpdatePhase,
     },
     graphics::{RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle},
@@ -202,23 +202,42 @@ pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "debug_ui"))]
 lazy_static! {
     pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
         TypeId::of::<InputComponent>(),
         TypeId::of::<TimeComponent>(),
         TypeId::of::<AudioManagerComponent>(),
         TypeId::of::<DeferredUpdateComponent>(),
-        TypeId::of::<EguiManagerComponent>()
+        TypeId::of::<crate::ecs::EguiManagerComponent>()
     );
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "debug_ui")))]
+lazy_static! {
+    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
+        TypeId::of::<InputComponent>(),
+        TypeId::of::<TimeComponent>(),
+        TypeId::of::<AudioManagerComponent>(),
+        TypeId::of::<DeferredUpdateComponent>(),
+    );
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "debug_ui"))]
 lazy_static! {
     pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
         TypeId::of::<InputComponent>(),
         TypeId::of::<TimeComponent>(),
         TypeId::of::<DeferredUpdateComponent>(),
-        TypeId::of::<EguiManagerComponent>()
+        TypeId::of::<crate::ecs::EguiManagerComponent>()
+    );
+}
+
+#[cfg(all(target_arch = "wasm32", not(feature = "debug_ui")))]
+lazy_static! {
+    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
+        TypeId::of::<InputComponent>(),
+        TypeId::of::<TimeComponent>(),
+        TypeId::of::<DeferredUpdateComponent>(),
     );
 }

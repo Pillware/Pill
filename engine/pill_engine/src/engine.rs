@@ -1,4 +1,4 @@
-use crate::{config::*, ecs::*, graphics::*, resources::*};
+use crate::{app_config::EngineConfig, config::*, ecs::*, graphics::*, resources::*};
 
 use pill_core::{
     debug, error, get_game_error_message, get_type_name, info, EngineError, LogContext,
@@ -24,7 +24,7 @@ pub trait PillGame {
 
 /// Heart of Pill Engine
 pub struct Engine {
-    pub(crate) config: config::Config,
+    pub(crate) config: EngineConfig,
     pub(crate) game: Option<Game>,
     pub(crate) renderer: Box<dyn PillRenderer>,
     pub(crate) scene_manager: SceneManager,
@@ -48,7 +48,7 @@ impl Engine {
         game: Box<dyn PillGame>,
         game_resources_directory_path: std::path::PathBuf,
         renderer: Box<dyn PillRenderer>,
-        config: config::Config,
+        config: EngineConfig,
     ) -> Self {
         let max_entity_count = config
             .get_int("MAX_ENTITIES")
@@ -306,6 +306,7 @@ impl Engine {
         // Register global components
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
+        #[cfg(feature = "debug_ui")]
         self.add_global_component(EguiManagerComponent::new())?;
 
         #[cfg(not(feature = "headless"))]
@@ -526,7 +527,10 @@ impl Engine {
     }
 
     pub fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) {
+        #[cfg(feature = "debug_ui")]
         self.renderer.pass_input_to_egui(event).unwrap();
+        #[cfg(not(feature = "debug_ui"))]
+        let _ = event;
     }
 
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
