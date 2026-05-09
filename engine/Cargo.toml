@@ -8,7 +8,7 @@ members = [
     "pill_native",
     "pill_web",
     "pill_runtime",
-    "NO_PATH", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
+    "/Users/mk/dev/demo/Pill-Engine-Upstream/examples/cube", ### Game project crate (This will be changed by Pill Launcher on build to allow proper compilation of game project)
 ]
 
 # The per-game wasm cdylib (pill_web_app) lives as a template at

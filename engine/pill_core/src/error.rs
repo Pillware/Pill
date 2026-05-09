@@ -27,10 +27,6 @@ pub enum RendererError {
     SurfaceOutOfMemory,
     #[error("Undefined {} {} error \n\nSource: ", "Renderer".general_object_style(), "Surface".specific_object_style())]
     SurfaceOther,
-    #[error("{} shader {} data bytes are invalid\n\n{}", .0, .1.name_style(), .2)]
-    InvalidShaderData(String, String, String),
-    #[error("{} shader {} compilation failed \n\n{}", .0, .1.name_style(), .2)]
-    ShaderCompilationFailed(String, String, String),
 }
 
 #[derive(Error, Debug, Clone)]

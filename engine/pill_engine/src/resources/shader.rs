@@ -145,13 +145,14 @@ impl Resource for Shader {
         //let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
         //self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
 
-        // Read vertex shader data
+        // Read vertex shader data — WGSL is the only accepted source format;
+        // wgpu consumes WGSL natively so there is no runtime compile step.
         let vertex_shader_bytes_vec: Vec<u8>;
         let vertex_shader_bytes: &[u8] = match &self.vertex_shader_resource_loader {
             ResourceLoader::Path(path) => {
                 // Check if path to asset is correct
                 let resource_file_path = engine.game_resources_directory_path.join(path);
-                pill_core::validate_asset_path(&resource_file_path, &["glsl"])?;
+                pill_core::validate_asset_path(&resource_file_path, &["wgsl"])?;
 
                 // Load data
                 vertex_shader_bytes_vec =
@@ -173,7 +174,7 @@ impl Resource for Shader {
             ResourceLoader::Path(path) => {
                 // Check if path to asset is correct
                 let resource_file_path = engine.game_resources_directory_path.join(path);
-                pill_core::validate_asset_path(&resource_file_path, &["glsl"])?;
+                pill_core::validate_asset_path(&resource_file_path, &["wgsl"])?;
 
                 // Load data
                 fragment_shader_bytes_vec =
@@ -189,6 +190,14 @@ impl Resource for Shader {
             ResourceLoader::Bytes(bytes) => bytes,
         };
 
+        // Convert bytes → str at the boundary; the renderer trait takes WGSL strings.
+        let vertex_wgsl = std::str::from_utf8(vertex_shader_bytes).with_context(|| {
+            format!("Vertex shader for {} is not valid UTF-8 WGSL", &self.name)
+        })?;
+        let fragment_wgsl = std::str::from_utf8(fragment_shader_bytes).with_context(|| {
+            format!("Fragment shader for {} is not valid UTF-8 WGSL", &self.name)
+        })?;
+
         // TODO: Parse shader files and validate texture and parameter slots, or create them automatically here, so the user does not have to do it manually
 
         // Load data
@@ -196,8 +205,8 @@ impl Resource for Shader {
             .renderer
             .create_shader(
                 &self.name,
-                vertex_shader_bytes,
-                fragment_shader_bytes,
+                vertex_wgsl,
+                fragment_wgsl,
                 &self.texture_slots,
                 &self.parameter_slots,
                 self.enable_engine_binding,

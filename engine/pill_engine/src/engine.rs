@@ -135,10 +135,10 @@ impl Engine {
         let default_lit_shader_handle = self.add_default_resource(Shader::new(
             DEFAULT_LIT_SHADER_NAME,
             ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/shaders/default_vertex.glsl"
+                "../res/shaders/default_vertex.wgsl"
             ))),
             ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/shaders/default_lit_fragment.glsl"
+                "../res/shaders/default_lit_fragment.wgsl"
             ))),
             vec![
                 (
@@ -177,10 +177,10 @@ impl Engine {
         let default_unlit_shader_handle = self.add_default_resource(Shader::new(
             DEFAULT_UNLIT_SHADER_NAME,
             ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/shaders/default_vertex.glsl"
+                "../res/shaders/default_vertex.wgsl"
             ))),
             ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/shaders/default_unlit_fragment.glsl"
+                "../res/shaders/default_unlit_fragment.wgsl"
             ))),
             vec![(
                 DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME.to_string(),

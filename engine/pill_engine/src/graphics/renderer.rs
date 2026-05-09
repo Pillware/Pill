@@ -46,8 +46,8 @@ pub trait PillRenderer {
     fn create_shader(
         &mut self,
         name: &str,
-        vertex_shader_bytes: &[u8],
-        fragment_shader_bytes: &[u8],
+        vertex_wgsl: &str,
+        fragment_wgsl: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
         parameter_slots: &IndexMap<String, ShaderParameterSlot>,
         pass_engine_parameters: bool,
