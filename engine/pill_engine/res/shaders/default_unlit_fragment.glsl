@@ -41,8 +41,8 @@ void main() {
     vec3 final_color = object_color.xyz * tint;
 
     // Exponential-squared depth fog. density = 0 → no fog, bit-identical output.
-    float fog_dist = length(camera_position - in_world_position);
-    float fog_factor = clamp(1.0 - exp(-fog_density * fog_density * fog_dist * fog_dist), 0.0, 1.0);
+    float fog_distance = length(camera_position - in_world_position);
+    float fog_factor = clamp(1.0 - exp(-fog_density * fog_density * fog_distance * fog_distance), 0.0, 1.0);
     final_color = mix(final_color, fog_color, fog_factor);
 
     out_final_color = vec4(final_color, 1.0);
