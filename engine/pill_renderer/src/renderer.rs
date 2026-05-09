@@ -9,8 +9,6 @@ use crate::{
     },
 };
 
-use indexmap::IndexMap;
-
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage,
     EngineConfig, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer,
@@ -23,7 +21,7 @@ use pill_core::{debug, info, LogContext, PillSlotMapKey, PillStyle, RendererErro
 
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::{Context, Error, Ok, Result};
+use pill_core::{ErrorContext, Result};
 
 pub struct Renderer {
     pub state: State,
@@ -63,7 +61,7 @@ impl PillRenderer for Renderer {
         vertex_wgsl: &str,
         fragment_wgsl: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &IndexMap<String, ShaderParameterSlot>,
+        parameter_slots: &Vec<(String, ShaderParameterSlot)>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -98,7 +96,7 @@ impl PillRenderer for Renderer {
         &mut self,
         name: &str,
         renderer_shader_handle: RendererShaderHandle,
-        textures: &IndexMap<String, MaterialTexture>,
+        textures: &Vec<(String, MaterialTexture)>,
         parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle> {
         let material = RendererMaterial::new(
@@ -121,14 +119,18 @@ impl PillRenderer for Renderer {
     fn create_texture(
         &mut self,
         name: &str,
-        image_data: &image::DynamicImage,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
         texture_type: TextureType,
     ) -> Result<RendererTextureHandle> {
         let texture = RendererTexture::new_texture(
             &self.state.device,
             &self.state.queue,
             Some(name),
-            image_data,
+            rgba,
+            width,
+            height,
             texture_type,
         )?;
         let handle = self
@@ -159,7 +161,7 @@ impl PillRenderer for Renderer {
     fn update_material_textures(
         &mut self,
         renderer_material_handle: RendererMaterialHandle,
-        textures: &IndexMap<String, MaterialTexture>,
+        textures: &Vec<(String, MaterialTexture)>,
     ) -> Result<()> {
         RendererMaterial::update_textures(
             &self.state.device,
@@ -623,7 +625,7 @@ impl State {
             .get_mut(get_renderer_resource_handle_from_camera_component(
                 active_camera_component,
             ))
-            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+            .ok_or_else(|| -> pill_core::PillError { RendererError::RendererResourceNotFound.into() })?;
         let camera_transform_storage = transform_component_storage
             .data
             .get(active_camera_entity_handle.data().index as usize)

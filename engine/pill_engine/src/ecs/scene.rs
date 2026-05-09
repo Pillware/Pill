@@ -3,13 +3,12 @@ use crate::ecs::{
     EntityHandle,
 };
 
-use indexmap::IndexMap;
 use pill_core::{
     create_bitmask_with_one, get_indices_of_set_elements, get_type_name, EngineError, PillSlotMap,
     PillTypeMap,
 };
 
-use anyhow::{Error, Result};
+use pill_core::Result;
 use std::{any::TypeId, collections::HashMap};
 
 pub const NEW_COMPONENT_BIT: u16 = 0b0000_0000_0000_0001;
@@ -21,8 +20,9 @@ pub struct Scene {
     pub entities: PillSlotMap<EntityHandle, Entity>,
     pub components: PillTypeMap,
 
-    pub scene_bitmask: u16, // Total bitmask of all components registered in scene
-    pub component_bitmasks: IndexMap<TypeId, u16>, // Bitmasks for each component type
+    pub scene_bitmask: u16,
+    pub component_bitmasks: HashMap<TypeId, u16>, // TypeId → bitmask, for fast lookup
+    pub component_type_order: Vec<TypeId>,         // bit-index → TypeId, for bitmask decomposition
 
     pub component_destroyers: HashMap<TypeId, Box<dyn ComponentDestroyer>>,
 }
@@ -35,7 +35,8 @@ impl Scene {
             components: PillTypeMap::new(),
 
             scene_bitmask: 0b0000_0000_0000_0000,
-            component_bitmasks: IndexMap::new(),
+            component_bitmasks: HashMap::new(),
+            component_type_order: Vec::new(),
 
             component_destroyers: HashMap::new(),
         }
@@ -58,14 +59,14 @@ impl Scene {
     where
         T: Component<Storage = ComponentStorage<T>>,
     {
-        let error = Error::new(EngineError::ComponentNotRegistered(
+        let error: pill_core::PillError = EngineError::ComponentNotRegistered(
             get_type_name::<T>(),
             self.name.clone(),
-        ));
+        ).into();
         let entity = self
             .entities
             .get(entity_handle)
-            .ok_or(Error::new(EngineError::InvalidEntityHandle))?;
+            .ok_or_else(|| -> pill_core::PillError { EngineError::InvalidEntityHandle.into() })?;
         let component_bitmask = self
             .component_bitmasks
             .get(&TypeId::of::<T>())
@@ -101,10 +102,10 @@ impl Scene {
     {
         self.components
             .get::<T>()
-            .ok_or(Error::new(EngineError::ComponentNotRegistered(
+            .ok_or(EngineError::ComponentNotRegistered(
                 get_type_name::<T>(),
                 self.name.clone(),
-            )))
+            ).into())
     }
 
     pub fn get_component_storage_mut<T>(&mut self) -> Result<&mut ComponentStorage<T>>
@@ -113,10 +114,10 @@ impl Scene {
     {
         self.components
             .get_mut::<T>()
-            .ok_or(Error::new(EngineError::ComponentNotRegistered(
+            .ok_or(EngineError::ComponentNotRegistered(
                 get_type_name::<T>(),
                 self.name.clone(),
-            )))
+            ).into())
     }
 
     // --- Bitmasks ---
@@ -126,11 +127,10 @@ impl Scene {
         T: Component<Storage = ComponentStorage<T>>,
     {
         if !self.is_component_registered::<T>() {
-            // Add new component bitmask
-            let component_index = self.component_bitmasks.len();
+            let component_index = self.component_type_order.len();
             let component_bitmask = create_bitmask_with_one(component_index as u16);
-            self.component_bitmasks
-                .insert(TypeId::of::<T>(), component_bitmask);
+            self.component_type_order.push(TypeId::of::<T>());
+            self.component_bitmasks.insert(TypeId::of::<T>(), component_bitmask);
 
             // Update scene bitmask
             self.scene_bitmask |= component_bitmask;
@@ -143,10 +143,10 @@ impl Scene {
     {
         match self.component_bitmasks.get(&TypeId::of::<T>()) {
             Some(v) => Ok(*v),
-            None => Err(Error::new(EngineError::ComponentNotRegistered(
+            None => Err(EngineError::ComponentNotRegistered(
                 get_type_name::<T>(),
                 self.name.clone(),
-            ))),
+            ).into()),
         }
     }
 
@@ -155,7 +155,7 @@ impl Scene {
         let mut component_typeids = Vec::<TypeId>::new();
         let component_indices = get_indices_of_set_elements(bitmask);
         for index in component_indices {
-            let (typeid, _bitmask) = self.component_bitmasks.get_index(index).unwrap();
+            let typeid = &self.component_type_order[index];
             component_typeids.push(*typeid);
         }
         component_typeids

@@ -2,7 +2,7 @@ use crate::ecs::{Component, ComponentDestroyer, ComponentStorage, Entity, Entity
 
 use pill_core::{get_type_name, EngineError, PillSlotMapKey};
 
-use anyhow::{Context, Error, Result};
+use pill_core::{ErrorContext, Result};
 
 pill_core::define_new_pill_slotmap_key! {
     pub struct SceneHandle;
@@ -36,7 +36,7 @@ impl SceneManager {
 
         // Check if there is space for entity
         if target_scene.entities.len() + 1 >= max_entity_count {
-            return Err(Error::new(EngineError::EntityLimitReached));
+            return Err(EngineError::EntityLimitReached.into());
         }
 
         // Create new entity with empty bitmask
@@ -96,10 +96,10 @@ impl SceneManager {
 
         // Check if component is already registered
         if target_scene.is_component_registered::<T>() {
-            return Err(Error::new(EngineError::ComponentAlreadyRegistered(
+            return Err(EngineError::ComponentAlreadyRegistered(
                 get_type_name::<T>(),
                 target_scene.name.clone(),
-            )));
+            ).into());
         }
 
         // Create new component storage
@@ -212,9 +212,9 @@ impl SceneManager {
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         // Check if scene with that name already exists
         if self.mapping.contains_key(&name.to_string()) {
-            return Err(Error::new(EngineError::SceneAlreadyExists(
+            return Err(EngineError::SceneAlreadyExists(
                 name.to_string(),
-            )));
+            ).into());
         }
 
         // Create new scene
@@ -242,7 +242,7 @@ impl SceneManager {
         let scene = self
             .scenes
             .get(scene_handle)
-            .ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+            .ok_or_else(|| -> pill_core::PillError { EngineError::InvalidSceneHandle.into() })?;
 
         Ok(scene)
     }
@@ -251,7 +251,7 @@ impl SceneManager {
         let scene = self
             .scenes
             .get_mut(scene_handle)
-            .ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+            .ok_or_else(|| -> pill_core::PillError { EngineError::InvalidSceneHandle.into() })?;
 
         Ok(scene)
     }
@@ -261,7 +261,7 @@ impl SceneManager {
         let scene = self
             .scenes
             .remove(scene_handle)
-            .ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+            .ok_or_else(|| -> pill_core::PillError { EngineError::InvalidSceneHandle.into() })?;
 
         // Return deleted scene
         Ok(scene)
@@ -273,7 +273,7 @@ impl SceneManager {
         // Check if scene for that handle exists
         self.scenes
             .get_mut(scene_handle)
-            .ok_or(Error::new(EngineError::InvalidSceneHandle))?;
+            .ok_or_else(|| -> pill_core::PillError { EngineError::InvalidSceneHandle.into() })?;
 
         // Set new active scene
         self.active_scene_handle = Some(scene_handle);
@@ -284,7 +284,7 @@ impl SceneManager {
     pub fn get_active_scene_handle(&self) -> Result<SceneHandle> {
         match self.active_scene_handle {
             Some(v) => Ok(v),
-            None => Err(Error::new(EngineError::NoActiveScene)),
+            None => Err(EngineError::NoActiveScene.into()),
         }
     }
 
@@ -292,7 +292,7 @@ impl SceneManager {
         // Check if active scene is set
         let active_scene_handle = self
             .active_scene_handle
-            .ok_or(Error::new(EngineError::NoActiveScene))?;
+            .ok_or_else(|| -> pill_core::PillError { EngineError::NoActiveScene.into() })?;
         let active_scene = self.get_scene(active_scene_handle)?;
 
         Ok(active_scene)
@@ -302,7 +302,7 @@ impl SceneManager {
         // Check if active scene is set
         let active_scene_handle = self
             .active_scene_handle
-            .ok_or(Error::new(EngineError::NoActiveScene))?;
+            .ok_or_else(|| -> pill_core::PillError { EngineError::NoActiveScene.into() })?;
         let active_scene = self.get_scene_mut(active_scene_handle)?;
 
         Ok(active_scene)
@@ -335,7 +335,7 @@ impl SceneManager {
                 .unwrap()
                 .as_mut()
                 .unwrap()),
-            false => Err(Error::msg("Component not found in Entity")),
+            false => Err("Component not found in Entity".into()),
         }
     }
 

@@ -1,6 +1,5 @@
 use crate::style::PillStyle;
 
-use anyhow::{Context, Error, Result};
 use colored::*;
 use thiserror::Error;
 

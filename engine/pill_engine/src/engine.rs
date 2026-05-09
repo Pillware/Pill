@@ -5,7 +5,7 @@ use pill_core::{
     PillSlotMapKey, PillStyle, PillTypeMap, Timer, Vector2f,
 };
 
-use anyhow::{Context, Error, Result};
+use pill_core::{ErrorContext, Result};
 use std::{any::TypeId, collections::VecDeque};
 use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
@@ -383,11 +383,12 @@ impl Engine {
 
         // Run systems
         for update_phase_index in 0..self.system_manager.update_phases.len() {
-            for system_index in 0..self.system_manager.update_phases[update_phase_index].len() {
+            let phase_len = self.system_manager.update_phases[update_phase_index].1.len();
+            for system_index in 0..phase_len {
                 let (system_name, update_phase, system_function);
                 {
-                    let system =
-                        &mut self.system_manager.update_phases[update_phase_index][system_index];
+                    let (_, system) =
+                        &mut self.system_manager.update_phases[update_phase_index].1[system_index];
                     if !system.enabled {
                         continue;
                     }
@@ -433,11 +434,11 @@ impl Engine {
                     Ok(None) => {
                         panic!(
                             "{}",
-                            Error::new(EngineError::NonReturnedSystemTimer(system_name.clone()))
+                            EngineError::NonReturnedSystemTimer(system_name.clone())
                         );
                     }
                     Err(e) => {
-                        panic!("{}", Error::new(EngineError::Other(e.to_string())));
+                        panic!("{}", EngineError::Other(e.to_string()));
                     }
                 };
 
@@ -750,9 +751,9 @@ impl Engine {
         let target_scene = self.scene_manager.get_scene(scene_handle)?;
 
         if target_scene.entity_has_component::<T>(entity_handle)? {
-            return Err(Error::new(EngineError::ComponentAlreadyExists(
+            return Err(EngineError::ComponentAlreadyExists(
                 get_type_name::<T>(),
-            )));
+            ).into());
         }
 
         // Initialize component
@@ -812,9 +813,9 @@ impl Engine {
     {
         // Check if component of this type is not already added
         if self.global_components.contains_key::<T>() {
-            return Err(Error::new(EngineError::GlobalComponentAlreadyExists(
+            return Err(EngineError::GlobalComponentAlreadyExists(
                 get_type_name::<T>(),
-            )));
+            ).into());
         }
 
         // Initialize component
@@ -836,9 +837,7 @@ impl Engine {
         let component = self
             .global_components
             .get::<T>()
-            .ok_or(Error::new(EngineError::GlobalComponentNotFound(
-                get_type_name::<T>(),
-            )))?
+            .ok_or_else(|| -> pill_core::PillError { EngineError::GlobalComponentNotFound(get_type_name::<T>()).into() })?
             .data
             .as_ref()
             .unwrap();
@@ -855,9 +854,7 @@ impl Engine {
         let component = self
             .global_components
             .get_mut::<T>()
-            .ok_or(Error::new(EngineError::GlobalComponentNotFound(
-                get_type_name::<T>(),
-            )))?
+            .ok_or_else(|| -> pill_core::PillError { EngineError::GlobalComponentNotFound(get_type_name::<T>()).into() })?
             .data
             .as_mut()
             .unwrap();
@@ -872,9 +869,9 @@ impl Engine {
     {
         // Check if the type of the component is the same as of the ones, which cannot be removed
         if ENGINE_GLOBAL_COMPONENTS.contains(&TypeId::of::<T>()) {
-            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(
+            return Err(EngineError::GlobalComponentCannotBeRemoved(
                 get_type_name::<T>(),
-            )));
+            ).into());
         }
 
         // Remove and destroy component
@@ -1098,9 +1095,9 @@ impl Engine {
         // Check if resource has proper name
         let resource_name = resource.get_name();
         if enforce_name_check && resource_name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            return Err(Error::new(EngineError::WrongResourceName(
+            return Err(EngineError::WrongResourceName(
                 resource_name.clone(),
-            )));
+            ).into());
         }
 
         // Initialize resource
@@ -1181,10 +1178,8 @@ impl Engine {
             .context(error_message.to_string())?
             .get_name();
         if resource_name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            return Err(Error::new(EngineError::RemoveDefaultResource(
-                resource_name.clone(),
-            )))
-            .context(error_message.to_string());
+            let e: pill_core::PillError = EngineError::RemoveDefaultResource(resource_name.clone()).into();
+            return Err(e).context(error_message.to_string());
         }
 
         // Remove and destroy resource
@@ -1216,10 +1211,8 @@ impl Engine {
 
         // Check if resource is not default
         if name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            return Err(Error::new(EngineError::RemoveDefaultResource(
-                name.to_string(),
-            )))
-            .context(error_message.to_string());
+            let e: pill_core::PillError = EngineError::RemoveDefaultResource(name.to_string()).into();
+            return Err(e).context(error_message.to_string());
         }
 
         // Remove resource

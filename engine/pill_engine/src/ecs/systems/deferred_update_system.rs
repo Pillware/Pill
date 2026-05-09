@@ -3,7 +3,7 @@ use crate::{
     engine::Engine,
 };
 
-use anyhow::Result;
+use pill_core::Result;
 use std::collections::VecDeque;
 
 pub fn deferred_update_system(engine: &mut Engine) -> Result<()> {

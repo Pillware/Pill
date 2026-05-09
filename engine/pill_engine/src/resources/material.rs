@@ -14,8 +14,7 @@ use pill_core::{
     PillStyle, PillTypeMapKey,
 };
 
-use anyhow::{Context, Error, Result};
-use indexmap::IndexMap;
+use pill_core::{ErrorContext, Result};
 use std::collections::HashMap;
 
 const DEFERRED_REQUEST_VARIANT_RENDERING_ORDER: usize = 0;
@@ -80,7 +79,7 @@ impl MaterialBuilder {
     pub fn texture(mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<Self> {
         self.material
             .textures
-            .insert(slot_name.to_string(), MaterialTexture::new(texture_handle));
+            .push((slot_name.to_string(), MaterialTexture::new(texture_handle)));
         Ok(self)
     }
 
@@ -127,7 +126,7 @@ pub struct Material {
     pub name: String,
     #[readonly]
     pub shader_handle: ShaderHandle,
-    pub(crate) textures: IndexMap<String, MaterialTexture>,
+    pub(crate) textures: Vec<(String, MaterialTexture)>,
     //pub(crate) textures_mapping: Vec<String>,  // Maps index to slot name, required for deferred update requests
     #[readonly]
     pub(crate) parameters: HashMap<String, MaterialParameter>,
@@ -150,7 +149,7 @@ impl Material {
         Self {
             name: name.to_string(),
             shader_handle: get_default_lit_shader_handles().0,
-            textures: IndexMap::new(),
+            textures: Vec::new(),
             //textures_mapping: Vec::new(),
             parameters: HashMap::new(),
             rendering_order: RENDER_QUEUE_KEY_ORDER.max as u8,
@@ -163,21 +162,17 @@ impl Material {
 
     pub fn set_texture(&mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<()> {
         // Get or insert new
-        match self.textures.entry(slot_name.to_string()) {
-            indexmap::map::Entry::Occupied(mut entry) => {
-                entry.get_mut().texture_handle = texture_handle;
-            }
-            indexmap::map::Entry::Vacant(entry) => {
-                entry.insert(MaterialTexture::new(texture_handle));
-                //self.textures_mapping.push(slot_name.to_string());
-            }
-        }
-
-        let slot_index = self.textures.get_index_of(slot_name).unwrap();
+        let slot_index = if let Some(pos) = self.textures.iter().position(|(k, _)| k == slot_name) {
+            self.textures[pos].1.texture_handle = texture_handle;
+            pos
+        } else {
+            self.textures.push((slot_name.to_string(), MaterialTexture::new(texture_handle)));
+            self.textures.len() - 1
+        };
 
         // Get texture slot
         //let texture_slot = self.textures.get_mut(slot_name)
-        //    .ok_or( Error::new(EngineError::MaterialTextureSlotNotFound(slot_name.to_string(), self.name.to_string())))?;
+        //    .ok_or( EngineError::MaterialTextureSlotNotFound(slot_name.to_string(), self.name.to_string()).into())?;
 
         // Get texture slot index
         //let texture_slot_index = self.textures_mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping");
@@ -197,7 +192,7 @@ impl Material {
     // pub fn remove_texture(&mut self, slot_name: &str) -> Result<()> {
     //     // Get texture slot
     //     let texture_slot = self.textures.data.get_mut(slot_name)
-    //         .ok_or( Error::new(EngineError::MaterialTextureSlotNotFound(slot_name.to_string(), self.name.to_string())))?;
+    //         .ok_or( EngineError::MaterialTextureSlotNotFound(slot_name.to_string(), self.name.to_string()).into())?;
 
     //     // Get texture slot index
     //     let texture_slot_index = self.textures.mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping");
@@ -226,7 +221,7 @@ impl Material {
                 self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_RENDERING_ORDER);
             }
         } else {
-            return Err(Error::new(error));
+            return Err(error.into());
         }
 
         Ok(())
@@ -241,7 +236,7 @@ impl Material {
         let parameter = self.parameters.get(parameter_name).context(error.clone())?;
         match parameter {
             MaterialParameter::Scalar(value) => Ok(*value),
-            _ => Err(Error::new(error)),
+            _ => Err(error.into()),
         }
     }
 
@@ -254,7 +249,7 @@ impl Material {
         let parameter = self.parameters.get(parameter_name).context(error.clone())?;
         match parameter {
             MaterialParameter::Bool(value) => Ok(*value),
-            _ => Err(Error::new(error)),
+            _ => Err(error.into()),
         }
     }
 
@@ -267,7 +262,7 @@ impl Material {
         let parameter = self.parameters.get(parameter_name).context(error.clone())?;
         match parameter {
             MaterialParameter::Color(value) => Ok(*value),
-            _ => Err(Error::new(error)),
+            _ => Err(error.into()),
         }
     }
 
@@ -292,7 +287,7 @@ impl Material {
                 }
                 Ok(())
             }
-            _ => Err(Error::new(error)),
+            _ => Err(error.into()),
         }
     }
 
@@ -317,7 +312,7 @@ impl Material {
                 }
                 Ok(())
             }
-            _ => Err(Error::new(error)),
+            _ => Err(error.into()),
         }
     }
 
@@ -348,7 +343,7 @@ impl Material {
                 }
                 Ok(())
             }
-            _ => Err(Error::new(error)),
+            _ => Err(error.into()),
         }
     }
 
@@ -374,11 +369,11 @@ impl Material {
 
         // Check if slots are of the same type
         if !enum_variant_eq(&texture.texture_type, &shader_texture_slot.texture_type) {
-            return Err(Error::new(EngineError::WrongTextureType(
+            return Err(EngineError::WrongTextureType(
                 get_enum_variant_type_name(&texture.texture_type),
                 texture_slot_name.to_string(),
                 get_enum_variant_type_name(&shader_texture_slot.texture_type),
-            )));
+            ).into());
         }
 
         Ok(())
@@ -477,17 +472,12 @@ impl Resource for Material {
             }
             DEFERRED_REQUEST_VARIANT_TEXTURE_START..=DEFERRED_REQUEST_VARIANT_TEXTURE_END => {
                 // Check if assigned texture is of correct type
-                let (texture_slot_name, texture_slot) = self
-                    .textures
-                    .get_index(request - DEFERRED_REQUEST_VARIANT_TEXTURE_START)
-                    .unwrap();
+                let idx = request - DEFERRED_REQUEST_VARIANT_TEXTURE_START;
+                let (texture_slot_name, texture_slot) = &self.textures[idx];
                 self.validate_texture(engine, texture_slot_name, texture_slot)?;
 
                 // Assign renderer resource handle to texture slot
-                let (texture_slot_name, texture_slot) = self
-                    .textures
-                    .get_index_mut(request - DEFERRED_REQUEST_VARIANT_TEXTURE_START)
-                    .unwrap();
+                let (texture_slot_name, texture_slot) = &mut self.textures[idx];
                 let texture = engine
                     .get_resource::<Texture>(&texture_slot.texture_handle)
                     .context(EngineError::InvalidTextureHandleForSlot(

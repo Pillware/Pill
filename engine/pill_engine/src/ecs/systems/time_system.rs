@@ -1,6 +1,6 @@
 use crate::{ecs::TimeComponent, engine::Engine};
 
-use anyhow::Result;
+use pill_core::Result;
 
 pub fn time_system(engine: &mut Engine) -> Result<()> {
     let delta_time = engine.frame_delta_time;

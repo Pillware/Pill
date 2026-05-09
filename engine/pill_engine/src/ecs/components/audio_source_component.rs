@@ -12,7 +12,7 @@ use pill_core::{
     get_enum_variant_type_name, get_type_name, warn, LogContext, PillStyle, PillTypeMapKey,
 };
 
-use anyhow::{Context, Result};
+use pill_core::{ErrorContext, Result};
 
 const DEFERRED_REQUEST_VARIANT_SET_SOUND: usize = 0;
 const DEFERRED_REQUEST_VARIANT_SET_VOLUME: usize = 1;

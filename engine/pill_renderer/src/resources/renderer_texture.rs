@@ -1,9 +1,6 @@
 use pill_engine::internal::TextureType;
 
-use anyhow::*;
-use image::GenericImageView;
-
-// --- Texture ---
+use pill_core::Result;
 
 pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
@@ -22,26 +19,22 @@ impl RendererTexture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         name: Option<&str>,
-        image_data: &image::DynamicImage,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
         texture_type: TextureType,
     ) -> Result<Self> {
-        let dimensions = image_data.dimensions();
-        let rgba = image_data.to_rgba8();
-
-        // Get size
         let size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
 
-        // Specify texture format
         let format = match texture_type {
             TextureType::Color => wgpu::TextureFormat::Rgba8UnormSrgb,
             TextureType::Normal => wgpu::TextureFormat::Rgba8Unorm,
         };
 
-        // Create texture
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: name,
             size,
@@ -53,24 +46,6 @@ impl RendererTexture {
             view_formats: &[],
         });
 
-        // Write data to texture
-        // queue.write_texture(
-        //     wgpu::ImageCopyTexture {
-        //         aspect: wgpu::TextureAspect::All,
-        //         texture: &texture,
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d::ZERO,
-        //     },
-        //     &rgba,
-        //     wgpu::ImageDataLayout {
-        //         offset: 0,
-        //         bytes_per_row: Some(4 * dimensions.0),
-        //         rows_per_image: Some(dimensions.1),
-        //     },
-        //     size,
-        // );
-
-        // Write data to texture
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -78,19 +53,17 @@ impl RendererTexture {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
             },
             size,
         );
 
-        // Create texture view
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Create sampler
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -98,19 +71,12 @@ impl RendererTexture {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            lod_min_clamp: 0.0,   // Fix: Must be 0.0 or greater
-            lod_max_clamp: 100.0, // You can set this based on your texture's mipmap levels
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
             ..Default::default()
         });
 
-        // Create final texture
-        let texture = Self {
-            texture,
-            texture_view,
-            sampler,
-        };
-
-        Ok(texture)
+        Ok(Self { texture, texture_view, sampler })
     }
 
     pub fn new_depth_texture(
@@ -118,15 +84,12 @@ impl RendererTexture {
         surface_configuration: &wgpu::SurfaceConfiguration,
         label: &str,
     ) -> Result<Self> {
-        // Get size
         let size = wgpu::Extent3d {
-            // Depth texture needs to be the same size as window
             width: surface_configuration.width,
             height: surface_configuration.height,
             depth_or_array_layers: 1,
         };
 
-        // Create texture
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
             size,
@@ -134,14 +97,12 @@ impl RendererTexture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING, // Rendering to this texture so RENDER_ATTACHMENT flag is needed
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
 
-        // Create texture view
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Create sampler
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
@@ -155,13 +116,6 @@ impl RendererTexture {
             ..Default::default()
         });
 
-        // Create final texture
-        let texture = Self {
-            texture,
-            texture_view,
-            sampler,
-        };
-
-        Ok(texture)
+        Ok(Self { texture, texture_view, sampler })
     }
 }

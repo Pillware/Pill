@@ -6,7 +6,7 @@ use crate::{
 
 use pill_core::{get_type_name, PillStyle, Vector3f};
 
-use anyhow::{Context, Result};
+use pill_core::{ErrorContext, Result};
 use pill_core::PillTypeMapKey;
 use std::ops::Range;
 

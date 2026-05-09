@@ -7,7 +7,7 @@ use crate::{
 };
 use pill_core::{Matrix3f, Vector3f};
 
-use anyhow::Result;
+use pill_core::Result;
 
 fn get_rotation_matrix(angles: Vector3f) -> Result<Matrix3f> {
     // Get the angles from the vector and convert them to radians

@@ -9,9 +9,7 @@ use crate::{
     resources::{MeshData, ShaderParameterSlot, ShaderTextureSlot, TextureType},
 };
 
-use anyhow::Result;
-use image::DynamicImage;
-use indexmap::IndexMap;
+use pill_core::Result;
 use pill_core::Timer;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
@@ -31,7 +29,7 @@ impl PillRenderer for DummyRenderer {
         _vertex_wgsl: &str,
         _fragment_wgsl: &str,
         _texture_slots: &HashMap<String, ShaderTextureSlot>,
-        _parameter_slots: &IndexMap<String, ShaderParameterSlot>,
+        _parameter_slots: &Vec<(String, ShaderParameterSlot)>,
         _pass_engine_parameters: bool,
         _pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -42,7 +40,7 @@ impl PillRenderer for DummyRenderer {
         &mut self,
         _name: &str,
         _renderer_shader_handle: RendererShaderHandle,
-        _textures: &IndexMap<String, MaterialTexture>,
+        _textures: &Vec<(String, MaterialTexture)>,
         _parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle> {
         Ok(RendererMaterialHandle::default())
@@ -51,7 +49,9 @@ impl PillRenderer for DummyRenderer {
     fn create_texture(
         &mut self,
         _name: &str,
-        _image_data: &DynamicImage,
+        _rgba: &[u8],
+        _width: u32,
+        _height: u32,
         _texture_type: TextureType,
     ) -> Result<RendererTextureHandle> {
         Ok(RendererTextureHandle::default())
@@ -70,7 +70,7 @@ impl PillRenderer for DummyRenderer {
     fn update_material_textures(
         &mut self,
         _renderer_material_handle: RendererMaterialHandle,
-        _textures: &IndexMap<String, MaterialTexture>,
+        _textures: &Vec<(String, MaterialTexture)>,
     ) -> Result<()> {
         Ok(())
     }
@@ -110,9 +110,7 @@ impl PillRenderer for DummyRenderer {
 
     // --- Other ---
 
-    fn resize(&mut self, _new_window_size: PhysicalSize<u32>) {
-        // no-op for dummy
-    }
+    fn resize(&mut self, _new_window_size: PhysicalSize<u32>) {}
 
     #[cfg(feature = "debug_ui")]
     fn pass_input_to_egui(&mut self, _event: &WindowEvent) -> Result<()> {

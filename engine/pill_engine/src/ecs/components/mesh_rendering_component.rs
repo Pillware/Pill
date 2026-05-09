@@ -11,7 +11,7 @@ use crate::{
 
 use pill_core::{get_type_name, PillStyle, PillTypeMapKey};
 
-use anyhow::{Context, Result};
+use pill_core::{ErrorContext, Result};
 
 const DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE: usize = 0;
 const DEFERRED_REQUEST_VARIANT_SET_MATERIAL: usize = 1;

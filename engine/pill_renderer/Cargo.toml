@@ -7,15 +7,6 @@ edition = "2021"
 pill_core = {path = "../pill_core"}
 pill_engine = {path = "../pill_engine", features = ["internal"]}
 
-# Data containers
-indexmap = "1.7.0"
-
-# Loaders
-image = { version = "0.23", default-features = false, features = ["png"] }
-
-# Errors
-anyhow = "1.0"
-
 # Logging
 log = "0.4"
 

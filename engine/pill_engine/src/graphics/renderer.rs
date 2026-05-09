@@ -7,10 +7,9 @@ use crate::{
     resources::{ShaderParameterSlot, ShaderTextureSlot, TextureType},
 };
 
-use indexmap::IndexMap;
 use pill_core::Timer;
 
-use anyhow::Result;
+use pill_core::Result;
 use std::{collections::HashMap, sync::Arc};
 
 // --- Renderer resource handles ---
@@ -50,7 +49,7 @@ pub trait PillRenderer {
         vertex_wgsl: &str,
         fragment_wgsl: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &IndexMap<String, ShaderParameterSlot>,
+        parameter_slots: &Vec<(String, ShaderParameterSlot)>,
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle>;
@@ -59,14 +58,16 @@ pub trait PillRenderer {
         &mut self,
         name: &str,
         renderer_shader_handle: RendererShaderHandle,
-        textures: &IndexMap<String, MaterialTexture>,
+        textures: &Vec<(String, MaterialTexture)>,
         parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle>;
 
     fn create_texture(
         &mut self,
         name: &str,
-        image_data: &image::DynamicImage,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
         texture_type: TextureType,
     ) -> Result<RendererTextureHandle>;
 
@@ -79,7 +80,7 @@ pub trait PillRenderer {
     fn update_material_textures(
         &mut self,
         renderer_material_handle: RendererMaterialHandle,
-        textures: &IndexMap<String, MaterialTexture>,
+        textures: &Vec<(String, MaterialTexture)>,
     ) -> Result<()>;
 
     fn update_material_parameters(

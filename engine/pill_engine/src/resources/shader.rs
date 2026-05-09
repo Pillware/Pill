@@ -10,9 +10,7 @@ use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
 use std::{collections::HashMap, path::Path};
 
-use indexmap::IndexMap;
-
-use anyhow::{Context, Result};
+use pill_core::{ErrorContext, Result};
 
 fn read_wgsl_bytes(loader: &ResourceLoader, base: &Path, label: &str) -> Result<Vec<u8>> {
     match loader {
@@ -20,7 +18,7 @@ fn read_wgsl_bytes(loader: &ResourceLoader, base: &Path, label: &str) -> Result<
             let abs = base.join(path);
             pill_core::validate_asset_path(&abs, &["wgsl"])?;
             std::fs::read(&abs)
-                .with_context(|| format!("Failed to read {label} shader file: {abs:?}"))
+                .map_err(|_| -> pill_core::PillError { format!("Failed to read {label} shader file: {abs:?}").into() })
         }
         ResourceLoader::Bytes(bytes) => Ok(bytes.to_vec()),
     }
@@ -87,10 +85,10 @@ pub struct Shader {
     #[readonly]
     pub fragment_shader_resource_loader: ResourceLoader,
     #[readonly]
-    // IndexMap (not HashMap) — iteration order must match the shader's uniform struct field order,
+    // Vec (not HashMap) — iteration order must match the shader's uniform struct field order,
     // because write_parameters_to_buffer packs bytes into the buffer in iteration order.
     // HashMap's randomized iteration order made tint/specularity get swapped, rendering the cube black.
-    pub parameter_slots: IndexMap<String, ShaderParameterSlot>,
+    pub parameter_slots: Vec<(String, ShaderParameterSlot)>,
     #[readonly]
     pub texture_slots: HashMap<String, ShaderTextureSlot>,
     #[readonly]
@@ -111,7 +109,7 @@ impl Shader {
         name: &str,
         vertex_shader_resource_loader: ResourceLoader,
         fragment_shader_resource_loader: ResourceLoader,
-        parameter_slots: IndexMap<String, ShaderParameterSlot>,
+        parameter_slots: Vec<(String, ShaderParameterSlot)>,
         texture_slots: HashMap<String, ShaderTextureSlot>,
         enable_engine_binding: bool, // If true, the engine uniform data will be accessible to the shader at (set = 0, binding = 0)
         enable_camera_binding: bool, // If true, the engine uniform data will be accessible to the shader at (set = 1, binding = 0)
@@ -169,12 +167,10 @@ impl Resource for Shader {
             &engine.game_resources_directory_path,
             "fragment",
         )?;
-        let vertex_wgsl = std::str::from_utf8(&vertex_bytes).with_context(|| {
-            format!("Vertex shader for {} is not valid UTF-8 WGSL", &self.name)
-        })?;
-        let fragment_wgsl = std::str::from_utf8(&fragment_bytes).with_context(|| {
-            format!("Fragment shader for {} is not valid UTF-8 WGSL", &self.name)
-        })?;
+        let vertex_wgsl = std::str::from_utf8(&vertex_bytes)
+            .map_err(|_| -> pill_core::PillError { format!("Vertex shader for {} is not valid UTF-8 WGSL", &self.name).into() })?;
+        let fragment_wgsl = std::str::from_utf8(&fragment_bytes)
+            .map_err(|_| -> pill_core::PillError { format!("Fragment shader for {} is not valid UTF-8 WGSL", &self.name).into() })?;
 
         // TODO: Parse shader files and validate texture and parameter slots, or create them automatically here, so the user does not have to do it manually
 

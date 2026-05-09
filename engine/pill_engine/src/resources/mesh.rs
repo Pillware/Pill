@@ -9,7 +9,7 @@ use pill_core::{
     get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey, Vector2f, Vector3f,
 };
 
-use anyhow::{Context, Error, Result};
+use pill_core::{ErrorContext, Result};
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "obj_loading")]
@@ -83,6 +83,29 @@ impl PillTypeMapKey for Mesh {
     type Storage = ResourceStorage<Mesh>;
 }
 
+fn load_rmesh(bytes: &[u8]) -> Result<MeshData> {
+    if bytes.len() < 16 || &bytes[0..4] != b"RMSH" {
+        return Err("not a valid .rmesh file (bad magic or truncated header)".into());
+    }
+    let vertex_count = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    let index_count = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let vertex_size = std::mem::size_of::<MeshVertex>();
+    let expected = 16 + vertex_count * vertex_size + index_count * 4;
+    if bytes.len() < expected {
+        return Err(format!(
+            ".rmesh truncated: expected {} bytes, got {}",
+            expected,
+            bytes.len()
+        )
+        .into());
+    }
+    let vb = &bytes[16..16 + vertex_count * vertex_size];
+    let ib = &bytes[16 + vertex_count * vertex_size..expected];
+    let vertices: Vec<MeshVertex> = bytemuck::cast_slice(vb).to_vec();
+    let indices: Vec<u32> = bytemuck::cast_slice(ib).to_vec();
+    Ok(MeshData { vertices, indices })
+}
+
 impl Resource for Mesh {
     type Handle = MeshHandle;
 
@@ -99,24 +122,34 @@ impl Resource for Mesh {
 
         // Load from file only if mesh_data not already set (procedural mesh)
         if self.mesh_data.is_none() {
-            #[cfg(feature = "obj_loading")]
-            {
-                let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-                pill_core::validate_asset_path(&resource_file_path, &["obj"])
-                    .context(error_message.clone())?;
+            let base = engine.game_resources_directory_path.join(&self.path);
+            let rmesh_path = base.with_extension("rmesh");
 
-                let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
-                    .context(error_message.clone())
-                    .context(format!(
-                        "Failed to create mesh data from {} file",
-                        resource_file_path.file_name().unwrap().to_string_lossy()
-                    ))?;
-                self.mesh_data = Some(mesh_data);
+            if rmesh_path.exists() {
+                let bytes = std::fs::read(&rmesh_path).map_err(|e| -> pill_core::PillError {
+                    format!("Failed to read mesh {rmesh_path:?}: {e}").into()
+                })?;
+                self.mesh_data = Some(load_rmesh(&bytes).context(error_message.clone())?);
+            } else {
+                #[cfg(feature = "obj_loading")]
+                {
+                    pill_core::validate_asset_path(&base, &["obj"])
+                        .context(error_message.clone())?;
+                    let mesh_data = MeshData::new(&base, self.flip_uv_y)
+                        .context(error_message.clone())
+                        .context(format!(
+                            "Failed to create mesh data from {} file",
+                            base.file_name().unwrap().to_string_lossy()
+                        ))?;
+                    self.mesh_data = Some(mesh_data);
+                }
+                #[cfg(not(feature = "obj_loading"))]
+                return Err(format!(
+                    "No preprocessed .rmesh found for {:?}; run `pill_launcher -a assets`",
+                    base
+                )
+                .into());
             }
-            #[cfg(not(feature = "obj_loading"))]
-            return Err(anyhow::anyhow!(
-                "OBJ loading is disabled (enable the obj_loading feature)"
-            ));
         }
 
         // Create new renderer mesh resource
@@ -193,15 +226,11 @@ impl MeshData {
     fn from_tobj_models(models: Vec<tobj::Model>, source: &str, flip_uv_y: bool) -> Result<Self> {
         // Check data validity
         if models.len() > 1 {
-            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(
-                source.to_string(),
-            )));
+            return Err(EngineError::InvalidModelFileMultipleMeshes(source.to_string()).into());
         }
 
         if models.is_empty() {
-            return Err(Error::new(EngineError::InvalidModelFile(
-                source.to_string(),
-            )));
+            return Err(EngineError::InvalidModelFile(source.to_string()).into());
         }
 
         // Load vertex data from model

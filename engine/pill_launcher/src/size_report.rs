@@ -62,15 +62,32 @@ pub fn print(build_wasm_dir: &Path, preopt_wasm: &Path) {
     for (bytes, name) in &items {
         *by_crate.entry(classify_crate(name)).or_insert(0) += *bytes;
     }
-    let mut groups: Vec<(String, u64)> = by_crate.into_iter().collect();
+    let mut groups: Vec<(String, u64)> = by_crate.clone().into_iter().collect();
     groups.sort_by(|a, b| b.1.cmp(&a.1));
+
+    const PILL_LIBS: &[&str] = &["pill_engine", "pill_renderer", "pill_core", "pill_web"];
 
     println!();
     println!("Crate breakdown (% of pre-opt {}):", fmt_bytes(total));
-    println!("  {:<18} {:>10} {:>7}", "crate", "size", "%");
-    for (crate_name, bytes) in groups.iter().take(15) {
+    println!();
+    println!("  Pill libs:");
+    println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
+    for lib in PILL_LIBS {
+        let bytes = by_crate.get(*lib).copied().unwrap_or(0);
+        let pct = 100.0 * bytes as f64 / total as f64;
+        println!("    {:<20} {:>10} {:>6.1}%", lib, fmt_bytes(bytes), pct);
+    }
+
+    println!();
+    println!("  3rd party (top 15):");
+    println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
+    for (crate_name, bytes) in groups
+        .iter()
+        .filter(|(k, _)| !PILL_LIBS.contains(&k.as_str()))
+        .take(15)
+    {
         let pct = 100.0 * *bytes as f64 / total as f64;
-        println!("  {:<18} {:>10} {:>6.1}%", crate_name, fmt_bytes(*bytes), pct);
+        println!("    {:<20} {:>10} {:>6.1}%", crate_name, fmt_bytes(*bytes), pct);
     }
 
     println!();

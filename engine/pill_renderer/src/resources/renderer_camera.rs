@@ -1,6 +1,6 @@
 use pill_engine::internal::{CameraComponent, TransformComponent};
 
-use anyhow::Result;
+use pill_core::Result;
 use pill_core::{Matrix3f, Matrix4f, Vector3f, Vector4f};
 use wgpu::util::DeviceExt;
 

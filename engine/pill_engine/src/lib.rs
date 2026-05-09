@@ -86,8 +86,7 @@ pub mod game {
         Vector3f, DISTINCT_COLOR_PALETTE,
     };
 
-    extern crate anyhow;
-    pub use anyhow::{Context, Error, Result};
+    pub use pill_core::{ErrorContext, PillError, Result};
 }
 
 #[cfg(not(target_arch = "wasm32"))]

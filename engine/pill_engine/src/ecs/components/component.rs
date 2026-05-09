@@ -5,7 +5,7 @@ use crate::{
 
 use pill_core::{PillSlotMapKey, PillTypeMapKey};
 
-use anyhow::Result;
+use pill_core::Result;
 use dyn_clone::DynClone;
 use std::marker::PhantomData;
 
