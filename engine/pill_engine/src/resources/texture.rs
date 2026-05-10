@@ -38,8 +38,7 @@ impl Texture {
         }
     }
 
-    /// Build a texture from raw image bytes (e.g. `include_bytes!("…png")`).
-    /// Decoded via the `image` crate — format detected from the bytes.
+    /// Decode image bytes (format auto-detected) into a texture.
     pub fn from_bytes(name: &str, texture_type: TextureType, bytes: &[u8]) -> Self {
         Self::new(
             name,

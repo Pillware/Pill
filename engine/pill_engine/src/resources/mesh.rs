@@ -69,9 +69,7 @@ impl Mesh {
         Self::from_data(name, MeshData::cube(size))
     }
 
-    /// Build a mesh from raw OBJ bytes (e.g. `include_bytes!(...)`). Use on
-    /// targets without a filesystem (wasm), or to bundle assets into the
-    /// binary. Companion to [`Self::new`] which loads from a path.
+    /// Parse a mesh from raw OBJ bytes; use `include_bytes!` to bundle assets into the binary (required on WASM).
     pub fn from_obj_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
         Ok(Self::from_data(
             name,
@@ -173,8 +171,7 @@ impl MeshData {
         Self::from_tobj_models(models, &path.display().to_string(), flip_uv_y)
     }
 
-    /// Parse OBJ data from bytes (e.g. `include_bytes!(...)`). MTL references
-    /// inside the OBJ are ignored — materials have to be set up separately.
+    /// Parse OBJ bytes into mesh data; MTL references are ignored.
     pub fn from_obj_bytes(bytes: &[u8], flip_uv_y: bool) -> Result<Self> {
         let mut reader = std::io::Cursor::new(bytes);
         let (models, _materials) = tobj::load_obj_buf(&mut reader, &obj_load_options(), |_| {
