@@ -26,8 +26,7 @@ pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};
 pub use texture::{Texture, TextureHandle, TextureType};
 
 pub use material::{
-    get_renderer_texture_handle_from_material_texture, Material, MaterialHandle, MaterialParameter,
-    MaterialTexture,
+    Material, MaterialHandle, MaterialParameter, MaterialTexture, PBRMaterial, PBRMaterialHandle,
 };
 
 pub use shader::{

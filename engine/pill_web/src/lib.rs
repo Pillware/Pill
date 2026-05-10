@@ -16,7 +16,7 @@ use winit::{
 };
 
 use pill_engine::internal::*;
-use pill_renderer::Renderer;
+use pill_engine::renderer::Renderer;
 
 // In release, every fallible call uses unwrap_unchecked so LLVM sees the Err
 // branch as UB and DCEs the whole branch — including format strings, Display

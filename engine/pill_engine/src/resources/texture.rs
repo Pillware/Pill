@@ -1,8 +1,9 @@
 use crate::{
     engine::Engine,
-    graphics::RendererTextureHandle,
+    renderer::resources::{RendererMaterial, RendererTexture},
     resources::{Material, Resource, ResourceLoader, ResourceStorage},
 };
+use std::collections::HashMap;
 
 use pill_core::{get_type_name, ErrorContext, PillSlotMapKey, PillStyle, PillTypeMapKey, Result};
 pill_core::define_new_pill_slotmap_key! {
@@ -13,6 +14,8 @@ pill_core::define_new_pill_slotmap_key! {
 pub enum TextureType {
     Color,
     Normal,
+    MetallicRoughness,
+    Emissive,
 }
 
 #[readonly::make]
@@ -23,7 +26,6 @@ pub struct Texture {
     pub resource_loader: ResourceLoader,
     #[readonly]
     pub texture_type: TextureType,
-    pub(crate) renderer_resource_handle: Option<RendererTextureHandle>,
 }
 
 impl Texture {
@@ -32,11 +34,9 @@ impl Texture {
             name: name.to_string(),
             resource_loader,
             texture_type,
-            renderer_resource_handle: None,
         }
     }
 
-    /// Decode image bytes (format auto-detected) into a texture.
     pub fn from_bytes(name: &str, texture_type: TextureType, bytes: &[u8]) -> Self {
         Self::new(
             name,
@@ -161,49 +161,88 @@ impl Resource for Texture {
         };
 
         // Create renderer texture resource
-        let renderer_resource_handle = engine
-            .renderer
-            .create_texture(&self.name, &rgba, width, height, self.texture_type)
+        #[cfg(not(feature = "headless"))]
+        {
+            let renderer_texture = RendererTexture::new_texture(
+                engine.renderer.get_device(),
+                engine.renderer.get_queue(),
+                &self.name,
+                &rgba,
+                width,
+                height,
+                self.texture_type,
+            )
             .context(error_message)?;
-        self.renderer_resource_handle = Some(renderer_resource_handle);
+            engine.resource_manager.add_resource(renderer_texture)?;
+        }
 
         Ok(())
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
-        // Destroy renderer resource
-        if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_texture(v).unwrap();
-        }
-
-        // Take resource storage from engine
-        let resource_storage = engine
+        #[cfg(not(feature = "headless"))]
+        engine
             .resource_manager
-            .get_resource_storage_mut::<Material>()?;
-        let materials = &mut resource_storage.data;
+            .remove_resource_by_name::<RendererTexture>(&self.name)?;
 
-        // Find materials that use this texture and update them
-        for material_slot in materials.iter_mut() {
-            let material: &mut Material = material_slot
-                .1
-                .as_mut()
-                .expect("Critical: Resource is None");
-
-            // Update texture slots
-            let before = material.textures.len();
-            material
-                .textures
-                .retain(|(_, slot)| slot.texture_handle.data() != self_handle.data());
-
-            if material.textures.len() < before {
-                engine
-                    .renderer
-                    .update_material_textures(
-                        material.renderer_resource_handle.unwrap(),
-                        &material.textures,
-                    )
-                    .unwrap();
+        // Phase 1: find and update affected materials (CPU side only)
+        let affected_material_names: Vec<String> = {
+            let resource_storage = engine
+                .resource_manager
+                .get_resource_storage_mut::<Material>()?;
+            let mut affected = Vec::new();
+            for (_, slot) in resource_storage.data.iter_mut() {
+                let material = slot.as_mut().expect("Critical: Resource is None");
+                let before = material.textures.len();
+                material
+                    .textures
+                    .retain(|(_, slot)| slot.texture_handle.data() != self_handle.data());
+                if material.textures.len() < before {
+                    affected.push(material.name.clone());
+                }
             }
+            affected
+        };
+
+        // Phase 2: rebuild RendererMaterial textures bind group for affected materials
+        #[cfg(not(feature = "headless"))]
+        for mat_name in &affected_material_names {
+            let new_bind_group = {
+                let renderer_mat = engine
+                    .resource_manager
+                    .get_resource_by_name::<RendererMaterial>(mat_name)?;
+                let renderer_shader = engine
+                    .resource_manager
+                    .get_resource::<crate::renderer::resources::RendererShader>(
+                    &renderer_mat.shader_handle,
+                )?;
+                let material = engine
+                    .resource_manager
+                    .get_resource_by_name::<Material>(mat_name)?;
+                let mut resolved: HashMap<String, crate::graphics::RendererTextureHandle> =
+                    HashMap::new();
+                for (slot_name, mat_tex) in &material.textures {
+                    let tex = engine
+                        .resource_manager
+                        .get_resource::<crate::resources::Texture>(&mat_tex.texture_handle)?;
+                    let h = engine
+                        .resource_manager
+                        .get_resource_handle::<RendererTexture>(&tex.name)?;
+                    resolved.insert(slot_name.clone(), h);
+                }
+                RendererMaterial::create_textures_bind_group(
+                    engine.renderer.get_device(),
+                    &engine.resource_manager,
+                    renderer_shader.textures_bind_group_layout.as_ref().unwrap(),
+                    &format!("{}_textures", mat_name),
+                    &renderer_shader.texture_slots,
+                    &resolved,
+                )?
+            };
+            engine
+                .resource_manager
+                .get_resource_by_name_mut::<RendererMaterial>(mat_name)?
+                .textures_bind_group = Some(new_bind_group);
         }
 
         Ok(())

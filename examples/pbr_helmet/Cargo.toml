@@ -1,0 +1,16 @@
+[package]
+name = "pill_game"
+version = "0.1.0"
+edition = "2021"
+workspace = "NO_PATH"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[build-dependencies]
+ureq = "2"
+pill_assets = { path = "../../engine/pill_assets" }
+image = { version = "0.25", features = ["hdr"] }
+
+[dependencies]
+pill_engine = { path = "../../engine/pill_engine", features = ["game", "internal"] }

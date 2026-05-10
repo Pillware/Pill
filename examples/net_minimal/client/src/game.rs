@@ -48,7 +48,7 @@ impl PillGame for Game {
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;
-        engine.register_component::<MeshRenderingComponent>(active_scene)?;
+        engine.register_component::<PbrRenderableComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
@@ -108,7 +108,7 @@ impl PillGame for Game {
             .rotation(Vector3f::new(-210.0, 0.0, 0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component.clone())?;
-        let mesh_rendering_component = MeshRenderingComponent::builder()
+        let mesh_rendering_component = PbrRenderableComponent::builder()
             .mesh(&pill_mesh_handle)
             .material(&pill_material_handle)
             .build();
@@ -310,7 +310,7 @@ fn spawn_player(
     engine.add_component_to_entity(
         scene,
         ent,
-        MeshRenderingComponent::builder()
+        PbrRenderableComponent::builder()
             .mesh(&mesh)
             .material(&mat)
             .build(),

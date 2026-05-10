@@ -88,5 +88,9 @@ macro_rules! create_game {
             let game: Box<dyn $game_trait> = Box::new($game_contructor);
             Box::into_raw(Box::new(game)) as *mut std::ffi::c_void
         }
+
+        pub fn create_pill_game() -> Box<dyn $game_trait> {
+            Box::new($game_contructor)
+        }
     };
 }

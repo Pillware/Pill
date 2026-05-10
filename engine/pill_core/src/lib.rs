@@ -4,6 +4,7 @@
 mod bitmask_utils;
 mod color;
 mod error;
+mod handle;
 mod log;
 mod math;
 #[cfg(not(target_arch = "wasm32"))]
@@ -12,6 +13,7 @@ mod pill_slotmap;
 mod pill_twinmap;
 mod pill_typemap;
 mod style;
+mod tags;
 mod timer;
 mod utils;
 
@@ -62,6 +64,13 @@ pub use utils::{
 };
 
 pub use color::{generate_color_palette, hsl_to_rgb, DISTINCT_COLOR_PALETTE};
+
+pub use handle::{Handle, ResourcePool};
+
+pub use tags::{
+    RendererBufferTag, RendererCameraTag, RendererMaterialTag, RendererMeshTag,
+    RendererPipelineTag, RendererPipelineV2Tag, RendererTextureTag,
+};
 
 pub use timer::{Timer, TimerRecord};
 

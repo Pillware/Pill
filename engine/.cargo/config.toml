@@ -1,0 +1,18 @@
+# Enable native CPU SIMD (AVX2/AVX512 on x86_64, NEON on ARM) for non-WASM builds.
+# Without this the compiler defaults to SSE2 baseline on x86_64.
+# wasm32 intentionally absent — target-cpu=native breaks WASM builds.
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "target-cpu=native"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]

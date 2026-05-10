@@ -140,9 +140,7 @@ fn workspace_includes_game(
 }
 
 fn looks_like_engine_workspace(path: &Path) -> bool {
-    path.join("pill_core").exists()
-        && path.join("pill_engine").exists()
-        && path.join("pill_renderer").exists()
+    path.join("pill_core").exists() && path.join("pill_engine").exists()
 }
 
 fn engine_workspace_from_game_manifest(game_project_directory_path: &Path) -> Option<PathBuf> {
@@ -929,7 +927,7 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     let engine_engine_source_files_watcher =
         FileWatcher::new(engine_source_path).set_recursive(true);
 
-    let renderer_source_path = engine_workspace_directory_path.join("pill_renderer/src");
+    let renderer_source_path = engine_workspace_directory_path.join("pill_engine/src/renderer");
     let engine_renderer_source_files_watcher =
         FileWatcher::new(renderer_source_path).set_recursive(true);
 
@@ -1399,10 +1397,8 @@ mod tests {
         let engine_b = root.join("Pill-Engine-Upstream").join("engine");
         fs::create_dir_all(engine_a.join("pill_core")).unwrap();
         fs::create_dir_all(engine_a.join("pill_engine")).unwrap();
-        fs::create_dir_all(engine_a.join("pill_renderer")).unwrap();
         fs::create_dir_all(engine_b.join("pill_core")).unwrap();
         fs::create_dir_all(engine_b.join("pill_engine")).unwrap();
-        fs::create_dir_all(engine_b.join("pill_renderer")).unwrap();
 
         fs::write(
             engine_a.join("Cargo.toml"),

@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 /// [`PillTypeMap`]: struct.PillTypeMap.html
 pub trait PillTypeMapKey: Any {
     /// Defines the value type that corresponds to this `PillTypeMapKey`.
-    type Storage: Send; //+ Sync;
+    type Storage; //: Send + Sync;
 }
 
 /// PillTypeMap is a simple abstraction around the standard library's [`HashMap`]
@@ -27,7 +27,7 @@ pub trait PillTypeMapKey: Any {
 /// [`HashMap`]: std::collections::HashMap
 //pub struct PillTypeMap(HashMap<TypeId, Box<(dyn Any + Send + Sync)>>);
 #[derive(Default)]
-pub struct PillTypeMap(HashMap<TypeId, Box<dyn Any + Send>>);
+pub struct PillTypeMap(HashMap<TypeId, Box<dyn Any>>);
 
 impl PillTypeMap {
     /// Creates a new instance of `PillTypeMap`.
@@ -268,7 +268,7 @@ where
     K: PillTypeMapKey,
 {
     //entry: HashMapOccupiedEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
-    entry: HashMapOccupiedEntry<'a, TypeId, Box<dyn Any + Send>>,
+    entry: HashMapOccupiedEntry<'a, TypeId, Box<dyn Any>>,
     _marker: PhantomData<&'a K::Storage>,
 }
 
@@ -307,7 +307,7 @@ where
     K: PillTypeMapKey,
 {
     //entry: HashMapVacantEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
-    entry: HashMapVacantEntry<'a, TypeId, Box<dyn Any + Send>>,
+    entry: HashMapVacantEntry<'a, TypeId, Box<dyn Any>>,
     _marker: PhantomData<&'a K::Storage>,
 }
 

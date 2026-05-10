@@ -12,3 +12,4 @@ glob = "0.3"
 png = "0.17"
 tobj = "3.0"
 bytemuck = { version = "1.4", features = ["derive"] }
+gltf = { version = "1", features = ["import"] }

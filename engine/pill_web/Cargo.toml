@@ -17,7 +17,6 @@ crate-type = ["rlib"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 pill_engine = { path = "../pill_engine", features = ["game", "internal"] }
-pill_renderer = { path = "../pill_renderer" }
 pill_core = { path = "../pill_core" }
 
 wasm-bindgen = "0.2"

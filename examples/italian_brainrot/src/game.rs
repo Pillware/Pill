@@ -13,7 +13,7 @@ impl PillGame for Game {
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;
-        engine.register_component::<MeshRenderingComponent>(active_scene)?;
+        engine.register_component::<PbrRenderableComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
@@ -140,7 +140,7 @@ impl PillGame for Game {
                     .build(),
             )
             .with_component(
-                MeshRenderingComponent::builder()
+                PbrRenderableComponent::builder()
                     .material(&chimpanzini_bananini_material_handle_lit)
                     .mesh(&chimpanzini_bananini_mesh_handle)
                     .build(),
@@ -157,7 +157,7 @@ impl PillGame for Game {
                     .build(),
             )
             .with_component(
-                MeshRenderingComponent::builder()
+                PbrRenderableComponent::builder()
                     .material(&chimpanzini_bananini_material_handle_unlit)
                     .mesh(&chimpanzini_bananini_mesh_handle)
                     .build(),

@@ -5,8 +5,9 @@
 // any field change must be mirrored on both sides.
 
 struct EngineParams {
-    float3 fog_color;
+    float  delta_time;
     float  fog_density;
+    float3 fog_color;
 };
 [[vk::binding(0, 0)]] ConstantBuffer<EngineParams> engine;
 

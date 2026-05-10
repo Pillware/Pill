@@ -939,7 +939,7 @@ fn register_plinko_ui(engine: &mut Engine) -> Result<()> {
         .clone();
 
     engine
-        .get_global_component_mut::<EguiManagerComponent>()?
+        .get_global_component_mut::<EguiComponent>()?
         .register_ui("plinko.controls", move |ctx| {
             egui::Window::new("Plinko Controls")
                 .default_open(true)

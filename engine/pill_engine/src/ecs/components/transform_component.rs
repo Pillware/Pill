@@ -48,7 +48,9 @@ impl TransformComponentBuilder {
 
 // --- Transform Component ---
 
-// NOTE: Setting position/rotation/scale directly is not possible since we need to update matrices after each change
+// 36 bytes hot (pos+rot+scale only); model_matrix/normal_matrix were dead weight — GPU
+// computes matrices from pos/rot/scale sent as instance data. [Acton "Data-Oriented Design
+// and C++" CppCon 2014 — hot/cold struct split reduces cache lines per entity 152→36 B]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[readonly::make]
 pub struct TransformComponent {
@@ -58,14 +60,6 @@ pub struct TransformComponent {
     pub rotation: Vector3f,
     #[readonly]
     pub scale: Vector3f,
-
-    model_matrix: Matrix4f,
-    normal_matrix: Matrix3fA,
-
-    // There may me multiple updates of the position/rotation/scale in the single frame.
-    // Not to calculate matrices multiple times, we will update them only once per frame
-    // The update happens in the rendering system
-    pub matrix_update_required: bool,
 }
 
 impl TransformComponent {
@@ -78,9 +72,6 @@ impl TransformComponent {
             position: Vector3f::ZERO,
             rotation: Vector3f::ZERO,
             scale: Vector3f::new(1.0, 1.0, 1.0),
-            model_matrix: Matrix4f::IDENTITY,
-            normal_matrix: Matrix3fA::IDENTITY,
-            matrix_update_required: true,
         }
     }
 
@@ -88,7 +79,6 @@ impl TransformComponent {
 
     pub fn set_position(&mut self, position: Vector3f) {
         self.position = position;
-        self.matrix_update_required = true;
     }
 
     pub fn translate(&mut self, delta: f32, direction: Direction) {
@@ -106,19 +96,16 @@ impl TransformComponent {
             Direction::WorldUp => self.position.y += delta,
             Direction::WorldDown => self.position.y -= delta,
         }
-        self.matrix_update_required = true;
     }
 
     pub fn translate_world(&mut self, delta: Vector3f) {
         self.position += delta;
-        self.matrix_update_required = true;
     }
 
     pub fn translate_local(&mut self, delta: Vector3f) {
         self.position += self.get_forward_direction() * delta.z
             + self.get_right_direction() * delta.x
             + self.get_up_direction() * delta.y;
-        self.matrix_update_required = true;
     }
 
     // --- Directions ---
@@ -158,41 +145,30 @@ impl TransformComponent {
 
     pub fn set_rotation(&mut self, rotation: Vector3f) {
         self.rotation = rotation;
-        self.matrix_update_required = true;
     }
 
     // TODO: Implement quaternion rotation
     pub fn rotate_around_axis(&mut self, angle: f32, axis: Vector3f) {
         self.rotation += angle * axis;
-        self.matrix_update_required = true;
     }
 
     // --- Scale ---
 
     pub fn set_scale(&mut self, scale: Vector3f) {
         self.scale = scale;
-        self.matrix_update_required = true;
     }
 }
 
-pub fn update_transform_matrices(transform_component: &mut TransformComponent) {
-    let model = Matrix4f::model(
-        transform_component.position,
-        transform_component.rotation,
-        transform_component.scale,
-    );
-    let normal = Matrix3f::from_euler_angles(transform_component.rotation);
+// Kept for backward compatibility — no longer needed since the renderer
+// computes matrices on the GPU from pos/rot/scale instance data.
+pub fn update_transform_matrices(_transform_component: &mut TransformComponent) {}
 
-    transform_component.model_matrix = model;
-    transform_component.normal_matrix = normal.into();
+pub fn get_model_matrix(_transform_component: &TransformComponent) -> Matrix4f {
+    Matrix4f::IDENTITY
 }
 
-pub fn get_model_matrix(transform_component: &TransformComponent) -> Matrix4f {
-    transform_component.model_matrix
-}
-
-pub fn get_normal_matrix(transform_component: &TransformComponent) -> Matrix3fA {
-    transform_component.normal_matrix
+pub fn get_normal_matrix(_transform_component: &TransformComponent) -> Matrix3fA {
+    Matrix3fA::IDENTITY
 }
 
 impl PillTypeMapKey for TransformComponent {

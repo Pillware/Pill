@@ -1,10 +1,9 @@
 use crate::{
     ecs::DeferredUpdateManagerPointer,
     engine::Engine,
+    renderer::resources::RendererShader,
     resources::{Resource, ResourceLoader, ResourceStorage, TextureType},
 };
-
-use crate::internal::RendererShaderHandle;
 
 use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
@@ -96,7 +95,6 @@ pub struct Shader {
     #[readonly]
     pub enable_camera_binding: bool,
 
-    pub(crate) renderer_resource_handle: Option<RendererShaderHandle>,
     handle: Option<ShaderHandle>,
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
@@ -122,7 +120,6 @@ impl Shader {
             texture_slots,
             enable_engine_binding,
             enable_camera_binding,
-            renderer_resource_handle: None,
             handle: None,
             deferred_update_manager: None,
         }
@@ -151,12 +148,6 @@ impl Resource for Shader {
             get_type_name::<Self>().specific_object_style()
         );
 
-        // This resource is using DeferredUpdateSystem so keep DeferredUpdateManager
-        //let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
-        //self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
-
-        // WGSL is the only accepted source format; wgpu consumes WGSL natively
-        // so there is no runtime compile step.
         let vertex_bytes = read_wgsl_bytes(
             &self.vertex_shader_resource_loader,
             &engine.game_resources_directory_path,
@@ -176,22 +167,22 @@ impl Resource for Shader {
                 format!("Fragment shader for {} is not valid UTF-8 WGSL", &self.name).into()
             })?;
 
-        // TODO: Parse shader files and validate texture and parameter slots, or create them automatically here, so the user does not have to do it manually
-
-        // Load data
-        let renderer_resource_handle = engine
-            .renderer
-            .create_shader(
-                &self.name,
-                vertex_wgsl,
-                fragment_wgsl,
-                &self.texture_slots,
-                &self.parameter_slots,
-                self.enable_engine_binding,
-                self.enable_camera_binding,
-            )
-            .context(error_message)?;
-        self.renderer_resource_handle = Some(renderer_resource_handle);
+        #[cfg(not(feature = "headless"))]
+        {
+            let renderer_shader = engine
+                .renderer
+                .create_shader_struct(
+                    &self.name,
+                    vertex_wgsl,
+                    fragment_wgsl,
+                    &self.texture_slots,
+                    &self.parameter_slots,
+                    self.enable_engine_binding,
+                    self.enable_camera_binding,
+                )
+                .context(error_message)?;
+            engine.resource_manager.add_resource(renderer_shader)?;
+        }
 
         Ok(())
     }
@@ -201,26 +192,10 @@ impl Resource for Shader {
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) -> Result<()> {
-        // Destroy renderer resource
-        if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_shader(v).unwrap();
-        }
-
-        // Find materials that use this shader and update them
-        // for (scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-        //     let x = &engine.resource_manager;
-
-        //     // for (entity_handle, mesh_rendering_component) in engine.iterate_one_component::<MeshRenderingComponent>()? {
-        //     //     if let Some(material_handle) = mesh_rendering_component.material_handle {
-        //     //         // If mesh rendering component has handle to this material
-        //     //         if material_handle.data() == self_handle.data() {
-        //     //             mesh_rendering_component.set_material_handle(Option::<MaterialHandle>::None);
-        //     //             mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
-        //     //         }
-        //     //     }
-        //     // }
-        // }
-
+        #[cfg(not(feature = "headless"))]
+        engine
+            .resource_manager
+            .remove_resource_by_name::<RendererShader>(&self.name)?;
         Ok(())
     }
 }

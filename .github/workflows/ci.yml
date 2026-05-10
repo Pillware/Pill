@@ -160,6 +160,8 @@ jobs:
         example:
           - examples/cube
           - examples/pill_tunel
+          - examples/pbr_helmet
+          - examples/pbr_balls
     steps:
       - uses: actions/checkout@v4
 
@@ -176,6 +178,8 @@ jobs:
           workspaces: |
             examples/cube/build/wasm/.build/pill_web -> target
             examples/pill_tunel/build/wasm/.build/pill_web -> target
+            examples/pbr_helmet/build/wasm/.build/pill_web -> target
+            examples/pbr_balls/build/wasm/.build/pill_web -> target
 
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
@@ -219,10 +223,10 @@ jobs:
         run: |
           WASM="examples/cube/build/wasm/pill_web_app_bg.wasm"
           ACTUAL=$(wc -c < "$WASM")
-          MAX=$((499 * 1024))
-          if [ "$ACTUAL" -gt "$MAX" ]; then
-            echo "FAIL: WASM $((ACTUAL / 1024)) KB exceeds 499 KB budget"
+          ACTUAL_KB=$((ACTUAL / 1024))
+          if [ "$ACTUAL_KB" -gt 499 ]; then
+            echo "FAIL: WASM $ACTUAL_KB KB exceeds 499 KB budget"
             exit 1
           fi
-          echo "OK: WASM $((ACTUAL / 1024)) KB <= 499 KB"
+          echo "OK: WASM $ACTUAL_KB KB <= 499 KB"
 

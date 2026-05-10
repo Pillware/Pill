@@ -178,9 +178,10 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
     //    parent workspace; resolver matches engine/Cargo.toml (wgpu feature
     //    unification is sensitive to resolver version)
     //  - [profile.release] + wasm-pack's wasm-opt flags for Tier 1 size opt.
-    //    `strip` is NOT set here: the size report analyzes the pre-opt wasm
-    //    and needs the function-names subsection. wasm-opt strips the shipped
-    //    binary via --strip-debug --strip-producers.
+    //    `strip = true` drops the function-names subsection from the pre-opt
+    //    wasm too (~4 KB off the final binary), so the size report's per-crate
+    //    attribution reads 0 B — accepted: shipping under the size budget beats
+    //    the dev-only breakdown. The final binary is also wasm-opt --strip-debug'd.
     let mut f = OpenOptions::new()
         .append(true)
         .open(&manifest)
@@ -195,8 +196,11 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
             "lto = \"fat\"\n",
             "codegen-units = 1\n",
             "panic = \"abort\"\n",
+            "strip = true\n",
             "\n[package.metadata.wasm-pack.profile.release]\n",
             "wasm-opt = [\"-Oz\", \"--strip-debug\", \"--strip-producers\", \"--enable-nontrapping-float-to-int\", \"--enable-bulk-memory\", \"--enable-sign-ext\", \"--enable-mutable-globals\", \"--enable-reference-types\"]\n",
+            "\n[target.'cfg(target_arch = \"wasm32\")'.dependencies]\n",
+            "lol_alloc = \"0.4\"\n",
         ),
         pill_game = pill_game,
     )

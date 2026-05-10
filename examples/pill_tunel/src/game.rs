@@ -107,13 +107,12 @@ fn tinted_pill_material(
     tint: (f32, f32, f32),
     color_tex: TextureHandle,
     normal_tex: TextureHandle,
-) -> Result<MaterialHandle> {
+) -> Result<PBRMaterialHandle> {
     engine.add_resource(
-        Material::builder(name)
-            .texture("color", color_tex)?
-            .texture("normal", normal_tex)?
-            .color_parameter("tint", Color::new(tint.0, tint.1, tint.2))?
-            .build(),
+        PBRMaterial::new(name)
+            .albedo(Color::new(tint.0, tint.1, tint.2))
+            .albedo_texture(color_tex)
+            .normal_texture(normal_tex),
     )
 }
 
@@ -131,6 +130,19 @@ pub struct WebGame {}
 
 // --- Systems -----------------------------------------------------------------
 
+/// Fast sine approximation (~0.1% error) — replaces std `sin` in the 60k-pill hot loop, where the
+/// transcendental dominated per-pill cost. Parabola fit + one refinement pass; range-reduced to
+/// [-π, π]. [Nick, "A Fast, Compact Approximation of the Sine Function", devmaster.net 2006;
+/// cf. Bhāskara I's sine approximation, 7th c.]
+fn fast_sin(mut x: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    x -= TAU * (x * (1.0 / TAU)).round(); // range-reduce to [-π, π]
+    const B: f32 = 4.0 / PI;
+    const C: f32 = -4.0 / (PI * PI);
+    let y = B * x + C * x * x.abs();
+    0.225 * (y * y.abs() - y) + y // refinement: ~1% → ~0.1% error
+}
+
 fn pill_particle_system(engine: &mut Engine) -> Result<()> {
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
     let tunnel_length = TUNNEL_FAR_Z - TUNNEL_NEAR_Z;
@@ -142,7 +154,7 @@ fn pill_particle_system(engine: &mut Engine) -> Result<()> {
         while z < TUNNEL_NEAR_Z {
             z += tunnel_length;
         }
-        let y_wobble = (z * PILL_WOBBLE_Z_K + pill.wobble_phase).sin() * PILL_WOBBLE_AMPLITUDE;
+        let y_wobble = fast_sin(z * PILL_WOBBLE_Z_K + pill.wobble_phase) * PILL_WOBBLE_AMPLITUDE;
         transform.set_position(Vector3f::new(
             transform.position.x,
             pill.base_y + y_wobble,
@@ -191,9 +203,19 @@ impl PillGame for WebGame {
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;
 
+        let zero_ibl =
+            engine.create_gpu_texture_f32("zero_ibl", &[0.0_f32, 0.0, 0.0, 0.0], 1, 1)?;
+        {
+            let rs = engine.get_global_component_mut::<RenderStateComponent>()?;
+            rs.bg_color = [CLEAR_COLOR.0, CLEAR_COLOR.1, CLEAR_COLOR.2];
+            rs.fog_density = FOG_DENSITY;
+            rs.ibl_diffuse = zero_ibl;
+            rs.ibl_specular = zero_ibl;
+        }
+
         engine.register_component::<TransformComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
-        engine.register_component::<MeshRenderingComponent>(active_scene)?;
+        engine.register_component::<PbrRenderableComponent>(active_scene)?;
         engine.register_component::<PillParticleComponent>(active_scene)?;
         engine.register_component::<HeroPillComponent>(active_scene)?;
 
@@ -213,7 +235,7 @@ impl PillGame for WebGame {
             include_bytes!("../res/textures/pill_normal.cooked_tex"),
         ))?;
 
-        let tunnel_materials: Vec<MaterialHandle> = PALETTE
+        let tunnel_materials: Vec<PBRMaterialHandle> = PALETTE
             .iter()
             .enumerate()
             .map(|(i, tint)| {
@@ -226,7 +248,7 @@ impl PillGame for WebGame {
                 )
             })
             .collect::<Result<_>>()?;
-        let hero_material =
+        let hero_material: PBRMaterialHandle =
             tinted_pill_material(engine, "hero_material", HERO_TINT, color_tex, normal_tex)?;
 
         // Camera
@@ -241,10 +263,6 @@ impl PillGame for WebGame {
                 CameraComponent::builder()
                     .enabled(true)
                     .fov(CAMERA_FOV)
-                    .clear_color(Color::new(CLEAR_COLOR.0, CLEAR_COLOR.1, CLEAR_COLOR.2))
-                    .fog_density(FOG_DENSITY)
-                    // Fade distant pills toward the clear color so the tunnel wrap seam disappears.
-                    .fog_color(Color::new(CLEAR_COLOR.0, CLEAR_COLOR.1, CLEAR_COLOR.2))
                     .build(),
             )
             .build();
@@ -259,9 +277,9 @@ impl PillGame for WebGame {
                     .build(),
             )
             .with_component(
-                MeshRenderingComponent::builder()
+                PbrRenderableComponent::builder()
                     .mesh(&pill_mesh)
-                    .material(&hero_material)
+                    .pbr_material(&hero_material)
                     .build(),
             )
             .with_component(HeroPillComponent {})
@@ -297,9 +315,9 @@ impl PillGame for WebGame {
                         .build(),
                 )
                 .with_component(
-                    MeshRenderingComponent::builder()
+                    PbrRenderableComponent::builder()
                         .mesh(&pill_mesh)
-                        .material(&material)
+                        .pbr_material(&material)
                         .build(),
                 )
                 .with_component(PillParticleComponent {

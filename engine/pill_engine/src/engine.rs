@@ -1,5 +1,11 @@
-use crate::app_config::EngineProcessInfo;
-use crate::{app_config::EngineConfig, config::*, ecs::*, graphics::*, resources::*};
+use crate::{
+    app_config::{EngineConfig, EngineProcessInfo},
+    config::*,
+    ecs::*,
+    graphics::*,
+    renderer::resources::{RendererMaterial, RendererMesh, RendererShader, RendererTexture},
+    resources::*,
+};
 
 use pill_core::{
     debug, error, get_game_error_message, get_type_name, info, EngineError, LogContext,
@@ -34,7 +40,6 @@ pub struct Engine {
     pub(crate) resource_manager: ResourceManager,
     pub(crate) global_components: PillTypeMap,
     pub(crate) input_queue: VecDeque<InputEvent>,
-    pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
     pub(crate) game_resources_directory_path: std::path::PathBuf,
     pub(crate) frame_delta_time: f32, // In milliseconds
@@ -67,7 +72,6 @@ impl Engine {
             resource_manager: ResourceManager::new(),
             global_components: PillTypeMap::new(),
             input_queue: VecDeque::new(),
-            render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path,
             frame_delta_time: 0.0,
@@ -91,7 +95,6 @@ impl Engine {
             resource_manager: ResourceManager::new(),
             global_components: PillTypeMap::new(),
             input_queue: VecDeque::new(),
-            render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path: std::path::PathBuf::new(),
             frame_delta_time: 0.0.into(),
@@ -124,8 +127,52 @@ impl Engine {
             .get_int("MAX_SOUNDS")
             .unwrap_or(MAX_SOUNDS as i64) as usize;
 
+        #[cfg(not(feature = "headless"))]
+        {
+            self.register_resource_type::<RendererShader>(max_shader_count)?;
+            self.register_resource_type::<RendererMaterial>(max_material_count)?;
+            self.register_resource_type::<RendererTexture>(max_texture_count)?;
+            self.register_resource_type::<RendererMesh>(max_mesh_count)?;
+
+            // Upload neutral 1×1 fallback textures for the env slots; game may override before first frame.
+            let bg_h = self.renderer.create_texture_from_pixels(
+                "pill_engine_default_equirect",
+                &[DEFAULT_EQUIRECT_FALLBACK_PIXEL],
+                1,
+                1,
+                wgpu::TextureFormat::Rgba32Float,
+            );
+            let diff_h = self.renderer.create_texture_from_pixels(
+                "pill_engine_default_ibl_diffuse",
+                &[DEFAULT_IBL_FALLBACK_PIXEL],
+                1,
+                1,
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
+            let spec_h = self.renderer.create_texture_from_pixels(
+                "pill_engine_default_ibl_specular",
+                &[DEFAULT_IBL_FALLBACK_PIXEL],
+                1,
+                1,
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
+            let lut_h = self.renderer.create_texture_from_pixels(
+                "pill_engine_default_brdf_lut",
+                &[DEFAULT_BRDF_LUT_FALLBACK_PIXEL],
+                1,
+                1,
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
+            let rs = self.get_global_component_mut::<RenderStateComponent>()?;
+            rs.background = bg_h;
+            rs.ibl_diffuse = diff_h;
+            rs.ibl_specular = spec_h;
+            rs.ibl_brdf_lut = lut_h;
+        }
+
         self.register_resource_type::<Shader>(max_shader_count)?;
         self.register_resource_type::<Material>(max_material_count)?;
+        self.register_resource_type::<PBRMaterial>(max_material_count)?;
         self.register_resource_type::<Texture>(max_texture_count)?;
         self.register_resource_type::<Mesh>(max_mesh_count)?;
         #[cfg(not(target_arch = "wasm32"))]
@@ -154,6 +201,10 @@ impl Engine {
                     DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME.to_string(),
                     ShaderParameterSlot::new(ShaderParameterType::Scalar),
                 ),
+                (
+                    DEFAULT_LIT_SHADER_METALLIC_FACTOR_PARAMETER_SLOT_NAME.to_string(),
+                    ShaderParameterSlot::new(ShaderParameterType::Scalar),
+                ),
             ]
             .into_iter()
             .collect(),
@@ -170,6 +221,20 @@ impl Engine {
                     ShaderTextureSlot::new(
                         TextureType::Normal,
                         DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS,
+                    ),
+                ),
+                (
+                    DEFAULT_LIT_SHADER_METALLIC_ROUGHNESS_TEXTURE_SLOT_NAME.to_string(),
+                    ShaderTextureSlot::new(
+                        TextureType::MetallicRoughness,
+                        DEFAULT_LIT_SHADER_METALLIC_ROUGHNESS_TEXTURE_SLOT_BINDINGS,
+                    ),
+                ),
+                (
+                    DEFAULT_LIT_SHADER_EMISSIVE_TEXTURE_SLOT_NAME.to_string(),
+                    ShaderTextureSlot::new(
+                        TextureType::Emissive,
+                        DEFAULT_LIT_SHADER_EMISSIVE_TEXTURE_SLOT_BINDINGS,
                     ),
                 ),
             ]
@@ -226,6 +291,24 @@ impl Engine {
         ))?;
 
         debug!(LogContext::Engine => "Default normal texture {} created", DEFAULT_NORMAL_TEXTURE_NAME.name_style());
+        debug!(LogContext::Engine => "Creating default metallic_roughness texture {}...", DEFAULT_METALLIC_ROUGHNESS_TEXTURE_NAME.name_style());
+
+        let default_mr_texture_handle = self.add_default_resource(Texture::new(
+            DEFAULT_METALLIC_ROUGHNESS_TEXTURE_NAME,
+            TextureType::MetallicRoughness,
+            ResourceLoader::Bytes(Box::new(DEFAULT_METALLIC_ROUGHNESS_TEXTURE_BYTES)),
+        ))?;
+
+        debug!(LogContext::Engine => "Default metallic_roughness texture {} created", DEFAULT_METALLIC_ROUGHNESS_TEXTURE_NAME.name_style());
+        debug!(LogContext::Engine => "Creating default emissive texture {}...", DEFAULT_EMISSIVE_TEXTURE_NAME.name_style());
+
+        let default_emissive_texture_handle = self.add_default_resource(Texture::new(
+            DEFAULT_EMISSIVE_TEXTURE_NAME,
+            TextureType::Emissive,
+            ResourceLoader::Bytes(Box::new(DEFAULT_EMISSIVE_TEXTURE_BYTES)),
+        ))?;
+
+        debug!(LogContext::Engine => "Default emissive texture {} created", DEFAULT_EMISSIVE_TEXTURE_NAME.name_style());
         debug!(LogContext::Engine => "Creating default material {}...", DEFAULT_LIT_MATERIAL_NAME.name_style());
 
         // Create default lit material
@@ -237,6 +320,7 @@ impl Engine {
                     Color::new(1.0, 1.0, 1.0),
                 )?
                 .scalar_parameter(DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME, 0.5)?
+                .scalar_parameter(DEFAULT_LIT_SHADER_METALLIC_FACTOR_PARAMETER_SLOT_NAME, 0.0)?
                 .texture(
                     DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME,
                     default_color_texture_handle,
@@ -244,6 +328,14 @@ impl Engine {
                 .texture(
                     DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME,
                     default_normal_texture_handle,
+                )?
+                .texture(
+                    DEFAULT_LIT_SHADER_METALLIC_ROUGHNESS_TEXTURE_SLOT_NAME,
+                    default_mr_texture_handle,
+                )?
+                .texture(
+                    DEFAULT_LIT_SHADER_EMISSIVE_TEXTURE_SLOT_NAME,
+                    default_emissive_texture_handle,
                 )?
                 .build(),
         )?;
@@ -307,15 +399,16 @@ impl Engine {
         // Register global components
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
-        #[cfg(feature = "debug_ui")]
+        #[cfg(feature = "ui")]
         {
-            self.add_global_component(EguiManagerComponent::new())?;
+            self.add_global_component(EguiComponent::new())?;
             self.add_global_component(BuildStatusIndicatorComponent::default())?;
         }
 
         #[cfg(not(feature = "headless"))]
         {
             self.add_global_component(InputComponent::new())?;
+            self.add_global_component(RenderStateComponent::new())?;
         }
 
         #[cfg(all(not(feature = "headless"), not(target_arch = "wasm32")))]
@@ -364,6 +457,12 @@ impl Engine {
                 AUDIO_SYSTEM.system_function,
                 AUDIO_SYSTEM.update_phase,
             )?;
+            #[cfg(feature = "ui")]
+            self.system_manager.add_system(
+                EGUI_SYSTEM.name,
+                EGUI_SYSTEM.system_function,
+                EGUI_SYSTEM.update_phase,
+            )?;
             self.system_manager.add_system(
                 RENDERING_SYSTEM.name,
                 RENDERING_SYSTEM.system_function,
@@ -380,7 +479,7 @@ impl Engine {
             )?;
         }
 
-        #[cfg(feature = "debug_ui")]
+        #[cfg(feature = "ui")]
         self.system_manager.add_system(
             "build_status_system",
             build_status_system,
@@ -463,8 +562,8 @@ impl Engine {
                             EngineError::NonReturnedSystemTimer(system_name.clone())
                         );
                     }
-                    Err(e) => {
-                        panic!("{}", EngineError::Other(e.to_string()));
+                    Err(error) => {
+                        panic!("{}", EngineError::Other(error.to_string()));
                     }
                 };
 
@@ -495,8 +594,8 @@ impl Engine {
 
     pub fn shutdown(&mut self) {
         // cleanup the registered egui hooks
-        #[cfg(feature = "debug_ui")]
-        self.get_global_component_mut::<EguiManagerComponent>()
+        #[cfg(feature = "ui")]
+        self.get_global_component_mut::<EguiComponent>()
             .unwrap()
             .clear_registered_ui();
 
@@ -560,9 +659,11 @@ impl Engine {
     }
 
     pub fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) {
-        #[cfg(feature = "debug_ui")]
-        self.renderer.pass_input_to_egui(event).unwrap();
-        #[cfg(not(feature = "debug_ui"))]
+        #[cfg(feature = "ui")]
+        if let Ok(mgr) = self.get_global_component::<EguiComponent>() {
+            mgr.egui_client.handle_input(event.clone());
+        }
+        #[cfg(not(feature = "ui"))]
         let _ = event;
     }
 
@@ -573,8 +674,148 @@ impl Engine {
 
 // --- API ------------------------------------------------------------------
 
+/// Parse an RTEX binary header.
+/// Returns `(pixel_bytes, width, height, mip_count, version)`.
+fn decode_rtex_header(bytes: &[u8]) -> (&[u8], u32, u32, u32, u32) {
+    let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    let w = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
+    let h = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
+    if version == 3 || version == 4 {
+        let mip_count = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
+        (&bytes[20..], w, h, mip_count, version)
+    } else {
+        (&bytes[16..], w, h, 1, version)
+    }
+}
+
 /// Pill Engine game API
 impl Engine {
+    // --- Renderer API ---
+
+    /// Provides equirect background texture bytes; used by PassBackground on first-frame init.
+    /// Must be called before the first rendered frame (i.e. from `start()`).
+    pub fn set_background_texture(&mut self, bytes: Vec<u8>) -> Result<()> {
+        let (raw, w, h, _mips, version) = decode_rtex_header(&bytes);
+        let format = if version == 2 {
+            wgpu::TextureFormat::Rgba32Float
+        } else {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        };
+        let handle =
+            self.renderer
+                .create_texture_from_pixels("studio_equirect", &[raw], w, h, format);
+        self.get_global_component_mut::<RenderStateComponent>()?
+            .background = handle;
+        Ok(())
+    }
+
+    /// Provides IBL map bytes (diffuse irradiance, specular prefilter, BRDF LUT);
+    /// used by PassPBROpaque on first-frame init.
+    /// Must be called before the first rendered frame (i.e. from `start()`).
+    pub fn set_ibl_textures(
+        &mut self,
+        diffuse: Vec<u8>,
+        specular: Vec<u8>,
+        brdf_lut: Vec<u8>,
+    ) -> Result<()> {
+        let (diff_raw, dw, dh, _, _) = decode_rtex_header(&diffuse);
+        let diff_h = self.renderer.create_texture_from_pixels(
+            "diffuse_ibl",
+            &[diff_raw],
+            dw,
+            dh,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        );
+        // specular: RTEX v4 — Rgba32Float mip chain
+        let (spec_raw, sw, sh, spec_mip_count, _) = decode_rtex_header(&specular);
+        const SPEC_BYTES_PER_TEXEL: usize = 16; // Rgba32Float = 4 channels × 4 bytes
+        let mut spec_slices: Vec<&[u8]> = Vec::with_capacity(spec_mip_count as usize);
+        let mut offset = 0usize;
+        for mip in 0..spec_mip_count {
+            let mip_bytes =
+                (sw >> mip).max(1) as usize * (sh >> mip).max(1) as usize * SPEC_BYTES_PER_TEXEL;
+            spec_slices.push(&spec_raw[offset..offset + mip_bytes]);
+            offset += mip_bytes;
+        }
+        let spec_h = self.renderer.create_texture_from_pixels(
+            "specular_ibl",
+            &spec_slices,
+            sw,
+            sh,
+            wgpu::TextureFormat::Rgba32Float,
+        );
+
+        let (lut_raw, lw, lh, _, _) = decode_rtex_header(&brdf_lut);
+        let lut_h = self.renderer.create_texture_from_pixels(
+            "brdf_lut",
+            &[lut_raw],
+            lw,
+            lh,
+            wgpu::TextureFormat::Rgba8Unorm,
+        );
+        let rs = self.get_global_component_mut::<RenderStateComponent>()?;
+        rs.ibl_diffuse = diff_h;
+        rs.ibl_specular = spec_h;
+        rs.ibl_brdf_lut = lut_h;
+        Ok(())
+    }
+
+    /// Creates a single-mip Rgba32Float GPU texture from f32 pixels.
+    /// Returns a handle for assignment to `RenderStateComponent`.
+    /// Must be called before the first rendered frame (i.e. from `start()`).
+    pub fn create_gpu_texture_f32(
+        &mut self,
+        name: &str,
+        pixels: &[f32],
+        width: u32,
+        height: u32,
+    ) -> Result<RendererTextureHandle> {
+        let bytes: &[u8] = bytemuck::cast_slice(pixels);
+        Ok(self.renderer.create_texture_from_pixels(
+            name,
+            &[bytes],
+            width,
+            height,
+            wgpu::TextureFormat::Rgba32Float,
+        ))
+    }
+
+    /// Creates a mipped Rgba32Float GPU texture from f32 pixels; `mips[0]` is the base level.
+    /// Returns a handle for assignment to `RenderStateComponent`.
+    /// Must be called before the first rendered frame (i.e. from `start()`).
+    pub fn create_gpu_mipped_texture_f32(
+        &mut self,
+        name: &str,
+        mips: &[Vec<f32>],
+        base_width: u32,
+        base_height: u32,
+    ) -> Result<RendererTextureHandle> {
+        let slices: Vec<&[u8]> = mips
+            .iter()
+            .map(|m| bytemuck::cast_slice(m.as_slice()))
+            .collect();
+        Ok(self.renderer.create_texture_from_pixels(
+            name,
+            &slices,
+            base_width,
+            base_height,
+            wgpu::TextureFormat::Rgba32Float,
+        ))
+    }
+
+    // --- UI API ---
+
+    /// Sets a game-defined egui overlay; called every frame before the engine debug window.
+    #[cfg(feature = "ui")]
+    pub fn set_game_overlay(
+        &mut self,
+        f: impl Fn(&egui::Context) + Send + Sync + 'static,
+    ) -> Result<()> {
+        self.get_global_component_mut::<crate::ecs::EguiComponent>()?
+            .set_overlay(f);
+        Ok(())
+    }
+
     // --- System API ---
 
     /// Adds game-defined system to the game update phase
@@ -861,18 +1102,7 @@ impl Engine {
     where
         T: GlobalComponent<Storage = GlobalComponentStorage<T>>,
     {
-        // Get component
-        let component = self
-            .global_components
-            .get::<T>()
-            .ok_or_else(|| -> pill_core::PillError {
-                EngineError::GlobalComponentNotFound(get_type_name::<T>()).into()
-            })?
-            .data
-            .as_ref()
-            .unwrap();
-
-        Ok(component)
+        crate::ecs::get_global_component_from::<T>(&self.global_components)
     }
 
     /// Returns global mutable component

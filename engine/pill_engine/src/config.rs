@@ -8,6 +8,9 @@ use crate::{
     resources::{MaterialHandle, ShaderHandle, TextureHandle, TextureType},
 };
 
+#[cfg(feature = "ui")]
+use crate::ecs::egui_system;
+
 #[cfg(not(target_arch = "wasm32"))]
 use crate::ecs::{audio_system, haptics_system, AudioManagerComponent};
 
@@ -82,6 +85,13 @@ pub const PHYSICS_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PostGame,
 };
 
+#[cfg(feature = "ui")]
+pub const EGUI_SYSTEM: SystemConfig = SystemConfig {
+    name: "egui_system",
+    system_function: egui_system,
+    update_phase: UpdatePhase::PostGame,
+};
+
 // --- Resources ---
 
 pub const RESOURCE_VERSION_LIMIT: usize = 255;
@@ -96,6 +106,8 @@ pub const MAX_SOUNDS: usize = 10;
 pub const DEFAULT_RESOURCE_PREFIX: &str = "pill_engine";
 pub const DEFAULT_COLOR_TEXTURE_NAME: &str = "pill_engine_default_color";
 pub const DEFAULT_NORMAL_TEXTURE_NAME: &str = "pill_engine_default_normal";
+pub const DEFAULT_METALLIC_ROUGHNESS_TEXTURE_NAME: &str = "pill_engine_default_metallic_roughness";
+pub const DEFAULT_EMISSIVE_TEXTURE_NAME: &str = "pill_engine_default_emissive";
 
 // RTEX layout: b"RTEX" | u32LE version=1 | u32LE width | u32LE height | raw RGBA bytes
 pub const DEFAULT_COLOR_TEXTURE_BYTES: [u8; 20] = [
@@ -106,6 +118,24 @@ pub const DEFAULT_NORMAL_TEXTURE_BYTES: [u8; 20] = [
     b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 128, 128, 255,
     255, // flat normal (0,0,1)
 ];
+// Neutral metallic_roughness: G=255 (max roughness → scalar passes through), B=0 (metallic=0)
+pub const DEFAULT_METALLIC_ROUGHNESS_TEXTURE_BYTES: [u8; 20] = [
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 255, 0, 255,
+];
+// Black emissive: no emission by default
+pub const DEFAULT_EMISSIVE_TEXTURE_BYTES: [u8; 20] = [
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 255,
+];
+
+// 1×1 Rgba32Float white — PassBackground equirect fallback; bg_color tints it to the desired solid color
+// 1.0f32 LE = 00 00 80 3F
+pub const DEFAULT_EQUIRECT_FALLBACK_PIXEL: &[u8] = &[
+    0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F,
+];
+// 1×1 Rgba8Unorm neutral-gray — IBL diffuse/specular fallback: RGBA = [77, 77, 77, 255] ≈ 0.3 linear
+pub const DEFAULT_IBL_FALLBACK_PIXEL: &[u8] = &[77, 77, 77, 255];
+// 1×1 Rgba8Unorm — BRDF LUT fallback: R=F0_scale=0.5, G=F0_bias=0.5
+pub const DEFAULT_BRDF_LUT_FALLBACK_PIXEL: &[u8] = &[128, 128, 0, 255];
 
 // Default lit shader
 pub const DEFAULT_LIT_SHADER_NAME: &str = "pill_engine_default_lit_shader";
@@ -113,8 +143,13 @@ pub const DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME: &str = "color";
 pub const DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS: (u32, u32) = (0, 1);
 pub const DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME: &str = "normal";
 pub const DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS: (u32, u32) = (2, 3);
+pub const DEFAULT_LIT_SHADER_METALLIC_ROUGHNESS_TEXTURE_SLOT_NAME: &str = "metallic_roughness";
+pub const DEFAULT_LIT_SHADER_METALLIC_ROUGHNESS_TEXTURE_SLOT_BINDINGS: (u32, u32) = (4, 5);
+pub const DEFAULT_LIT_SHADER_EMISSIVE_TEXTURE_SLOT_NAME: &str = "emissive";
+pub const DEFAULT_LIT_SHADER_EMISSIVE_TEXTURE_SLOT_BINDINGS: (u32, u32) = (6, 7);
 pub const DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
 pub const DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME: &str = "specularity";
+pub const DEFAULT_LIT_SHADER_METALLIC_FACTOR_PARAMETER_SLOT_NAME: &str = "metallic_factor";
 pub const DEFAULT_LIT_MATERIAL_NAME: &str = "pill_engine_default_lit_material";
 
 pub const DEFAULT_UNLIT_SHADER_NAME: &str = "pill_engine_default_unlit_shader";
@@ -124,32 +159,12 @@ pub const DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
 pub const DEFAULT_UNLIT_MATERIAL_NAME: &str = "pill_engine_default_unlit_material";
 
 // Render queue key
-pub type RenderQueueKeyType = u64; // Defines size of renderer queue key (Should be u8, u16, u32, or u64)
+pub type RenderQueueKeyType = u64;
 
-pub const RENDER_QUEUE_KEY_ITEMS_LENGTH: [RenderQueueKeyType; 7] = [5, 8, 8, 8, 8, 8, 8]; // Defines size of next render queue key parts (bits from left to right)
-
-// 64-bit render sort key layout (u64)
-// +---------+--------------+---------------------------------------------------------+
-// | Bits    |   Field      |  Description                                            |
-// +---------+--------------+---------------------------------------------------------+
-// |  0..4  | Order        |  5 bits: render order (max 32)                           |
-// |  5..12 | Shader Idx   |  8 bits: shader index (max 256)                          |
-// | 13..20 | Shader Ver   |  8 bits: shader version (max 256)                        |
-// | 21..28 | Material Idx |  8 bits: material index (max 256)                        |
-// | 29..36 | Material Ver |  8 bits: material version (max 256)                      |
-// | 37..44 | Mesh Idx     |  8 bits: mesh index (max 256)                            |
-// | 45..52 | Mesh Ver     |  8 bits: mesh version (max 256)                          |
-// | 53..63 | Free         | 11 bits: free for future use                             |
-// +---------+--------------+---------------------------------------------------------+
-
-// Indices of render queue key parts (maps RENDER_QUEUE_KEY_ITEMS_LENGTH)
-pub const RENDER_QUEUE_KEY_RENDERING_ORDER_IDX: u8 = 0;
-pub const RENDER_QUEUE_KEY_SHADER_INDEX_IDX: u8 = 1;
-pub const RENDER_QUEUE_KEY_SHADER_VERSION_IDX: u8 = 2;
-pub const RENDER_QUEUE_KEY_MATERIAL_INDEX_IDX: u8 = 3;
-pub const RENDER_QUEUE_KEY_MATERIAL_VERSION_IDX: u8 = 4;
-pub const RENDER_QUEUE_KEY_MESH_INDEX_IDX: u8 = 5;
-pub const RENDER_QUEUE_KEY_MESH_VERSION_IDX: u8 = 6;
+// 64-bit render sort key layout (MSB → LSB):
+// bit: 63        59 58       51 50       43 42       35 34       27 26       19 18       11 10        0
+//      [  order   ] [shader_idx] [shader_ver] [ mat_idx ] [ mat_ver ] [mesh_idx ] [mesh_ver ] [  unused  ]
+//      [  5 bits  ] [  8 bits  ] [  8 bits  ] [  8 bits  ] [  8 bits  ] [  8 bits  ] [  8 bits  ] [ 11 bits ]
 
 // Default resource handle - Color texture
 pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData {
@@ -173,6 +188,29 @@ pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle =
         version: std::num::NonZeroU32::new(1).unwrap(),
     });
 
+// Default resource handle - MetallicRoughness texture
+pub const DEFAULT_METALLIC_ROUGHNESS_TEXTURE_HANDLE: TextureHandle =
+    TextureHandle(PillSlotMapKeyData {
+        index: 3,
+        version: std::num::NonZeroU32::new(1).unwrap(),
+    });
+pub const DEFAULT_RENDERER_METALLIC_ROUGHNESS_TEXTURE_HANDLE: RendererTextureHandle =
+    RendererTextureHandle(PillSlotMapKeyData {
+        index: 3,
+        version: std::num::NonZeroU32::new(1).unwrap(),
+    });
+
+// Default resource handle - Emissive texture
+pub const DEFAULT_EMISSIVE_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData {
+    index: 4,
+    version: std::num::NonZeroU32::new(1).unwrap(),
+});
+pub const DEFAULT_RENDERER_EMISSIVE_TEXTURE_HANDLE: RendererTextureHandle =
+    RendererTextureHandle(PillSlotMapKeyData {
+        index: 4,
+        version: std::num::NonZeroU32::new(1).unwrap(),
+    });
+
 pub fn get_default_texture_handles(
     texture_type: TextureType,
 ) -> (TextureHandle, RendererTextureHandle) {
@@ -184,6 +222,14 @@ pub fn get_default_texture_handles(
         TextureType::Normal => (
             DEFAULT_NORMAL_TEXTURE_HANDLE,
             DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE,
+        ),
+        TextureType::MetallicRoughness => (
+            DEFAULT_METALLIC_ROUGHNESS_TEXTURE_HANDLE,
+            DEFAULT_RENDERER_METALLIC_ROUGHNESS_TEXTURE_HANDLE,
+        ),
+        TextureType::Emissive => (
+            DEFAULT_EMISSIVE_TEXTURE_HANDLE,
+            DEFAULT_RENDERER_EMISSIVE_TEXTURE_HANDLE,
         ),
     }
 }
@@ -232,8 +278,8 @@ lazy_static! {
         ];
         #[cfg(not(target_arch = "wasm32"))]
         component_types.push(TypeId::of::<AudioManagerComponent>());
-        #[cfg(feature = "debug_ui")]
-        component_types.push(TypeId::of::<crate::ecs::EguiManagerComponent>());
+        #[cfg(feature = "ui")]
+        component_types.push(TypeId::of::<crate::ecs::EguiComponent>());
         component_types
     };
 }

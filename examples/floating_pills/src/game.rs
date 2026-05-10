@@ -72,7 +72,7 @@ impl PillGame for Game {
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;
-        engine.register_component::<MeshRenderingComponent>(active_scene)?;
+        engine.register_component::<PbrRenderableComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
@@ -386,7 +386,7 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
             .get(demo_state.current_mesh)
             .unwrap();
         for (_, mesh_rendering_component) in
-            engine.iterate_one_component_mut::<MeshRenderingComponent>()?
+            engine.iterate_one_component_mut::<PbrRenderableComponent>()?
         {
             mesh_rendering_component.set_mesh(&mesh_handle);
         }
@@ -403,7 +403,7 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
         };
 
         for (_, mesh_rendering_component) in
-            engine.iterate_one_component_mut::<MeshRenderingComponent>()?
+            engine.iterate_one_component_mut::<PbrRenderableComponent>()?
         {
             let material_handle = current_material_set[rng.gen_range(0..=2)];
             mesh_rendering_component.set_material(&material_handle);
@@ -614,7 +614,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
             })
             .with_component(TransformComponent::new())
             .with_component(
-                MeshRenderingComponent::builder()
+                PbrRenderableComponent::builder()
                     .material(&material_handle)
                     .mesh(&mesh_handle)
                     .build(),
