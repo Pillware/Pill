@@ -37,6 +37,15 @@ impl Texture {
             renderer_resource_handle: None,
         }
     }
+
+    /// Decode image bytes (format auto-detected) into a texture.
+    pub fn from_bytes(name: &str, texture_type: TextureType, bytes: &[u8]) -> Self {
+        Self::new(
+            name,
+            texture_type,
+            ResourceLoader::Bytes(bytes.to_vec().into_boxed_slice()),
+        )
+    }
 }
 
 impl PillTypeMapKey for Texture {

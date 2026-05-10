@@ -57,6 +57,16 @@ impl CameraComponentBuilder {
         self
     }
 
+    pub fn fog_density(mut self, density: f32) -> Self {
+        self.component.fog_density = density;
+        self
+    }
+
+    pub fn fog_color(mut self, color: Vector3f) -> Self {
+        self.component.fog_color = color;
+        self
+    }
+
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.component.enabled = enabled;
         self
@@ -74,6 +84,10 @@ pub struct CameraComponent {
     pub fov: f32,
     pub range: Range<f32>,
     pub clear_color: Vector3f,
+    // Exponential-squared fog: final_color is mixed toward fog_color by
+    // 1 - exp(-density² · distance²). density = 0.0 disables fog (default).
+    pub fog_density: f32,
+    pub fog_color: Vector3f,
     pub enabled: bool,
     pub(crate) renderer_resource_handle: Option<RendererCameraHandle>,
 }
@@ -95,6 +109,8 @@ impl CameraComponent {
             fov: 60.0,
             range: 0.1..100.0,
             clear_color: Vector3f::new(0.15, 0.15, 0.15),
+            fog_density: 0.0,
+            fog_color: Vector3f::new(0.0, 0.0, 0.0),
             renderer_resource_handle: None,
             enabled: false,
         }
