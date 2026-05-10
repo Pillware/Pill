@@ -27,8 +27,8 @@ impl PillRenderer for DummyRenderer {
     fn create_shader(
         &mut self,
         _name: &str,
-        _vertex_shader_bytes: &[u8],
-        _fragment_shader_bytes: &[u8],
+        _vertex_wgsl: &str,
+        _fragment_wgsl: &str,
         _texture_slots: &HashMap<String, ShaderTextureSlot>,
         _parameter_slots: &IndexMap<String, ShaderParameterSlot>,
         _pass_engine_parameters: bool,

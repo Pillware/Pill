@@ -1,6 +1,6 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use indexmap::IndexMap;
-use pill_core::{debug, LogContext, PillStyle, RendererError};
+use pill_core::{debug, LogContext, PillStyle};
 use pill_engine::internal::{ShaderParameterSlot, ShaderTextureSlot};
 use std::collections::HashMap;
 
@@ -18,9 +18,6 @@ pub struct RendererShader {
     pub pass_camera_parameters: bool,
 }
 
-use naga::back::wgsl;
-use naga::front::glsl;
-
 impl RendererShader {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -29,8 +26,8 @@ impl RendererShader {
         color_format: wgpu::TextureFormat,
         depth_format: Option<wgpu::TextureFormat>,
         vertex_layouts: &[wgpu::VertexBufferLayout],
-        vertex_shader_bytes: &[u8],
-        fragment_shader_bytes: &[u8],
+        vertex_wgsl: &str,
+        fragment_wgsl: &str,
         parameter_slots: &IndexMap<String, ShaderParameterSlot>,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
         engine_bind_group_layout: &wgpu::BindGroupLayout,
@@ -64,45 +61,10 @@ impl RendererShader {
             debug!(LogContext::Rendering => "{}", shader_info);
         }
 
-        // Convert bytes to string
-        let vertex_shader_source = std::str::from_utf8(vertex_shader_bytes).map_err(|e| {
-            Error::new(RendererError::InvalidShaderData(
-                "Vertex".to_string(),
-                name.to_string(),
-                e.to_string(),
-            ))
-        })?;
-        let fragment_shader_source = std::str::from_utf8(fragment_shader_bytes).map_err(|e| {
-            Error::new(RendererError::InvalidShaderData(
-                "Fragment".to_string(),
-                name.to_string(),
-                e.to_string(),
-            ))
-        })?;
-
-        // Convert GLSL to WGSL
-        let vertex_wgsl = compile_glsl_to_wgsl(vertex_shader_source, naga::ShaderStage::Vertex)
-            .map_err(|e| {
-                Error::new(RendererError::ShaderCompilationFailed(
-                    "Vertex".to_string(),
-                    name.to_string(),
-                    e.to_string(),
-                ))
-            })?;
-        let fragment_wgsl =
-            compile_glsl_to_wgsl(fragment_shader_source, naga::ShaderStage::Fragment).map_err(
-                |e| {
-                    Error::new(RendererError::ShaderCompilationFailed(
-                        "Fragment".to_string(),
-                        name.to_string(),
-                        e.to_string(),
-                    ))
-                },
-            )?;
-
         debug!(LogContext::Rendering => "Shader modules created");
 
-        // Create shader modules with WGSL
+        // Create shader modules from WGSL strings — wgpu consumes WGSL natively;
+        // no compile step at runtime, no naga linked into the binary.
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("master_vertex_shader"),
             source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
@@ -218,13 +180,13 @@ impl RendererShader {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &vertex_shader,
-                entry_point: Some("main"),
+                entry_point: Some("vs_main"),
                 buffers: vertex_layouts, // Specifies structure of vertices that will be passed to the vertex shader
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &fragment_shader,
-                entry_point: Some("main"),
+                entry_point: Some("fs_main"),
                 targets: color_target_states,
                 compilation_options: Default::default(),
             }),
@@ -271,23 +233,4 @@ impl RendererShader {
 
         Ok(pipeline)
     }
-}
-
-fn compile_glsl_to_wgsl(source: &str, stage: naga::ShaderStage) -> Result<String> {
-    let mut frontend = glsl::Frontend::default();
-    let options = glsl::Options::from(stage);
-    let module = frontend.parse(&options, source).unwrap();
-
-    let mut validator = naga::valid::Validator::new(
-        naga::valid::ValidationFlags::all(),
-        naga::valid::Capabilities::empty(),
-    );
-
-    let info = validator.validate(&module)?;
-
-    let mut output = String::new();
-    let mut writer = wgsl::Writer::new(&mut output, wgsl::WriterFlags::empty());
-    writer.write(&module, &info)?;
-
-    Ok(output)
 }

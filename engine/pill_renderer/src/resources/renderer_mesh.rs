@@ -59,26 +59,30 @@ impl Vertex for RendererMesh {
                 },
                 wgpu::VertexAttribute {
                     // Vertex texture coordinates
+                    // slangc maps TEXCOORD0 → @location(4), not 1
                     offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
+                    shader_location: 4,
                     format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
                     // Vertex normal
+                    // slangc maps NORMAL → @location(5)
                     offset: mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
-                    shader_location: 2,
+                    shader_location: 5,
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
                     // Vertex tangent
+                    // slangc maps TANGENT → @location(6)
                     offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 3,
+                    shader_location: 6,
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
                     // Vertex bitangent
+                    // slangc maps BINORMAL → @location(7)
                     offset: mem::size_of::<[f32; 11]>() as wgpu::BufferAddress,
-                    shader_location: 4,
+                    shader_location: 7,
                     format: wgpu::VertexFormat::Float32x3,
                 },
             ],

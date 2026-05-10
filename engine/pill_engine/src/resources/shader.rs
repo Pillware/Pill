@@ -8,11 +8,23 @@ use crate::internal::RendererShaderHandle;
 
 use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use indexmap::IndexMap;
 
 use anyhow::{Context, Result};
+
+fn read_wgsl_bytes(loader: &ResourceLoader, base: &Path, label: &str) -> Result<Vec<u8>> {
+    match loader {
+        ResourceLoader::Path(path) => {
+            let abs = base.join(path);
+            pill_core::validate_asset_path(&abs, &["wgsl"])?;
+            std::fs::read(&abs)
+                .with_context(|| format!("Failed to read {label} shader file: {abs:?}"))
+        }
+        ResourceLoader::Bytes(bytes) => Ok(bytes.to_vec()),
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum ShaderParameterType {
@@ -145,49 +157,24 @@ impl Resource for Shader {
         //let deferred_update_component = engine.get_global_component_mut::<DeferredUpdateComponent>().expect("Critical: No DeferredUpdateComponent");
         //self.deferred_update_manager = Some(deferred_update_component.borrow_deferred_update_manager());
 
-        // Read vertex shader data
-        let vertex_shader_bytes_vec: Vec<u8>;
-        let vertex_shader_bytes: &[u8] = match &self.vertex_shader_resource_loader {
-            ResourceLoader::Path(path) => {
-                // Check if path to asset is correct
-                let resource_file_path = engine.game_resources_directory_path.join(path);
-                pill_core::validate_asset_path(&resource_file_path, &["glsl"])?;
-
-                // Load data
-                vertex_shader_bytes_vec =
-                    std::fs::read(&resource_file_path).with_context(|| {
-                        format!(
-                            "Failed to read vertex shader file: {:?}",
-                            &resource_file_path
-                        )
-                    })?;
-
-                vertex_shader_bytes_vec.as_slice()
-            }
-            ResourceLoader::Bytes(bytes) => bytes,
-        };
-
-        // Read fragment shader data
-        let fragment_shader_bytes_vec: Vec<u8>;
-        let fragment_shader_bytes: &[u8] = match &self.fragment_shader_resource_loader {
-            ResourceLoader::Path(path) => {
-                // Check if path to asset is correct
-                let resource_file_path = engine.game_resources_directory_path.join(path);
-                pill_core::validate_asset_path(&resource_file_path, &["glsl"])?;
-
-                // Load data
-                fragment_shader_bytes_vec =
-                    std::fs::read(&resource_file_path).with_context(|| {
-                        format!(
-                            "Failed to read fragment shader file: {:?}",
-                            &resource_file_path
-                        )
-                    })?;
-
-                fragment_shader_bytes_vec.as_slice()
-            }
-            ResourceLoader::Bytes(bytes) => bytes,
-        };
+        // WGSL is the only accepted source format; wgpu consumes WGSL natively
+        // so there is no runtime compile step.
+        let vertex_bytes = read_wgsl_bytes(
+            &self.vertex_shader_resource_loader,
+            &engine.game_resources_directory_path,
+            "vertex",
+        )?;
+        let fragment_bytes = read_wgsl_bytes(
+            &self.fragment_shader_resource_loader,
+            &engine.game_resources_directory_path,
+            "fragment",
+        )?;
+        let vertex_wgsl = std::str::from_utf8(&vertex_bytes).with_context(|| {
+            format!("Vertex shader for {} is not valid UTF-8 WGSL", &self.name)
+        })?;
+        let fragment_wgsl = std::str::from_utf8(&fragment_bytes).with_context(|| {
+            format!("Fragment shader for {} is not valid UTF-8 WGSL", &self.name)
+        })?;
 
         // TODO: Parse shader files and validate texture and parameter slots, or create them automatically here, so the user does not have to do it manually
 
@@ -196,8 +183,8 @@ impl Resource for Shader {
             .renderer
             .create_shader(
                 &self.name,
-                vertex_shader_bytes,
-                fragment_shader_bytes,
+                vertex_wgsl,
+                fragment_wgsl,
                 &self.texture_slots,
                 &self.parameter_slots,
                 self.enable_engine_binding,

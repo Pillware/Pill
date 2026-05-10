@@ -34,20 +34,23 @@ impl Vertex for Instance {
             attributes: &[
                 wgpu::VertexAttribute {
                     // Instance transform position
+                    // slangc maps TEXCOORD1 → @location(1)
                     offset: 0,
-                    shader_location: 5,
+                    shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
                     // Instance transform rotation
+                    // slangc maps TEXCOORD2 → @location(2)
                     offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 6,
+                    shader_location: 2,
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
                     // Instance transform scale
+                    // slangc maps TEXCOORD3 → @location(3)
                     offset: mem::size_of::<[f32; 6]>() as wgpu::BufferAddress,
-                    shader_location: 7,
+                    shader_location: 3,
                     format: wgpu::VertexFormat::Float32x3,
                 }, // Model matrix (mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot for each vec4)
                    //     wgpu::VertexAttribute {

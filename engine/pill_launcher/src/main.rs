@@ -1124,9 +1124,9 @@ fn run_app() -> Result<()> {
         .short("a")
         .long("action")
         .takes_value(true)
-        .possible_values(&["create", "run", "build", "docs", "cargo"])
+        .possible_values(&["create", "run", "build", "docs", "cargo", "assets"])
         .required(true)
-        .help("Specify action to perform: creating/running/building the game project or generating docs, alternatively run any cargo command on the project");
+        .help("Specify action to perform: creating/running/building the game project, generating docs, running cargo passthrough, or rebuilding assets (HLSL→WGSL etc.)");
 
     let name_option = Arg::with_name("name")
         .short("n")
@@ -1304,6 +1304,27 @@ fn run_app() -> Result<()> {
                 &passthrough_args,
             )
             .context("Cargo passthrough failed")?;
+        }
+        "assets" => {
+            let project_dir = PathBuf::from(directory_path_argument.expect(
+                "Project directory must be specified for asset rebuild. Example: --path <PROJECT_DIR>",
+            ))
+            .absolutize()
+            .context("Failed to absolutize project directory path")?
+            .to_path_buf();
+
+            let pipeline = pill_assets::Pipeline {
+                root: project_dir.join("res"),
+                rules: pill_assets::default_rules(),
+            };
+            let stats = pipeline.run().context("Asset pipeline failed")?;
+            println!(
+                "Assets: discovered={} rebuilt={} skipped={} (root: {})",
+                stats.discovered.len(),
+                stats.rebuilt.len(),
+                stats.skipped.len(),
+                pipeline.root.display()
+            );
         }
         _ => {
             println!("Undefined action");

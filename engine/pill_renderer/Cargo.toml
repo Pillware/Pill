@@ -20,13 +20,12 @@ anyhow = "1.0"
 log = "0.4"
 
 # Other
-wgpu = { version = "25.0.0", features = [ "spirv" ] }
+wgpu = "25.0.0"
 glam = { version = "0.30.8", features = ["serde", "bytemuck"] }
 winit = "0.30.12"
 cgmath = "0.18"
 bytemuck = { version = "1.4", features = [ "derive" ] }
 config = "0.11"
-naga = { version = "0.19", features = ["glsl-in", "wgsl-out"] }
 
 # egui
 egui = "0.32.1"
