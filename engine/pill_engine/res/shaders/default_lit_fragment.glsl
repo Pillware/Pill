@@ -10,8 +10,9 @@ layout(location=5) in vec3 in_world_position;
 
 // Input engine parameters
 layout(set=0, binding=0) uniform engine {
-    vec3  fog_color;
+    float delta_time;
     float fog_density;
+    vec3  fog_color;
 };
 
 // Input camera parameters

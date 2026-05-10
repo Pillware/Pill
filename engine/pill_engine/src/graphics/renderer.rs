@@ -112,6 +112,7 @@ pub trait PillRenderer {
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
+        delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()>;
 }
