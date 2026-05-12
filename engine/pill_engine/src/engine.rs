@@ -1179,8 +1179,7 @@ impl Engine {
             .context(error_message.to_string())?
             .get_name();
         if resource_name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            let e: pill_core::PillError = EngineError::RemoveDefaultResource(resource_name.clone()).into();
-            return Err(e).context(error_message.to_string());
+            return Err(EngineError::RemoveDefaultResource(resource_name.clone())).context(error_message.to_string());
         }
 
         // Remove and destroy resource
@@ -1212,8 +1211,7 @@ impl Engine {
 
         // Check if resource is not default
         if name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            let e: pill_core::PillError = EngineError::RemoveDefaultResource(name.to_string()).into();
-            return Err(e).context(error_message.to_string());
+            return Err(EngineError::RemoveDefaultResource(name.to_string())).context(error_message.to_string());
         }
 
         // Remove resource
