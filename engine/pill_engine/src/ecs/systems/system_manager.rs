@@ -37,6 +37,7 @@ pub struct SystemManager {
 
 impl SystemManager {
     pub fn new() -> Self {
+        // Register phases
         Self {
             update_phases: vec![
                 (UpdatePhase::PreGame, Vec::new()),
@@ -60,9 +61,9 @@ impl SystemManager {
     pub fn get_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<&mut System> {
         // Find collection of systems for given update phase
         let phase_str = format!("{}", update_phase);
-        let col = self.phase_systems_mut(&update_phase)?;
+        let system_collection = self.phase_systems_mut(&update_phase)?;
         // Get system by name
-        col.iter_mut()
+        system_collection.iter_mut()
             .find(|(k, _)| k == name)
             .map(|(_, v)| v)
             .ok_or_else(|| EngineError::SystemNotFound(name.to_string(), phase_str).into())
@@ -76,10 +77,10 @@ impl SystemManager {
     ) -> Result<()> {
         // Find collection of systems for given update phase
         let phase_str = format!("{}", update_phase);
-        let col = self.phase_systems_mut(&update_phase)?;
+        let system_collection = self.phase_systems_mut(&update_phase)?;
 
         // Check if system with that name already exists
-        if col.iter().any(|(k, _)| k == name) {
+        if system_collection.iter().any(|(k, _)| k == name) {
             return Err(EngineError::SystemAlreadyExists(
                 name.to_string(),
                 phase_str,
@@ -88,7 +89,7 @@ impl SystemManager {
 
         // Create system object
         // Add system
-        col.push((name.to_string(), System {
+        system_collection.push((name.to_string(), System {
             name: name.to_string(),
             update_phase,
             system_function,
@@ -102,7 +103,7 @@ impl SystemManager {
     pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
         // Find collection of systems for given update phase
         let phase_str = format!("{}", update_phase);
-        let col = self.phase_systems_mut(&update_phase)?;
+        let system_collection = self.phase_systems_mut(&update_phase)?;
 
         // Check if system with that name exists
         if !col.iter().any(|(k, _)| k == name) {
@@ -113,7 +114,7 @@ impl SystemManager {
         }
 
         // Remove system
-        col.retain(|(k, _)| k != name);
+        system_collection.retain(|(k, _)| k != name);
         Ok(())
     }
 
