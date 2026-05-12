@@ -1,3 +1,4 @@
+// Functions for changing the style of output string
 pub trait PillStyle {
     fn module_object_style(self) -> String;
     fn general_object_style(self) -> String;
@@ -10,6 +11,7 @@ pub trait PillStyle {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl PillStyle for &str {
+    // To be used with large module objects (Engine, Renderer, Window, etc) - changes color and adds bold
     #[inline]
     fn module_object_style(self) -> String {
         use colored::Colorize;
@@ -22,12 +24,14 @@ impl PillStyle for &str {
         .to_string()
     }
 
+    // To be used with general objects (Scene, Component, System, Resource, etc) - changes color and adds bold
     #[inline]
     fn general_object_style(self) -> String {
         use colored::Colorize;
         self.color(colored::Color::BrightCyan).to_string()
     }
 
+    // To be used with specific objects (CameraComponent, Texture, Mesh, etc) - changes color
     #[inline]
     fn specific_object_style(self) -> String {
         use colored::Colorize;
@@ -39,6 +43,7 @@ impl PillStyle for &str {
         .to_string()
     }
 
+    // To be used with names - changes color adds quotation marks
     #[inline]
     fn name_style(self) -> String {
         use colored::Colorize;
@@ -51,18 +56,21 @@ impl PillStyle for &str {
             .to_string()
     }
 
+    // To be used with names - changes color adds bold
     #[inline]
     fn error_style(self) -> String {
         use colored::Colorize;
         self.color(colored::Color::Red).bold().to_string()
     }
 
+    // Warning
     #[inline]
     fn warn_style(self) -> String {
         use colored::Colorize;
         self.color(colored::Color::Yellow).bold().to_string()
     }
 
+    // Debug
     #[inline]
     fn debug_style(self) -> String {
         use colored::Colorize;
