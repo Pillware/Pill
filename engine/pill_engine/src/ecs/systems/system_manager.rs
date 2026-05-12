@@ -58,8 +58,10 @@ impl SystemManager {
     }
 
     pub fn get_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<&mut System> {
+        // Find collection of systems for given update phase
         let phase_str = format!("{}", update_phase);
         let col = self.phase_systems_mut(&update_phase)?;
+        // Get system by name
         col.iter_mut()
             .find(|(k, _)| k == name)
             .map(|(_, v)| v)
@@ -72,9 +74,11 @@ impl SystemManager {
         system_function: SystemFunction,
         update_phase: UpdatePhase,
     ) -> Result<()> {
+        // Find collection of systems for given update phase
         let phase_str = format!("{}", update_phase);
         let col = self.phase_systems_mut(&update_phase)?;
 
+        // Check if system with that name already exists
         if col.iter().any(|(k, _)| k == name) {
             return Err(EngineError::SystemAlreadyExists(
                 name.to_string(),
@@ -82,6 +86,8 @@ impl SystemManager {
             ).into());
         }
 
+        // Create system object
+        // Add system
         col.push((name.to_string(), System {
             name: name.to_string(),
             update_phase,
@@ -94,9 +100,11 @@ impl SystemManager {
     }
 
     pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
+        // Find collection of systems for given update phase
         let phase_str = format!("{}", update_phase);
         let col = self.phase_systems_mut(&update_phase)?;
 
+        // Check if system with that name exists
         if !col.iter().any(|(k, _)| k == name) {
             return Err(EngineError::SystemNotFound(
                 name.to_string(),
@@ -104,6 +112,7 @@ impl SystemManager {
             ).into());
         }
 
+        // Remove system
         col.retain(|(k, _)| k != name);
         Ok(())
     }
@@ -115,16 +124,24 @@ impl SystemManager {
         enabled: bool,
     ) -> Result<()> {
         let system = self.get_system(name, update_phase)?;
+        // Set system state
         system.enabled = enabled;
         Ok(())
     }
 
+    // This function can be called in the system function to get the timer for the system
+    // It will pass the ownership of the timer to the requsting scope.
+    // This has to be returned back using update_system_timer function, otherwise engine will panic.
+    // NOTE: Before system function is called, engine already starts "System update" context in the timer
     pub fn get_system_timer(
         &mut self,
         name: &str,
         update_phase: UpdatePhase,
     ) -> Result<Option<Timer>> {
+        // Get system by name
         let system: &mut System = self.get_system(name, update_phase)?;
+
+        // Return timer
         Ok(system.timer.take())
     }
 
@@ -134,7 +151,9 @@ impl SystemManager {
         update_phase: UpdatePhase,
         timer: Timer,
     ) -> Result<()> {
+        // Get system by name
         let system = self.get_system(name, update_phase)?;
+        // Update timer
         system.timer = Some(timer);
         Ok(())
     }
