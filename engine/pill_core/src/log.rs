@@ -10,6 +10,7 @@ use {
 };
 
 /// Contexts for logging
+//#[derive(Debug, Eq, PartialEq, Hash)]
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Eq, PartialEq, Hash, AsRefStr, EnumString, Clone)]
 #[strum(serialize_all = "snake_case", ascii_case_insensitive)]
@@ -63,6 +64,7 @@ pub fn get_default_log_levels() -> String {
     .join(", ")
 }
 
+/// Convert string to LevelFilter
 #[cfg(not(target_arch = "wasm32"))]
 fn parse_log_level(level: &str) -> LevelFilter {
     match level.to_lowercase().as_str() {
@@ -75,6 +77,7 @@ fn parse_log_level(level: &str) -> LevelFilter {
     }
 }
 
+/// Parse a string like "ecs: debug, renderer: info" or "ecs=debug, renderer=info"
 #[cfg(not(target_arch = "wasm32"))]
 fn parse_config_log_settings(log_levels_config_setting: &str) -> HashMap<String, LevelFilter> {
     let mut map = HashMap::new();
@@ -92,6 +95,7 @@ fn parse_config_log_settings(log_levels_config_setting: &str) -> HashMap<String,
     map
 }
 
+/// Initialize logger with per-context levels from Config
 #[cfg(not(target_arch = "wasm32"))]
 pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
     let context_levels = parse_config_log_settings(log_levels_config_setting);
@@ -126,8 +130,15 @@ pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
         )
     });
 
+    // Allow non-contextual logging
+    //builder.filter_level(LevelFilter::Info);
+    //builder.filter_module("wgpu_hal::vulkan::instance", LevelFilter::Info);
+
+    // Allow default context logging
+    // TODO: Does it work??
     builder.filter_module("default", LevelFilter::Info);
 
+    // Apply per-module filters
     for (context, level) in &context_levels {
         builder.filter_module(context.as_ref(), *level);
     }
@@ -138,7 +149,9 @@ pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
 #[cfg(target_arch = "wasm32")]
 pub fn set_log_levels(_log_levels_config_setting: &str, _show_date: bool) {}
 
-/// Log at a specific level with an explicit module target.
+/// Context-aware logging macros
+/// Log an error message with context. The first argument must be a LogContext, and
+/// the format string must be a string literal, like `"error: {}"` not a variable.
 #[macro_export]
 macro_rules! log_context {
     ($level:ident, $ctx:expr, $($arg:tt)+) => {
@@ -148,9 +161,12 @@ macro_rules! log_context {
 
 #[macro_export]
 macro_rules! info {
+    // Contextual logging: require `ctx =>` form
     ($ctx:expr => $($arg:tt)+) => {
         $crate::log_context!(info, $ctx, $($arg)+)
     };
+
+    // Fallback to standard logging
     ($($arg:tt)+) => {
         $crate::log_context!(debug, "default", $($arg)+)
     };
@@ -158,9 +174,12 @@ macro_rules! info {
 
 #[macro_export]
 macro_rules! debug {
+    // Contextual logging: require `ctx =>` form
     ($ctx:expr => $($arg:tt)+) => {
         $crate::log_context!(debug, $ctx, $($arg)+)
     };
+
+    // Fallback to standard logging
     ($($arg:tt)+) => {
         $crate::log_context!(debug, "default", $($arg)+)
     };
@@ -168,9 +187,12 @@ macro_rules! debug {
 
 #[macro_export]
 macro_rules! warn {
+    // Contextual logging: require `ctx =>` form
     ($ctx:expr => $($arg:tt)+) => {
         $crate::log_context!(warn, $ctx, $($arg)+)
     };
+
+    // Fallback to standard logging
     ($($arg:tt)+) => {
         $crate::log_context!(warn, "default", $($arg)+)
     };
@@ -178,9 +200,12 @@ macro_rules! warn {
 
 #[macro_export]
 macro_rules! error {
+    // Contextual logging: require `ctx =>` form
     ($ctx:expr => $($arg:tt)+) => {
         $crate::log_context!(error, $ctx, $($arg)+)
     };
+
+    // Fallback to standard logging
     ($($arg:tt)+) => {
         $crate::log_context!(error, "default", $($arg)+)
     };
