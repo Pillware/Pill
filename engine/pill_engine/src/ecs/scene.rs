@@ -20,7 +20,7 @@ pub struct Scene {
     pub entities: PillSlotMap<EntityHandle, Entity>,
     pub components: PillTypeMap,
 
-    pub scene_bitmask: u16,
+    pub scene_bitmask: u16, // Total bitmask of all components registered in scene
     pub component_bitmasks: HashMap<TypeId, u16>, // TypeId → bitmask, for fast lookup
     pub component_type_order: Vec<TypeId>,         // bit-index → TypeId, for bitmask decomposition
 
@@ -127,6 +127,7 @@ impl Scene {
         T: Component<Storage = ComponentStorage<T>>,
     {
         if !self.is_component_registered::<T>() {
+            // Add new component bitmask
             let component_index = self.component_type_order.len();
             let component_bitmask = create_bitmask_with_one(component_index as u16);
             self.component_type_order.push(TypeId::of::<T>());
