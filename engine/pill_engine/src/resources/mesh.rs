@@ -229,7 +229,7 @@ impl MeshData {
         Self::from_tobj_models(models, &path.display().to_string(), flip_uv_y)
     }
 
-    /// Parse OBJ bytes into mesh data; MTL references are ignored.
+    #[cfg(feature = "obj_loading")]
     pub fn from_obj_bytes(bytes: &[u8], flip_uv_y: bool) -> Result<Self> {
         let mut reader = std::io::Cursor::new(bytes);
         let (models, _materials) = tobj::load_obj_buf(&mut reader, &obj_load_options(), |_| {

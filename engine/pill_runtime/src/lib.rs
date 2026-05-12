@@ -6,8 +6,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{bail, Context, Result};
-use config::Config;
+use pill_core::{PillError, Result};
 use libloading::{Library, Symbol};
 use pill_abi::*;
 use pill_engine::internal::*;
@@ -30,9 +29,9 @@ fn set_err(msg: impl Into<String>) {
 
 unsafe fn cstr(p: *const c_char) -> Result<&'static str> {
     if p.is_null() {
-        bail!("null cstr");
+        return Err("null cstr".into());
     }
-    Ok(CStr::from_ptr(p).to_str()?)
+    CStr::from_ptr(p).to_str().map_err(|e| -> PillError { e.to_string().into() })
 }
 
 fn load_game(game_library_path: &str) -> Result<(Library, Box<dyn PillGame>)> {
@@ -41,12 +40,12 @@ fn load_game(game_library_path: &str) -> Result<(Library, Box<dyn PillGame>)> {
     // we are fine to unload + load a new Box<dyn PillGame>
     type CreateGameFn = unsafe extern "C" fn() -> *mut c_void;
     let game_dynamic_library = unsafe {
-        Library::new(game_library_path).with_context(|| {
-            format!("Failed to load game dynamic library at {game_library_path}")
-        })?
+        Library::new(game_library_path)
+            .map_err(|e| -> PillError { format!("Failed to load game dynamic library at {game_library_path}: {e}").into() })?
     };
     let get_game_function: Symbol<CreateGameFn> =
-        unsafe { game_dynamic_library.get(b"get_game") }.context("Missing symbol get_game")?;
+        unsafe { game_dynamic_library.get(b"get_game") }
+            .map_err(|e| -> PillError { format!("Missing symbol get_game: {e}").into() })?;
     let game = unsafe { *Box::from_raw(get_game_function() as *mut Box<dyn PillGame>) };
     Ok((game_dynamic_library, game))
 }
@@ -59,7 +58,7 @@ struct Runtime {
 
     resource_directory: PathBuf,
 
-    config: config::Config,
+    config: EngineConfig,
 
     // Keep engine ptr for hot-reload
     engine: Option<Engine>,
@@ -106,7 +105,7 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
         let a = unsafe { &*args };
 
         if a.window_ptr.is_null() {
-            bail!("create: window_ptr is null")
+            return Err("create: window_ptr is null".into());
         }
 
         let game_library_path = unsafe { cstr(a.game_dylib_path) }?.to_string();
@@ -117,13 +116,13 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
         // Arc::into_raw(clone)
         let window = unsafe { Arc::from_raw(a.window_ptr as *const Window) };
 
-        let mut config = Config::default();
-        let _ = config.merge(config::File::with_name(&config_path));
+        let config_ini = std::fs::read_to_string(&config_path).unwrap_or_default();
+        let mut config = EngineConfig::from_ini(&config_ini);
         if config.get_int("WINDOW_WIDTH").is_err() {
-            let _ = config.set("WINDOW_WIDTH", a.initial_w as i64);
+            config.set("WINDOW_WIDTH", a.initial_w as i64);
         }
         if config.get_int("WINDOW_HEIGHT").is_err() {
-            let _ = config.set("WINDOW_HEIGHT", a.initial_h as i64);
+            config.set("WINDOW_HEIGHT", a.initial_h as i64);
         }
 
         let (game_library, game) = load_game(&game_library_path)?;
@@ -149,7 +148,7 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
     match r {
         Ok(()) => PILL_OK,
         Err(e) => {
-            set_err(format!("{e:#}"));
+            set_err(format!("{e}"));
             PILL_ERR
         }
     }
@@ -300,7 +299,7 @@ extern "C" fn reload_game(engine: EngineHandle, game_dylib_path: *const c_char) 
     match r {
         Ok(()) => PILL_OK,
         Err(e) => {
-            set_err(format!("{e:#}"));
+            set_err(format!("{e}"));
             PILL_ERR
         }
     }

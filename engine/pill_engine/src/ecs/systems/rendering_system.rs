@@ -122,6 +122,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     timer.begin_context("Render");
 
     // Render
+    let delta_time = engine.frame_delta_time;
+
     #[cfg(feature = "debug_ui")]
     let render_result = engine.renderer.render(
         active_camera_entity_handle,
@@ -129,7 +131,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         camera_component_storage,
         transform_component_storage,
         egui_ui,
-        0.0,
+        delta_time,
         &mut timer,
     );
     #[cfg(not(feature = "debug_ui"))]
@@ -138,6 +140,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         &engine.render_queue,
         camera_component_storage,
         transform_component_storage,
+        delta_time,
         &mut timer,
     );
     match render_result {

@@ -87,6 +87,16 @@ pub const DEFAULT_RESOURCE_PREFIX: &str = "pill_engine";
 pub const DEFAULT_COLOR_TEXTURE_NAME: &str = "pill_engine_default_color";
 pub const DEFAULT_NORMAL_TEXTURE_NAME: &str = "pill_engine_default_normal";
 
+// RTEX layout: b"RTEX" | u32LE version=1 | u32LE width | u32LE height | raw RGBA bytes
+pub const DEFAULT_COLOR_TEXTURE_BYTES: [u8; 20] = [
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
+    255, 255, 255, 255, // white albedo
+];
+pub const DEFAULT_NORMAL_TEXTURE_BYTES: [u8; 20] = [
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
+    128, 128, 255, 255, // flat normal (0,0,1)
+];
+
 // Default lit shader
 pub const DEFAULT_LIT_SHADER_NAME: &str = "pill_engine_default_lit_shader";
 pub const DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME: &str = "color";

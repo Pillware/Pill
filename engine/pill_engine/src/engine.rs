@@ -208,9 +208,7 @@ impl Engine {
         let default_color_texture_handle = self.add_default_resource(Texture::new(
             DEFAULT_COLOR_TEXTURE_NAME,
             TextureType::Color,
-            ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/textures/default_color.rtex"
-            ))),
+            ResourceLoader::Bytes(Box::new(DEFAULT_COLOR_TEXTURE_BYTES)),
         ))?;
 
         debug!(LogContext::Engine => "Default color texture {} created", DEFAULT_COLOR_TEXTURE_NAME.name_style());
@@ -219,9 +217,7 @@ impl Engine {
         let default_normal_texture_handle = self.add_default_resource(Texture::new(
             DEFAULT_NORMAL_TEXTURE_NAME,
             TextureType::Normal,
-            ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/textures/default_normal.rtex"
-            ))),
+            ResourceLoader::Bytes(Box::new(DEFAULT_NORMAL_TEXTURE_BYTES)),
         ))?;
 
         debug!(LogContext::Engine => "Default normal texture {} created", DEFAULT_NORMAL_TEXTURE_NAME.name_style());

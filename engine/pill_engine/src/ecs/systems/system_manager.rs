@@ -106,7 +106,7 @@ impl SystemManager {
         let system_collection = self.phase_systems_mut(&update_phase)?;
 
         // Check if system with that name exists
-        if !col.iter().any(|(k, _)| k == name) {
+        if !system_collection.iter().any(|(k, _)| k == name) {
             return Err(EngineError::SystemNotFound(
                 name.to_string(),
                 phase_str,

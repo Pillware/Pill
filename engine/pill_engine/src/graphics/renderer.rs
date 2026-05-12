@@ -127,6 +127,7 @@ pub trait PillRenderer {
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()>;
 }

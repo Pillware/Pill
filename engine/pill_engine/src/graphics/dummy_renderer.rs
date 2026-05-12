@@ -140,6 +140,7 @@ impl PillRenderer for DummyRenderer {
         _render_queue: &[RenderQueueItem],
         _camera_component_storage: &ComponentStorage<CameraComponent>,
         _transform_component_storage: &ComponentStorage<TransformComponent>,
+        _delta_time: f32,
         _timer: &mut Timer,
     ) -> Result<()> {
         Ok(())
