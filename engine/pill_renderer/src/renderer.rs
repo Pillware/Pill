@@ -258,12 +258,12 @@ impl PillRenderer for Renderer {
         delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()> {
+        self.state.pending_egui_ui = Some(egui_ui);
         self.state.render(
             active_camera_entity_handle,
             render_queue,
             camera_component_storage,
             transform_component_storage,
-            egui_ui,
             delta_time,
             timer,
         )
@@ -276,6 +276,7 @@ impl PillRenderer for Renderer {
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()> {
         self.state.render(
@@ -283,6 +284,7 @@ impl PillRenderer for Renderer {
             render_queue,
             camera_component_storage,
             transform_component_storage,
+            delta_time,
             timer,
         )
     }
@@ -304,6 +306,8 @@ pub struct State {
     mesh_drawer: MeshDrawer,
     #[cfg(feature = "debug_ui")]
     egui_drawer: crate::drawers::egui_drawer::EguiDrawer,
+    #[cfg(feature = "debug_ui")]
+    pending_egui_ui: Option<Box<dyn FnMut(&egui::Context)>>,
     // Other
     camera_bind_group_layout: wgpu::BindGroupLayout,
     //profiler: Profiler,
@@ -515,6 +519,8 @@ impl State {
             mesh_drawer,
             #[cfg(feature = "debug_ui")]
             egui_drawer,
+            #[cfg(feature = "debug_ui")]
+            pending_egui_ui: None,
             // Other
             camera_bind_group_layout,
             // profiler
@@ -539,39 +545,13 @@ impl State {
         }
     }
 
-    #[cfg(feature = "debug_ui")]
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
-        timer: &mut Timer,
-    ) -> Result<()> {
-        self.render_inner(active_camera_entity_handle, render_queue, camera_component_storage, transform_component_storage, Some(egui_ui), timer)
-    }
-
-    #[cfg(not(feature = "debug_ui"))]
-    fn render(
-        &mut self,
-        active_camera_entity_handle: EntityHandle,
-        render_queue: &[RenderQueueItem],
-        camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>,
-        timer: &mut Timer,
-    ) -> Result<()> {
-        self.render_inner(active_camera_entity_handle, render_queue, camera_component_storage, transform_component_storage, timer)
-    }
-
-    fn render_inner(
-        &mut self,
-        active_camera_entity_handle: EntityHandle,
-        render_queue: &[RenderQueueItem],
-        camera_component_storage: &ComponentStorage<CameraComponent>,
-        transform_component_storage: &ComponentStorage<TransformComponent>,
-        #[cfg(feature = "debug_ui")] egui_ui: Option<Box<dyn FnMut(&egui::Context)>>,
         timer: &mut Timer,
     ) -> Result<()> {
         debug!(LogContext::Frame => "Starting frame render");
@@ -706,7 +686,7 @@ impl State {
 
         // Render egui UI
         #[cfg(feature = "debug_ui")]
-        if let Some(egui_ui) = egui_ui {
+        if let Some(egui_ui) = self.pending_egui_ui.take() {
             timer.begin_context("Egui Draw");
             debug!(LogContext::Frame => "Start recording egui draw commands");
 
