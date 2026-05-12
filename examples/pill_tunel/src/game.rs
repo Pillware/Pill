@@ -201,7 +201,7 @@ impl PillGame for WebGame {
         let pill_mesh = engine.add_resource(Mesh::from_rmesh_bytes(
             "pill",
             include_bytes!("../res/models/pill.rmesh"),
-        )?)?;
+        ))?;
         let color_tex = engine.add_resource::<Texture>(Texture::from_bytes(
             "pill_color",
             TextureType::Color,

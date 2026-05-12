@@ -73,8 +73,8 @@ impl Mesh {
     /// Build a mesh from pre-converted `.rmesh` bytes (e.g. `include_bytes!(...)`).
     /// Works on all targets including wasm. Produces smaller binaries than
     /// `from_obj_bytes` — run `pill_launcher -a assets` to generate `.rmesh` files.
-    pub fn from_rmesh_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
-        Ok(Self::from_data(name, load_rmesh(bytes)?))
+    pub fn from_rmesh_bytes(name: &str, bytes: &[u8]) -> Self {
+        Self::from_data(name, load_rmesh(bytes).expect("corrupted embedded asset — regenerate with pill_launcher -a assets"))
     }
 
     /// Parse a mesh from raw OBJ bytes; use `include_bytes!` to bundle assets into the binary (required on WASM).
