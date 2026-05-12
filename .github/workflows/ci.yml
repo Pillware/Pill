@@ -213,3 +213,16 @@ jobs:
           curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app_bg.wasm
           echo "Dev server smoke test OK for $EXAMPLE"
 
+      - name: Size guard — WASM budget
+        if: matrix.example == 'examples/cube'
+        shell: bash
+        run: |
+          WASM="examples/cube/build/wasm/pill_web_app_bg.wasm"
+          ACTUAL=$(wc -c < "$WASM")
+          MAX=$((499 * 1024))
+          if [ "$ACTUAL" -gt "$MAX" ]; then
+            echo "FAIL: WASM $((ACTUAL / 1024)) KB exceeds 499 KB budget"
+            exit 1
+          fi
+          echo "OK: WASM $((ACTUAL / 1024)) KB <= 499 KB"
+
