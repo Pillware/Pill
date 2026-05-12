@@ -55,7 +55,9 @@ enum TwiggyResult {
 
 fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
     // `twiggy top` lists items by retained size. `-n 15000` returns effectively
-    // the full symbol table; we aggregate downstream so we want the whole list.
+    // the full symbol table (typical wasm bundles have a few thousand symbols);
+    // we aggregate downstream in `classify_crate` / `parse_twiggy`, so we want
+    // the whole list, not just the biggest N.
     let output = match Command::new("twiggy")
         .args(["top", "-n", "15000"])
         .arg(wasm_path)
