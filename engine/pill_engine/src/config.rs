@@ -202,42 +202,17 @@ pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "debug_ui"))]
 lazy_static! {
-    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
-        TypeId::of::<InputComponent>(),
-        TypeId::of::<TimeComponent>(),
-        TypeId::of::<AudioManagerComponent>(),
-        TypeId::of::<DeferredUpdateComponent>(),
-        TypeId::of::<crate::ecs::EguiManagerComponent>()
-    );
-}
-
-#[cfg(all(not(target_arch = "wasm32"), not(feature = "debug_ui")))]
-lazy_static! {
-    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
-        TypeId::of::<InputComponent>(),
-        TypeId::of::<TimeComponent>(),
-        TypeId::of::<AudioManagerComponent>(),
-        TypeId::of::<DeferredUpdateComponent>(),
-    );
-}
-
-#[cfg(all(target_arch = "wasm32", feature = "debug_ui"))]
-lazy_static! {
-    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
-        TypeId::of::<InputComponent>(),
-        TypeId::of::<TimeComponent>(),
-        TypeId::of::<DeferredUpdateComponent>(),
-        TypeId::of::<crate::ecs::EguiManagerComponent>()
-    );
-}
-
-#[cfg(all(target_arch = "wasm32", not(feature = "debug_ui")))]
-lazy_static! {
-    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
-        TypeId::of::<InputComponent>(),
-        TypeId::of::<TimeComponent>(),
-        TypeId::of::<DeferredUpdateComponent>(),
-    );
+    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = {
+        let mut v = vec![
+            TypeId::of::<InputComponent>(),
+            TypeId::of::<TimeComponent>(),
+            TypeId::of::<DeferredUpdateComponent>(),
+        ];
+        #[cfg(not(target_arch = "wasm32"))]
+        v.push(TypeId::of::<AudioManagerComponent>());
+        #[cfg(feature = "debug_ui")]
+        v.push(TypeId::of::<crate::ecs::EguiManagerComponent>());
+        v
+    };
 }
