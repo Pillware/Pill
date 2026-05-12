@@ -383,7 +383,8 @@ impl Engine {
 
         // Run systems
         for update_phase_index in 0..self.system_manager.update_phases.len() {
-            let phase_len = self.system_manager.update_phases[update_phase_index].1.len();
+            let (_, phase_systems) = &self.system_manager.update_phases[update_phase_index];
+            let phase_len = phase_systems.len();
             for system_index in 0..phase_len {
                 let (system_name, update_phase, system_function);
                 {
