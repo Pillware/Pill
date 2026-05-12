@@ -85,9 +85,8 @@ pub struct Shader {
     #[readonly]
     pub fragment_shader_resource_loader: ResourceLoader,
     #[readonly]
-    // Vec (not HashMap) — iteration order must match the shader's uniform struct field order,
-    // because write_parameters_to_buffer packs bytes into the buffer in iteration order.
-    // HashMap's randomized iteration order made tint/specularity get swapped, rendering the cube black.
+    // Vec (not HashMap/IndexMap) — slot position is the integer key (slot i → byte offset i*16 in the uniform buffer).
+    // O(1) by index, contiguous, no external dep. HashMap's random order caused tint/specularity swap (black cube bug).
     pub parameter_slots: Vec<(String, ShaderParameterSlot)>,
     #[readonly]
     pub texture_slots: HashMap<String, ShaderTextureSlot>,
