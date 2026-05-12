@@ -34,10 +34,11 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage::<T>()?;
 
         // Get resource slot
-        let resource_slot = resource_storage
-            .data
-            .get(*resource_handle)
-            .ok_or_else(|| -> pill_core::PillError { EngineError::InvalidResourceHandle(get_type_name::<T>()).into() })?;
+        let resource_slot = resource_storage.data.get(*resource_handle).ok_or_else(
+            || -> pill_core::PillError {
+                EngineError::InvalidResourceHandle(get_type_name::<T>()).into()
+            },
+        )?;
 
         Ok(resource_slot)
     }
@@ -53,10 +54,11 @@ impl ResourceManager {
         let resource_storage = self.get_resource_storage_mut::<T>()?;
 
         // Get resource slot
-        let resource_slot = resource_storage
-            .data
-            .get_mut(*resource_handle)
-            .ok_or_else(|| -> pill_core::PillError { EngineError::InvalidResourceHandle(get_type_name::<T>()).into() })?;
+        let resource_slot = resource_storage.data.get_mut(*resource_handle).ok_or_else(
+            || -> pill_core::PillError {
+                EngineError::InvalidResourceHandle(get_type_name::<T>()).into()
+            },
+        )?;
 
         Ok(resource_slot)
     }
@@ -69,7 +71,9 @@ impl ResourceManager {
     {
         self.resources
             .get::<T>()
-            .ok_or_else(|| -> pill_core::PillError { EngineError::ResourceNotRegistered(get_type_name::<T>()).into() })
+            .ok_or_else(|| -> pill_core::PillError {
+                EngineError::ResourceNotRegistered(get_type_name::<T>()).into()
+            })
     }
 
     pub(crate) fn get_resource_storage_mut<T>(&mut self) -> Result<&mut ResourceStorage<T>>
@@ -78,7 +82,9 @@ impl ResourceManager {
     {
         self.resources
             .get_mut::<T>()
-            .ok_or_else(|| -> pill_core::PillError { EngineError::ResourceNotRegistered(get_type_name::<T>()).into() })
+            .ok_or_else(|| -> pill_core::PillError {
+                EngineError::ResourceNotRegistered(get_type_name::<T>()).into()
+            })
     }
 
     // --- Register - Add - Remove ---
@@ -103,9 +109,7 @@ impl ResourceManager {
 
         // Check if there is space for resource
         if resource_storage.data.len() >= resource_storage.max_resource_count {
-            return Err(EngineError::ResourceLimitReached(
-                get_type_name::<T>(),
-            ).into());
+            return Err(EngineError::ResourceLimitReached(get_type_name::<T>()).into());
         }
 
         // Check if resource already exists
@@ -113,7 +117,8 @@ impl ResourceManager {
             return Err(EngineError::ResourceAlreadyExists(
                 get_type_name::<T>(),
                 resource_name.clone(),
-            ).into());
+            )
+            .into());
         }
 
         // Insert new resource

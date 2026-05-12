@@ -166,7 +166,8 @@ impl Material {
             self.textures[pos].1.texture_handle = texture_handle;
             pos
         } else {
-            self.textures.push((slot_name.to_string(), MaterialTexture::new(texture_handle)));
+            self.textures
+                .push((slot_name.to_string(), MaterialTexture::new(texture_handle)));
             self.textures.len() - 1
         };
 
@@ -373,7 +374,8 @@ impl Material {
                 get_enum_variant_type_name(&texture.texture_type),
                 texture_slot_name.to_string(),
                 get_enum_variant_type_name(&shader_texture_slot.texture_type),
-            ).into());
+            )
+            .into());
         }
 
         Ok(())

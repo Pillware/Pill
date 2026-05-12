@@ -22,7 +22,7 @@ pub struct Scene {
 
     pub scene_bitmask: u16, // Total bitmask of all components registered in scene
     pub component_bitmasks: HashMap<TypeId, u16>, // TypeId → bitmask, for fast lookup
-    pub component_type_order: Vec<TypeId>,         // bit-index → TypeId, for bitmask decomposition
+    pub component_type_order: Vec<TypeId>, // bit-index → TypeId, for bitmask decomposition
 
     pub component_destroyers: HashMap<TypeId, Box<dyn ComponentDestroyer>>,
 }
@@ -59,10 +59,8 @@ impl Scene {
     where
         T: Component<Storage = ComponentStorage<T>>,
     {
-        let error: pill_core::PillError = EngineError::ComponentNotRegistered(
-            get_type_name::<T>(),
-            self.name.clone(),
-        ).into();
+        let error: pill_core::PillError =
+            EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone()).into();
         let entity = self
             .entities
             .get(entity_handle)
@@ -100,24 +98,18 @@ impl Scene {
     where
         T: Component<Storage = ComponentStorage<T>>,
     {
-        self.components
-            .get::<T>()
-            .ok_or(EngineError::ComponentNotRegistered(
-                get_type_name::<T>(),
-                self.name.clone(),
-            ).into())
+        self.components.get::<T>().ok_or(
+            EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone()).into(),
+        )
     }
 
     pub fn get_component_storage_mut<T>(&mut self) -> Result<&mut ComponentStorage<T>>
     where
         T: Component<Storage = ComponentStorage<T>>,
     {
-        self.components
-            .get_mut::<T>()
-            .ok_or(EngineError::ComponentNotRegistered(
-                get_type_name::<T>(),
-                self.name.clone(),
-            ).into())
+        self.components.get_mut::<T>().ok_or(
+            EngineError::ComponentNotRegistered(get_type_name::<T>(), self.name.clone()).into(),
+        )
     }
 
     // --- Bitmasks ---
@@ -131,7 +123,8 @@ impl Scene {
             let component_index = self.component_type_order.len();
             let component_bitmask = create_bitmask_with_one(component_index as u16);
             self.component_type_order.push(TypeId::of::<T>());
-            self.component_bitmasks.insert(TypeId::of::<T>(), component_bitmask);
+            self.component_bitmasks
+                .insert(TypeId::of::<T>(), component_bitmask);
 
             // Update scene bitmask
             self.scene_bitmask |= component_bitmask;
@@ -147,7 +140,8 @@ impl Scene {
             None => Err(EngineError::ComponentNotRegistered(
                 get_type_name::<T>(),
                 self.name.clone(),
-            ).into()),
+            )
+            .into()),
         }
     }
 

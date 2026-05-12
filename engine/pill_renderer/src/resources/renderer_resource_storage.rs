@@ -8,8 +8,8 @@ use pill_engine::internal::{
     RendererShaderHandle, RendererTextureHandle,
 };
 
-use pill_core::Result;
 use pill_core::PillSlotMap;
+use pill_core::Result;
 
 pub const MAX_SHADERS: usize = 10;
 pub const MAX_TEXTURES: usize = 10;

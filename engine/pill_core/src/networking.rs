@@ -217,9 +217,8 @@ pub fn client_connect(bind: &str, client_id: u64) -> Result<NetworkClient> {
         SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0), // [::]:0
     };
 
-    let socket = UdpSocket::bind(local_bind).map_err(|e| {
-        format!("Client failed to bind local UDP socket at {local_bind}: {e}")
-    })?;
+    let socket = UdpSocket::bind(local_bind)
+        .map_err(|e| format!("Client failed to bind local UDP socket at {local_bind}: {e}"))?;
     socket.set_nonblocking(true)?;
 
     let client = RenetClient::new(ConnectionConfig::default());

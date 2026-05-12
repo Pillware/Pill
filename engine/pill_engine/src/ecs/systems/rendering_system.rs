@@ -1,8 +1,8 @@
 use crate::{
     config::RENDERING_SYSTEM,
     ecs::{
-        CameraAspectRatio, CameraComponent, EntityHandle,
-        MeshRenderingComponent, TransformComponent,
+        CameraAspectRatio, CameraComponent, EntityHandle, MeshRenderingComponent,
+        TransformComponent,
     },
     engine::Engine,
     graphics::RenderQueueItem,
@@ -43,8 +43,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
     }
 
-    let active_camera_entity_handle =
-        active_camera_entity_handle_result.ok_or_else(|| -> pill_core::PillError { EngineError::NoActiveCamera.into() })?;
+    let active_camera_entity_handle = active_camera_entity_handle_result
+        .ok_or_else(|| -> pill_core::PillError { EngineError::NoActiveCamera.into() })?;
 
     // - Prepare rendering data
     timer.record("Clear render queue");

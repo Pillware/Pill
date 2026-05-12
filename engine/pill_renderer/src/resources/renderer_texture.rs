@@ -84,7 +84,11 @@ impl RendererTexture {
             ..Default::default()
         });
 
-        Ok(Self { texture, texture_view, sampler })
+        Ok(Self {
+            texture,
+            texture_view,
+            sampler,
+        })
     }
 
     pub fn new_depth_texture(
@@ -129,6 +133,10 @@ impl RendererTexture {
             ..Default::default()
         });
 
-        Ok(Self { texture, texture_view, sampler })
+        Ok(Self {
+            texture,
+            texture_view,
+            sampler,
+        })
     }
 }

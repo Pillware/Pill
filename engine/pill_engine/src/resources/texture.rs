@@ -70,7 +70,10 @@ fn decode_png(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     let raw = &buf[..info.buffer_size()];
     let rgba = match info.color_type {
         png::ColorType::Rgba => raw.to_vec(),
-        png::ColorType::Rgb => raw.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
+        png::ColorType::Rgb => raw
+            .chunks(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
         png::ColorType::Grayscale => raw.iter().flat_map(|&g| [g, g, g, 255]).collect(),
         png::ColorType::GrayscaleAlpha => raw
             .chunks(2)
@@ -118,10 +121,9 @@ impl Resource for Texture {
                     {
                         // Check if path to asset is correct
                         pill_core::validate_asset_path(&base, &["png", "rtex"])?;
-                        let bytes =
-                            std::fs::read(&base).map_err(|e| -> pill_core::PillError {
-                                format!("Failed to read texture {base:?}: {e}").into()
-                            })?;
+                        let bytes = std::fs::read(&base).map_err(|e| -> pill_core::PillError {
+                            format!("Failed to read texture {base:?}: {e}").into()
+                        })?;
                         if base.extension().map(|e| e == "rtex").unwrap_or(false) {
                             decode_rtex(&bytes)?
                         } else {

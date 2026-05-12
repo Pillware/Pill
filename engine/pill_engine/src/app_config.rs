@@ -38,7 +38,9 @@ impl EngineConfig {
             .get(&key.to_uppercase())
             .ok_or_else(|| -> PillError { format!("{key} not found in config").into() })?
             .parse::<i64>()
-            .map_err(|e| -> PillError { format!("Config key {key} is not a valid integer: {e}").into() })
+            .map_err(|e| -> PillError {
+                format!("Config key {key} is not a valid integer: {e}").into()
+            })
     }
 
     pub fn get_bool(&self, key: &str) -> Result<bool> {

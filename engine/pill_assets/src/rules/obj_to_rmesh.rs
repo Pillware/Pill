@@ -69,10 +69,7 @@ impl Rule for ObjToRmesh {
                     mesh.positions[i * 3 + 1],
                     mesh.positions[i * 3 + 2],
                 ],
-                texture_coordinates: [
-                    *mesh.texcoords.get(i * 2).unwrap_or(&0.0),
-                    1.0 - uv_v,
-                ],
+                texture_coordinates: [*mesh.texcoords.get(i * 2).unwrap_or(&0.0), 1.0 - uv_v],
                 normal: [
                     *mesh.normals.get(i * 3).unwrap_or(&0.0),
                     *mesh.normals.get(i * 3 + 1).unwrap_or(&0.0),

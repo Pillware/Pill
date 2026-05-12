@@ -1,8 +1,8 @@
 use crate::{
     ecs::{
         deferred_update_system, input_system, rendering_system, time_system,
-        DeferredUpdateComponent, InputComponent, PlayerId, SystemFunction,
-        TimeComponent, UpdatePhase,
+        DeferredUpdateComponent, InputComponent, PlayerId, SystemFunction, TimeComponent,
+        UpdatePhase,
     },
     graphics::{RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle},
     resources::{MaterialHandle, ShaderHandle, TextureHandle, TextureType},
@@ -89,12 +89,12 @@ pub const DEFAULT_NORMAL_TEXTURE_NAME: &str = "pill_engine_default_normal";
 
 // RTEX layout: b"RTEX" | u32LE version=1 | u32LE width | u32LE height | raw RGBA bytes
 pub const DEFAULT_COLOR_TEXTURE_BYTES: [u8; 20] = [
-    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
-    255, 255, 255, 255, // white albedo
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 255, 255, 255,
+    255, // white albedo
 ];
 pub const DEFAULT_NORMAL_TEXTURE_BYTES: [u8; 20] = [
-    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
-    128, 128, 255, 255, // flat normal (0,0,1)
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 128, 128, 255,
+    255, // flat normal (0,0,1)
 ];
 
 // Default lit shader

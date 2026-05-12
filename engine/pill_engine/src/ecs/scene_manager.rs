@@ -99,7 +99,8 @@ impl SceneManager {
             return Err(EngineError::ComponentAlreadyRegistered(
                 get_type_name::<T>(),
                 target_scene.name.clone(),
-            ).into());
+            )
+            .into());
         }
 
         // Create new component storage
@@ -212,9 +213,7 @@ impl SceneManager {
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         // Check if scene with that name already exists
         if self.mapping.contains_key(&name.to_string()) {
-            return Err(EngineError::SceneAlreadyExists(
-                name.to_string(),
-            ).into());
+            return Err(EngineError::SceneAlreadyExists(name.to_string()).into());
         }
 
         // Create new scene

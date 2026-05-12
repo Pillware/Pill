@@ -97,7 +97,8 @@ impl SoundData {
             Err(_err) => {
                 return Err(EngineError::InvalidAssetPath(
                     path.clone().into_os_string().into_string().unwrap(),
-                ).into())
+                )
+                .into())
             }
             file => file?,
         };

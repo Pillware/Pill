@@ -17,8 +17,9 @@ fn read_wgsl_bytes(loader: &ResourceLoader, base: &Path, label: &str) -> Result<
         ResourceLoader::Path(path) => {
             let abs = base.join(path);
             pill_core::validate_asset_path(&abs, &["wgsl"])?;
-            std::fs::read(&abs)
-                .map_err(|_| -> pill_core::PillError { format!("Failed to read {label} shader file: {abs:?}").into() })
+            std::fs::read(&abs).map_err(|_| -> pill_core::PillError {
+                format!("Failed to read {label} shader file: {abs:?}").into()
+            })
         }
         ResourceLoader::Bytes(bytes) => Ok(bytes.to_vec()),
     }
@@ -166,10 +167,14 @@ impl Resource for Shader {
             &engine.game_resources_directory_path,
             "fragment",
         )?;
-        let vertex_wgsl = std::str::from_utf8(&vertex_bytes)
-            .map_err(|_| -> pill_core::PillError { format!("Vertex shader for {} is not valid UTF-8 WGSL", &self.name).into() })?;
-        let fragment_wgsl = std::str::from_utf8(&fragment_bytes)
-            .map_err(|_| -> pill_core::PillError { format!("Fragment shader for {} is not valid UTF-8 WGSL", &self.name).into() })?;
+        let vertex_wgsl =
+            std::str::from_utf8(&vertex_bytes).map_err(|_| -> pill_core::PillError {
+                format!("Vertex shader for {} is not valid UTF-8 WGSL", &self.name).into()
+            })?;
+        let fragment_wgsl =
+            std::str::from_utf8(&fragment_bytes).map_err(|_| -> pill_core::PillError {
+                format!("Fragment shader for {} is not valid UTF-8 WGSL", &self.name).into()
+            })?;
 
         // TODO: Parse shader files and validate texture and parameter slots, or create them automatically here, so the user does not have to do it manually
 

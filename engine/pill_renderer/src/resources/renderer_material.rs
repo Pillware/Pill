@@ -36,7 +36,9 @@ impl RendererMaterial {
         let shader = rendering_resource_storage
             .shaders
             .get(shader_handle)
-            .ok_or_else(|| -> pill_core::PillError { RendererError::RendererResourceNotFound.into() })?;
+            .ok_or_else(|| -> pill_core::PillError {
+                RendererError::RendererResourceNotFound.into()
+            })?;
 
         let parameter_slots = &shader.parameter_slots;
         let texture_slots = &shader.texture_slots;
@@ -159,19 +161,25 @@ impl RendererMaterial {
         let material = rendering_resource_storage
             .materials
             .get(material_renderer_handle)
-            .ok_or_else(|| -> pill_core::PillError { RendererError::RendererResourceNotFound.into() })?;
+            .ok_or_else(|| -> pill_core::PillError {
+                RendererError::RendererResourceNotFound.into()
+            })?;
         let shader_handle = material.shader_handle;
         let shader = rendering_resource_storage
             .shaders
             .get(shader_handle)
-            .ok_or_else(|| -> pill_core::PillError { RendererError::RendererResourceNotFound.into() })?;
+            .ok_or_else(|| -> pill_core::PillError {
+                RendererError::RendererResourceNotFound.into()
+            })?;
 
         let parameter_slots = &shader.parameter_slots;
 
         let material = rendering_resource_storage
             .materials
             .get_mut(material_renderer_handle)
-            .ok_or_else(|| -> pill_core::PillError { RendererError::RendererResourceNotFound.into() })?;
+            .ok_or_else(|| -> pill_core::PillError {
+                RendererError::RendererResourceNotFound.into()
+            })?;
 
         // Update uniform buffer if it exists
         if let Some(ref buffer) = material.parameters_uniform_buffer {
@@ -254,7 +262,11 @@ impl RendererMaterial {
 
         for (slot_name, slot) in texture_slots {
             // Get texture from material texture map or use default
-            let renderer_texture_handle = match textures.iter().find(|(k, _)| k == slot_name).map(|(_, v)| v) {
+            let renderer_texture_handle = match textures
+                .iter()
+                .find(|(k, _)| k == slot_name)
+                .map(|(_, v)| v)
+            {
                 Some(material_texture) => {
                     debug!(LogContext::Rendering => "Material texture slot {} found in material textures", slot_name.name_style());
                     get_renderer_texture_handle_from_material_texture(material_texture).unwrap()

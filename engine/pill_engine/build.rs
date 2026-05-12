@@ -19,7 +19,10 @@ fn main() {
     // Header-include directory: tracked recursively so changes to shared
     // structs (common.hlsl) re-trigger the build. The glob doesn't pick these
     // up (HlslToWgsl matches top-level shaders/*.hlsl only).
-    println!("cargo:rerun-if-changed={}", root.join("shaders/include").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        root.join("shaders/include").display()
+    );
     for input in &stats.discovered {
         println!("cargo:rerun-if-changed={}", input.display());
     }

@@ -6,9 +6,9 @@ use std::{
     time::Duration,
 };
 
-use pill_core::{PillError, Result};
 use libloading::{Library, Symbol};
 use pill_abi::*;
+use pill_core::{PillError, Result};
 use pill_engine::internal::*;
 use pill_renderer::Renderer;
 use winit::{
@@ -31,7 +31,9 @@ unsafe fn cstr(p: *const c_char) -> Result<&'static str> {
     if p.is_null() {
         return Err("null cstr".into());
     }
-    CStr::from_ptr(p).to_str().map_err(|e| -> PillError { e.to_string().into() })
+    CStr::from_ptr(p)
+        .to_str()
+        .map_err(|e| -> PillError { e.to_string().into() })
 }
 
 fn load_game(game_library_path: &str) -> Result<(Library, Box<dyn PillGame>)> {
@@ -40,12 +42,12 @@ fn load_game(game_library_path: &str) -> Result<(Library, Box<dyn PillGame>)> {
     // we are fine to unload + load a new Box<dyn PillGame>
     type CreateGameFn = unsafe extern "C" fn() -> *mut c_void;
     let game_dynamic_library = unsafe {
-        Library::new(game_library_path)
-            .map_err(|e| -> PillError { format!("Failed to load game dynamic library at {game_library_path}: {e}").into() })?
+        Library::new(game_library_path).map_err(|e| -> PillError {
+            format!("Failed to load game dynamic library at {game_library_path}: {e}").into()
+        })?
     };
-    let get_game_function: Symbol<CreateGameFn> =
-        unsafe { game_dynamic_library.get(b"get_game") }
-            .map_err(|e| -> PillError { format!("Missing symbol get_game: {e}").into() })?;
+    let get_game_function: Symbol<CreateGameFn> = unsafe { game_dynamic_library.get(b"get_game") }
+        .map_err(|e| -> PillError { format!("Missing symbol get_game: {e}").into() })?;
     let game = unsafe { *Box::from_raw(get_game_function() as *mut Box<dyn PillGame>) };
     Ok((game_dynamic_library, game))
 }

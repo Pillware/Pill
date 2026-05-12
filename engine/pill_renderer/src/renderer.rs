@@ -605,7 +605,9 @@ impl State {
             .get_mut(get_renderer_resource_handle_from_camera_component(
                 active_camera_component,
             ))
-            .ok_or_else(|| -> pill_core::PillError { RendererError::RendererResourceNotFound.into() })?;
+            .ok_or_else(|| -> pill_core::PillError {
+                RendererError::RendererResourceNotFound.into()
+            })?;
         let camera_transform_storage = transform_component_storage
             .data
             .get(active_camera_entity_handle.data().index as usize)

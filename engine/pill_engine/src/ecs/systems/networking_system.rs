@@ -52,8 +52,8 @@
 //!   replication metadata.
 //! - `pill_core::networking` for transports and wire helpers.
 
-use pill_core::Result;
 use log::debug;
+use pill_core::Result;
 use pill_core::{
     client_connect, client_disconnect, client_flush, client_get_events, client_send, client_update,
     is_not_ready, server_broadcast, server_broadcast_except, server_disconnect_client,
