@@ -29,7 +29,7 @@ impl PillRenderer for DummyRenderer {
         _vertex_wgsl: &str,
         _fragment_wgsl: &str,
         _texture_slots: &HashMap<String, ShaderTextureSlot>,
-        _parameter_slots: &Vec<(String, ShaderParameterSlot)>,
+        _parameter_slots: &[(String, ShaderParameterSlot)],
         _pass_engine_parameters: bool,
         _pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -40,7 +40,7 @@ impl PillRenderer for DummyRenderer {
         &mut self,
         _name: &str,
         _renderer_shader_handle: RendererShaderHandle,
-        _textures: &Vec<(String, MaterialTexture)>,
+        _textures: &[(String, MaterialTexture)],
         _parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle> {
         Ok(RendererMaterialHandle::default())
@@ -70,7 +70,7 @@ impl PillRenderer for DummyRenderer {
     fn update_material_textures(
         &mut self,
         _renderer_material_handle: RendererMaterialHandle,
-        _textures: &Vec<(String, MaterialTexture)>,
+        _textures: &[(String, MaterialTexture)],
     ) -> Result<()> {
         Ok(())
     }

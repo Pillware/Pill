@@ -28,7 +28,7 @@ impl RendererMaterial {
         rendering_resource_storage: &RendererResourceStorage,
         name: &str,
         shader_handle: RendererShaderHandle,
-        textures: &Vec<(String, MaterialTexture)>,
+        textures: &[(String, MaterialTexture)],
         parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<Self> {
         debug!(LogContext::Rendering => "Creating material {}", name.name_style());
@@ -118,7 +118,7 @@ impl RendererMaterial {
         _device: &wgpu::Device,
         _material_renderer_handle: RendererMaterialHandle,
         _rendering_resource_storage: &mut RendererResourceStorage,
-        _textures: &Vec<(String, MaterialTexture)>,
+        _textures: &[(String, MaterialTexture)],
     ) -> Result<()> {
         // let material = rendering_resource_storage.materials.get(material_renderer_handle)
         //     .ok_or(RendererError::RendererResourceNotFound.into())?;
@@ -189,7 +189,7 @@ impl RendererMaterial {
         Ok(())
     }
 
-    fn calculate_uniform_size(parameter_slots: &Vec<(String, ShaderParameterSlot)>) -> usize {
+    fn calculate_uniform_size(parameter_slots: &[(String, ShaderParameterSlot)]) -> usize {
         // Calculate total size needed for all parameters
         // Each parameter slot gets 16 bytes (vec4 alignment in WGSL)
         parameter_slots.len() * 16
@@ -198,7 +198,7 @@ impl RendererMaterial {
     fn write_parameters_to_buffer(
         queue: &wgpu::Queue,
         buffer: &wgpu::Buffer,
-        parameter_slots: &Vec<(String, ShaderParameterSlot)>,
+        parameter_slots: &[(String, ShaderParameterSlot)],
         parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<()> {
         // Create a temporary buffer to hold all parameter data
@@ -256,7 +256,7 @@ impl RendererMaterial {
         texture_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        textures: &Vec<(String, MaterialTexture)>,
+        textures: &[(String, MaterialTexture)],
     ) -> Result<wgpu::BindGroup> {
         let mut entries = Vec::new();
 

@@ -61,7 +61,7 @@ impl PillRenderer for Renderer {
         vertex_wgsl: &str,
         fragment_wgsl: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &Vec<(String, ShaderParameterSlot)>,
+        parameter_slots: &[(String, ShaderParameterSlot)],
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -96,7 +96,7 @@ impl PillRenderer for Renderer {
         &mut self,
         name: &str,
         renderer_shader_handle: RendererShaderHandle,
-        textures: &Vec<(String, MaterialTexture)>,
+        textures: &[(String, MaterialTexture)],
         parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle> {
         let material = RendererMaterial::new(
@@ -161,7 +161,7 @@ impl PillRenderer for Renderer {
     fn update_material_textures(
         &mut self,
         renderer_material_handle: RendererMaterialHandle,
-        textures: &Vec<(String, MaterialTexture)>,
+        textures: &[(String, MaterialTexture)],
     ) -> Result<()> {
         RendererMaterial::update_textures(
             &self.state.device,

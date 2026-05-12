@@ -27,7 +27,7 @@ impl RendererShader {
         vertex_layouts: &[wgpu::VertexBufferLayout],
         vertex_wgsl: &str,
         fragment_wgsl: &str,
-        parameter_slots: &Vec<(String, ShaderParameterSlot)>,
+        parameter_slots: &[(String, ShaderParameterSlot)],
         texture_slots: &HashMap<String, ShaderTextureSlot>,
         engine_bind_group_layout: &wgpu::BindGroupLayout,
         camera_bind_group_layout: &wgpu::BindGroupLayout,
@@ -220,7 +220,7 @@ impl RendererShader {
         let pipeline = Self {
             name: name.to_string(),
             render_pipeline,
-            parameter_slots: parameter_slots.clone(),
+            parameter_slots: parameter_slots.to_vec(),
             textures_bind_group_layout,
             texture_slots: texture_slots.clone(),
             parameters_bind_group_layout,

@@ -71,7 +71,7 @@ impl Engine {
     }
 
     #[cfg(feature = "headless")]
-    pub fn new(game: Box<dyn PillGame>, config: config::Config) -> Self {
+    pub fn new(game: Box<dyn PillGame>, config: EngineConfig) -> Self {
         let max_entity_count = config
             .get_int("MAX_ENTITIES")
             .unwrap_or(MAX_ENTITIES as i64) as usize;
