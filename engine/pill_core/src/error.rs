@@ -132,6 +132,8 @@ pub enum EngineError<'a> {
     Other(String),
 }
 
-pub fn err_prefix() -> String {
-    "\nERROR".error_style()
+#[cfg(not(target_arch = "wasm32"))]
+pub fn err_prefix() -> colored::ColoredString {
+    use colored::Colorize;
+    "\nERROR".red().bold()
 }
