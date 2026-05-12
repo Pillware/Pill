@@ -77,8 +77,7 @@ impl Mesh {
         Ok(Self::from_data(name, load_rmesh(bytes)?))
     }
 
-    /// Build a mesh from raw OBJ bytes (e.g. `include_bytes!(...)`).
-    /// Prefer `from_rmesh_bytes` on wasm — it avoids the tobj parser overhead.
+    /// Parse a mesh from raw OBJ bytes; use `include_bytes!` to bundle assets into the binary (required on WASM).
     #[cfg(feature = "obj_loading")]
     pub fn from_obj_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
         Ok(Self::from_data(

@@ -103,6 +103,7 @@ impl Resource for Texture {
             get_type_name::<Self>().specific_object_style()
         );
 
+        // Create new renderer texture resource
         let (rgba, width, height) = match &self.resource_loader {
             ResourceLoader::Path(path) => {
                 let base = engine.game_resources_directory_path.join(path);
@@ -115,6 +116,7 @@ impl Resource for Texture {
                 } else {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
+                        // Check if path to asset is correct
                         pill_core::validate_asset_path(&base, &["png", "rtex"])?;
                         let bytes =
                             std::fs::read(&base).map_err(|e| -> pill_core::PillError {
@@ -154,6 +156,7 @@ impl Resource for Texture {
             }
         };
 
+        // Create renderer texture resource
         let renderer_resource_handle = engine
             .renderer
             .create_texture(&self.name, &rgba, width, height, self.texture_type)
@@ -164,21 +167,25 @@ impl Resource for Texture {
     }
 
     fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
+        // Destroy renderer resource
         if let Some(v) = self.renderer_resource_handle {
             engine.renderer.destroy_texture(v).unwrap();
         }
 
+        // Take resource storage from engine
         let resource_storage = engine
             .resource_manager
             .get_resource_storage_mut::<Material>()?;
         let materials = &mut resource_storage.data;
 
+        // Find materials that use this texture and update them
         for material_slot in materials.iter_mut() {
             let material: &mut Material = material_slot
                 .1
                 .as_mut()
                 .expect("Critical: Resource is None");
 
+            // Update texture slots
             let before = material.textures.len();
             material
                 .textures

@@ -110,7 +110,9 @@ impl PillRenderer for DummyRenderer {
 
     // --- Other ---
 
-    fn resize(&mut self, _new_window_size: PhysicalSize<u32>) {}
+    fn resize(&mut self, _new_window_size: PhysicalSize<u32>) {
+        // no-op for dummy
+    }
 
     #[cfg(feature = "debug_ui")]
     fn pass_input_to_egui(&mut self, _event: &WindowEvent) -> Result<()> {
