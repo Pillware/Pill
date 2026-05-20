@@ -69,12 +69,8 @@ pub fn get_game_error_message(result: Result<()>) -> Option<String> {
     result.err().map(|e| {
         use std::error::Error;
         let mut message = format!("Game error: {e}\n");
-        let mut source = e.source();
-        let mut i = 0usize;
-        while let Some(s) = source {
+        for (i, s) in std::iter::successors(e.source(), |s| s.source()).enumerate() {
             message.push_str(&format!("  {i}: {s}\n"));
-            i += 1;
-            source = s.source();
         }
         message
     })

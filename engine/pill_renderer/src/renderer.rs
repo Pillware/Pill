@@ -591,7 +591,6 @@ impl State {
         // CameraComponent) can be forwarded into the `engine` UBO alongside delta_time.
         self.renderer_resource_storage.engine_parameters.update(
             &self.queue,
-            delta_time,
             active_camera_component.fog_density,
             [
                 active_camera_component.fog_color.x,

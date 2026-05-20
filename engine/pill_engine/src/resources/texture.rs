@@ -48,7 +48,7 @@ impl Texture {
 
 fn decode_rtex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     if bytes.len() < 16 || &bytes[0..4] != b"RTEX" {
-        return Err("not a valid .rtex file (bad magic or truncated header)".into());
+        return Err(pill_core::PillError::from("not a valid .rtex file (bad magic or truncated header)"));
     }
     let width = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
     let height = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
@@ -132,11 +132,10 @@ impl Resource for Texture {
                     }
                     #[cfg(target_arch = "wasm32")]
                     {
-                        return Err(format!(
+                        return Err(pill_core::PillError::from(format!(
                             "No preprocessed .rtex found for {:?}; run `pill_launcher -a assets`",
                             base
-                        )
-                        .into());
+                        )));
                     }
                 }
             }
@@ -150,9 +149,7 @@ impl Resource for Texture {
                     }
                     #[cfg(target_arch = "wasm32")]
                     {
-                        return Err(
-                            "Texture::from_bytes on wasm requires pre-converted RTEX format".into(),
-                        );
+                        return Err(pill_core::PillError::from("Texture::from_bytes on wasm requires pre-converted RTEX format"));
                     }
                 }
             }

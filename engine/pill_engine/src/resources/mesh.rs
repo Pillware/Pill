@@ -70,15 +70,11 @@ impl Mesh {
         Self::from_data(name, MeshData::cube(size))
     }
 
-    /// Build a mesh from pre-converted `.rmesh` bytes (e.g. `include_bytes!(...)`).
+    /// Build a mesh from pre-converted `.runtime_mesh` bytes (e.g. `include_bytes!(...)`).
     /// Works on all targets including wasm. Produces smaller binaries than
-    /// `from_obj_bytes` — run `pill_launcher -a assets` to generate `.rmesh` files.
-    pub fn from_rmesh_bytes(name: &str, bytes: &[u8]) -> Self {
-        Self::from_data(
-            name,
-            load_rmesh(bytes)
-                .expect("corrupted embedded asset — regenerate with pill_launcher -a assets"),
-        )
+    /// `from_obj_bytes` — run `pill_launcher -a assets` to generate `.runtime_mesh` files.
+    pub fn from_runtime_mesh_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
+        Ok(Self::from_data(name, load_runtime_mesh(bytes)?))
     }
 
     /// Parse a mesh from raw OBJ bytes; use `include_bytes!` to bundle assets into the binary (required on WASM).
@@ -95,9 +91,9 @@ impl PillTypeMapKey for Mesh {
     type Storage = ResourceStorage<Mesh>;
 }
 
-fn load_rmesh(bytes: &[u8]) -> Result<MeshData> {
+fn load_runtime_mesh(bytes: &[u8]) -> Result<MeshData> {
     if bytes.len() < 16 || &bytes[0..4] != b"RMSH" {
-        return Err("not a valid .rmesh file (bad magic or truncated header)".into());
+        return Err("not a valid .runtime_mesh file (bad magic or truncated header)".into());
     }
     let vertex_count = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
     let index_count = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
@@ -105,23 +101,23 @@ fn load_rmesh(bytes: &[u8]) -> Result<MeshData> {
     let expected = 16 + vertex_count * vertex_size + index_count * 4;
     if bytes.len() < expected {
         return Err(format!(
-            ".rmesh truncated: expected {} bytes, got {}",
+            ".runtime_mesh truncated: expected {} bytes, got {}",
             expected,
             bytes.len()
         )
         .into());
     }
-    let vb = &bytes[16..16 + vertex_count * vertex_size];
-    let ib = &bytes[16 + vertex_count * vertex_size..expected];
+    let vertex_bytes = &bytes[16..16 + vertex_count * vertex_size];
+    let index_bytes = &bytes[16 + vertex_count * vertex_size..expected];
     // cast_slice requires the source pointer to be aligned to the target type.
     // include_bytes! data is only 1-byte aligned, so collect through Vec<u32>
     // (which allocates at 4-byte alignment) before casting to MeshVertex / u32.
-    let vb_u32: Vec<u32> = vb
+    let vertex_u32s: Vec<u32> = vertex_bytes
         .chunks_exact(4)
         .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
         .collect();
-    let vertices: Vec<MeshVertex> = bytemuck::cast_slice(&vb_u32).to_vec();
-    let indices: Vec<u32> = ib
+    let vertices: Vec<MeshVertex> = bytemuck::cast_slice(&vertex_u32s).to_vec();
+    let indices: Vec<u32> = index_bytes
         .chunks_exact(4)
         .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
         .collect();
@@ -145,13 +141,13 @@ impl Resource for Mesh {
         // Load from file only if mesh_data not already set (procedural mesh)
         if self.mesh_data.is_none() {
             let base = engine.game_resources_directory_path.join(&self.path);
-            let rmesh_path = base.with_extension("rmesh");
+            let runtime_mesh_path = base.with_extension("runtime_mesh");
 
-            if rmesh_path.exists() {
-                let bytes = std::fs::read(&rmesh_path).map_err(|e| -> pill_core::PillError {
-                    format!("Failed to read mesh {rmesh_path:?}: {e}").into()
+            if runtime_mesh_path.exists() {
+                let bytes = std::fs::read(&runtime_mesh_path).map_err(|e| -> pill_core::PillError {
+                    format!("Failed to read mesh {runtime_mesh_path:?}: {e}").into()
                 })?;
-                self.mesh_data = Some(load_rmesh(&bytes).context(error_message.clone())?);
+                self.mesh_data = Some(load_runtime_mesh(&bytes).context(error_message.clone())?);
             } else {
                 #[cfg(feature = "obj_loading")]
                 {
@@ -166,11 +162,10 @@ impl Resource for Mesh {
                     self.mesh_data = Some(mesh_data);
                 }
                 #[cfg(not(feature = "obj_loading"))]
-                return Err(format!(
-                    "No preprocessed .rmesh found for {:?}; run `pill_launcher -a assets`",
+                return Err(pill_core::PillError::from(format!(
+                    "No preprocessed .runtime_mesh found for {:?}; run `pill_launcher -a assets`",
                     base
-                )
-                .into());
+                )));
             }
         }
 

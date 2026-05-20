@@ -214,15 +214,15 @@ pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle
 
 lazy_static! {
     pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = {
-        let mut v = vec![
+        let mut component_types = vec![
             TypeId::of::<InputComponent>(),
             TypeId::of::<TimeComponent>(),
             TypeId::of::<DeferredUpdateComponent>(),
         ];
         #[cfg(not(target_arch = "wasm32"))]
-        v.push(TypeId::of::<AudioManagerComponent>());
+        component_types.push(TypeId::of::<AudioManagerComponent>());
         #[cfg(feature = "debug_ui")]
-        v.push(TypeId::of::<crate::ecs::EguiManagerComponent>());
-        v
+        component_types.push(TypeId::of::<crate::ecs::EguiManagerComponent>());
+        component_types
     };
 }
