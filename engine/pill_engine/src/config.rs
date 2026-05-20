@@ -214,6 +214,7 @@ pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle
 
 lazy_static! {
     pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = {
+        #[allow(unused_mut)]
         let mut component_types = vec![
             TypeId::of::<InputComponent>(),
             TypeId::of::<TimeComponent>(),
