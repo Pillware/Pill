@@ -87,14 +87,8 @@ impl EngineParameters {
         Ok(camera)
     }
 
-    pub fn update(
-        &mut self,
-        queue: &wgpu::Queue,
-        fog_density: f32,
-        fog_color: [f32; 3],
-    ) {
-        self.parameters_data
-            .update_data(fog_density, fog_color);
+    pub fn update(&mut self, queue: &wgpu::Queue, fog_density: f32, fog_color: [f32; 3]) {
+        self.parameters_data.update_data(fog_density, fog_color);
         queue.write_buffer(
             &self.parameters_uniform_buffer,
             0,

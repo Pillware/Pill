@@ -55,7 +55,9 @@ impl SystemManager {
             .iter_mut()
             .find(|(phase, _)| phase == update_phase)
             .map(|(_, systems)| systems)
-            .ok_or_else(|| EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)).into())
+            .ok_or_else(|| {
+                EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)).into()
+            })
     }
 
     pub fn get_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<&mut System> {
@@ -63,7 +65,8 @@ impl SystemManager {
         let phase_str = format!("{}", update_phase);
         let system_collection = self.phase_systems_mut(&update_phase)?;
         // Get system by name
-        system_collection.iter_mut()
+        system_collection
+            .iter_mut()
             .find(|(system_name, _)| system_name == name)
             .map(|(_, system)| system)
             .ok_or_else(|| EngineError::SystemNotFound(name.to_string(), phase_str).into())
@@ -81,21 +84,21 @@ impl SystemManager {
 
         // Check if system with that name already exists
         if system_collection.iter().any(|(k, _)| k == name) {
-            return Err(EngineError::SystemAlreadyExists(
-                name.to_string(),
-                phase_str,
-            ).into());
+            return Err(EngineError::SystemAlreadyExists(name.to_string(), phase_str).into());
         }
 
         // Create system object
         // Add system
-        system_collection.push((name.to_string(), System {
-            name: name.to_string(),
-            update_phase,
-            system_function,
-            enabled: true,
-            timer: Some(Timer::new()),
-        }));
+        system_collection.push((
+            name.to_string(),
+            System {
+                name: name.to_string(),
+                update_phase,
+                system_function,
+                enabled: true,
+                timer: Some(Timer::new()),
+            },
+        ));
 
         Ok(())
     }
@@ -107,10 +110,7 @@ impl SystemManager {
 
         // Check if system with that name exists
         if !system_collection.iter().any(|(k, _)| k == name) {
-            return Err(EngineError::SystemNotFound(
-                name.to_string(),
-                phase_str,
-            ).into());
+            return Err(EngineError::SystemNotFound(name.to_string(), phase_str).into());
         }
 
         // Remove system

@@ -144,9 +144,10 @@ impl Resource for Mesh {
             let runtime_mesh_path = base.with_extension("runtime_mesh");
 
             if runtime_mesh_path.exists() {
-                let bytes = std::fs::read(&runtime_mesh_path).map_err(|e| -> pill_core::PillError {
-                    format!("Failed to read mesh {runtime_mesh_path:?}: {e}").into()
-                })?;
+                let bytes =
+                    std::fs::read(&runtime_mesh_path).map_err(|e| -> pill_core::PillError {
+                        format!("Failed to read mesh {runtime_mesh_path:?}: {e}").into()
+                    })?;
                 self.mesh_data = Some(load_runtime_mesh(&bytes).context(error_message.clone())?);
             } else {
                 #[cfg(feature = "obj_loading")]
