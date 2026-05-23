@@ -114,9 +114,10 @@ impl Resource for Texture {
                 let base = engine.game_resources_directory_path.join(path);
                 let cooked_tex_path = base.with_extension("cooked_tex");
                 if cooked_tex_path.exists() {
-                    let bytes = std::fs::read(&cooked_tex_path).map_err(|e| -> pill_core::PillError {
-                        format!("Failed to read texture {cooked_tex_path:?}: {e}").into()
-                    })?;
+                    let bytes =
+                        std::fs::read(&cooked_tex_path).map_err(|e| -> pill_core::PillError {
+                            format!("Failed to read texture {cooked_tex_path:?}: {e}").into()
+                        })?;
                     decode_cooked_tex(&bytes)?
                 } else {
                     #[cfg(not(target_arch = "wasm32"))]
