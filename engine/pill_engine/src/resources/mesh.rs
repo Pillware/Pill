@@ -70,11 +70,11 @@ impl Mesh {
         Self::from_data(name, MeshData::cube(size))
     }
 
-    /// Build a mesh from pre-converted `.runtime_mesh` bytes (e.g. `include_bytes!(...)`).
+    /// Build a mesh from pre-converted `.cooked_mesh` bytes (e.g. `include_bytes!(...)`).
     /// Works on all targets including wasm. Produces smaller binaries than
-    /// `from_obj_bytes` — run `pill_launcher -a assets` to generate `.runtime_mesh` files.
-    pub fn from_runtime_mesh_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
-        Ok(Self::from_data(name, load_runtime_mesh(bytes)?))
+    /// `from_obj_bytes` — run `pill_launcher -a assets` to generate `.cooked_mesh` files.
+    pub fn from_cooked_mesh_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
+        Ok(Self::from_data(name, load_cooked_mesh(bytes)?))
     }
 
     /// Parse a mesh from raw OBJ bytes; use `include_bytes!` to bundle assets into the binary (required on WASM).
@@ -91,9 +91,9 @@ impl PillTypeMapKey for Mesh {
     type Storage = ResourceStorage<Mesh>;
 }
 
-fn load_runtime_mesh(bytes: &[u8]) -> Result<MeshData> {
+fn load_cooked_mesh(bytes: &[u8]) -> Result<MeshData> {
     if bytes.len() < 16 || &bytes[0..4] != b"RMSH" {
-        return Err("not a valid .runtime_mesh file (bad magic or truncated header)".into());
+        return Err("not a valid .cooked_mesh file (bad magic or truncated header)".into());
     }
     let vertex_count = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
     let index_count = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
@@ -101,7 +101,7 @@ fn load_runtime_mesh(bytes: &[u8]) -> Result<MeshData> {
     let expected = 16 + vertex_count * vertex_size + index_count * 4;
     if bytes.len() < expected {
         return Err(format!(
-            ".runtime_mesh truncated: expected {} bytes, got {}",
+            ".cooked_mesh truncated: expected {} bytes, got {}",
             expected,
             bytes.len()
         )
@@ -141,14 +141,14 @@ impl Resource for Mesh {
         // Load from file only if mesh_data not already set (procedural mesh)
         if self.mesh_data.is_none() {
             let base = engine.game_resources_directory_path.join(&self.path);
-            let runtime_mesh_path = base.with_extension("runtime_mesh");
+            let cooked_mesh_path = base.with_extension("cooked_mesh");
 
-            if runtime_mesh_path.exists() {
+            if cooked_mesh_path.exists() {
                 let bytes =
-                    std::fs::read(&runtime_mesh_path).map_err(|e| -> pill_core::PillError {
-                        format!("Failed to read mesh {runtime_mesh_path:?}: {e}").into()
+                    std::fs::read(&cooked_mesh_path).map_err(|e| -> pill_core::PillError {
+                        format!("Failed to read mesh {cooked_mesh_path:?}: {e}").into()
                     })?;
-                self.mesh_data = Some(load_runtime_mesh(&bytes).context(error_message.clone())?);
+                self.mesh_data = Some(load_cooked_mesh(&bytes).context(error_message.clone())?);
             } else {
                 #[cfg(feature = "obj_loading")]
                 {
@@ -164,7 +164,7 @@ impl Resource for Mesh {
                 }
                 #[cfg(not(feature = "obj_loading"))]
                 return Err(pill_core::PillError::from(format!(
-                    "No preprocessed .runtime_mesh found for {:?}; run `pill_launcher -a assets`",
+                    "No preprocessed .cooked_mesh found for {:?}; run `pill_launcher -a assets`",
                     base
                 )));
             }

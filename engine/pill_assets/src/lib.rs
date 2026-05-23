@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 
 pub mod rules;
 
-pub use rules::{default_rules, HlslToWgsl, ObjToRuntimeMesh, PngToRtex};
+pub use rules::{default_rules, HlslToWgsl, ObjToCookedMesh, PngToCookedTex};
 
 pub trait Rule {
     /// Glob (relative to the pipeline root) selecting source inputs.

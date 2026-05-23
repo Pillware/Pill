@@ -46,10 +46,10 @@ impl Texture {
     }
 }
 
-fn decode_rtex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
+fn decode_cooked_tex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
     if bytes.len() < 16 || &bytes[0..4] != b"RTEX" {
         return Err(pill_core::PillError::from(
-            "not a valid .rtex file (bad magic or truncated header)",
+            "not a valid .cooked_tex file (bad magic or truncated header)",
         ));
     }
     let width = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
@@ -112,22 +112,22 @@ impl Resource for Texture {
         let (rgba, width, height) = match &self.resource_loader {
             ResourceLoader::Path(path) => {
                 let base = engine.game_resources_directory_path.join(path);
-                let rtex_path = base.with_extension("rtex");
-                if rtex_path.exists() {
-                    let bytes = std::fs::read(&rtex_path).map_err(|e| -> pill_core::PillError {
-                        format!("Failed to read texture {rtex_path:?}: {e}").into()
+                let cooked_tex_path = base.with_extension("cooked_tex");
+                if cooked_tex_path.exists() {
+                    let bytes = std::fs::read(&cooked_tex_path).map_err(|e| -> pill_core::PillError {
+                        format!("Failed to read texture {cooked_tex_path:?}: {e}").into()
                     })?;
-                    decode_rtex(&bytes)?
+                    decode_cooked_tex(&bytes)?
                 } else {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
                         // Check if path to asset is correct
-                        pill_core::validate_asset_path(&base, &["png", "rtex"])?;
+                        pill_core::validate_asset_path(&base, &["png", "cooked_tex"])?;
                         let bytes = std::fs::read(&base).map_err(|e| -> pill_core::PillError {
                             format!("Failed to read texture {base:?}: {e}").into()
                         })?;
-                        if base.extension().map(|e| e == "rtex").unwrap_or(false) {
-                            decode_rtex(&bytes)?
+                        if base.extension().map(|e| e == "cooked_tex").unwrap_or(false) {
+                            decode_cooked_tex(&bytes)?
                         } else {
                             decode_png(&bytes)?
                         }
@@ -135,7 +135,7 @@ impl Resource for Texture {
                     #[cfg(target_arch = "wasm32")]
                     {
                         return Err(pill_core::PillError::from(format!(
-                            "No preprocessed .rtex found for {:?}; run `pill_launcher -a assets`",
+                            "No preprocessed .cooked_tex found for {:?}; run `pill_launcher -a assets`",
                             base
                         )));
                     }
@@ -143,7 +143,7 @@ impl Resource for Texture {
             }
             ResourceLoader::Bytes(bytes) => {
                 if bytes.starts_with(b"RTEX") {
-                    decode_rtex(bytes)?
+                    decode_cooked_tex(bytes)?
                 } else {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
@@ -152,7 +152,7 @@ impl Resource for Texture {
                     #[cfg(target_arch = "wasm32")]
                     {
                         return Err(pill_core::PillError::from(
-                            "Texture::from_bytes on wasm requires pre-converted RTEX format",
+                            "Texture::from_bytes on wasm requires pre-converted COOKED_TEX format",
                         ));
                     }
                 }

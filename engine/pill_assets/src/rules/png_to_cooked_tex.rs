@@ -4,15 +4,15 @@ use anyhow::{bail, Context, Result};
 
 use crate::Rule;
 
-/// PNG → RTEX pre-decoded texture.
+/// PNG → cooked_tex pre-decoded texture.
 ///
 /// Format: `b"RTEX" | u32 version=1 | u32 width | u32 height | raw RGBA bytes`
 /// All multi-byte integers are little-endian.
-pub struct PngToRtex;
+pub struct PngToCookedTex;
 
-impl Rule for PngToRtex {
+impl Rule for PngToCookedTex {
     fn name(&self) -> &'static str {
-        "png_to_rtex"
+        "png_to_cooked_tex"
     }
 
     fn input_glob(&self) -> &'static str {
@@ -20,7 +20,7 @@ impl Rule for PngToRtex {
     }
 
     fn output_for(&self, input: &Path) -> PathBuf {
-        input.with_extension("rtex")
+        input.with_extension("cooked_tex")
     }
 
     fn build(&self, input: &Path, output: &Path) -> Result<()> {

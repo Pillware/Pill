@@ -17,18 +17,18 @@ struct Vertex {
     bitangent: [f32; 3],
 }
 
-/// OBJ → runtime_mesh pre-processed mesh.
+/// OBJ → cooked_mesh pre-processed mesh.
 ///
 /// Format: `b"RMSH" | u32 version=1 | u32 vertex_count | u32 index_count`
 ///         `| vertex_count * sizeof(Vertex) bytes | index_count * 4 bytes`
 /// All integers are little-endian. Vertices and indices are raw LE memory images.
 ///
 /// UV Y-coordinate is pre-flipped (1.0 − v) to match the engine default.
-pub struct ObjToRuntimeMesh;
+pub struct ObjToCookedMesh;
 
-impl Rule for ObjToRuntimeMesh {
+impl Rule for ObjToCookedMesh {
     fn name(&self) -> &'static str {
-        "obj_to_runtime_mesh"
+        "obj_to_cooked_mesh"
     }
 
     fn input_glob(&self) -> &'static str {
@@ -36,7 +36,7 @@ impl Rule for ObjToRuntimeMesh {
     }
 
     fn output_for(&self, input: &Path) -> PathBuf {
-        input.with_extension("runtime_mesh")
+        input.with_extension("cooked_mesh")
     }
 
     /// Loads the OBJ, computes per-vertex tangent space via Gram-Schmidt, and writes a flat binary blob (magic + header + interleaved vertex data + indices).
