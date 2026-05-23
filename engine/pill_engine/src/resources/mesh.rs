@@ -9,9 +9,10 @@ use pill_core::{
     get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey, Vector2f, Vector3f,
 };
 
-use anyhow::{Context, Error, Result};
+use pill_core::{ErrorContext, Result};
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "obj_loading")]
 fn obj_load_options() -> tobj::LoadOptions {
     tobj::LoadOptions {
         triangulate: true,
@@ -69,7 +70,15 @@ impl Mesh {
         Self::from_data(name, MeshData::cube(size))
     }
 
+    /// Build a mesh from pre-converted `.cooked_mesh` bytes (e.g. `include_bytes!(...)`).
+    /// Works on all targets including wasm. Produces smaller binaries than
+    /// `from_obj_bytes` — run `pill_launcher -a assets` to generate `.cooked_mesh` files.
+    pub fn from_cooked_mesh_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
+        Ok(Self::from_data(name, load_cooked_mesh(bytes)?))
+    }
+
     /// Parse a mesh from raw OBJ bytes; use `include_bytes!` to bundle assets into the binary (required on WASM).
+    #[cfg(feature = "obj_loading")]
     pub fn from_obj_bytes(name: &str, bytes: &[u8]) -> Result<Self> {
         Ok(Self::from_data(
             name,
@@ -80,6 +89,39 @@ impl Mesh {
 
 impl PillTypeMapKey for Mesh {
     type Storage = ResourceStorage<Mesh>;
+}
+
+fn load_cooked_mesh(bytes: &[u8]) -> Result<MeshData> {
+    if bytes.len() < 16 || &bytes[0..4] != b"RMSH" {
+        return Err("not a valid .cooked_mesh file (bad magic or truncated header)".into());
+    }
+    let vertex_count = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    let index_count = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let vertex_size = std::mem::size_of::<MeshVertex>();
+    let expected = 16 + vertex_count * vertex_size + index_count * 4;
+    if bytes.len() < expected {
+        return Err(format!(
+            ".cooked_mesh truncated: expected {} bytes, got {}",
+            expected,
+            bytes.len()
+        )
+        .into());
+    }
+    let vertex_bytes = &bytes[16..16 + vertex_count * vertex_size];
+    let index_bytes = &bytes[16 + vertex_count * vertex_size..expected];
+    // cast_slice requires the source pointer to be aligned to the target type.
+    // include_bytes! data is only 1-byte aligned, so collect through Vec<u32>
+    // (which allocates at 4-byte alignment) before casting to MeshVertex / u32.
+    let vertex_u32s: Vec<u32> = vertex_bytes
+        .chunks_exact(4)
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .collect();
+    let vertices: Vec<MeshVertex> = bytemuck::cast_slice(&vertex_u32s).to_vec();
+    let indices: Vec<u32> = index_bytes
+        .chunks_exact(4)
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .collect();
+    Ok(MeshData { vertices, indices })
 }
 
 impl Resource for Mesh {
@@ -98,17 +140,34 @@ impl Resource for Mesh {
 
         // Load from file only if mesh_data not already set (procedural mesh)
         if self.mesh_data.is_none() {
-            let resource_file_path = engine.game_resources_directory_path.join(&self.path);
-            pill_core::validate_asset_path(&resource_file_path, &["obj"])
-                .context(error_message.clone())?;
+            let base = engine.game_resources_directory_path.join(&self.path);
+            let cooked_mesh_path = base.with_extension("cooked_mesh");
 
-            let mesh_data = MeshData::new(&resource_file_path, self.flip_uv_y)
-                .context(error_message.clone())
-                .context(format!(
-                    "Failed to create mesh data from {} file",
-                    resource_file_path.file_name().unwrap().to_string_lossy()
-                ))?;
-            self.mesh_data = Some(mesh_data);
+            if cooked_mesh_path.exists() {
+                let bytes =
+                    std::fs::read(&cooked_mesh_path).map_err(|e| -> pill_core::PillError {
+                        format!("Failed to read mesh {cooked_mesh_path:?}: {e}").into()
+                    })?;
+                self.mesh_data = Some(load_cooked_mesh(&bytes).context(error_message.clone())?);
+            } else {
+                #[cfg(feature = "obj_loading")]
+                {
+                    pill_core::validate_asset_path(&base, &["obj"])
+                        .context(error_message.clone())?;
+                    let mesh_data = MeshData::new(&base, self.flip_uv_y)
+                        .context(error_message.clone())
+                        .context(format!(
+                            "Failed to create mesh data from {} file",
+                            base.file_name().unwrap().to_string_lossy()
+                        ))?;
+                    self.mesh_data = Some(mesh_data);
+                }
+                #[cfg(not(feature = "obj_loading"))]
+                return Err(pill_core::PillError::from(format!(
+                    "No preprocessed .cooked_mesh found for {:?}; run `pill_launcher -a assets`",
+                    base
+                )));
+            }
         }
 
         // Create new renderer mesh resource
@@ -166,12 +225,13 @@ pub struct MeshData {
 }
 
 impl MeshData {
+    #[cfg(feature = "obj_loading")]
     pub fn new(path: &Path, flip_uv_y: bool) -> Result<Self> {
         let (models, _materials) = tobj::load_obj(path, &obj_load_options())?;
         Self::from_tobj_models(models, &path.display().to_string(), flip_uv_y)
     }
 
-    /// Parse OBJ bytes into mesh data; MTL references are ignored.
+    #[cfg(feature = "obj_loading")]
     pub fn from_obj_bytes(bytes: &[u8], flip_uv_y: bool) -> Result<Self> {
         let mut reader = std::io::Cursor::new(bytes);
         let (models, _materials) = tobj::load_obj_buf(&mut reader, &obj_load_options(), |_| {
@@ -180,18 +240,15 @@ impl MeshData {
         Self::from_tobj_models(models, "<in-memory>", flip_uv_y)
     }
 
+    #[cfg(feature = "obj_loading")]
     fn from_tobj_models(models: Vec<tobj::Model>, source: &str, flip_uv_y: bool) -> Result<Self> {
         // Check data validity
         if models.len() > 1 {
-            return Err(Error::new(EngineError::InvalidModelFileMultipleMeshes(
-                source.to_string(),
-            )));
+            return Err(EngineError::InvalidModelFileMultipleMeshes(source.to_string()).into());
         }
 
         if models.is_empty() {
-            return Err(Error::new(EngineError::InvalidModelFile(
-                source.to_string(),
-            )));
+            return Err(EngineError::InvalidModelFile(source.to_string()).into());
         }
 
         // Load vertex data from model

@@ -1,11 +1,11 @@
-use crate::{config::*, ecs::*, graphics::*, resources::*};
+use crate::{app_config::EngineConfig, config::*, ecs::*, graphics::*, resources::*};
 
 use pill_core::{
     debug, error, get_game_error_message, get_type_name, info, EngineError, LogContext,
     PillSlotMapKey, PillStyle, PillTypeMap, Timer, Vector2f,
 };
 
-use anyhow::{Context, Error, Result};
+use pill_core::{ErrorContext, Result};
 use std::{any::TypeId, collections::VecDeque};
 use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
@@ -24,7 +24,7 @@ pub trait PillGame {
 
 /// Heart of Pill Engine
 pub struct Engine {
-    pub(crate) config: config::Config,
+    pub(crate) config: EngineConfig,
     pub(crate) game: Option<Game>,
     pub(crate) renderer: Box<dyn PillRenderer>,
     pub(crate) scene_manager: SceneManager,
@@ -48,7 +48,7 @@ impl Engine {
         game: Box<dyn PillGame>,
         game_resources_directory_path: std::path::PathBuf,
         renderer: Box<dyn PillRenderer>,
-        config: config::Config,
+        config: EngineConfig,
     ) -> Self {
         let max_entity_count = config
             .get_int("MAX_ENTITIES")
@@ -71,7 +71,7 @@ impl Engine {
     }
 
     #[cfg(feature = "headless")]
-    pub fn new(game: Box<dyn PillGame>, config: config::Config) -> Self {
+    pub fn new(game: Box<dyn PillGame>, config: EngineConfig) -> Self {
         let max_entity_count = config
             .get_int("MAX_ENTITIES")
             .unwrap_or(MAX_ENTITIES as i64) as usize;
@@ -208,9 +208,7 @@ impl Engine {
         let default_color_texture_handle = self.add_default_resource(Texture::new(
             DEFAULT_COLOR_TEXTURE_NAME,
             TextureType::Color,
-            ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/textures/default_color.png"
-            ))),
+            ResourceLoader::Bytes(Box::new(DEFAULT_COLOR_TEXTURE_BYTES)),
         ))?;
 
         debug!(LogContext::Engine => "Default color texture {} created", DEFAULT_COLOR_TEXTURE_NAME.name_style());
@@ -219,9 +217,7 @@ impl Engine {
         let default_normal_texture_handle = self.add_default_resource(Texture::new(
             DEFAULT_NORMAL_TEXTURE_NAME,
             TextureType::Normal,
-            ResourceLoader::Bytes(Box::new(*include_bytes!(
-                "../res/textures/default_normal.png"
-            ))),
+            ResourceLoader::Bytes(Box::new(DEFAULT_NORMAL_TEXTURE_BYTES)),
         ))?;
 
         debug!(LogContext::Engine => "Default normal texture {} created", DEFAULT_NORMAL_TEXTURE_NAME.name_style());
@@ -306,6 +302,7 @@ impl Engine {
         // Register global components
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
+        #[cfg(feature = "debug_ui")]
         self.add_global_component(EguiManagerComponent::new())?;
 
         #[cfg(not(feature = "headless"))]
@@ -382,11 +379,13 @@ impl Engine {
 
         // Run systems
         for update_phase_index in 0..self.system_manager.update_phases.len() {
-            for system_index in 0..self.system_manager.update_phases[update_phase_index].len() {
+            let (_, phase_systems) = &self.system_manager.update_phases[update_phase_index];
+            let phase_len = phase_systems.len();
+            for system_index in 0..phase_len {
                 let (system_name, update_phase, system_function);
                 {
-                    let system =
-                        &mut self.system_manager.update_phases[update_phase_index][system_index];
+                    let (_, system) =
+                        &mut self.system_manager.update_phases[update_phase_index].1[system_index];
                     if !system.enabled {
                         continue;
                     }
@@ -432,11 +431,11 @@ impl Engine {
                     Ok(None) => {
                         panic!(
                             "{}",
-                            Error::new(EngineError::NonReturnedSystemTimer(system_name.clone()))
+                            EngineError::NonReturnedSystemTimer(system_name.clone())
                         );
                     }
                     Err(e) => {
-                        panic!("{}", Error::new(EngineError::Other(e.to_string())));
+                        panic!("{}", EngineError::Other(e.to_string()));
                     }
                 };
 
@@ -526,7 +525,10 @@ impl Engine {
     }
 
     pub fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) {
+        #[cfg(feature = "debug_ui")]
         self.renderer.pass_input_to_egui(event).unwrap();
+        #[cfg(not(feature = "debug_ui"))]
+        let _ = event;
     }
 
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
@@ -746,9 +748,7 @@ impl Engine {
         let target_scene = self.scene_manager.get_scene(scene_handle)?;
 
         if target_scene.entity_has_component::<T>(entity_handle)? {
-            return Err(Error::new(EngineError::ComponentAlreadyExists(
-                get_type_name::<T>(),
-            )));
+            return Err(EngineError::ComponentAlreadyExists(get_type_name::<T>()).into());
         }
 
         // Initialize component
@@ -808,9 +808,7 @@ impl Engine {
     {
         // Check if component of this type is not already added
         if self.global_components.contains_key::<T>() {
-            return Err(Error::new(EngineError::GlobalComponentAlreadyExists(
-                get_type_name::<T>(),
-            )));
+            return Err(EngineError::GlobalComponentAlreadyExists(get_type_name::<T>()).into());
         }
 
         // Initialize component
@@ -832,9 +830,9 @@ impl Engine {
         let component = self
             .global_components
             .get::<T>()
-            .ok_or(Error::new(EngineError::GlobalComponentNotFound(
-                get_type_name::<T>(),
-            )))?
+            .ok_or_else(|| -> pill_core::PillError {
+                EngineError::GlobalComponentNotFound(get_type_name::<T>()).into()
+            })?
             .data
             .as_ref()
             .unwrap();
@@ -851,9 +849,9 @@ impl Engine {
         let component = self
             .global_components
             .get_mut::<T>()
-            .ok_or(Error::new(EngineError::GlobalComponentNotFound(
-                get_type_name::<T>(),
-            )))?
+            .ok_or_else(|| -> pill_core::PillError {
+                EngineError::GlobalComponentNotFound(get_type_name::<T>()).into()
+            })?
             .data
             .as_mut()
             .unwrap();
@@ -868,9 +866,7 @@ impl Engine {
     {
         // Check if the type of the component is the same as of the ones, which cannot be removed
         if ENGINE_GLOBAL_COMPONENTS.contains(&TypeId::of::<T>()) {
-            return Err(Error::new(EngineError::GlobalComponentCannotBeRemoved(
-                get_type_name::<T>(),
-            )));
+            return Err(EngineError::GlobalComponentCannotBeRemoved(get_type_name::<T>()).into());
         }
 
         // Remove and destroy component
@@ -1094,9 +1090,7 @@ impl Engine {
         // Check if resource has proper name
         let resource_name = resource.get_name();
         if enforce_name_check && resource_name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            return Err(Error::new(EngineError::WrongResourceName(
-                resource_name.clone(),
-            )));
+            return Err(EngineError::WrongResourceName(resource_name.clone()).into());
         }
 
         // Initialize resource
@@ -1177,10 +1171,8 @@ impl Engine {
             .context(error_message.to_string())?
             .get_name();
         if resource_name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            return Err(Error::new(EngineError::RemoveDefaultResource(
-                resource_name.clone(),
-            )))
-            .context(error_message.to_string());
+            return Err(EngineError::RemoveDefaultResource(resource_name.clone()))
+                .context(error_message.to_string());
         }
 
         // Remove and destroy resource
@@ -1212,10 +1204,8 @@ impl Engine {
 
         // Check if resource is not default
         if name.starts_with(DEFAULT_RESOURCE_PREFIX) {
-            return Err(Error::new(EngineError::RemoveDefaultResource(
-                name.to_string(),
-            )))
-            .context(error_message.to_string());
+            return Err(EngineError::RemoveDefaultResource(name.to_string()))
+                .context(error_message.to_string());
         }
 
         // Remove resource

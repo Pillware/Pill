@@ -28,7 +28,7 @@ use crate::{
     ecs::{GlobalComponent, GlobalComponentStorage, NetworkStateComponent, TransformComponent},
     engine::Engine,
 };
-use anyhow::Result;
+use pill_core::Result;
 use pill_core::{client_connect, server_start, NetworkClient, NetworkServer, PillTypeMapKey};
 use std::collections::HashMap;
 

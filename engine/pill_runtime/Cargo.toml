@@ -12,8 +12,6 @@ pill_core = { path = "../pill_core" }
 pill_engine = { path = "../pill_engine", features = ["internal"] }
 pill_renderer = { path = "../pill_renderer" }
 
-anyhow = "1.0"
-config = "0.11"
 libloading = "0.8.8"
 winit = "0.30.12"
 

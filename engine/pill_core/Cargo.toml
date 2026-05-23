@@ -10,22 +10,20 @@ edition = "2021"
 
 [dependencies]
 glam = { version = "0.30.8", features = ["serde"] }
-anyhow = "1.0.45"
 thiserror = "1.0.30"
-colored = "2.0.0"
 boolinator = "2.4.0"
-log = "0.4"
-indexmap = "1.7.0"
+log = { version = "0.4", features = ["release_max_level_off"] }
+web-time = "1.1"
+
+# Native-only dependencies (not available on WASM)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+colored = "2.0.0"
 config = "0.11"
 env_logger = "0.9.0"
 chrono = "0.4.19"
 strum_macros = "0.27.2"
 strum = "0.27.2"
 bincode = "1.0"
-web-time = "1.1"
-
-# Native-only networking (not available on WASM)
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 renet = "1.0.0"
 renet_netcode = "1.0.0"
 serde = { version = "1.0.228", features = ["derive"] }

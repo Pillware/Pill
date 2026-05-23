@@ -1,15 +1,17 @@
-use colored::Colorize;
-use config::Config;
 use log::LevelFilter;
-use std::io::Write;
-use std::str::FromStr;
-use std::{collections::HashMap, fmt::Debug};
-use strum_macros::{AsRefStr, EnumString};
 
 use crate::PillStyle;
 
+#[cfg(not(target_arch = "wasm32"))]
+use {
+    std::collections::HashMap,
+    std::io::Write,
+    strum_macros::{AsRefStr, EnumString},
+};
+
 /// Contexts for logging
 //#[derive(Debug, Eq, PartialEq, Hash)]
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Eq, PartialEq, Hash, AsRefStr, EnumString, Clone)]
 #[strum(serialize_all = "snake_case", ascii_case_insensitive)]
 pub enum LogContext {
@@ -20,6 +22,33 @@ pub enum LogContext {
     Rendering,
     Resources,
     Frame,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+pub enum LogContext {
+    HotReload,
+    Engine,
+    Input,
+    ECS,
+    Rendering,
+    Resources,
+    Frame,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl AsRef<str> for LogContext {
+    fn as_ref(&self) -> &str {
+        match self {
+            LogContext::HotReload => "hot_reload",
+            LogContext::Engine => "engine",
+            LogContext::Input => "input",
+            LogContext::ECS => "ecs",
+            LogContext::Rendering => "rendering",
+            LogContext::Resources => "resources",
+            LogContext::Frame => "frame",
+        }
+    }
 }
 
 pub fn get_default_log_levels() -> String {
@@ -36,6 +65,7 @@ pub fn get_default_log_levels() -> String {
 }
 
 /// Convert string to LevelFilter
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_log_level(level: &str) -> LevelFilter {
     match level.to_lowercase().as_str() {
         "info" => LevelFilter::Info,
@@ -48,6 +78,7 @@ fn parse_log_level(level: &str) -> LevelFilter {
 }
 
 /// Parse a string like "ecs: debug, renderer: info" or "ecs=debug, renderer=info"
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_config_log_settings(log_levels_config_setting: &str) -> HashMap<String, LevelFilter> {
     let mut map = HashMap::new();
     for context_log_level in log_levels_config_setting.split(',') {
@@ -65,16 +96,18 @@ fn parse_config_log_settings(log_levels_config_setting: &str) -> HashMap<String,
 }
 
 /// Initialize logger with per-context levels from Config
+#[cfg(not(target_arch = "wasm32"))]
 pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
     let context_levels = parse_config_log_settings(log_levels_config_setting);
 
-    fn styled_level(level: log::Level) -> colored::ColoredString {
+    fn styled_level(level: log::Level) -> String {
+        use colored::Colorize;
         match level {
-            log::Level::Info => "INFO".white(),
-            log::Level::Debug => "DEBUG".debug_style(),
-            log::Level::Warn => "WARN".warn_style(),
-            log::Level::Error => "ERROR".error_style(),
-            _ => level.to_string().white(),
+            log::Level::Info => "INFO".white().to_string(),
+            log::Level::Debug => "DEBUG".blue().bold().to_string(),
+            log::Level::Warn => "WARN".yellow().bold().to_string(),
+            log::Level::Error => "ERROR".red().bold().to_string(),
+            _ => level.to_string(),
         }
     }
 
@@ -112,6 +145,9 @@ pub fn set_log_levels(log_levels_config_setting: &str, show_date: bool) {
 
     builder.init();
 }
+
+#[cfg(target_arch = "wasm32")]
+pub fn set_log_levels(_log_levels_config_setting: &str, _show_date: bool) {}
 
 /// Context-aware logging macros
 /// Log an error message with context. The first argument must be a LogContext, and

@@ -2,7 +2,7 @@ use crate::engine::Engine;
 
 use pill_core::{PillSlotMapKey, PillTypeMapKey};
 
-use anyhow::Result;
+use pill_core::Result;
 use std::path::PathBuf;
 
 // --- Resource ---

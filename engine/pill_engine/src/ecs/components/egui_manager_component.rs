@@ -1,3 +1,5 @@
+#![cfg(feature = "debug_ui")]
+
 use std::collections::HashMap;
 
 use crate::{
@@ -11,7 +13,7 @@ use crate::{
 use egui::Ui;
 use pill_core::{PillTypeMapKey, Timer, TimerRecord};
 
-use anyhow::{Context, Result};
+use pill_core::{ErrorContext, Result};
 
 pub struct EguiManagerComponent {
     collapsing_state: HashMap<String, bool>,

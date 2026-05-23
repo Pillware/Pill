@@ -1,8 +1,8 @@
 use crate::{
     config::RENDERING_SYSTEM,
     ecs::{
-        CameraAspectRatio, CameraComponent, EguiManagerComponent, EntityHandle,
-        MeshRenderingComponent, TransformComponent,
+        CameraAspectRatio, CameraComponent, EntityHandle, MeshRenderingComponent,
+        TransformComponent,
     },
     engine::Engine,
     graphics::RenderQueueItem,
@@ -10,7 +10,7 @@ use crate::{
 
 use pill_core::{warn, EngineError, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer};
 
-use anyhow::{Context, Error, Result};
+use pill_core::{ErrorContext, Result};
 use web_time::Instant;
 
 pub fn rendering_system(engine: &mut Engine) -> Result<()> {
@@ -43,8 +43,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         }
     }
 
-    let active_camera_entity_handle =
-        active_camera_entity_handle_result.ok_or(Error::new(EngineError::NoActiveCamera))?;
+    let active_camera_entity_handle = active_camera_entity_handle_result
+        .ok_or_else(|| -> pill_core::PillError { EngineError::NoActiveCamera.into() })?;
 
     // - Prepare rendering data
     timer.record("Clear render queue");
@@ -98,7 +98,8 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     timer.record("Get component storages");
 
-    let egui_ui = EguiManagerComponent::get_ui(engine); // egui_manager_component.get_ui(engine);
+    #[cfg(feature = "debug_ui")]
+    let egui_ui = crate::ecs::EguiManagerComponent::get_ui(engine);
 
     let active_scene = engine.scene_manager.get_active_scene_mut()?;
     // Get storages
@@ -121,15 +122,28 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     timer.begin_context("Render");
 
     // Render
-    match engine.renderer.render(
+    let delta_time = engine.frame_delta_time;
+
+    #[cfg(feature = "debug_ui")]
+    let render_result = engine.renderer.render(
         active_camera_entity_handle,
         &engine.render_queue,
         camera_component_storage,
         transform_component_storage,
         egui_ui,
-        0.0,
+        delta_time,
         &mut timer,
-    ) {
+    );
+    #[cfg(not(feature = "debug_ui"))]
+    let render_result = engine.renderer.render(
+        active_camera_entity_handle,
+        &engine.render_queue,
+        camera_component_storage,
+        transform_component_storage,
+        delta_time,
+        &mut timer,
+    );
+    match render_result {
         Ok(_) => {
             timer.end_context()?; // End "Render" context
             engine.system_manager.update_system_timer(

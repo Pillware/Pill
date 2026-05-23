@@ -6,7 +6,7 @@ use crate::{
 
 use pill_core::{get_type_name, EngineError, PillSlotMapKey, PillStyle, PillTypeMapKey};
 
-use anyhow::{Context, Error, Result};
+use pill_core::{ErrorContext, Result};
 use rodio::Decoder;
 use std::{
     fs::File,
@@ -95,9 +95,10 @@ impl SoundData {
         // Open sound file
         let mut sound_file = match File::open(path) {
             Err(_err) => {
-                return Err(Error::new(EngineError::InvalidAssetPath(
+                return Err(EngineError::InvalidAssetPath(
                     path.clone().into_os_string().into_string().unwrap(),
-                )))
+                )
+                .into())
             }
             file => file?,
         };

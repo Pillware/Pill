@@ -1,7 +1,5 @@
 use crate::style::PillStyle;
 
-use anyhow::{Context, Error, Result};
-use colored::*;
 use thiserror::Error;
 
 // --- Core error ---
@@ -134,6 +132,8 @@ pub enum EngineError<'a> {
     Other(String),
 }
 
-pub fn err_prefix() -> ColoredString {
-    "\nERROR".error_style()
+#[cfg(not(target_arch = "wasm32"))]
+pub fn err_prefix() -> colored::ColoredString {
+    use colored::Colorize;
+    "\nERROR".red().bold()
 }

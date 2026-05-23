@@ -1,4 +1,5 @@
 use crate::{
+    app_config::EngineConfig,
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     graphics::{
         PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle,
@@ -8,9 +9,7 @@ use crate::{
     resources::{MeshData, ShaderParameterSlot, ShaderTextureSlot, TextureType},
 };
 
-use anyhow::Result;
-use image::DynamicImage;
-use indexmap::IndexMap;
+use pill_core::Result;
 use pill_core::Timer;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
@@ -18,7 +17,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 pub struct DummyRenderer;
 
 impl PillRenderer for DummyRenderer {
-    fn new(_window: Arc<Window>, _config: config::Config) -> Result<Self> {
+    fn new(_window: Arc<Window>, _config: EngineConfig) -> Result<Self> {
         Ok(DummyRenderer)
     }
 
@@ -30,7 +29,7 @@ impl PillRenderer for DummyRenderer {
         _vertex_wgsl: &str,
         _fragment_wgsl: &str,
         _texture_slots: &HashMap<String, ShaderTextureSlot>,
-        _parameter_slots: &IndexMap<String, ShaderParameterSlot>,
+        _parameter_slots: &[(String, ShaderParameterSlot)],
         _pass_engine_parameters: bool,
         _pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -41,7 +40,7 @@ impl PillRenderer for DummyRenderer {
         &mut self,
         _name: &str,
         _renderer_shader_handle: RendererShaderHandle,
-        _textures: &IndexMap<String, MaterialTexture>,
+        _textures: &[(String, MaterialTexture)],
         _parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle> {
         Ok(RendererMaterialHandle::default())
@@ -50,7 +49,9 @@ impl PillRenderer for DummyRenderer {
     fn create_texture(
         &mut self,
         _name: &str,
-        _image_data: &DynamicImage,
+        _rgba: &[u8],
+        _width: u32,
+        _height: u32,
         _texture_type: TextureType,
     ) -> Result<RendererTextureHandle> {
         Ok(RendererTextureHandle::default())
@@ -69,7 +70,7 @@ impl PillRenderer for DummyRenderer {
     fn update_material_textures(
         &mut self,
         _renderer_material_handle: RendererMaterialHandle,
-        _textures: &IndexMap<String, MaterialTexture>,
+        _textures: &[(String, MaterialTexture)],
     ) -> Result<()> {
         Ok(())
     }
@@ -113,10 +114,12 @@ impl PillRenderer for DummyRenderer {
         // no-op for dummy
     }
 
+    #[cfg(feature = "debug_ui")]
     fn pass_input_to_egui(&mut self, _event: &WindowEvent) -> Result<()> {
         Ok(())
     }
 
+    #[cfg(feature = "debug_ui")]
     fn render(
         &mut self,
         _active_camera_entity_handle: EntityHandle,
@@ -124,6 +127,19 @@ impl PillRenderer for DummyRenderer {
         _camera_component_storage: &ComponentStorage<CameraComponent>,
         _transform_component_storage: &ComponentStorage<TransformComponent>,
         _egui_ui: Box<dyn FnMut(&egui::Context)>,
+        _delta_time: f32,
+        _timer: &mut Timer,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(not(feature = "debug_ui"))]
+    fn render(
+        &mut self,
+        _active_camera_entity_handle: EntityHandle,
+        _render_queue: &[RenderQueueItem],
+        _camera_component_storage: &ComponentStorage<CameraComponent>,
+        _transform_component_storage: &ComponentStorage<TransformComponent>,
         _delta_time: f32,
         _timer: &mut Timer,
     ) -> Result<()> {

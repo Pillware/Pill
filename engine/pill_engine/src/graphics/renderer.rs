@@ -1,15 +1,15 @@
 #![allow(clippy::too_many_arguments)]
 use crate::{
+    app_config::EngineConfig,
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     graphics::RenderQueueItem,
     internal::{MaterialParameter, MaterialTexture, MeshData},
     resources::{ShaderParameterSlot, ShaderTextureSlot, TextureType},
 };
 
-use indexmap::IndexMap;
 use pill_core::Timer;
 
-use anyhow::Result;
+use pill_core::Result;
 use std::{collections::HashMap, sync::Arc};
 
 // --- Renderer resource handles ---
@@ -37,7 +37,7 @@ pill_core::define_new_pill_slotmap_key! {
 // --- Renderer trait definition ---
 
 pub trait PillRenderer {
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self>
+    fn new(window: Arc<winit::window::Window>, config: EngineConfig) -> Result<Self>
     where
         Self: Sized;
 
@@ -49,7 +49,7 @@ pub trait PillRenderer {
         vertex_wgsl: &str,
         fragment_wgsl: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &IndexMap<String, ShaderParameterSlot>,
+        parameter_slots: &[(String, ShaderParameterSlot)],
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle>;
@@ -58,14 +58,16 @@ pub trait PillRenderer {
         &mut self,
         name: &str,
         renderer_shader_handle: RendererShaderHandle,
-        textures: &IndexMap<String, MaterialTexture>,
+        textures: &[(String, MaterialTexture)],
         parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle>;
 
     fn create_texture(
         &mut self,
         name: &str,
-        image_data: &image::DynamicImage,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
         texture_type: TextureType,
     ) -> Result<RendererTextureHandle>;
 
@@ -78,7 +80,7 @@ pub trait PillRenderer {
     fn update_material_textures(
         &mut self,
         renderer_material_handle: RendererMaterialHandle,
-        textures: &IndexMap<String, MaterialTexture>,
+        textures: &[(String, MaterialTexture)],
     ) -> Result<()>;
 
     fn update_material_parameters(
@@ -103,8 +105,10 @@ pub trait PillRenderer {
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
+    #[cfg(feature = "debug_ui")]
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()>;
 
+    #[cfg(feature = "debug_ui")]
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
@@ -112,6 +116,17 @@ pub trait PillRenderer {
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
+        delta_time: f32,
+        timer: &mut Timer,
+    ) -> Result<()>;
+
+    #[cfg(not(feature = "debug_ui"))]
+    fn render(
+        &mut self,
+        active_camera_entity_handle: EntityHandle,
+        render_queue: &[RenderQueueItem],
+        camera_component_storage: &ComponentStorage<CameraComponent>,
+        transform_component_storage: &ComponentStorage<TransformComponent>,
         delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()>;

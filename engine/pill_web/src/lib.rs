@@ -18,6 +18,22 @@ use winit::{
 use pill_engine::internal::*;
 use pill_renderer::Renderer;
 
+// In release, every fallible call uses unwrap_unchecked so LLVM sees the Err
+// branch as UB and DCEs the whole branch — including format strings, Display
+// impls, and flt2dec that are only reachable through those panic paths.
+#[cfg(not(debug_assertions))]
+macro_rules! must {
+    ($e:expr) => {
+        unsafe { ($e).unwrap_unchecked() }
+    };
+}
+#[cfg(debug_assertions)]
+macro_rules! must {
+    ($e:expr) => {
+        ($e).unwrap()
+    };
+}
+
 /// Boots the game on a WebGPU canvas. Call from a `#[wasm_bindgen(start)]`
 /// shim in the per-game crate, after constructing the game's `PillGame` impl.
 ///
@@ -25,7 +41,9 @@ use pill_renderer::Renderer;
 /// embeds it into the per-game crate via `include_str!` because wasm has no
 /// filesystem at runtime.
 pub fn run(game: Box<dyn PillGame>, config_ini: &'static str) {
+    #[cfg(debug_assertions)]
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    #[cfg(debug_assertions)]
     console_log::init_with_level(log::Level::Debug).expect("Failed to init logger");
 
     log::info!(
@@ -38,16 +56,15 @@ pub fn run(game: Box<dyn PillGame>, config_ini: &'static str) {
 }
 
 async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
-    let event_loop = EventLoop::new().expect("Failed to create event loop");
+    let event_loop = must!(EventLoop::new());
 
     let window = {
         use winit::platform::web::WindowAttributesExtWebSys;
 
-        let canvas = web_sys::window()
+        let canvas = must!(web_sys::window()
             .and_then(|win| win.document())
             .and_then(|doc| doc.get_element_by_id("canvas"))
-            .and_then(|el| el.dyn_into::<web_sys::HtmlCanvasElement>().ok())
-            .expect("Failed to find canvas element with id 'canvas'");
+            .and_then(|el| el.dyn_into::<web_sys::HtmlCanvasElement>().ok()));
 
         // WebGPU surface creation requires non-zero dimensions. If the canvas
         // hasn't been laid out by CSS yet (pre-layout / hidden parent), the
@@ -61,9 +78,7 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
             .with_inner_size(PhysicalSize::new(width, height));
 
         #[allow(deprecated)]
-        event_loop
-            .create_window(attrs)
-            .expect("Failed to create window")
+        must!(event_loop.create_window(attrs))
     };
 
     let window = Arc::new(window);
@@ -77,33 +92,32 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
     // Parse the embedded config.ini provided by the per-game shim. Wasm has
     // no filesystem, so the launcher inlined the bytes via include_str! at
     // build time.
-    let mut config = config::Config::default();
-    if let Err(e) = config.merge(config::File::from_str(config_ini, config::FileFormat::Ini)) {
-        log::warn!("Failed to parse embedded config.ini: {e}");
-    }
-    let _ = config.set("WINDOW_WIDTH", window_size.width as i64);
-    let _ = config.set("WINDOW_HEIGHT", window_size.height as i64);
+    let mut config = pill_engine::internal::EngineConfig::from_ini(config_ini);
+    config.set("WINDOW_WIDTH", window_size.width as i64);
+    config.set("WINDOW_HEIGHT", window_size.height as i64);
 
     log::info!("Creating renderer...");
-    let renderer: Box<dyn PillRenderer> = Box::new(
-        Renderer::new_async(Arc::clone(&window), config.clone())
-            .await
-            .expect("Failed to create renderer"),
-    );
+    let renderer: Box<dyn PillRenderer> = Box::new(must!(
+        Renderer::new_async(Arc::clone(&window), config.clone()).await
+    ));
 
     log::info!("Creating engine...");
-
     let mut engine = Engine::new(game, std::path::PathBuf::from("res"), renderer, config);
 
     log::info!("Initializing engine...");
     match engine.initialize(Some(window_size)) {
-        Ok(()) => log::info!("engine.initialize() OK"),
-        Err(e) => {
-            log::error!("engine.initialize() FAILED: {:#}", e);
-            panic!("engine init failed: {:#}", e);
+        Ok(()) => {}
+        Err(_e) => {
+            #[cfg(debug_assertions)]
+            panic!("engine init failed: {:#}", _e);
+            // Safety: if initialize() fails the game is unrunnable regardless;
+            // treat as unreachable so LLVM DCEs EngineError::fmt + flt2dec.
+            #[cfg(not(debug_assertions))]
+            unsafe {
+                core::hint::unreachable_unchecked()
+            }
         }
     }
-    log::info!("Engine ready, starting event loop");
 
     let mut last_time = web_sys::window()
         .and_then(|w| w.performance())
@@ -140,11 +154,7 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
                     last_time = now;
                     let dt = std::time::Duration::from_secs_f64(dt_ms / 1000.0);
 
-                    if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        engine.update(dt);
-                    })) {
-                        log::error!("engine.update() panicked: {:?}", e);
-                    }
+                    engine.update(dt);
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     engine.pass_keyboard_key_input(event);

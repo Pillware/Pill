@@ -18,7 +18,7 @@ use pill_engine::{
     ComponentStorage,
 };
 
-use anyhow::{Error, Result};
+use pill_core::Result;
 
 #[derive(Debug, Clone, Default)]
 pub struct DrawingContext {
@@ -276,10 +276,10 @@ impl MeshDrawer {
                 let transform_slot = transform_component_storage
                     .data
                     .get(render_queue_item.entity_index as usize)
-                    .ok_or_else(|| Error::new(RendererError::Other))?;
+                    .ok_or_else(|| -> pill_core::PillError { RendererError::Other.into() })?;
                 let transform_component = transform_slot
                     .as_ref()
-                    .ok_or_else(|| Error::new(RendererError::Other))?;
+                    .ok_or_else(|| -> pill_core::PillError { RendererError::Other.into() })?;
                 //println!("Creating new instance with transform component: {:?} {:?}", i, transform_component.position);
                 self.instances.push(Instance::new(transform_component));
             }

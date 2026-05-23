@@ -1,5 +1,5 @@
-use anyhow::Result;
-use pill_engine::internal::{Engine, PillGame, TransformComponent, NetworkStateComponent, NetworkSide, NetworkEntityState, networking_system_server};
+use pill_core::Result;
+use pill_engine::internal::{Engine, EngineConfig, PillGame, TransformComponent, NetworkStateComponent, NetworkSide, NetworkEntityState, networking_system_server};
 use pill_core::{server_broadcast_exit, server_dying_grasp};
 use log::info;
 use std::time::{Duration, Instant};
@@ -71,10 +71,8 @@ fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let config = config::Config::default();
-
     let game: Box<dyn PillGame> = Box::new(HeadlessGame);
-    let mut engine = Engine::new(game, config);
+    let mut engine = Engine::new(game, EngineConfig::from_ini(""));
 
     engine.initialize(None)?;
 

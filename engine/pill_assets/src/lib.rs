@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 
 pub mod rules;
 
-pub use rules::{default_rules, HlslToWgsl};
+pub use rules::{default_rules, HlslToWgsl, ObjToCookedMesh, PngToCookedTex};
 
 pub trait Rule {
     /// Glob (relative to the pipeline root) selecting source inputs.
@@ -60,11 +60,13 @@ impl Pipeline {
                 .to_str()
                 .with_context(|| format!("non-UTF8 path in pipeline root: {pattern:?}"))?;
 
-            let matches = glob::glob(pattern_str)
-                .with_context(|| format!("invalid glob {pattern_str:?} for rule {}", rule.name()))?;
+            let matches = glob::glob(pattern_str).with_context(|| {
+                format!("invalid glob {pattern_str:?} for rule {}", rule.name())
+            })?;
 
             for entry in matches {
-                let input = entry.with_context(|| format!("glob entry error for rule {}", rule.name()))?;
+                let input =
+                    entry.with_context(|| format!("glob entry error for rule {}", rule.name()))?;
                 stats.discovered.push(input.clone());
 
                 let output = rule.output_for(&input);
@@ -79,8 +81,9 @@ impl Pipeline {
                         .with_context(|| format!("create output dir {parent:?}"))?;
                 }
 
-                rule.build(&input, &output)
-                    .with_context(|| format!("rule {} failed: {input:?} -> {output:?}", rule.name()))?;
+                rule.build(&input, &output).with_context(|| {
+                    format!("rule {} failed: {input:?} -> {output:?}", rule.name())
+                })?;
                 stats.rebuilt.push(output);
             }
         }

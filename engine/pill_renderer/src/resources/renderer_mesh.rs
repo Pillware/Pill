@@ -1,6 +1,6 @@
 use pill_engine::internal::{MeshData, MeshVertex};
 
-use anyhow::*;
+use pill_core::Result;
 use wgpu::util::DeviceExt;
 
 // --- Vertex ---

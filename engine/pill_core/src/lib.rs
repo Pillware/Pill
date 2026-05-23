@@ -15,6 +15,29 @@ mod style;
 mod timer;
 mod utils;
 
+// --- Error types ---
+
+pub type PillError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub type Result<T> = std::result::Result<T, PillError>;
+
+pub trait ErrorContext<T> {
+    fn context<E: Into<PillError>>(self, err: E) -> Result<T>;
+}
+
+impl<T> ErrorContext<T> for Option<T> {
+    #[inline]
+    fn context<E: Into<PillError>>(self, err: E) -> Result<T> {
+        self.ok_or_else(|| err.into())
+    }
+}
+
+impl<T, S: Into<PillError>> ErrorContext<T> for std::result::Result<T, S> {
+    #[inline]
+    fn context<E: Into<PillError>>(self, err: E) -> Result<T> {
+        self.map_err(|_| err.into())
+    }
+}
+
 // --- Use ---
 
 pub use math::{

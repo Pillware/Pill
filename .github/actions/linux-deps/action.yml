@@ -1,4 +1,4 @@
-iname: Install Linux deps
+name: Install Linux deps
 description: Install native Linux packages required to build Pill-Engine examples
 runs:
   using: "composite"
@@ -7,3 +7,10 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y pkg-config libasound2-dev libudev-dev plantuml mold
+    - shell: bash
+      run: |
+        SLANG_VERSION=2026.8.1
+        curl -sL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-x86_64-glibc-2.28.tar.gz" \
+          | sudo tar -xz -C /usr/local
+        sudo ldconfig
+        slangc -v

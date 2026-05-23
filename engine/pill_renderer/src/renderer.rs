@@ -1,7 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 use crate::{
     config::MAX_INSTANCE_PER_DRAWCALL_COUNT,
-    drawers::egui_drawer::EguiDrawer,
     drawers::mesh_drawer::MeshDrawer,
     instance::Instance,
     resources::{
@@ -10,20 +9,19 @@ use crate::{
     },
 };
 
-use indexmap::IndexMap;
-
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage,
-    EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer, RenderQueueItem,
-    RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle,
-    RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot, TextureType, TransformComponent,
+    EngineConfig, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer,
+    RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+    RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot,
+    TextureType, TransformComponent,
 };
 
 use pill_core::{debug, info, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer};
 
 use std::{collections::HashMap, sync::Arc};
 
-use anyhow::{Context, Error, Ok, Result};
+use pill_core::{ErrorContext, Result};
 
 pub struct Renderer {
     pub state: State,
@@ -33,7 +31,7 @@ impl Renderer {
     /// Async constructor for WASM - call this instead of PillRenderer::new on web
     pub async fn new_async(
         window: Arc<winit::window::Window>,
-        config: config::Config,
+        config: EngineConfig,
     ) -> Result<Self> {
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
         let state: State = State::new(window, config).await?;
@@ -43,7 +41,7 @@ impl Renderer {
 
 impl PillRenderer for Renderer {
     #[cfg(not(target_arch = "wasm32"))]
-    fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> {
+    fn new(window: Arc<winit::window::Window>, config: EngineConfig) -> Result<Self> {
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
         let state: State = pollster::block_on(State::new(window, config))?;
 
@@ -51,7 +49,7 @@ impl PillRenderer for Renderer {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn new(_window: Arc<winit::window::Window>, _config: config::Config) -> Result<Self> {
+    fn new(_window: Arc<winit::window::Window>, _config: EngineConfig) -> Result<Self> {
         panic!("Use Renderer::new_async on WASM")
     }
 
@@ -63,7 +61,7 @@ impl PillRenderer for Renderer {
         vertex_wgsl: &str,
         fragment_wgsl: &str,
         texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &IndexMap<String, ShaderParameterSlot>,
+        parameter_slots: &[(String, ShaderParameterSlot)],
         pass_engine_parameters: bool,
         pass_camera_parameters: bool,
     ) -> Result<RendererShaderHandle> {
@@ -98,7 +96,7 @@ impl PillRenderer for Renderer {
         &mut self,
         name: &str,
         renderer_shader_handle: RendererShaderHandle,
-        textures: &IndexMap<String, MaterialTexture>,
+        textures: &[(String, MaterialTexture)],
         parameters: &HashMap<String, MaterialParameter>,
     ) -> Result<RendererMaterialHandle> {
         let material = RendererMaterial::new(
@@ -121,14 +119,18 @@ impl PillRenderer for Renderer {
     fn create_texture(
         &mut self,
         name: &str,
-        image_data: &image::DynamicImage,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
         texture_type: TextureType,
     ) -> Result<RendererTextureHandle> {
         let texture = RendererTexture::new_texture(
             &self.state.device,
             &self.state.queue,
             Some(name),
-            image_data,
+            rgba,
+            width,
+            height,
             texture_type,
         )?;
         let handle = self
@@ -159,7 +161,7 @@ impl PillRenderer for Renderer {
     fn update_material_textures(
         &mut self,
         renderer_material_handle: RendererMaterialHandle,
-        textures: &IndexMap<String, MaterialTexture>,
+        textures: &[(String, MaterialTexture)],
     ) -> Result<()> {
         RendererMaterial::update_textures(
             &self.state.device,
@@ -239,11 +241,13 @@ impl PillRenderer for Renderer {
         self.state.resize(new_window_size)
     }
 
+    #[cfg(feature = "debug_ui")]
     fn pass_input_to_egui(&mut self, event: &winit::event::WindowEvent) -> Result<()> {
         self.state.egui_drawer.handle_input(event);
         Ok(())
     }
 
+    #[cfg(feature = "debug_ui")]
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
@@ -254,12 +258,32 @@ impl PillRenderer for Renderer {
         delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()> {
+        self.state.pending_egui_ui = Some(egui_ui);
         self.state.render(
             active_camera_entity_handle,
             render_queue,
             camera_component_storage,
             transform_component_storage,
-            egui_ui,
+            delta_time,
+            timer,
+        )
+    }
+
+    #[cfg(not(feature = "debug_ui"))]
+    fn render(
+        &mut self,
+        active_camera_entity_handle: EntityHandle,
+        render_queue: &[RenderQueueItem],
+        camera_component_storage: &ComponentStorage<CameraComponent>,
+        transform_component_storage: &ComponentStorage<TransformComponent>,
+        delta_time: f32,
+        timer: &mut Timer,
+    ) -> Result<()> {
+        self.state.render(
+            active_camera_entity_handle,
+            render_queue,
+            camera_component_storage,
+            transform_component_storage,
             delta_time,
             timer,
         )
@@ -280,7 +304,10 @@ pub struct State {
     depth_texture: RendererTexture,
     // Drawers
     mesh_drawer: MeshDrawer,
-    egui_drawer: EguiDrawer,
+    #[cfg(feature = "debug_ui")]
+    egui_drawer: crate::drawers::egui_drawer::EguiDrawer,
+    #[cfg(feature = "debug_ui")]
+    pending_egui_ui: Option<Box<dyn FnMut(&egui::Context)>>,
     // Other
     camera_bind_group_layout: wgpu::BindGroupLayout,
     //profiler: Profiler,
@@ -288,7 +315,7 @@ pub struct State {
 
 impl State {
     // Creating some of the wgpu types requires async code
-    async fn new(window: Arc<winit::window::Window>, config: config::Config) -> Result<Self> {
+    async fn new(window: Arc<winit::window::Window>, config: EngineConfig) -> Result<Self> {
         let window_width = config
             .get_int("WINDOW_WIDTH")
             .context("WINDOW_WIDTH is missing from config")? as u32;
@@ -296,6 +323,7 @@ impl State {
             .get_int("WINDOW_HEIGHT")
             .context("WINDOW_HEIGHT is missing from config")? as u32;
         let window_size = winit::dpi::PhysicalSize::new(window_width, window_height);
+        #[cfg(feature = "debug_ui")]
         let window_ref = window.clone();
 
         // 1. Create instance and surface
@@ -450,12 +478,15 @@ impl State {
         let renderer_resource_storage = RendererResourceStorage::new(&device, &config)?;
 
         // 8. Drawers
-        let (mesh_drawer, egui_drawer) = {
-            let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
-            let egui_drawer =
-                EguiDrawer::new(&device, surface_configuration.format, None, 1, window_ref);
-            (mesh_drawer, egui_drawer)
-        };
+        let mesh_drawer = MeshDrawer::new(&device, MAX_INSTANCE_PER_DRAWCALL_COUNT as u32);
+        #[cfg(feature = "debug_ui")]
+        let egui_drawer = crate::drawers::egui_drawer::EguiDrawer::new(
+            &device,
+            surface_configuration.format,
+            None,
+            1,
+            window_ref,
+        );
 
         // 9. Profiler
         // let profiler = {
@@ -486,7 +517,10 @@ impl State {
             depth_texture,
             // Drawers
             mesh_drawer,
+            #[cfg(feature = "debug_ui")]
             egui_drawer,
+            #[cfg(feature = "debug_ui")]
+            pending_egui_ui: None,
             // Other
             camera_bind_group_layout,
             // profiler
@@ -517,8 +551,7 @@ impl State {
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
-        egui_ui: Box<dyn FnMut(&egui::Context)>,
-        delta_time: f32,
+        _delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()> {
         debug!(LogContext::Frame => "Starting frame render");
@@ -558,7 +591,6 @@ impl State {
         // CameraComponent) can be forwarded into the `engine` UBO alongside delta_time.
         self.renderer_resource_storage.engine_parameters.update(
             &self.queue,
-            delta_time,
             active_camera_component.fog_density,
             [
                 active_camera_component.fog_color.x,
@@ -572,7 +604,9 @@ impl State {
             .get_mut(get_renderer_resource_handle_from_camera_component(
                 active_camera_component,
             ))
-            .ok_or(Error::new(RendererError::RendererResourceNotFound))?;
+            .ok_or_else(|| -> pill_core::PillError {
+                RendererError::RendererResourceNotFound.into()
+            })?;
         let camera_transform_storage = transform_component_storage
             .data
             .get(active_camera_entity_handle.data().index as usize)
@@ -652,11 +686,11 @@ impl State {
         }
 
         // Render egui UI
-        {
+        #[cfg(feature = "debug_ui")]
+        if let Some(egui_ui) = self.pending_egui_ui.take() {
             timer.begin_context("Egui Draw");
             debug!(LogContext::Frame => "Start recording egui draw commands");
 
-            // Render egui UI
             self.egui_drawer.record_draw_commands(
                 &self.device,
                 &self.queue,

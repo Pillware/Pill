@@ -2,6 +2,7 @@
 
 #[cfg(feature = "headless")]
 mod dummy_renderer;
+#[cfg(feature = "debug_ui")]
 mod egui;
 mod render_queue;
 mod renderer;
@@ -15,6 +16,7 @@ pub use renderer::{
 
 #[cfg(feature = "headless")]
 pub use self::dummy_renderer::DummyRenderer;
+#[cfg(feature = "debug_ui")]
 pub use egui::EguiUI;
 
 pub use render_queue::{

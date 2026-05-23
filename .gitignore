@@ -9,3 +9,4 @@ engine/pill_engine/docs/uml_out/*
 engine/target_*
 
 *.log
+*.wgsl

@@ -198,19 +198,19 @@ impl PillGame for WebGame {
         engine.register_component::<HeroPillComponent>(active_scene)?;
 
         // Assets embedded in the binary (zero runtime I/O on any target).
-        let pill_mesh = engine.add_resource(Mesh::from_obj_bytes(
+        let pill_mesh = engine.add_resource(Mesh::from_cooked_mesh_bytes(
             "pill",
-            include_bytes!("../res/models/pill.obj"),
+            include_bytes!("../res/models/pill.cooked_mesh"),
         )?)?;
         let color_tex = engine.add_resource::<Texture>(Texture::from_bytes(
             "pill_color",
             TextureType::Color,
-            include_bytes!("../res/textures/pill_color.png"),
+            include_bytes!("../res/textures/pill_color.cooked_tex"),
         ))?;
         let normal_tex = engine.add_resource::<Texture>(Texture::from_bytes(
             "pill_normal",
             TextureType::Normal,
-            include_bytes!("../res/textures/pill_normal.png"),
+            include_bytes!("../res/textures/pill_normal.cooked_tex"),
         ))?;
 
         let tunnel_materials: Vec<MaterialHandle> = PALETTE

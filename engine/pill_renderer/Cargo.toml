@@ -7,35 +7,28 @@ edition = "2021"
 pill_core = {path = "../pill_core"}
 pill_engine = {path = "../pill_engine", features = ["internal"]}
 
-# Data containers
-indexmap = "1.7.0"
-
-# Loaders
-image = "0.23"
-
-# Errors
-anyhow = "1.0"
-
 # Logging
-log = "0.4"
+log = { version = "0.4", features = ["release_max_level_off"] }
 
 # Other
-wgpu = "25.0.0"
 glam = { version = "0.30.8", features = ["serde", "bytemuck"] }
 winit = "0.30.12"
 cgmath = "0.18"
 bytemuck = { version = "1.4", features = [ "derive" ] }
-config = "0.11"
-
-# egui
-egui = "0.32.1"
-egui-wgpu = { version = "0.32.1", features = ["winit"] }
+# egui (optional — enabled by debug_ui feature)
+egui = { version = "0.32.1", optional = true }
+egui-wgpu = { version = "0.32.1", features = ["winit"], optional = true }
 
 # Native-only dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wgpu = "25.0.0"
 pollster = "0.2"
-egui-winit = { version = "0.32.1", features = ["clipboard"] }
+egui-winit = { version = "0.32.1", features = ["clipboard"], optional = true }
 
 # WASM dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-egui-winit = { version = "0.32.1", default-features = false }
+wgpu = { version = "25.0.0", default-features = false, features = ["webgpu", "wgsl"] }
+egui-winit = { version = "0.32.1", default-features = false, optional = true }
+
+[features]
+debug_ui = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit", "pill_engine/debug_ui"]

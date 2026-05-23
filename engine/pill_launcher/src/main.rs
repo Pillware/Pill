@@ -805,8 +805,9 @@ fn build_game_project(
     // Pre-render PUML only for non-hot-reload builds
     let pill_engine_dir = get_path(Location::PillEngineCrate);
     if *compile_mode != CompileMode::HotReload {
-        render_puml_for_crate(&pill_engine_dir)
-            .context("Failed to render PlantUML diagrams for pill_engine")?;
+        if let Err(e) = render_puml_for_crate(&pill_engine_dir) {
+            eprintln!("Warning: skipping PlantUML render ({})", e);
+        }
     }
 
     let mut arguments = vec![
@@ -1004,8 +1005,9 @@ fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Pre-render all PUML in the engine crate
     let pill_engine_dir = get_path(Location::PillEngineCrate);
-    render_puml_for_crate(&pill_engine_dir)
-        .context("Failed to render PlantUML diagrams for pill_engine")?;
+    if let Err(e) = render_puml_for_crate(&pill_engine_dir) {
+        eprintln!("Warning: skipping PlantUML render ({})", e);
+    }
 
     // Game dev docs
     let arguments = vec![
@@ -1169,6 +1171,12 @@ fn run_app() -> Result<()> {
         .required(false)
         .help("Build/run target: native standalone executable or WASM+WebGPU for the browser");
 
+    let max_wasm_size_option = Arg::with_name("max-wasm-size")
+        .long("max-wasm-size")
+        .takes_value(true)
+        .required(false)
+        .help("Fail WASM release build if final binary exceeds N KB");
+
     let game_args = Arg::with_name("game-args")
         .help("Arguments passed through to cargo/game (use `--` to separate them)")
         .multiple(true)
@@ -1183,6 +1191,7 @@ fn run_app() -> Result<()> {
         .arg(output_path_option)
         .arg(compile_mode_option)
         .arg(target_option)
+        .arg(max_wasm_size_option)
         .arg(game_args)
         .setting(AppSettings::TrailingVarArg);
 
@@ -1212,6 +1221,10 @@ fn run_app() -> Result<()> {
         "web" => BuildTarget::Web,
         _ => BuildTarget::Native,
     };
+
+    let max_wasm_size_kb: Option<u64> = matches
+        .value_of("max-wasm-size")
+        .and_then(|s| s.parse().ok());
 
     match action_argument {
         "create" => {
@@ -1277,7 +1290,7 @@ fn run_app() -> Result<()> {
                             "Note: `-o/--output-path` is ignored with `-t wasm`; output is fixed at <game>/build/wasm/"
                         );
                     }
-                    wasm_build::build(&game_project_directory_path, &compile_mode)
+                    wasm_build::build(&game_project_directory_path, &compile_mode, max_wasm_size_kb)
                         .context("Failed to build game project for wasm")?;
                 }
             }

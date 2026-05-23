@@ -17,7 +17,7 @@ use fs_extra::dir::CopyOptions;
 
 use crate::{get_path, modify_file, size_report, CompileMode, Location};
 
-pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode) -> Result<()> {
+pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode, max_size_kb: Option<u64>) -> Result<()> {
     println!("Building WASM/WebGPU target for game project at {game_project_directory_path:?}...");
     if *compile_mode == CompileMode::HotReload {
         println!("Note: hot-reload is not meaningful for WASM; using --dev mode.");
@@ -52,6 +52,20 @@ pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode) -> 
             .join("release")
             .join("pill_web_app.wasm");
         size_report::print(&build_wasm_dir, &preopt_wasm);
+
+        if let Some(limit) = max_size_kb {
+            let final_wasm = build_wasm_dir.join("pill_web_app_bg.wasm");
+            let actual = fs::metadata(&final_wasm)
+                .context("Cannot stat final WASM")?.len();
+            if actual > limit * 1024 {
+                bail!(
+                    "WASM binary {:.1} KB exceeds budget {} KB",
+                    actual as f64 / 1024.0,
+                    limit
+                );
+            }
+            println!("Size guard OK ({:.1} KB ≤ {} KB)", actual as f64 / 1024.0, limit);
+        }
     }
 
     println!();

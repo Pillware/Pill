@@ -17,8 +17,7 @@
 //! This module uses the **reliable, ordered** channel by default. The constants
 //! [`RELIABLE_CHANNEL_ID`] and [`UNRELIABLE_CHANNEL_ID`] mirror `renet::DefaultChannel`.
 
-use crate::EngineError;
-use anyhow::{Context, Result};
+use crate::{EngineError, ErrorContext, PillError, Result};
 use renet::{ConnectionConfig, DefaultChannel, RenetClient, RenetServer, ServerEvent};
 use renet_netcode::{
     ClientAuthentication, NetcodeClientTransport, NetcodeError, NetcodeServerTransport,
@@ -56,12 +55,12 @@ pub struct ExitNotice {
 }
 
 impl TryFrom<u8> for NetworkAction {
-    type Error = anyhow::Error;
+    type Error = PillError;
 
     /// Convert a wire `u8` into a [`NetworkAction`].
     ///
     /// Returns an error if the value is not a known action.
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
             0 => Ok(NetworkAction::Update),
             1 => Ok(NetworkAction::Join),
@@ -114,8 +113,8 @@ fn now() -> Duration {
 /// reconnects, or nonblocking IO (e.g. `WouldBlock`, `Interrupted`,
 /// `ClientNotConnected`, `Disconnected`).
 #[inline]
-pub fn is_not_ready(err: &anyhow::Error) -> bool {
-    if let Some(e) = err.downcast_ref::<NetcodeTransportError>() {
+pub fn is_not_ready(err: &PillError) -> bool {
+    if let Some(e) = (**err).downcast_ref::<NetcodeTransportError>() {
         return match e {
             NetcodeTransportError::Netcode(ne) => {
                 matches!(
@@ -130,7 +129,7 @@ pub fn is_not_ready(err: &anyhow::Error) -> bool {
         };
     }
 
-    if let Some(ne) = err.downcast_ref::<NetcodeError>() {
+    if let Some(ne) = (**err).downcast_ref::<NetcodeError>() {
         return matches!(
             ne,
             NetcodeError::ClientNotConnected | NetcodeError::Disconnected(_)
@@ -159,7 +158,7 @@ pub fn is_not_ready(err: &anyhow::Error) -> bool {
 ///     }
 ///     server_flush(&mut server)?;
 /// }
-/// # Ok::<_, anyhow::Error>(())
+/// # Ok::<_, pill_core::PillError>(())
 /// ```
 pub fn server_start(bind: &str, max_clients: usize) -> Result<NetworkServer> {
     let address: SocketAddr = bind.parse()?;
@@ -208,7 +207,7 @@ pub fn server_start(bind: &str, max_clients: usize) -> Result<NetworkServer> {
 ///    }
 ///    client_flush(&mut client)?;
 /// }
-/// # Ok::<_, anyhow::Error>(())
+/// # Ok::<_, pill_core::PillError>(())
 /// ```
 pub fn client_connect(bind: &str, client_id: u64) -> Result<NetworkClient> {
     let server_addr: SocketAddr = bind.parse()?;
@@ -219,7 +218,7 @@ pub fn client_connect(bind: &str, client_id: u64) -> Result<NetworkClient> {
     };
 
     let socket = UdpSocket::bind(local_bind)
-        .with_context(|| format!("Client failed to bind local UDP socket at {}", local_bind))?;
+        .map_err(|e| format!("Client failed to bind local UDP socket at {local_bind}: {e}"))?;
     socket.set_nonblocking(true)?;
 
     let client = RenetClient::new(ConnectionConfig::default());
@@ -439,7 +438,7 @@ pub fn client_flush(net: &mut NetworkClient) -> Result<()> {
 /// - Unknown tag (propagates [`EngineError::InvalidNetworkAction`]).
 fn decode_wire(buf: &[u8]) -> Result<NetworkPacket> {
     let Some((tag_byte, data)) = buf.split_first() else {
-        anyhow::bail!("Received empty message")
+        return Err("Received empty message".into());
     };
     let tag = NetworkAction::try_from(*tag_byte)?;
     Ok(NetworkPacket {

@@ -1,8 +1,8 @@
 use crate::{
     ecs::{
         deferred_update_system, input_system, rendering_system, time_system,
-        DeferredUpdateComponent, EguiManagerComponent, InputComponent, PlayerId, SystemFunction,
-        TimeComponent, UpdatePhase,
+        DeferredUpdateComponent, InputComponent, PlayerId, SystemFunction, TimeComponent,
+        UpdatePhase,
     },
     graphics::{RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle},
     resources::{MaterialHandle, ShaderHandle, TextureHandle, TextureType},
@@ -86,6 +86,16 @@ pub const MAX_SOUNDS: usize = 10;
 pub const DEFAULT_RESOURCE_PREFIX: &str = "pill_engine";
 pub const DEFAULT_COLOR_TEXTURE_NAME: &str = "pill_engine_default_color";
 pub const DEFAULT_NORMAL_TEXTURE_NAME: &str = "pill_engine_default_normal";
+
+// RTEX layout: b"RTEX" | u32LE version=1 | u32LE width | u32LE height | raw RGBA bytes
+pub const DEFAULT_COLOR_TEXTURE_BYTES: [u8; 20] = [
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 255, 255, 255,
+    255, // white albedo
+];
+pub const DEFAULT_NORMAL_TEXTURE_BYTES: [u8; 20] = [
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 128, 128, 255,
+    255, // flat normal (0,0,1)
+];
 
 // Default lit shader
 pub const DEFAULT_LIT_SHADER_NAME: &str = "pill_engine_default_lit_shader";
@@ -202,23 +212,18 @@ pub fn get_default_material_handles() -> (MaterialHandle, RendererMaterialHandle
     (DEFAULT_MATERIAL_HANDLE, DEFAULT_RENDERER_MATERIAL_HANDLE)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 lazy_static! {
-    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
-        TypeId::of::<InputComponent>(),
-        TypeId::of::<TimeComponent>(),
-        TypeId::of::<AudioManagerComponent>(),
-        TypeId::of::<DeferredUpdateComponent>(),
-        TypeId::of::<EguiManagerComponent>()
-    );
-}
-
-#[cfg(target_arch = "wasm32")]
-lazy_static! {
-    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = vec!(
-        TypeId::of::<InputComponent>(),
-        TypeId::of::<TimeComponent>(),
-        TypeId::of::<DeferredUpdateComponent>(),
-        TypeId::of::<EguiManagerComponent>()
-    );
+    pub static ref ENGINE_GLOBAL_COMPONENTS: Vec<TypeId> = {
+        #[allow(unused_mut)]
+        let mut component_types = vec![
+            TypeId::of::<InputComponent>(),
+            TypeId::of::<TimeComponent>(),
+            TypeId::of::<DeferredUpdateComponent>(),
+        ];
+        #[cfg(not(target_arch = "wasm32"))]
+        component_types.push(TypeId::of::<AudioManagerComponent>());
+        #[cfg(feature = "debug_ui")]
+        component_types.push(TypeId::of::<crate::ecs::EguiManagerComponent>());
+        component_types
+    };
 }

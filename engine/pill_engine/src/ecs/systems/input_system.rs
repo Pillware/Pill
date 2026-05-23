@@ -7,7 +7,7 @@ use crate::{
 };
 use pill_core::Vector2f;
 
-use anyhow::Result;
+use pill_core::Result;
 use winit::event::{ElementState, MouseScrollDelta};
 
 #[cfg(not(target_arch = "wasm32"))]

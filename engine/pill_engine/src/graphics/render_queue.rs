@@ -5,9 +5,9 @@ use crate::{
 
 use pill_core::PillSlotMapKey;
 
-use anyhow::Result;
 use core::fmt::{self, Debug};
 use lazy_static::lazy_static;
+use pill_core::Result;
 use std::{
     cmp::Ordering,
     convert::TryInto,

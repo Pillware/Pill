@@ -4,9 +4,7 @@ use crate::{
     resources::{Material, Resource, ResourceLoader, ResourceStorage},
 };
 
-use pill_core::{get_type_name, PillSlotMapKey, PillStyle, PillTypeMapKey};
-
-use anyhow::{Context, Result};
+use pill_core::{get_type_name, ErrorContext, PillSlotMapKey, PillStyle, PillTypeMapKey, Result};
 pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }
@@ -48,6 +46,50 @@ impl Texture {
     }
 }
 
+fn decode_cooked_tex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
+    if bytes.len() < 16 || &bytes[0..4] != b"RTEX" {
+        return Err(pill_core::PillError::from(
+            "not a valid .cooked_tex file (bad magic or truncated header)",
+        ));
+    }
+    let width = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
+    let height = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
+    Ok((bytes[16..].to_vec(), width, height))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn decode_png(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
+    let decoder = png::Decoder::new(bytes);
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| -> pill_core::PillError { e.to_string().into() })?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| -> pill_core::PillError { e.to_string().into() })?;
+    let width = info.width;
+    let height = info.height;
+    let raw = &buf[..info.buffer_size()];
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => raw.to_vec(),
+        png::ColorType::Rgb => raw
+            .chunks(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
+        png::ColorType::Grayscale => raw.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::GrayscaleAlpha => raw
+            .chunks(2)
+            .flat_map(|p| [p[0], p[0], p[0], p[1]])
+            .collect(),
+        _ => {
+            let e: pill_core::PillError =
+                format!("unsupported PNG color type: {:?}", info.color_type).into();
+            return Err(e);
+        }
+    };
+    Ok((rgba, width, height))
+}
+
 impl PillTypeMapKey for Texture {
     type Storage = ResourceStorage<Texture>;
 }
@@ -67,26 +109,62 @@ impl Resource for Texture {
         );
 
         // Create new renderer texture resource
-        let image_data = match &self.resource_loader {
+        let (rgba, width, height) = match &self.resource_loader {
             ResourceLoader::Path(path) => {
-                // Check if path to asset is correct
-                let resource_file_path = engine.game_resources_directory_path.join(path);
-                pill_core::validate_asset_path(&resource_file_path, &["png", "jpg", "gif", "tif"])?;
-
-                // Load data
-                image::open(&resource_file_path)?
+                let base = engine.game_resources_directory_path.join(path);
+                let cooked_tex_path = base.with_extension("cooked_tex");
+                if cooked_tex_path.exists() {
+                    let bytes =
+                        std::fs::read(&cooked_tex_path).map_err(|e| -> pill_core::PillError {
+                            format!("Failed to read texture {cooked_tex_path:?}: {e}").into()
+                        })?;
+                    decode_cooked_tex(&bytes)?
+                } else {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        // Check if path to asset is correct
+                        pill_core::validate_asset_path(&base, &["png", "cooked_tex"])?;
+                        let bytes = std::fs::read(&base).map_err(|e| -> pill_core::PillError {
+                            format!("Failed to read texture {base:?}: {e}").into()
+                        })?;
+                        if base.extension().map(|e| e == "cooked_tex").unwrap_or(false) {
+                            decode_cooked_tex(&bytes)?
+                        } else {
+                            decode_png(&bytes)?
+                        }
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        return Err(pill_core::PillError::from(format!(
+                            "No preprocessed .cooked_tex found for {:?}; run `pill_launcher -a assets`",
+                            base
+                        )));
+                    }
+                }
             }
             ResourceLoader::Bytes(bytes) => {
-                // Load data
-                image::load_from_memory(bytes)?
+                if bytes.starts_with(b"RTEX") {
+                    decode_cooked_tex(bytes)?
+                } else {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        decode_png(bytes)?
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        return Err(pill_core::PillError::from(
+                            "Texture::from_bytes on wasm requires pre-converted COOKED_TEX format",
+                        ));
+                    }
+                }
             }
         };
 
         // Create renderer texture resource
         let renderer_resource_handle = engine
             .renderer
-            .create_texture(&self.name, &image_data, self.texture_type)
-            .context(error_message.clone())?;
+            .create_texture(&self.name, &rgba, width, height, self.texture_type)
+            .context(error_message)?;
         self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
@@ -112,38 +190,12 @@ impl Resource for Texture {
                 .expect("Critical: Resource is None");
 
             // Update texture slots
-            let mut material_updated = false;
-            // Iterate all texture slots in material and remove one with handle to this texture
-            // for (texture_slot_name, texture_slot) in material.textures.iter_mut() {
-            //     if texture_slot.texture_handle.data() == self_handle.data() { // TODO: Add proper handle comparison method
-            //         material.textures.remove(texture_slot_name);
-            //         material_updated = true;
-            //     }
-            // }
+            let before = material.textures.len();
+            material
+                .textures
+                .retain(|(_, slot)| slot.texture_handle.data() != self_handle.data());
 
-            let mut texture_slots_to_remove = Vec::new();
-            for (texture_slot_name, texture_slot) in material.textures.iter() {
-                if texture_slot.texture_handle.data() == self_handle.data() {
-                    texture_slots_to_remove.push(texture_slot_name.clone());
-                }
-            }
-            for texture_slot in texture_slots_to_remove {
-                material.textures.remove(&texture_slot);
-                material_updated = true;
-            }
-
-            // for texture_slot in material.textures.iter_mut() {
-            //     if let Some(texture_handle) = texture_slot.1.texture_handle {
-            //         // If material texture has handle to this texture
-            //         if texture_handle.data() == self_handle.data() {
-            //             texture_slot.1.texture_handle = None;
-            //             texture_slot.1.renderer_texture_handle = None;
-            //             material_updated = true;
-            //         }
-            //     }
-            // }
-
-            if material_updated {
+            if material.textures.len() < before {
                 engine
                     .renderer
                     .update_material_textures(

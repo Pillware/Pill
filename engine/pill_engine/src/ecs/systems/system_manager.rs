@@ -2,9 +2,8 @@ use crate::engine::Engine;
 
 use pill_core::{EngineError, Timer};
 
-use anyhow::{Error, Result};
 use core::fmt;
-use indexmap::IndexMap;
+use pill_core::Result;
 use std::fmt::Display;
 
 pub type SystemFunction = fn(engine: &mut Engine) -> Result<()>;
@@ -31,34 +30,46 @@ impl Display for UpdatePhase {
 }
 
 pub struct SystemManager {
-    pub(crate) update_phases: IndexMap<UpdatePhase, IndexMap<String, System>>,
+    // Outer Vec preserves phase execution order (PreGame → Game → PostGame).
+    // Inner Vec preserves system registration order within each phase.
+    pub(crate) update_phases: Vec<(UpdatePhase, Vec<(String, System)>)>,
 }
 
 impl SystemManager {
     pub fn new() -> Self {
-        let mut update_phases = IndexMap::<UpdatePhase, IndexMap<String, System>>::new();
-
         // Register phases
-        update_phases.insert(UpdatePhase::PreGame, IndexMap::<String, System>::new());
-        update_phases.insert(UpdatePhase::Game, IndexMap::<String, System>::new());
-        update_phases.insert(UpdatePhase::PostGame, IndexMap::<String, System>::new());
+        Self {
+            update_phases: vec![
+                (UpdatePhase::PreGame, Vec::new()),
+                (UpdatePhase::Game, Vec::new()),
+                (UpdatePhase::PostGame, Vec::new()),
+            ],
+        }
+    }
 
-        Self { update_phases }
+    fn phase_systems_mut(
+        &mut self,
+        update_phase: &UpdatePhase,
+    ) -> Result<&mut Vec<(String, System)>> {
+        self.update_phases
+            .iter_mut()
+            .find(|(phase, _)| phase == update_phase)
+            .map(|(_, systems)| systems)
+            .ok_or_else(|| {
+                EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)).into()
+            })
     }
 
     pub fn get_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<&mut System> {
         // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
-            EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
-        ))?;
-
+        let phase_str = format!("{}", update_phase);
+        let system_collection = self.phase_systems_mut(&update_phase)?;
         // Get system by name
         system_collection
-            .get_mut(name)
-            .ok_or(Error::new(EngineError::SystemNotFound(
-                name.to_string(),
-                format!("{}", update_phase),
-            )))
+            .iter_mut()
+            .find(|(system_name, _)| system_name == name)
+            .map(|(_, system)| system)
+            .ok_or_else(|| EngineError::SystemNotFound(name.to_string(), phase_str).into())
     }
 
     pub fn add_system(
@@ -68,50 +79,42 @@ impl SystemManager {
         update_phase: UpdatePhase,
     ) -> Result<()> {
         // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
-            EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
-        ))?;
+        let phase_str = format!("{}", update_phase);
+        let system_collection = self.phase_systems_mut(&update_phase)?;
 
         // Check if system with that name already exists
-        if system_collection.contains_key(name) {
-            return Err(Error::new(EngineError::SystemAlreadyExists(
-                name.to_string(),
-                format!("{}", update_phase),
-            )));
+        if system_collection.iter().any(|(k, _)| k == name) {
+            return Err(EngineError::SystemAlreadyExists(name.to_string(), phase_str).into());
         }
 
         // Create system object
-        let system_object = System {
-            name: name.to_string(),
-            update_phase,
-            system_function,
-            enabled: true,
-            timer: Some(Timer::new()),
-        };
-
         // Add system
-        system_collection.insert(name.to_string(), system_object);
+        system_collection.push((
+            name.to_string(),
+            System {
+                name: name.to_string(),
+                update_phase,
+                system_function,
+                enabled: true,
+                timer: Some(Timer::new()),
+            },
+        ));
 
         Ok(())
     }
 
     pub fn remove_system(&mut self, name: &str, update_phase: UpdatePhase) -> Result<()> {
         // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
-            EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
-        ))?;
+        let phase_str = format!("{}", update_phase);
+        let system_collection = self.phase_systems_mut(&update_phase)?;
 
         // Check if system with that name exists
-        if !system_collection.contains_key(name) {
-            return Err(Error::new(EngineError::SystemNotFound(
-                name.to_string(),
-                format!("{}", update_phase),
-            )));
+        if !system_collection.iter().any(|(k, _)| k == name) {
+            return Err(EngineError::SystemNotFound(name.to_string(), phase_str).into());
         }
 
         // Remove system
-        system_collection.remove(name);
-
+        system_collection.retain(|(k, _)| k != name);
         Ok(())
     }
 
@@ -121,23 +124,9 @@ impl SystemManager {
         update_phase: UpdatePhase,
         enabled: bool,
     ) -> Result<()> {
-        // Find collection of systems for given update phase
-        let system_collection = self.update_phases.get_mut(&update_phase).ok_or(Error::new(
-            EngineError::SystemUpdatePhaseNotFound(format!("{}", update_phase)),
-        ))?;
-
-        // Check if system with that name exists
-        let system =
-            system_collection
-                .get_mut(name)
-                .ok_or(Error::new(EngineError::SystemNotFound(
-                    name.to_string(),
-                    format!("{}", update_phase),
-                )))?;
-
+        let system = self.get_system(name, update_phase)?;
         // Set system state
         system.enabled = enabled;
-
         Ok(())
     }
 
@@ -165,10 +154,8 @@ impl SystemManager {
     ) -> Result<()> {
         // Get system by name
         let system = self.get_system(name, update_phase)?;
-
         // Update timer
         system.timer = Some(timer);
-
         Ok(())
     }
 }

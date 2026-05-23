@@ -11,9 +11,8 @@ pub fn print(build_wasm_dir: &Path, preopt_wasm: &Path) {
     let Ok(preopt_size) = fs::metadata(preopt_wasm).map(|m| m.len()) else {
         return;
     };
-    let final_size = fs::metadata(build_wasm_dir.join("pill_web_app_bg.wasm"))
-        .ok()
-        .map(|m| m.len());
+    let final_wasm = build_wasm_dir.join("pill_web_app_bg.wasm");
+    let final_size = fs::metadata(&final_wasm).ok().map(|m| m.len());
 
     println!();
     match final_size {
@@ -25,61 +24,118 @@ pub fn print(build_wasm_dir: &Path, preopt_wasm: &Path) {
         None => println!("wasm size: pre-opt {}", fmt_bytes(preopt_size)),
     }
 
+    // Run twiggy on both binaries when available so we can see what actually
+    // survives wasm-opt (the pre-opt binary contains wasm-bindgen custom
+    // sections that are stripped during optimization).
+    if let Some(f) = final_size {
+        println!();
+        println!("--- Final binary analysis ({}) ---", fmt_bytes(f));
+        match run_twiggy_analysis(&final_wasm, f) {
+            TwiggyResult::NoTwiggy => {
+                println!("(install twiggy for per-crate breakdown: cargo install twiggy)");
+            }
+            TwiggyResult::Done => {}
+            TwiggyResult::Empty | TwiggyResult::Error => {}
+        }
+    }
+
+    println!();
+    println!("--- Pre-opt analysis ({}) ---", fmt_bytes(preopt_size));
+    if let TwiggyResult::NoTwiggy = run_twiggy_analysis(preopt_wasm, preopt_size) {
+        println!("(install twiggy for per-crate breakdown: cargo install twiggy)");
+    }
+}
+
+enum TwiggyResult {
+    Done,
+    Empty,
+    Error,
+    NoTwiggy,
+}
+
+fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
     // `twiggy top` lists items by retained size. `-n 15000` returns effectively
     // the full symbol table (typical wasm bundles have a few thousand symbols);
     // we aggregate downstream in `classify_crate` / `parse_twiggy`, so we want
     // the whole list, not just the biggest N.
     let output = match Command::new("twiggy")
         .args(["top", "-n", "15000"])
-        .arg(preopt_wasm)
+        .arg(wasm_path)
         .stderr(Stdio::null())
         .output()
     {
         Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            println!("(install twiggy for per-crate breakdown: cargo install twiggy)");
-            return;
-        }
-        Err(_) => return,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return TwiggyResult::NoTwiggy,
+        Err(_) => return TwiggyResult::Error,
     };
     if !output.status.success() {
-        return;
+        return TwiggyResult::Error;
     }
     let Ok(stdout) = String::from_utf8(output.stdout) else {
-        return;
+        return TwiggyResult::Error;
     };
 
     let items = parse_twiggy(&stdout);
     if items.is_empty() {
-        return;
+        return TwiggyResult::Empty;
     }
-
-    // Percentages are against the actual binary size, not the sum of twiggy's
-    // shallow bytes (which double-counts — e.g. symbols referencing .rodata).
-    let total = preopt_size;
 
     let mut by_crate: HashMap<String, u64> = HashMap::new();
     for (bytes, name) in &items {
         *by_crate.entry(classify_crate(name)).or_insert(0) += *bytes;
     }
-    let mut groups: Vec<(String, u64)> = by_crate.into_iter().collect();
+    let mut groups: Vec<(String, u64)> = by_crate.clone().into_iter().collect();
     groups.sort_by(|a, b| b.1.cmp(&a.1));
 
+    const ENGINE_LIBS: &[&str] = &["pill_engine", "pill_renderer", "pill_core", "pill_web"];
+    const GAME_LIBS: &[&str] = &["pill_game"];
+    let excluded: Vec<&str> = ENGINE_LIBS.iter().chain(GAME_LIBS.iter()).copied().collect();
+
+    let engine_total: u64 = ENGINE_LIBS
+        .iter()
+        .map(|k| by_crate.get(*k).copied().unwrap_or(0))
+        .sum();
+
     println!();
-    println!("Crate breakdown (% of pre-opt {}):", fmt_bytes(total));
-    println!("  {:<18} {:>10} {:>7}", "crate", "size", "%");
-    for (crate_name, bytes) in groups.iter().take(15) {
+    println!("  Engine libs — BUDGET (% of {}):", fmt_bytes(total));
+    println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
+    for lib in ENGINE_LIBS {
+        let bytes = by_crate.get(*lib).copied().unwrap_or(0);
+        let pct = 100.0 * bytes as f64 / total as f64;
+        println!("    {:<20} {:>10} {:>6.1}%", lib, fmt_bytes(bytes), pct);
+    }
+    let epct = 100.0 * engine_total as f64 / total as f64;
+    println!("    {:<20} {:>10} {:>6.1}%  ← engine total", "---", fmt_bytes(engine_total), epct);
+
+    let game_bytes = by_crate.get("pill_game").copied().unwrap_or(0);
+    let game_rodata = by_crate.get("[game-rodata]").copied().unwrap_or(0);
+    println!();
+    println!("  Game (monitor only — excluded from engine budget):");
+    println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
+    println!("    {:<20} {:>10} {:>6.1}%  (game logic)", "pill_game", fmt_bytes(game_bytes), 100.0 * game_bytes as f64 / total as f64);
+    println!("    {:<20} {:>10} {:>6.1}%  (embedded assets via include_bytes!)", "[game-assets]", fmt_bytes(game_rodata), 100.0 * game_rodata as f64 / total as f64);
+
+    println!();
+    println!("  3rd party (top 15):");
+    println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
+    for (crate_name, bytes) in groups
+        .iter()
+        .filter(|(k, _)| !excluded.contains(&k.as_str()))
+        .take(15)
+    {
         let pct = 100.0 * *bytes as f64 / total as f64;
-        println!("  {:<18} {:>10} {:>6.1}%", crate_name, fmt_bytes(*bytes), pct);
+        println!("    {:<20} {:>10} {:>6.1}%", crate_name, fmt_bytes(*bytes), pct);
     }
 
     println!();
-    println!("Top 10 symbols:");
+    println!("  Top 10 symbols:");
     for (bytes, name) in items.iter().take(10) {
         let pct = 100.0 * *bytes as f64 / total as f64;
         let display = truncate_display(name, 72);
         println!("  {:>10} {:>5.1}%  {}", fmt_bytes(*bytes), pct, display);
     }
+
+    TwiggyResult::Done
 }
 
 // Parse twiggy's default text output. Each data row:
@@ -139,6 +195,9 @@ fn fmt_bytes(n: u64) -> String {
 // correctness, only for the per-family rollup in the printed report.
 fn classify_crate(name: &str) -> String {
     if name.contains(".rodata") || name.contains("data segment") {
+        if name.contains("pill_game") {
+            return "[game-rodata]".into();
+        }
         return "[rodata]".into();
     }
     if name.contains("function names") {

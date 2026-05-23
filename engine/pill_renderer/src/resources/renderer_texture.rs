@@ -1,7 +1,6 @@
 use pill_engine::internal::TextureType;
 
-use anyhow::*;
-use image::GenericImageView;
+use pill_core::Result;
 
 // --- Texture ---
 
@@ -22,16 +21,15 @@ impl RendererTexture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         name: Option<&str>,
-        image_data: &image::DynamicImage,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
         texture_type: TextureType,
     ) -> Result<Self> {
-        let dimensions = image_data.dimensions();
-        let rgba = image_data.to_rgba8();
-
         // Get size
         let size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
 
@@ -54,23 +52,6 @@ impl RendererTexture {
         });
 
         // Write data to texture
-        // queue.write_texture(
-        //     wgpu::ImageCopyTexture {
-        //         aspect: wgpu::TextureAspect::All,
-        //         texture: &texture,
-        //         mip_level: 0,
-        //         origin: wgpu::Origin3d::ZERO,
-        //     },
-        //     &rgba,
-        //     wgpu::ImageDataLayout {
-        //         offset: 0,
-        //         bytes_per_row: Some(4 * dimensions.0),
-        //         rows_per_image: Some(dimensions.1),
-        //     },
-        //     size,
-        // );
-
-        // Write data to texture
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -78,11 +59,11 @@ impl RendererTexture {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &rgba,
+            rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
             },
             size,
         );
@@ -103,14 +84,11 @@ impl RendererTexture {
             ..Default::default()
         });
 
-        // Create final texture
-        let texture = Self {
+        Ok(Self {
             texture,
             texture_view,
             sampler,
-        };
-
-        Ok(texture)
+        })
     }
 
     pub fn new_depth_texture(
@@ -155,13 +133,10 @@ impl RendererTexture {
             ..Default::default()
         });
 
-        // Create final texture
-        let texture = Self {
+        Ok(Self {
             texture,
             texture_view,
             sampler,
-        };
-
-        Ok(texture)
+        })
     }
 }
