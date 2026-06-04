@@ -334,6 +334,11 @@ impl Engine {
             ))?;
         }
 
+        #[cfg(feature = "physics")]
+        {
+            self.add_global_component(PhysicsGlobalComponent::new())?;
+        }
+
         // Add built-in systems
         self.system_manager.add_system(
             TIME_SYSTEM.name,
@@ -372,6 +377,15 @@ impl Engine {
             build_status_system,
             UpdatePhase::PostGame,
         )?;
+
+        #[cfg(feature = "physics")]
+        {
+            self.system_manager.add_system(
+                PHYSICS_SYSTEM.name,
+                PHYSICS_SYSTEM.system_function,
+                PHYSICS_SYSTEM.update_phase,
+            )?;
+        }
 
         // Create default resources
         self.create_default_resources()
