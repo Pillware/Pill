@@ -111,7 +111,7 @@ impl RigidBodyComponent {
     }
 
     fn post_deferred_update_request(&mut self, request_variant: usize) {
-        if self.deferred_update_manager.is_some() {
+        if let Some(manager) = &mut self.deferred_update_manager {
             let entity_handle = self.entity_handle.expect(
                 "Critical: Cannot post deferred update request. No EntityHandle set in Component",
             );
@@ -123,10 +123,7 @@ impl RigidBodyComponent {
                 scene_handle,
                 request_variant,
             );
-            self.deferred_update_manager
-                .as_mut()
-                .expect("Critical: No DeferredUpdateManager")
-                .post_update_request(request);
+            manager.post_update_request(request);
         }
     }
 }

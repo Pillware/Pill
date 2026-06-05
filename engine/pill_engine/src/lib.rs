@@ -80,6 +80,11 @@ pub mod game {
         resources::Sound,
     };
 
+    #[cfg(feature = "physics")]
+    pub use crate::ecs::{
+        ColliderComponent, PhysicsWorldComponent, RigidBodyComponent, RigidBodyType, SharedShape,
+    };
+
     extern crate pill_core;
     pub use pill_core::{
         create_game, define_new_pill_slotmap_key, Color, PillTypeMapKey, Vector2f, Vector2i,
