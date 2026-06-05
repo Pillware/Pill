@@ -1,7 +1,7 @@
 use crate::ecs::components::{Component, GlobalComponent, GlobalComponentStorage};
 
-use anyhow::{Context, Error, Result};
 use pill_core::PillTypeMapKey;
+use pill_core::{ErrorContext, Result};
 use rapier3d::prelude::*;
 
 /// A global component that manages the Rapier physics world.
@@ -23,7 +23,7 @@ use rapier3d::prelude::*;
 pub struct PhysicsWorldComponent {
     pub rigid_body_set: RigidBodySet,
     pub collider_set: ColliderSet,
-    pub gravity: Vector<Real>,
+    pub gravity: Vector,
     pub integration_parameters: IntegrationParameters,
     pub physics_pipeline: PhysicsPipeline,
     pub island_manager: IslandManager,
@@ -48,9 +48,9 @@ impl PhysicsWorldComponent {
         // );
         // let mut query_pipeline = QueryPipeline::new();
         Self {
-            rigid_body_set: rigid_body_set,
-            collider_set: collider_set,
-            gravity: vector![0.0, -9.81, 0.0],
+            rigid_body_set,
+            collider_set,
+            gravity: vector![0.0, -9.81, 0.0].into(),
             integration_parameters: IntegrationParameters::default(),
             physics_pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
@@ -65,13 +65,13 @@ impl PhysicsWorldComponent {
         }
     }
 
-    pub fn set_gravity(&mut self, gravity: Vector<Real>) {
+    pub fn set_gravity(&mut self, gravity: Vector) {
         self.gravity = gravity;
     }
 
     pub fn step(&mut self) {
         self.physics_pipeline.step(
-            &self.gravity,
+            self.gravity,
             &self.integration_parameters,
             &mut self.island_manager,
             &mut self.broad_phase,

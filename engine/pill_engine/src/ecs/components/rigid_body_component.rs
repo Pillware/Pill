@@ -6,8 +6,8 @@ use crate::{
     engine::Engine,
 };
 
-use anyhow::{Context, Error, Result};
 use pill_core::{get_type_name, PillStyle, PillTypeMapKey};
+use pill_core::{ErrorContext, Result};
 use rapier3d::prelude::*;
 
 const DEFERRED_REQUEST_VARIANT_ADD: usize = 0;
@@ -53,7 +53,7 @@ pub struct RigidBodyComponent {
     #[readonly]
     pub additional_mass: Option<RigidBodyAdditionalMassProps>,
     #[readonly]
-    pub initial_position: Isometry<Real>,
+    pub initial_position: Pose,
     #[readonly]
     pub ccd_enabled: bool,
     #[readonly]
@@ -79,7 +79,7 @@ impl RigidBodyComponent {
             angular_damping: 0.0,
             gravity_scale: 1.0,
             additional_mass: None,
-            initial_position: Isometry::identity(),
+            initial_position: Pose::identity(),
             ccd_enabled: false,
             dominance_group: 0,
             can_sleep: true,
@@ -194,8 +194,8 @@ impl PillTypeMapKey for RigidBodyComponent {
 // Implement Into<rapier3d::dynamics::RigidBody> for RigidBodyComponent
 impl Into<RigidBody> for RigidBodyComponent {
     fn into(self) -> rapier3d::dynamics::RigidBody {
-        let mut builder = rapier3d::dynamics::RigidBodyBuilder::new(self.body_type)
-            .position(self.initial_position)
+        let builder = rapier3d::dynamics::RigidBodyBuilder::new(self.body_type)
+            .pose(self.initial_position)
             .locked_axes(self.locked_axes)
             .linear_damping(self.linear_damping)
             .angular_damping(self.angular_damping)
@@ -245,7 +245,7 @@ impl Component for RigidBodyComponent {
                 self.rigid_body_handle = Some(physics_world.rigid_body_set.insert(rigid_body));
             }
             _ => {
-                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().sobj_style());
+                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
             }
         }
 

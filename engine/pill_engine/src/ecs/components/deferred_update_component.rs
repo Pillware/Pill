@@ -270,6 +270,7 @@ impl DeferredUpdateManager {
 
 // --- Manager pointer ---
 
+#[derive(Clone)]
 pub struct DeferredUpdateManagerPointer(pub(crate) Arc<Mutex<DeferredUpdateManager>>);
 
 impl DeferredUpdateManagerPointer {

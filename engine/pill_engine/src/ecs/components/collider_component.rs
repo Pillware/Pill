@@ -7,9 +7,9 @@ use crate::{
     engine::Engine,
 };
 
-use anyhow::{Context, Error, Result};
 use pill_core::{get_type_name, PillStyle, PillTypeMapKey, Vector3f};
-use rapier3d::{na::Vector3, prelude::*};
+use pill_core::{ErrorContext, Result};
+use rapier3d::prelude::*;
 
 const DEFERRED_REQUEST_VARIANT_ADD: usize = 0;
 
@@ -19,7 +19,7 @@ pub struct ColliderComponent {
     #[readonly]
     pub shape: SharedShape,
     #[readonly]
-    pub position: Isometry<Real>,
+    pub position: Pose,
     #[readonly]
     pub friction: Real,
     #[readonly]
@@ -43,7 +43,7 @@ impl ColliderComponent {
     pub fn new() -> Self {
         Self {
             shape: SharedShape::cuboid(0.5, 0.5, 0.5),
-            position: Isometry::identity(),
+            position: Pose::identity(),
             friction: 0.5,
             restitution: 0.0,
             mass: 1.0,
@@ -167,14 +167,13 @@ impl ColliderComponentBuilder {
         self
     }
 
-    pub fn position(mut self, position: Isometry<Real>) -> Self {
+    pub fn position(mut self, position: Pose) -> Self {
         self.component.position = position;
         self
     }
 
     pub fn translation(mut self, translation: Vector3f) -> Self {
-        self.component.position =
-            Isometry::translation(translation.x, translation.y, translation.z);
+        self.component.position = Pose::translation(translation.x, translation.y, translation.z);
         self
     }
 
@@ -190,7 +189,7 @@ impl PillTypeMapKey for ColliderComponent {
 // Implement Into<rapier3d::dynamics::RigidBody> for RigidBodyComponent
 impl Into<Collider> for ColliderComponent {
     fn into(self) -> Collider {
-        let mut builder = ColliderBuilder::new(self.shape)
+        let builder = ColliderBuilder::new(self.shape)
             .position(self.position)
             .friction(self.friction)
             .restitution(self.restitution)
@@ -261,7 +260,7 @@ impl Component for ColliderComponent {
                 }
             }
             _ => {
-                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().sobj_style());
+                panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
             }
         }
 
