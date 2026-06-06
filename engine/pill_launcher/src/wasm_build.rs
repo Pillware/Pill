@@ -29,6 +29,11 @@ pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode, max
     let scratch_pill_web_app_dir = build_wasm_dir.join(".build").join("pill_web_app");
     let scratch_pkg_dir = build_wasm_dir.join(".build").join("pkg");
 
+    // Cook assets before wasm-pack — cooked files are git-ignored and embedded
+    // via include_bytes! at compile time, so they must exist for the game crate
+    // to compile on a fresh checkout.
+    crate::cook_assets(game_project_directory_path)?;
+
     prepare_scratch_crate(&wasm_template_dir, &scratch_pill_web_app_dir)?;
     embed_game_config(game_project_directory_path, &scratch_pill_web_app_dir)?;
     rewrite_scratch_manifest(&scratch_pill_web_app_dir, game_project_directory_path)?;

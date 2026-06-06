@@ -777,6 +777,24 @@ fn run_game_project(
     Ok(())
 }
 
+// Cook source assets (HLSL→WGSL, OBJ→cooked_mesh, PNG→cooked_tex) into the game
+// project's res dir. Cooked outputs are git-ignored and `include_bytes!`'d at
+// compile time (esp. on wasm), so they must exist before the game crate builds.
+pub(crate) fn cook_assets(game_project_directory_path: &Path) -> Result<()> {
+    let pipeline = pill_assets::Pipeline {
+        root: game_project_directory_path.join("res"),
+        rules: pill_assets::default_rules(),
+    };
+    let stats = pipeline.run().context("Asset pipeline failed")?;
+    println!(
+        "Assets: discovered={} rebuilt={} skipped={}",
+        stats.discovered.len(),
+        stats.rebuilt.len(),
+        stats.skipped.len()
+    );
+    Ok(())
+}
+
 fn build_game_project(
     game_project_directory_path: &PathBuf,
     output_directory_path: &PathBuf,
@@ -786,6 +804,10 @@ fn build_game_project(
         "Building game project from {}...",
         game_project_directory_path.display()
     );
+
+    // Cook assets before compiling — cooked files are git-ignored and embedded
+    // via include_bytes! at compile time.
+    cook_assets(game_project_directory_path)?;
 
     let hot_reload_child = *compile_mode == CompileMode::HotReload
         && std::env::var("PILL_HOT_RELOAD_CHILD").ok().as_deref() == Some("1");
@@ -1326,18 +1348,7 @@ fn run_app() -> Result<()> {
             .context("Failed to absolutize project directory path")?
             .to_path_buf();
 
-            let pipeline = pill_assets::Pipeline {
-                root: project_dir.join("res"),
-                rules: pill_assets::default_rules(),
-            };
-            let stats = pipeline.run().context("Asset pipeline failed")?;
-            println!(
-                "Assets: discovered={} rebuilt={} skipped={} (root: {})",
-                stats.discovered.len(),
-                stats.rebuilt.len(),
-                stats.skipped.len(),
-                pipeline.root.display()
-            );
+            cook_assets(&project_dir)?;
         }
         _ => {
             println!("Undefined action");

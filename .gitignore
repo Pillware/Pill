@@ -10,3 +10,5 @@ engine/target_*
 
 *.log
 *.wgsl
+*.cooked_mesh
+*.cooked_tex

@@ -27,8 +27,8 @@ impl PillGame for Game {
         // Add shaders
         let cartoon_shader_handle = engine.add_resource(Shader::new(
             "cartoon",
-            ResourceLoader::Path("shaders/default_vertex.glsl".into()),
-            ResourceLoader::Path("shaders/cartoon_fragment.glsl".into()),
+            ResourceLoader::Path("shaders/default_vertex.wgsl".into()),
+            ResourceLoader::Path("shaders/cartoon_fragment.wgsl".into()),
             vec![(
                 "posterize_level".to_string(),
                 ShaderParameterSlot::new(ShaderParameterType::Scalar),
@@ -81,12 +81,12 @@ impl PillGame for Game {
             engine.add_resource::<Texture>(Texture::new(
                 "chimpanzini_bananini",
                 TextureType::Color,
-                ResourceLoader::Path("textures/chimpanzini_bananini_color.jpg".into()),
+                ResourceLoader::Path("textures/chimpanzini_bananini_color.png".into()),
             ))?;
 
         println!("Added resources!!!!!!!!!!!!!!!");
         // Add materials
-        let _chimpanzini_bananini_material_handle = engine.add_resource::<Material>(
+        let chimpanzini_bananini_material_handle_cartoon = engine.add_resource::<Material>(
             Material::builder("chimpanzini_bananini_cartoon")
                 .shader(cartoon_shader_handle)?
                 .texture("color", chimpanzini_bananini_color_texture_handle)?
@@ -159,6 +159,23 @@ impl PillGame for Game {
             .with_component(
                 MeshRenderingComponent::builder()
                     .material(&chimpanzini_bananini_material_handle_unlit)
+                    .mesh(&chimpanzini_bananini_mesh_handle)
+                    .build(),
+            )
+            .with_component(TagAlphaComponent {})
+            .build();
+
+        // Create chimpanzini bananini entity with the custom cartoon (posterize) shader
+        engine
+            .build_entity(active_scene)
+            .with_component(
+                TransformComponent::builder()
+                    .position(Vector3f::new(0.0, 0.0, 1.5))
+                    .build(),
+            )
+            .with_component(
+                MeshRenderingComponent::builder()
+                    .material(&chimpanzini_bananini_material_handle_cartoon)
                     .mesh(&chimpanzini_bananini_mesh_handle)
                     .build(),
             )

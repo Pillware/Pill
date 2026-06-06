@@ -110,42 +110,42 @@ impl PillGame for Game {
         let fabric_color_texture = Texture::new(
             "fabric_color",
             TextureType::Color,
-            ResourceLoader::Path("textures/fabric_color.jpg".into()),
+            ResourceLoader::Path("textures/fabric_color.png".into()),
         );
         let fabric_color_texture_handle = engine.add_resource::<Texture>(fabric_color_texture)?;
 
         let fabric_normal_texture = Texture::new(
             "fabric_normal",
             TextureType::Normal,
-            ResourceLoader::Path("textures/fabric_normal.jpg".into()),
+            ResourceLoader::Path("textures/fabric_normal.png".into()),
         );
         let fabric_normal_texture_handle = engine.add_resource::<Texture>(fabric_normal_texture)?;
 
         let stones_color_texture = Texture::new(
             "stones_color",
             TextureType::Color,
-            ResourceLoader::Path("textures/stones_color.jpg".into()),
+            ResourceLoader::Path("textures/stones_color.png".into()),
         );
         let stones_color_texture_handle = engine.add_resource::<Texture>(stones_color_texture)?;
 
         let stones_normal_texture = Texture::new(
             "stones_normal",
             TextureType::Normal,
-            ResourceLoader::Path("textures/stones_normal.jpg".into()),
+            ResourceLoader::Path("textures/stones_normal.png".into()),
         );
         let stones_normal_texture_handle = engine.add_resource::<Texture>(stones_normal_texture)?;
 
         let organic_color_texture = Texture::new(
             "organic_color",
             TextureType::Color,
-            ResourceLoader::Path("textures/organic_color.jpg".into()),
+            ResourceLoader::Path("textures/organic_color.png".into()),
         );
         let organic_color_texture_handle = engine.add_resource::<Texture>(organic_color_texture)?;
 
         let organic_normal_texture = Texture::new(
             "organic_normal",
             TextureType::Normal,
-            ResourceLoader::Path("textures/organic_normal.jpg".into()),
+            ResourceLoader::Path("textures/organic_normal.png".into()),
         );
         let organic_normal_texture_handle =
             engine.add_resource::<Texture>(organic_normal_texture)?;
