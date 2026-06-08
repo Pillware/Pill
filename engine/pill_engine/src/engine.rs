@@ -387,6 +387,13 @@ impl Engine {
             )?;
         }
 
+        #[cfg(feature = "debug_ui")]
+        self.system_manager.add_system(
+            "build_status_system",
+            build_status_system,
+            UpdatePhase::PostGame,
+        )?;
+
         // Create default resources
         self.create_default_resources()
             .context("Failed to create default resources")?;
