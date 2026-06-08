@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 pill_abi = { path = "../pill_abi" }
 pill_core = { path = "../pill_core" }
 pill_engine = { path = "../pill_engine", features = ["internal"] }
-pill_renderer = { path = "../pill_renderer" }
+pill_renderer = { path = "../pill_renderer", features = ["debug_ui"] }
 
 libloading = "0.8.8"
 winit = "0.30.12"

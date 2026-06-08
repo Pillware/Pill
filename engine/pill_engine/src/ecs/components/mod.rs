@@ -6,6 +6,8 @@ pub(crate) mod audio_listener_component;
 pub(crate) mod audio_manager_component;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod audio_source_component;
+#[cfg(feature = "debug_ui")]
+pub(crate) mod build_status_indicator_component;
 pub(crate) mod camera_component;
 mod component;
 mod component_storage;

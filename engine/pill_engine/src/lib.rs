@@ -91,7 +91,7 @@ pub mod game {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod internal_mod {
-    pub use crate::app_config::EngineConfig;
+    pub use crate::app_config::{BuildTarget, CompileMode, EngineConfig, EngineProcessInfo};
     pub use crate::{
         config::*,
         ecs::{
@@ -120,7 +120,7 @@ mod internal_mod {
 
 #[cfg(target_arch = "wasm32")]
 mod internal_mod {
-    pub use crate::app_config::EngineConfig;
+    pub use crate::app_config::{BuildTarget, CompileMode, EngineConfig, EngineProcessInfo};
     pub use crate::{
         config::*,
         ecs::{

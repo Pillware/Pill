@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use crate::{
     ecs::{
         components::{GlobalComponent, GlobalComponentStorage},
-        UpdatePhase,
+        BuildStatus, BuildStatusIndicatorComponent, UpdatePhase,
     },
     engine::Engine,
+    internal::CompileMode,
 };
 
-use egui::Ui;
+use egui::{Color32, Ui};
 use pill_core::{PillTypeMapKey, Timer, TimerRecord};
 
 use pill_core::{ErrorContext, Result};
@@ -25,6 +26,7 @@ impl Default for EguiManagerComponent {
     }
 }
 
+// TODO: add the build type/status
 impl EguiManagerComponent {
     pub fn new() -> Self {
         Self {
@@ -75,11 +77,41 @@ impl EguiManagerComponent {
             .sum::<f32>();
         let frame_delta_time = engine.frame_delta_time;
 
+        let build_mode = engine.process.mode.as_str();
+        let build_target = engine.process.target.as_str();
+        let build_status = engine
+            .get_global_component::<BuildStatusIndicatorComponent>()
+            .unwrap()
+            .last_build_status;
+
         let ui = Box::new(move |ui: &egui::Context| {
             egui::Window::new("Pill Engine")
-                .default_open(false)
+                .default_open(true)
                 .resizable(true)
                 .anchor(egui::Align2::LEFT_TOP, [0.0, 0.0])
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.add(egui::Label::new(format!("Mode: {}", build_mode)));
+                        ui.add(egui::Label::new(format!("Target: {}", build_target)));
+                        if build_mode == CompileMode::HotReload.as_str() {
+                            ui.add(egui::Label::new("Build Status:"));
+                            let color = match build_status {
+                                BuildStatus::Pass => Color32::GREEN,
+                                BuildStatus::Fail => Color32::RED,
+                                BuildStatus::Warning => Color32::YELLOW,
+                            };
+                            let (rect, _) = ui
+                                .allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                            ui.painter().circle_filled(rect.center(), 12.0, color);
+                        }
+                    });
+                });
+
+            egui::Window::new("Details")
+                .default_open(false)
+                .resizable(true)
+                //.anchor(egui::Align2::LEFT_TOP, [0.0, 0.0]) // TODO: how to make it below the
+                // previous
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // optional: prevent auto shrink
@@ -87,6 +119,8 @@ impl EguiManagerComponent {
                             if ui.add(egui::Button::new("Click me")).clicked() {
                                 println!("PRESSED");
                             }
+                            ui.add(egui::Label::new(format!("Mode: {}", build_mode)));
+                            ui.add(egui::Label::new(format!("Target: {}", build_target)));
                             ui.add(egui::Label::new(format!(
                                 "FPS {}",
                                 1000.0 / frame_delta_time
