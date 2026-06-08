@@ -2,6 +2,8 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod audio_system;
+#[cfg(feature = "debug_ui")]
+pub(crate) mod build_status_system;
 pub(crate) mod deferred_update_system;
 pub(crate) mod input_system;
 #[cfg(not(target_arch = "wasm32"))]

@@ -62,6 +62,8 @@ struct Runtime {
 
     config: EngineConfig,
 
+    process: EngineProcessInfo,
+
     // Keep engine ptr for hot-reload
     engine: Option<Engine>,
     game_library: Option<Library>,
@@ -79,6 +81,7 @@ impl Runtime {
             self.resource_directory.clone(),
             renderer,
             self.config.clone(),
+            self.process.clone(),
         );
         engine.initialize(Some(self.window_size))?;
         Ok(engine)
@@ -126,6 +129,10 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
         if config.get_int("WINDOW_HEIGHT").is_err() {
             config.set("WINDOW_HEIGHT", a.initial_h as i64);
         }
+        let compile_mode =
+            std::env::var("PILL_COMPILE_MODE").map_err(|_| "PILL_COMPILE_MODE is not set")?;
+        let process =
+            EngineProcessInfo::new(&compile_mode, pill_engine::internal::BuildTarget::Native);
 
         let (game_library, game) = load_game(&game_library_path)?;
 
@@ -134,6 +141,7 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
             window_size: winit::dpi::PhysicalSize::new(a.initial_w, a.initial_h),
             resource_directory: game_resource_dir.into(),
             config,
+            process,
             engine: None,
             game_library: Some(game_library),
         });

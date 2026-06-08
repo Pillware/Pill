@@ -306,6 +306,7 @@ pub struct State {
     mesh_drawer: MeshDrawer,
     #[cfg(feature = "debug_ui")]
     egui_drawer: crate::drawers::egui_drawer::EguiDrawer,
+    #[allow(clippy::type_complexity)]
     #[cfg(feature = "debug_ui")]
     pending_egui_ui: Option<Box<dyn FnMut(&egui::Context)>>,
     // Other

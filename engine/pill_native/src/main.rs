@@ -711,14 +711,14 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
         output_directory.to_str().unwrap(),
     ];
 
-    let status = std::process::Command::new(&launcher_cmd)
+    let output = std::process::Command::new(&launcher_cmd)
         .args(args)
         .env("PILL_HOT_RELOAD_CHILD", "1")
         .env("PILL_ENGINE_WORKSPACE_DIR", engine_source_directory_path)
-        .status();
+        .output();
 
-    let status = match status {
-        Ok(status) => status,
+    let output = match output {
+        Ok(output) => output,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let manifest = engine_source_directory_path
                 .join("pill_launcher")
@@ -728,16 +728,29 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
                 .args(args)
                 .env("PILL_HOT_RELOAD_CHILD", "1")
                 .env("PILL_ENGINE_WORKSPACE_DIR", engine_source_directory_path)
-                .status()
+                .output()
                 .context("Failed to invoke pill_launcher via cargo for hot reload")?
         }
         Err(error) => return Err(error).context("Failed to invoke pill_launcher for hot reload"),
     };
 
-    if !status.success() {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    print!("{stdout}");
+    eprint!("{stderr}");
+
+    if !output.status.success() {
+        std::env::set_var("PILL_HOT_RELOAD_STATUS", "fail");
         bail!("pill_launcher build hot-reload failed");
     }
 
+    let has_warnings = stdout.contains("warning:") || stderr.contains("warning:");
+    if has_warnings {
+        std::env::set_var("PILL_HOT_RELOAD_STATUS", "warn");
+    } else {
+        std::env::set_var("PILL_HOT_RELOAD_STATUS", "pass");
+    }
     Ok(())
 }
 
@@ -804,7 +817,18 @@ fn check_and_reload(
 
     let build_start = Instant::now();
     if !game_source_changed.is_empty() || !engine_source_changed.is_empty() {
-        build_hot_reload_via_launcher(project_paths)?;
+        if let Err(error) = build_hot_reload_via_launcher(project_paths) {
+            warn!(
+                LogContext::HotReload =>
+                "Hot-reload build failed; keeping currently loaded runtime/game. Error: {error:?}"
+            );
+
+            // drain dylib watcher changes to reduce stale/partial build triggers (fat or fast
+            // fingers)
+            let _ = file_watchers.dynamic_libraries_files_watcher.get_changes();
+
+            return Ok(());
+        }
         warn!("Build took: {:?} time", build_start.elapsed());
     }
 
@@ -1193,7 +1217,7 @@ fn run_app() -> Result<()> {
     // └── Cargo.lock
 
     let mut hot_reload_enabled =
-        std::env::var("PILL_ENABLE_HOT_RELOAD").ok().as_deref() == Some("1");
+        std::env::var("PILL_COMPILE_MODE").ok().as_deref() == Some("hot-reload");
 
     let current_directory_path = std::env::current_exe()
         .context("Failed to get current executable path")?

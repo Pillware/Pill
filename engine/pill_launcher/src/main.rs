@@ -1,8 +1,8 @@
 #![allow(non_snake_case, dead_code)]
 
-mod web_dev_server;
 mod size_report;
 mod wasm_build;
+mod web_dev_server;
 
 use anyhow::*;
 use clap::{App, AppSettings, Arg};
@@ -66,7 +66,7 @@ fn dylib(name: &str) -> String {
     format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
 }
 
-fn target_dir_for(mode: &CompileMode) -> &'static str {
+fn to_str(mode: &CompileMode) -> &'static str {
     match mode {
         CompileMode::Release => "release",
         CompileMode::Debug => "debug",
@@ -558,7 +558,7 @@ fn prepare_workspace_for_game(
     if switching_game {
         let compilation_artifacts_folder_path = get_path(Location::EngineCrates)
             .join("target")
-            .join(target_dir_for(compile_mode));
+            .join(to_str(compile_mode));
 
         let artifact_prefix = if cfg!(target_os = "windows") {
             "pill_game"
@@ -749,14 +749,7 @@ fn run_game_project(
             "PILL_STANDALONE_LAYOUT",
             standalone_layout_for(compile_mode),
         )
-        .env(
-            "PILL_ENABLE_HOT_RELOAD",
-            if *compile_mode == CompileMode::HotReload {
-                "1"
-            } else {
-                "0"
-            },
-        )
+        .env("PILL_COMPILE_MODE", to_str(compile_mode))
         .args(game_args)
         .status()
         .with_context(|| {
@@ -860,7 +853,7 @@ fn build_game_project(
         .ok_or_else(|| Error::msg("build failed"))?;
 
     // Where cargo artifacts actually are now:
-    let compilation_artifacts_folder_path = cargo_target_dir.join(target_dir_for(compile_mode));
+    let compilation_artifacts_folder_path = cargo_target_dir.join(to_str(compile_mode));
 
     // Ensure build/data exists
     fs::create_dir_all(output_directory_path.join("data").as_path())
@@ -1312,8 +1305,12 @@ fn run_app() -> Result<()> {
                             "Note: `-o/--output-path` is ignored with `-t wasm`; output is fixed at <game>/build/wasm/"
                         );
                     }
-                    wasm_build::build(&game_project_directory_path, &compile_mode, max_wasm_size_kb)
-                        .context("Failed to build game project for wasm")?;
+                    wasm_build::build(
+                        &game_project_directory_path,
+                        &compile_mode,
+                        max_wasm_size_kb,
+                    )
+                    .context("Failed to build game project for wasm")?;
                 }
             }
         }

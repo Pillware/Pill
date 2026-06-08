@@ -1,10 +1,58 @@
 use std::collections::HashMap;
 
 use pill_core::Result;
+use std::str::FromStr;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompileMode {
+    Debug,
+    Release,
+    HotReload,
+}
+
+impl CompileMode {
+    pub(crate) fn from_env_value(value: &str) -> Result<Self> {
+        match value {
+            "debug" => Ok(Self::Debug),
+            "release" => Ok(Self::Release),
+            "hot-reload" => Ok(Self::HotReload),
+            other => Err(format!("Invalid compile mode: {other}").into()),
+        }
+    }
+
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            CompileMode::Debug => "debug",
+            CompileMode::Release => "release",
+            CompileMode::HotReload => "hot-reload",
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum BuildTarget {
+    Native,
+    Web,
+}
+
+impl BuildTarget {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            BuildTarget::Web => "web",
+            BuildTarget::Native => "native",
+        }
+    }
+}
 
 #[derive(Default, Clone)]
 pub struct EngineConfig {
     values: HashMap<String, String>,
+}
+
+#[derive(Clone)]
+pub struct EngineProcessInfo {
+    pub(crate) mode: CompileMode,
+    pub(crate) target: BuildTarget,
 }
 
 impl EngineConfig {
@@ -53,6 +101,16 @@ impl EngineConfig {
             "true" | "1" | "yes" => Ok(true),
             "false" | "0" | "no" => Ok(false),
             _ => Err(format!("Config key {key} is not a valid bool: {v}").into()),
+        }
+    }
+}
+
+impl EngineProcessInfo {
+    pub fn new(mode: &str, target: BuildTarget) -> Self {
+        let translated = CompileMode::from_env_value(mode).unwrap();
+        Self {
+            target,
+            mode: translated,
         }
     }
 }

@@ -31,6 +31,11 @@ pub use components::audio_source_component::AudioSourceComponent;
 #[cfg(feature = "debug_ui")]
 pub use components::egui_manager_component::EguiManagerComponent;
 
+#[cfg(feature = "debug_ui")]
+pub use components::build_status_indicator_component::{
+    BuildStatus, BuildStatusIndicatorComponent,
+};
+
 pub use components::deferred_update_component::{
     DeferredUpdateComponent, DeferredUpdateComponentRequest, DeferredUpdateManagerPointer,
     DeferredUpdateRequest, DeferredUpdateResourceRequest,
@@ -80,6 +85,9 @@ pub use systems::networking_system::{
     client_go_offline, networking_system_client, networking_system_server, EntityUpdate,
     NetworkEntityAction, NetworkUpdatePayload,
 };
+
+#[cfg(feature = "debug_ui")]
+pub use systems::build_status_system::build_status_system;
 
 // - Other
 

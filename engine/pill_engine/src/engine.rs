@@ -1,3 +1,4 @@
+use crate::app_config::EngineProcessInfo;
 use crate::{app_config::EngineConfig, config::*, ecs::*, graphics::*, resources::*};
 
 use pill_core::{
@@ -25,6 +26,7 @@ pub trait PillGame {
 /// Heart of Pill Engine
 pub struct Engine {
     pub(crate) config: EngineConfig,
+    pub(crate) process: EngineProcessInfo,
     pub(crate) game: Option<Game>,
     pub(crate) renderer: Box<dyn PillRenderer>,
     pub(crate) scene_manager: SceneManager,
@@ -49,6 +51,7 @@ impl Engine {
         game_resources_directory_path: std::path::PathBuf,
         renderer: Box<dyn PillRenderer>,
         config: EngineConfig,
+        process: EngineProcessInfo,
     ) -> Self {
         let max_entity_count = config
             .get_int("MAX_ENTITIES")
@@ -56,6 +59,7 @@ impl Engine {
 
         Self {
             config,
+            process,
             game: Some(game),
             renderer,
             scene_manager: SceneManager::new(max_entity_count),
@@ -71,7 +75,7 @@ impl Engine {
     }
 
     #[cfg(feature = "headless")]
-    pub fn new(game: Box<dyn PillGame>, config: EngineConfig) -> Self {
+    pub fn new(game: Box<dyn PillGame>, config: EngineConfig, process: EngineProcessInfo) -> Self {
         let max_entity_count = config
             .get_int("MAX_ENTITIES")
             .unwrap_or(MAX_ENTITIES as i64) as usize;
@@ -79,6 +83,7 @@ impl Engine {
 
         Self {
             config,
+            process,
             game: Some(game),
             renderer: dummy_renderer,
             scene_manager: SceneManager::new(max_entity_count),
@@ -303,7 +308,10 @@ impl Engine {
         self.add_global_component(TimeComponent::new())?;
         self.add_global_component(DeferredUpdateComponent::new())?;
         #[cfg(feature = "debug_ui")]
-        self.add_global_component(EguiManagerComponent::new())?;
+        {
+            self.add_global_component(EguiManagerComponent::new())?;
+            self.add_global_component(BuildStatusIndicatorComponent::default())?;
+        }
 
         #[cfg(not(feature = "headless"))]
         {
@@ -357,6 +365,13 @@ impl Engine {
                 RENDERING_SYSTEM.update_phase,
             )?;
         }
+
+        #[cfg(feature = "debug_ui")]
+        self.system_manager.add_system(
+            "build_status_system",
+            build_status_system,
+            UpdatePhase::PostGame,
+        )?;
 
         // Create default resources
         self.create_default_resources()
