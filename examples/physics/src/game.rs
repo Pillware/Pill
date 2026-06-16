@@ -16,6 +16,7 @@ define_global_component!(PlinkoBoard {
     backplate_material: MaterialHandle,
     peg_mesh: MeshHandle,
     peg_material: MaterialHandle,
+    compartment_material: MaterialHandle,
 });
 
 define_component!(BallComponent {});
@@ -65,12 +66,6 @@ impl PillGame for Game {
             spawn_index: 0,
         })?;
 
-        // Add meshes
-        let pill_mesh_handle = engine.add_resource(Mesh::from_cooked_mesh_bytes(
-            "Pill",
-            include_bytes!("../res/models/pill.cooked_mesh"),
-        )?)?;
-
         // Add textures
         let pill_color_texture = Texture::from_bytes(
             "PillColor",
@@ -92,15 +87,6 @@ impl PillGame for Game {
             .color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
             .scalar_parameter("specularity", 0.5)?
             .build();
-        let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
-
-        //let ground_material = Material::builder("Ground")
-        //    .texture("color", pill_color_texture_handle)?
-        //    .texture("normal", pill_normal_texture_handle)?
-        //    .color_parameter("tint", Color::new(0.0, 1.0, 0.0))?
-        //    .scalar_parameter("specularity", 0.5)?
-        //    .build();
-        //let ground_material_handle = engine.add_resource::<Material>(ground_material)?;
 
         // TODO: later add variable materials and colours
         // Ball mesh and material
@@ -125,6 +111,14 @@ impl PillGame for Game {
         let backplate_material_handle = engine.add_resource::<Material>(
             Material::builder("Backplate")
                 .color_parameter("tint", Color::new(1.0, 0.0, 0.0))?
+                .scalar_parameter("specularity", 0.5)?
+                .build(),
+        )?;
+
+        // Compartment material
+        let compartment_material_handle = engine.add_resource::<Material>(
+            Material::builder("Compratment")
+                .color_parameter("tint", Color::new(0.0, 1.0, 0.0))?
                 .scalar_parameter("specularity", 0.5)?
                 .build(),
         )?;
@@ -162,62 +156,6 @@ impl PillGame for Game {
             .with_component(CameraComponent::builder().enabled(true).build())
             .build();
 
-        // Create pill entity
-        engine
-            .build_entity(active_scene)
-            .with_component(
-                TransformComponent::builder()
-                    .position(Vector3f::new(0.0, 15.0, 0.0))
-                    .rotation(Vector3f::new(-210.0, 0.0, 0.0))
-                    .build(),
-            )
-            .with_component(
-                MeshRenderingComponent::builder()
-                    .mesh(&pill_mesh_handle)
-                    .material(&pill_material_handle)
-                    .build(),
-            )
-            .with_component(PillComponent {})
-            .with_component(
-                RigidBodyComponent::builder()
-                    .body_type(RigidBodyType::Dynamic)
-                    .build(),
-            )
-            .with_component(
-                ColliderComponent::builder()
-                    .shape(SharedShape::ball(3.0))
-                    .mass(100.0)
-                    .build(),
-            )
-            .build();
-
-        // Create ground entity
-        //engine
-        //    .build_entity(active_scene)
-        //    .with_component(
-        //        TransformComponent::builder()
-        //            .position(Vector3f::new(0.0, 0.0, 0.0))
-        //            .scale(Vector3f::new(1.0, 1.0, 1.0))
-        //            .build(),
-        //    )
-        //    .with_component(
-        //        MeshRenderingComponent::builder()
-        //            .mesh(&ground_mesh_handle)
-        //            .material(&ground_material_handle)
-        //            .build(),
-        //    )
-        //    .with_component(
-        //        RigidBodyComponent::builder()
-        //            .body_type(RigidBodyType::Fixed)
-        //            .build(),
-        //    )
-        //    .with_component(
-        //        ColliderComponent::builder()
-        //            .shape(SharedShape::cuboid(200.0, 0.5, 200.0))
-        //            .build(),
-        //    )
-        //    .build();
-
         // Store handles for spawning in the plinko global component
         let plinko = PlinkoBoard {
             ball_material: ball_material_handle,
@@ -226,6 +164,7 @@ impl PillGame for Game {
             backplate_mesh: backplate_mesh_handle,
             peg_material: peg_material_handle,
             peg_mesh: peg_mesh_handle,
+            compartment_material: compartment_material_handle,
         };
         spawn_plinko_board(engine, active_scene, &plinko)?;
 
@@ -261,23 +200,31 @@ fn ball_spawning_system(engine: &mut Engine) -> Result<()> {
 }
 
 fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBoard) -> Result<()> {
-    // Coordinate convention for this demo:
-    // - The board lives in the X/Y plane.
-    // - The camera is on -Z looking toward +Z.
-    // - The Blender plane mesh is X/Z, so rotate it +90° around X to make it X/Y.
-    // - The Blender cylinder mesh is Y-axis aligned, so rotate it +90° around X to make pegs protrude along Z.
+    // Board lives in the X/Y plane.
+    // Camera is on -Z looking toward +Z.
+    // Plane mesh is X/Z in model space, so rotate +90° around X.
+    // Cylinder mesh is Y-axis aligned, so rotate +90° around X to make pegs protrude along Z.
 
     const BOARD_Z: f32 = 1.0;
     const BOARD_HALF_WIDTH: f32 = 10.0;
     const BOARD_HALF_HEIGHT: f32 = 14.0;
     const BOARD_CENTER_Y: f32 = 4.0;
+
     const WALL_THICKNESS: f32 = 0.35;
+
     const PEG_RADIUS: f32 = 0.38;
     const PEG_HALF_DEPTH: f32 = 0.55;
 
-    let board_rotation = Vector3f::new(90.0, 0.0, 0.0);
+    const BIN_COUNT: usize = 8;
+    const DIVIDER_HALF_WIDTH: f32 = 0.18;
+    const DIVIDER_HALF_HEIGHT: f32 = 1.8;
 
-    // Backplate.
+    let board_rotation = Vector3f::new(90.0, 0.0, 0.0);
+    let bottom_y = BOARD_CENTER_Y - BOARD_HALF_HEIGHT;
+
+    // ---------------------------------------------------------------------
+    // Backplate
+    // ---------------------------------------------------------------------
     engine
         .build_entity(scene)
         .with_component(
@@ -300,7 +247,6 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
         )
         .with_component(
             ColliderComponent::builder()
-                // Local Y becomes world Z after board_rotation, so this is a thin back wall.
                 .shape(SharedShape::cuboid(
                     BOARD_HALF_WIDTH,
                     0.25,
@@ -310,39 +256,44 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
         )
         .build();
 
-    // Simple rectangular frame: left wall, right wall, bottom catch wall.
-    let walls = [
+    // ---------------------------------------------------------------------
+    // Outer frame: left wall, right wall, bottom wall
+    // ---------------------------------------------------------------------
+    let frame_pieces = [
         (
             Vector3f::new(-BOARD_HALF_WIDTH, BOARD_CENTER_Y, 0.0),
+            board_rotation,
             Vector3f::new(WALL_THICKNESS, 1.0, BOARD_HALF_HEIGHT),
             SharedShape::cuboid(WALL_THICKNESS, 0.35, BOARD_HALF_HEIGHT),
         ),
         (
             Vector3f::new(BOARD_HALF_WIDTH, BOARD_CENTER_Y, 0.0),
+            board_rotation,
             Vector3f::new(WALL_THICKNESS, 1.0, BOARD_HALF_HEIGHT),
             SharedShape::cuboid(WALL_THICKNESS, 0.35, BOARD_HALF_HEIGHT),
         ),
         (
-            Vector3f::new(0.0, BOARD_CENTER_Y - BOARD_HALF_HEIGHT, 0.0),
+            Vector3f::new(0.0, bottom_y, 0.0),
+            board_rotation,
             Vector3f::new(BOARD_HALF_WIDTH, 1.0, WALL_THICKNESS),
             SharedShape::cuboid(BOARD_HALF_WIDTH, 0.35, WALL_THICKNESS),
         ),
     ];
 
-    for (position, scale, shape) in walls {
+    for (position, rotation, scale, shape) in frame_pieces {
         engine
             .build_entity(scene)
             .with_component(
                 TransformComponent::builder()
                     .position(position)
-                    .rotation(board_rotation)
+                    .rotation(rotation)
                     .scale(scale)
                     .build(),
             )
             .with_component(
                 MeshRenderingComponent::builder()
                     .mesh(&plinko.backplate_mesh)
-                    .material(&plinko.backplate_material)
+                    .material(&plinko.compartment_material)
                     .build(),
             )
             .with_component(
@@ -354,7 +305,9 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
             .build();
     }
 
-    // Peg field.
+    // ---------------------------------------------------------------------
+    // Peg field
+    // ---------------------------------------------------------------------
     for row in 0..6 {
         let y = 14.0 - row as f32 * 3.0;
         let columns = if row % 2 == 0 { 5 } else { 6 };
@@ -392,6 +345,52 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
                 )
                 .build();
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Bottom compartments (bin dividers)
+    // ---------------------------------------------------------------------
+    let inner_left = -BOARD_HALF_WIDTH + WALL_THICKNESS * 1.5;
+    let inner_right = BOARD_HALF_WIDTH - WALL_THICKNESS * 1.5;
+    let inner_width = inner_right - inner_left;
+    let bin_width = inner_width / BIN_COUNT as f32;
+
+    for i in 1..BIN_COUNT {
+        let x = inner_left + i as f32 * bin_width;
+        let divider_y = bottom_y + DIVIDER_HALF_HEIGHT + WALL_THICKNESS * 0.75;
+
+        engine
+            .build_entity(scene)
+            .with_component(
+                TransformComponent::builder()
+                    .position(Vector3f::new(x, divider_y, 0.0))
+                    .rotation(board_rotation)
+                    .scale(Vector3f::new(DIVIDER_HALF_WIDTH, 1.0, DIVIDER_HALF_HEIGHT))
+                    .build(),
+            )
+            .with_component(
+                MeshRenderingComponent::builder()
+                    .mesh(&plinko.backplate_mesh)
+                    .material(&plinko.compartment_material)
+                    .build(),
+            )
+            .with_component(
+                RigidBodyComponent::builder()
+                    .body_type(RigidBodyType::Fixed)
+                    .build(),
+            )
+            .with_component(
+                ColliderComponent::builder()
+                    .shape(SharedShape::cuboid(
+                        DIVIDER_HALF_WIDTH,
+                        0.35,
+                        DIVIDER_HALF_HEIGHT,
+                    ))
+                    .friction(0.25)
+                    .restitution(0.15)
+                    .build(),
+            )
+            .build();
     }
 
     Ok(())
