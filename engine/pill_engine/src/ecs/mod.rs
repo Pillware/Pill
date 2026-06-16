@@ -64,7 +64,7 @@ pub use components::rigid_body_component::{RigidBodyComponent, RigidBodyComponen
 pub use components::collider_component::{ColliderComponent, ColliderComponentBuilder};
 
 #[cfg(feature = "physics")]
-pub use rapier3d::prelude::{RigidBodyType, SharedShape};
+pub use rapier3d::prelude::{LockedAxes, RigidBodyType, SharedShape};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use components::network_manager_component::{

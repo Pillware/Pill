@@ -17,7 +17,11 @@ use fs_extra::dir::CopyOptions;
 
 use crate::{get_path, modify_file, size_report, CompileMode, Location};
 
-pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode, max_size_kb: Option<u64>) -> Result<()> {
+pub fn build(
+    game_project_directory_path: &Path,
+    compile_mode: &CompileMode,
+    max_size_kb: Option<u64>,
+) -> Result<()> {
     println!("Building WASM/WebGPU target for game project at {game_project_directory_path:?}...");
     if *compile_mode == CompileMode::HotReload {
         println!("Note: hot-reload is not meaningful for WASM; using --dev mode.");
@@ -61,7 +65,8 @@ pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode, max
         if let Some(limit) = max_size_kb {
             let final_wasm = build_wasm_dir.join("pill_web_app_bg.wasm");
             let actual = fs::metadata(&final_wasm)
-                .context("Cannot stat final WASM")?.len();
+                .context("Cannot stat final WASM")?
+                .len();
             if actual > limit * 1024 {
                 bail!(
                     "WASM binary {:.1} KB exceeds budget {} KB",
@@ -69,7 +74,11 @@ pub fn build(game_project_directory_path: &Path, compile_mode: &CompileMode, max
                     limit
                 );
             }
-            println!("Size guard OK ({:.1} KB ≤ {} KB)", actual as f64 / 1024.0, limit);
+            println!(
+                "Size guard OK ({:.1} KB ≤ {} KB)",
+                actual as f64 / 1024.0,
+                limit
+            );
         }
     }
 
@@ -258,8 +267,7 @@ fn copy_build_outputs(
     for file in ["pill_web_app.js", "pill_web_app_bg.wasm"] {
         let src = scratch_pkg_dir.join(file);
         let dst = build_wasm_dir.join(file);
-        fs::copy(&src, &dst)
-            .with_context(|| format!("Failed to copy {src:?} to {dst:?}"))?;
+        fs::copy(&src, &dst).with_context(|| format!("Failed to copy {src:?} to {dst:?}"))?;
     }
 
     // Default web shell from the engine template (index.html + logo + ...).
@@ -295,17 +303,14 @@ fn copy_game_assets(src_res: &Path, dst_res: &Path) -> Result<()> {
 // Flat-copy files from `src` into `dst`, following symlinks. `label` is used
 // in error messages to distinguish template vs user-overlay copies.
 fn copy_dir_files(src: &Path, dst: &Path, label: &str) -> Result<()> {
-    for entry in
-        fs::read_dir(src).with_context(|| format!("Failed to read {label} dir {src:?}"))?
-    {
+    for entry in fs::read_dir(src).with_context(|| format!("Failed to read {label} dir {src:?}"))? {
         let entry = entry?;
         // path().metadata() follows symlinks so symlinked assets are copied as files.
         if entry.path().metadata()?.is_file() {
             let target = dst.join(entry.file_name());
             let entry_path = resolve_pseudo_symlink(&entry.path());
-            fs::copy(&entry_path, &target).with_context(|| {
-                format!("Failed to {label}-copy {entry_path:?} to {target:?}")
-            })?;
+            fs::copy(&entry_path, &target)
+                .with_context(|| format!("Failed to {label}-copy {entry_path:?} to {target:?}"))?;
         }
     }
     Ok(())

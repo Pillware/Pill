@@ -82,7 +82,8 @@ pub mod game {
 
     #[cfg(feature = "physics")]
     pub use crate::ecs::{
-        ColliderComponent, PhysicsWorldComponent, RigidBodyComponent, RigidBodyType, SharedShape,
+        ColliderComponent, LockedAxes, PhysicsWorldComponent, RigidBodyComponent, RigidBodyType,
+        SharedShape,
     };
 
     extern crate pill_core;

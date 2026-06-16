@@ -2,13 +2,14 @@ use crate::{
     ecs::{
         Component, ComponentStorage, DeferredUpdateComponent, DeferredUpdateComponentRequest,
         DeferredUpdateManagerPointer, EntityHandle, PhysicsWorldComponent, SceneHandle,
+        TransformComponent,
     },
     engine::Engine,
 };
 
 use pill_core::{get_type_name, PillStyle, PillTypeMapKey};
 use pill_core::{ErrorContext, Result};
-use rapier3d::prelude::*;
+use rapier3d::{glamx::EulerRot, prelude::*};
 
 const DEFERRED_REQUEST_VARIANT_ADD: usize = 0;
 
@@ -236,9 +237,34 @@ impl Component for RigidBodyComponent {
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> {
         match request {
             DEFERRED_REQUEST_VARIANT_ADD => {
-                let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
+                let entity_handle = self
+                    .entity_handle
+                    .expect("Critical: Cannot register RigidBodyComponent without EntityHandle");
+                let scene_handle = self
+                    .scene_handle
+                    .expect("Critical: Cannot register RigidBodyComponent without SceneHandle");
 
-                let rigid_body: RigidBody = self.clone().into();
+                let (position, rotation_deg) = {
+                    let transform = engine
+                        .scene_manager
+                        .get_entity_component::<TransformComponent>(entity_handle, scene_handle)?;
+
+                    (transform.position, transform.rotation)
+                };
+                let rotation = Rotation::from_euler(
+                    EulerRot::XYZ,
+                    rotation_deg.x.to_radians(),
+                    rotation_deg.y.to_radians(),
+                    rotation_deg.z.to_radians(),
+                );
+
+                let mut rigid_body: RigidBody = self.clone().into();
+
+                // Sync the transform to Rapier, after that dynamic rigidbodies are handled by
+                // Rapier only
+                rigid_body.set_position(Pose::from_parts(position, rotation), false);
+
+                let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
                 self.rigid_body_handle = Some(physics_world.rigid_body_set.insert(rigid_body));
             }
             _ => {

@@ -89,7 +89,11 @@ fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
 
     const ENGINE_LIBS: &[&str] = &["pill_engine", "pill_renderer", "pill_core", "pill_web"];
     const GAME_LIBS: &[&str] = &["pill_game"];
-    let excluded: Vec<&str> = ENGINE_LIBS.iter().chain(GAME_LIBS.iter()).copied().collect();
+    let excluded: Vec<&str> = ENGINE_LIBS
+        .iter()
+        .chain(GAME_LIBS.iter())
+        .copied()
+        .collect();
 
     let engine_total: u64 = ENGINE_LIBS
         .iter()
@@ -105,15 +109,30 @@ fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
         println!("    {:<20} {:>10} {:>6.1}%", lib, fmt_bytes(bytes), pct);
     }
     let epct = 100.0 * engine_total as f64 / total as f64;
-    println!("    {:<20} {:>10} {:>6.1}%  ← engine total", "---", fmt_bytes(engine_total), epct);
+    println!(
+        "    {:<20} {:>10} {:>6.1}%  ← engine total",
+        "---",
+        fmt_bytes(engine_total),
+        epct
+    );
 
     let game_bytes = by_crate.get("pill_game").copied().unwrap_or(0);
     let game_rodata = by_crate.get("[game-rodata]").copied().unwrap_or(0);
     println!();
     println!("  Game (monitor only — excluded from engine budget):");
     println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
-    println!("    {:<20} {:>10} {:>6.1}%  (game logic)", "pill_game", fmt_bytes(game_bytes), 100.0 * game_bytes as f64 / total as f64);
-    println!("    {:<20} {:>10} {:>6.1}%  (embedded assets via include_bytes!)", "[game-assets]", fmt_bytes(game_rodata), 100.0 * game_rodata as f64 / total as f64);
+    println!(
+        "    {:<20} {:>10} {:>6.1}%  (game logic)",
+        "pill_game",
+        fmt_bytes(game_bytes),
+        100.0 * game_bytes as f64 / total as f64
+    );
+    println!(
+        "    {:<20} {:>10} {:>6.1}%  (embedded assets via include_bytes!)",
+        "[game-assets]",
+        fmt_bytes(game_rodata),
+        100.0 * game_rodata as f64 / total as f64
+    );
 
     println!();
     println!("  3rd party (top 15):");
@@ -124,7 +143,12 @@ fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
         .take(15)
     {
         let pct = 100.0 * *bytes as f64 / total as f64;
-        println!("    {:<20} {:>10} {:>6.1}%", crate_name, fmt_bytes(*bytes), pct);
+        println!(
+            "    {:<20} {:>10} {:>6.1}%",
+            crate_name,
+            fmt_bytes(*bytes),
+            pct
+        );
     }
 
     println!();
@@ -232,9 +256,9 @@ fn classify_crate(name: &str) -> String {
         return "[other]".into();
     }
     match ident.as_str() {
-        "core" | "alloc" | "std" | "compiler_builtins" | "rustc_demangle" | "dlmalloc"
-        | "str" | "bool" | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64"
-        | "f32" | "f64" | "char" | "usize" | "isize" | "T" => "[rust-std]".into(),
+        "core" | "alloc" | "std" | "compiler_builtins" | "rustc_demangle" | "dlmalloc" | "str"
+        | "bool" | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" | "f32" | "f64"
+        | "char" | "usize" | "isize" | "T" => "[rust-std]".into(),
         "jpeg_decoder" | "png" | "tiff" | "gif" | "weezl" | "miniz_oxide" | "color_quant"
         | "qoi" | "exr" => "image".into(),
         "epaint" | "emath" | "egui_wgpu" | "egui_winit" => "egui".into(),

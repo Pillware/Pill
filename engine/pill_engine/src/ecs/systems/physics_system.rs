@@ -119,7 +119,10 @@ fn sync_transforms_to_physics(engine: &mut Engine, scene_handle: SceneHandle) ->
         if let Some(rb_handle) = rb_handle {
             let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
             if let Some(rigid_body) = physics_world.rigid_body_set.get_mut(rb_handle) {
-                //let position = Vector3::new(position.x, position.y, position.z);
+                // Dynamic rigidbodies are owned by Rapier, no need to update them manually
+                if rigid_body.body_type() == RigidBodyType::Dynamic {
+                    continue;
+                }
 
                 // Convert Euler angles to quaternion
                 let rotation = Rotation::from_euler(
@@ -130,7 +133,7 @@ fn sync_transforms_to_physics(engine: &mut Engine, scene_handle: SceneHandle) ->
                 );
 
                 // Update rigid body position and rotation
-                rigid_body.set_position(Pose::from_parts(position.into(), rotation), true);
+                rigid_body.set_position(Pose::from_parts(position, rotation), true);
             }
         }
     }

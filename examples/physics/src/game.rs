@@ -22,7 +22,8 @@ define_component!(BallComponent {});
 
 define_global_component!(StateComponent {
     elapsed: f32,
-    timeout: f32
+    timeout: f32,
+    spawn_index: u64
 });
 
 define_component!(CameraMovementComponent {
@@ -61,6 +62,7 @@ impl PillGame for Game {
         engine.add_global_component(StateComponent {
             elapsed: 0.0,
             timeout: 1.0,
+            spawn_index: 0,
         })?;
 
         // Add meshes
@@ -145,16 +147,16 @@ impl PillGame for Game {
             .build_entity(active_scene)
             .with_component(
                 TransformComponent::builder()
-                    .position(Vector3f::new(0.0, 6.0, -20.0))
+                    .position(Vector3f::new(0.0, 2.0, -30.0))
                     .rotation(Vector3f::new(0.0, 0.0, 0.0))
                     .build(),
             )
             .with_component(CameraMovementComponent {
                 orbit_speed: 60.0,
                 zoom_speed: 5.0,
-                angle: 0.0,
+                angle: -90.0,
                 radius: 30.0,
-                delta_y: 0.0,
+                delta_y: 2.0,
                 delta_z: 0.0,
             })
             .with_component(CameraComponent::builder().enabled(true).build())
@@ -242,7 +244,16 @@ fn ball_spawning_system(engine: &mut Engine) -> Result<()> {
     let state: &mut StateComponent = engine.get_global_component_mut::<StateComponent>()?;
     if state.elapsed + dt > state.timeout {
         state.elapsed = 0.0;
-        spawn_ball(engine, scene_handle, &ball_mesh, &ball_material)?;
+        let spawn_index = state.spawn_index;
+        state.spawn_index = state.spawn_index.wrapping_add(1);
+
+        spawn_ball(
+            engine,
+            scene_handle,
+            &ball_mesh,
+            &ball_material,
+            spawn_index,
+        )?;
     } else {
         state.elapsed += dt;
     }
@@ -250,17 +261,30 @@ fn ball_spawning_system(engine: &mut Engine) -> Result<()> {
 }
 
 fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBoard) -> Result<()> {
-    // ball is 0.5 in radius and occupies roughly one square on the grid
-    // TODO: fix model rotations and scale?
-    // spawn a few pegs and the back plane for starters, then create the outline etc
-    // spawn the backplate
+    // Coordinate convention for this demo:
+    // - The board lives in the X/Y plane.
+    // - The camera is on -Z looking toward +Z.
+    // - The Blender plane mesh is X/Z, so rotate it +90° around X to make it X/Y.
+    // - The Blender cylinder mesh is Y-axis aligned, so rotate it +90° around X to make pegs protrude along Z.
+
+    const BOARD_Z: f32 = 1.0;
+    const BOARD_HALF_WIDTH: f32 = 10.0;
+    const BOARD_HALF_HEIGHT: f32 = 14.0;
+    const BOARD_CENTER_Y: f32 = 4.0;
+    const WALL_THICKNESS: f32 = 0.35;
+    const PEG_RADIUS: f32 = 0.38;
+    const PEG_HALF_DEPTH: f32 = 0.55;
+
+    let board_rotation = Vector3f::new(90.0, 0.0, 0.0);
+
+    // Backplate.
     engine
         .build_entity(scene)
         .with_component(
             TransformComponent::builder()
-                .position(Vector3f::new(0.0, 0.0, 4.0))
-                .rotation(Vector3f::new(90.0, 0.0, 30.0))
-                .scale(Vector3f::new(24.0, 2.0, 10.0))
+                .position(Vector3f::new(0.0, BOARD_CENTER_Y, BOARD_Z))
+                .rotation(board_rotation)
+                .scale(Vector3f::new(BOARD_HALF_WIDTH, 1.0, BOARD_HALF_HEIGHT))
                 .build(),
         )
         .with_component(
@@ -269,7 +293,6 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
                 .material(&plinko.backplate_material)
                 .build(),
         )
-        .with_component(BallComponent {})
         .with_component(
             RigidBodyComponent::builder()
                 .body_type(RigidBodyType::Fixed)
@@ -277,72 +300,99 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
         )
         .with_component(
             ColliderComponent::builder()
-                .shape(SharedShape::cuboid(2.0, 2.0, 2.0))
+                // Local Y becomes world Z after board_rotation, so this is a thin back wall.
+                .shape(SharedShape::cuboid(
+                    BOARD_HALF_WIDTH,
+                    0.25,
+                    BOARD_HALF_HEIGHT,
+                ))
                 .build(),
         )
         .build();
 
-    // spawn the ball boxes
-    engine
-        .build_entity(scene)
-        .with_component(
-            TransformComponent::builder()
-                .position(Vector3f::new(0.0, -24.0, 4.0))
-                .rotation(Vector3f::new(0.0, 0.0, 120.0))
-                .scale(Vector3f::new(10.0, 2.0, 10.0))
-                .build(),
-        )
-        .with_component(
-            MeshRenderingComponent::builder()
-                .mesh(&plinko.backplate_mesh)
-                .material(&plinko.backplate_material)
-                .build(),
-        )
-        .with_component(BallComponent {})
-        .with_component(
-            RigidBodyComponent::builder()
-                .body_type(RigidBodyType::Fixed)
-                .build(),
-        )
-        .with_component(
-            ColliderComponent::builder()
-                .shape(SharedShape::cuboid(2.0, 2.0, 2.0))
-                .build(),
-        )
-        .build();
+    // Simple rectangular frame: left wall, right wall, bottom catch wall.
+    let walls = [
+        (
+            Vector3f::new(-BOARD_HALF_WIDTH, BOARD_CENTER_Y, 0.0),
+            Vector3f::new(WALL_THICKNESS, 1.0, BOARD_HALF_HEIGHT),
+            SharedShape::cuboid(WALL_THICKNESS, 0.35, BOARD_HALF_HEIGHT),
+        ),
+        (
+            Vector3f::new(BOARD_HALF_WIDTH, BOARD_CENTER_Y, 0.0),
+            Vector3f::new(WALL_THICKNESS, 1.0, BOARD_HALF_HEIGHT),
+            SharedShape::cuboid(WALL_THICKNESS, 0.35, BOARD_HALF_HEIGHT),
+        ),
+        (
+            Vector3f::new(0.0, BOARD_CENTER_Y - BOARD_HALF_HEIGHT, 0.0),
+            Vector3f::new(BOARD_HALF_WIDTH, 1.0, WALL_THICKNESS),
+            SharedShape::cuboid(BOARD_HALF_WIDTH, 0.35, WALL_THICKNESS),
+        ),
+    ];
 
-    // spawn a few pegs
-    for i in 0..3 {
+    for (position, scale, shape) in walls {
         engine
             .build_entity(scene)
             .with_component(
                 TransformComponent::builder()
-                    .position(Vector3f::new(-5.0 + 3.0 + i as f32 * 4.0, 0.0, 2.0))
-                    .rotation(Vector3f::new(90.0, 0.0, 30.0))
-                    .scale(Vector3f::new(1.0, 3.0, 1.0))
+                    .position(position)
+                    .rotation(board_rotation)
+                    .scale(scale)
                     .build(),
             )
             .with_component(
                 MeshRenderingComponent::builder()
-                    .mesh(&plinko.peg_mesh)
-                    .material(&plinko.peg_material)
+                    .mesh(&plinko.backplate_mesh)
+                    .material(&plinko.backplate_material)
                     .build(),
             )
-            .with_component(BallComponent {})
             .with_component(
                 RigidBodyComponent::builder()
                     .body_type(RigidBodyType::Fixed)
                     .build(),
             )
-            .with_component(
-                ColliderComponent::builder()
-                    .shape(SharedShape::cylinder(1.0, 1.0))
-                    .build(),
-            )
+            .with_component(ColliderComponent::builder().shape(shape).build())
             .build();
     }
 
-    // spawn the transparent shielding? collider?
+    // Peg field.
+    for row in 0..6 {
+        let y = 14.0 - row as f32 * 3.0;
+        let columns = if row % 2 == 0 { 5 } else { 6 };
+        let x_start = if row % 2 == 0 { -6.0 } else { -7.5 };
+
+        for column in 0..columns {
+            let x = x_start + column as f32 * 3.0;
+
+            engine
+                .build_entity(scene)
+                .with_component(
+                    TransformComponent::builder()
+                        .position(Vector3f::new(x, y, 0.0))
+                        .rotation(board_rotation)
+                        .scale(Vector3f::new(PEG_RADIUS, PEG_HALF_DEPTH, PEG_RADIUS))
+                        .build(),
+                )
+                .with_component(
+                    MeshRenderingComponent::builder()
+                        .mesh(&plinko.peg_mesh)
+                        .material(&plinko.peg_material)
+                        .build(),
+                )
+                .with_component(
+                    RigidBodyComponent::builder()
+                        .body_type(RigidBodyType::Fixed)
+                        .build(),
+                )
+                .with_component(
+                    ColliderComponent::builder()
+                        .shape(SharedShape::cylinder(PEG_HALF_DEPTH, PEG_RADIUS))
+                        .friction(0.25)
+                        .restitution(0.35)
+                        .build(),
+                )
+                .build();
+        }
+    }
 
     Ok(())
 }
@@ -353,13 +403,17 @@ fn spawn_ball(
     scene: SceneHandle,
     mesh: &MeshHandle,
     material: &MaterialHandle,
+    spawn_index: u64,
 ) -> Result<()> {
+    const SPAWN_XS: [f32; 8] = [-0.9, 0.75, -0.35, 1.15, -1.25, 0.45, -0.65, 0.95];
+    let spawn_x = SPAWN_XS[spawn_index as usize % SPAWN_XS.len()];
+
     engine
         .build_entity(scene)
         .with_component(
             TransformComponent::builder()
-                .position(Vector3f::new(0.0, 18.0, 0.0))
-                .scale(Vector3f::new(0.5, 0.5, 0.5))
+                .position(Vector3f::new(spawn_x, 18.0, 0.0))
+                .scale(Vector3f::new(0.25, 0.25, 0.25))
                 .build(),
         )
         .with_component(
@@ -372,12 +426,17 @@ fn spawn_ball(
         .with_component(
             RigidBodyComponent::builder()
                 .body_type(RigidBodyType::Dynamic)
+                .locked_axes(LockedAxes::TRANSLATION_LOCKED_Z)
+                .ccd_enabled(true)
+                .can_sleep(false)
                 .build(),
         )
         .with_component(
             ColliderComponent::builder()
-                .shape(SharedShape::ball(2.0))
+                .shape(SharedShape::ball(0.55))
                 .mass(0.1)
+                .friction(0.2)
+                .restitution(0.25)
                 .build(),
         )
         .build();
