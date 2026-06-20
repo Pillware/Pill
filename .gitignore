@@ -12,3 +12,6 @@ engine/target_*
 *.wgsl
 *.cooked_mesh
 *.cooked_tex
+
+/engine/pill_esp32
+engine/pill_esp32

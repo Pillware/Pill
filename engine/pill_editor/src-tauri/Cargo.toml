@@ -1,0 +1,56 @@
+[workspace]
+# Prevent Cargo from walking up to the parent engine/ workspace
+members = ["."]
+
+[package]
+name = "pill-editor"
+version = "0.1.0"
+authors = [
+    # Extend this list when submiting PR
+    "Mateusz Szymoński <mateusz.szymonski@gmail.com>",
+]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "tauri_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["unstable"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# wgpu for rendering to the orange wl_subsurface; 0.20 uses rwh 0.6 (Tauri 2).
+wgpu = "0.20"
+# Block on wgpu's async initialisation in the render thread.
+pollster = "0.3"
+# Safe byte casting for vertex buffer data.
+bytemuck = { version = "1", features = ["derive"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# raw-window-handle 0.6 is the version Tauri 2 uses; needed to extract the
+# Wayland wl_surface* and wl_display* from a WebviewWindow on Linux.
+raw-window-handle = "0.6"
+# GTK3 bindings — already a transitive dep via wry; used to set the overlay
+# window as transient for the main window and centre it on the parent.
+gtk = { version = "0.18" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# raw-window-handle 0.6 for extracting HWND from Tauri windows and
+# creating wgpu surfaces backed by Win32 child windows.
+raw-window-handle = "0.6"
+# Win32 API bindings for child-window viewport management.
+windows = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }

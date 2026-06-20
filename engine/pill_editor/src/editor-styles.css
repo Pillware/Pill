@@ -1,0 +1,281 @@
+/* ── Root layout ─────────────────────────────────────────────────────────── */
+html,
+body,
+#root {
+    background: transparent !important;
+}
+
+body {
+    background: transparent !important;
+    margin: 0 !important;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+}
+
+.editor-root {
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+    background: transparent !important;
+    color: #d4d4d4;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 12px;
+    overflow: hidden;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 32px;
+    min-height: 32px;
+    border-bottom: 1px solid #111;
+    padding: 0 8px;
+    gap: 8px;
+}
+
+.toolbar-group {
+    display: flex;
+    gap: 4px;
+}
+
+.toolbar-center {
+    display: flex;
+    gap: 4px;
+}
+
+.toolbar-btn {
+    background: #3c3c3c;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 2px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.toolbar-btn:hover {
+    background: #505050;
+}
+
+.toolbar-btn.play {
+    background: #2a5f2a;
+    color: #aaffaa;
+    border-color: #3a8f3a;
+}
+
+.toolbar-btn.play:hover {
+    background: #347034;
+}
+
+.flexlayout__tabset_tabbar_inner {
+    background: #1e1e1e;
+}
+
+/* ── FlexLayout canvas ───────────────────────────────────────────────────── */
+
+/* ── FlexLayout canvas ───────────────────────────────────────────────────── */
+
+.editor-layout {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+
+.flexlayout__tabset_tabbar_outer {
+    background: #1e1e1e;
+}
+
+
+/*
+ * Restore the dark theme backgrounds — only Scene and Game panels
+ * should be transparent so the wgpu subsurface shows through.
+ */
+.editor-layout .flexlayout__layout {
+    --color-background: transparent;
+    --color-tab-content: transparent;
+    --color-tabset-background: transparent;
+    --color-tabset-background-selected: transparent;
+    --color-tabset-background-maximized: transparent;
+}
+
+/* ── Generic panel base ──────────────────────────────────────────────────── */
+
+.panel {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    box-sizing: border-box;
+    padding: 4px;
+    background: #1e1e1e;
+}
+
+/* ── Hierarchy ───────────────────────────────────────────────────────────── */
+
+.panel-hierarchy {
+    padding: 0;
+}
+
+.hierarchy-item {
+    padding: 3px 12px;
+    cursor: default;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.hierarchy-item:hover {
+    background: #2a2d2e;
+}
+
+/* ── Scene / Game views ──────────────────────────────────────────────────── */
+
+.panel-scene,
+.panel-game {
+    position: relative;
+    background: transparent !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.scene-label {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    font-size: 14px;
+    color: #383838;
+    pointer-events: none;
+    text-shadow: 0px 0px 4px #00000062;
+
+}
+
+/* Subtle perspective grid */
+.scene-grid {
+    position: absolute;
+    inset: 0;
+
+}
+
+.scene-gizmo {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.scene-gizmo span:nth-child(1) {
+    color: #e06c75;
+    text-shadow: 0px 0px 4px #00000062;
+}
+
+/* X → red   */
+.scene-gizmo span:nth-child(2) {
+    color: #59ad1c;
+    text-shadow: 0px 0px 4px #00000062;
+}
+
+/* Y → green */
+.scene-gizmo span:nth-child(3) {
+    color: #2d86cf;
+    text-shadow: 0px 0px 4px #00000062;
+}
+
+/* Z → blue  */
+
+/* ── Inspector ───────────────────────────────────────────────────────────── */
+
+.panel-inspector {
+    padding: 8px;
+}
+
+.inspector-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: #9cdcfe;
+    border-bottom: 1px solid #333;
+    padding-bottom: 3px;
+    margin-bottom: 6px;
+}
+
+.inspector-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.inspector-row label {
+    width: 80px;
+    color: #888;
+    flex-shrink: 0;
+}
+
+.inspector-row input[type="text"],
+.inspector-row input:not([type]) {
+    flex: 1;
+    background: #3c3c3c;
+    border: 1px solid #555;
+    color: #d4d4d4;
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-size: 11px;
+}
+
+.inspector-ref {
+    color: #ce9178;
+    font-size: 11px;
+}
+
+/* ── Project browser ─────────────────────────────────────────────────────── */
+
+.panel-project {
+    padding: 0;
+}
+
+.project-item {
+    padding: 3px 12px;
+    cursor: default;
+    border-bottom: 1px solid #2a2a2a;
+    color: #c8c8c8;
+}
+
+.project-item:hover {
+    background: #2a2d2e;
+}
+
+/* ── Console ─────────────────────────────────────────────────────────────── */
+
+.panel-console {
+    padding: 4px 0;
+}
+
+.console-line {
+    padding: 2px 10px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 11px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.console-log {
+    color: #d4d4d4;
+}
+
+.console-warn {
+    color: #e5c07b;
+    background: #2a2200;
+}
+
+.console-error {
+    color: #e06c75;
+    background: #2a0000;
+}
