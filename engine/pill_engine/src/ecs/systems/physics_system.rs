@@ -1,7 +1,7 @@
 use crate::{
     config::PHYSICS_SYSTEM,
     ecs::{
-        ColliderComponent, PhysicsWorldComponent, RigidBodyComponent, SceneHandle,
+        ColliderComponent, PhysicsWorldComponent, RigidBodyComponent, SceneHandle, TimeComponent,
         TransformComponent,
     },
     engine::Engine,
@@ -46,10 +46,44 @@ use rapier3d::prelude::*;
 /// engine.add_component_to_entity(scene, entity, ColliderComponent::ball(1.0))?;
 /// ```
 pub fn physics_system(engine: &mut Engine) -> Result<()> {
+    const MAX_FRAME_DELTA: f32 = 0.25;
+    const MAX_PHYSICS_STEPS_PER_FRAME: u32 = 8;
+
     let mut timer = Timer::new();
+    let delta_time = engine
+        .get_global_component::<TimeComponent>()?
+        .delta_time
+        .clamp(0.0, MAX_FRAME_DELTA);
 
     // Get the active scene handle
     let active_scene_handle = engine.scene_manager.get_active_scene_handle()?;
+
+    let physics_steps = {
+        let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
+
+        physics_world.time_accumulated += delta_time;
+
+        let mut steps = 0;
+
+        while physics_world.time_accumulated >= physics_world.integration_parameters.dt
+            && steps < MAX_PHYSICS_STEPS_PER_FRAME
+        {
+            physics_world.time_accumulated -= physics_world.integration_parameters.dt;
+            steps += 1;
+        }
+
+        if steps == MAX_PHYSICS_STEPS_PER_FRAME {
+            physics_world.time_accumulated = physics_world
+                .time_accumulated
+                .min(physics_world.integration_parameters.dt);
+        }
+
+        steps
+    };
+
+    if physics_steps == 0 {
+        return Ok(());
+    }
 
     timer.record("Sync transforms to physics");
 
@@ -59,7 +93,9 @@ pub fn physics_system(engine: &mut Engine) -> Result<()> {
     timer.record("Step the physics world");
     {
         let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
-        physics_world.step();
+        for _ in 0..physics_steps {
+            physics_world.step();
+        }
     }
 
     timer.record("Sync physics to transforms");

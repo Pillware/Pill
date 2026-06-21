@@ -336,7 +336,7 @@ impl Engine {
 
         #[cfg(feature = "physics")]
         {
-            self.add_global_component(PhysicsWorldComponent::new())?;
+            self.add_global_component(PhysicsWorldComponent::default())?;
         }
 
         // Add built-in systems

@@ -166,6 +166,10 @@ impl PillGame for Game {
 
         engine.add_global_component(plinko)?;
 
+        let physics_world_component = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
+        const METERS_PER_WORLD_UNIT: f32 = 0.20;
+        physics_world_component.set_gravity(Vector3f::new(0.0, -9.81 / METERS_PER_WORLD_UNIT, 0.0));
+
         Ok(())
     }
 }

@@ -34,17 +34,23 @@ pub struct PhysicsWorldComponent {
     pub ccd_solver: CCDSolver,
     pub physics_hooks: (),
     pub event_handler: (),
+    pub time_accumulated: f32,
 }
 
 impl PhysicsWorldComponent {
-    pub fn new() -> Self {
+    pub fn new(time_step: f32, meters_per_world_unit: f32) -> Self {
         let rigid_body_set = RigidBodySet::new();
         let collider_set = ColliderSet::new();
+        let integration_parameters = IntegrationParameters {
+            dt: time_step,
+            ..Default::default()
+        };
+
         Self {
             rigid_body_set,
             collider_set,
-            gravity: vector![0.0, -9.81, 0.0].into(),
-            integration_parameters: IntegrationParameters::default(),
+            gravity: vector![0.0, -9.81 / meters_per_world_unit, 0.0].into(),
+            integration_parameters,
             physics_pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
             broad_phase: DefaultBroadPhase::new(),
@@ -54,11 +60,16 @@ impl PhysicsWorldComponent {
             ccd_solver: CCDSolver::new(),
             physics_hooks: (),
             event_handler: (),
+            time_accumulated: 0.0,
         }
     }
 
     pub fn set_gravity(&mut self, gravity: Vector) {
         self.gravity = gravity;
+    }
+
+    pub fn set_timestep(&mut self, time_step: f32) {
+        self.integration_parameters.dt = time_step;
     }
 
     pub fn step(&mut self) {
@@ -81,7 +92,9 @@ impl PhysicsWorldComponent {
 
 impl Default for PhysicsWorldComponent {
     fn default() -> Self {
-        PhysicsWorldComponent::new()
+        const TIME_STEP: f32 = 1.0 / 60.0;
+        const METERS_PER_WORLD_UNIT: f32 = 1.0;
+        PhysicsWorldComponent::new(TIME_STEP, METERS_PER_WORLD_UNIT)
     }
 }
 
