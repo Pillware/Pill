@@ -93,99 +93,55 @@ impl PillGame for Game {
         // --- Create resources ---
 
         // Add meshes
-        let pill_mesh = engine.add_resource(Mesh::from_cooked_mesh_bytes(
-            "pill",
-            include_bytes!("../res/models/pill.cooked_mesh"),
-        )?)?;
-        let cube_mesh = engine.add_resource(Mesh::from_cooked_mesh_bytes(
-            "cube",
-            include_bytes!("../res/models/rounded_cube.cooked_mesh"),
-        )?)?;
-        let torus_mesh = engine.add_resource(Mesh::from_cooked_mesh_bytes(
-            "torus",
-            include_bytes!("../res/models/torus.cooked_mesh"),
-        )?)?;
+        let pill_mesh = engine.add_resource(Mesh::new("pill", "models/pill.obj".into()))?;
+        let cube_mesh =
+            engine.add_resource(Mesh::new("rounded_cube", "models/rounded_cube.obj".into()))?;
+        let torus_mesh = engine.add_resource(Mesh::new("torus", "models/torus.obj".into()))?;
 
         // Add sounds
         let ambient_music = Sound::new("ambient", "audio/test_music.mp3".into());
         let ambient_music_handle = engine.add_resource(ambient_music)?;
 
         // Add textures
-        let fabric_color_texture = Texture::from_bytes(
+        let fabric_color_texture = Texture::new(
             "fabric_color",
             TextureType::Color,
-<<<<<<< HEAD
             ResourceLoader::Path("textures/fabric_color.png".into()),
-||||||| parent of 3bad100 (examples: fix missing textures)
-            ResourceLoader::Path("textures/fabric_color.jpg".into()),
-=======
-            include_bytes!("../res/textures/fabric_color.cooked_tex"),
->>>>>>> 3bad100 (examples: fix missing textures)
         );
         let fabric_color_texture_handle = engine.add_resource::<Texture>(fabric_color_texture)?;
 
-        let fabric_normal_texture = Texture::from_bytes(
+        let fabric_normal_texture = Texture::new(
             "fabric_normal",
             TextureType::Normal,
-<<<<<<< HEAD
             ResourceLoader::Path("textures/fabric_normal.png".into()),
-||||||| parent of 3bad100 (examples: fix missing textures)
-            ResourceLoader::Path("textures/fabric_normal.jpg".into()),
-=======
-            include_bytes!("../res/textures/fabric_normal.cooked_tex"),
->>>>>>> 3bad100 (examples: fix missing textures)
         );
         let fabric_normal_texture_handle = engine.add_resource::<Texture>(fabric_normal_texture)?;
 
-        let stones_color_texture = Texture::from_bytes(
+        let stones_color_texture = Texture::new(
             "stones_color",
             TextureType::Color,
-<<<<<<< HEAD
             ResourceLoader::Path("textures/stones_color.png".into()),
-||||||| parent of 3bad100 (examples: fix missing textures)
-            ResourceLoader::Path("textures/stones_color.jpg".into()),
-=======
-            include_bytes!("../res/textures/stones_color.cooked_tex"),
->>>>>>> 3bad100 (examples: fix missing textures)
         );
         let stones_color_texture_handle = engine.add_resource::<Texture>(stones_color_texture)?;
 
-        let stones_normal_texture = Texture::from_bytes(
+        let stones_normal_texture = Texture::new(
             "stones_normal",
             TextureType::Normal,
-<<<<<<< HEAD
             ResourceLoader::Path("textures/stones_normal.png".into()),
-||||||| parent of 3bad100 (examples: fix missing textures)
-            ResourceLoader::Path("textures/stones_normal.jpg".into()),
-=======
-            include_bytes!("../res/textures/stones_normal.cooked_tex"),
->>>>>>> 3bad100 (examples: fix missing textures)
         );
         let stones_normal_texture_handle = engine.add_resource::<Texture>(stones_normal_texture)?;
 
-        let organic_color_texture = Texture::from_bytes(
+        let organic_color_texture = Texture::new(
             "organic_color",
             TextureType::Color,
-<<<<<<< HEAD
             ResourceLoader::Path("textures/organic_color.png".into()),
-||||||| parent of 3bad100 (examples: fix missing textures)
-            ResourceLoader::Path("textures/organic_color.jpg".into()),
-=======
-            include_bytes!("../res/textures/organic_color.cooked_tex"),
->>>>>>> 3bad100 (examples: fix missing textures)
         );
         let organic_color_texture_handle = engine.add_resource::<Texture>(organic_color_texture)?;
 
-        let organic_normal_texture = Texture::from_bytes(
+        let organic_normal_texture = Texture::new(
             "organic_normal",
             TextureType::Normal,
-<<<<<<< HEAD
             ResourceLoader::Path("textures/organic_normal.png".into()),
-||||||| parent of 3bad100 (examples: fix missing textures)
-            ResourceLoader::Path("textures/organic_normal.jpg".into()),
-=======
-            include_bytes!("../res/textures/organic_normal.cooked_tex"),
->>>>>>> 3bad100 (examples: fix missing textures)
         );
         let organic_normal_texture_handle =
             engine.add_resource::<Texture>(organic_normal_texture)?;

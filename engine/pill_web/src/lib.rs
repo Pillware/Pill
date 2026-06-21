@@ -97,7 +97,7 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
     config.set("WINDOW_HEIGHT", window_size.height as i64);
     let compile_mode = std::env::var("PILL_COMPILE_MODE").unwrap_or_else(|_| "unknown".to_string());
     let process = pill_engine::internal::EngineProcessInfo::new(
-        compile_mode,
+        &compile_mode,
         pill_engine::internal::BuildTarget::Web,
     );
 
