@@ -4,6 +4,7 @@
 mod bitmask_utils;
 mod color;
 mod error;
+mod handle;
 mod log;
 mod math;
 #[cfg(not(target_arch = "wasm32"))]
@@ -12,6 +13,7 @@ mod pill_slotmap;
 mod pill_twinmap;
 mod pill_typemap;
 mod style;
+mod tags;
 mod timer;
 mod utils;
 
@@ -34,7 +36,13 @@ impl<T> ErrorContext<T> for Option<T> {
 impl<T, S: Into<PillError>> ErrorContext<T> for std::result::Result<T, S> {
     #[inline]
     fn context<E: Into<PillError>>(self, err: E) -> Result<T> {
-        self.map_err(|_| err.into())
+        self.map_err(|original| {
+            let context_msg = err.into();
+            let original_msg = original.into();
+            // Chain: the new context wraps the original, preserving both messages.
+            let chained: PillError = format!("{context_msg}: {original_msg}").into();
+            chained
+        })
     }
 }
 
@@ -62,6 +70,13 @@ pub use utils::{
 };
 
 pub use color::{generate_color_palette, hsl_to_rgb, DISTINCT_COLOR_PALETTE};
+
+pub use handle::{Handle, ResourcePool};
+
+pub use tags::{
+    RendererBufferTag, RendererCameraTag, RendererMaterialTag, RendererMeshTag,
+    RendererPipelineTag, RendererPipelineV2Tag, RendererTextureTag,
+};
 
 pub use timer::{Timer, TimerRecord};
 

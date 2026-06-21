@@ -103,6 +103,14 @@ impl EngineConfig {
             _ => Err(format!("Config key {key} is not a valid bool: {v}").into()),
         }
     }
+
+    pub fn get_str(&self, key: &str) -> Result<String> {
+        use pill_core::PillError;
+        self.values
+            .get(&key.to_ascii_uppercase())
+            .cloned()
+            .ok_or_else(|| -> PillError { format!("{key} not found in config").into() })
+    }
 }
 
 impl EngineProcessInfo {

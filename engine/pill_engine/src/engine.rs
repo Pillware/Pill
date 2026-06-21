@@ -38,6 +38,38 @@ pub struct Engine {
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
     pub(crate) game_resources_directory_path: std::path::PathBuf,
     pub(crate) frame_delta_time: f32, // In milliseconds
+    pub(crate) exit_requested: bool,  // Set by game to request graceful shutdown
+    pub(crate) frame_count: u64,      // Monotonic counter, incremented each update()
+}
+
+// ---- PUBLIC API (always available) ----------------------------------------
+
+impl Engine {
+    /// Request graceful shutdown. The runtime checks this after each update()
+    /// and exits the event loop when true.
+    pub fn request_exit(&mut self) {
+        self.exit_requested = true;
+    }
+
+    /// Whether the game has requested shutdown.
+    pub fn is_exit_requested(&self) -> bool {
+        self.exit_requested
+    }
+
+    /// Monotonic frame counter — incremented at the start of each update().
+    pub fn frame_count(&self) -> u64 {
+        self.frame_count
+    }
+
+    /// Read-only access to the engine configuration.
+    pub fn config(&self) -> &EngineConfig {
+        &self.config
+    }
+
+    /// Last frame's delta time in milliseconds.
+    pub fn frame_delta_time(&self) -> f32 {
+        self.frame_delta_time
+    }
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -71,6 +103,8 @@ impl Engine {
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path,
             frame_delta_time: 0.0,
+            exit_requested: false,
+            frame_count: 0,
         }
     }
 
@@ -95,6 +129,8 @@ impl Engine {
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path: std::path::PathBuf::new(),
             frame_delta_time: 0.0.into(),
+            exit_requested: false,
+            frame_count: 0,
         }
     }
 
@@ -387,6 +423,8 @@ impl Engine {
     ///
     /// Runs all systems in order: PreGame -> Game -> PostGame
     pub fn update(&mut self, delta_time: std::time::Duration) {
+        self.frame_count += 1;
+
         let stop_on_game_errors = self
             .config
             .get_bool("PANIC_ON_GAME_ERRORS")

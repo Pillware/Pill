@@ -8,7 +8,7 @@ use std::{
 
 use libloading::{Library, Symbol};
 use pill_abi::*;
-use pill_core::{PillError, Result};
+use pill_core::{set_log_levels, PillError, Result};
 use pill_engine::internal::*;
 use pill_renderer::Renderer;
 use winit::{
@@ -123,6 +123,13 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
 
         let config_ini = std::fs::read_to_string(&config_path).unwrap_or_default();
         let mut config = EngineConfig::from_ini(&config_ini);
+
+        // Initialize the DLL-side logger so engine error/info logs are visible.
+        // (pill_native sets up the app-side logger; the DLL has its own global state.)
+        if let Ok(log_levels) = config.get_str("LOG_LEVELS") {
+            set_log_levels(&log_levels, false);
+        }
+
         if config.get_int("WINDOW_WIDTH").is_err() {
             config.set("WINDOW_WIDTH", a.initial_w as i64);
         }
@@ -312,6 +319,17 @@ extern "C" fn reload_game(engine: EngineHandle, game_dylib_path: *const c_char) 
             set_err(format!("{e}"));
             PILL_ERR
         }
+    }
+}
+
+extern "C" fn is_exit_requested(engine: EngineHandle) -> i32 {
+    if engine.is_null() {
+        return 0;
+    }
+    let rt = unsafe { &mut *(engine as *mut Runtime) };
+    match rt.engine.as_ref() {
+        Some(e) if e.is_exit_requested() => 1,
+        _ => 0,
     }
 }
 

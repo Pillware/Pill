@@ -1,0 +1,20 @@
+[package]
+name = "pill_game"
+version = "0.1.0"
+edition = "2021"
+workspace = "NO_PATH"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pill_engine = { path = "../../engine/pill_engine", features = [
+    "game",
+    "obj_loading",
+] }
+rand = "0.8.4"
+
+[features]
+benchmark_window = []
+benchmark_headless = []
+default = []

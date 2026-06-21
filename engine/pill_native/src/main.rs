@@ -549,6 +549,15 @@ impl RuntimeHost {
         }
         Ok(())
     }
+
+    /// Returns true if the engine has requested graceful shutdown (e.g. benchmark finished).
+    fn should_exit(&self) -> bool {
+        if self.handle.is_null() {
+            return false;
+        }
+        let runtime_api = unsafe { &*self.api };
+        (runtime_api.is_exit_requested)(self.handle) != 0
+    }
 }
 
 impl Drop for RuntimeHost {
@@ -1134,6 +1143,13 @@ impl ApplicationHandler for App {
 
                 if let Some(runtime_host) = self.runtime_host.as_mut() {
                     runtime_host.update(delta);
+
+                    // Check if the engine has requested graceful exit
+                    // (e.g. benchmark finished after N frames).
+                    if runtime_host.should_exit() {
+                        event_loop.exit();
+                        return;
+                    }
                 }
 
                 if self.hot_reload_enabled {

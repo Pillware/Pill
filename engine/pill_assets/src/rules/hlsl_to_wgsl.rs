@@ -52,7 +52,7 @@ impl Rule for HlslToWgsl {
         let out = match result {
             Ok(out) => out,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
-                "slangc not found on PATH. Install Slang from https://github.com/shader-slang/slang/releases and add slangc to PATH."
+                "Slangc was not found on PATH. Install Slang from https://github.com/shader-slang/slang/releases and add slangc to PATH."
             ),
             Err(e) => return Err(e).context("failed to spawn slangc"),
         };
@@ -61,7 +61,7 @@ impl Rule for HlslToWgsl {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let stderr = String::from_utf8_lossy(&out.stderr);
             bail!(
-                "slangc exited {:?} for {input:?}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
+                "Slangc exited {:?} for {input:?}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}",
                 out.status.code()
             );
         }

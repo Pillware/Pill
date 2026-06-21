@@ -12,3 +12,10 @@ engine/target_*
 *.wgsl
 *.cooked_mesh
 *.cooked_tex
+DamagedHelmet.glb
+MetalRoughSpheres.glb
+studio_small_08.hdr
+
+/.github/skills
+/temp
+*.blend1

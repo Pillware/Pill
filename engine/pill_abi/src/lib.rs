@@ -63,6 +63,10 @@ pub struct PillEngineApiV1 {
 
     // --- Hot reload ---
     pub reload_game: extern "C" fn(engine: EngineHandle, game_dylib_path: *const c_char) -> i32,
+
+    // --- Exit signal (benchmarks / graceful shutdown) ---
+    /// Returns 1 if the engine has requested graceful exit, 0 otherwise.
+    pub is_exit_requested: extern "C" fn(engine: EngineHandle) -> i32,
 }
 
 pub const PILL_ENGINE_API_SYMBOL: &[u8] = b"get_pill_engine_api_v1\0";

@@ -13,7 +13,7 @@ fn main() {
         rules: default_rules(),
     };
 
-    let stats = pipeline.run().expect("asset pipeline failed");
+    let stats = pipeline.run().expect("Asset pipeline operation failed");
 
     println!("cargo:rerun-if-changed=build.rs");
     // Header-include directory: tracked recursively so changes to shared

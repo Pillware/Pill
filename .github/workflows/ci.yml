@@ -1,4 +1,18 @@
-# Run the github CI which builds the launcher and uses it to build examples, run the formatter and clippy checker
+# Pill CI Pipeline
+#
+# Triggers on every push. Builds the launcher once, then fans out to parallel
+# jobs that download the artifact: formatting, clippy, native builds, and WASM.
+#
+# All build/test logic is now built into PillLauncher itself:
+#   pill_launcher -a check|build|wasm-test|benchmark|ci
+#
+# Job dependency graph:
+#   build_launcher ──┬── code_check
+#                    ├── code_formatting_check
+#                    ├── code_linting_check
+#                    ├── build_examples (matrix)
+#                    ├── build_wasm_example (matrix)
+#                    └── benchmark (main / PR only)
 name: CI
 
 on:
@@ -10,60 +24,93 @@ concurrency:
 
 env:
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-  # No workflow-level RUSTFLAGS: it overrides target-scoped .cargo/config.toml and leaks -fuse-ld=mold into wasm builds, which rust-lld rejects.
 
 jobs:
   build_launcher:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: ./.github/actions/linux-deps
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             engine -> target
-
       - name: Build PillLauncher (release)
         run: cargo build --release --manifest-path engine/pill_launcher/Cargo.toml
-
       - name: Upload PillLauncher artifact
         uses: actions/upload-artifact@v4
         with:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release/PillLauncher
 
-  code_formatting_check:
+  code_check:
     runs-on: ubuntu-latest
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-
       - uses: ./.github/actions/linux-deps
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          components: rustfmt
-
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
       - name: Download PillLauncher artifact
         uses: actions/download-artifact@v4
         with:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release
-
-      - name: Run fmt via PillLauncher and ensure repo stays clean
+      - name: Validate launcher artifact
         shell: bash
         run: |
           set -euo pipefail
           chmod +x engine/pill_launcher/target/release/PillLauncher
-          ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills/ -- fmt
+          test -x engine/pill_launcher/target/release/PillLauncher || {
+            echo "ERROR: PillLauncher artifact missing or not executable"
+            exit 1
+          }
+          echo "PillLauncher artifact OK"
+      - name: cargo check (engine crates)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./engine/pill_launcher/target/release/PillLauncher -a check
+
+  code_formatting_check:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Download PillLauncher artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: engine/pill_launcher/target/release
+      - name: Validate launcher artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+          test -x engine/pill_launcher/target/release/PillLauncher || {
+            echo "ERROR: PillLauncher artifact missing or not executable"
+            exit 1
+          }
+          echo "PillLauncher artifact OK"
+      - name: rustfmt check
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills -- fmt
           git diff --exit-code -- . ':(exclude)engine/Cargo.toml' ':(exclude)examples/floating_pills/Cargo.toml'
 
   code_linting_check:
@@ -71,31 +118,35 @@ jobs:
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-
       - uses: ./.github/actions/linux-deps
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: clippy
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             engine -> target
-
       - name: Download PillLauncher artifact
         uses: actions/download-artifact@v4
         with:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release
-
-      - name: Run clippy via PillLauncher (-D warnings)
+      - name: Validate launcher artifact
         shell: bash
         run: |
           set -euo pipefail
           chmod +x engine/pill_launcher/target/release/PillLauncher
-          ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills/ -- clippy -- -D warnings
+          test -x engine/pill_launcher/target/release/PillLauncher || {
+            echo "ERROR: PillLauncher artifact missing or not executable"
+            exit 1
+          }
+          echo "PillLauncher artifact OK"
+      - name: clippy lint (-D warnings)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./engine/pill_launcher/target/release/PillLauncher -a cargo -p examples/floating_pills -- clippy -- -D warnings
           git diff --exit-code -- . ':(exclude)engine/Cargo.toml' ':(exclude)examples/floating_pills/Cargo.toml'
 
   build_examples:
@@ -106,20 +157,17 @@ jobs:
       matrix:
         example:
           - examples/cube
-          - examples/floating_pills/
+          - examples/floating_pills
           - examples/italian_brainrot
+          - examples/city
           - examples/net_minimal/client
           - examples/net_minimal/server
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: ./.github/actions/linux-deps
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -127,25 +175,31 @@ jobs:
             examples/cube -> target
             examples/floating_pills -> target
             examples/italian_brainrot -> target
+            examples/city -> target
             examples/net_minimal/client -> target
             examples/net_minimal/server -> target
-
       - name: Download PillLauncher artifact
         uses: actions/download-artifact@v4
         with:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release
-
-      - name: Build example (PillLauncher or cargo for headless server)
+      - name: Validate launcher artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+          test -x engine/pill_launcher/target/release/PillLauncher || {
+            echo "ERROR: PillLauncher artifact missing or not executable"
+            exit 1
+          }
+          echo "PillLauncher artifact OK"
+      - name: Build example
         shell: bash
         env:
           EXAMPLE: ${{ matrix.example }}
         run: |
           set -euo pipefail
-          chmod +x engine/pill_launcher/target/release/PillLauncher
-
           if [[ "$EXAMPLE" == "examples/net_minimal/server" ]]; then
-            # Build the server as a normal Rust binary (headless)
             cargo build --manifest-path "$EXAMPLE/Cargo.toml"
           else
             ./engine/pill_launcher/target/release/PillLauncher -a build -p "$EXAMPLE"
@@ -160,69 +214,94 @@ jobs:
         example:
           - examples/cube
           - examples/pill_tunel
+          - examples/pbr_helmet
+          - examples/pbr_balls
     steps:
       - uses: actions/checkout@v4
-
       - uses: ./.github/actions/linux-deps
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-          rustflags: ''
-
+          rustflags: ""
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             examples/cube/build/wasm/.build/pill_web -> target
             examples/pill_tunel/build/wasm/.build/pill_web -> target
-
+            examples/pbr_helmet/build/wasm/.build/pill_web -> target
+            examples/pbr_balls/build/wasm/.build/pill_web -> target
       - uses: jetli/wasm-pack-action@v0.4.0
         with:
           version: latest
-
       - name: Download PillLauncher artifact
         uses: actions/download-artifact@v4
         with:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release
-
-      - name: Smoke test — build wasm and serve via dev server
+      - name: Validate launcher artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+          test -x engine/pill_launcher/target/release/PillLauncher || {
+            echo "ERROR: PillLauncher artifact missing or not executable"
+            exit 1
+          }
+          echo "PillLauncher artifact OK"
+      - name: WASM build + smoke test + size guard
         shell: bash
         env:
           EXAMPLE: ${{ matrix.example }}
         run: |
           set -euo pipefail
-          chmod +x engine/pill_launcher/target/release/PillLauncher
+          BUDGET_FLAG=""
+          if [[ "$EXAMPLE" == "examples/cube" ]]; then
+            BUDGET_FLAG="--wasm-budget-kb 499"
+          fi
+          ./engine/pill_launcher/target/release/PillLauncher -a wasm-test -p "$EXAMPLE" $BUDGET_FLAG
 
-          # `-a run -t web` builds the bundle, then starts the dev server on :8080.
-          ./engine/pill_launcher/target/release/PillLauncher -a run -t web -p "$EXAMPLE" -c release &
-          server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-
-          # Wait up to 180s for the server to bind (release wasm-pack + wasm-opt is slow).
-          for _ in $(seq 1 180); do
-            if curl -sf -o /dev/null http://127.0.0.1:8080/; then
-              break
-            fi
-            sleep 1
-          done
-
-          curl -sf -o /dev/null http://127.0.0.1:8080/
-          curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app.js
-          curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app_bg.wasm
-          echo "Dev server smoke test OK for $EXAMPLE"
-
-      - name: Size guard — WASM budget
-        if: matrix.example == 'examples/cube'
+  benchmark:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    needs: build_launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - name: Install xvfb (virtual display for windowed benchmarks)
+        run: sudo apt-get install -y xvfb
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
+            examples/city -> target
+      - name: Download PillLauncher artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: engine/pill_launcher/target/release
+      - name: Validate launcher artifact
         shell: bash
         run: |
-          WASM="examples/cube/build/wasm/pill_web_app_bg.wasm"
-          ACTUAL=$(wc -c < "$WASM")
-          MAX=$((499 * 1024))
-          if [ "$ACTUAL" -gt "$MAX" ]; then
-            echo "FAIL: WASM $((ACTUAL / 1024)) KB exceeds 499 KB budget"
+          set -euo pipefail
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+          test -x engine/pill_launcher/target/release/PillLauncher || {
+            echo "ERROR: PillLauncher artifact missing or not executable"
             exit 1
-          fi
-          echo "OK: WASM $((ACTUAL / 1024)) KB <= 499 KB"
-
+          }
+          echo "PillLauncher artifact OK"
+      - name: Run city benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run --auto-servernum \
+            ./engine/pill_launcher/target/release/PillLauncher \
+            -a benchmark \
+            -p examples/city \
+            --bench-iterations 5 \
+            --bench-frames 1000 \
+            --bench-features benchmark_window \
+            -c release
