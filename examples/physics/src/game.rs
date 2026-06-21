@@ -61,7 +61,7 @@ impl PillGame for Game {
         engine.register_component::<CameraMovementComponent>(active_scene)?;
 
         // Add systems
-        //engine.add_system("ball_spawning_system", ball_spawning_system)?;
+        engine.add_system("ball_spawning_system", ball_spawning_system)?;
         engine.add_system("camera_movement_system", camera_movement_system)?;
         engine.add_global_component(StateComponent {
             elapsed: 0.0,

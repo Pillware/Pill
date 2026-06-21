@@ -371,13 +371,6 @@ impl Engine {
             )?;
         }
 
-        #[cfg(feature = "debug_ui")]
-        self.system_manager.add_system(
-            "build_status_system",
-            build_status_system,
-            UpdatePhase::PostGame,
-        )?;
-
         #[cfg(feature = "physics")]
         {
             self.system_manager.add_system(
