@@ -204,11 +204,6 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
     // Camera looks from -Z toward +Z.
     // Plane mesh is X/Z in model space, so rotate +90° around X.
     // Cylinder mesh is Y-axis aligned, so rotate +90° around X.
-    //
-    // Triangle mesh:
-    // - local X/Z form the visible right-triangle footprint
-    // - local Y is depth/thickness
-    // - after +90° around X, local X/Z become board X/Y, local Y becomes world Z
 
     const BOARD_Z: f32 = 1.0;
     const BOARD_HALF_WIDTH: f32 = 10.0;
@@ -220,22 +215,29 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
     const PEG_RADIUS: f32 = 0.38;
     const PEG_HALF_DEPTH: f32 = 0.55;
 
+    const PEG_ROW_COUNT: usize = 6;
+    const PEG_ROW_TOP_Y: f32 = 14.0;
+    const PEG_ROW_STEP_Y: f32 = 3.0;
+
     const BIN_COUNT: usize = 9;
     const DIVIDER_HALF_WIDTH: f32 = 0.18;
     const DIVIDER_HALF_HEIGHT: f32 = 1.8;
 
-    // Visible side triangles.
-    const SIDE_TRIANGLE_COUNT: usize = 6;
-    const SIDE_TRIANGLE_START_Y: f32 = 12.8;
-    const SIDE_TRIANGLE_STEP_Y: f32 = 2.8;
-    const SIDE_TRIANGLE_HEIGHT: f32 = 1.15;
-    const SIDE_TRIANGLE_INSET_X: f32 = 1.35;
-    const SIDE_TRIANGLE_HALF_DEPTH: f32 = 0.28;
+    const SIDE_TRIANGLE_COUNT: usize = PEG_ROW_COUNT - 1;
+    const SIDE_TRIANGLE_GAP_CENTER_Y: f32 = PEG_ROW_TOP_Y - PEG_ROW_STEP_Y * 0.5;
+    const SIDE_TRIANGLE_STEP_Y: f32 = PEG_ROW_STEP_Y;
 
-    // Invisible physics kicker.
-    // Slightly overlaps the wall to remove seam traps.
-    const SIDE_KICKER_OVERLAP_X: f32 = 0.65;
-    const SIDE_KICKER_HALF_THICKNESS: f32 = 0.12;
+    // Keep the wooden-guide look, but pull the point back enough that
+    // it cannot create a narrow route beside the outer peg.
+    const SIDE_TRIANGLE_INSET_X: f32 = 0.72;
+    const SIDE_TRIANGLE_HALF_HEIGHT: f32 = 1.00;
+    const SIDE_TRIANGLE_HALF_DEPTH: f32 = 0.34;
+
+    // The collider is a trapezoid very close to the visual triangle.
+    // Flat/rounded nose avoids a degenerate sharp-point contact.
+    const SIDE_TRIANGLE_TIP_HALF_HEIGHT: f32 = 0.12;
+    const SIDE_TRIANGLE_CORNER_RADIUS: f32 = 0.06;
+    const SIDE_TRIANGLE_WALL_OVERLAP_X: f32 = 0.12;
 
     let board_rotation = Vector3f::new(90.0, 0.0, 0.0);
     let bottom_y = BOARD_CENTER_Y - BOARD_HALF_HEIGHT;
@@ -277,7 +279,7 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
         .build();
 
     // ---------------------------------------------------------------------
-    // Outer frame: left wall
+    // Left wall
     // ---------------------------------------------------------------------
     engine
         .build_entity(scene)
@@ -309,7 +311,7 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
         .build();
 
     // ---------------------------------------------------------------------
-    // Outer frame: right wall
+    // Right wall
     // ---------------------------------------------------------------------
     engine
         .build_entity(scene)
@@ -341,7 +343,7 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
         .build();
 
     // ---------------------------------------------------------------------
-    // Outer frame: bottom wall
+    // Bottom wall
     // ---------------------------------------------------------------------
     engine
         .build_entity(scene)
@@ -373,34 +375,21 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
         .build();
 
     // ---------------------------------------------------------------------
-    // Side triangles
-    //
-    // Visual:
-    // - actual Triangle mesh, no strip Christmas tree garbage
-    //
-    // Physics:
-    // - invisible low-friction diagonal cuboid
-    // - overlaps into side wall to avoid seam traps
+    // Side triangle barriers
     // ---------------------------------------------------------------------
     let left_wall_inner_x = -BOARD_HALF_WIDTH + WALL_THICKNESS;
     let right_wall_inner_x = BOARD_HALF_WIDTH - WALL_THICKNESS;
 
     for i in 0..SIDE_TRIANGLE_COUNT {
-        let top_y = SIDE_TRIANGLE_START_Y - i as f32 * SIDE_TRIANGLE_STEP_Y;
-        let bottom_y = top_y - SIDE_TRIANGLE_HEIGHT;
+        let center_y = SIDE_TRIANGLE_GAP_CENTER_Y - i as f32 * SIDE_TRIANGLE_STEP_Y;
 
-        // Left triangle.
-        //
-        // Desired footprint:
-        //
-        // wall top     *
-        //              |\
-        //              | \
-        // wall bottom  *--* inward tip
-        //
-        let left_center = Vector3f::new(
+        // Your existing mesh helper wants this slightly lower anchor.
+        let visual_anchor_y = center_y - SIDE_TRIANGLE_HALF_HEIGHT * 0.5;
+
+        // Left visual tooth.
+        let left_visual_center = Vector3f::new(
             left_wall_inner_x + SIDE_TRIANGLE_INSET_X * 0.5,
-            (top_y + bottom_y) * 0.5,
+            visual_anchor_y,
             -0.03,
         );
 
@@ -408,39 +397,34 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
             engine,
             scene,
             plinko,
-            left_center,
+            left_visual_center,
             true,
             SIDE_TRIANGLE_INSET_X,
-            SIDE_TRIANGLE_HEIGHT,
+            SIDE_TRIANGLE_HALF_HEIGHT,
             SIDE_TRIANGLE_HALF_DEPTH,
         )?;
 
-        let left_visual_end =
-            Vector3f::new(left_wall_inner_x + SIDE_TRIANGLE_INSET_X, bottom_y, 0.0);
-
-        let left_physics_start =
-            Vector3f::new(left_wall_inner_x - SIDE_KICKER_OVERLAP_X, top_y, 0.0);
-
-        spawn_invisible_side_kicker_collider(
+        // Left physical tooth: one full convex solid.
+        spawn_side_tooth_collider(
             engine,
             scene,
-            left_physics_start,
-            left_visual_end,
-            SIDE_KICKER_HALF_THICKNESS,
+            Vector3f::new(
+                left_wall_inner_x - SIDE_TRIANGLE_WALL_OVERLAP_X + SIDE_TRIANGLE_INSET_X * 0.5,
+                center_y,
+                0.0,
+            ),
+            true,
+            SIDE_TRIANGLE_INSET_X,
+            SIDE_TRIANGLE_HALF_HEIGHT,
+            SIDE_TRIANGLE_HALF_DEPTH,
+            SIDE_TRIANGLE_TIP_HALF_HEIGHT,
+            SIDE_TRIANGLE_CORNER_RADIUS,
         )?;
 
-        // Right triangle, mirrored.
-        //
-        // Desired footprint:
-        //
-        //        * wall top
-        //       /|
-        //      / |
-        // tip *--* wall bottom
-        //
-        let right_center = Vector3f::new(
+        // Right visual tooth.
+        let right_visual_center = Vector3f::new(
             right_wall_inner_x - SIDE_TRIANGLE_INSET_X * 0.5,
-            (top_y + bottom_y) * 0.5,
+            visual_anchor_y,
             -0.03,
         );
 
@@ -448,33 +432,35 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
             engine,
             scene,
             plinko,
-            right_center,
+            right_visual_center,
             false,
             SIDE_TRIANGLE_INSET_X,
-            SIDE_TRIANGLE_HEIGHT,
+            SIDE_TRIANGLE_HALF_HEIGHT,
             SIDE_TRIANGLE_HALF_DEPTH,
         )?;
 
-        let right_visual_end =
-            Vector3f::new(right_wall_inner_x - SIDE_TRIANGLE_INSET_X, bottom_y, 0.0);
-
-        let right_physics_start =
-            Vector3f::new(right_wall_inner_x + SIDE_KICKER_OVERLAP_X, top_y, 0.0);
-
-        spawn_invisible_side_kicker_collider(
+        // Right physical tooth: mirrored, one full convex solid.
+        spawn_side_tooth_collider(
             engine,
             scene,
-            right_physics_start,
-            right_visual_end,
-            SIDE_KICKER_HALF_THICKNESS,
+            Vector3f::new(
+                right_wall_inner_x + SIDE_TRIANGLE_WALL_OVERLAP_X - SIDE_TRIANGLE_INSET_X * 0.5,
+                center_y,
+                0.0,
+            ),
+            false,
+            SIDE_TRIANGLE_INSET_X,
+            SIDE_TRIANGLE_HALF_HEIGHT,
+            SIDE_TRIANGLE_HALF_DEPTH,
+            SIDE_TRIANGLE_TIP_HALF_HEIGHT,
+            SIDE_TRIANGLE_CORNER_RADIUS,
         )?;
     }
-
     // ---------------------------------------------------------------------
     // Peg field
     // ---------------------------------------------------------------------
-    for row in 0..6 {
-        let y = 14.0 - row as f32 * 3.0;
+    for row in 0..PEG_ROW_COUNT {
+        let y = PEG_ROW_TOP_Y - row as f32 * PEG_ROW_STEP_Y;
         let columns = if row % 2 == 0 { 5 } else { 6 };
         let x_start = if row % 2 == 0 { -6.0 } else { -7.5 };
 
@@ -513,7 +499,7 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
     }
 
     // ---------------------------------------------------------------------
-    // Bottom compartments / score bins
+    // Bottom compartments
     // ---------------------------------------------------------------------
     let inner_left = -BOARD_HALF_WIDTH + WALL_THICKNESS * 1.5;
     let inner_right = BOARD_HALF_WIDTH - WALL_THICKNESS * 1.5;
@@ -616,25 +602,22 @@ fn spawn_side_triangles_visual(
     Ok(())
 }
 
-fn spawn_invisible_side_kicker_collider(
+fn spawn_side_deflector_collider(
     engine: &mut Engine,
     scene: SceneHandle,
-    physics_start: Vector3f,
-    physics_end: Vector3f,
+    start: Vector3f,
+    end: Vector3f,
     half_thickness: f32,
+    half_depth: f32,
 ) -> Result<()> {
-    let dx = physics_end.x - physics_start.x;
-    let dy = physics_end.y - physics_start.y;
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
 
     let length = (dx * dx + dy * dy).sqrt();
     let half_length = length * 0.5;
     let angle_deg = dy.atan2(dx).to_degrees();
 
-    let center = Vector3f::new(
-        (physics_start.x + physics_end.x) * 0.5,
-        (physics_start.y + physics_end.y) * 0.5,
-        0.0,
-    );
+    let center = Vector3f::new((start.x + end.x) * 0.5, (start.y + end.y) * 0.5, 0.0);
 
     engine
         .build_entity(scene)
@@ -652,9 +635,74 @@ fn spawn_invisible_side_kicker_collider(
         )
         .with_component(
             ColliderComponent::builder()
-                .shape(SharedShape::cuboid(half_length, 0.35, half_thickness))
-                .friction(0.0)
-                .restitution(0.18)
+                .shape(SharedShape::cuboid(half_length, half_depth, half_thickness))
+                .friction(0.04)
+                .restitution(0.04)
+                .build(),
+        )
+        .build();
+
+    Ok(())
+}
+
+fn spawn_side_tooth_collider(
+    engine: &mut Engine,
+    scene: SceneHandle,
+    center: Vector3f,
+    is_left: bool,
+    inset_x: f32,
+    half_height: f32,
+    half_depth: f32,
+    tip_half_height: f32,
+    corner_radius: f32,
+) -> Result<()> {
+    let half_inset = inset_x * 0.5;
+
+    // Local X/Y is already board X/Y, so this entity deliberately has
+    // no +90° rotation. Its prism is authored directly in board space.
+    let (base_x, tip_x) = if is_left {
+        (-half_inset, half_inset)
+    } else {
+        (half_inset, -half_inset)
+    };
+
+    // A rounded trapezoidal prism:
+    //
+    // Left:                 Right:
+    //
+    // | \                   / |
+    // |  | <- flat nose     |  |
+    // | /                   \ |
+    //
+    // This is one convex collider, so there is no seam or isolated cap
+    // in which a ball can be caught.
+    let points = [
+        Vector3f::new(base_x, -half_height, -half_depth),
+        Vector3f::new(base_x, half_height, -half_depth),
+        Vector3f::new(tip_x, -tip_half_height, -half_depth),
+        Vector3f::new(tip_x, tip_half_height, -half_depth),
+        Vector3f::new(base_x, -half_height, half_depth),
+        Vector3f::new(base_x, half_height, half_depth),
+        Vector3f::new(tip_x, -tip_half_height, half_depth),
+        Vector3f::new(tip_x, tip_half_height, half_depth),
+    ];
+
+    let shape = SharedShape::round_convex_hull(&points, corner_radius)
+        .expect("side tooth points must form a valid convex prism");
+
+    engine
+        .build_entity(scene)
+        .with_component(TransformComponent::builder().position(center).build())
+        .with_component(
+            RigidBodyComponent::builder()
+                .body_type(RigidBodyType::Fixed)
+                .build(),
+        )
+        .with_component(
+            ColliderComponent::builder()
+                .shape(shape)
+                .friction(0.05)
+                .restitution(0.03)
                 .build(),
         )
         .build();
