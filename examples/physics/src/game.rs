@@ -17,10 +17,13 @@ define_global_component!(PlinkoBoard {
     peg_mesh: MeshHandle,
     peg_material: MaterialHandle,
     compartment_material: MaterialHandle,
+    triangle_mesh: MeshHandle,
+    triangle_material: MaterialHandle,
 });
 
 define_component!(BallComponent {});
 
+// TODO: add egui tweaks - ball size, pegs size, spawn frequency. physics parameters?
 define_global_component!(StateComponent {
     elapsed: f32,
     timeout: f32,
@@ -58,35 +61,13 @@ impl PillGame for Game {
         engine.register_component::<CameraMovementComponent>(active_scene)?;
 
         // Add systems
-        engine.add_system("ball_spawning_system", ball_spawning_system)?;
+        //engine.add_system("ball_spawning_system", ball_spawning_system)?;
         engine.add_system("camera_movement_system", camera_movement_system)?;
         engine.add_global_component(StateComponent {
             elapsed: 0.0,
             timeout: 1.0,
             spawn_index: 0,
         })?;
-
-        // Add textures
-        let pill_color_texture = Texture::from_bytes(
-            "PillColor",
-            TextureType::Color,
-            include_bytes!("../res/textures/pill_color.cooked_tex"),
-        );
-        let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
-        let pill_normal_texture = Texture::from_bytes(
-            "PillNormal",
-            TextureType::Normal,
-            include_bytes!("../res/textures/pill_normal.cooked_tex"),
-        );
-        let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
-
-        // Add materials
-        let pill_material = Material::builder("Pill")
-            .texture("color", pill_color_texture_handle)?
-            .texture("normal", pill_normal_texture_handle)?
-            .color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
-            .scalar_parameter("specularity", 0.5)?
-            .build();
 
         // TODO: later add variable materials and colours
         // Ball mesh and material
@@ -136,6 +117,19 @@ impl PillGame for Game {
                 .build(),
         )?;
 
+        // Side triangles meshes and materials
+        let triangle_mesh_handle = engine.add_resource(Mesh::from_cooked_mesh_bytes(
+            "Triangle",
+            include_bytes!("../res/models/triangle.cooked_mesh"),
+        )?)?;
+
+        let triangle_material_handle = engine.add_resource::<Material>(
+            Material::builder("Triangle")
+                .color_parameter("tint", Color::new(0.5, 0.5, 0.5))?
+                .scalar_parameter("specularity", 0.5)?
+                .build(),
+        )?;
+
         // Create camera entity
         engine
             .build_entity(active_scene)
@@ -165,6 +159,8 @@ impl PillGame for Game {
             peg_material: peg_material_handle,
             peg_mesh: peg_mesh_handle,
             compartment_material: compartment_material_handle,
+            triangle_mesh: triangle_mesh_handle,
+            triangle_material: triangle_material_handle,
         };
         spawn_plinko_board(engine, active_scene, &plinko)?;
 
@@ -200,10 +196,15 @@ fn ball_spawning_system(engine: &mut Engine) -> Result<()> {
 }
 
 fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBoard) -> Result<()> {
-    // Board lives in the X/Y plane.
-    // Camera is on -Z looking toward +Z.
+    // Board lies in the X/Y plane.
+    // Camera looks from -Z toward +Z.
     // Plane mesh is X/Z in model space, so rotate +90° around X.
-    // Cylinder mesh is Y-axis aligned, so rotate +90° around X to make pegs protrude along Z.
+    // Cylinder mesh is Y-axis aligned, so rotate +90° around X.
+    //
+    // Triangle mesh:
+    // - local X/Z form the visible right-triangle footprint
+    // - local Y is depth/thickness
+    // - after +90° around X, local X/Z become board X/Y, local Y becomes world Z
 
     const BOARD_Z: f32 = 1.0;
     const BOARD_HALF_WIDTH: f32 = 10.0;
@@ -215,9 +216,22 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
     const PEG_RADIUS: f32 = 0.38;
     const PEG_HALF_DEPTH: f32 = 0.55;
 
-    const BIN_COUNT: usize = 8;
+    const BIN_COUNT: usize = 9;
     const DIVIDER_HALF_WIDTH: f32 = 0.18;
     const DIVIDER_HALF_HEIGHT: f32 = 1.8;
+
+    // Visible side triangles.
+    const SIDE_TRIANGLE_COUNT: usize = 6;
+    const SIDE_TRIANGLE_START_Y: f32 = 12.8;
+    const SIDE_TRIANGLE_STEP_Y: f32 = 2.8;
+    const SIDE_TRIANGLE_HEIGHT: f32 = 1.15;
+    const SIDE_TRIANGLE_INSET_X: f32 = 1.35;
+    const SIDE_TRIANGLE_HALF_DEPTH: f32 = 0.28;
+
+    // Invisible physics kicker.
+    // Slightly overlaps the wall to remove seam traps.
+    const SIDE_KICKER_OVERLAP_X: f32 = 0.65;
+    const SIDE_KICKER_HALF_THICKNESS: f32 = 0.12;
 
     let board_rotation = Vector3f::new(90.0, 0.0, 0.0);
     let bottom_y = BOARD_CENTER_Y - BOARD_HALF_HEIGHT;
@@ -252,57 +266,204 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
                     0.25,
                     BOARD_HALF_HEIGHT,
                 ))
+                .friction(0.20)
+                .restitution(0.05)
                 .build(),
         )
         .build();
 
     // ---------------------------------------------------------------------
-    // Outer frame: left wall, right wall, bottom wall
+    // Outer frame: left wall
     // ---------------------------------------------------------------------
-    let frame_pieces = [
-        (
-            Vector3f::new(-BOARD_HALF_WIDTH, BOARD_CENTER_Y, 0.0),
-            board_rotation,
-            Vector3f::new(WALL_THICKNESS, 1.0, BOARD_HALF_HEIGHT),
-            SharedShape::cuboid(WALL_THICKNESS, 0.35, BOARD_HALF_HEIGHT),
-        ),
-        (
-            Vector3f::new(BOARD_HALF_WIDTH, BOARD_CENTER_Y, 0.0),
-            board_rotation,
-            Vector3f::new(WALL_THICKNESS, 1.0, BOARD_HALF_HEIGHT),
-            SharedShape::cuboid(WALL_THICKNESS, 0.35, BOARD_HALF_HEIGHT),
-        ),
-        (
-            Vector3f::new(0.0, bottom_y, 0.0),
-            board_rotation,
-            Vector3f::new(BOARD_HALF_WIDTH, 1.0, WALL_THICKNESS),
-            SharedShape::cuboid(BOARD_HALF_WIDTH, 0.35, WALL_THICKNESS),
-        ),
-    ];
+    engine
+        .build_entity(scene)
+        .with_component(
+            TransformComponent::builder()
+                .position(Vector3f::new(-BOARD_HALF_WIDTH, BOARD_CENTER_Y, 0.0))
+                .rotation(board_rotation)
+                .scale(Vector3f::new(WALL_THICKNESS, 1.0, BOARD_HALF_HEIGHT))
+                .build(),
+        )
+        .with_component(
+            MeshRenderingComponent::builder()
+                .mesh(&plinko.backplate_mesh)
+                .material(&plinko.compartment_material)
+                .build(),
+        )
+        .with_component(
+            RigidBodyComponent::builder()
+                .body_type(RigidBodyType::Fixed)
+                .build(),
+        )
+        .with_component(
+            ColliderComponent::builder()
+                .shape(SharedShape::cuboid(WALL_THICKNESS, 0.35, BOARD_HALF_HEIGHT))
+                .friction(0.0)
+                .restitution(0.08)
+                .build(),
+        )
+        .build();
 
-    for (position, rotation, scale, shape) in frame_pieces {
-        engine
-            .build_entity(scene)
-            .with_component(
-                TransformComponent::builder()
-                    .position(position)
-                    .rotation(rotation)
-                    .scale(scale)
-                    .build(),
-            )
-            .with_component(
-                MeshRenderingComponent::builder()
-                    .mesh(&plinko.backplate_mesh)
-                    .material(&plinko.compartment_material)
-                    .build(),
-            )
-            .with_component(
-                RigidBodyComponent::builder()
-                    .body_type(RigidBodyType::Fixed)
-                    .build(),
-            )
-            .with_component(ColliderComponent::builder().shape(shape).build())
-            .build();
+    // ---------------------------------------------------------------------
+    // Outer frame: right wall
+    // ---------------------------------------------------------------------
+    engine
+        .build_entity(scene)
+        .with_component(
+            TransformComponent::builder()
+                .position(Vector3f::new(BOARD_HALF_WIDTH, BOARD_CENTER_Y, 0.0))
+                .rotation(board_rotation)
+                .scale(Vector3f::new(WALL_THICKNESS, 1.0, BOARD_HALF_HEIGHT))
+                .build(),
+        )
+        .with_component(
+            MeshRenderingComponent::builder()
+                .mesh(&plinko.backplate_mesh)
+                .material(&plinko.compartment_material)
+                .build(),
+        )
+        .with_component(
+            RigidBodyComponent::builder()
+                .body_type(RigidBodyType::Fixed)
+                .build(),
+        )
+        .with_component(
+            ColliderComponent::builder()
+                .shape(SharedShape::cuboid(WALL_THICKNESS, 0.35, BOARD_HALF_HEIGHT))
+                .friction(0.0)
+                .restitution(0.08)
+                .build(),
+        )
+        .build();
+
+    // ---------------------------------------------------------------------
+    // Outer frame: bottom wall
+    // ---------------------------------------------------------------------
+    engine
+        .build_entity(scene)
+        .with_component(
+            TransformComponent::builder()
+                .position(Vector3f::new(0.0, bottom_y, 0.0))
+                .rotation(board_rotation)
+                .scale(Vector3f::new(BOARD_HALF_WIDTH, 1.0, WALL_THICKNESS))
+                .build(),
+        )
+        .with_component(
+            MeshRenderingComponent::builder()
+                .mesh(&plinko.backplate_mesh)
+                .material(&plinko.compartment_material)
+                .build(),
+        )
+        .with_component(
+            RigidBodyComponent::builder()
+                .body_type(RigidBodyType::Fixed)
+                .build(),
+        )
+        .with_component(
+            ColliderComponent::builder()
+                .shape(SharedShape::cuboid(BOARD_HALF_WIDTH, 0.35, WALL_THICKNESS))
+                .friction(0.35)
+                .restitution(0.10)
+                .build(),
+        )
+        .build();
+
+    // ---------------------------------------------------------------------
+    // Side triangles
+    //
+    // Visual:
+    // - actual Triangle mesh, no strip Christmas tree garbage
+    //
+    // Physics:
+    // - invisible low-friction diagonal cuboid
+    // - overlaps into side wall to avoid seam traps
+    // ---------------------------------------------------------------------
+    let left_wall_inner_x = -BOARD_HALF_WIDTH + WALL_THICKNESS;
+    let right_wall_inner_x = BOARD_HALF_WIDTH - WALL_THICKNESS;
+
+    for i in 0..SIDE_TRIANGLE_COUNT {
+        let top_y = SIDE_TRIANGLE_START_Y - i as f32 * SIDE_TRIANGLE_STEP_Y;
+        let bottom_y = top_y - SIDE_TRIANGLE_HEIGHT;
+
+        // Left triangle.
+        //
+        // Desired footprint:
+        //
+        // wall top     *
+        //              |\
+        //              | \
+        // wall bottom  *--* inward tip
+        //
+        let left_center = Vector3f::new(
+            left_wall_inner_x + SIDE_TRIANGLE_INSET_X * 0.5,
+            (top_y + bottom_y) * 0.5,
+            -0.03,
+        );
+
+        spawn_side_triangles_visual(
+            engine,
+            scene,
+            plinko,
+            left_center,
+            true,
+            SIDE_TRIANGLE_INSET_X,
+            SIDE_TRIANGLE_HEIGHT,
+            SIDE_TRIANGLE_HALF_DEPTH,
+        )?;
+
+        let left_visual_end =
+            Vector3f::new(left_wall_inner_x + SIDE_TRIANGLE_INSET_X, bottom_y, 0.0);
+
+        let left_physics_start =
+            Vector3f::new(left_wall_inner_x - SIDE_KICKER_OVERLAP_X, top_y, 0.0);
+
+        spawn_invisible_side_kicker_collider(
+            engine,
+            scene,
+            left_physics_start,
+            left_visual_end,
+            SIDE_KICKER_HALF_THICKNESS,
+        )?;
+
+        // Right triangle, mirrored.
+        //
+        // Desired footprint:
+        //
+        //        * wall top
+        //       /|
+        //      / |
+        // tip *--* wall bottom
+        //
+        let right_center = Vector3f::new(
+            right_wall_inner_x - SIDE_TRIANGLE_INSET_X * 0.5,
+            (top_y + bottom_y) * 0.5,
+            -0.03,
+        );
+
+        spawn_side_triangles_visual(
+            engine,
+            scene,
+            plinko,
+            right_center,
+            false,
+            SIDE_TRIANGLE_INSET_X,
+            SIDE_TRIANGLE_HEIGHT,
+            SIDE_TRIANGLE_HALF_DEPTH,
+        )?;
+
+        let right_visual_end =
+            Vector3f::new(right_wall_inner_x - SIDE_TRIANGLE_INSET_X, bottom_y, 0.0);
+
+        let right_physics_start =
+            Vector3f::new(right_wall_inner_x + SIDE_KICKER_OVERLAP_X, top_y, 0.0);
+
+        spawn_invisible_side_kicker_collider(
+            engine,
+            scene,
+            right_physics_start,
+            right_visual_end,
+            SIDE_KICKER_HALF_THICKNESS,
+        )?;
     }
 
     // ---------------------------------------------------------------------
@@ -339,7 +500,7 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
                 .with_component(
                     ColliderComponent::builder()
                         .shape(SharedShape::cylinder(PEG_HALF_DEPTH, PEG_RADIUS))
-                        .friction(0.25)
+                        .friction(0.20)
                         .restitution(0.35)
                         .build(),
                 )
@@ -348,7 +509,7 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
     }
 
     // ---------------------------------------------------------------------
-    // Bottom compartments (bin dividers)
+    // Bottom compartments / score bins
     // ---------------------------------------------------------------------
     let inner_left = -BOARD_HALF_WIDTH + WALL_THICKNESS * 1.5;
     let inner_right = BOARD_HALF_WIDTH - WALL_THICKNESS * 1.5;
@@ -386,12 +547,113 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
                         0.35,
                         DIVIDER_HALF_HEIGHT,
                     ))
-                    .friction(0.25)
-                    .restitution(0.15)
+                    .friction(0.30)
+                    .restitution(0.08)
                     .build(),
             )
             .build();
     }
+
+    Ok(())
+}
+
+fn spawn_side_triangles_visual(
+    engine: &mut Engine,
+    scene: SceneHandle,
+    plinko: &PlinkoBoard,
+    center: Vector3f,
+    is_left: bool,
+    inset_x: f32,
+    height: f32,
+    half_depth: f32,
+) -> Result<()> {
+    // Your Triangle.obj has a right-triangle footprint in local X/Z.
+    //
+    // With rotation +90° around X:
+    // - local X maps to board X
+    // - local Z maps to board Y
+    // - local Y maps to world Z/depth
+    //
+    // Left side needs horizontal mirroring, hence negative X scale.
+    let x_scale = if is_left {
+        -inset_x * 0.5
+    } else {
+        inset_x * 0.5
+    };
+
+    let z_scale = height * 0.5;
+
+    // Draw twice with local-Y flipped to avoid front/back normal/culling issues.
+    // This preserves the same X/Y footprint, because local Y is only depth.
+    let depth_scales = [half_depth, -half_depth];
+
+    // draw them twice so we get the big wedge shape
+    for i in (0..2).rev() {
+        let new_center = Vector3f::new(center.x, center.y + height * i as f32, center.z);
+        for y_depth_scale in depth_scales {
+            engine
+                .build_entity(scene)
+                .with_component(
+                    TransformComponent::builder()
+                        .position(new_center)
+                        .rotation(Vector3f::new(90.0 + 180.0 * i as f32, 0.0, 0.0))
+                        .scale(Vector3f::new(x_scale, y_depth_scale, z_scale))
+                        .build(),
+                )
+                .with_component(
+                    MeshRenderingComponent::builder()
+                        .mesh(&plinko.triangle_mesh)
+                        .material(&plinko.triangle_material)
+                        .build(),
+                )
+                .build();
+        }
+    }
+    Ok(())
+}
+
+fn spawn_invisible_side_kicker_collider(
+    engine: &mut Engine,
+    scene: SceneHandle,
+    physics_start: Vector3f,
+    physics_end: Vector3f,
+    half_thickness: f32,
+) -> Result<()> {
+    let dx = physics_end.x - physics_start.x;
+    let dy = physics_end.y - physics_start.y;
+
+    let length = (dx * dx + dy * dy).sqrt();
+    let half_length = length * 0.5;
+    let angle_deg = dy.atan2(dx).to_degrees();
+
+    let center = Vector3f::new(
+        (physics_start.x + physics_end.x) * 0.5,
+        (physics_start.y + physics_end.y) * 0.5,
+        0.0,
+    );
+
+    engine
+        .build_entity(scene)
+        .with_component(
+            TransformComponent::builder()
+                .position(center)
+                .rotation(Vector3f::new(90.0, 0.0, angle_deg))
+                .scale(Vector3f::new(half_length, 1.0, half_thickness))
+                .build(),
+        )
+        .with_component(
+            RigidBodyComponent::builder()
+                .body_type(RigidBodyType::Fixed)
+                .build(),
+        )
+        .with_component(
+            ColliderComponent::builder()
+                .shape(SharedShape::cuboid(half_length, 0.35, half_thickness))
+                .friction(0.0)
+                .restitution(0.18)
+                .build(),
+        )
+        .build();
 
     Ok(())
 }
@@ -426,8 +688,8 @@ fn spawn_ball(
             RigidBodyComponent::builder()
                 .body_type(RigidBodyType::Dynamic)
                 .locked_axes(LockedAxes::TRANSLATION_LOCKED_Z)
-                .ccd_enabled(true)
-                .can_sleep(false)
+                .ccd_enabled(false)
+                .can_sleep(true)
                 .build(),
         )
         .with_component(
