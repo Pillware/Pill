@@ -63,7 +63,7 @@ impl ColliderComponent {
     }
 
     fn post_deferred_update_request(&mut self, request_variant: usize) {
-        if self.deferred_update_manager.is_some() {
+        if let Some(update_manager) = &mut self.deferred_update_manager {
             let entity_handle = self.entity_handle.expect(
                 "Critical: Cannot post deferred update request. No EntityHandle set in Component",
             );
@@ -75,43 +75,14 @@ impl ColliderComponent {
                 scene_handle,
                 request_variant,
             );
-            self.deferred_update_manager
-                .as_mut()
-                .expect("Critical: No DeferredUpdateManager")
-                .post_update_request(request);
+            update_manager.post_update_request(request);
         }
     }
+}
 
-    fn register_in_physics_world(&mut self, engine: &mut Engine) -> Result<()> {
-        // Try to get associated rigid body handle
-        let rigid_body_component_storage = engine
-            .scene_manager
-            .get_active_scene()
-            .unwrap()
-            .get_component_storage::<RigidBodyComponent>()?;
-        let rigid_body_handle: Option<RigidBodyHandle> = rigid_body_component_storage.data.get(self.entity_handle.unwrap().0.index as usize)
-            .context("Failed to get rigid body handle, no corresponding rigidbody component found in the entity")?.as_ref().and_then(|rb| rb.get_rigid_body_handle().clone());
-        let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
-
-        match rigid_body_handle {
-            Some(rigid_body_handle) => {
-                // If we have a rigid body handle, we can create the collider with it
-                let collider: Collider = self.clone().into();
-                let rigid_body_set = &mut physics_world.rigid_body_set;
-                self.collider_handle = Some(physics_world.collider_set.insert_with_parent(
-                    collider,
-                    rigid_body_handle,
-                    rigid_body_set,
-                ));
-            }
-            None => {
-                // If we don't have a rigid body handle, we can still create the collider
-                let collider: Collider = self.clone().into();
-                self.collider_handle = Some(physics_world.collider_set.insert(collider));
-            }
-        }
-
-        Ok(())
+impl Default for ColliderComponent {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -186,17 +157,16 @@ impl PillTypeMapKey for ColliderComponent {
     type Storage = ComponentStorage<ColliderComponent>;
 }
 
-// Implement Into<rapier3d::dynamics::RigidBody> for RigidBodyComponent
-impl Into<Collider> for ColliderComponent {
-    fn into(self) -> Collider {
-        let builder = ColliderBuilder::new(self.shape)
-            .position(self.position)
-            .friction(self.friction)
-            .restitution(self.restitution)
-            .mass(self.mass)
-            .sensor(self.is_sensor)
-            .collision_groups(self.collision_groups)
-            .solver_groups(self.solver_groups);
+impl From<ColliderComponent> for Collider {
+    fn from(collider: ColliderComponent) -> Self {
+        let builder = ColliderBuilder::new(collider.shape)
+            .position(collider.position)
+            .friction(collider.friction)
+            .restitution(collider.restitution)
+            .mass(collider.mass)
+            .sensor(collider.is_sensor)
+            .collision_groups(collider.collision_groups)
+            .solver_groups(collider.solver_groups);
 
         builder.build()
     }
@@ -204,15 +174,11 @@ impl Into<Collider> for ColliderComponent {
 
 impl Component for ColliderComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
         let deferred_update_component = engine
             .get_global_component_mut::<DeferredUpdateComponent>()
             .expect("Critical: No DeferredUpdateComponent");
         self.deferred_update_manager =
             Some(deferred_update_component.borrow_deferred_update_manager());
-
-        // self.register_in_physics_world(engine)
-        //     .context(format!("Registering {} {} in physics world", "Component".gobj_style(), get_type_name::<Self>().sobj_style()))?;
 
         Ok(())
     }
@@ -238,7 +204,7 @@ impl Component for ColliderComponent {
                     .get(self.entity_handle.unwrap().0.index as usize)
                     .unwrap()
                     .as_ref()
-                    .and_then(|rb| rb.get_rigid_body_handle().clone());
+                    .and_then(|rb| rb.get_rigid_body_handle());
                 let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
 
                 match rigid_body_handle {

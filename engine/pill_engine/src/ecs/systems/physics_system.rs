@@ -53,17 +53,10 @@ pub fn physics_system(engine: &mut Engine) -> Result<()> {
 
     timer.record("Sync transforms to physics");
 
-    //timer.record_new_context("Sync transforms to physics")?;
-
     // Sync transforms to physics bodies before stepping
     sync_transforms_to_physics(engine, active_scene_handle)?;
 
-    //timer.end_context()?;
     timer.record("Step the physics world");
-
-    // Step the physics world
-    //timer.record("Step the physics world")?;
-
     {
         let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
         physics_world.step();
@@ -71,17 +64,7 @@ pub fn physics_system(engine: &mut Engine) -> Result<()> {
 
     timer.record("Sync physics to transforms");
 
-    //timer.record_new_context("Sync physics to transforms")?;
-
     sync_physics_to_transforms(engine, active_scene_handle)?;
-
-    // timer.end_context()?;
-
-    //engine.system_manager.update_system_timer(
-    //    PHYSICS_SYSTEM.name,
-    //    PHYSICS_SYSTEM.update_phase,
-    //    timer,
-    //)?;
 
     Ok(())
 }

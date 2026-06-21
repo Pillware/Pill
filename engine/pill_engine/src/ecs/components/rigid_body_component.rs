@@ -101,16 +101,6 @@ impl RigidBodyComponent {
         self.rigid_body_handle
     }
 
-    pub fn register_in_physics_world(&mut self, engine: &mut Engine) -> Result<()> {
-        // Try to get associated rigid body handle
-        let physics_world = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
-
-        let rigid_body: RigidBody = self.clone().into();
-        self.rigid_body_handle = Some(physics_world.rigid_body_set.insert(rigid_body));
-
-        Ok(())
-    }
-
     fn post_deferred_update_request(&mut self, request_variant: usize) {
         if let Some(manager) = &mut self.deferred_update_manager {
             let entity_handle = self.entity_handle.expect(
@@ -129,6 +119,12 @@ impl RigidBodyComponent {
     }
 }
 
+impl Default for RigidBodyComponent {
+    fn default() -> Self {
+        RigidBodyComponent::new()
+    }
+}
+
 pub struct RigidBodyComponentBuilder {
     component: RigidBodyComponent,
 }
@@ -144,16 +140,6 @@ impl RigidBodyComponentBuilder {
         self.component.body_type = body_type;
         self
     }
-
-    // pub fn body_type(mut self, body_type: RigidBodyType) -> Self {
-    //     self.component = match body_type {
-    //         RigidBodyType::Dynamic => RigidBodyBuilder::dynamic(),
-    //         RigidBodyType::Fixed => RigidBodyBuilder::fixed(),
-    //         RigidBodyType::KinematicPositionBased => RigidBodyBuilder::kinematic_position_based(),
-    //         RigidBodyType::KinematicVelocityBased => RigidBodyBuilder::kinematic_velocity_based(),
-    //     };
-    //     self
-    // }
 
     pub fn locked_axes(mut self, locked_axes: LockedAxes) -> Self {
         self.component.locked_axes = locked_axes;
@@ -189,23 +175,27 @@ impl PillTypeMapKey for RigidBodyComponent {
     type Storage = ComponentStorage<RigidBodyComponent>;
 }
 
-// Implement Into<rapier3d::dynamics::RigidBody> for RigidBodyComponent
-impl Into<RigidBody> for RigidBodyComponent {
-    fn into(self) -> rapier3d::dynamics::RigidBody {
-        let builder = rapier3d::dynamics::RigidBodyBuilder::new(self.body_type)
-            .pose(self.initial_position)
-            .locked_axes(self.locked_axes)
-            .linear_damping(self.linear_damping)
-            .angular_damping(self.angular_damping)
-            .gravity_scale(self.gravity_scale)
-            .ccd_enabled(self.ccd_enabled)
-            .can_sleep(self.can_sleep)
-            .enabled(self.enabled)
-            .dominance_group(self.dominance_group);
+impl From<RigidBodyComponent> for RigidBody {
+    fn from(rigid_body: RigidBodyComponent) -> Self {
+        let mut builder = rapier3d::dynamics::RigidBodyBuilder::new(rigid_body.body_type)
+            .pose(rigid_body.initial_position)
+            .locked_axes(rigid_body.locked_axes)
+            .linear_damping(rigid_body.linear_damping)
+            .angular_damping(rigid_body.angular_damping)
+            .gravity_scale(rigid_body.gravity_scale)
+            .ccd_enabled(rigid_body.ccd_enabled)
+            .can_sleep(rigid_body.can_sleep)
+            .enabled(rigid_body.enabled)
+            .dominance_group(rigid_body.dominance_group);
 
-        // if let Some(mass_props) = self.additional_mass {
-        //     builder = builder.additional_mass_properties(mass_props);
-        // }
+        if let Some(mass_props) = rigid_body.additional_mass {
+            match mass_props {
+                RigidBodyAdditionalMassProps::MassProps(props) => {
+                    builder = builder.additional_mass_properties(props)
+                }
+                RigidBodyAdditionalMassProps::Mass(real) => builder = builder.additional_mass(real),
+            }
+        }
 
         builder.build()
     }
@@ -213,16 +203,11 @@ impl Into<RigidBody> for RigidBodyComponent {
 
 impl Component for RigidBodyComponent {
     fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        // This component is using DeferredUpdateSystem so keep DeferredUpdateManager
         let deferred_update_component = engine
             .get_global_component_mut::<DeferredUpdateComponent>()
             .expect("Critical: No DeferredUpdateComponent");
         self.deferred_update_manager =
             Some(deferred_update_component.borrow_deferred_update_manager());
-
-        // self.register_in_physics_world(engine)
-
-        //     .context(format!("Registering {} {} in physics world", "Component".gobj_style(), get_type_name::<Self>().sobj_style()))?;
 
         Ok(())
     }

@@ -32,7 +32,6 @@ pub struct PhysicsWorldComponent {
     pub impulse_joint_set: ImpulseJointSet,
     pub multibody_joint_set: MultibodyJointSet,
     pub ccd_solver: CCDSolver,
-    //pub query_pipeline: QueryPipeline<'static>,
     pub physics_hooks: (),
     pub event_handler: (),
 }
@@ -41,12 +40,6 @@ impl PhysicsWorldComponent {
     pub fn new() -> Self {
         let rigid_body_set = RigidBodySet::new();
         let collider_set = ColliderSet::new();
-        // let mut query_pipeline = QueryPipeline::new();
-        // query_pipeline.update(
-        //     &rigid_body_set,
-        //     &collider_set
-        // );
-        // let mut query_pipeline = QueryPipeline::new();
         Self {
             rigid_body_set,
             collider_set,
@@ -59,7 +52,6 @@ impl PhysicsWorldComponent {
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            // query_pipeline: query_pipeline,
             physics_hooks: (),
             event_handler: (),
         }
@@ -84,8 +76,12 @@ impl PhysicsWorldComponent {
             &self.physics_hooks,
             &self.event_handler,
         );
+    }
+}
 
-        //self.query_pipeline.update(&self.rigid_body_set, &self.collider_set);
+impl Default for PhysicsWorldComponent {
+    fn default() -> Self {
+        PhysicsWorldComponent::new()
     }
 }
 
