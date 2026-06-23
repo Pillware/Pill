@@ -121,64 +121,86 @@ where
     T: Component<Storage = ComponentStorage<T>>,
 {
     fn process(&mut self, engine: &mut Engine) -> Result<()> {
-        let mut component = Option::<T>::None;
+        let entity_index = self.entity_handle.data().index as usize;
 
-        {
-            // Get scene
-            let scene = engine
-                .scene_manager
-                .get_scene_mut(self.scene_handle)
-                .unwrap();
+        // Take the component only if this exact entity still exists and still
+        // has this component. A queued request can legitimately become stale.
+        let mut component = {
+            let scene = match engine.scene_manager.get_scene_mut(self.scene_handle) {
+                Ok(scene) => scene,
+                Err(_) => return Ok(()), // Scene was removed.
+            };
 
-            // Get component storage
+            // Important: validates the slot-map generation, not merely `index`.
+            // Without this, an old request could affect a newly-created entity
+            // that reused the same storage index.
+            if !scene.entities.contains_key(self.entity_handle) {
+                return Ok(());
+            }
+
             let component_storage = scene
                 .get_component_storage_mut::<T>()
                 .expect("Critical: Component not registered");
 
-            // Get component slot
-            let component_slot = component_storage
+            match component_storage
                 .data
-                .get_mut(self.entity_handle.data().index as usize)
-                .unwrap();
+                .get_mut(entity_index)
+                .and_then(Option::take)
+            {
+                Some(component) => component,
 
-            // Take component from slot
-            component = Some(component_slot.take().expect("Critical: Component is None"));
-        }
+                // Entity survived but its component was removed before this
+                // request was processed. This is a stale request, not a panic.
+                None => return Ok(()),
+            }
+        };
 
-        // Process
-        component
-            .as_mut()
-            .unwrap()
+        // Do not `?` here: we must restore `component` first even on error.
+        let update_result = component
             .deferred_update(engine, self.request_variant)
             .context(format!(
                 "Deferred update of {} {} failed",
                 "Component".general_object_style(),
-                get_type_name::<T>().specific_object_style()
-            ))?;
+                get_type_name::<T>().specific_object_style(),
+            ));
 
+        // Restore the component before propagating the result.
         {
-            // Get scene
-            let scene = engine
-                .scene_manager
-                .get_scene_mut(self.scene_handle)
-                .unwrap();
+            let scene = match engine.scene_manager.get_scene_mut(self.scene_handle) {
+                Ok(scene) => scene,
 
-            // Get component storage
+                // The component deleted its own scene while updating.
+                // Dropping the extracted component is correct.
+                Err(_) => return update_result,
+            };
+
+            // The entity may have deleted itself during deferred_update.
+            if !scene.entities.contains_key(self.entity_handle) {
+                return update_result;
+            }
+
             let component_storage = scene
                 .get_component_storage_mut::<T>()
                 .expect("Critical: Component not registered");
 
-            // Get component slot
-            let component_slot = component_storage
-                .data
-                .get_mut(self.entity_handle.data().index as usize)
-                .unwrap();
+            let Some(component_slot) = component_storage.data.get_mut(entity_index) else {
+                return update_result;
+            };
 
-            // Put component back to slot
-            let _ = component_slot.insert(component.take().unwrap());
+            // A deferred update should not silently overwrite a component that
+            // was added while the original one was temporarily extracted.
+            if component_slot.is_some() {
+                return Err(format!(
+                    "Deferred update of {} tried to restore into an occupied component slot",
+                    get_type_name::<T>(),
+                )
+                .into());
+            }
+
+            *component_slot = Some(component);
         }
 
-        Ok(())
+        update_result
     }
 }
 

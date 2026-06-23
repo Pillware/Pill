@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use pill_engine::{define_component, define_global_component, game::*};
 
 // Define custom component
@@ -19,11 +21,13 @@ define_global_component!(PlinkoBoard {
     compartment_material: MaterialHandle,
     triangle_mesh: MeshHandle,
     triangle_material: MaterialHandle,
+    ball_radius: f32,
 });
 
 define_component!(BallComponent {});
 
 // TODO: add egui tweaks - ball size, pegs size, spawn frequency. physics parameters?
+// TODO: add mode controls - timeout or manual spawning only, reset button in egui
 define_global_component!(StateComponent {
     elapsed: f32,
     timeout: f32,
@@ -38,6 +42,32 @@ define_component!(CameraMovementComponent {
     delta_y: f32,
     delta_z: f32,
 });
+
+pub struct PlinkoUiState {
+    pub ball_radius: f32,
+    pub rebuild_requested: bool,
+}
+
+impl Default for PlinkoUiState {
+    fn default() -> Self {
+        PlinkoUiState {
+            ball_radius: 0.25,
+            rebuild_requested: false,
+        }
+    }
+}
+
+define_global_component!(PlinkoTuningComponent {
+    state: Arc<Mutex<PlinkoUiState>>,
+});
+
+impl Default for PlinkoTuningComponent {
+    fn default() -> Self {
+        PlinkoTuningComponent {
+            state: Arc::new(Mutex::new(PlinkoUiState::default())),
+        }
+    }
+}
 
 // Game
 pub struct Game {}
@@ -63,6 +93,8 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("ball_spawning_system", ball_spawning_system)?;
         engine.add_system("camera_movement_system", camera_movement_system)?;
+        engine.add_system("demo_keyboard_control_system", demo_keyboard_control_system)?;
+        engine.add_system("update_plinko_ui_system", update_plinko_ui_system)?;
         engine.add_global_component(StateComponent {
             elapsed: 0.0,
             timeout: 1.0,
@@ -150,6 +182,7 @@ impl PillGame for Game {
             .with_component(CameraComponent::builder().enabled(true).build())
             .build();
 
+        const BALL_RADIUS: f32 = 0.25;
         // Store handles for spawning in the plinko global component
         let plinko = PlinkoBoard {
             ball_material: ball_material_handle,
@@ -161,6 +194,7 @@ impl PillGame for Game {
             compartment_material: compartment_material_handle,
             triangle_mesh: triangle_mesh_handle,
             triangle_material: triangle_material_handle,
+            ball_radius: BALL_RADIUS,
         };
         spawn_plinko_board(engine, active_scene, &plinko)?;
 
@@ -169,6 +203,10 @@ impl PillGame for Game {
         let physics_world_component = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
         const METERS_PER_WORLD_UNIT: f32 = 0.20;
         physics_world_component.set_gravity(Vector3f::new(0.0, -9.81 / METERS_PER_WORLD_UNIT, 0.0));
+
+        // Setup egui components
+        engine.add_global_component(PlinkoTuningComponent::default())?;
+        register_plinko_ui(engine)?;
 
         Ok(())
     }
@@ -180,6 +218,7 @@ fn ball_spawning_system(engine: &mut Engine) -> Result<()> {
     let scene_handle = engine.get_active_scene_handle()?;
     let ball_mesh = engine.get_global_component::<PlinkoBoard>()?.ball_mesh;
     let ball_material = engine.get_global_component::<PlinkoBoard>()?.ball_material;
+    let ball_radius = engine.get_global_component::<PlinkoBoard>()?.ball_radius;
     let state: &mut StateComponent = engine.get_global_component_mut::<StateComponent>()?;
     if state.elapsed + dt > state.timeout {
         state.elapsed = 0.0;
@@ -192,6 +231,7 @@ fn ball_spawning_system(engine: &mut Engine) -> Result<()> {
             &ball_mesh,
             &ball_material,
             spawn_index,
+            ball_radius,
         )?;
     } else {
         state.elapsed += dt;
@@ -602,49 +642,6 @@ fn spawn_side_triangles_visual(
     Ok(())
 }
 
-fn spawn_side_deflector_collider(
-    engine: &mut Engine,
-    scene: SceneHandle,
-    start: Vector3f,
-    end: Vector3f,
-    half_thickness: f32,
-    half_depth: f32,
-) -> Result<()> {
-    let dx = end.x - start.x;
-    let dy = end.y - start.y;
-
-    let length = (dx * dx + dy * dy).sqrt();
-    let half_length = length * 0.5;
-    let angle_deg = dy.atan2(dx).to_degrees();
-
-    let center = Vector3f::new((start.x + end.x) * 0.5, (start.y + end.y) * 0.5, 0.0);
-
-    engine
-        .build_entity(scene)
-        .with_component(
-            TransformComponent::builder()
-                .position(center)
-                .rotation(Vector3f::new(90.0, 0.0, angle_deg))
-                .scale(Vector3f::new(half_length, 1.0, half_thickness))
-                .build(),
-        )
-        .with_component(
-            RigidBodyComponent::builder()
-                .body_type(RigidBodyType::Fixed)
-                .build(),
-        )
-        .with_component(
-            ColliderComponent::builder()
-                .shape(SharedShape::cuboid(half_length, half_depth, half_thickness))
-                .friction(0.04)
-                .restitution(0.04)
-                .build(),
-        )
-        .build();
-
-    Ok(())
-}
-
 fn spawn_side_tooth_collider(
     engine: &mut Engine,
     scene: SceneHandle,
@@ -717,6 +714,7 @@ fn spawn_ball(
     mesh: &MeshHandle,
     material: &MaterialHandle,
     spawn_index: u64,
+    ball_radius: f32,
 ) -> Result<()> {
     const SPAWN_XS: [f32; 8] = [-0.9, 0.75, -0.35, 1.15, -1.25, 0.45, -0.65, 0.95];
     let spawn_x = SPAWN_XS[spawn_index as usize % SPAWN_XS.len()];
@@ -726,7 +724,7 @@ fn spawn_ball(
         .with_component(
             TransformComponent::builder()
                 .position(Vector3f::new(spawn_x, 18.0, 0.0))
-                .scale(Vector3f::new(0.25, 0.25, 0.25))
+                .scale(Vector3f::new(ball_radius, ball_radius, ball_radius))
                 .build(),
         )
         .with_component(
@@ -746,7 +744,7 @@ fn spawn_ball(
         )
         .with_component(
             ColliderComponent::builder()
-                .shape(SharedShape::ball(0.55))
+                .shape(SharedShape::ball(ball_radius * 2.0 + 0.05))
                 .mass(0.1)
                 .friction(0.2)
                 .restitution(0.25)
@@ -839,5 +837,112 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         transform_transform.set_rotation(Vector3f::new(0.0, -angle - 90.0, 0.0));
     }
 
+    Ok(())
+}
+
+fn clear_all_balls(engine: &mut Engine) -> Result<()> {
+    let mut entities: Vec<EntityHandle> = vec![];
+    for (entity, _) in engine.iterate_one_component_mut::<BallComponent>()? {
+        entities.push(entity);
+    } // TODO: could just bulk remove all entities with BallComponent
+    for entity in entities {
+        engine.remove_entity_default_scene(entity)?;
+    }
+    Ok(())
+}
+
+fn demo_keyboard_control_system(engine: &mut Engine) -> Result<()> {
+    let input = engine.get_global_component::<InputComponent>()?;
+    let scene = engine.get_active_scene_handle()?;
+
+    let reset_key = input.get_key(KeyboardKey::KeyR);
+    let space_key = input.get_key_pressed(KeyboardKey::Space);
+
+    // remove all balls
+    if reset_key {
+        clear_all_balls(engine)?;
+    }
+
+    // spawn a ball
+    if space_key {
+        let ball_mesh = engine.get_global_component::<PlinkoBoard>()?.ball_mesh;
+        let ball_material = engine.get_global_component::<PlinkoBoard>()?.ball_material;
+        let ball_radius = engine.get_global_component::<PlinkoBoard>()?.ball_radius;
+        let state: &mut StateComponent = engine.get_global_component_mut::<StateComponent>()?;
+        let spawn_index = state.spawn_index;
+        state.spawn_index = state.spawn_index.wrapping_add(1);
+        spawn_ball(
+            engine,
+            scene,
+            &ball_mesh,
+            &ball_material,
+            spawn_index,
+            ball_radius,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn register_plinko_ui(engine: &mut Engine) -> Result<()> {
+    let state = engine
+        .get_global_component::<PlinkoTuningComponent>()?
+        .state
+        .clone();
+
+    engine
+        .get_global_component_mut::<EguiManagerComponent>()?
+        .register_ui("plinko.controls", move |ctx| {
+            egui::Window::new("Plinko Controls")
+                .default_open(true)
+                .show(ctx, |ui| {
+                    let mut state = state
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+                    let response = ui.add(
+                        egui::Slider::new(&mut state.ball_radius, 0.05..=0.50).text("Ball Radius"),
+                    );
+
+                    if response.drag_stopped()
+                        || (response.changed() && !response.is_pointer_button_down_on())
+                    {
+                        state.rebuild_requested = true;
+                    }
+                });
+        });
+
+    Ok(())
+}
+
+fn update_plinko_ui_system(engine: &mut Engine) -> Result<()> {
+    let state = engine
+        .get_global_component::<PlinkoTuningComponent>()?
+        .state
+        .clone();
+
+    let requested_radius = {
+        let mut state = state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        if !state.rebuild_requested {
+            None
+        } else {
+            state.rebuild_requested = false;
+            Some(state.ball_radius)
+        }
+    };
+
+    let Some(radius) = requested_radius else {
+        return Ok(());
+    };
+
+    // update the state from the UI
+    engine
+        .get_global_component_mut::<PlinkoBoard>()?
+        .ball_radius = radius;
+
+    clear_all_balls(engine)?;
     Ok(())
 }
