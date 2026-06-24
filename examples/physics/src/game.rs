@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 use pill_engine::{define_component, define_global_component, game::*};
 
@@ -21,17 +24,17 @@ define_global_component!(PlinkoBoard {
     compartment_material: MaterialHandle,
     triangle_mesh: MeshHandle,
     triangle_material: MaterialHandle,
-    ball_radius: f32,
 });
 
-define_component!(BallComponent {});
+define_component!(BallComponent { index: u64 });
 
-// TODO: add egui tweaks - ball size, pegs size, spawn frequency. physics parameters?
-// TODO: add mode controls - timeout or manual spawning only, reset button in egui
+// set threshold of spawned objects and remove the oldest N if we go beyond the limit, allow for
+// tweaking that in UI
 define_global_component!(StateComponent {
     elapsed: f32,
     timeout: f32,
-    spawn_index: u64
+    spawn_index: u64,
+    ball_radius: f32,
 });
 
 define_component!(CameraMovementComponent {
@@ -43,28 +46,60 @@ define_component!(CameraMovementComponent {
     delta_z: f32,
 });
 
-pub struct PlinkoUiState {
+pub enum PlinkoUiCommand {
+    SpawnBall,
+    ClearBalls,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlinkoSettings {
     pub ball_radius: f32,
-    pub rebuild_requested: bool,
+    pub gravity_y_mps2: f32,
+    pub spawn_interval: f32,
+    pub palette_index: u8, // which colour palette to use
+}
+
+const METERS_PER_WORLD_UNIT: f32 = 0.20;
+
+impl Default for PlinkoSettings {
+    fn default() -> Self {
+        PlinkoSettings {
+            ball_radius: 0.25,
+            gravity_y_mps2: -9.81,
+            spawn_interval: 1.0,
+            palette_index: 0,
+        }
+    }
+}
+
+pub struct PlinkoUiState {
+    pub command_queue: VecDeque<PlinkoUiCommand>,
+    pub commited: PlinkoSettings,
+    pub draft: PlinkoSettings,
 }
 
 impl Default for PlinkoUiState {
     fn default() -> Self {
+        let settings = PlinkoSettings::default();
+
         PlinkoUiState {
-            ball_radius: 0.25,
-            rebuild_requested: false,
+            command_queue: VecDeque::new(),
+            commited: settings,
+            draft: settings,
         }
     }
 }
 
 define_global_component!(PlinkoTuningComponent {
     state: Arc<Mutex<PlinkoUiState>>,
+    applied: PlinkoSettings,
 });
 
 impl Default for PlinkoTuningComponent {
     fn default() -> Self {
         PlinkoTuningComponent {
             state: Arc::new(Mutex::new(PlinkoUiState::default())),
+            applied: PlinkoSettings::default(),
         }
     }
 }
@@ -91,14 +126,15 @@ impl PillGame for Game {
         engine.register_component::<CameraMovementComponent>(active_scene)?;
 
         // Add systems
+        engine.add_system("update_plinko_ui_system", update_plinko_ui_system)?;
         engine.add_system("ball_spawning_system", ball_spawning_system)?;
         engine.add_system("camera_movement_system", camera_movement_system)?;
         engine.add_system("demo_keyboard_control_system", demo_keyboard_control_system)?;
-        engine.add_system("update_plinko_ui_system", update_plinko_ui_system)?;
         engine.add_global_component(StateComponent {
             elapsed: 0.0,
             timeout: 1.0,
             spawn_index: 0,
+            ball_radius: 0.25,
         })?;
 
         // TODO: later add variable materials and colours
@@ -182,7 +218,6 @@ impl PillGame for Game {
             .with_component(CameraComponent::builder().enabled(true).build())
             .build();
 
-        const BALL_RADIUS: f32 = 0.25;
         // Store handles for spawning in the plinko global component
         let plinko = PlinkoBoard {
             ball_material: ball_material_handle,
@@ -194,14 +229,12 @@ impl PillGame for Game {
             compartment_material: compartment_material_handle,
             triangle_mesh: triangle_mesh_handle,
             triangle_material: triangle_material_handle,
-            ball_radius: BALL_RADIUS,
         };
         spawn_plinko_board(engine, active_scene, &plinko)?;
 
         engine.add_global_component(plinko)?;
 
         let physics_world_component = engine.get_global_component_mut::<PhysicsWorldComponent>()?;
-        const METERS_PER_WORLD_UNIT: f32 = 0.20;
         physics_world_component.set_gravity(Vector3f::new(0.0, -9.81 / METERS_PER_WORLD_UNIT, 0.0));
 
         // Setup egui components
@@ -215,24 +248,12 @@ impl PillGame for Game {
 fn ball_spawning_system(engine: &mut Engine) -> Result<()> {
     // if a timeout has passed, spawn the ball (every 1s for now)
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let scene_handle = engine.get_active_scene_handle()?;
-    let ball_mesh = engine.get_global_component::<PlinkoBoard>()?.ball_mesh;
-    let ball_material = engine.get_global_component::<PlinkoBoard>()?.ball_material;
-    let ball_radius = engine.get_global_component::<PlinkoBoard>()?.ball_radius;
-    let state: &mut StateComponent = engine.get_global_component_mut::<StateComponent>()?;
+    let state = engine.get_global_component_mut::<StateComponent>()?;
+
     if state.elapsed + dt > state.timeout {
         state.elapsed = 0.0;
-        let spawn_index = state.spawn_index;
-        state.spawn_index = state.spawn_index.wrapping_add(1);
 
-        spawn_ball(
-            engine,
-            scene_handle,
-            &ball_mesh,
-            &ball_material,
-            spawn_index,
-            ball_radius,
-        )?;
+        spawn_one_ball(engine)?;
     } else {
         state.elapsed += dt;
     }
@@ -707,6 +728,27 @@ fn spawn_side_tooth_collider(
     Ok(())
 }
 
+fn spawn_one_ball(engine: &mut Engine) -> Result<()> {
+    let scene = engine.get_active_scene_handle()?;
+    let ball_mesh = engine.get_global_component::<PlinkoBoard>()?.ball_mesh;
+    let ball_material = engine.get_global_component::<PlinkoBoard>()?.ball_material;
+    let state = engine.get_global_component_mut::<StateComponent>()?;
+    let ball_radius = state.ball_radius;
+
+    let spawn_index = state.spawn_index;
+    state.spawn_index = state.spawn_index.wrapping_add(1);
+    spawn_ball(
+        engine,
+        scene,
+        &ball_mesh,
+        &ball_material,
+        spawn_index,
+        ball_radius,
+    )?;
+
+    Ok(())
+}
+
 // Spawn a ball in the same place falling down, called periodically
 fn spawn_ball(
     engine: &mut Engine,
@@ -733,7 +775,7 @@ fn spawn_ball(
                 .material(material)
                 .build(),
         )
-        .with_component(BallComponent {})
+        .with_component(BallComponent { index: spawn_index })
         .with_component(
             RigidBodyComponent::builder()
                 .body_type(RigidBodyType::Dynamic)
@@ -840,6 +882,10 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
+// TODO: this currently does not remove all physic entities, the colliders and RBs remain
+// hence we get ghost balls
+//
+// TODO: fix after new ECS merge, should be fixed by then
 fn clear_all_balls(engine: &mut Engine) -> Result<()> {
     let mut entities: Vec<EntityHandle> = vec![];
     for (entity, _) in engine.iterate_one_component_mut::<BallComponent>()? {
@@ -853,35 +899,37 @@ fn clear_all_balls(engine: &mut Engine) -> Result<()> {
 
 fn demo_keyboard_control_system(engine: &mut Engine) -> Result<()> {
     let input = engine.get_global_component::<InputComponent>()?;
-    let scene = engine.get_active_scene_handle()?;
 
-    let reset_key = input.get_key(KeyboardKey::KeyR);
-    let space_key = input.get_key_pressed(KeyboardKey::Space);
+    let reset_pressed = input.get_key(KeyboardKey::KeyR);
+    let spawn_pressed = input.get_key_pressed(KeyboardKey::Space);
+
+    if !reset_pressed && !spawn_pressed {
+        return Ok(());
+    }
+
+    let state = engine
+        .get_global_component::<PlinkoTuningComponent>()?
+        .state
+        .clone();
+    let mut state = state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // remove all balls
-    if reset_key {
-        clear_all_balls(engine)?;
+    if reset_pressed {
+        state.command_queue.push_back(PlinkoUiCommand::ClearBalls);
     }
 
     // spawn a ball
-    if space_key {
-        let ball_mesh = engine.get_global_component::<PlinkoBoard>()?.ball_mesh;
-        let ball_material = engine.get_global_component::<PlinkoBoard>()?.ball_material;
-        let ball_radius = engine.get_global_component::<PlinkoBoard>()?.ball_radius;
-        let state: &mut StateComponent = engine.get_global_component_mut::<StateComponent>()?;
-        let spawn_index = state.spawn_index;
-        state.spawn_index = state.spawn_index.wrapping_add(1);
-        spawn_ball(
-            engine,
-            scene,
-            &ball_mesh,
-            &ball_material,
-            spawn_index,
-            ball_radius,
-        )?;
+    if spawn_pressed {
+        state.command_queue.push_back(PlinkoUiCommand::SpawnBall);
     }
 
     Ok(())
+}
+
+fn commit_slider(response: &egui::Response) -> bool {
+    response.drag_stopped() || (response.changed() && !response.is_pointer_button_down_on())
 }
 
 fn register_plinko_ui(engine: &mut Engine) -> Result<()> {
@@ -901,13 +949,33 @@ fn register_plinko_ui(engine: &mut Engine) -> Result<()> {
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
 
                     let response = ui.add(
-                        egui::Slider::new(&mut state.ball_radius, 0.05..=0.50).text("Ball Radius"),
+                        egui::Slider::new(&mut state.draft.ball_radius, 0.05..=0.40)
+                            .text("Ball Radius"),
                     );
 
-                    if response.drag_stopped()
-                        || (response.changed() && !response.is_pointer_button_down_on())
-                    {
-                        state.rebuild_requested = true;
+                    if commit_slider(&response) {
+                        state.commited.ball_radius = state.draft.ball_radius;
+                    }
+
+                    let response = ui.add(
+                        egui::Slider::new(&mut state.draft.gravity_y_mps2, -30.0..=10.0)
+                            .text("Gravity Y (m/s^2)"),
+                    );
+
+                    if commit_slider(&response) {
+                        state.commited.gravity_y_mps2 = state.draft.gravity_y_mps2;
+                    }
+
+                    let clicked = ui.button("Spawn a Ball").clicked();
+
+                    if clicked {
+                        state.command_queue.push_back(PlinkoUiCommand::SpawnBall);
+                    }
+
+                    let clicked = ui.button("Clear Balls").clicked();
+
+                    if clicked {
+                        state.command_queue.push_back(PlinkoUiCommand::ClearBalls);
                     }
                 });
         });
@@ -921,28 +989,58 @@ fn update_plinko_ui_system(engine: &mut Engine) -> Result<()> {
         .state
         .clone();
 
-    let requested_radius = {
+    let (desired, commands) = {
         let mut state = state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-        if !state.rebuild_requested {
-            None
-        } else {
-            state.rebuild_requested = false;
-            Some(state.ball_radius)
-        }
+        (state.commited, std::mem::take(&mut state.command_queue))
     };
 
-    let Some(radius) = requested_radius else {
-        return Ok(());
-    };
+    let applied = engine
+        .get_global_component::<PlinkoTuningComponent>()?
+        .applied;
 
-    // update the state from the UI
+    let ball_radius_changed = desired.ball_radius != applied.ball_radius;
+    let gravity_changed = desired.gravity_y_mps2 != applied.gravity_y_mps2;
+    let spawn_interval_changed = desired.spawn_interval != applied.spawn_interval;
+
+    if ball_radius_changed {
+        engine
+            .get_global_component_mut::<StateComponent>()?
+            .ball_radius = desired.ball_radius;
+    }
+
+    if gravity_changed {
+        engine
+            .get_global_component_mut::<PhysicsWorldComponent>()?
+            .set_gravity(Vector3f::new(
+                0.0,
+                desired.gravity_y_mps2 / METERS_PER_WORLD_UNIT,
+                0.0,
+            ));
+    }
+
+    if spawn_interval_changed {
+        engine.get_global_component_mut::<StateComponent>()?.timeout = desired.spawn_interval;
+    }
+
     engine
-        .get_global_component_mut::<PlinkoBoard>()?
-        .ball_radius = radius;
+        .get_global_component_mut::<PlinkoTuningComponent>()?
+        .applied = desired;
 
-    clear_all_balls(engine)?;
+    if commands
+        .iter()
+        .any(|command| matches!(command, PlinkoUiCommand::ClearBalls))
+    {
+        clear_all_balls(engine)?;
+    } else {
+        for command in commands {
+            if matches!(command, PlinkoUiCommand::SpawnBall) {
+                spawn_one_ball(engine)?;
+            }
+        }
+    }
+
     Ok(())
 }
