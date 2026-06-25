@@ -33,6 +33,11 @@ use crate::utils::wasm;
 use crate::utils::web_dev_server;
 use crate::utils::workspace::prepare_workspace_for_game;
 
+/// When true, stderr from cargo is parsed and noisy lines are suppressed,
+/// and only actionable error messages are extracted. This is experimental
+/// and may drop useful diagnostics — keep disabled by default.
+const USE_EXPERIMENTAL_LOGS_PARSER: bool = false;
+
 /// Shared CLI flag registration for both "run" and "build" actions.
 fn register_build_flags(app: App<'static, 'static>) -> App<'static, 'static> {
     app.arg(path_flag())
@@ -385,68 +390,92 @@ pub(crate) fn build_game_project(
         }
     }
     let start = Instant::now();
-    let mut cargo_child = Command::new("cargo")
-        .args(&arguments)
-        .current_dir(&engine_workspace_directory_path)
-        .env("CARGO_TARGET_DIR", &cargo_target_dir)
-        .stdout(Stdio::inherit()) // real-time to terminal
-        .stderr(Stdio::piped()) // we'll read line-by-line
-        .spawn()
-        .context("failed to spawn cargo build")?;
+    let mut cargo_child = if USE_EXPERIMENTAL_LOGS_PARSER {
+        Command::new("cargo")
+            .args(&arguments)
+            .current_dir(&engine_workspace_directory_path)
+            .env("CARGO_TARGET_DIR", &cargo_target_dir)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to spawn cargo build")?
+    } else {
+        Command::new("cargo")
+            .args(&arguments)
+            .current_dir(&engine_workspace_directory_path)
+            .env("CARGO_TARGET_DIR", &cargo_target_dir)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .context("failed to spawn cargo build")?
+    };
 
-    // Stream stderr in real time. When cargo hits an error, we suppress the
-    // noisy error-chain output and present it cleanly in the final error message.
-    let stderr_pipe = cargo_child
-        .stderr
-        .take()
-        .context("failed to capture cargo stderr")?;
-    let mut stderr_lines = String::new();
-    {
-        let reader = BufReader::new(stderr_pipe);
-        let mut in_error = false;
-        for line in reader.lines() {
-            let line = line.unwrap_or_default();
-            stderr_lines.push_str(&line);
-            stderr_lines.push('\n');
+    if USE_EXPERIMENTAL_LOGS_PARSER {
+        // Stream stderr in real time. When cargo hits an error, we suppress the
+        // noisy error-chain output and present it cleanly in the final error message.
+        let stderr_pipe = cargo_child
+            .stderr
+            .take()
+            .context("failed to capture cargo stderr")?;
+        let mut stderr_lines = String::new();
+        {
+            let reader = BufReader::new(stderr_pipe);
+            let mut in_error = false;
+            for line in reader.lines() {
+                let line = line.unwrap_or_default();
+                stderr_lines.push_str(&line);
+                stderr_lines.push('\n');
 
-            let trimmed = line.trim();
+                let trimmed = line.trim();
 
-            // When we see an error header, start suppressing subsequent lines.
-            // The full error will be extracted and shown cleanly at the end.
-            if trimmed.starts_with("error:")
-                || (trimmed.starts_with("thread") && trimmed.contains("panicked at"))
-            {
-                in_error = true;
-                continue;
-            }
-
-            if in_error {
-                // Stay in error mode until a clear "normal output" marker.
-                if trimmed.starts_with("warning:")
-                    || trimmed.starts_with("Compiling")
-                    || trimmed.starts_with("Checking")
-                    || trimmed.starts_with("Finished")
+                // When we see an error header, start suppressing subsequent lines.
+                // The full error will be extracted and shown cleanly at the end.
+                if trimmed.starts_with("error:")
+                    || (trimmed.starts_with("thread") && trimmed.contains("panicked at"))
                 {
-                    in_error = false;
-                    eprintln!("{line}");
+                    in_error = true;
+                    continue;
                 }
-                continue;
+
+                if in_error {
+                    // Stay in error mode until a clear "normal output" marker.
+                    if trimmed.starts_with("warning:")
+                        || trimmed.starts_with("Compiling")
+                        || trimmed.starts_with("Checking")
+                        || trimmed.starts_with("Finished")
+                    {
+                        in_error = false;
+                        eprintln!("{line}");
+                    }
+                    continue;
+                }
+
+                eprintln!("{line}");
             }
-
-            eprintln!("{line}");
         }
-    }
 
-    let cargo_status = cargo_child
-        .wait()
-        .context("failed to wait on cargo build")?;
-    let stderr = stderr_lines;
+        let cargo_status = cargo_child
+            .wait()
+            .context("failed to wait on cargo build")?;
+        let stderr = stderr_lines;
 
-    // Build failed — extract only the actionable error message from the raw stderr.
-    if !cargo_status.success() {
-        let detail = parse_cargo_stderr(&stderr);
-        let elapsed = start.elapsed();
-        bail!(format_build_error(&detail, elapsed));
+        // Build failed — extract only the actionable error message from the raw stderr.
+        if !cargo_status.success() {
+            let detail = parse_cargo_stderr(&stderr);
+            let elapsed = start.elapsed();
+            bail!(format_build_error(&detail, elapsed));
+        }
+    } else {
+        let cargo_status = cargo_child
+            .wait()
+            .context("failed to wait on cargo build")?;
+
+        if !cargo_status.success() {
+            bail!(
+                "cargo build failed with exit code {:?}",
+                cargo_status.code()
+            );
+        }
     }
 
     // Cargo placed the compiled binaries in CARGO_TARGET_DIR/<profile>/.

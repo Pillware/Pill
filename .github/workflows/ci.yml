@@ -1,18 +1,19 @@
 # Pill CI Pipeline
 #
 # Triggers on every push. Builds the launcher once, then fans out to parallel
-# jobs that download the artifact: formatting, clippy, native builds, and WASM.
+# jobs that download the artifact: check, fmt, clippy, native builds, WASM, and
+# benchmarks.
 #
 # All build/test logic is now built into PillLauncher itself:
-#   pill_launcher -a check|build|wasm-test|benchmark|ci
+#   PillLauncher -a check-code|cargo|cargo -- clippy|build|check-wasm|benchmark|size-benchmark|ci
 #
 # Job dependency graph:
-#   build_launcher ──┬── code_check
-#                    ├── code_formatting_check
-#                    ├── code_linting_check
-#                    ├── build_examples (matrix)
-#                    ├── build_wasm_example (matrix)
-#                    └── benchmark (main / PR only)
+#   build_launcher ──┬── code_check              (-a check-code)
+#                    ├── code_formatting_check    (-a cargo -p ... -- fmt)
+#                    ├── code_linting_check       (-a cargo -p ... -- clippy)
+#                    ├── build_examples (matrix)  (-a build -p ...)
+#                    ├── build_wasm_example       (-a check-wasm -p ...)
+#                    └── benchmark (main/PR only) (-a benchmark -p ...)
 name: CI
 
 on:
@@ -79,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./engine/pill_launcher/target/release/PillLauncher -a check
+          ./engine/pill_launcher/target/release/PillLauncher -a check-code
 
   code_formatting_check:
     runs-on: ubuntu-latest
@@ -259,7 +260,7 @@ jobs:
           if [[ "$EXAMPLE" == "examples/cube" ]]; then
             BUDGET_FLAG="--wasm-budget-kb 499"
           fi
-          ./engine/pill_launcher/target/release/PillLauncher -a wasm-test -p "$EXAMPLE" $BUDGET_FLAG
+          ./engine/pill_launcher/target/release/PillLauncher -a check-wasm -p "$EXAMPLE" $BUDGET_FLAG
 
   benchmark:
     runs-on: ubuntu-latest

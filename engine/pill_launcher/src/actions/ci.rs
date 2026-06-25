@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use crate::actions::build::build_game_project;
 use crate::actions::cargo_passthrough::cargo_passthrough;
-use crate::actions::check::do_check;
+use crate::actions::check::do_check_code;
 use crate::actions::Action;
 use crate::types::*;
 use crate::utils::cli::{compile_mode_flag, parse_compile_mode, path_flag};
@@ -47,7 +47,7 @@ pub(crate) fn do_ci(game_project_path: &PathBuf, compile_mode: &CompileMode) -> 
 
     // Step 1: fast compile-check of all engine crates (no game code).
     println!("--- 1/4: cargo check ---");
-    do_check().context("check step failed")?;
+    do_check_code().context("check step failed")?;
 
     // Step 2: code formatting via rustfmt.
     println!("--- 2/4: rustfmt ---");

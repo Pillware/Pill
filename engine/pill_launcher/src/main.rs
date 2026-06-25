@@ -13,15 +13,13 @@ mod types;
 mod utils;
 
 use actions::assets::Assets;
+use actions::benchmark::{Benchmark, SizeBenchmark};
 use actions::build::{Build, Run};
 use actions::cargo_passthrough::Cargo;
-use actions::check::Check;
-use actions::check_wasm::CheckWasm;
+use actions::check::{CheckCode, CheckWasm};
 use actions::ci::Ci;
 use actions::create::Create;
 use actions::docs::Docs;
-use actions::performance_benchmark::Benchmark;
-use actions::size_benchmark::SizeBenchmark;
 use actions::Action;
 
 fn main() {
@@ -32,7 +30,7 @@ fn main() {
         Box::new(Docs),
         Box::new(Cargo),
         Box::new(Assets),
-        Box::new(Check),
+        Box::new(CheckCode),
         Box::new(Benchmark),
         Box::new(SizeBenchmark),
         Box::new(CheckWasm),
