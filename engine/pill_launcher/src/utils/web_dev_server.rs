@@ -11,11 +11,12 @@ use std::fs::{self, File};
 use std::path::Path;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use anyhow::{Error, Result};
 
 use crate::types::CompileMode;
+use crate::utils::common::get_latest_mtime_in_directory;
 use crate::utils::wasm;
 
 const ADDRESS_HOST: &str = "127.0.0.1";
@@ -34,15 +35,11 @@ type Subscribers = Arc<Mutex<Vec<mpsc::Sender<()>>>>;
 
 /// Build the WASM bundle and start a dev HTTP server.
 /// Injects a live-reload script into HTML responses; watches for file changes.
-pub fn run(
-    game_project_directory_path: &Path,
-    compile_mode: &CompileMode,
-    port: u16,
-) -> Result<()> {
+pub fn run(project_directory_path: &Path, compile_mode: &CompileMode, port: u16) -> Result<()> {
     // Build the WASM bundle first, then serve it.
-    wasm::build(game_project_directory_path, compile_mode, None)?;
+    wasm::build_project(project_directory_path, compile_mode, None)?;
 
-    let build_wasm_dir = game_project_directory_path.join("build").join("wasm");
+    let build_wasm_dir = project_directory_path.join("build").join("wasm");
     let subscribers: Subscribers = Arc::new(Mutex::new(Vec::new()));
     let address = format!("{ADDRESS_HOST}:{port}");
 
@@ -69,37 +66,16 @@ pub fn run(
 }
 
 fn spawn_watcher(watch_dir: std::path::PathBuf, subscribers: Subscribers) {
-    let mut last = latest_mtime(&watch_dir);
+    let mut last = get_latest_mtime_in_directory(&watch_dir);
     thread::spawn(move || loop {
         thread::sleep(WATCH_POLL);
-        let cur = latest_mtime(&watch_dir);
+        let cur = get_latest_mtime_in_directory(&watch_dir);
         if cur > last && cur.is_some() {
             last = cur;
             let mut subs = subscribers.lock().unwrap_or_else(|e| e.into_inner());
             subs.retain(|tx| tx.send(()).is_ok());
         }
     });
-}
-
-// Max mtime among regular files in `dir` (shallow, skipping dotfiles/.build scratch).
-// NOTE: This only watches top-level files. Changes in subdirectories
-// (e.g. build/wasm/res/textures/) do not trigger a reload.
-fn latest_mtime(dir: &Path) -> Option<SystemTime> {
-    fs::read_dir(dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name();
-            if name.to_string_lossy().starts_with('.') {
-                return None;
-            }
-            let md = e.metadata().ok()?;
-            if !md.is_file() {
-                return None;
-            }
-            md.modified().ok()
-        })
-        .max()
 }
 
 fn handle_request(

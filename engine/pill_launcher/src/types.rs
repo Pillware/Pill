@@ -4,7 +4,6 @@
 // - Location: maps logical repo paths (engine crates, examples root, etc.) to absolute dirs.
 // - CompileMode: selects debug, release, or hot-reload build profile.
 // - BuildTarget: chooses between native standalone and WASM/WebGPU output.
-// - All enums are pub(crate) — consumed by utils/, actions/, and the CLI dispatcher.
 
 use std::fmt;
 

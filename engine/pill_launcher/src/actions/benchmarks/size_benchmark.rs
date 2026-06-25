@@ -1,7 +1,7 @@
 // This file implements the "size-benchmark" action: build + artifact size analysis.
 //
 // Responsibilities:
-// - Builds the game project for the given target (native or WASM).
+// - Builds the project for the given target (native or WASM).
 // - Analyzes the final build artifact sizes:
 //   - Native: executable, dynamic libraries, resource directories.
 //   - WASM: final and pre-optimization .wasm sizes, twiggy per-crate breakdown.
@@ -17,10 +17,9 @@ use std::process::{Command, Stdio};
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::cli::{
-    parse_build_target, path_flag, target_flag,
-};
-use crate::utils::paths::get_game_build_path;
+use crate::utils::cli::{parse_build_target, path_flag, target_flag};
+use crate::utils::common::format_bytes;
+use crate::utils::paths::get_project_build_path;
 
 #[derive(Debug)]
 pub(crate) struct SizeBenchmark;
@@ -31,8 +30,7 @@ impl Action for SizeBenchmark {
     }
 
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(path_flag())
-            .arg(target_flag())
+        app.arg(path_flag()).arg(target_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
@@ -46,30 +44,30 @@ impl Action for SizeBenchmark {
     }
 }
 
-/// Build the game and print a size report for the final artifact.
+/// Build the project and print a size report for the final artifact.
 pub(crate) fn do_size_benchmark(
-    game_project_directory_path: &PathBuf,
+    project_directory_path: &PathBuf,
     compile_mode: &CompileMode,
     target: &BuildTarget,
 ) -> Result<()> {
     println!(
         "Size benchmark: {} (target: {}, compile mode: release)",
-        game_project_directory_path.display(),
+        project_directory_path.display(),
         target,
     );
 
     match target {
         BuildTarget::Native => {
             let mut output_directory_path = PathBuf::from(".");
-            output_directory_path = get_game_build_path(
-                game_project_directory_path,
+            output_directory_path = get_project_build_path(
+                project_directory_path,
                 &output_directory_path,
                 compile_mode,
             )?;
 
             println!("Building native target...");
-            crate::actions::build::build_game_project(
-                game_project_directory_path,
+            crate::utils::build_common::build_project(
+                project_directory_path,
                 &output_directory_path,
                 compile_mode,
                 None,
@@ -79,9 +77,9 @@ pub(crate) fn do_size_benchmark(
         }
         BuildTarget::Web => {
             println!("Building WASM target...");
-            crate::utils::wasm::build(game_project_directory_path, compile_mode, None)?;
+            crate::utils::wasm::build_project(project_directory_path, compile_mode, None)?;
 
-            let build_wasm_dir = game_project_directory_path.join("build").join("wasm");
+            let build_wasm_dir = project_directory_path.join("build").join("wasm");
             let pre_optimization_wasm = build_wasm_dir
                 .join(".build")
                 .join("pill_web_app")
@@ -233,11 +231,7 @@ fn print_native_report(build_output_dir: &Path) {
     }
 
     println!("|{:-^32}|{:-^14}|", "", "");
-    println!(
-        "| {:<30} | {:>10} |",
-        "TOTAL",
-        format_bytes(total)
-    );
+    println!("| {:<30} | {:>10} |", "TOTAL", format_bytes(total));
     println!();
 }
 
@@ -361,10 +355,10 @@ fn run_twiggy_analysis(wasm_file_path: &Path, total: u64) -> TwiggyResult {
     groups.sort_by(|a, b| b.1.cmp(&a.1));
 
     const ENGINE_LIBS: &[&str] = &["pill_engine", "pill_renderer", "pill_core", "pill_web"];
-    const GAME_LIBS: &[&str] = &["pill_game"];
+    const PROJECT_LIBS: &[&str] = &["pill_project"];
     let excluded: Vec<&str> = ENGINE_LIBS
         .iter()
-        .chain(GAME_LIBS.iter())
+        .chain(PROJECT_LIBS.iter())
         .copied()
         .collect();
 
@@ -380,7 +374,12 @@ fn run_twiggy_analysis(wasm_file_path: &Path, total: u64) -> TwiggyResult {
     for lib in ENGINE_LIBS {
         let bytes = by_crate.get(*lib).copied().unwrap_or(0);
         let percent = 100.0 * bytes as f64 / total as f64;
-        println!("    {:<20} {:>10} {:>6.1}%", lib, format_bytes(bytes), percent);
+        println!(
+            "    {:<20} {:>10} {:>6.1}%",
+            lib,
+            format_bytes(bytes),
+            percent
+        );
     }
     let engine_percent = 100.0 * engine_total as f64 / total as f64;
     println!(
@@ -390,23 +389,23 @@ fn run_twiggy_analysis(wasm_file_path: &Path, total: u64) -> TwiggyResult {
         engine_percent
     );
 
-    // Game code + embedded assets (monitoring only)
-    let game_bytes = by_crate.get("pill_game").copied().unwrap_or(0);
-    let game_rodata = by_crate.get("[game-rodata]").copied().unwrap_or(0);
+    // Project code + embedded assets (monitoring only)
+    let project_bytes = by_crate.get("pill_project").copied().unwrap_or(0);
+    let project_rodata = by_crate.get("[project-rodata]").copied().unwrap_or(0);
     println!();
-    println!("  Game (monitor only — excluded from engine budget):");
+    println!("  Project (monitor only — excluded from engine budget):");
     println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
     println!(
-        "    {:<20} {:>10} {:>6.1}%  (game logic)",
-        "pill_game",
-        format_bytes(game_bytes),
-        100.0 * game_bytes as f64 / total as f64
+        "    {:<20} {:>10} {:>6.1}%  (project logic)",
+        "pill_project",
+        format_bytes(project_bytes),
+        100.0 * project_bytes as f64 / total as f64
     );
     println!(
         "    {:<20} {:>10} {:>6.1}%  (embedded assets via include_bytes!)",
-        "[game-assets]",
-        format_bytes(game_rodata),
-        100.0 * game_rodata as f64 / total as f64
+        "[project-assets]",
+        format_bytes(project_rodata),
+        100.0 * project_rodata as f64 / total as f64
     );
 
     // Top 15 third-party dependencies
@@ -480,25 +479,12 @@ fn truncate_display(name: &str, max_chars: usize) -> String {
     }
 }
 
-fn format_bytes(n: u64) -> String {
-    const MB: f64 = 1024.0 * 1024.0;
-    const KB: f64 = 1024.0;
-    let bytes_float = n as f64;
-    if bytes_float >= MB {
-        format!("{:.2} MB", bytes_float / MB)
-    } else if bytes_float >= KB {
-        format!("{:.1} KB", bytes_float / KB)
-    } else {
-        format!("{n} B")
-    }
-}
-
 /// Coarse bucketing of twiggy item names into crate families.
 /// Heuristic — relies on stable twiggy section names and wasm-bindgen symbol prefixes.
 fn classify_crate(name: &str) -> String {
     if name.contains(".rodata") || name.contains("data segment") {
-        if name.contains("pill_game") {
-            return "[game-rodata]".into();
+        if name.contains("pill_project") {
+            return "[project-rodata]".into();
         }
         return "[other-rodata]".into();
     }
@@ -526,8 +512,8 @@ fn classify_crate(name: &str) -> String {
         if crate_name.eq_ignore_ascii_case("PillWeb") {
             return "pill_web".into();
         }
-        if crate_name.eq_ignore_ascii_case("PillGame") {
-            return "pill_game".into();
+        if crate_name.eq_ignore_ascii_case("PillProject") {
+            return "pill_project".into();
         }
         return crate_name.to_string();
     }

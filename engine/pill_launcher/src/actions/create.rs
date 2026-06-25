@@ -1,10 +1,9 @@
-// This file implements the "create" action: scaffolding a new game project.
+// This file implements the "create" action: scaffolding a new project.
 //
 // Responsibilities:
 // - Copies the pill_default template into the target directory.
 // - Rewrites config.ini (TITLE, WINDOW_TITLE) and Cargo.toml (pill_engine path,
 //   workspace membership) to match the new project.
-// - Depends on: utils::paths (get_path, Location), utils::files (modify_file).
 
 use anyhow::{Context, Error, Result};
 use clap::{App, Arg, ArgMatches};
@@ -32,7 +31,7 @@ impl Action for Create {
                 .short("n")
                 .long("name")
                 .takes_value(true)
-                .help("Name of new game project"),
+                .help("Name of new project"),
         )
         .arg(path_flag())
     }
@@ -45,38 +44,38 @@ impl Action for Create {
             .value_of("name")
             .ok_or_else(|| Error::msg("--name <name> is required for the 'create' action"))?
             .to_string();
-        create_game_project(&parent, &name)
+        create_project(&parent, &name)
     }
 }
 
-/// Scaffold a new Pill game project from the pill_default template.
+/// Scaffold a new Pill project from the pill_default template.
 /// Copies template files, renames the directory, and rewrites config.ini
 /// and Cargo.toml with the new project name and absolute engine paths.
-pub(crate) fn create_game_project(
-    game_project_parent_directory_path: &Path,
-    game_name: &str,
+pub(crate) fn create_project(
+    project_parent_directory_path: &Path,
+    project_name: &str,
 ) -> Result<()> {
     const TEMPLATE_NAME: &str = "pill_default";
 
-    let game_project_directory_path = game_project_parent_directory_path.join(game_name);
+    let project_directory_path = project_parent_directory_path.join(project_name);
     // Guard against overwriting an existing directory.
-    if game_project_directory_path.exists() {
+    if project_directory_path.exists() {
         return Err(Error::msg(format!(
-            "Game project directory {} already exists",
-            game_project_directory_path.display()
+            "Project directory {} already exists",
+            project_directory_path.display()
         )));
     }
 
-    let game_resource_directory_path = game_project_directory_path.join("res");
+    let project_resource_directory_path = project_directory_path.join("res");
 
     println!(
-        "Creating new game project {} in directory {}",
-        game_name,
-        game_project_directory_path.display()
+        "Creating new project {} in directory {}",
+        project_name,
+        project_directory_path.display()
     );
 
     // Get templates (assuming that they are stored in res folder of pill_launcher crate)
-    let template_game_project_directory_path = get_path(Location::PillLauncherCrate)
+    let template_project_directory_path = get_path(Location::PillLauncherCrate)
         .join("res")
         .join("templates");
 
@@ -86,8 +85,8 @@ pub(crate) fn create_game_project(
     println!("Copying project template...");
 
     fs_extra::dir::copy(
-        template_game_project_directory_path.join(TEMPLATE_NAME),
-        &game_project_directory_path,
+        template_project_directory_path.join(TEMPLATE_NAME),
+        &project_directory_path,
         &CopyOptions::new().overwrite(true),
     )
     .context("Cannot copy template directory")?;
@@ -95,14 +94,14 @@ pub(crate) fn create_game_project(
     // Setup config file
     println!("Setting up config file...");
     modify_file(
-        &game_resource_directory_path.join("config.ini"),
-        &game_resource_directory_path.join("config.ini"),
+        &project_resource_directory_path.join("config.ini"),
+        &project_resource_directory_path.join("config.ini"),
         |line: String| -> String {
             if line.starts_with("TITLE") {
-                return format!("TITLE={}", game_name);
+                return format!("TITLE={}", project_name);
             }
             if line.starts_with("WINDOW_TITLE") {
-                return format!("WINDOW_TITLE={}", game_name);
+                return format!("WINDOW_TITLE={}", project_name);
             }
             line
         },
@@ -111,7 +110,7 @@ pub(crate) fn create_game_project(
     // Rewrite Cargo.toml in a single pass — point pill_engine at the absolute path
     // and set the workspace field to the engine workspace directory.
     println!("Setting up manifest file...");
-    let cargo_toml_path = game_project_directory_path.join("Cargo.toml");
+    let cargo_toml_path = project_directory_path.join("Cargo.toml");
     let pill_engine_path = get_path(Location::PillEngineCrate)
         .to_string_lossy()
         .replace('\\', "/");
@@ -124,7 +123,7 @@ pub(crate) fn create_game_project(
         |line: String| -> String {
             if line.contains("pill_engine") {
                 return format!(
-                    "pill_engine = {{ path = \"{pill_engine_path}\", features = [\"game\"] }}"
+                    "pill_engine = {{ path = \"{pill_engine_path}\", features = [\"project\"] }}"
                 );
             }
             if line.contains("workspace") {
@@ -135,7 +134,7 @@ pub(crate) fn create_game_project(
     )?;
 
     // Success
-    println!("Game project creation completed!");
+    println!("Project creation completed!");
 
     Ok(())
 }

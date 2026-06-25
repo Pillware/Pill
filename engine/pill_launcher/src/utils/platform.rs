@@ -7,9 +7,9 @@ pub(crate) const EXECUTABLE_SUFFIX: &str = ".exe";
 pub(crate) const EXECUTABLE_SUFFIX: &str = ""; // Linux, macOS, etc. – no extension
 
 #[cfg(target_os = "windows")]
-pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = ""; //  pill_game.dll
+pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = ""; //  pill_project.dll
 #[cfg(not(target_os = "windows"))]
-pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = "lib"; //  libpill_game.so / .dylib
+pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = "lib"; //  libpill_project.so / .dylib
 
 #[cfg(target_os = "windows")]
 pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".dll";

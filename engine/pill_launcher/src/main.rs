@@ -1,3 +1,8 @@
+//! PillLauncher — CLI build orchestrator for the Pill game engine.
+//!
+//! Manages project scaffolding, asset pipelines, native/WASM builds,
+//! benchmarking, and CI workflows for Pill-based game projects.
+
 // This file is the crate root for PillLauncher.
 //
 // Responsibilities:
@@ -9,23 +14,21 @@
 #![warn(missing_docs)]
 #![warn(clippy::clone_on_copy)]
 
-//! PillLauncher — CLI build orchestrator for the Pill game engine.
-//!
-//! Manages project scaffolding, asset pipelines, native/WASM builds,
-//! benchmarking, and CI workflows for Pill-based game projects.
-
 mod actions;
 mod types;
 mod utils;
 
 use actions::assets::Assets;
-use actions::benchmark::{Benchmark, SizeBenchmark};
-use actions::build::{Build, Run};
+use actions::benchmarks::performance_benchmark::Benchmark;
+use actions::benchmarks::size_benchmark::SizeBenchmark;
+use actions::build::Build;
 use actions::cargo_passthrough::Cargo;
-use actions::check::{CheckCode, CheckWasm};
+use actions::checks::check_code::CheckCode;
+use actions::checks::check_wasm::CheckWasm;
 use actions::ci::Ci;
 use actions::create::Create;
 use actions::docs::Docs;
+use actions::run::Run;
 use actions::Action;
 
 fn main() {

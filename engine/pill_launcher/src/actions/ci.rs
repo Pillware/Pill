@@ -12,13 +12,13 @@ use path_absolutize::Absolutize;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
-use crate::actions::build::build_game_project;
 use crate::actions::cargo_passthrough::cargo_passthrough;
-use crate::actions::check::do_check_code;
+use crate::actions::checks::check_code::do_check_code;
 use crate::actions::Action;
 use crate::types::*;
+use crate::utils::build_common::build_project;
 use crate::utils::cli::{compile_mode_flag, parse_compile_mode, path_flag};
-use crate::utils::paths::get_game_build_path;
+use crate::utils::paths::get_project_build_path;
 
 #[derive(Debug)]
 pub(crate) struct Ci;
@@ -43,39 +43,33 @@ impl Action for Ci {
 
 /// Run the CI pipeline: cargo check → rustfmt → clippy → build.
 /// Stops on the first failing step. Prints a summary on success.
-pub(crate) fn do_ci(game_project_path: &PathBuf, compile_mode: &CompileMode) -> Result<()> {
-    println!("=== CI Pipeline ===");
+pub(crate) fn do_ci(project_path: &PathBuf, compile_mode: &CompileMode) -> Result<()> {
+    println!("=== Pill Continuous Integration Pipeline ===");
     println!();
 
-    // Step 1: fast compile-check of all engine crates (no game code).
+    // Step 1: fast compile-check of all engine crates (no project code).
     println!("--- 1/4: cargo check ---");
     do_check_code().context("check step failed")?;
 
     // Step 2: code formatting via rustfmt.
     println!("--- 2/4: rustfmt ---");
-    cargo_passthrough(game_project_path, compile_mode, &["fmt".into()])
-        .context("fmt step failed")?;
+    cargo_passthrough(project_path, compile_mode, &["fmt".into()]).context("fmt step failed")?;
 
     // Step 3: clippy linting with deny-by-default warnings.
-    println!("--- 3/4: clippy (-D warnings) ---");
+    println!("--- 3/4: clippy ---");
     cargo_passthrough(
-        game_project_path,
+        project_path,
         compile_mode,
         &["clippy".into(), "--".into(), "-D".into(), "warnings".into()],
     )
     .context("clippy step failed")?;
 
-    // Step 4: full native build of the game project.
+    // Step 4: full native build of the project.
     println!("--- 4/4: build ---");
     let output_path = PathBuf::from(".");
-    let output_directory_path = get_game_build_path(game_project_path, &output_path, compile_mode)?;
-    build_game_project(
-        game_project_path,
-        &output_directory_path,
-        compile_mode,
-        None,
-    )
-    .context("build step failed")?;
+    let output_directory_path = get_project_build_path(project_path, &output_path, compile_mode)?;
+    build_project(project_path, &output_directory_path, compile_mode, None)
+        .context("build step failed")?;
 
     println!();
     if std::io::stdout().is_terminal() {

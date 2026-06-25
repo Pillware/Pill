@@ -63,20 +63,20 @@ impl Action for CheckWasm {
 /// not needed for smoke testing), optionally check the binary size against a budget,
 /// start a tiny HTTP dev server, smoke-test the three core files, and stop the server.
 pub(crate) fn do_check_wasm(
-    game_project_directory_path: &PathBuf,
+    project_directory_path: &PathBuf,
     port: u16,
     budget_kb: Option<u64>,
 ) -> Result<()> {
     println!(
         "WASM check: {} (port {})",
-        game_project_directory_path.display(),
+        project_directory_path.display(),
         port,
     );
 
     println!("Building WASM bundle (debug) ...");
-    wasm::build(game_project_directory_path, &CompileMode::Debug, None)?;
+    wasm::build_project(project_directory_path, &CompileMode::Debug, None)?;
 
-    let wasm_directory = game_project_directory_path.join("build").join("wasm");
+    let wasm_directory = project_directory_path.join("build").join("wasm");
 
     // Optional size check: fail early if the .wasm exceeds the budget.
     if let Some(budget) = budget_kb {

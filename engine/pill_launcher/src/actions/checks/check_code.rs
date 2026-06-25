@@ -1,7 +1,7 @@
 // This file implements the "check-code" action: fast compile-check of engine crates.
 //
 // Responsibilities:
-// - Temporarily removes the game project from engine/Cargo.toml's workspace members
+// - Temporarily removes the project from engine/Cargo.toml's workspace members
 //   so cargo check doesn't try to resolve a project with system-specific paths.
 // - Runs `cargo check` on pill_core, pill_abi, pill_assets, pill_engine, pill_native,
 //   pill_runtime, and pill_web.
@@ -35,13 +35,13 @@ impl Action for CheckCode {
     }
 }
 
-/// Run cargo check on all engine crates (no game code).
-/// Temporarily strips the game project from workspace members,
+/// Run cargo check on all engine crates (no project code).
+/// Temporarily strips the project from workspace members,
 /// runs the check, and restores the manifest even on error or Ctrl+C.
 pub(crate) fn do_check_code() -> Result<()> {
     println!("Running cargo check on engine crates...");
 
-    // Locate the engine workspace manifest and temporarily strip the game project.
+    // Locate the engine workspace manifest and temporarily strip the project.
     let engine_dir = get_path(Location::EngineCrates);
     let cargo_toml = engine_dir.join("Cargo.toml");
 
@@ -53,11 +53,11 @@ pub(crate) fn do_check_code() -> Result<()> {
     let original = fs::read_to_string(&cargo_toml)
         .with_context(|| format!("Failed to read {}", cargo_toml.display()))?;
 
-    // Remove the game-project workspace member line so cargo check doesn't
+    // Remove the project-project workspace member line so cargo check doesn't
     // try to resolve a project that may have system-specific paths or missing deps.
     let stripped: String = original
         .lines()
-        .filter(|line| !line.contains(GAME_PROJECT_CRATE_MARKER))
+        .filter(|line| !line.contains(PROJECT_CRATE_MARKER))
         .collect::<Vec<_>>()
         .join("\n");
 

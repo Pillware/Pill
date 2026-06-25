@@ -1,21 +1,21 @@
 // This file implements the "benchmark" action: build+run iterations with stats.
 //
 // Responsibilities:
-// - Builds the game with benchmark features (e.g. benchmark_window).
+// - Builds the project with benchmark features (e.g. benchmark_window).
 // - Runs N iterations, capturing stdout to extract JSON frame-time reports.
 // - Parses full per-iteration statistics and prints a markdown table + aggregate summary.
-// - Depends on: actions::build (build_game_project, run_game_project), utils::paths.
+// - Depends on: actions::build (build_project, run_project), utils::paths.
 
 use anyhow::{anyhow, bail, Result};
 use clap::{App, Arg, ArgMatches};
 use path_absolutize::Absolutize;
 use std::path::PathBuf;
 
-use crate::actions::build::{build_game_project, run_game_project};
 use crate::actions::Action;
 use crate::types::*;
+use crate::utils::build_common::{build_project, run_project};
 use crate::utils::cli::{compile_mode_flag, parse_compile_mode, path_flag};
-use crate::utils::paths::get_game_build_path;
+use crate::utils::paths::get_project_build_path;
 
 #[derive(Debug)]
 pub(crate) struct Benchmark;
@@ -61,7 +61,7 @@ impl Action for Benchmark {
     }
 }
 
-/// Per-iteration statistics parsed from the game's JSON report line.
+/// Per-iteration statistics parsed from the project's JSON report line.
 #[derive(Debug, Clone)]
 struct IterationStats {
     /// Which run this was (1-based).
@@ -90,31 +90,28 @@ struct IterationStats {
     standard_deviation_ms: f64,
 }
 
-/// Build the game with benchmark features, run N iterations capturing stdout
+/// Build the project with benchmark features, run N iterations capturing stdout
 /// JSON, parse full stats, and print a markdown table + aggregate summary.
 pub(crate) fn do_benchmark(
-    game_project_directory_path: &PathBuf,
+    project_directory_path: &PathBuf,
     compile_mode: &CompileMode,
     benchmark_iterations: u32,
     benchmark_features: &str,
 ) -> Result<()> {
     println!(
         "Benchmark: {} ({} iterations, features: {})",
-        game_project_directory_path.display(),
+        project_directory_path.display(),
         benchmark_iterations,
         benchmark_features,
     );
 
     let mut output_directory_path = PathBuf::from(".");
-    output_directory_path = get_game_build_path(
-        game_project_directory_path,
-        &output_directory_path,
-        compile_mode,
-    )?;
+    output_directory_path =
+        get_project_build_path(project_directory_path, &output_directory_path, compile_mode)?;
 
     println!("Building with features: {} ...", benchmark_features);
-    build_game_project(
-        game_project_directory_path,
+    build_project(
+        project_directory_path,
         &output_directory_path,
         compile_mode,
         Some(benchmark_features),
@@ -124,8 +121,8 @@ pub(crate) fn do_benchmark(
     let mut all_stats: Vec<IterationStats> = Vec::new();
     for i in 1..=benchmark_iterations {
         println!("Iteration {} / {} ...", i, benchmark_iterations);
-        let output = run_game_project(
-            game_project_directory_path,
+        let output = run_project(
+            project_directory_path,
             &output_directory_path,
             compile_mode,
             &[],
@@ -191,7 +188,7 @@ fn parse_iteration_json(json: &str, run: u32) -> Result<IterationStats> {
         .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'stddev_ms' field"))?;
 
     // Reject iterations with NaN in any numeric field — NaN indicates a bug
-    // in the game's benchmark output, not a valid measurement.
+    // in the project's benchmark output, not a valid measurement.
     for (name, val) in [
         ("average_ms", average_ms),
         ("median_ms", median_ms),

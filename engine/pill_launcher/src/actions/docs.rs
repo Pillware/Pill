@@ -1,11 +1,10 @@
 // This file implements the "docs" action: generating rustdoc for engine crates.
 //
 // Responsibilities:
-// - Generates two doc sets: game_dev (public API) and engine_dev (private items).
+// - Generates two doc sets: project_dev (public API) and engine_dev (private items).
 // - Temporarily rewrites the Empty example's Cargo.toml and pill_native's Cargo.toml
 //   to point at absolute engine paths so cargo doc resolves dependencies correctly.
 // - Pre-renders PlantUML diagrams before doc generation.
-// - Depends on: utils::paths, utils::files, utils::assets.
 
 use anyhow::{bail, Context, Error, Result};
 use clap::{App, ArgMatches};
@@ -39,25 +38,25 @@ impl Action for Docs {
     }
 }
 
-/// Generate rustdoc for engine crates into two sets: game_dev and engine_dev.
+/// Generate rustdoc for engine crates into two sets: project_dev and engine_dev.
 /// Temporarily rewrites Cargo.toml files so cargo doc resolves path dependencies.
 /// Restores original manifests on exit even if generation fails.
 ///
-/// **Not safe for concurrent use.** If two `pill_launcher -a docs` processes run
+/// WARNING: Not safe for concurrent use. If two `pill_launcher -a docs` processes run
 /// simultaneously, they race on the same Cargo.toml files and may produce
 /// incorrect documentation or leave manifests in a modified state.
 pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     // The Empty example serves as a workspace anchor so cargo doc can resolve deps.
-    let empty_example_game_path = get_path(Location::EngineProjectRoot)
+    let empty_example_project_path = get_path(Location::EngineProjectRoot)
         .join("examples")
         .join("Empty");
-    if !empty_example_game_path.exists() {
+    if !empty_example_project_path.exists() {
         return Err(Error::msg(
             "Cannot find Empty project in examples directory",
         ));
     }
 
-    let empty_cargo_toml = empty_example_game_path.join("Cargo.toml");
+    let empty_cargo_toml = empty_example_project_path.join("Cargo.toml");
     let native_cargo_toml = get_path(Location::PillNativeCrate).join("Cargo.toml");
 
     // Snapshot original manifests so we can restore them on exit.
@@ -74,7 +73,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         |line: String| -> String {
             if line.contains("pill_engine") {
                 return format!(
-                    "pill_engine = {{path = \"{}\", features = [\"game\"]}}",
+                    "pill_engine = {{path = \"{}\", features = [\"project\"]}}",
                     get_path(Location::PillEngineCrate)
                         .to_str()
                         .unwrap()
@@ -91,10 +90,12 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         &native_cargo_toml,
         &native_cargo_toml,
         |line: String| -> String {
-            if line.contains("pill_game") {
+            if line.contains("pill_project") {
                 return format!(
-                    "pill_game = {{path = \"{}\"}}",
-                    empty_example_game_path.to_string_lossy().replace("\\", "/")
+                    "pill_project = {{path = \"{}\"}}",
+                    empty_example_project_path
+                        .to_string_lossy()
+                        .replace("\\", "/")
                 );
             }
             line
@@ -122,16 +123,16 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
             })?;
         }
 
-        // Prepare two output directories: game_dev (public API) and engine_dev (all items).
-        let output_game_dev_path = docs_path.join("game_dev");
+        // Prepare two output directories: project_dev (public API) and engine_dev (all items).
+        let output_project_dev_path = docs_path.join("project_dev");
         let output_engine_dev_path = docs_path.join("engine_dev");
 
         fs::create_dir_all(&docs_path)?;
-        fs::create_dir_all(&output_game_dev_path)?;
+        fs::create_dir_all(&output_project_dev_path)?;
         fs::create_dir_all(&output_engine_dev_path)?;
 
         let engine_crate_manifest_path = get_path(Location::PillEngineCrate).join("Cargo.toml");
-        let full_engine_manifest_path = empty_example_game_path.join("Cargo.toml");
+        let full_engine_manifest_path = empty_example_project_path.join("Cargo.toml");
 
         // 5. Pre-render PlantUML diagrams so they appear in the generated docs.
         let pill_engine_dir = get_path(Location::PillEngineCrate);
@@ -139,14 +140,14 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
             eprintln!("Warning: skipping PlantUML render ({})", e);
         }
 
-        // 6. Generate game_dev docs: public API surface (game + internal features).
+        // 6. Generate project_dev docs: public API surface (project + internal features).
         let manifest = full_engine_manifest_path.to_string_lossy();
-        let target = output_game_dev_path.to_string_lossy();
+        let target = output_project_dev_path.to_string_lossy();
         let arguments = vec![
             "doc",
             "--no-deps",
             "--features",
-            "game,internal",
+            "project,internal",
             "--manifest-path",
             &*manifest,
             "--target-dir",
@@ -156,12 +157,15 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         let status = Command::new("cargo")
             .args(arguments)
             .status()
-            .context("Failed to execute command for generating game dev docs")?;
+            .context("Failed to execute command for generating project dev docs")?;
 
         if !status.success() {
-            bail!("game_dev docs failed to generate (exit {:?})", status.code());
+            bail!(
+                "project_dev docs failed to generate (exit {:?})",
+                status.code()
+            );
         }
-        println!("game_dev docs generated successfully!");
+        println!("project_dev docs generated successfully!");
 
         // 7. Generate engine_dev docs: pill_core first (no dependencies), private items included.
         let core_crate_manifest_path = get_path(Location::PillCoreCrate).join("Cargo.toml");

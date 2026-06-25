@@ -3,20 +3,17 @@
 use anyhow::{bail, Context, Error, Result};
 use config::Config;
 use path_absolutize::Absolutize;
-use std::{
-    path::{Path, PathBuf},
-};
-
+use std::path::{Path, PathBuf};
 
 use crate::types::*;
 
-/// Sentinel comment that marks a workspace-member line as the launcher-injected game project.
-/// Used by `prepare_workspace_for_game` to write the line, `extract_member_path_from_line`
+/// Sentinel comment that marks a workspace-member line as the launcher-injected project.
+/// Used by `prepare_workspace_for_project` to write the line, `extract_member_path_from_line`
 /// to detect it, and the "check" action to strip it before running cargo check.
 ///
 /// The `#` prefix ensures this is a valid TOML comment on all parsers.
 /// The unique phrase minimizes false positives from coincidental text matches.
-pub(crate) const GAME_PROJECT_CRATE_MARKER: &str = "# pill-launcher-managed-workspace-member";
+pub(crate) const PROJECT_CRATE_MARKER: &str = "# pill-launcher-managed-workspace-member";
 
 /// Map CompileMode to the Cargo target directory name (debug/release/hot-reload).
 pub(crate) fn get_target_directory_for_compile_mode(mode: &CompileMode) -> &'static str {
@@ -81,13 +78,13 @@ pub(crate) fn find_engine_workspace_directory() -> Result<PathBuf> {
         return Ok(directory);
     }
 
-    bail!("Cannot locate engine workspace dir (tried env + walking up from exe/cwd)");
+    bail!("Cannot locate engine workspace directory (tried env + walking up from exe/cwd)");
 }
 
 /// Map a Location variant to its absolute filesystem path.
 /// Panics if the engine workspace directory cannot be found.
 pub(crate) fn get_path(location: Location) -> PathBuf {
-    // engine workspace dir = .../Pill-Engine/engine
+    // engine workspace directory = .../Pill-Engine/engine
     let engine_workspace =
         find_engine_workspace_directory().expect("Failed to locate engine workspace directory");
 
@@ -117,10 +114,10 @@ pub(crate) fn normalize_path(p: &Path) -> Result<String> {
         .replace('\\', "/"))
 }
 
-/// Extract the game project path from a workspace member line containing the marker comment.
+/// Extract the project path from a workspace member line containing the marker comment.
 pub(crate) fn extract_member_path_from_line(line: &str) -> Option<String> {
     let trimmed = line.trim();
-    if !trimmed.contains(GAME_PROJECT_CRATE_MARKER) {
+    if !trimmed.contains(PROJECT_CRATE_MARKER) {
         return None;
     }
     let first_quote = trimmed.find('"')?;
@@ -137,15 +134,15 @@ pub(crate) fn get_output_directory_for_compile_mode(mode: &CompileMode) -> &'sta
     }
 }
 
-/// Compute the build output directory for a game project (defaults to <game>/build/<mode>/).
-pub(crate) fn get_game_build_path(
-    game_project_directory_path: &Path,
+/// Compute the build output directory for a project (defaults to <project>/build/<mode>/).
+pub(crate) fn get_project_build_path(
+    project_directory_path: &Path,
     output_directory_path: &PathBuf,
     compile_mode: &CompileMode,
 ) -> Result<PathBuf> {
-    // Default output path: <game>/build/<dev|release|hot-reload>/.
+    // Default output path: <project>/build/<dev|release|hot-reload>/.
     if output_directory_path.as_os_str() == "." {
-        Ok(game_project_directory_path
+        Ok(project_directory_path
             .join("build")
             .join(get_output_directory_for_compile_mode(compile_mode))
             .absolutize()?
@@ -155,43 +152,41 @@ pub(crate) fn get_game_build_path(
     }
 }
 
-/// Read the TITLE field from a game project's res/config.ini (spaces removed).
-pub(crate) fn get_game_title(game_project_directory_path: &Path) -> Result<String> {
-    // Get game title
-    let config_path = game_project_directory_path.join("res").join("config.ini");
+/// Read the TITLE field from a project's res/config.ini (spaces removed).
+pub(crate) fn get_project_title(project_directory_path: &Path) -> Result<String> {
+    // Get project title
+    let config_path = project_directory_path.join("res").join("config.ini");
     let mut config = Config::default();
     config
         .merge(config::File::with_name(
             &config_path.to_string_lossy().into_owned(),
         ))
-        .context("Failed to find config.ini file in game project \"res\" folder")?;
-    let game_title = config
+        .context("Failed to find config.ini file in project \"res\" folder")?;
+    let project_title = config
         .get_str("TITLE")
-        .context("Failed to get game config.ini")?
+        .context("Failed to get project config.ini")?
         .replace(' ', "");
 
-    Ok(game_title)
+    Ok(project_title)
 }
 
-/// Validate that a directory contains a Pill game project (Cargo.toml, res/, src/, config.ini).
-pub(crate) fn check_game_project_validity(game_project_directory_path: &Path) -> Result<()> {
-    if !game_project_directory_path.join("Cargo.toml").exists() {
-        return Err(Error::msg("Missing Cargo.toml file in game project folder"));
+/// Validate that a directory contains a Pill project (Cargo.toml, res/, src/, config.ini).
+pub(crate) fn check_project_validity(project_directory_path: &Path) -> Result<()> {
+    if !project_directory_path.join("Cargo.toml").exists() {
+        return Err(Error::msg("Missing Cargo.toml file in project folder"));
     }
-    if !game_project_directory_path.join("res").exists() {
-        return Err(Error::msg("Missing \"res\" folder in game project folder"));
+    if !project_directory_path.join("res").exists() {
+        return Err(Error::msg("Missing \"res\" folder in project folder"));
     }
-    if !game_project_directory_path.join("src").exists() {
-        return Err(Error::msg("Missing \"src\" folder in game project folder"));
+    if !project_directory_path.join("src").exists() {
+        return Err(Error::msg("Missing \"src\" folder in project folder"));
     }
-    if !game_project_directory_path
+    if !project_directory_path
         .join("res")
         .join("config.ini")
         .exists()
     {
-        return Err(Error::msg(
-            "Missing \"config.ini\" file in game project folder",
-        ));
+        return Err(Error::msg("Missing \"config.ini\" file in project folder"));
     }
 
     Ok(())

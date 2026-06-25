@@ -1,10 +1,10 @@
 // This file implements the "cargo" passthrough action.
 //
 // Responsibilities:
-// - Prepares the engine workspace for the given game project.
+// - Prepares the engine workspace for the given project.
 // - Runs an arbitrary cargo command (fmt, clippy, etc.) in that workspace.
 // - Used by the "ci" meta-action for fmt and clippy steps.
-// - Depends on: workspace (prepare_workspace_for_game).
+// - Depends on: workspace (prepare_workspace_for_project).
 
 use anyhow::{bail, Context, Result};
 use clap::{App, ArgMatches};
@@ -15,7 +15,7 @@ use std::process::Command;
 use crate::actions::Action;
 use crate::types::*;
 use crate::utils::cli::{parse_compile_mode, path_flag};
-use crate::utils::workspace::prepare_workspace_for_game;
+use crate::utils::workspace::prepare_workspace_for_project;
 
 /// Registers `-p` / `--path`. Trailing args (after `--`) are collected
 /// by the global passthrough mechanism in `utils::cli` and forwarded to cargo.
@@ -34,7 +34,7 @@ impl Action for Cargo {
     fn run(&self, matches: &ArgMatches) -> Result<()> {
         let compile_mode = parse_compile_mode(matches);
         let passthrough: Vec<String> = matches
-            .values_of("game-args")
+            .values_of("project-args")
             .map(|v| v.map(String::from).collect())
             .unwrap_or_default();
         let path = PathBuf::from(matches.value_of("path").unwrap_or("."))
@@ -44,10 +44,10 @@ impl Action for Cargo {
     }
 }
 
-/// Run an arbitrary cargo command in the engine workspace with the game project linked.
+/// Run an arbitrary cargo command in the engine workspace with the project linked.
 /// Requires at least one cargo argument; fails if the cargo command exits non-zero.
 pub(crate) fn cargo_passthrough(
-    game_project_directory_path: &Path,
+    project_directory_path: &Path,
     compile_mode: &CompileMode,
     cargo_args: &[String],
 ) -> Result<()> {
@@ -56,9 +56,9 @@ pub(crate) fn cargo_passthrough(
         bail!("Must call cargo with at least one argument");
     }
 
-    // Link the game project into the workspace so cargo commands see the full context.
+    // Link the project into the workspace so cargo commands see the full context.
     let engine_workspace_directory_path =
-        prepare_workspace_for_game(game_project_directory_path, compile_mode)?;
+        prepare_workspace_for_project(project_directory_path, compile_mode)?;
 
     println!(
         "Running `cargo {}` in workspace {}...",

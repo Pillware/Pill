@@ -168,20 +168,20 @@ pub(crate) fn copy_directory_recursive(source: &Path, destination: &Path) -> Res
     Ok(())
 }
 
-/// Mirror a game project's res/ directory into the build output data directory.
+/// Mirror a project's res/ directory into the build output data directory.
 /// Used for packaged release builds where resources must be bundled alongside the executable.
 /// Stages to a temporary directory first and validates before swapping, so a failed copy
 /// never leaves a partial or corrupted resource directory.
 pub(crate) fn stage_packaged_resource_files(
-    game_project_directory_path: &Path,
+    project_directory_path: &Path,
     data_directory: &Path,
 ) -> Result<()> {
-    let source_resources_dir = game_project_directory_path.join("res");
+    let source_resources_dir = project_directory_path.join("res");
     let destination_resources_dir = data_directory.join("res");
 
     if !source_resources_dir.exists() {
         bail!(
-            "Game resources directory does not exist: {}",
+            "Project resources directory does not exist: {}",
             source_resources_dir.display()
         );
     }
@@ -251,7 +251,7 @@ pub(crate) fn remove_files_starting_with(
     file_name_prefix: &str,
 ) -> Result<()> {
     if !directory_path.exists() || !directory_path.is_dir() {
-        return Ok(()); // Skip non-existent or non-dir
+        return Ok(()); // Skip non-existent or non-directory
     }
 
     for entry in fs::read_dir(directory_path).context("Failed to read directory")? {
@@ -272,11 +272,13 @@ pub(crate) fn remove_files_starting_with(
 
 /// Recursively delete all cooked asset files (`.cooked_mesh`, `.cooked_tex`) under a directory.
 /// Used by the asset pipeline's force-rebuild mode to clear previously built outputs.
-pub(crate) fn delete_cooked_resource_files_recursive(dir: &Path) -> Result<()> {
-    if !dir.exists() {
+pub(crate) fn delete_cooked_resource_files_recursive(directory: &Path) -> Result<()> {
+    if !directory.exists() {
         return Ok(());
     }
-    for entry in fs::read_dir(dir).with_context(|| format!("Failed to read {}", dir.display()))? {
+    for entry in fs::read_dir(directory)
+        .with_context(|| format!("Failed to read {}", directory.display()))?
+    {
         let entry = entry?;
         let file_type = entry.file_type()?;
         let path = entry.path();

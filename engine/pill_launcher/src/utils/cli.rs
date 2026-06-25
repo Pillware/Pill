@@ -4,7 +4,7 @@
 // Responsibilities:
 // - Takes a list of Action trait objects.
 // - Iterates over them, calling register() on each to build the full CLI.
-// - Adds the common --action flag and -- game-args passthrough.
+// - Adds the common --action flag and -- project-args passthrough.
 // - After parsing, dispatches to the matching action's run() method.
 
 use crate::types::{BuildTarget, CompileMode};
@@ -16,7 +16,7 @@ use crate::actions::Action;
 /// Build the CLI from the provided actions, parse args, and dispatch.
 pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
     let mut app = App::new("PillLauncher")
-        .about("Tool for managing Pill game projects")
+        .about("Tool for managing Pill project projects")
         .version(env!("CARGO_PKG_VERSION"));
 
     // Collect all valid action names for the --action possible_values list.
@@ -35,10 +35,10 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
     );
 
     // Common passthrough: trailing arguments after `--` are forwarded to the
-    // game or cargo command (used by "run", "build", "cargo" actions).
+    // project or cargo command (used by "run", "build", "cargo" actions).
     app = app.arg(
-        Arg::with_name("game-args")
-            .help("Arguments passed through to the game or cargo (use `--` to separate)")
+        Arg::with_name("project-args")
+            .help("Arguments passed through to the project or cargo (use `--` to separate)")
             .multiple(true)
             .last(true)
             .allow_hyphen_values(true),
@@ -70,14 +70,14 @@ pub(crate) const DEFAULT_COMPILE_MODE: &str = "debug";
 
 // -- Shared flag builders ---------------------------------------------------
 
-/// `-p` / `--path` — game project directory.
+/// `-p` / `--path` — project directory.
 pub(crate) fn path_flag() -> Arg<'static, 'static> {
     Arg::with_name("path")
         .short("p")
         .long("path")
         .takes_value(true)
         .default_value(".")
-        .help("Path to the game project")
+        .help("Path to the project")
 }
 
 /// `-c` / `--compile-mode` — debug, release, or hot-reload.
@@ -119,12 +119,12 @@ pub(crate) fn clean_flag() -> Arg<'static, 'static> {
         .help("Delete all cooked asset files and rebuild from source")
 }
 
-/// `--features` — comma-separated Cargo features for pill_game.
+/// `--features` — comma-separated Cargo features for pill_project.
 pub(crate) fn features_flag() -> Arg<'static, 'static> {
     Arg::with_name("features")
         .long("features")
         .takes_value(true)
-        .help("Cargo features to enable for pill_game (comma-separated)")
+        .help("Cargo features to enable for pill_project (comma-separated)")
 }
 
 // -- Shared parsers ---------------------------------------------------------
