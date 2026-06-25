@@ -78,7 +78,9 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
             .with_inner_size(PhysicalSize::new(width, height));
 
         #[allow(deprecated)]
-        must!(event_loop.create_window(attrs))
+        let window = must!(event_loop.create_window(attrs));
+
+        window
     };
 
     let window = Arc::new(window);

@@ -93,14 +93,10 @@ impl PillGame for Game {
         // --- Create resources ---
 
         // Add meshes
-        let pill_mesh = Mesh::new("pill", "models/pill.obj".into());
-        let pill_mesh_handle = engine.add_resource(pill_mesh)?;
-
-        let cube_mesh = Mesh::new("rounded_cube", "models/rounded_cube.obj".into());
-        let cube_mesh_handle = engine.add_resource(cube_mesh)?;
-
-        let torus_mesh = Mesh::new("torus", "models/torus.obj".into());
-        let torus_mesh_handle = engine.add_resource(torus_mesh)?;
+        let pill_mesh = engine.add_resource(Mesh::new("pill", "models/pill.obj".into()))?;
+        let cube_mesh =
+            engine.add_resource(Mesh::new("rounded_cube", "models/rounded_cube.obj".into()))?;
+        let torus_mesh = engine.add_resource(Mesh::new("torus", "models/torus.obj".into()))?;
 
         // Add sounds
         let ambient_music = Sound::new("ambient", "audio/test_music.mp3".into());
@@ -247,7 +243,7 @@ impl PillGame for Game {
         let demo_state = DemoStateComponent {
             floating_objects_movement_enabled: true,
             current_mesh: 0,
-            mesh_handles: vec![pill_mesh_handle, cube_mesh_handle, torus_mesh_handle],
+            mesh_handles: vec![pill_mesh, cube_mesh, torus_mesh],
             current_material_set: 0,
             textured_material_handles: vec![
                 fabric_material_handle,

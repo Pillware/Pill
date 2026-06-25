@@ -54,6 +54,18 @@ pub use components::mesh_rendering_component::MeshRenderingComponent;
 
 pub use components::time_component::TimeComponent;
 
+#[cfg(feature = "physics")]
+pub use components::physics_world_component::PhysicsWorldComponent;
+
+#[cfg(feature = "physics")]
+pub use components::rigid_body_component::{RigidBodyComponent, RigidBodyComponentBuilder};
+
+#[cfg(feature = "physics")]
+pub use components::collider_component::{ColliderComponent, ColliderComponentBuilder};
+
+#[cfg(feature = "physics")]
+pub use rapier3d::prelude::{LockedAxes, RigidBodyType, SharedShape};
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use components::network_manager_component::{
     ClientState, ConnectionState, NetworkManagerComponent, NetworkSide,
@@ -79,6 +91,9 @@ pub use systems::time_system::time_system;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use systems::audio_system::audio_system;
+
+#[cfg(feature = "physics")]
+pub use systems::physics_system::physics_system;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use systems::networking_system::{
