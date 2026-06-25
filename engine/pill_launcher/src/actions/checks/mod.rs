@@ -1,8 +1,7 @@
-// Checks sub-module: validation and benchmarking actions.
+// Checks sub-module: code validation and WASM smoke-testing.
 //
 // - check_code: fast compile-check of engine crates (no game code).
 // - check_wasm: build WASM, smoke-test dev server, check size budget.
-// - benchmarks: performance and artifact-size benchmarks.
 
 pub mod check_code;
 pub mod check_wasm;

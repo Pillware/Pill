@@ -2,10 +2,10 @@
 //
 // Responsibilities:
 // - run(): entry point — builds the WASM bundle, then serves build/wasm/ on
-//   localhost:8080 with long-poll reload when files change.
+//   the given port with long-poll reload when files change.
 // - Injects a small <script> into HTML responses that polls /__reload.
 // - Watches the build output directory for file changes (polling every 500ms).
-// - Depends on: utils::wasm_build (for the initial bundle build), types::CompileMode.
+// - Depends on: utils::wasm (for the initial bundle build), types::CompileMode.
 
 use std::fs::{self, File};
 use std::path::Path;
