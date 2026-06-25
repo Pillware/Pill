@@ -15,9 +15,9 @@ use std::{env, fs, path::PathBuf, process::Command};
 use crate::actions::Action;
 use crate::types::*;
 use crate::utils::cli::output_path_flag;
-use crate::utils::plantuml::render_puml_for_crate;
 use crate::utils::files::modify_file;
 use crate::utils::paths::*;
+use crate::utils::plantuml::render_puml_for_crate;
 
 pub(crate) struct Docs;
 
@@ -41,6 +41,10 @@ impl Action for Docs {
 /// Generate rustdoc for engine crates into two sets: game_dev and engine_dev.
 /// Temporarily rewrites Cargo.toml files so cargo doc resolves path dependencies.
 /// Restores original manifests on exit even if generation fails.
+///
+/// **Not safe for concurrent use.** If two `pill_launcher -a docs` processes run
+/// simultaneously, they race on the same Cargo.toml files and may produce
+/// incorrect documentation or leave manifests in a modified state.
 pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     // The Empty example serves as a workspace anchor so cargo doc can resolve deps.
     let empty_example_game_path = get_path(Location::EngineProjectRoot)
@@ -112,8 +116,9 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
         // 4. Clean any previous doc output so stale files don't persist.
         if docs_path.exists() {
-            fs::remove_dir_all(&docs_path)
-                .with_context(|| format!("Cannot clear output directory: {}", docs_path.display()))?;
+            fs::remove_dir_all(&docs_path).with_context(|| {
+                format!("Cannot clear output directory: {}", docs_path.display())
+            })?;
         }
 
         // Prepare two output directories: game_dev (public API) and engine_dev (all items).

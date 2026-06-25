@@ -192,34 +192,91 @@ fn parse_iteration_json(json: &str, run: u32) -> Option<IterationStats> {
 }
 
 /// Extract an `f64` value from a JSON object for the given key.
+/// Handles optional whitespace around the colon and value.
 fn extract_json_f64(json: &str, key: &str) -> Option<f64> {
-    let search = format!("\"{}\":", key);
-    let start = json.find(&search)? + search.len();
-    let rest = &json[start..];
-    let end = rest
-        .find(|c: char| c == ',' || c == '}' || c.is_whitespace())
-        .unwrap_or(rest.len());
-    rest[..end].trim().parse::<f64>().ok()
+    let value_str = extract_json_value(json, key)?;
+    value_str.trim().parse::<f64>().ok()
 }
 
 /// Extract a `u64` value from a JSON object for the given key.
 fn extract_json_u64(json: &str, key: &str) -> Option<u64> {
-    let search = format!("\"{}\":", key);
-    let start = json.find(&search)? + search.len();
-    let rest = &json[start..];
-    let end = rest
-        .find(|c: char| c == ',' || c == '}' || c.is_whitespace())
-        .unwrap_or(rest.len());
-    rest[..end].trim().parse::<u64>().ok()
+    let value_str = extract_json_value(json, key)?;
+    value_str.trim().parse::<u64>().ok()
+}
+
+/// Extract the raw value substring for the given key from a flat JSON object.
+/// Handles string values with `\"` escapes, numbers, and skips interior whitespace.
+fn extract_json_value<'j>(json: &'j str, key: &str) -> Option<&'j str> {
+    let search = format!("\"{}\"", key);
+    let after_key = json.find(&search)? + search.len();
+
+    // Skip whitespace and the colon separator.
+    let after_colon = json[after_key..].find(':').map(|i| after_key + i + 1)?;
+
+    let rest = json[after_colon..].trim_start();
+    if rest.is_empty() {
+        return None;
+    }
+
+    let first_char = rest.chars().next()?;
+    if first_char == '"' {
+        // String value: scan for the closing unescaped quote.
+        let inner = &rest[1..];
+        let mut chars = inner.char_indices();
+        loop {
+            match chars.next() {
+                Some((_, '\\')) => {
+                    // Skip the escaped character (handles \\, \", \n, etc.)
+                    chars.next();
+                }
+                Some((i, '"')) => return Some(&inner[..i]),
+                None => return None, // unterminated string
+                _ => {}
+            }
+        }
+    } else {
+        // Number or literal (true/false/null): scan until delimiter.
+        let end = rest
+            .find(|c: char| c == ',' || c == '}' || c.is_whitespace())
+            .unwrap_or(rest.len());
+        Some(&rest[..end])
+    }
 }
 
 /// Extract a quoted string value from a JSON object for the given key.
+/// Returns the raw string content with escape sequences preserved.
 fn extract_json_string(json: &str, key: &str) -> Option<String> {
-    let search = format!("\"{}\":\"", key);
-    let start = json.find(&search)? + search.len();
-    let rest = &json[start..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+    let raw = extract_json_value(json, key)?;
+    // Strip surrounding quotes if present.
+    let inner = raw.strip_prefix('"').and_then(|s| s.strip_suffix('"'))?;
+    // Unescape common JSON escape sequences (\\, \", \n, \r, \t).
+    let unescaped = unescape_json_string(inner);
+    Some(unescaped)
+}
+
+/// Minimal JSON string unescaping: handles \\, \", \n, \r, \t.
+fn unescape_json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('"') => out.push('"'),
+                Some('\\') => out.push('\\'),
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some('t') => out.push('\t'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 // -- Report formatting -------------------------------------------------------

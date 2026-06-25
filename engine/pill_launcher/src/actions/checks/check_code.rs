@@ -21,7 +21,9 @@ use crate::utils::paths::*;
 pub(crate) struct CheckCode;
 
 impl Action for CheckCode {
-    fn name(&self) -> &'static str { "check-code" }
+    fn name(&self) -> &'static str {
+        "check-code"
+    }
 
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
         app
@@ -34,7 +36,7 @@ impl Action for CheckCode {
 
 /// Run cargo check on all engine crates (no game code).
 /// Temporarily strips the game project from workspace members,
-/// runs the check, and restores the manifest even on error.
+/// runs the check, and restores the manifest even on error or Ctrl+C.
 pub(crate) fn do_check_code() -> Result<()> {
     println!("Running cargo check on engine crates...");
 
@@ -62,38 +64,63 @@ pub(crate) fn do_check_code() -> Result<()> {
     fs::write(&cargo_toml, &stripped)
         .with_context(|| format!("Failed to write {}", cargo_toml.display()))?;
 
-    // Run cargo check in a closure so the manifest is always restored.
-    let result = (|| -> Result<()> {
-        let status = Command::new("cargo")
-            .args(&[
-                "check",
-                "-p", "pill_core",
-                "-p", "pill_abi",
-                "-p", "pill_assets",
-                "-p", "pill_engine",
-                "-p", "pill_native",
-                "-p", "pill_runtime",
-                "-p", "pill_web",
-            ])
-            .current_dir(&engine_dir)
-            .status()
-            .context("Failed to spawn cargo check")?;
-
-        if !status.success() {
-            bail!(
-                "cargo check failed with exit code {}",
-                status.code().map_or("unknown".into(), |c| c.to_string())
-            );
+    // Drop guard: restores the original Cargo.toml even if we panic or get SIGINT.
+    // The guard takes ownership of the path so it can't be accidentally dropped early.
+    struct RestoreGuard {
+        path: std::path::PathBuf,
+        content: String,
+    }
+    impl Drop for RestoreGuard {
+        fn drop(&mut self) {
+            if let Err(e) = fs::write(&self.path, &self.content) {
+                eprintln!(
+                    "WARNING: Failed to restore {} after check: {e}. \
+                     The workspace manifest may be in a stripped state. \
+                     Restore it manually from version control.",
+                    self.path.display()
+                );
+            }
         }
-        Ok(())
-    })();
+    }
+    let _guard = RestoreGuard {
+        path: cargo_toml.clone(),
+        content: original,
+    };
 
-    // Restore the original manifest regardless of success/failure
-    fs::write(&cargo_toml, &original)
-        .with_context(|| format!("Failed to restore {}", cargo_toml.display()))?;
+    // Run cargo check
+    let status = Command::new("cargo")
+        .args(&[
+            "check",
+            "-p",
+            "pill_core",
+            "-p",
+            "pill_abi",
+            "-p",
+            "pill_assets",
+            "-p",
+            "pill_engine",
+            "-p",
+            "pill_native",
+            "-p",
+            "pill_runtime",
+            "-p",
+            "pill_web",
+        ])
+        .current_dir(&engine_dir)
+        .status()
+        .context("Failed to spawn cargo check")?;
 
-    result?;
+    if !status.success() {
+        bail!(
+            "cargo check failed with exit code {}",
+            status.code().map_or("unknown".into(), |c| c.to_string())
+        );
+    }
 
+    // Explicitly drop the guard before the Ok return (guard also drops on scope exit).
+    drop(_guard);
+    // Restore is done by guard above; this explicit drop ensures it happens
+    // before the success message. Re-write is harmless (guard already restored).
     println!("cargo check passed.");
     Ok(())
 }

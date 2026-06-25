@@ -2,6 +2,9 @@
 
 use anyhow::*;
 use std::{fs, path::Path, result::Result::Ok};
+// Used by codesign_ad_hoc on macOS:
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 /// Rewrite a file line-by-line, passing each line to the provided closure that can modify it.
 /// Skips writing if the output would be identical to the input (no-op detection).

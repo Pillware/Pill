@@ -13,7 +13,10 @@ use crate::types::*;
 /// Sentinel comment that marks a workspace-member line as the launcher-injected game project.
 /// Used by `prepare_workspace_for_game` to write the line, `extract_member_path_from_line`
 /// to detect it, and the "check" action to strip it before running cargo check.
-pub(crate) const GAME_PROJECT_CRATE_MARKER: &str = "### Game project crate";
+///
+/// The `#` prefix ensures this is a valid TOML comment on all parsers.
+/// The unique phrase minimizes false positives from coincidental text matches.
+pub(crate) const GAME_PROJECT_CRATE_MARKER: &str = "# pill-launcher-managed-workspace-member";
 
 /// Map CompileMode to the Cargo target directory name (debug/release/hot-reload).
 pub(crate) fn get_target_directory_for_compile_mode(mode: &CompileMode) -> &'static str {
@@ -153,7 +156,9 @@ pub(crate) fn get_game_title(game_project_directory_path: &Path) -> Result<Strin
     let config_path = game_project_directory_path.join("res").join("config.ini");
     let mut config = Config::default();
     config
-        .merge(config::File::with_name(&config_path.to_string_lossy().into_owned()))
+        .merge(config::File::with_name(
+            &config_path.to_string_lossy().into_owned(),
+        ))
         .context("Failed to find config.ini file in game project \"res\" folder")?;
     let game_title = config
         .get_str("TITLE")
