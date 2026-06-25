@@ -89,7 +89,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
             if line.contains("pill_game") {
                 return format!(
                     "pill_game = {{path = \"{}\"}}",
-                    empty_example_game_path.to_str().unwrap().replace("\\", "/")
+                    empty_example_game_path.to_string_lossy().replace("\\", "/")
                 );
             }
             line
@@ -134,15 +134,17 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         }
 
         // 6. Generate game_dev docs: public API surface (game + internal features).
+        let manifest = full_engine_manifest_path.to_string_lossy();
+        let target = output_game_dev_path.to_string_lossy();
         let arguments = vec![
             "doc",
             "--no-deps",
             "--features",
             "game,internal",
             "--manifest-path",
-            full_engine_manifest_path.to_str().unwrap(),
+            &*manifest,
             "--target-dir",
-            output_game_dev_path.to_str().unwrap(),
+            &*target,
             "--release",
         ];
         let status = Command::new("cargo")
@@ -157,14 +159,16 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
         // 7. Generate engine_dev docs: pill_core first (no dependencies), private items included.
         let core_crate_manifest_path = get_path(Location::PillCoreCrate).join("Cargo.toml");
+        let manifest = core_crate_manifest_path.to_string_lossy();
+        let target = output_engine_dev_path.to_string_lossy();
         let arguments = vec![
             "doc",
             "--no-deps",
             "--document-private-items",
             "--manifest-path",
-            core_crate_manifest_path.to_str().unwrap(),
+            &*manifest,
             "--target-dir",
-            output_engine_dev_path.to_str().unwrap(),
+            &*target,
             "--release",
         ];
         let status = Command::new("cargo")
@@ -178,6 +182,8 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         }
 
         // Generate engine_dev docs: pill_engine with all features, private items included.
+        let manifest = engine_crate_manifest_path.to_string_lossy();
+        let target = output_engine_dev_path.to_string_lossy();
         let arguments = vec![
             "doc",
             "--no-deps",
@@ -185,9 +191,9 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
             "--features",
             "all",
             "--manifest-path",
-            engine_crate_manifest_path.to_str().unwrap(),
+            &*manifest,
             "--target-dir",
-            output_engine_dev_path.to_str().unwrap(),
+            &*target,
             "--release",
         ];
         let status = Command::new("cargo")

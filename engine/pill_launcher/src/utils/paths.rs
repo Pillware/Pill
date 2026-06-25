@@ -153,7 +153,7 @@ pub(crate) fn get_game_title(game_project_directory_path: &Path) -> Result<Strin
     let config_path = game_project_directory_path.join("res").join("config.ini");
     let mut config = Config::default();
     config
-        .merge(config::File::with_name(config_path.to_str().unwrap()))
+        .merge(config::File::with_name(&config_path.to_string_lossy().into_owned()))
         .context("Failed to find config.ini file in game project \"res\" folder")?;
     let game_title = config
         .get_str("TITLE")

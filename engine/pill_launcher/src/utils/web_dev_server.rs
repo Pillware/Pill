@@ -70,10 +70,8 @@ fn spawn_watcher(watch_dir: std::path::PathBuf, subscribers: Subscribers) {
         let cur = latest_mtime(&watch_dir);
         if cur > last && cur.is_some() {
             last = cur;
-            let mut subs = subscribers.lock().unwrap();
-            for tx in subs.drain(..) {
-                let _ = tx.send(());
-            }
+            let mut subs = subscribers.lock().unwrap_or_else(|e| e.into_inner());
+            subs.retain(|tx| tx.send(()).is_ok());
         }
     });
 }
@@ -149,7 +147,10 @@ fn handle_request(
 
 fn handle_reload(request: tiny_http::Request, subscribers: Subscribers) -> Result<()> {
     let (tx, rx) = mpsc::channel();
-    subscribers.lock().unwrap().push(tx);
+    subscribers
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(tx);
     let signaled = rx.recv_timeout(LONG_POLL_TIMEOUT).is_ok();
     respond(request, if signaled { 200 } else { 204 }, "")
 }

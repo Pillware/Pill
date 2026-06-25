@@ -1,11 +1,7 @@
 // This file provides reusable file-system operations for the launcher.
 
 use anyhow::*;
-use std::{
-    fs,
-    path::Path,
-    result::Result::Ok,
-};
+use std::{fs, path::Path, result::Result::Ok};
 
 /// Rewrite a file line-by-line, passing each line to the provided closure that can modify it.
 /// Skips writing if the output would be identical to the input (no-op detection).
@@ -18,11 +14,15 @@ pub(crate) fn modify_file<A: FnMut(String) -> String>(
     let input = fs::read_to_string(input_path)
         .with_context(|| format!("Failed to read {}", input_path.display()))?;
 
+    // Normalize CRLF → LF so line-ending style changes don't cause
+    // spurious rewrites or corrupt Cargo.toml / config.ini files.
+    let input_normalized = input.replace("\r\n", "\n");
+
     // Prevent overwriting the same files
     let mut changed = false;
 
     // Read lines from input file
-    let lines = input
+    let lines = input_normalized
         .lines()
         .map(|line| {
             let new_line = action(line.to_string());
@@ -34,12 +34,12 @@ pub(crate) fn modify_file<A: FnMut(String) -> String>(
         .collect::<Vec<String>>();
 
     let mut out = lines.join("\n");
-    if input.ends_with("\n") {
+    if input_normalized.ends_with("\n") {
         out.push('\n');
     }
 
     // No-op detection: skip writing if nothing changed (avoids invalidating caches).
-    if input_path == output_path && !changed && out == input {
+    if input_path == output_path && !changed && out == input_normalized {
         return Ok(());
     }
 
@@ -59,7 +59,11 @@ pub(crate) fn modify_file<A: FnMut(String) -> String>(
         fs::write(&tmp_path, &out)
             .with_context(|| format!("Failed to write temp file {}", tmp_path.display()))?;
         fs::rename(&tmp_path, output_path).with_context(|| {
-            format!("Failed to rename {} to {}", tmp_path.display(), output_path.display())
+            format!(
+                "Failed to rename {} to {}",
+                tmp_path.display(),
+                output_path.display()
+            )
         })?;
     } else {
         fs::write(output_path, out)
@@ -172,14 +176,22 @@ pub(crate) fn stage_packaged_resource_files(
         );
     }
 
-    fs::create_dir_all(data_directory)
-        .with_context(|| format!("Failed to create data directory {}", data_directory.display()))?;
+    fs::create_dir_all(data_directory).with_context(|| {
+        format!(
+            "Failed to create data directory {}",
+            data_directory.display()
+        )
+    })?;
 
     // Stage into a temporary directory so we never leave a partial copy.
     let staging_dir = data_directory.join(".res_staging_tmp");
     if staging_dir.exists() {
-        fs::remove_dir_all(&staging_dir)
-            .with_context(|| format!("Failed to clear staging directory {}", staging_dir.display()))?;
+        fs::remove_dir_all(&staging_dir).with_context(|| {
+            format!(
+                "Failed to clear staging directory {}",
+                staging_dir.display()
+            )
+        })?;
     }
 
     copy_directory_recursive(&source_resources_dir, &staging_dir)?;

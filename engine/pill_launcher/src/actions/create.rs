@@ -117,12 +117,10 @@ pub(crate) fn create_game_project(
     println!("Setting up manifest file...");
     let cargo_toml_path = game_project_directory_path.join("Cargo.toml");
     let pill_engine_path = get_path(Location::PillEngineCrate)
-        .to_str()
-        .unwrap()
+        .to_string_lossy()
         .replace('\\', "/");
     let engine_workspace_path = get_path(Location::EngineCrates)
-        .to_str()
-        .unwrap()
+        .to_string_lossy()
         .replace('\\', "/");
     modify_file(
         &cargo_toml_path,

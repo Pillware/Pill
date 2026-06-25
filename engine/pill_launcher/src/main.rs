@@ -5,9 +5,6 @@
 // - Instantiates all CLI action objects.
 // - Passes them to the generic dispatcher in utils::cli.
 
-// PillLauncher uses PascalCase for the binary name — allow it without global suppression.
-#![allow(non_snake_case)]
-
 mod actions;
 mod types;
 mod utils;

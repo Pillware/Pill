@@ -67,9 +67,12 @@ pub(crate) fn render_puml_for_crate(crate_directory: &Path) -> Result<()> {
             .context("Spawn plantuml -pipe")?;
 
         {
-            let mut stdin = child.stdin.take().unwrap();
-            let bytes = fs::read(puml)
-                .with_context(|| format!("Read PUML file {}", puml.display()))?;
+            let mut stdin = child
+                .stdin
+                .take()
+                .context("Failed to take plantuml stdin")?;
+            let bytes =
+                fs::read(puml).with_context(|| format!("Read PUML file {}", puml.display()))?;
             stdin.write_all(&bytes)?;
         }
 
