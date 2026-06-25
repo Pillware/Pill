@@ -1,6 +1,6 @@
 // This file implements the "assets" action: run the asset pipeline.
 
-use anyhow::*;
+use anyhow::Result;
 use clap::{App, ArgMatches};
 use path_absolutize::Absolutize;
 use std::path::PathBuf;

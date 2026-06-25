@@ -7,13 +7,11 @@
 // - Smoke-tests that /, /pill_web_app.js, and /pill_web_app_bg.wasm return HTTP 200.
 // - Stops the server and reports results.
 
-use anyhow::*;
+use anyhow::{bail, Context, Result};
 use clap::{App, Arg, ArgMatches};
 use path_absolutize::Absolutize;
 use std::time::Duration;
 use std::{fs, path::PathBuf};
-// Un-shadow Ok from anyhow::* so if-let patterns work correctly:
-use std::result::Result::Ok;
 
 use crate::actions::Action;
 use crate::types::CompileMode;
@@ -123,10 +121,15 @@ pub(crate) fn do_check_wasm(
         }
     });
 
-    // Retry the smoke test with brief back-off rather than a fixed sleep.
+    // Retry the smoke test with exponential back-off rather than a fixed sleep.
     let mut server_ready = false;
-    for _ in 0..20 {
-        std::thread::sleep(std::time::Duration::from_millis(50));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut delay = std::time::Duration::from_millis(10);
+    loop {
+        if std::time::Instant::now() > deadline {
+            break;
+        }
+        std::thread::sleep(delay);
         if ureq::get(&format!("http://127.0.0.1:{}/", port))
             .timeout(Duration::from_secs(10))
             .call()
@@ -135,6 +138,7 @@ pub(crate) fn do_check_wasm(
             server_ready = true;
             break;
         }
+        delay = (delay * 2).min(std::time::Duration::from_secs(1));
     }
     if !server_ready {
         server.unblock();
@@ -164,7 +168,20 @@ pub(crate) fn do_check_wasm(
 
     // Shut down the server cleanly and join the thread before returning.
     server.unblock();
-    let _ = server_thread.join();
+    match server_thread.join() {
+        Ok(()) => {}
+        Err(e) => {
+            // Propagate panics from the server thread as errors
+            let msg = if let Some(s) = e.downcast_ref::<String>() {
+                s.clone()
+            } else if let Some(s) = e.downcast_ref::<&str>() {
+                s.to_string()
+            } else {
+                "unknown panic payload".to_string()
+            };
+            eprintln!("Warning: dev server thread panicked: {msg}");
+        }
+    }
 
     result?;
     println!("WASM check passed.");

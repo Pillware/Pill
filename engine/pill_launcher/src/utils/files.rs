@@ -1,15 +1,14 @@
 // This file provides reusable file-system operations for the launcher.
 
-use anyhow::*;
+use anyhow::{bail, Context, Result};
 use std::{fs, path::Path};
-// Un-shadow Ok from anyhow::* so if-let patterns work correctly:
-use std::result::Result::Ok;
 // Used by codesign_ad_hoc on macOS:
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
 /// Rewrite a file line-by-line, passing each line to the provided closure that can modify it.
 /// Skips writing if the output would be identical to the input (no-op detection).
+#[must_use]
 pub(crate) fn modify_file<A: FnMut(String) -> String>(
     input_path: &Path,
     output_path: &Path,
@@ -44,7 +43,9 @@ pub(crate) fn modify_file<A: FnMut(String) -> String>(
     }
 
     // No-op detection: skip writing if nothing changed (avoids invalidating caches).
-    if input_path == output_path && !changed && out == input_normalized {
+    // Compare against the original input (before CRLF→LF normalization) so that
+    // files with CRLF line endings on Windows aren't needlessly rewritten.
+    if input_path == output_path && !changed && out == input {
         return Ok(());
     }
 
@@ -59,8 +60,11 @@ pub(crate) fn modify_file<A: FnMut(String) -> String>(
 
     // Write atomically when rewriting a file in-place: write to a temp file beside
     // the target and rename into place. A crash mid-write leaves the original intact.
+    // Include the process ID in the temp filename to avoid collisions between
+    // concurrent launcher processes.
     if input_path == output_path {
-        let tmp_path = output_path.with_extension("tmp");
+        let tmp_ext = format!("tmp-{}", std::process::id());
+        let tmp_path = output_path.with_extension(tmp_ext);
         fs::write(&tmp_path, &out)
             .with_context(|| format!("Failed to write temp file {}", tmp_path.display()))?;
         fs::rename(&tmp_path, output_path).with_context(|| {
@@ -94,6 +98,7 @@ pub(crate) fn codesign_ad_hoc(path: &Path) -> Result<()> {
 
 /// Copy a file only if the source is newer than the destination (by mtime and size).
 /// Returns true if a copy was performed, false if skipped.
+#[must_use]
 pub(crate) fn copy_file_if_newer(source: &Path, destination: &Path) -> Result<bool> {
     // Returns true if a copy was performed, false if the destination is already up-to-date.
     if !source.exists() {

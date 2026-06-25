@@ -7,7 +7,7 @@
 // - Ensures pill_native and pill_game share type IDs by compiling in the same workspace.
 // - Depends on: utils::paths (location resolution), utils::files (file rewriting).
 
-use anyhow::*;
+use anyhow::{Context, Error, Result};
 use std::{fs, path::{Path, PathBuf}};
 
 use crate::types::*;
@@ -57,8 +57,13 @@ pub(crate) fn prepare_workspace_for_game(
     }
 
     // Only perform cleanup/rewrite if the game project actually changed.
+    // Compare canonicalized paths to handle case-insensitive filesystems (Windows/macOS).
     let switching_game = match &current_linked {
-        Some(cur) => cur != &desired_game_path,
+        Some(cur) => {
+            let cur_canon = std::path::PathBuf::from(cur).canonicalize().ok();
+            let des_canon = std::path::PathBuf::from(&desired_game_path).canonicalize().ok();
+            cur_canon != des_canon
+        }
         None => true,
     };
 
@@ -68,16 +73,19 @@ pub(crate) fn prepare_workspace_for_game(
             .join("target")
             .join(get_target_directory_for_compile_mode(compile_mode));
 
-        let artifact_prefix = if cfg!(target_os = "windows") {
-            "pill_game"
-        } else {
-            "libpill_game"
-        };
-        remove_files_starting_with(&compilation_artifacts_folder_path, artifact_prefix)?;
-        remove_files_starting_with(
-            &compilation_artifacts_folder_path.join("deps"),
-            artifact_prefix,
-        )?;
+        // Clean artifacts for all three workspace crates that vary per-game
+        for prefix in &["pill_game", "pill_runtime", "pill_native"] {
+            let artifact_prefix = if cfg!(target_os = "windows") {
+                prefix.to_string()
+            } else {
+                format!("lib{prefix}")
+            };
+            remove_files_starting_with(&compilation_artifacts_folder_path, &artifact_prefix)?;
+            remove_files_starting_with(
+                &compilation_artifacts_folder_path.join("deps"),
+                &artifact_prefix,
+            )?;
+        }
     }
 
     // Inject the game project path into engine/Cargo.toml's workspace members.

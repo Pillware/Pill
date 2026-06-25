@@ -6,7 +6,7 @@
 //   workspace membership) to match the new project.
 // - Depends on: utils::paths (get_path, Location), utils::files (modify_file).
 
-use anyhow::*;
+use anyhow::{Context, Error, Result};
 use clap::{App, Arg, ArgMatches};
 use fs_extra::dir::CopyOptions;
 use path_absolutize::Absolutize;
@@ -80,28 +80,17 @@ pub(crate) fn create_game_project(
         .join("res")
         .join("templates");
 
-    // Copy the pill_default template into the target parent directory.
+    // Copy the pill_default template directly to the target project name.
+    // This avoids the copy-then-rename pattern which leaves orphan directories
+    // if the process is killed between the two steps.
     println!("Copying project template...");
 
     fs_extra::dir::copy(
         template_game_project_directory_path.join(TEMPLATE_NAME),
-        game_project_parent_directory_path,
+        &game_project_directory_path,
         &CopyOptions::new().overwrite(true),
     )
     .context("Cannot copy template directory")?;
-
-    // Rename the copied template directory to the new project name.
-    std::fs::rename(
-        game_project_parent_directory_path.join(TEMPLATE_NAME),
-        &game_project_directory_path,
-    )
-    .with_context(|| {
-        format!(
-            "Failed to rename template directory to '{}'. \
-             The template was copied as '{}' and may need manual cleanup.",
-            game_name, TEMPLATE_NAME
-        )
-    })?;
 
     // Setup config file
     println!("Setting up config file...");

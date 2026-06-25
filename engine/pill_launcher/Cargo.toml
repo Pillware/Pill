@@ -18,4 +18,4 @@ ureq = "2"
 pill_assets = { path = "../pill_assets" }
 
 [profile.release]
-debug = 2
+debug = 1

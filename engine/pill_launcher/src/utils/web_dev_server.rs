@@ -124,16 +124,24 @@ fn handle_request(
     // Reject paths that attempt to escape the served directory.
     if relative_path
         .split('/')
-        .any(|seg| seg == ".." || seg.starts_with('.'))
+        .any(|seg| seg == ".." || seg == ".")
     {
         return respond(request, 400, "bad path");
     }
     let path = build_wasm_dir.join(relative_path);
     // Canonicalize the resolved path and verify it stays within the served root.
-    if let Ok(canonical) = path.canonicalize() {
-        if !canonical.starts_with(build_wasm_dir) {
-            return respond(request, 403, "forbidden");
-        }
+    // Treat canonicalization failure as a rejection — if we cannot verify the
+    // path, we must not serve the file.
+    let canonical = match path.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return respond(request, 403, "forbidden"),
+    };
+    let canonical_root = match build_wasm_dir.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return respond(request, 500, "server misconfigured"),
+    };
+    if !canonical.starts_with(&canonical_root) {
+        return respond(request, 403, "forbidden");
     }
     if !path.is_file() {
         return respond(request, 404, "not found");
@@ -181,7 +189,8 @@ fn respond(request: tiny_http::Request, status: u16, body: &str) -> Result<()> {
 fn content_type_for(path: &Path) -> &'static str {
     match path.extension().and_then(|s| s.to_str()) {
         Some("html") => "text/html; charset=utf-8",
-        Some("js") | Some("mjs") => "text/javascript; charset=utf-8",
+        Some("js") => "text/javascript; charset=utf-8",
+        Some("mjs") => "application/javascript; charset=utf-8",
         Some("wasm") => "application/wasm",
         Some("png") => "image/png",
         Some("svg") => "image/svg+xml",

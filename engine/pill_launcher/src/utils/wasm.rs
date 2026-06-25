@@ -9,8 +9,7 @@
 // - Handles pseudo-symlinks (Git on Windows without core.symlinks).
 
 use std::env;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -18,7 +17,6 @@ use anyhow::{bail, Context, Error, Result};
 use fs_extra::dir::CopyOptions;
 
 use crate::types::{CompileMode, Location};
-use crate::utils::files::modify_file;
 use crate::utils::paths::get_path;
 
 /// Build a WASM/WebGPU bundle via wasm-pack using a scratch directory.
@@ -146,6 +144,8 @@ fn embed_game_config(game_directory: &Path, scratch_pill_web_app_dir: &Path) -> 
 }
 
 /// Rewrite the scratch Cargo.toml with absolute path-deps to engine crates and the game.
+/// Builds the entire manifest content in memory and writes it atomically to avoid
+/// corruption from partial writes or duplicate append sections on retry.
 fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_directory: &Path) -> Result<()> {
     let engine = get_path(Location::EngineCrates);
     let pill_engine = cargo_path(&engine.join("pill_engine"));
@@ -155,50 +155,56 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_directory: &Pa
     let pill_game = cargo_path(game_directory);
 
     let manifest = scratch_pill_web_app_dir.join("Cargo.toml");
-    modify_file(&manifest, &manifest, |line: String| -> String {
+
+    // Read the template manifest and apply path rewrites
+    let template = fs::read_to_string(&manifest)
+        .with_context(|| format!("Failed to read scratch manifest {}", manifest.display()))?;
+
+    // Build the full content in memory: template with rewrites + appended sections
+    let mut content = String::new();
+    for line in template.lines() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("pill_engine ") || trimmed.starts_with("pill_engine=") {
-            format!(
-                "pill_engine = {{ path = \"{pill_engine}\", features = [\"game\", \"internal\"] }}"
-            )
+            content.push_str(&format!(
+                "pill_engine = {{ path = \"{pill_engine}\", features = [\"game\", \"internal\"] }}\n"
+            ));
         } else if trimmed.starts_with("pill_renderer ") || trimmed.starts_with("pill_renderer=") {
-            format!("pill_renderer = {{ path = \"{pill_renderer}\" }}")
+            content.push_str(&format!("pill_renderer = {{ path = \"{pill_renderer}\" }}\n"));
         } else if trimmed.starts_with("pill_core ") || trimmed.starts_with("pill_core=") {
-            format!("pill_core = {{ path = \"{pill_core}\" }}")
+            content.push_str(&format!("pill_core = {{ path = \"{pill_core}\" }}\n"));
         } else if trimmed.starts_with("pill_web ") || trimmed.starts_with("pill_web=") {
-            format!("pill_web = {{ path = \"{pill_web}\" }}")
+            content.push_str(&format!("pill_web = {{ path = \"{pill_web}\" }}\n"));
         } else {
-            line
+            content.push_str(line);
+            content.push('\n');
         }
+    }
+
+    // Append the fixed sections (idempotent — building in memory ensures no duplicates)
+    content.push_str(&format!("\npill_game = {{ path = \"{pill_game}\" }}\n"));
+    content.push_str("\n[workspace]\nresolver = \"2\"\n");
+    content.push_str("\n[profile.release]\n");
+    content.push_str("opt-level = \"z\"\n");
+    content.push_str("lto = \"fat\"\n");
+    content.push_str("codegen-units = 1\n");
+    content.push_str("panic = \"abort\"\n");
+    content.push_str("strip = true\n");
+    content.push_str("\n[package.metadata.wasm-pack.profile.release]\n");
+    content.push_str("wasm-opt = [\"-Oz\", \"--strip-debug\", \"--strip-producers\", \"--enable-nontrapping-float-to-int\", \"--enable-bulk-memory\", \"--enable-sign-ext\", \"--enable-mutable-globals\", \"--enable-reference-types\"]\n");
+    content.push_str("\n[target.'cfg(target_arch = \"wasm32\")'.dependencies]\n");
+    content.push_str("lol_alloc = \"0.4\"\n");
+
+    // Write atomically: temp file then rename, so a crash never leaves a partial file
+    let tmp_path = manifest.with_extension(format!("toml-tmp-{}", std::process::id()));
+    fs::write(&tmp_path, &content)
+        .with_context(|| format!("Failed to write scratch manifest to {}", tmp_path.display()))?;
+    fs::rename(&tmp_path, &manifest).with_context(|| {
+        format!(
+            "Failed to rename {} to {}",
+            tmp_path.display(),
+            manifest.display()
+        )
     })?;
-
-    let mut file_handle = OpenOptions::new()
-        .append(true)
-        .open(&manifest)
-        .context("Failed to open scratch Cargo.toml for append")?;
-
-    // Build the appendix as a plain string to avoid write!-macro format-string
-    // injection if the game path contains '{' or '}' characters.
-    let appendix = format!(
-        concat!(
-            "\npill_game = {{ path = \"{0}\" }}\n",
-            "\n[workspace]\nresolver = \"2\"\n",
-            "\n[profile.release]\n",
-            "opt-level = \"z\"\n",
-            "lto = \"fat\"\n",
-            "codegen-units = 1\n",
-            "panic = \"abort\"\n",
-            "strip = true\n",
-            "\n[package.metadata.wasm-pack.profile.release]\n",
-            "wasm-opt = [\"-Oz\", \"--strip-debug\", \"--strip-producers\", \"--enable-nontrapping-float-to-int\", \"--enable-bulk-memory\", \"--enable-sign-ext\", \"--enable-mutable-globals\", \"--enable-reference-types\"]\n",
-            "\n[target.'cfg(target_arch = \"wasm32\")'.dependencies]\n",
-            "lol_alloc = \"0.4\"\n",
-        ),
-        pill_game,
-    );
-    file_handle
-        .write_all(appendix.as_bytes())
-        .context("Failed to append to scratch Cargo.toml")?;
 
     Ok(())
 }

@@ -1,13 +1,12 @@
 // This file handles all path resolution and workspace discovery for the launcher.
 
-use anyhow::*;
+use anyhow::{bail, Context, Error, Result};
 use config::Config;
 use path_absolutize::Absolutize;
 use std::{
     path::{Path, PathBuf},
 };
-// Un-shadow Ok from anyhow::* so if-let patterns work correctly:
-use std::result::Result::Ok;
+
 
 use crate::types::*;
 
@@ -102,6 +101,11 @@ pub(crate) fn get_path(location: Location) -> PathBuf {
         Location::PillCoreCrate => engine_workspace.join("pill_core"),
         Location::PillNativeCrate => engine_workspace.join("pill_native"),
         Location::PillLauncherCrate => engine_workspace.join("pill_launcher"),
+        Location::PillRendererCrate => engine_workspace.join("pill_renderer"),
+        Location::PillAbiCrate => engine_workspace.join("pill_abi"),
+        Location::PillAssetsCrate => engine_workspace.join("pill_assets"),
+        Location::PillRuntimeCrate => engine_workspace.join("pill_runtime"),
+        Location::PillWebCrate => engine_workspace.join("pill_web"),
     }
 }
 

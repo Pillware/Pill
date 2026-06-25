@@ -61,31 +61,55 @@ pub(crate) fn do_check_code() -> Result<()> {
         .collect::<Vec<_>>()
         .join("\n");
 
+    // Write a backup before modifying the original, so recovery is possible
+    // even if we crash or the restore write fails.
+    let backup_path = cargo_toml.with_extension("toml.pill-backup");
+    fs::write(&backup_path, &original).with_context(|| {
+        format!(
+            "Failed to write backup manifest to {}",
+            backup_path.display()
+        )
+    })?;
+
     // Write the stripped version
     fs::write(&cargo_toml, &stripped)
         .with_context(|| format!("Failed to write {}", cargo_toml.display()))?;
 
     // Drop guard: restores the original Cargo.toml even if we panic or get SIGINT.
-    // The guard takes ownership of the path so it can't be accidentally dropped early.
+    // Falls back to the backup file if the primary restoration fails.
     struct RestoreGuard {
         path: std::path::PathBuf,
         content: String,
+        backup_path: std::path::PathBuf,
+    }
+    impl RestoreGuard {
+        fn restore(&self) -> std::io::Result<()> {
+            fs::write(&self.path, &self.content)?;
+            // Clean up the backup on successful restoration
+            let _ = fs::remove_file(&self.backup_path);
+            std::result::Result::Ok(())
+        }
     }
     impl Drop for RestoreGuard {
         fn drop(&mut self) {
-            if let Err(e) = fs::write(&self.path, &self.content) {
+            if let Err(e) = self.restore() {
+                // Primary restore failed — try to restore from backup
                 eprintln!(
                     "WARNING: Failed to restore {} after check: {e}. \
-                     The workspace manifest may be in a stripped state. \
-                     Restore it manually from version control.",
-                    self.path.display()
+                     A backup is available at {}. \
+                     Restore it manually: copy {} {}",
+                    self.path.display(),
+                    self.backup_path.display(),
+                    self.backup_path.display(),
+                    self.path.display(),
                 );
             }
         }
     }
-    let _guard = RestoreGuard {
+    let guard = RestoreGuard {
         path: cargo_toml.clone(),
         content: original,
+        backup_path,
     };
 
     // Run cargo check
@@ -118,10 +142,20 @@ pub(crate) fn do_check_code() -> Result<()> {
         );
     }
 
-    // Explicitly drop the guard before the Ok return (guard also drops on scope exit).
-    drop(_guard);
-    // Restore is done by guard above; this explicit drop ensures it happens
-    // before the success message. Re-write is harmless (guard already restored).
+    // Explicitly restore and check for errors before returning success.
+    guard.restore().with_context(|| {
+        format!(
+            "Failed to restore {} after check. \
+             A backup is available at {}. \
+             Restore it manually: copy {} {}",
+            cargo_toml.display(),
+            cargo_toml.with_extension("toml.pill-backup").display(),
+            cargo_toml.with_extension("toml.pill-backup").display(),
+            cargo_toml.display(),
+        )
+    })?;
+    // Prevent the Drop impl from running a second time (the restore above already succeeded).
+    std::mem::forget(guard);
     println!("cargo check passed.");
     Ok(())
 }

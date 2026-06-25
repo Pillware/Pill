@@ -17,6 +17,8 @@ pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".dll";
 pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".so";
 #[cfg(target_os = "macos")]
 pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".dylib";
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".so"; // reasonable default for Unix-like platforms
 
 pub(crate) fn dynamic_library_name(name: &str) -> String {
     format!("{DYNAMIC_LIBRARY_PREFIX}{name}{DYNAMIC_LIBRARY_SUFFIX}")

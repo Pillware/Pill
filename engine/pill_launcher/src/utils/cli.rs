@@ -8,14 +8,14 @@
 // - After parsing, dispatches to the matching action's run() method.
 
 use crate::types::{BuildTarget, CompileMode};
-use anyhow::*;
+use anyhow::{bail, Result};
 use clap::{App, AppSettings, Arg, ArgMatches};
 
 use crate::actions::Action;
 
 /// Build the CLI from the provided actions, parse args, and dispatch.
-pub(crate) fn run_app(actions: &[Box<dyn Action>]) -> Result<()> {
-    let mut app = App::new("Pill Launcher")
+pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
+    let mut app = App::new("PillLauncher")
         .about("Tool for managing Pill game projects")
         .version(env!("CARGO_PKG_VERSION"));
 

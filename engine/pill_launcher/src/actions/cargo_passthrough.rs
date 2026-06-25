@@ -6,7 +6,7 @@
 // - Used by the "ci" meta-action for fmt and clippy steps.
 // - Depends on: workspace (prepare_workspace_for_game).
 
-use anyhow::*;
+use anyhow::{bail, Context, Result};
 use clap::{App, ArgMatches};
 use path_absolutize::Absolutize;
 use std::path::{Path, PathBuf};

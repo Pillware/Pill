@@ -3,7 +3,7 @@
 // Renders *.puml files under <crate>/docs/uml/ into SVGs in <crate>/docs/uml_out/
 // using the plantuml CLI. Gracefully skips if plantuml is not installed.
 
-use anyhow::*;
+use anyhow::{bail, Context, Result};
 use std::{
     ffi::OsStr,
     fs,

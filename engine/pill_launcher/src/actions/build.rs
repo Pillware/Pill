@@ -8,7 +8,7 @@
 // - Supports --features passthrough, hot-reload mode, and stdout capture (for benchmarks).
 // - Depends on: workspace, utils::paths, utils::files, utils::platform, utils::assets.
 
-use anyhow::*;
+use anyhow::{bail, Context, Error, Result};
 use clap::{App, Arg, ArgMatches};
 use path_absolutize::Absolutize;
 use std::{
@@ -16,6 +16,7 @@ use std::{
     io::{BufRead, BufReader, IsTerminal},
     path::PathBuf,
     process::{Command, Stdio},
+    sync::LazyLock,
     time::Instant,
 };
 
@@ -33,27 +34,36 @@ use crate::utils::wasm;
 use crate::utils::web_dev_server;
 use crate::utils::workspace::prepare_workspace_for_game;
 
-/// When true, stderr from cargo is parsed and noisy lines are suppressed,
+/// When set, stderr from cargo is parsed and noisy lines are suppressed,
 /// and only actionable error messages are extracted. This is experimental
 /// and may drop useful diagnostics — keep disabled by default.
-const USE_EXPERIMENTAL_LOGS_PARSER: bool = false;
+/// Set `PILL_EXPERIMENTAL_LOGS=1` to enable at runtime.
+fn use_experimental_logs_parser() -> bool {
+    std::env::var("PILL_EXPERIMENTAL_LOGS").ok().as_deref() == Some("1")
+}
 
-/// Returns ANSI escape wrappers for success / failure messages if stdout is a
-/// terminal. Returns empty strings otherwise (piped output, CI logs, etc.).
+/// Lazily-initialized ANSI escape wrappers for success / failure messages.
+/// Cached so `is_terminal()` is called only once per process.
 fn ansi_green() -> (&'static str, &'static str) {
-    if std::io::stdout().is_terminal() {
-        ("\x1b[32m", "\x1b[0m")
-    } else {
-        ("", "")
-    }
+    static ANSI: LazyLock<(&str, &str)> = LazyLock::new(|| {
+        if std::io::stdout().is_terminal() {
+            ("\x1b[32m", "\x1b[0m")
+        } else {
+            ("", "")
+        }
+    });
+    *ANSI
 }
 
 fn ansi_red() -> (&'static str, &'static str) {
-    if std::io::stdout().is_terminal() {
-        ("\x1b[31m", "\x1b[0m")
-    } else {
-        ("", "")
-    }
+    static ANSI: LazyLock<(&str, &str)> = LazyLock::new(|| {
+        if std::io::stdout().is_terminal() {
+            ("\x1b[31m", "\x1b[0m")
+        } else {
+            ("", "")
+        }
+    });
+    *ANSI
 }
 
 /// Shared CLI flag registration for both "run" and "build" actions.
@@ -69,6 +79,13 @@ fn register_build_flags(app: App<'static, 'static>) -> App<'static, 'static> {
                 .long("max-wasm-size")
                 .takes_value(true)
                 .help("Fail WASM build if binary exceeds N KB"),
+        )
+        .arg(
+            Arg::with_name("wasm-port")
+                .long("wasm-port")
+                .takes_value(true)
+                .default_value("8080")
+                .help("Dev server port for WASM targets"),
         )
 }
 
@@ -198,7 +215,12 @@ impl Action for Run {
                 )?;
             }
             BuildTarget::Web => {
-                web_dev_server::run(&path, &compile_mode, 8080)?;
+                let port: u16 = matches
+                    .value_of("wasm-port")
+                    .unwrap_or("8080")
+                    .parse()
+                    .unwrap_or(8080);
+                web_dev_server::run(&path, &compile_mode, port)?;
             }
         }
         Ok(())
@@ -411,7 +433,7 @@ pub(crate) fn build_game_project(
         }
     }
     let start = Instant::now();
-    let mut cargo_child = if USE_EXPERIMENTAL_LOGS_PARSER {
+    let mut cargo_child = if use_experimental_logs_parser() {
         Command::new("cargo")
             .args(&arguments)
             .current_dir(&engine_workspace_directory_path)
@@ -431,7 +453,7 @@ pub(crate) fn build_game_project(
             .context("failed to spawn cargo build")?
     };
 
-    if USE_EXPERIMENTAL_LOGS_PARSER {
+    if use_experimental_logs_parser() {
         // Stream stderr in real time. When cargo hits an error, we suppress the
         // noisy error-chain output and present it cleanly in the final error message.
         let stderr_pipe = cargo_child

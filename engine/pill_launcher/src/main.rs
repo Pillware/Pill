@@ -5,6 +5,15 @@
 // - Instantiates all CLI action objects.
 // - Passes them to the generic dispatcher in utils::cli.
 
+#![deny(clippy::all)]
+#![warn(missing_docs)]
+#![warn(clippy::clone_on_copy)]
+
+//! PillLauncher — CLI build orchestrator for the Pill game engine.
+//!
+//! Manages project scaffolding, asset pipelines, native/WASM builds,
+//! benchmarking, and CI workflows for Pill-based game projects.
+
 mod actions;
 mod types;
 mod utils;
@@ -20,18 +29,18 @@ use actions::docs::Docs;
 use actions::Action;
 
 fn main() {
-    let actions: Vec<Box<dyn Action>> = vec![
-        Box::new(Create),
-        Box::new(Run),
-        Box::new(Build),
-        Box::new(Docs),
-        Box::new(Cargo),
-        Box::new(Assets),
-        Box::new(CheckCode),
-        Box::new(Benchmark),
-        Box::new(SizeBenchmark),
-        Box::new(CheckWasm),
-        Box::new(Ci),
+    let actions: [&dyn Action; 11] = [
+        &Create,
+        &Run,
+        &Build,
+        &Docs,
+        &Cargo,
+        &Assets,
+        &CheckCode,
+        &Benchmark,
+        &SizeBenchmark,
+        &CheckWasm,
+        &Ci,
     ];
 
     if let Err(e) = utils::cli::run_app(&actions) {

@@ -6,7 +6,7 @@
 // - Uses actions::check, actions::cargo_passthrough (for fmt/clippy), and actions::build.
 // - Prints a summary when all steps pass.
 
-use anyhow::*;
+use anyhow::{Context, Result};
 use clap::{App, ArgMatches};
 use path_absolutize::Absolutize;
 use std::io::IsTerminal;

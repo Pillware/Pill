@@ -10,6 +10,7 @@ use std::fmt;
 
 /// Which part of the repository a path points to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub(crate) enum Location {
     /// Repository root (parent of engine/).
     EngineProjectRoot,
@@ -23,6 +24,16 @@ pub(crate) enum Location {
     PillNativeCrate,
     /// The pill_launcher crate itself.
     PillLauncherCrate,
+    /// The pill_renderer crate.
+    PillRendererCrate,
+    /// The pill_abi crate.
+    PillAbiCrate,
+    /// The pill_assets crate.
+    PillAssetsCrate,
+    /// The pill_runtime crate.
+    PillRuntimeCrate,
+    /// The pill_web crate.
+    PillWebCrate,
 }
 
 /// Build profile: debug, release, or hot-reload.

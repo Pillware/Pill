@@ -7,7 +7,7 @@
 // - Pre-renders PlantUML diagrams before doc generation.
 // - Depends on: utils::paths, utils::files, utils::assets.
 
-use anyhow::*;
+use anyhow::{bail, Context, Error, Result};
 use clap::{App, ArgMatches};
 use path_absolutize::Absolutize;
 use std::{env, fs, path::PathBuf, process::Command};
@@ -159,9 +159,9 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
             .context("Failed to execute command for generating game dev docs")?;
 
         if !status.success() {
-            bail!("Engine docs failed to generate (exit {:?})", status.code());
+            bail!("game_dev docs failed to generate (exit {:?})", status.code());
         }
-        println!("Engine dev docs generated successfully!");
+        println!("game_dev docs generated successfully!");
 
         // 7. Generate engine_dev docs: pill_core first (no dependencies), private items included.
         let core_crate_manifest_path = get_path(Location::PillCoreCrate).join("Cargo.toml");
@@ -209,11 +209,11 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
         if !status.success() {
             bail!(
-                "Game dev docs failed to generate (exit {:?})",
+                "engine_dev docs failed to generate (exit {:?})",
                 status.code()
             );
         }
-        println!("Game dev docs generated successfully!");
+        println!("engine_dev docs generated successfully!");
 
         Ok(())
     })();

@@ -7,15 +7,13 @@
 //   - WASM: final and pre-optimization .wasm sizes, twiggy per-crate breakdown.
 // - Prints a formatted size report to the console.
 
-use anyhow::*;
+use anyhow::Result;
 use clap::{App, ArgMatches};
 use path_absolutize::Absolutize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-// Un-shadow Ok from anyhow::* so if-let patterns work correctly:
-use std::result::Result::Ok;
 
 use crate::actions::Action;
 use crate::types::*;
@@ -268,7 +266,7 @@ fn dir_size_impl(path: &Path, total: &mut u64, visited: &mut std::collections::H
             if entry_path.is_dir() {
                 dir_size_impl(&entry_path, total, visited);
             } else if let Ok(meta) = entry_path.metadata() {
-                *total += meta.len();
+                *total = total.saturating_add(meta.len());
             }
         }
     }

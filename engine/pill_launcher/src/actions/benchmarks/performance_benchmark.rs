@@ -6,7 +6,7 @@
 // - Parses full per-iteration statistics and prints a markdown table + aggregate summary.
 // - Depends on: actions::build (build_game_project, run_game_project), utils::paths.
 
-use anyhow::*;
+use anyhow::{anyhow, bail, Result};
 use clap::{App, Arg, ArgMatches};
 use path_absolutize::Absolutize;
 use std::path::PathBuf;
@@ -138,8 +138,9 @@ pub(crate) fn do_benchmark(
             for line in stdout.lines() {
                 let trimmed = line.trim();
                 if trimmed.starts_with('{') {
-                    if let Some(stats) = parse_iteration_json(trimmed, i) {
-                        all_stats.push(stats);
+                    match parse_iteration_json(trimmed, i) {
+                        Ok(stats) => all_stats.push(stats),
+                        Err(e) => eprintln!("  Warning: iteration {} — {:#}", i, e),
                     }
                     break;
                 }
@@ -163,20 +164,49 @@ pub(crate) fn do_benchmark(
 // -- JSON parsing ------------------------------------------------------------
 
 /// Parse a single iteration's JSON report line into an [`IterationStats`].
-fn parse_iteration_json(json: &str, run: u32) -> Option<IterationStats> {
-    let mode = extract_json_string(json, "mode")?;
-    let total_frames = extract_json_u64(json, "total_frames")?;
-    let measured_frames = extract_json_u64(json, "measured_frames")?;
-    let entity_count = extract_json_u64(json, "entity_count")?;
-    let average_ms = extract_json_f64(json, "average_ms")?;
-    let median_ms = extract_json_f64(json, "median_ms")?;
-    let min_ms = extract_json_f64(json, "min_ms")?;
-    let max_ms = extract_json_f64(json, "max_ms")?;
-    let range_ms = extract_json_f64(json, "range_ms")?;
-    let variance = extract_json_f64(json, "variance")?;
-    let standard_deviation_ms = extract_json_f64(json, "stddev_ms")?;
+/// Returns an error explaining which field failed to parse, rather than silently
+/// returning `None` and skipping the iteration.
+fn parse_iteration_json(json: &str, run: u32) -> Result<IterationStats> {
+    let mode = extract_json_string(json, "mode")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'mode' field"))?;
+    let total_frames = extract_json_u64(json, "total_frames")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'total_frames' field"))?;
+    let measured_frames = extract_json_u64(json, "measured_frames")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'measured_frames' field"))?;
+    let entity_count = extract_json_u64(json, "entity_count")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'entity_count' field"))?;
+    let average_ms = extract_json_f64(json, "average_ms")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'average_ms' field"))?;
+    let median_ms = extract_json_f64(json, "median_ms")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'median_ms' field"))?;
+    let min_ms = extract_json_f64(json, "min_ms")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'min_ms' field"))?;
+    let max_ms = extract_json_f64(json, "max_ms")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'max_ms' field"))?;
+    let range_ms = extract_json_f64(json, "range_ms")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'range_ms' field"))?;
+    let variance = extract_json_f64(json, "variance")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'variance' field"))?;
+    let standard_deviation_ms = extract_json_f64(json, "stddev_ms")
+        .ok_or_else(|| anyhow!("iteration {run}: missing or invalid 'stddev_ms' field"))?;
 
-    Some(IterationStats {
+    // Reject iterations with NaN in any numeric field — NaN indicates a bug
+    // in the game's benchmark output, not a valid measurement.
+    for (name, val) in [
+        ("average_ms", average_ms),
+        ("median_ms", median_ms),
+        ("min_ms", min_ms),
+        ("max_ms", max_ms),
+        ("range_ms", range_ms),
+        ("variance", variance),
+        ("stddev_ms", standard_deviation_ms),
+    ] {
+        if val.is_nan() {
+            bail!("iteration {run}: '{name}' is NaN — benchmark output is corrupted");
+        }
+    }
+
+    Ok(IterationStats {
         run,
         mode,
         total_frames,
