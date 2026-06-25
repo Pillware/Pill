@@ -18,6 +18,7 @@ use crate::utils::cli::path_flag;
 use crate::utils::files::modify_file;
 use crate::utils::paths::*;
 
+#[derive(Debug)]
 pub(crate) struct Create;
 
 impl Action for Create {
@@ -94,7 +95,13 @@ pub(crate) fn create_game_project(
         game_project_parent_directory_path.join(TEMPLATE_NAME),
         &game_project_directory_path,
     )
-    .context("Failed to rename template directory to game project name")?;
+    .with_context(|| {
+        format!(
+            "Failed to rename template directory to '{}'. \
+             The template was copied as '{}' and may need manual cleanup.",
+            game_name, TEMPLATE_NAME
+        )
+    })?;
 
     // Setup config file
     println!("Setting up config file...");

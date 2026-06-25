@@ -18,6 +18,7 @@ use crate::types::*;
 use crate::utils::paths::*;
 
 /// No flags needed — just registers the action name.
+#[derive(Debug)]
 pub(crate) struct CheckCode;
 
 impl Action for CheckCode {

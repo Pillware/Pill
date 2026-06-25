@@ -18,7 +18,7 @@ use anyhow::{Error, Result};
 use crate::types::CompileMode;
 use crate::utils::wasm;
 
-const ADDRESS: &str = "127.0.0.1:8080";
+const ADDRESS_HOST: &str = "127.0.0.1";
 const WATCH_POLL: Duration = Duration::from_millis(500);
 const LONG_POLL_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -32,21 +32,26 @@ const RELOAD_SCRIPT: &str = concat!(
 
 type Subscribers = Arc<Mutex<Vec<mpsc::Sender<()>>>>;
 
-/// Build the WASM bundle and start a dev HTTP server on localhost:8080.
+/// Build the WASM bundle and start a dev HTTP server.
 /// Injects a live-reload script into HTML responses; watches for file changes.
-pub fn run(game_project_directory_path: &Path, compile_mode: &CompileMode) -> Result<()> {
+pub fn run(
+    game_project_directory_path: &Path,
+    compile_mode: &CompileMode,
+    port: u16,
+) -> Result<()> {
     // Build the WASM bundle first, then serve it.
     wasm::build(game_project_directory_path, compile_mode, None)?;
 
     let build_wasm_dir = game_project_directory_path.join("build").join("wasm");
     let subscribers: Subscribers = Arc::new(Mutex::new(Vec::new()));
+    let address = format!("{ADDRESS_HOST}:{port}");
 
     // Start a background watcher that notifies long-poll clients on file changes.
     spawn_watcher(build_wasm_dir.clone(), Arc::clone(&subscribers));
 
-    let server = tiny_http::Server::http(ADDRESS).map_err(|e| Error::msg(e.to_string()))?;
+    let server = tiny_http::Server::http(&address).map_err(|e| Error::msg(e.to_string()))?;
     println!();
-    println!("Serving {} at http://{}", build_wasm_dir.display(), ADDRESS);
+    println!("Serving {} at http://{}", build_wasm_dir.display(), address);
     println!("Live reload enabled — the page will refresh on wasm rebuilds.");
     println!("Ctrl+C to stop.");
 
@@ -77,6 +82,8 @@ fn spawn_watcher(watch_dir: std::path::PathBuf, subscribers: Subscribers) {
 }
 
 // Max mtime among regular files in `dir` (shallow, skipping dotfiles/.build scratch).
+// NOTE: This only watches top-level files. Changes in subdirectories
+// (e.g. build/wasm/res/textures/) do not trigger a reload.
 fn latest_mtime(dir: &Path) -> Option<SystemTime> {
     fs::read_dir(dir)
         .ok()?
@@ -114,10 +121,20 @@ fn handle_request(
     } else {
         relative_path
     };
-    if relative_path.split('/').any(|seg| seg == "..") {
+    // Reject paths that attempt to escape the served directory.
+    if relative_path
+        .split('/')
+        .any(|seg| seg == ".." || seg.starts_with('.'))
+    {
         return respond(request, 400, "bad path");
     }
     let path = build_wasm_dir.join(relative_path);
+    // Canonicalize the resolved path and verify it stays within the served root.
+    if let Ok(canonical) = path.canonicalize() {
+        if !canonical.starts_with(build_wasm_dir) {
+            return respond(request, 403, "forbidden");
+        }
+    }
     if !path.is_file() {
         return respond(request, 404, "not found");
     }

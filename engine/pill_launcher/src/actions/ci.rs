@@ -9,6 +9,7 @@
 use anyhow::*;
 use clap::{App, ArgMatches};
 use path_absolutize::Absolutize;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use crate::actions::build::build_game_project;
@@ -19,6 +20,7 @@ use crate::types::*;
 use crate::utils::cli::{compile_mode_flag, parse_compile_mode, path_flag};
 use crate::utils::paths::get_game_build_path;
 
+#[derive(Debug)]
 pub(crate) struct Ci;
 
 impl Action for Ci {
@@ -76,6 +78,10 @@ pub(crate) fn do_ci(game_project_path: &PathBuf, compile_mode: &CompileMode) -> 
     .context("build step failed")?;
 
     println!();
-    println!("\x1b[32mAll CI checks passed.\x1b[0m");
+    if std::io::stdout().is_terminal() {
+        println!("\x1b[32mAll CI checks passed.\x1b[0m");
+    } else {
+        println!("All CI checks passed.");
+    }
     Ok(())
 }

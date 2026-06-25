@@ -9,6 +9,7 @@
 use std::fmt;
 
 /// Which part of the repository a path points to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Location {
     /// Repository root (parent of engine/).
     EngineProjectRoot,

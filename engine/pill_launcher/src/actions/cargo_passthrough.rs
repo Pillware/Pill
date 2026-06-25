@@ -17,7 +17,9 @@ use crate::types::*;
 use crate::utils::cli::{parse_compile_mode, path_flag};
 use crate::utils::workspace::prepare_workspace_for_game;
 
-/// Registers `-p` / `--path` and collects trailing args as the cargo command.
+/// Registers `-p` / `--path`. Trailing args (after `--`) are collected
+/// by the global passthrough mechanism in `utils::cli` and forwarded to cargo.
+#[derive(Debug)]
 pub(crate) struct Cargo;
 
 impl Action for Cargo {

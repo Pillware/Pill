@@ -13,7 +13,7 @@ use clap::{App, Arg, ArgMatches};
 use path_absolutize::Absolutize;
 use std::{
     fs,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, IsTerminal},
     path::PathBuf,
     process::{Command, Stdio},
     time::Instant,
@@ -37,6 +37,24 @@ use crate::utils::workspace::prepare_workspace_for_game;
 /// and only actionable error messages are extracted. This is experimental
 /// and may drop useful diagnostics — keep disabled by default.
 const USE_EXPERIMENTAL_LOGS_PARSER: bool = false;
+
+/// Returns ANSI escape wrappers for success / failure messages if stdout is a
+/// terminal. Returns empty strings otherwise (piped output, CI logs, etc.).
+fn ansi_green() -> (&'static str, &'static str) {
+    if std::io::stdout().is_terminal() {
+        ("\x1b[32m", "\x1b[0m")
+    } else {
+        ("", "")
+    }
+}
+
+fn ansi_red() -> (&'static str, &'static str) {
+    if std::io::stdout().is_terminal() {
+        ("\x1b[31m", "\x1b[0m")
+    } else {
+        ("", "")
+    }
+}
 
 /// Shared CLI flag registration for both "run" and "build" actions.
 fn register_build_flags(app: App<'static, 'static>) -> App<'static, 'static> {
@@ -129,11 +147,13 @@ fn format_elapsed_time(elapsed: std::time::Duration) -> String {
 /// Format a build-failure message with ANSI red coloring and elapsed time.
 fn format_build_error(detail: &str, elapsed: std::time::Duration) -> String {
     let time_str = format_elapsed_time(elapsed);
+    let (open, close) = ansi_red();
     format!(
-        "\x1b[31mPill Standalone \"run\" command failed {time_str}\x1b[0m\n\nCaused by:\n{detail}"
+        "{open}Pill Standalone \"run\" command failed {time_str}{close}\n\nCaused by:\n{detail}"
     )
 }
 
+#[derive(Debug)]
 pub(crate) struct Run;
 
 impl Action for Run {
@@ -178,13 +198,14 @@ impl Action for Run {
                 )?;
             }
             BuildTarget::Web => {
-                web_dev_server::run(&path, &compile_mode)?;
+                web_dev_server::run(&path, &compile_mode, 8080)?;
             }
         }
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Build;
 
 impl Action for Build {
@@ -583,7 +604,8 @@ pub(crate) fn build_game_project(
     }
 
     let time_str = format_elapsed_time(start.elapsed());
-    println!("\x1b[32mGame built successfully {time_str}\x1b[0m");
+    let (open, close) = ansi_green();
+    println!("{open}Game built successfully {time_str}{close}");
 
     Ok(())
 }

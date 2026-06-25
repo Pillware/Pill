@@ -17,6 +17,7 @@ use crate::types::*;
 use crate::utils::cli::{compile_mode_flag, parse_compile_mode, path_flag};
 use crate::utils::paths::get_game_build_path;
 
+#[derive(Debug)]
 pub(crate) struct Benchmark;
 
 impl Action for Benchmark {
@@ -332,21 +333,29 @@ fn print_markdown_report(all_stats: &[IterationStats]) {
     }
     println!();
 
-    // Aggregate statistics computed from the per-iteration averages.
-    let averages: Vec<f64> = all_stats.iter().map(|s| s.average_ms).collect();
+    // Filter NaN values before computing aggregates.
+    let averages: Vec<f64> = all_stats
+        .iter()
+        .map(|s| s.average_ms)
+        .filter(|v| v.is_finite())
+        .collect();
+    if averages.is_empty() {
+        println!("Warning: all frame-time averages were NaN; skipping aggregate stats.");
+        return;
+    }
     let aggregate_mean = mean(&averages);
     let aggregate_median = median_of(&averages);
     let aggregate_stddev = standard_deviation(&averages, aggregate_mean);
 
-    // Best / worst iterations (by average_ms)
+    // Best / worst iterations (by average_ms), using total_cmp for NaN-safe ordering.
     let best = all_stats
         .iter()
-        .min_by(|a, b| a.average_ms.partial_cmp(&b.average_ms).unwrap())
-        .unwrap();
+        .min_by(|a, b| a.average_ms.total_cmp(&b.average_ms))
+        .unwrap_or(&all_stats[0]);
     let worst = all_stats
         .iter()
-        .max_by(|a, b| a.average_ms.partial_cmp(&b.average_ms).unwrap())
-        .unwrap();
+        .max_by(|a, b| a.average_ms.total_cmp(&b.average_ms))
+        .unwrap_or(&all_stats[0]);
 
     println!("### Aggregate (cross-iteration)");
     println!();

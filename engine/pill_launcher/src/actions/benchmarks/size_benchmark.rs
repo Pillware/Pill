@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+// Un-shadow Ok from anyhow::* so if-let patterns work correctly:
 use std::result::Result::Ok;
 
 use crate::actions::Action;
@@ -23,6 +24,7 @@ use crate::utils::cli::{
 };
 use crate::utils::paths::get_game_build_path;
 
+#[derive(Debug)]
 pub(crate) struct SizeBenchmark;
 
 impl Action for SizeBenchmark {
@@ -242,19 +244,34 @@ fn print_native_report(build_output_dir: &Path) {
 }
 
 /// Recursively compute the total byte size of a directory.
+/// Uses canonicalize to detect and skip symlink cycles.
 fn dir_size(path: &Path) -> u64 {
     let mut total: u64 = 0;
+    let mut visited = std::collections::HashSet::new();
+    dir_size_impl(path, &mut total, &mut visited);
+    total
+}
+
+fn dir_size_impl(path: &Path, total: &mut u64, visited: &mut std::collections::HashSet<PathBuf>) {
+    // Resolve symlinks for cycle detection; skip if already visited.
+    let resolved = match path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    if !visited.insert(resolved) {
+        return; // already visited — symlink cycle
+    }
+
     if let Ok(entries) = fs::read_dir(path) {
         for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                total += dir_size(&path);
-            } else if let Ok(meta) = path.metadata() {
-                total += meta.len();
+            let entry_path = entry.path();
+            if entry_path.is_dir() {
+                dir_size_impl(&entry_path, total, visited);
+            } else if let Ok(meta) = entry_path.metadata() {
+                *total += meta.len();
             }
         }
     }
-    total
 }
 
 // ============================================================================

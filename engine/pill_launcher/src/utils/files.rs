@@ -1,7 +1,9 @@
 // This file provides reusable file-system operations for the launcher.
 
 use anyhow::*;
-use std::{fs, path::Path, result::Result::Ok};
+use std::{fs, path::Path};
+// Un-shadow Ok from anyhow::* so if-let patterns work correctly:
+use std::result::Result::Ok;
 // Used by codesign_ad_hoc on macOS:
 #[cfg(target_os = "macos")]
 use std::process::Command;

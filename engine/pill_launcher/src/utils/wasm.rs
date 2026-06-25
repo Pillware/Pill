@@ -176,9 +176,12 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_directory: &Pa
         .append(true)
         .open(&manifest)
         .context("Failed to open scratch Cargo.toml for append")?;
-    write!(file_handle,
+
+    // Build the appendix as a plain string to avoid write!-macro format-string
+    // injection if the game path contains '{' or '}' characters.
+    let appendix = format!(
         concat!(
-            "\npill_game = {{ path = \"{pill_game}\" }}\n",
+            "\npill_game = {{ path = \"{0}\" }}\n",
             "\n[workspace]\nresolver = \"2\"\n",
             "\n[profile.release]\n",
             "opt-level = \"z\"\n",
@@ -191,9 +194,11 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_directory: &Pa
             "\n[target.'cfg(target_arch = \"wasm32\")'.dependencies]\n",
             "lol_alloc = \"0.4\"\n",
         ),
-        pill_game = pill_game,
-    )
-    .context("Failed to append to scratch Cargo.toml")?;
+        pill_game,
+    );
+    file_handle
+        .write_all(appendix.as_bytes())
+        .context("Failed to append to scratch Cargo.toml")?;
 
     Ok(())
 }

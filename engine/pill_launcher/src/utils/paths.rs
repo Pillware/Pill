@@ -5,8 +5,9 @@ use config::Config;
 use path_absolutize::Absolutize;
 use std::{
     path::{Path, PathBuf},
-    result::Result::Ok,
 };
+// Un-shadow Ok from anyhow::* so if-let patterns work correctly:
+use std::result::Result::Ok;
 
 use crate::types::*;
 

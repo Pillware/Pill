@@ -9,6 +9,7 @@ use crate::actions::Action;
 use crate::utils::assets::run_asset_pipeline;
 use crate::utils::cli::{clean_flag, path_flag};
 
+#[derive(Debug)]
 pub(crate) struct Assets;
 
 impl Action for Assets {

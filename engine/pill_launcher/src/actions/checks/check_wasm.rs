@@ -10,13 +10,17 @@
 use anyhow::*;
 use clap::{App, Arg, ArgMatches};
 use path_absolutize::Absolutize;
-use std::{fs, path::PathBuf, result::Result::Ok};
+use std::time::Duration;
+use std::{fs, path::PathBuf};
+// Un-shadow Ok from anyhow::* so if-let patterns work correctly:
+use std::result::Result::Ok;
 
 use crate::actions::Action;
 use crate::types::CompileMode;
 use crate::utils::cli::path_flag;
 use crate::utils::wasm;
 
+#[derive(Debug)]
 pub(crate) struct CheckWasm;
 
 impl Action for CheckWasm {
@@ -124,6 +128,7 @@ pub(crate) fn do_check_wasm(
     for _ in 0..20 {
         std::thread::sleep(std::time::Duration::from_millis(50));
         if ureq::get(&format!("http://127.0.0.1:{}/", port))
+            .timeout(Duration::from_secs(10))
             .call()
             .is_ok()
         {
@@ -145,6 +150,7 @@ pub(crate) fn do_check_wasm(
         for endpoint in files {
             let url = format!("{}{}", base, endpoint);
             let response = ureq::get(&url)
+                .timeout(Duration::from_secs(10))
                 .call()
                 .with_context(|| format!("HTTP GET {} failed", url))?;
             if response.status() != 200 {

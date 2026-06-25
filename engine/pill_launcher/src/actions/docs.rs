@@ -19,6 +19,7 @@ use crate::utils::files::modify_file;
 use crate::utils::paths::*;
 use crate::utils::plantuml::render_puml_for_crate;
 
+#[derive(Debug)]
 pub(crate) struct Docs;
 
 impl Action for Docs {

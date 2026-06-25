@@ -15,7 +15,9 @@ use crate::actions::Action;
 
 /// Build the CLI from the provided actions, parse args, and dispatch.
 pub(crate) fn run_app(actions: &[Box<dyn Action>]) -> Result<()> {
-    let mut app = App::new("Pill Launcher").about("Tool for managing Pill game projects");
+    let mut app = App::new("Pill Launcher")
+        .about("Tool for managing Pill game projects")
+        .version(env!("CARGO_PKG_VERSION"));
 
     // Collect all valid action names for the --action possible_values list.
     let names: Vec<&str> = actions.iter().map(|a| a.name()).collect();
