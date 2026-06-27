@@ -44,7 +44,30 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
             .allow_hyphen_values(true),
     );
 
-    // Let each action register its own flags.
+    // Register shared flags once — individual actions must NOT re-register
+    // these (clap v2 panics on duplicate arg names).
+    app = app
+        .arg(path_flag())
+        .arg(compile_mode_flag())
+        .arg(target_flag())
+        .arg(output_path_flag())
+        .arg(clean_flag())
+        .arg(features_flag())
+        .arg(
+            Arg::with_name("max-wasm-size")
+                .long("max-wasm-size")
+                .takes_value(true)
+                .help("Maximum WASM binary size in KB"),
+        )
+        .arg(
+            Arg::with_name("wasm-port")
+                .long("wasm-port")
+                .takes_value(true)
+                .default_value("8080")
+                .help("Port for the WASM dev server"),
+        );
+
+    // Let each action register its own unique flags.
     for action in actions {
         app = action.register(app);
     }

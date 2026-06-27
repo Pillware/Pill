@@ -2,8 +2,7 @@
 //
 // Responsibilities:
 // - Prepares the engine workspace for the given project.
-// - Runs an arbitrary cargo command (fmt, clippy, etc.) in that workspace.
-// - Used by the "ci" meta-action for fmt and clippy steps.
+// - Runs an arbitrary cargo command (fmt, clippy, check, etc.) in that workspace.
 // - Depends on: workspace (prepare_workspace_for_project).
 
 use anyhow::{bail, Context, Result};
@@ -14,7 +13,7 @@ use std::process::Command;
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::cli::{parse_compile_mode, path_flag};
+use crate::utils::cli::parse_compile_mode;
 use crate::utils::workspace::prepare_workspace_for_project;
 
 /// Registers `-p` / `--path`. Trailing args (after `--`) are collected
@@ -28,7 +27,7 @@ impl Action for Cargo {
     }
 
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(path_flag())
+        app // shared flags (--path) registered in cli::run_app()
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {

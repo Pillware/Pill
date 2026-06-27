@@ -13,7 +13,6 @@ use std::{env, fs, path::PathBuf, process::Command};
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::cli::output_path_flag;
 use crate::utils::files::modify_file;
 use crate::utils::paths::*;
 use crate::utils::plantuml::render_puml_for_crate;
@@ -27,7 +26,7 @@ impl Action for Docs {
     }
 
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(output_path_flag())
+        app // shared --output-path registered in cli::run_app()
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {

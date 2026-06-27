@@ -1,5 +1,5 @@
 // This file provides shared build/run utilities consumed by the "build" and
-// "run" actions as well as benchmarks and CI.
+// "run" actions.
 //
 // Responsibilities:
 // - CLI flag registration for build-related actions.
@@ -9,7 +9,6 @@
 // - run_project(): build then launch the standalone executable.
 
 use anyhow::{bail, Context, Error, Result};
-use clap::Arg;
 use std::{
     fs,
     io::{BufRead, BufReader},
@@ -19,42 +18,28 @@ use std::{
 };
 
 use crate::types::*;
-use crate::utils::cli::{
-    clean_flag, compile_mode_flag, features_flag, output_path_flag, path_flag, target_flag,
-};
 use crate::utils::common::{
-    ansi_green, format_build_error, format_elapsed_time, parse_cargo_stderr,
-    use_experimental_logs_parser,
+    ansi_green, dynamic_library_name, format_build_error, format_elapsed_time, parse_cargo_stderr,
+    use_experimental_logs_parser, EXECUTABLE_SUFFIX,
 };
-use crate::utils::files::*;
-use crate::utils::paths::*;
+#[cfg(target_os = "macos")]
+use crate::utils::files::codesign_ad_hoc;
+use crate::utils::files::{copy_file_if_newer, stage_packaged_resource_files};
+use crate::utils::paths::{
+    find_engine_workspace_directory, get_path, get_project_title,
+    get_standalone_layout_for_compile_mode, get_target_directory_for_compile_mode,
+};
 use crate::utils::plantuml::render_puml_for_crate;
-use crate::utils::platform::*;
 use crate::utils::workspace::prepare_workspace_for_project;
 
 /// Shared CLI flag registration for both "run" and "build" actions.
 pub(crate) fn register_build_flags(
     app: clap::App<'static, 'static>,
 ) -> clap::App<'static, 'static> {
-    app.arg(path_flag())
-        .arg(output_path_flag())
-        .arg(compile_mode_flag())
-        .arg(target_flag())
-        .arg(clean_flag())
-        .arg(features_flag())
-        .arg(
-            Arg::with_name("max-wasm-size")
-                .long("max-wasm-size")
-                .takes_value(true)
-                .help("Fail WASM build if binary exceeds N KB"),
-        )
-        .arg(
-            Arg::with_name("wasm-port")
-                .long("wasm-port")
-                .takes_value(true)
-                .default_value("8080")
-                .help("Dev server port for WASM targets"),
-        )
+    // Shared flags (path, compile-mode, target, features, etc.) are
+    // registered once in cli::run_app().  Build and Run actions have
+    // no unique flags of their own.
+    app
 }
 
 // ---------------------------------------------------------------------------

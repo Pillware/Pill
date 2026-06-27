@@ -5,7 +5,6 @@ pub mod files;
 pub mod native_target;
 pub mod paths;
 pub mod plantuml;
-pub mod platform;
 pub mod wasm_target;
 pub mod web_dev_server;
 pub mod workspace;

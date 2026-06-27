@@ -3,12 +3,9 @@
 //
 // Modules:
 // - assets: run the asset pipeline (HLSL→WGSL, etc.).
-// - benchmarks: performance and artifact-size analysis.
 // - build: compile native or WASM projects.
 // - run: build and launch native projects (or serve WASM).
 // - cargo_passthrough: forward arbitrary cargo commands to the workspace.
-// - checks: code validation (check_code) and WASM smoke-testing (check_wasm).
-// - ci: meta-action running check → fmt → clippy → build sequentially.
 // - create: scaffold a new game project from template.
 // - docs: generate cargo doc for engine crates.
 
@@ -16,11 +13,8 @@ use anyhow::Result;
 use clap::{App, ArgMatches};
 
 pub mod assets;
-pub mod benchmarks;
 pub mod build;
 pub mod cargo_passthrough;
-pub mod checks;
-pub mod ci;
 pub mod create;
 pub mod docs;
 pub mod run;

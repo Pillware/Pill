@@ -66,8 +66,8 @@ jobs:
             name: pilllauncher-linux,
             path: engine/pill_launcher/target/release,
           }
-      - name: Quick suite (smoke tests + cube)
-        run: bash devops/tests/run_pill_launcher_tests.sh quick
+      - name: Quick suite (smoke tests)
+        run: bash devops/tests/run_pill_launcher_tests.sh basics create cargo assets
 
   # ------------------------------------------------------------------
   # Full suite — all examples, WASM, CI checks, benchmark
@@ -105,5 +105,5 @@ jobs:
             name: pilllauncher-linux,
             path: engine/pill_launcher/target/release,
           }
-      - name: Full suite (all examples + CI checks + benchmark)
-        run: bash devops/tests/run_pill_launcher_tests.sh full
+      - name: Full suite (all action tests)
+        run: bash devops/tests/run_pill_launcher_tests.sh all

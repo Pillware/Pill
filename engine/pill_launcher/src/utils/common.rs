@@ -22,6 +22,34 @@ use crate::types::Location;
 use crate::utils::paths::get_path;
 
 // ---------------------------------------------------------------------------
+// OS-specific constants and the dynamic library naming helper.
+// ---------------------------------------------------------------------------
+
+/// Executable file extension (e.g. ".exe" on Windows, "" on Linux/macOS).
+#[cfg(target_os = "windows")]
+pub(crate) const EXECUTABLE_SUFFIX: &str = ".exe";
+#[cfg(not(target_os = "windows"))]
+pub(crate) const EXECUTABLE_SUFFIX: &str = ""; // Linux, macOS, etc. – no extension
+
+#[cfg(target_os = "windows")]
+pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = ""; //  pill_project.dll
+#[cfg(not(target_os = "windows"))]
+pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = "lib"; //  libpill_project.so / .dylib
+
+#[cfg(target_os = "windows")]
+pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".dll";
+#[cfg(target_os = "linux")]
+pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".so";
+#[cfg(target_os = "macos")]
+pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".dylib";
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".so"; // reasonable default for Unix-like platforms
+
+pub(crate) fn dynamic_library_name(name: &str) -> String {
+    format!("{DYNAMIC_LIBRARY_PREFIX}{name}{DYNAMIC_LIBRARY_SUFFIX}")
+}
+
+// ---------------------------------------------------------------------------
 // Feature flags (runtime)
 // ---------------------------------------------------------------------------
 
@@ -374,24 +402,6 @@ pub(crate) fn get_latest_mtime_in_directory(directory: &Path) -> Option<SystemTi
             md.modified().ok()
         })
         .max()
-}
-
-// ---------------------------------------------------------------------------
-// Byte formatting
-// ---------------------------------------------------------------------------
-
-/// Format a byte count as a human-readable string (B, KB, MB).
-pub(crate) fn format_bytes(n: u64) -> String {
-    const MB: f64 = 1024.0 * 1024.0;
-    const KB: f64 = 1024.0;
-    let bytes_float = n as f64;
-    if bytes_float >= MB {
-        format!("{:.2} MB", bytes_float / MB)
-    } else if bytes_float >= KB {
-        format!("{:.1} KB", bytes_float / KB)
-    } else {
-        format!("{n} B")
-    }
 }
 
 // ---------------------------------------------------------------------------

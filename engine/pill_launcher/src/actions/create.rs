@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::cli::path_flag;
 use crate::utils::files::{copy_directory_recursive, modify_file};
 use crate::utils::paths::*;
 
@@ -32,7 +31,6 @@ impl Action for Create {
                 .takes_value(true)
                 .help("Name of new project"),
         )
-        .arg(path_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {

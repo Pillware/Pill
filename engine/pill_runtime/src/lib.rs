@@ -349,6 +349,7 @@ static API: PillEngineApiV1 = PillEngineApiV1 {
     cursor_position,
     mouse_wheel_line,
     reload_game,
+    is_exit_requested,
 };
 
 #[no_mangle]
