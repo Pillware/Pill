@@ -31,31 +31,31 @@ source "$SCRIPT_DIR/common.sh"
 
 code_formatting_check() {
     echo "=== rustfmt ==="
-    cargo fmt --manifest-path engine/Cargo.toml
+    cargo fmt --all --manifest-path engine/Cargo.toml
 
     echo "=== checking for fmt diffs ==="
+    # Exclude Cargo.toml files — the launcher rewrites workspace paths
+    # (NO_PATH → absolute), which are not formatting issues.
     git diff --exit-code -- . \
         ':(exclude)engine/Cargo.toml' \
+        ':(exclude)examples/*/Cargo.toml' \
         && report_pass "code formatting" \
         || report_fail "code formatting" "rustfmt produced changes — run 'cargo fmt'"
 }
 
 # ===========================================================================
-# 2. code_linting_check — cargo clippy -D warnings (direct) + git diff
+# 2. code_linting_check — cargo clippy -D warnings (direct)
 # ===========================================================================
 
 code_linting_check() {
     echo "=== clippy -D warnings ==="
     local clippy_output exit_code
-    clippy_output=$(cargo clippy --manifest-path engine/Cargo.toml -- -D warnings 2>&1) && exit_code=$? || exit_code=$?
+    clippy_output=$(cargo clippy --all --manifest-path engine/Cargo.toml -- -D warnings 2>&1) && exit_code=$? || exit_code=$?
 
-    git diff --exit-code -- . \
-        ':(exclude)engine/Cargo.toml' \
-        && report_pass "code linting" \
-        || report_fail "code linting" "clippy modified files"
-
-    if [ "$exit_code" -ne 0 ]; then
-        report_fail "clippy warnings" "${clippy_output:0:200}"
+    if [ "$exit_code" -eq 0 ]; then
+        report_pass "code linting"
+    else
+        report_fail "clippy warnings" "${clippy_output:0:300}"
     fi
 }
 

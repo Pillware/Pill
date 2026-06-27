@@ -1,11 +1,14 @@
 [package]
-name = "pill_game"
+name = "pill_project"
 version = "0.1.0"
 edition = "2021"
-workspace = "/Users/mk/dev/demo/Pill-Engine/engine"
+workspace = "NO_PATH"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pill_engine = { path = "../../engine/pill_engine", features = ["game", "internal"] }
+pill_engine = { path = "../../engine/pill_engine", features = [
+    "game",
+    "internal",
+] }

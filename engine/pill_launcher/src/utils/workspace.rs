@@ -6,7 +6,7 @@
 // - Rewrites the project's own Cargo.toml workspace path to point at the engine workspace.
 // - Ensures pill_native and pill_project share type IDs by compiling in the same workspace.
 
-use anyhow::{Context, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -91,16 +91,51 @@ pub(crate) fn prepare_workspace_for_project(
 
     // Inject the project path into engine/Cargo.toml's workspace members.
     if switching_project {
-        modify_file(
-            &workspace_manifest_path,
-            &workspace_manifest_path,
-            |line: String| -> String {
-                if line.contains(PROJECT_CRATE_MARKER) {
-                    return desired_line.clone();
+        if current_linked.is_some() {
+            // Replace the existing marker line with the new project path.
+            modify_file(
+                &workspace_manifest_path,
+                &workspace_manifest_path,
+                |line: String| -> String {
+                    if line.contains(PROJECT_CRATE_MARKER) {
+                        return desired_line.clone();
+                    }
+                    line
+                },
+            )?;
+        } else {
+            // No project currently linked — insert a new member line before
+            // the closing `]` of the members array.
+            let manifest_text = fs::read_to_string(&workspace_manifest_path)
+                .with_context(|| format!("Failed to read {}", workspace_manifest_path.display()))?;
+
+            // Find the closing bracket of the members list and insert before it.
+            let mut out = String::with_capacity(manifest_text.len() + desired_line.len() + 2);
+            let mut in_members = false;
+            let mut inserted = false;
+            for line in manifest_text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("members") && trimmed.contains('[') {
+                    in_members = true;
                 }
-                line
-            },
-        )?;
+                if in_members && !inserted && trimmed == "]" {
+                    out.push_str(&desired_line);
+                    out.push('\n');
+                    inserted = true;
+                }
+                out.push_str(line);
+                out.push('\n');
+            }
+            if !inserted {
+                bail!("Could not find closing `]` in workspace members section");
+            }
+            // Remove trailing newline added by the loop
+            out.truncate(out.trim_end().len());
+            out.push('\n');
+            fs::write(&workspace_manifest_path, &out).with_context(|| {
+                format!("Failed to write {}", workspace_manifest_path.display())
+            })?;
+        }
     }
 
     // Ensure the project's own Cargo.toml workspace field points to the engine workspace.
