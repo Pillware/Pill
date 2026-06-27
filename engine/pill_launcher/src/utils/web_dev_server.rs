@@ -37,7 +37,7 @@ type Subscribers = Arc<Mutex<Vec<mpsc::Sender<()>>>>;
 /// Injects a live-reload script into HTML responses; watches for file changes.
 pub fn run(project_directory_path: &Path, compile_mode: &CompileMode, port: u16) -> Result<()> {
     // Build the WASM bundle first, then serve it.
-    wasm::build_project(project_directory_path, compile_mode, None)?;
+    wasm_target::build_project(project_directory_path, compile_mode, None)?;
 
     let build_wasm_dir = project_directory_path.join("build").join("wasm");
     let subscribers: Subscribers = Arc::new(Mutex::new(Vec::new()));

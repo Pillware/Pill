@@ -24,7 +24,7 @@ use actions::benchmarks::size_benchmark::SizeBenchmark;
 use actions::build::Build;
 use actions::cargo_passthrough::Cargo;
 use actions::checks::check_code::CheckCode;
-use actions::checks::check_wasm::CheckWasm;
+use actions::checks::check_wasm_target::CheckWasm;
 use actions::ci::Ci;
 use actions::create::Create;
 use actions::docs::Docs;

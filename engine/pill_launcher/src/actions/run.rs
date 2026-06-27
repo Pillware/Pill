@@ -1,8 +1,8 @@
 // This file implements the "run" action: build and launch a native project.
 //
 // Responsibilities:
-// - Parses CLI flags (shared with the "build" action via build_common).
-// - Delegates to build_common::run_project() for the actual build+run logic.
+// - Parses CLI flags (shared with the "build" action via native_target).
+// - Delegates to native_target::run_project() for the actual build+run logic.
 // - Supports WASM target by delegating to web_dev_server.
 
 use anyhow::Result;
@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::build_common::{register_build_flags, run_project};
+use crate::utils::native_target::{register_build_flags, run_project};
 use crate::utils::cli::{parse_build_target, parse_compile_mode};
 use crate::utils::paths::get_project_build_path;
 use crate::utils::web_dev_server;

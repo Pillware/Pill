@@ -66,7 +66,7 @@ pub(crate) fn do_size_benchmark(
             )?;
 
             println!("Building native target...");
-            crate::utils::build_common::build_project(
+            crate::utils::native_target::build_project(
                 project_directory_path,
                 &output_directory_path,
                 compile_mode,
@@ -77,7 +77,7 @@ pub(crate) fn do_size_benchmark(
         }
         BuildTarget::Web => {
             println!("Building WASM target...");
-            crate::utils::wasm::build_project(project_directory_path, compile_mode, None)?;
+            crate::utils::wasm_target::build_project(project_directory_path, compile_mode, None)?;
 
             let build_wasm_dir = project_directory_path.join("build").join("wasm");
             let pre_optimization_wasm = build_wasm_dir

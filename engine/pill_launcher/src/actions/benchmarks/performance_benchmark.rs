@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::build_common::{build_project, run_project};
+use crate::utils::native_target::{build_project, run_project};
 use crate::utils::cli::{compile_mode_flag, parse_compile_mode, path_flag};
 use crate::utils::paths::get_project_build_path;
 

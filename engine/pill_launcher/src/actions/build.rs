@@ -1,9 +1,9 @@
 ﻿// This file implements the "build" action: compile a native or WASM project.
 //
 // Responsibilities:
-// - Parses CLI flags (shared with the "run" action via build_common).
-// - Delegates to build_common::build_project() for native builds.
-// - Delegates to wasm::build_project() for WASM targets.
+// - Parses CLI flags (shared with the "run" action via native_target).
+// - Delegates to native_target::build_project() for native builds.
+// - Delegates to wasm_target::build_project() for WASM targets.
 
 use anyhow::Result;
 use clap::{App, ArgMatches};
@@ -12,8 +12,8 @@ use std::path::PathBuf;
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::build_common::{build_project, register_build_flags};
 use crate::utils::cli::{parse_build_target, parse_compile_mode};
+use crate::utils::native_target::{build_project, register_build_flags};
 use crate::utils::paths::get_project_build_path;
 use crate::utils::wasm;
 
@@ -57,7 +57,7 @@ impl Action for Build {
                 if matches.occurrences_of("output-path") > 0 {
                     println!("Note: `-o/--output-path` is ignored with `-t wasm`; output is fixed at <project>/build/wasm/");
                 }
-                wasm::build_project(&path, &compile_mode, maximum_wasm_size)?;
+                wasm_target::build_project(&path, &compile_mode, maximum_wasm_size)?;
             }
         }
         Ok(())

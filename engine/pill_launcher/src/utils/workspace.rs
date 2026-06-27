@@ -5,7 +5,6 @@
 // - Cleans stale build artifacts when switching between different project projects.
 // - Rewrites the project's own Cargo.toml workspace path to point at the engine workspace.
 // - Ensures pill_native and pill_project share type IDs by compiling in the same workspace.
-// - Depends on: utils::paths (location resolution), utils::files (file rewriting).
 
 use anyhow::{Context, Error, Result};
 use std::{

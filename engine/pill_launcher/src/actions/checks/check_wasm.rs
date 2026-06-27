@@ -74,7 +74,7 @@ pub(crate) fn do_check_wasm(
     );
 
     println!("Building WASM bundle (debug) ...");
-    wasm::build_project(project_directory_path, &CompileMode::Debug, None)?;
+    wasm_target::build_project(project_directory_path, &CompileMode::Debug, None)?;
 
     let wasm_directory = project_directory_path.join("build").join("wasm");
 
