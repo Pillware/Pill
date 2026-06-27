@@ -1,5 +1,5 @@
 [package]
-name = "pill_game"
+name = "pill_project"
 version = "0.1.0"
 edition = "2021"
 workspace = "NO_PATH"
@@ -8,4 +8,4 @@ workspace = "NO_PATH"
 crate-type = ["cdylib"]
 
 [dependencies]
-pill_engine = {path = "NO_PATH", features = ["game"]}
+pill_engine = { path = "NO_PATH", features = ["game"] }

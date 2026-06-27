@@ -67,7 +67,7 @@ jobs:
             path: engine/pill_launcher/target/release,
           }
       - name: Quick suite (smoke tests + cube)
-        run: bash devops/tests/pill_launcher_tests.sh quick
+        run: bash devops/tests/run_pill_launcher_tests.sh quick
 
   # ------------------------------------------------------------------
   # Full suite — all examples, WASM, CI checks, benchmark
@@ -106,4 +106,4 @@ jobs:
             path: engine/pill_launcher/target/release,
           }
       - name: Full suite (all examples + CI checks + benchmark)
-        run: bash devops/tests/pill_launcher_tests.sh full
+        run: bash devops/tests/run_pill_launcher_tests.sh full

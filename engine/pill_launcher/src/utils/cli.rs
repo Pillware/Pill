@@ -51,9 +51,25 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
 
     app = app.setting(AppSettings::TrailingVarArg);
 
-    let matches = app
-        .get_matches_safe()
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    // Use get_matches_safe so we don't exit() inside the library — important
+    // for unit tests that call run_app directly.  We must handle
+    // HelpDisplayed / VersionDisplayed ourselves because clap returns them
+    // as errors even though the user expects exit code 0.
+    let matches = match app.get_matches_safe() {
+        Ok(m) => m,
+        Err(e) => {
+            // --help and --version print their output to stdout and return an
+            // error of kind HelpDisplayed / VersionDisplayed.  The output has
+            // already been printed by clap — just exit successfully.
+            use clap::ErrorKind;
+            match e.kind {
+                ErrorKind::HelpDisplayed | ErrorKind::VersionDisplayed => {
+                    std::process::exit(0);
+                }
+                _ => return Err(anyhow::anyhow!("{}", e)),
+            }
+        }
+    };
 
     // Find the action named by --action and delegate.
     let action_name = matches.value_of("action").expect("Action is required");

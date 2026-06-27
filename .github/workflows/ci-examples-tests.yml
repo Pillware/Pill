@@ -73,7 +73,7 @@ jobs:
             path: engine/pill_launcher/target/release,
           }
       - name: Build ${{ matrix.example }}
-        run: bash devops/tests/examples_tests.sh "${{ matrix.example }}"
+        run: bash devops/tests/run_examples_tests.sh "${{ matrix.example }}"
 
   # ------------------------------------------------------------------
   # Standalone crates (no PillLauncher needed)
@@ -134,4 +134,4 @@ jobs:
             path: engine/pill_launcher/target/release,
           }
       - name: WASM build ${{ matrix.example }}
-        run: bash devops/tests/basic_tests.sh ci_check_wasm "${{ matrix.example }}"
+        run: bash devops/tests/run_examples_tests.sh "${{ matrix.example }}"

@@ -49,25 +49,6 @@ jobs:
   # Fast parallel jobs — every push
   # ------------------------------------------------------------------
 
-  code_check:
-    runs-on: ubuntu-latest
-    needs: build_launcher
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: stable }
-      - uses: Swatinem/rust-cache@v2
-        with: { workspaces: "engine -> target" }
-      - uses: actions/download-artifact@v4
-        with:
-          {
-            name: pilllauncher-linux,
-            path: engine/pill_launcher/target/release,
-          }
-      - name: cargo check (engine crates)
-        run: bash devops/tests/basic_tests.sh ci_check_code
-
   code_formatting_check:
     runs-on: ubuntu-latest
     needs: build_launcher
@@ -83,7 +64,7 @@ jobs:
             path: engine/pill_launcher/target/release,
           }
       - name: rustfmt check
-        run: bash devops/tests/basic_tests.sh ci_fmt
+        run: bash devops/tests/run_basic_tests.sh code_formatting_check
 
   code_linting_check:
     runs-on: ubuntu-latest
@@ -102,7 +83,7 @@ jobs:
             path: engine/pill_launcher/target/release,
           }
       - name: clippy lint
-        run: bash devops/tests/basic_tests.sh ci_clippy
+        run: bash devops/tests/run_basic_tests.sh code_linting_check
 
   # -- Fast native builds (cube is the smallest/simplest example) -----------
   build_cube:
@@ -125,7 +106,7 @@ jobs:
             path: engine/pill_launcher/target/release,
           }
       - name: Build cube example
-        run: bash devops/tests/basic_tests.sh ci_build examples/cube
+        run: bash devops/tests/run_basic_tests.sh build_native_cube_example
 
   # -- net_minimal standalone crates (no PillLauncher needed) ---------------
   build_net_minimal:
@@ -184,4 +165,4 @@ jobs:
             path: engine/pill_launcher/target/release,
           }
       - name: WASM build + smoke test
-        run: bash devops/tests/basic_tests.sh ci_check_wasm "${{ matrix.example }}"
+        run: bash devops/tests/run_basic_tests.sh build_wasm_example "${{ matrix.example }}"

@@ -66,14 +66,20 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         .with_context(|| format!("Failed to read {}", native_cargo_toml.display()))?;
 
     // 1. Point the Empty example's Cargo.toml at the absolute engine path
-    // so cargo doc can resolve the pill_engine dependency.
+    // so cargo doc can resolve the pill_engine dependency.  Strip the
+    // workspace = "NO_PATH" line entirely — the empty example isn't a
+    // workspace member, and leaving a valid workspace path would cause
+    // "package believes it's in a workspace when it's not" errors.
     modify_file(
         &empty_cargo_toml,
         &empty_cargo_toml,
         |line: String| -> String {
+            if line.trim_start().starts_with("workspace") {
+                return String::new(); // remove — not a workspace member
+            }
             if line.contains("pill_engine") {
                 return format!(
-                    "pill_engine = {{path = \"{}\", features = [\"project\"]}}",
+                    "pill_engine = {{path = \"{}\", features = [\"all\"]}}",
                     get_path(Location::PillEngineCrate)
                         .to_str()
                         .unwrap()
@@ -140,14 +146,15 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
             eprintln!("Warning: skipping PlantUML render ({})", e);
         }
 
-        // 6. Generate project_dev docs: public API surface (project + internal features).
+        // 6. Generate project_dev docs: public API surface (project + internal
+        // features).  Features are enabled via the pill_engine dependency spec
+        // in the Empty example's Cargo.toml (set above), not via --features on
+        // the cargo doc CLI (which would apply to the wrong crate).
         let manifest = full_engine_manifest_path.to_string_lossy();
         let target = output_project_dev_path.to_string_lossy();
         let arguments = vec![
             "doc",
             "--no-deps",
-            "--features",
-            "project,internal",
             "--manifest-path",
             &*manifest,
             "--target-dir",

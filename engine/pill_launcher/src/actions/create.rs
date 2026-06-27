@@ -7,14 +7,13 @@
 
 use anyhow::{Context, Error, Result};
 use clap::{App, Arg, ArgMatches};
-use fs_extra::dir::CopyOptions;
 use path_absolutize::Absolutize;
 use std::path::{Path, PathBuf};
 
 use crate::actions::Action;
 use crate::types::*;
 use crate::utils::cli::path_flag;
-use crate::utils::files::modify_file;
+use crate::utils::files::{copy_directory_recursive, modify_file};
 use crate::utils::paths::*;
 
 #[derive(Debug)]
@@ -80,14 +79,13 @@ pub(crate) fn create_project(
         .join("templates");
 
     // Copy the pill_default template directly to the target project name.
-    // This avoids the copy-then-rename pattern which leaves orphan directories
-    // if the process is killed between the two steps.
+    // Uses std::fs-based recursive copy (not fs_extra) to avoid a known
+    // Windows path-resolution issue with fs_extra::dir::copy.
     println!("Copying project template...");
 
-    fs_extra::dir::copy(
-        template_project_directory_path.join(TEMPLATE_NAME),
+    copy_directory_recursive(
+        &template_project_directory_path.join(TEMPLATE_NAME),
         &project_directory_path,
-        &CopyOptions::new().overwrite(true),
     )
     .context("Cannot copy template directory")?;
 

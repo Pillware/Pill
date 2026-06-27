@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# devops/tests/examples_tests.sh — Build every Pill example project
+# devops/tests/run_examples_tests.sh — Build every Pill example project
 # =============================================================================
 #
 # Usage:
-#   bash devops/tests/examples_tests.sh all               # build everything
-#   bash devops/tests/examples_tests.sh examples/cube      # build one example
-#   bash devops/tests/examples_tests.sh native             # native examples only
-#   bash devops/tests/examples_tests.sh wasm               # WASM examples only
+#   bash devops/tests/run_examples_tests.sh all               # build everything
+#   bash devops/tests/run_examples_tests.sh examples/cube      # build one example
+#   bash devops/tests/run_examples_tests.sh native             # native examples only
+#   bash devops/tests/run_examples_tests.sh wasm               # WASM examples only
 #
 # Prerequisites:
 #   - PillLauncher binary must be built (auto-detected, or set PILL_LAUNCHER_BIN)
@@ -16,11 +16,11 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Source shared helpers (binary discovery, assert_ok, etc.)
+# Source shared helpers (binary discovery, report_*, etc.)
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=./basic_tests.sh
-source "$SCRIPT_DIR/basic_tests.sh"
+# shellcheck source=./common.sh
+source "$SCRIPT_DIR/common.sh"
 
 # ---------------------------------------------------------------------------
 # Example lists
