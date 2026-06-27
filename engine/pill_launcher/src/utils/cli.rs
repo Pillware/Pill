@@ -51,7 +51,9 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
 
     app = app.setting(AppSettings::TrailingVarArg);
 
-    let matches = app.get_matches();
+    let matches = app
+        .get_matches_safe()
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     // Find the action named by --action and delegate.
     let action_name = matches.value_of("action").expect("Action is required");

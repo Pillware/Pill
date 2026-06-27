@@ -1,0 +1,109 @@
+# Pill CI — full pre-release validation
+#
+# Runs the complete pill_launcher_tests.sh suite: basic smoke tests,
+# every example (native + WASM), CI checks (fmt, clippy), and the
+# city performance benchmark.
+#
+# Triggered manually or on a weekly schedule.  This is the gate you
+# run before tagging a release.
+
+name: CI Full Suite
+
+on:
+  schedule:
+    # Every Sunday at 04:00 UTC
+    - cron: "0 4 * * 0"
+  workflow_dispatch:
+
+env:
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ------------------------------------------------------------------
+  # Build the launcher once, upload as artifact for all downstream jobs
+  # ------------------------------------------------------------------
+  build_launcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
+      - name: Build PillLauncher (release)
+        run: cargo build --release --manifest-path engine/pill_launcher/Cargo.toml
+      - name: Upload PillLauncher artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: engine/pill_launcher/target/release/PillLauncher
+
+  # ------------------------------------------------------------------
+  # Quick suite — basic smoke tests + cube build
+  # ------------------------------------------------------------------
+  quick_suite:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with: { toolchain: stable }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
+            examples/cube -> target
+      - uses: actions/download-artifact@v4
+        with:
+          {
+            name: pilllauncher-linux,
+            path: engine/pill_launcher/target/release,
+          }
+      - name: Quick suite (smoke tests + cube)
+        run: bash devops/tests/pill_launcher_tests.sh quick
+
+  # ------------------------------------------------------------------
+  # Full suite — all examples, WASM, CI checks, benchmark
+  # ------------------------------------------------------------------
+  full_suite:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - name: Install xvfb (for benchmark)
+        run: sudo apt-get install -y xvfb
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          rustflags: ""
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
+            examples/cube -> target
+            examples/city -> target
+            examples/floating_pills -> target
+            examples/italian_brainrot -> target
+            examples/cube/build/wasm/.build/pill_web -> target
+            examples/pill_tunel/build/wasm/.build/pill_web -> target
+            examples/pbr_helmet/build/wasm/.build/pill_web -> target
+            examples/pbr_balls/build/wasm/.build/pill_web -> target
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with: { version: latest }
+      - uses: actions/download-artifact@v4
+        with:
+          {
+            name: pilllauncher-linux,
+            path: engine/pill_launcher/target/release,
+          }
+      - name: Full suite (all examples + CI checks + benchmark)
+        run: bash devops/tests/pill_launcher_tests.sh full

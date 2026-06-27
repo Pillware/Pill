@@ -15,7 +15,7 @@ use crate::types::*;
 use crate::utils::cli::{parse_build_target, parse_compile_mode};
 use crate::utils::native_target::{build_project, register_build_flags};
 use crate::utils::paths::get_project_build_path;
-use crate::utils::wasm;
+use crate::utils::wasm_target;
 
 #[derive(Debug)]
 pub(crate) struct Build;

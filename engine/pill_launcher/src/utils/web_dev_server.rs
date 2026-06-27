@@ -17,7 +17,7 @@ use anyhow::{Error, Result};
 
 use crate::types::CompileMode;
 use crate::utils::common::get_latest_mtime_in_directory;
-use crate::utils::wasm;
+use crate::utils::wasm_target;
 
 const ADDRESS_HOST: &str = "127.0.0.1";
 const WATCH_POLL: Duration = Duration::from_millis(500);

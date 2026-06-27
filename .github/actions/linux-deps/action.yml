@@ -1,5 +1,5 @@
 name: Install Linux deps
-description: Install native Linux packages required to build Pill-Engine examples
+description: Install native Linux packages required to build Pill examples
 runs:
   using: "composite"
   steps:

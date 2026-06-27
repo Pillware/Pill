@@ -16,7 +16,7 @@ use std::{fs, path::PathBuf};
 use crate::actions::Action;
 use crate::types::CompileMode;
 use crate::utils::cli::path_flag;
-use crate::utils::wasm;
+use crate::utils::wasm_target;
 
 #[derive(Debug)]
 pub(crate) struct CheckWasm;

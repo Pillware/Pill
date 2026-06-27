@@ -14,6 +14,9 @@
 #![warn(missing_docs)]
 #![warn(clippy::clone_on_copy)]
 
+#[cfg(test)]
+mod test_actions;
+
 mod actions;
 mod types;
 mod utils;
@@ -24,7 +27,7 @@ use actions::benchmarks::size_benchmark::SizeBenchmark;
 use actions::build::Build;
 use actions::cargo_passthrough::Cargo;
 use actions::checks::check_code::CheckCode;
-use actions::checks::check_wasm_target::CheckWasm;
+use actions::checks::check_wasm::CheckWasm;
 use actions::ci::Ci;
 use actions::create::Create;
 use actions::docs::Docs;

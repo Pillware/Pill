@@ -1,0 +1,137 @@
+# Pill CI — example builds (all native + WASM)
+#
+# Builds every example project in the repo.  Runs on daily schedule and
+# manual trigger.  Separate from ci-basic.yml to keep per-push feedback fast.
+#
+# Calls devops/tests/examples_tests.sh under the hood.
+
+name: CI Examples
+
+on:
+  schedule:
+    # Every day at 03:30 UTC (staggered after ci-basic daily)
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ------------------------------------------------------------------
+  # Build the launcher once, upload as artifact for all downstream jobs
+  # ------------------------------------------------------------------
+  build_launcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
+      - name: Build PillLauncher (release)
+        run: cargo build --release --manifest-path engine/pill_launcher/Cargo.toml
+      - name: Upload PillLauncher artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilllauncher-linux
+          path: engine/pill_launcher/target/release/PillLauncher
+
+  # ------------------------------------------------------------------
+  # Native example builds (matrix — each example in parallel)
+  # ------------------------------------------------------------------
+  build_native_examples:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - examples/cube
+          - examples/floating_pills
+          - examples/italian_brainrot
+          - examples/city
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with: { toolchain: stable }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine -> target
+            ${{ matrix.example }} -> target
+      - uses: actions/download-artifact@v4
+        with:
+          {
+            name: pilllauncher-linux,
+            path: engine/pill_launcher/target/release,
+          }
+      - name: Build ${{ matrix.example }}
+        run: bash devops/tests/examples_tests.sh "${{ matrix.example }}"
+
+  # ------------------------------------------------------------------
+  # Standalone crates (no PillLauncher needed)
+  # ------------------------------------------------------------------
+  build_standalone:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    strategy:
+      fail-fast: false
+      matrix:
+        crate:
+          - examples/net_minimal/client
+          - examples/net_minimal/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with: { toolchain: stable }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ${{ matrix.crate }} -> target
+      - name: Build ${{ matrix.crate }}
+        run: cargo build --manifest-path ${{ matrix.crate }}/Cargo.toml
+
+  # ------------------------------------------------------------------
+  # WASM example builds (matrix — each example in parallel)
+  # ------------------------------------------------------------------
+  build_wasm_examples:
+    runs-on: ubuntu-latest
+    needs: build_launcher
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - examples/cube
+          - examples/pill_tunel
+          - examples/pbr_helmet
+          - examples/pbr_balls
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/linux-deps
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          rustflags: ""
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ${{ matrix.example }}/build/wasm/.build/pill_web -> target
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with: { version: latest }
+      - uses: actions/download-artifact@v4
+        with:
+          {
+            name: pilllauncher-linux,
+            path: engine/pill_launcher/target/release,
+          }
+      - name: WASM build ${{ matrix.example }}
+        run: bash devops/tests/basic_tests.sh ci_check_wasm "${{ matrix.example }}"
