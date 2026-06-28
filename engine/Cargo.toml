@@ -10,7 +10,6 @@ members = [
     "pill_web",
     "pill_runtime",
 ]
-]
 
 # The per-game wasm cdylib (pill_web_app) lives as a template at
 # pill_launcher/res/templates/wasm/ and is instantiated per-game by the launcher.
