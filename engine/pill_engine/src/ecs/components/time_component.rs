@@ -7,7 +7,7 @@ use pill_core::Result;
 #[readonly::make]
 pub struct TimeComponent {
     #[readonly]
-    pub time: f32, // Time elapsed from the start of the engine/game in seconds
+    pub time: f32, // Time elapsed from the start of the engine/project in seconds
     #[readonly]
     pub delta_time: f32, // Time of last frame in seconds
 }

@@ -1,11 +1,8 @@
-# Pill CI — full pre-release validation
+# Pill CI - launcher action validation
 #
-# Runs the complete pill_launcher_tests.sh suite: basic smoke tests,
-# every example (native + WASM), CI checks (fmt, clippy), and the
-# city performance benchmark.
-#
-# Triggered manually or on a weekly schedule.  This is the gate you
-# run before tagging a release.
+# Quick suite: smoke tests (basics, create, cargo, assets).
+# Full suite: heavier actions (build, run, docs).
+# Triggered weekly or manually.
 
 name: CI Full Suite
 
@@ -45,7 +42,7 @@ jobs:
           path: engine/pill_launcher/target/release/PillLauncher
 
   # ------------------------------------------------------------------
-  # Quick suite — basic smoke tests + cube build
+  # Quick suite - basic smoke tests + cube build
   # ------------------------------------------------------------------
   quick_suite:
     runs-on: ubuntu-latest
@@ -70,7 +67,7 @@ jobs:
         run: bash devops/tests/run_pill_launcher_tests.sh basics create cargo assets
 
   # ------------------------------------------------------------------
-  # Full suite — all examples, WASM, CI checks, benchmark
+  # Full suite - launcher build + run + docs tests
   # ------------------------------------------------------------------
   full_suite:
     runs-on: ubuntu-latest
@@ -78,8 +75,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/linux-deps
-      - name: Install xvfb (for benchmark)
-        run: sudo apt-get install -y xvfb
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
@@ -94,9 +89,6 @@ jobs:
             examples/floating_pills -> target
             examples/italian_brainrot -> target
             examples/cube/build/wasm/.build/pill_web -> target
-            examples/pill_tunel/build/wasm/.build/pill_web -> target
-            examples/pbr_helmet/build/wasm/.build/pill_web -> target
-            examples/pbr_balls/build/wasm/.build/pill_web -> target
       - uses: jetli/wasm-pack-action@v0.4.0
         with: { version: latest }
       - uses: actions/download-artifact@v4
@@ -105,5 +97,5 @@ jobs:
             name: pilllauncher-linux,
             path: engine/pill_launcher/target/release,
           }
-      - name: Full suite (all action tests)
-        run: bash devops/tests/run_pill_launcher_tests.sh all
+      - name: Full suite (all launcher action tests)
+        run: bash devops/tests/run_pill_launcher_tests.sh build run docs

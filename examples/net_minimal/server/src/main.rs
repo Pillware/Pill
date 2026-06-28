@@ -3,7 +3,7 @@ use pill_core::Result;
 use pill_core::{server_broadcast_exit, server_dying_grasp};
 use pill_engine::internal::{
     networking_system_server, Engine, EngineConfig, NetworkEntityState, NetworkSide,
-    NetworkStateComponent, PillGame, TransformComponent,
+    NetworkStateComponent, PillProject, TransformComponent,
 };
 use pill_engine::internal::{EngineProcessInfo, NetworkManagerComponent};
 use std::io::Write;
@@ -41,11 +41,11 @@ fn spawn_player(
     Ok(())
 }
 
-struct HeadlessGame; // TODO: placeholder for the actual game struct
-                     //
-impl PillGame for HeadlessGame {
+struct HeadlessProject; // TODO: placeholder for the actual project struct
+                        //
+impl PillProject for HeadlessProject {
     fn start(&self, engine: &mut Engine) -> Result<()> {
-        println!("Starting HeadlessGame...");
+        println!("Starting HeadlessProject...");
 
         let scene = engine.create_scene("ServerWorld")?;
         engine.set_active_scene(scene)?;
@@ -85,11 +85,11 @@ fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let game: Box<dyn PillGame> = Box::new(HeadlessGame);
+    let project: Box<dyn PillProject> = Box::new(HeadlessProject);
     let compile_mode =
         std::env::var("PILL_COMPILE_MODE").map_err(|_| "PILL_COMPILE_MODE is not set")?;
     let process = EngineProcessInfo::new(&compile_mode, pill_engine::internal::BuildTarget::Native);
-    let mut engine = Engine::new(game, EngineConfig::from_ini(""), process);
+    let mut engine = Engine::new(project, EngineConfig::from_ini(""), process);
 
     engine.initialize(None)?;
 
@@ -103,7 +103,7 @@ fn main() -> Result<()> {
 
     let mut last = Instant::now();
 
-    info!("Starting headless game loop...");
+    info!("Starting headless pill project loop...");
 
     loop {
         // graceful shutdown on Ctrl-C
@@ -127,7 +127,7 @@ fn main() -> Result<()> {
 
             // drive networking, simulation
             engine.update(tick);
-            //println!("Game updated at {:?}", last);
+            //println!("Pill project updated at {:?}", last);
         } else {
             // sleep to avoid busy waiting
             std::thread::sleep(tick - now.duration_since(last));

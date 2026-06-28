@@ -111,7 +111,7 @@ impl Resource for Texture {
         // Create new renderer texture resource
         let (rgba, width, height) = match &self.resource_loader {
             ResourceLoader::Path(path) => {
-                let base = engine.game_resources_directory_path.join(path);
+                let base = engine.project_resources_directory_path.join(path);
                 let cooked_tex_path = base.with_extension("cooked_tex");
                 if cooked_tex_path.exists() {
                     let bytes =

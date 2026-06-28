@@ -14,8 +14,8 @@ pub struct PillEngineCreateArgsV1 {
     pub window_ptr: *const c_void,
 
     /// UTF-8, null-terminated
-    pub game_dylib_path: *const c_char,
-    pub game_resources_dir: *const c_char,
+    pub project_dylib_path: *const c_char,
+    pub project_resources_dir: *const c_char,
     pub config_path: *const c_char,
 
     pub initial_w: u32,
@@ -29,7 +29,7 @@ pub struct PillEngineApiV1 {
     pub struct_size: u32, // set to size of Self
     pub abi_version: u32,
 
-    /// Later stable hash that engine/game expect of each other
+    /// Later stable hash that engine/project expect of each other
     pub abi_hash: u64,
 
     pub last_error_utf8: extern "C" fn() -> *const c_char,
@@ -62,7 +62,8 @@ pub struct PillEngineApiV1 {
     pub mouse_wheel_line: extern "C" fn(engine: EngineHandle, dx: f32, dy: f32),
 
     // --- Hot reload ---
-    pub reload_game: extern "C" fn(engine: EngineHandle, game_dylib_path: *const c_char) -> i32,
+    pub reload_project:
+        extern "C" fn(engine: EngineHandle, project_dylib_path: *const c_char) -> i32,
 
     // --- Exit signal (benchmarks / graceful shutdown) ---
     /// Returns 1 if the engine has requested graceful exit, 0 otherwise.

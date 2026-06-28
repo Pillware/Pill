@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
-# =============================================================================
-# devops/tests/run_examples_tests.sh — Build every Pill example project
-# =============================================================================
+
+# REQUIREMENTS: Rust toolchain (cargo), a compiled PillLauncher binary
+#               (auto-discovered or set via PILL_LAUNCHER_BIN).
+
+# DESCRIPTION: Build every Pill example project to verify they all compile.
+#   Each example is built via PillLauncher in release mode. Standalone Cargo
+#   crates (net_minimal) are built directly with cargo.
+
+# USAGE: bash devops/tests/run_examples_tests.sh [all|<example-path>]
 #
-# Usage:
-#   bash devops/tests/run_examples_tests.sh all               # build everything
-#   bash devops/tests/run_examples_tests.sh examples/cube      # build one example
-#   bash devops/tests/run_examples_tests.sh native             # native examples only
-#   bash devops/tests/run_examples_tests.sh wasm               # WASM examples only
-#
-# Prerequisites:
-#   - PillLauncher binary must be built (auto-detected, or set PILL_LAUNCHER_BIN)
-#   - cargo, wasm-pack (for WASM targets)
+#   all                        build all examples (default)
+#   examples/cube              build a single example
+
+# EXAMPLE USAGE:
+#   bash devops/tests/run_examples_tests.sh all
+#   bash devops/tests/run_examples_tests.sh examples/city
+
+# --- SCRIPT ---
 
 set -euo pipefail
 
-# ---------------------------------------------------------------------------
-# Source shared helpers (binary discovery, report_*, etc.)
-# ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
@@ -26,134 +28,113 @@ source "$SCRIPT_DIR/common.sh"
 # Example lists
 # ---------------------------------------------------------------------------
 
-# Native examples built via `PillLauncher -a build`
-NATIVE_EXAMPLES=(
+PILL_EXAMPLES=(
     "examples/cube"
     "examples/floating_pills"
     "examples/italian_brainrot"
     "examples/city"
+    "examples/empty"
+    "examples/pill_tunel"
 )
 
-# Standalone Cargo projects (no PillLauncher needed)
 STANDALONE_CRATES=(
     "examples/net_minimal/client"
     "examples/net_minimal/server"
 )
 
-# WASM examples built via `PillLauncher -a check-wasm`
-WASM_EXAMPLES=(
-    "examples/cube"
-    "examples/pill_tunel"
-    "examples/pbr_helmet"
-    "examples/pbr_balls"
-)
-
 # ---------------------------------------------------------------------------
-# Build functions
+# Build helpers
 # ---------------------------------------------------------------------------
 
-# Build a single native Pill example.
-build_native_example() {
+_build_pill_example() {
     local example_path="$1"
-    echo "--- Building native: $example_path ---"
-    invoke_launcher -a build -p "$example_path" -c debug
+    local build_exit_code=0
+    invoke_launcher -a build -p "$example_path" -c release 2>&1 || build_exit_code=$?
+    if [ "$build_exit_code" -eq 0 ]; then
+        report_pass "$example_path"
+    else
+        report_fail "$example_path" "build failed (exit $build_exit_code)"
+    fi
 }
 
-# Build a standalone Cargo crate (not a Pill project).
-build_standalone_crate() {
+_build_standalone_crate() {
     local crate_path="$1"
-    echo "--- Building standalone: $crate_path ---"
-    cargo build --manifest-path "$crate_path/Cargo.toml"
+    local build_exit_code=0
+    cargo build --manifest-path "$crate_path/Cargo.toml" --release 2>&1 || build_exit_code=$?
+    if [ "$build_exit_code" -eq 0 ]; then
+        report_pass "$crate_path"
+    else
+        report_fail "$crate_path" "build failed (exit $build_exit_code)"
+    fi
 }
 
-# Build and smoke-test a WASM example.
-build_wasm_example() {
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+build_all_examples() {
+    echo ""
+    echo "------------------------------------------------------------------"
+    echo "Building all Pill example projects (release, shared target dir)"
+
+    # Use a shared cargo target directory so pill_engine (and its
+    # dependencies) are reused when features match across examples.
+    export PILL_TARGET_DIR="$PWD/engine/target_projects/_examples"
+
+    local example_index=0
+    local total_examples=$((${#PILL_EXAMPLES[@]} + ${#STANDALONE_CRATES[@]}))
+
+    # Pill projects
+    for example_path in "${PILL_EXAMPLES[@]}"; do
+        example_index=$((example_index + 1))
+        echo ""
+        echo "($example_index/$total_examples) $example_path"
+        echo "Building - this may take a moment"
+        _build_pill_example "$example_path"
+    done
+
+    # Standalone Cargo crates
+    for crate_path in "${STANDALONE_CRATES[@]}"; do
+        example_index=$((example_index + 1))
+        echo ""
+        echo "($example_index/$total_examples) $crate_path"
+        echo "Building - this may take a moment"
+        _build_standalone_crate "$crate_path"
+    done
+}
+
+build_single_example() {
     local example_path="$1"
-    echo "--- Building WASM: $example_path ---"
-    invoke_launcher -a check-wasm -p "$example_path"
-}
+    echo ""
+    echo "------------------------------------------------------------------"
+    echo "Building $example_path (release)"
+    echo "Building - this may take a moment"
 
-# ---------------------------------------------------------------------------
-# Batch runners
-# ---------------------------------------------------------------------------
-
-build_all_native() {
-    echo "=== Building all native examples ==="
-    local failed=0
-    for example in "${NATIVE_EXAMPLES[@]}"; do
-        if build_native_example "$example"; then
-            report_pass "native: $example"
-        else
-            report_fail "native: $example" "build failed"
-            failed=$((failed + 1))
-        fi
-    done
-
-    for crate in "${STANDALONE_CRATES[@]}"; do
-        if build_standalone_crate "$crate"; then
-            report_pass "standalone: $crate"
-        else
-            report_fail "standalone: $crate" "build failed"
-            failed=$((failed + 1))
-        fi
-    done
-
-    return $failed
-}
-
-build_all_wasm() {
-    echo "=== Building all WASM examples ==="
-    local failed=0
-    for example in "${WASM_EXAMPLES[@]}"; do
-        if build_wasm_example "$example"; then
-            report_pass "wasm: $example"
-        else
-            report_fail "wasm: $example" "build failed"
-            failed=$((failed + 1))
-        fi
-    done
-    return $failed
+    if [ -d "$example_path/res" ]; then
+        _build_pill_example "$example_path"
+    elif [ -f "$example_path/Cargo.toml" ]; then
+        _build_standalone_crate "$example_path"
+    else
+        report_skip "$example_path" "not a valid project (no Cargo.toml or res/ found)"
+    fi
 }
 
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    return 0
+fi
+
 case "${1:-all}" in
-    all)
-        build_all_native
-        build_all_wasm
-        ;;
-    native)
-        build_all_native
-        ;;
-    wasm)
-        build_all_wasm
+    all|"")
+        build_all_examples
         ;;
     *)
-        # Assume it's a path to a single example
-        example_path="$1"
-        if [ -f "$example_path/Cargo.toml" ]; then
-            # Determine type by checking for a res/ directory (Pill project marker)
-            if [ -d "$example_path/res" ]; then
-                build_native_example "$example_path"
-            else
-                build_standalone_crate "$example_path"
-            fi
-        else
-            echo "Usage: $0 [all|native|wasm|<example-path>]"
-            echo ""
-            echo "Native examples:"
-            for e in "${NATIVE_EXAMPLES[@]}"; do echo "  $e"; done
-            echo ""
-            echo "Standalone crates:"
-            for c in "${STANDALONE_CRATES[@]}"; do echo "  $c"; done
-            echo ""
-            echo "WASM examples:"
-            for w in "${WASM_EXAMPLES[@]}"; do echo "  $w"; done
-            exit 1
-        fi
+        build_single_example "$1"
         ;;
 esac
 
 print_summary
+

@@ -1,12 +1,22 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pill Engine - WebGPU</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { height: 100%; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
         body {
             background: #fff;
             color: #222;
@@ -16,6 +26,7 @@
             align-items: center;
             overflow: hidden;
         }
+
         #made-with {
             position: fixed;
             bottom: 24px;
@@ -28,7 +39,13 @@
             color: #666;
             user-select: none;
         }
-        #made-with img { height: 66px; width: auto; display: block; }
+
+        #made-with img {
+            height: 66px;
+            width: auto;
+            display: block;
+        }
+
         #fullscreen-btn {
             position: fixed;
             top: 16px;
@@ -47,14 +64,26 @@
             cursor: pointer;
             transition: background 0.1s ease, transform 0.1s ease;
         }
-        #fullscreen-btn:hover { background: #000; }
-        #fullscreen-btn:active { transform: translateX(-50%) translateY(1px); }
+
+        #fullscreen-btn:hover {
+            background: #000;
+        }
+
+        #fullscreen-btn:active {
+            transform: translateX(-50%) translateY(1px);
+        }
+
         #canvas {
             display: block;
             width: 80vw;
             height: 80vh;
         }
-        #canvas:fullscreen { width: 100vw; height: 100vh; }
+
+        #canvas:fullscreen {
+            width: 100vw;
+            height: 100vh;
+        }
+
         #error {
             color: #c0392b;
             font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -64,6 +93,7 @@
         }
     </style>
 </head>
+
 <body>
     <div id="made-with">
         <span>made with</span>
@@ -124,11 +154,12 @@
                 await init();
             } catch (e) {
                 console.error('Failed to load WASM:', e);
-                showError('Failed to load game: ' + e.message);
+                showError('Failed to load pill project: ' + e.message);
             }
         }
 
         run();
     </script>
 </body>
+
 </html>

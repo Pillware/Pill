@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# =============================================================================
-# devops/tests/common.sh — shared test infrastructure
-# =============================================================================
+# ---------------------------------------------------------------------------==
+# devops/tests/common.sh - shared test infrastructure
+# ---------------------------------------------------------------------------==
 #
 # Sourced by all test scripts.  Provides:
 #   - terminal colours & global test counters
@@ -11,7 +11,7 @@
 #   - invoke_launcher, assert_ok, assert_fail
 #   - print_summary
 #
-# Idempotent — safe to source multiple times (e.g. from nested scripts).
+# Idempotent - safe to source multiple times (e.g. from nested scripts).
 
 # ---- idempotency guard ------------------------------------------------------
 if [[ "${COMMON_SH_LOADED:-}" == "1" ]]; then
@@ -28,12 +28,13 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'   # No Color (reset)
 
-# ---- global test counters ---------------------------------------------------
+# ---- global test counters & per-result log ---------------------------------
 tests_passed=0; tests_failed=0; tests_skipped=0
+test_results=()  # stores "PASS|<description>", "FAIL|<description> - reason", etc.
 
-# ===========================================================================
+# ---------------------------------------------------------------------------
 # Binary discovery
-# ===========================================================================
+# ---------------------------------------------------------------------------
 # We try several well-known locations so the script works whether run from
 # the repo root or from inside engine/pill_launcher.  CI sets
 # PILL_LAUNCHER_BIN explicitly after downloading the build artifact.
@@ -63,9 +64,18 @@ if [ -z "$pill_launcher_bin" ] || [ ! -f "$pill_launcher_bin" ]; then
 fi
 chmod +x "$pill_launcher_bin" 2>/dev/null || true
 
-# ===========================================================================
+# Clear stale cargo package-cache lock (can block parallel builds).
+rm -f "${HOME}/.cargo/.package-cache" 2>/dev/null || true
+
+# Restore engine/Cargo.toml to its committed state - previous test runs may
+# have left stale workspace-member entries if they crashed mid-build.
+if [ -f "engine/Cargo.toml" ] && command -v git > /dev/null 2>&1; then
+    git checkout -- engine/Cargo.toml 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
 # Temporary test directory
-# ===========================================================================
+# ---------------------------------------------------------------------------
 
 TMPDIR="${TMPDIR:-/tmp}"
 test_workspace_root="${TEST_ROOT:-$TMPDIR/pill-ci-tests-$$}"
@@ -76,23 +86,46 @@ cleanup_workspace() {
 }
 trap cleanup_workspace EXIT
 
-# ===========================================================================
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
+# Format a byte count as human-readable (e.g. "1.2 MB", "337 KB", "359 B").
+# Uses numfmt if available (GNU coreutils), otherwise falls back to a simple
+# integer division that matches ls -lh style (no decimal places).
+format_size() {
+    local bytes=$1
+    if command -v numfmt > /dev/null 2>&1; then
+        numfmt --to=iec --suffix=B "$bytes" 2>/dev/null || echo "${bytes} B"
+    elif [ "$bytes" -ge 1048576 ]; then
+        echo "$((bytes / 1048576)) MB"
+    elif [ "$bytes" -ge 1024 ]; then
+        echo "$((bytes / 1024)) KB"
+    else
+        echo "${bytes} B"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Test result helpers
-# ===========================================================================
+# ---------------------------------------------------------------------------
 
 report_pass() {
     echo -e "  ${GREEN}PASS${NC} $1"
     tests_passed=$((tests_passed + 1))
+    test_results+=("PASS|$1")
 }
 
 report_fail() {
-    echo -e "  ${RED}FAIL${NC} $1 — $2"
+    echo -e "  ${RED}FAIL${NC} $1 - $2"
     tests_failed=$((tests_failed + 1))
+    test_results+=("FAIL|$1 - $2")
 }
 
 report_skip() {
-    echo -e "  ${YELLOW}SKIP${NC} $1 — $2"
+    echo -e "  ${YELLOW}SKIP${NC} $1 - $2"
     tests_skipped=$((tests_skipped + 1))
+    test_results+=("SKIP|$1 - $2")
 }
 
 invoke_launcher() {
@@ -123,6 +156,18 @@ assert_fail() {
 print_summary() {
     local total_tests=$((tests_passed + tests_failed + tests_skipped))
     echo ""
+    echo "========================================"
+    local index=0
+    for entry in "${test_results[@]}"; do
+        index=$((index + 1))
+        local status="${entry%%|*}"
+        local description="${entry#*|}"
+        case "$status" in
+            PASS) echo "($index/$total_tests) ${GREEN}PASS${NC} - $description" ;;
+            FAIL) echo "($index/$total_tests) ${RED}FAIL${NC} - $description" ;;
+            SKIP) echo "($index/$total_tests) ${YELLOW}SKIP${NC} - $description" ;;
+        esac
+    done
     echo "========================================"
     echo -e "Results: ${GREEN}$tests_passed passed${NC}, ${RED}$tests_failed failed${NC}, ${YELLOW}$tests_skipped skipped${NC} ($total_tests total)"
     echo "========================================"

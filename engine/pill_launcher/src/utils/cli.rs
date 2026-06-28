@@ -44,7 +44,7 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
             .allow_hyphen_values(true),
     );
 
-    // Register shared flags once — individual actions must NOT re-register
+    // Register shared flags once - individual actions must NOT re-register
     // these (clap v2 panics on duplicate arg names).
     app = app
         .arg(path_flag())
@@ -74,7 +74,7 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
 
     app = app.setting(AppSettings::TrailingVarArg);
 
-    // Use get_matches_safe so we don't exit() inside the library — important
+    // Use get_matches_safe so we don't exit() inside the library - important
     // for unit tests that call run_app directly.  We must handle
     // HelpDisplayed / VersionDisplayed ourselves because clap returns them
     // as errors even though the user expects exit code 0.
@@ -83,7 +83,7 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
         Err(e) => {
             // --help and --version print their output to stdout and return an
             // error of kind HelpDisplayed / VersionDisplayed.  The output has
-            // already been printed by clap — just exit successfully.
+            // already been printed by clap - just exit successfully.
             use clap::ErrorKind;
             match e.kind {
                 ErrorKind::HelpDisplayed | ErrorKind::VersionDisplayed => {
@@ -111,7 +111,7 @@ pub(crate) const DEFAULT_COMPILE_MODE: &str = "debug";
 
 // -- Shared flag builders ---------------------------------------------------
 
-/// `-p` / `--path` — project directory.
+/// `-p` / `--path` - project directory.
 pub(crate) fn path_flag() -> Arg<'static, 'static> {
     Arg::with_name("path")
         .short("p")
@@ -121,7 +121,7 @@ pub(crate) fn path_flag() -> Arg<'static, 'static> {
         .help("Path to the project")
 }
 
-/// `-c` / `--compile-mode` — debug, release, or hot-reload.
+/// `-c` / `--compile-mode` - debug, release, or hot-reload.
 pub(crate) fn compile_mode_flag() -> Arg<'static, 'static> {
     Arg::with_name("compile-mode")
         .short("c")
@@ -132,7 +132,7 @@ pub(crate) fn compile_mode_flag() -> Arg<'static, 'static> {
         .help("Build profile: debug, release, or hot-reload")
 }
 
-/// `-o` / `--output-path` — where to place build artifacts.
+/// `-o` / `--output-path` - where to place build artifacts.
 pub(crate) fn output_path_flag() -> Arg<'static, 'static> {
     Arg::with_name("output-path")
         .short("o")
@@ -142,7 +142,7 @@ pub(crate) fn output_path_flag() -> Arg<'static, 'static> {
         .help("Build output directory")
 }
 
-/// `-t` / `--target` — native or web (WASM).
+/// `-t` / `--target` - native or web (WASM).
 pub(crate) fn target_flag() -> Arg<'static, 'static> {
     Arg::with_name("target")
         .short("t")
@@ -153,19 +153,19 @@ pub(crate) fn target_flag() -> Arg<'static, 'static> {
         .help("Build target: native executable or WASM+WebGPU")
 }
 
-/// `--clean` — force-rebuild cooked assets before building.
+/// `--clean` - force-rebuild cooked assets before building.
 pub(crate) fn clean_flag() -> Arg<'static, 'static> {
     Arg::with_name("clean")
         .long("clean")
         .help("Delete all cooked asset files and rebuild from source")
 }
 
-/// `--features` — comma-separated Cargo features for pill_project.
+/// `--features` - comma-separated Cargo features for project.
 pub(crate) fn features_flag() -> Arg<'static, 'static> {
     Arg::with_name("features")
         .long("features")
         .takes_value(true)
-        .help("Cargo features to enable for pill_project (comma-separated)")
+        .help("Cargo features to enable for project (comma-separated)")
 }
 
 // -- Shared parsers ---------------------------------------------------------

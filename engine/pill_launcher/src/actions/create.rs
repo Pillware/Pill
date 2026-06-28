@@ -103,7 +103,7 @@ pub(crate) fn create_project(
         },
     )?;
 
-    // Rewrite Cargo.toml in a single pass — point pill_engine at the absolute path
+    // Rewrite Cargo.toml in a single pass - point pill_engine at the absolute path
     // and set the workspace field to the engine workspace directory.
     println!("Setting up manifest file...");
     let cargo_toml_path = project_directory_path.join("Cargo.toml");

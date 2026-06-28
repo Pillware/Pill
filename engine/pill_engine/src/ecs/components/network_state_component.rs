@@ -29,7 +29,7 @@ pub enum NetworkEntityState {
 /// Per-entity replication metadata and latest network-relevant snapshot.
 ///
 /// This component is meant to be **lightweight** and focused on networking.
-/// Game-specific data lives in your own components; you can mirror pieces
+/// Project-specific data lives in your own components; you can mirror pieces
 /// here as needed for replication (e.g., position/orientation via `transform`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkStateComponent {
@@ -60,7 +60,7 @@ pub struct NetworkStateComponent {
     /// compute smooth visuals between authoritative snapshots.
     pub last_transform: Option<TransformComponent>,
 
-    /// Game-defined **entity type key** (e.g., `"Player"`, `"Crate"`, …).
+    /// Project-defined **entity type key** (e.g., `"Player"`, `"Crate"`, …).
     ///
     /// This is used to look up spawn/despawn handlers in the network manager.
     pub entity_type: String,

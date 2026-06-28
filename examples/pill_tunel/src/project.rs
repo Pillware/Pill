@@ -1,4 +1,8 @@
-use pill_engine::{define_component, game::*};
+use pill_engine::define_component;
+use pill_engine::project::*;
+
+pub struct Project {}
+create_project!(Project {}, PillProject);
 
 // --- Scene constants ---------------------------------------------------------
 
@@ -127,7 +131,7 @@ define_component!(PillParticleComponent {
 });
 define_component!(HeroPillComponent {});
 
-pub struct WebGame {}
+pub struct WebProject {}
 
 // --- Systems -----------------------------------------------------------------
 
@@ -184,9 +188,9 @@ fn camera_drift_system(engine: &mut Engine) -> Result<()> {
     Ok(())
 }
 
-// --- Game --------------------------------------------------------------------
+// --- Project --------------------------------------------------------------------
 
-impl PillGame for WebGame {
+impl PillProject for WebProject {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;

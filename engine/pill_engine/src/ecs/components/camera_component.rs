@@ -117,7 +117,7 @@ impl CameraComponent {
     }
 }
 
-// This needed so that renderer can get renderer camera handle from camera component while it is still hidden in game API
+// This needed so that renderer can get renderer camera handle from camera component while it is still hidden in project API
 pub fn get_renderer_resource_handle_from_camera_component(
     camera_component: &CameraComponent,
 ) -> RendererCameraHandle {

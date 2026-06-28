@@ -18,9 +18,9 @@ pub struct System {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum UpdatePhase {
-    PreGame,
-    Game,
-    PostGame,
+    PreProject,
+    Project,
+    PostProject,
 }
 
 impl Display for UpdatePhase {
@@ -30,7 +30,7 @@ impl Display for UpdatePhase {
 }
 
 pub struct SystemManager {
-    // Outer Vec preserves phase execution order (PreGame → Game → PostGame).
+    // Outer Vec preserves phase execution order (PreProject → Project → PostProject).
     // Inner Vec preserves system registration order within each phase.
     pub(crate) update_phases: Vec<(UpdatePhase, Vec<(String, System)>)>,
 }
@@ -40,9 +40,9 @@ impl SystemManager {
         // Register phases
         Self {
             update_phases: vec![
-                (UpdatePhase::PreGame, Vec::new()),
-                (UpdatePhase::Game, Vec::new()),
-                (UpdatePhase::PostGame, Vec::new()),
+                (UpdatePhase::PreProject, Vec::new()),
+                (UpdatePhase::Project, Vec::new()),
+                (UpdatePhase::PostProject, Vec::new()),
             ],
         }
     }

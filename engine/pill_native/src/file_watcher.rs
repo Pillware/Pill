@@ -152,7 +152,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
 
-        let file_path = root.join("game.rs");
+        let file_path = root.join("project.rs");
         fs::write(&file_path, "v1").unwrap();
 
         let mut watcher = FileWatcher::new(root.clone()).set_recursive(true);

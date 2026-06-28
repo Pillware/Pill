@@ -1,4 +1,4 @@
-# devops/tests/Dockerfile — Pill-Engine CI image (Alpine)
+# devops/tests/Dockerfile - Pill-Engine CI image (Alpine)
 #
 # Build once:
 #   docker build -t pill-ci -f devops/tests/Dockerfile .

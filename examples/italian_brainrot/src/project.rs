@@ -1,9 +1,12 @@
-use pill_engine::{define_component, game::*};
+use pill_engine::define_component;
+use pill_engine::project::*;
+
+pub struct Project {}
+create_project!(Project {}, PillProject);
+
 define_component!(TagAlphaComponent {});
 
-pub struct Game {}
-
-impl PillGame for Game {
+impl PillProject for Project {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         // --- Basic setup ---
 

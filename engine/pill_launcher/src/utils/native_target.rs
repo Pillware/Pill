@@ -5,7 +5,7 @@
 // - CLI flag registration for build-related actions.
 // - Cargo stderr parsing for user-friendly error messages.
 // - ANSI terminal detection (cached).
-// - build_project(): compile pill_project + pill_native + pill_runtime.
+// - build_project(): compile project + pill_native + pill_runtime.
 // - run_project(): build then launch the standalone executable.
 
 use anyhow::{bail, Context, Error, Result};
@@ -48,7 +48,7 @@ pub(crate) fn register_build_flags(
 
 /// Build and then launch the native standalone executable for a project.
 /// Supports optional stdout capture (for benchmarks) and --features passthrough.
-/// Sets PILL_PROJECT_DIR, PILL_ENGINE_WORKSPACE_DIR, and other env vars.
+/// Sets PROJECT_DIR, PILL_ENGINE_WORKSPACE_DIR, and other env vars.
 pub(crate) fn run_project(
     project_directory_path: &PathBuf,
     output_directory_path: &PathBuf,
@@ -82,7 +82,8 @@ pub(crate) fn run_project(
     cmd.current_dir(output_directory_path)
         .env("PILL_LAUNCHER_BIN", &launcher_bin)
         .env("PILL_ENGINE_WORKSPACE_DIR", &engine_workspace)
-        .env("PILL_PROJECT_DIR", project_directory_path)
+        .env("PROJECT_DIR", project_directory_path)
+        .env("PILL_COMPILE_MODE", compile_mode.to_string())
         .env(
             "PILL_STANDALONE_LAYOUT",
             get_standalone_layout_for_compile_mode(compile_mode),
@@ -129,16 +130,15 @@ pub(crate) fn run_project(
         })?;
 
         if !status.success() {
-            eprintln!(
-                "Project exited with error code: {}",
-                status.code().map_or("unknown".into(), |c| c.to_string())
-            );
+            let code = status.code().map_or("unknown".into(), |c| c.to_string());
+            eprintln!("Project exited with error code: {code}");
+            bail!("Project exited with error code: {code}");
         }
         Ok(None)
     }
 }
 
-/// Build pill_project + pill_native + pill_runtime via cargo in the engine workspace.
+/// Build project + pill_native + pill_runtime via cargo in the engine workspace.
 /// Copies the standalone executable and dynamic libraries into the output directory.
 /// Supports --features, hot-reload, PlantUML pre-rendering, and per-project target dirs.
 pub(crate) fn build_project(
@@ -155,15 +155,20 @@ pub(crate) fn build_project(
     let hot_reload_child = *compile_mode == CompileMode::HotReload
         && std::env::var("PILL_HOT_RELOAD_CHILD").ok().as_deref() == Some("1");
 
-    let engine_workspace_directory_path =
+    let (engine_workspace_directory_path, _workspace_guard) =
         prepare_workspace_for_project(project_directory_path, compile_mode)?;
+    // _workspace_guard restores engine/Cargo.toml on drop
 
     let project_title =
         get_project_title(project_directory_path).context("Failed to get project title")?;
 
-    let cargo_target_dir = engine_workspace_directory_path
-        .join("target_projects")
-        .join(&project_title);
+    let cargo_target_dir = if let Ok(shared) = std::env::var("PILL_TARGET_DIR") {
+        PathBuf::from(shared)
+    } else {
+        engine_workspace_directory_path
+            .join("target_projects")
+            .join(&project_title)
+    };
 
     let pill_engine_dir = get_path(Location::PillEngineCrate);
     if *compile_mode != CompileMode::HotReload {
@@ -175,7 +180,7 @@ pub(crate) fn build_project(
     let mut arguments = vec![
         "build",
         "-p",
-        "pill_project",
+        "project",
         "-p",
         "pill_native",
         "-p",
@@ -314,8 +319,7 @@ pub(crate) fn build_project(
         stage_packaged_resource_files(project_directory_path, &data_directory)?;
     }
 
-    let project_source =
-        compilation_artifacts_folder_path.join(dynamic_library_name("pill_project"));
+    let project_source = compilation_artifacts_folder_path.join(dynamic_library_name("project"));
     let runtime_source =
         compilation_artifacts_folder_path.join(dynamic_library_name("pill_runtime"));
 
@@ -335,11 +339,11 @@ pub(crate) fn build_project(
     if *compile_mode != CompileMode::HotReload || !hot_reload_child {
         if copy_file_if_newer(
             &project_source,
-            &data_directory.join(dynamic_library_name("pill_project")),
+            &data_directory.join(dynamic_library_name("project")),
         )? {
             println!("Copied project dynamic library");
             #[cfg(target_os = "macos")]
-            codesign_ad_hoc(&data_directory.join(dynamic_library_name("pill_project")))?;
+            codesign_ad_hoc(&data_directory.join(dynamic_library_name("project")))?;
         } else {
             println!("Skipping copying of project dynamic library");
         }
@@ -358,7 +362,7 @@ pub(crate) fn build_project(
     if *compile_mode == CompileMode::HotReload {
         if copy_file_if_newer(
             &project_source,
-            &data_directory.join(dynamic_library_name("pill_project_hot_reloaded")),
+            &data_directory.join(dynamic_library_name("project_hot_reloaded")),
         )? {
             println!("Copied project hot-reload dynamic library");
         } else {

@@ -2,7 +2,7 @@ use crate::app_config::EngineProcessInfo;
 use crate::{app_config::EngineConfig, config::*, ecs::*, graphics::*, resources::*};
 
 use pill_core::{
-    debug, error, get_game_error_message, get_type_name, info, EngineError, LogContext,
+    debug, error, get_project_error_message, get_type_name, info, EngineError, LogContext,
     PillSlotMapKey, PillStyle, PillTypeMap, Timer, Vector2f,
 };
 
@@ -12,14 +12,13 @@ use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
 // -------------------------------------------------------------------------------
 
-pub type Game = Box<dyn PillGame>;
 pub type KeyboardKey = winit::keyboard::KeyCode;
 pub type MouseButton = winit::event::MouseButton;
 
-/// Engine <-> Game interface
+/// Engine <-> Project interface
 ///
-/// Entry point of the game project. Mandatory to implement.
-pub trait PillGame {
+/// Entry point of the project. Mandatory to implement.
+pub trait PillProject {
     fn start(&self, engine: &mut Engine) -> Result<()>;
 }
 
@@ -27,7 +26,7 @@ pub trait PillGame {
 pub struct Engine {
     pub(crate) config: EngineConfig,
     pub(crate) process: EngineProcessInfo,
-    pub(crate) game: Option<Game>,
+    pub(crate) project: Option<Box<dyn PillProject>>,
     pub(crate) renderer: Box<dyn PillRenderer>,
     pub(crate) scene_manager: SceneManager,
     pub(crate) system_manager: SystemManager,
@@ -36,9 +35,9 @@ pub struct Engine {
     pub(crate) input_queue: VecDeque<InputEvent>,
     pub(crate) render_queue: Vec<RenderQueueItem>,
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
-    pub(crate) game_resources_directory_path: std::path::PathBuf,
+    pub(crate) project_resources_directory_path: std::path::PathBuf,
     pub(crate) frame_delta_time: f32, // In milliseconds
-    pub(crate) exit_requested: bool,  // Set by game to request graceful shutdown
+    pub(crate) exit_requested: bool,  // Set by project to request graceful shutdown
     pub(crate) frame_count: u64,      // Monotonic counter, incremented each update()
 }
 
@@ -51,7 +50,7 @@ impl Engine {
         self.exit_requested = true;
     }
 
-    /// Whether the game has requested shutdown.
+    /// Whether the pill project has requested shutdown.
     pub fn is_exit_requested(&self) -> bool {
         self.exit_requested
     }
@@ -79,8 +78,8 @@ impl Engine {
 impl Engine {
     #[cfg(not(feature = "headless"))]
     pub fn new(
-        game: Box<dyn PillGame>,
-        game_resources_directory_path: std::path::PathBuf,
+        project: Box<dyn PillProject>,
+        project_resources_directory_path: std::path::PathBuf,
         renderer: Box<dyn PillRenderer>,
         config: EngineConfig,
         process: EngineProcessInfo,
@@ -92,7 +91,7 @@ impl Engine {
         Self {
             config,
             process,
-            game: Some(game),
+            project: Some(project),
             renderer,
             scene_manager: SceneManager::new(max_entity_count),
             system_manager: SystemManager::new(),
@@ -101,7 +100,7 @@ impl Engine {
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
-            game_resources_directory_path,
+            project_resources_directory_path,
             frame_delta_time: 0.0,
             exit_requested: false,
             frame_count: 0,
@@ -109,7 +108,11 @@ impl Engine {
     }
 
     #[cfg(feature = "headless")]
-    pub fn new(game: Box<dyn PillGame>, config: EngineConfig, process: EngineProcessInfo) -> Self {
+    pub fn new(
+        project: Box<dyn PillProject>,
+        config: EngineConfig,
+        process: EngineProcessInfo,
+    ) -> Self {
         let max_entity_count = config
             .get_int("MAX_ENTITIES")
             .unwrap_or(MAX_ENTITIES as i64) as usize;
@@ -118,7 +121,7 @@ impl Engine {
         Self {
             config,
             process,
-            game: Some(game),
+            project: Some(project),
             renderer: dummy_renderer,
             scene_manager: SceneManager::new(max_entity_count),
             system_manager: SystemManager::new(),
@@ -127,7 +130,7 @@ impl Engine {
             input_queue: VecDeque::new(),
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
-            game_resources_directory_path: std::path::PathBuf::new(),
+            project_resources_directory_path: std::path::PathBuf::new(),
             frame_delta_time: 0.0.into(),
             exit_requested: false,
             frame_count: 0,
@@ -307,33 +310,33 @@ impl Engine {
         Ok(())
     }
 
-    fn start_game(&mut self) -> Result<()> {
-        info!(LogContext::Engine => "Starting {}", "Game".module_object_style());
+    fn start_project(&mut self) -> Result<()> {
+        info!(LogContext::Engine => "Starting {}", "Project".module_object_style());
 
-        let game = self
-            .game
+        let project = self
+            .project
             .take()
-            .ok_or(EngineError::Other("Cannot get game".to_string()))?;
-        let stop_on_game_errors = self
+            .ok_or(EngineError::Other("Cannot get project".to_string()))?;
+        let stop_on_project_errors = self
             .config
-            .get_bool("PANIC_ON_GAME_ERRORS")
-            .unwrap_or(PANIC_ON_GAME_ERRORS);
-        let result = game.start(self);
-        match stop_on_game_errors {
-            true => result.context(format!("{} error", "Game".module_object_style()))?,
+            .get_bool("PANIC_ON_PROJECT_ERRORS")
+            .unwrap_or(PANIC_ON_PROJECT_ERRORS);
+        let result = project.start(self);
+        match stop_on_project_errors {
+            true => result.context(format!("{} error", "Project".module_object_style()))?,
             false => {
-                if let Some(message) = get_game_error_message(result) {
+                if let Some(message) = get_project_error_message(result) {
                     error!(LogContext::Engine => "{}", message);
                 }
             }
         }
-        self.game = Some(game);
+        self.project = Some(project);
         Ok(())
     }
 
     /// Initializes Pill Engine
     ///
-    /// Creates default global components, adds default systems, creates default resources, initializes game
+    /// Creates default global components, adds default systems, creates default resources, initializes pill project
     pub fn initialize(&mut self, window_size: Option<winit::dpi::PhysicalSize<u32>>) -> Result<()> {
         info!(LogContext::Engine => "Initializing {}", "Engine".module_object_style());
 
@@ -406,29 +409,29 @@ impl Engine {
         self.system_manager.add_system(
             "build_status_system",
             build_status_system,
-            UpdatePhase::PostGame,
+            UpdatePhase::PostProject,
         )?;
 
         // Create default resources
         self.create_default_resources()
             .context("Failed to create default resources")?;
 
-        // Start game
-        self.start_game()?;
+        // Start pill project
+        self.start_project()?;
 
         Ok(())
     }
 
     /// Main engine update function
     ///
-    /// Runs all systems in order: PreGame -> Game -> PostGame
+    /// Runs all systems in order: PreProject -> Project -> PostProject
     pub fn update(&mut self, delta_time: std::time::Duration) {
         self.frame_count += 1;
 
-        let stop_on_game_errors = self
+        let stop_on_project_errors = self
             .config
-            .get_bool("PANIC_ON_GAME_ERRORS")
-            .unwrap_or(PANIC_ON_GAME_ERRORS);
+            .get_bool("PANIC_ON_PROJECT_ERRORS")
+            .unwrap_or(PANIC_ON_PROJECT_ERRORS);
 
         // Run systems
         for update_phase_index in 0..self.system_manager.update_phases.len() {
@@ -466,10 +469,10 @@ impl Engine {
                         format!("{:?}", update_phase.clone()),
                     ));
 
-                    if update_phase == UpdatePhase::Game && stop_on_game_errors {
+                    if update_phase == UpdatePhase::Project && stop_on_project_errors {
                         result.unwrap(); // Panic on error if configured
                     } else if let Err(err) = result {
-                        if let Some(message) = get_game_error_message(Err(err)) {
+                        if let Some(message) = get_project_error_message(Err(err)) {
                             error!("{}", message);
                         }
                     }
@@ -591,11 +594,11 @@ impl Engine {
 
 // --- API ------------------------------------------------------------------
 
-/// Pill Engine game API
+/// Pill Engine pill project API
 impl Engine {
     // --- System API ---
 
-    /// Adds game-defined system to the game update phase
+    /// Adds pill project-defined system to the project update phase
     pub fn add_system(
         &mut self,
         name: &str,
@@ -606,33 +609,33 @@ impl Engine {
             "System".general_object_style(),
             name.name_style(),
             "UpdatePhase".specific_object_style(),
-            "Game".name_style()
+            "Project".name_style()
         );
 
         self.system_manager
-            .add_system(name, system_function, UpdatePhase::Game)
+            .add_system(name, system_function, UpdatePhase::Project)
             .context(format!("Adding {} failed", "System".general_object_style()))
     }
 
-    /// Removes game-defined system
+    /// Removes pill project-defined system
     pub fn remove_system(&mut self, name: &str) -> Result<()> {
         debug!(
             "Removing {} {} from {} {}",
             "System".general_object_style(),
             name.name_style(),
             "UpdatePhase".specific_object_style(),
-            "Game".name_style()
+            "Project".name_style()
         );
 
         self.system_manager
-            .remove_system(name, UpdatePhase::Game)
+            .remove_system(name, UpdatePhase::Project)
             .context(format!(
                 "Removing {} failed",
                 "System".general_object_style()
             ))
     }
 
-    /// Toggles game-defined system
+    /// Toggles pill project-defined system
     pub fn toggle_system(
         &mut self,
         name: &str,
@@ -663,11 +666,11 @@ impl Engine {
             "System".general_object_style(),
             name.name_style(),
             "UpdatePhase".specific_object_style(),
-            "Game".name_style()
+            "Project".name_style()
         );
 
         self.system_manager
-            .get_system_timer(name, UpdatePhase::Game)
+            .get_system_timer(name, UpdatePhase::Project)
             .unwrap()
             .unwrap()
     }
@@ -1116,7 +1119,7 @@ impl Engine {
     where
         T: Resource<Storage = ResourceStorage<T>>,
     {
-        // TODO: Doesnt work when called from game
+        // TODO: Doesnt work when called from pill project
         info!(LogContext::Resources => "Adding {} {} {}", "Resource".general_object_style(), get_type_name::<T>().specific_object_style(), resource.get_name().name_style());
 
         self.add_resource_internal(resource, true)

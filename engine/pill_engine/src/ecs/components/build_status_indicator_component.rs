@@ -1,19 +1,8 @@
 #![cfg(feature = "debug_ui")]
 
-use std::collections::HashMap;
+use crate::ecs::components::{GlobalComponent, GlobalComponentStorage};
 
-use crate::{
-    ecs::{
-        components::{GlobalComponent, GlobalComponentStorage},
-        UpdatePhase,
-    },
-    engine::Engine,
-};
-
-use egui::Ui;
-use pill_core::{PillTypeMapKey, Timer, TimerRecord};
-
-use pill_core::{ErrorContext, Result};
+use pill_core::PillTypeMapKey;
 
 #[derive(Copy, Clone)]
 pub enum BuildStatus {
@@ -25,7 +14,7 @@ pub enum BuildStatus {
 // display the build type + target
 // also display the last hot-reload status (compiled the code and reloaded or failed) with red/green
 // light indicator
-// updated every time we try hot-reloading and build_game
+// updated every time we try hot-reloading and build_project
 pub struct BuildStatusIndicatorComponent {
     pub(crate) last_build_status: BuildStatus,
 }

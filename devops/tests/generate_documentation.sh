@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# =============================================================================
-# devops/tests/generate_documentation.sh — Pill Engine documentation generator
-# =============================================================================
-#
-# Generates rustdoc for the engine crates via `PillLauncher -a docs`.
-# Sources run_basic_tests.sh for shared helpers (binary discovery, report_*,
-# test workspace, etc.).
-#
-# Usage:
-#   bash devops/tests/generate_documentation.sh          # generate docs
-#   bash devops/tests/generate_documentation.sh test     # generate + verify
-#   bash devops/tests/generate_documentation.sh --help   # this message
+
+# REQUIREMENTS: Rust toolchain (cargo), a compiled PillLauncher binary
+#               (auto-discovered or set via PILL_LAUNCHER_BIN).
+
+# DESCRIPTION: Generate rustdoc documentation for all Pill crates
+#   via PillLauncher. Supports two output profiles: project_dev (public API
+#   with project + internal features) and engine_dev (private items +
+#   pill_core).
+
+# USAGE: bash devops/tests/generate_documentation.sh
+
+# EXAMPLE USAGE:
+#   bash devops/tests/generate_documentation.sh
+
+# --- SCRIPT ---
 
 set -euo pipefail
 
@@ -18,54 +21,43 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
 
-# ===========================================================================
+# ---------------------------------------------------------------------------
 # Documentation generation
-# ===========================================================================
+# ---------------------------------------------------------------------------
 
-generate_docs() {
-    echo "=== Generating Pill Engine documentation ==="
-    local docs_output_dir="$test_workspace_root/docs-out"
-    mkdir -p "$docs_output_dir"
+generate_documentation() {
+    echo ""
+    echo "------------------------------------------------------------------"
+    echo "Generating Pill documentation"
+    local docs_output_directory="$test_workspace_root/documentation_output"
+    mkdir -p "$docs_output_directory"
 
-    echo "    (this may take a moment)"
-    local launcher_output exit_code
-    launcher_output=$(invoke_launcher -a docs -o "$docs_output_dir" 2>&1) && exit_code=$? || exit_code=$?
+    echo "Running docs generation - this may take a moment"
+    local documentation_output documentation_exit_code=0
+    documentation_output=$(invoke_launcher -a docs -o "$docs_output_directory" 2>&1) || documentation_exit_code=$?
 
-    if [ "$exit_code" -eq 0 ]; then
-        report_pass "docs generation succeeded"
-        echo ""
-        echo "Documentation generated at: $docs_output_dir/docs/"
-        echo "  project_dev/ — public API (game + internal features)"
-        echo "  engine_dev/  — private items + pill_core"
-    elif echo "$launcher_output" | grep -qi "plantuml\|Cannot locate\|manifest"; then
-        report_skip "docs generation" "PlantUML not installed or manifest issue"
+    if [ "$documentation_exit_code" -eq 0 ]; then
+        report_pass "documentation generated"
+        if [ -d "$docs_output_directory/docs" ]; then
+            report_pass "documentation output directory exists"
+        else
+            report_fail "documentation output" "missing $docs_output_directory/docs/"
+        fi
+    elif echo "$documentation_output" | grep -qi "plantuml\|Cannot locate\|manifest"; then
+        report_skip "documentation generation" "PlantUML not installed or manifest issue"
     else
-        report_fail "docs generation" "exit $exit_code: ${launcher_output:0:200}"
+        report_fail "documentation generation" "exit $documentation_exit_code"
     fi
 }
 
-# ===========================================================================
-# Dispatch (only when executed directly)
-# ===========================================================================
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
 
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
-    return 0  # sourced — expose generate_docs function
+    return 0
 fi
 
-case "${1:-test}" in
-    test)
-        generate_docs
-        print_summary
-        ;;
-    --help|-h|help)
-        echo "Usage: $0 [test|--help]"
-        echo ""
-        echo "Commands:"
-        echo "  test    Generate docs and report results (default)"
-        echo "  --help  Show this message"
-        ;;
-    *)
-        generate_docs
-        print_summary
-        ;;
-esac
+generate_documentation
+print_summary
+

@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-
 use pill_core::Result;
-use std::str::FromStr;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompileMode {

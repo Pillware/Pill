@@ -10,9 +10,13 @@ mod renderer;
 // --- Use ---
 
 pub use renderer::{
-    PillRenderer, Renderer, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+    PillRenderer, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
     RendererShaderHandle, RendererTextureHandle,
 };
+// Renderer type alias (Box<dyn PillRenderer>) is unused —
+// callers use Box<dyn PillRenderer> directly.
+#[allow(unused_imports)]
+pub use renderer::Renderer;
 
 #[cfg(feature = "headless")]
 pub use self::dummy_renderer::DummyRenderer;

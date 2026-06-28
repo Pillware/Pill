@@ -283,7 +283,7 @@ fn client_try_reconnect(engine: &mut Engine) -> Result<()> {
 
 /// Client-initiated graceful disconnect (sends `Exit`, updates state, closes).
 ///
-/// Safe to call from UI or game logic wanting to go offline.
+/// Safe to call from UI or project logic wanting to go offline.
 pub fn client_go_offline(engine: &mut Engine, reason: &str) -> Result<()> {
     let time = engine.get_global_component::<TimeComponent>()?.time;
 

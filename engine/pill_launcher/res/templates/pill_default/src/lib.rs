@@ -1,4 +1,7 @@
-mod game;
-use pill_engine::game::create_game;
+mod project;
+use pill_engine::project::create_project;
 
-create_game!(crate::game::Game {}, pill_engine::game::PillGame);
+create_project!(
+    crate::project::Project {},
+    pill_engine::project::PillProject
+);

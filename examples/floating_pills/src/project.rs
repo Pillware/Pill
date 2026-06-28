@@ -1,9 +1,13 @@
 #![allow(dead_code)]
-use pill_engine::{define_component, define_global_component, game::*};
+use pill_engine::project::*;
+use pill_engine::{define_component, define_global_component, project::*};
 use rand::{thread_rng, Rng};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::Instant;
+
+pub struct Project {}
+create_project!(Project {}, PillProject);
 
 pub const FLOATING_OBJECT_SPAWN_BATCH_COUNT: usize = 100;
 pub const FLOATING_OBJECT_REMOVE_BATCH_COUNT: usize = 10;
@@ -57,14 +61,12 @@ define_global_component!(BenchComponent {
     report_every_frames: u32,
 });
 
-pub struct Game {}
-
-impl PillGame for Game {
+impl PillProject for Project {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         // --- Basic setup ---
 
         // Disable build-in audio system
-        engine.toggle_system("audio_system", UpdatePhase::PostGame, false)?;
+        engine.toggle_system("audio_system", UpdatePhase::PostProject, false)?;
 
         // Create scene
         let active_scene = engine.create_scene("default")?;
@@ -291,7 +293,7 @@ fn demo_control_system(engine: &mut Engine) -> Result<()> {
         demo_state.floating_objects_movement_enabled =
             !demo_state.floating_objects_movement_enabled;
         let enabled = demo_state.floating_objects_movement_enabled;
-        engine.toggle_system("objects_movement", UpdatePhase::Game, enabled)?;
+        engine.toggle_system("objects_movement", UpdatePhase::Project, enabled)?;
     }
 
     Ok(())

@@ -159,12 +159,12 @@ impl Resource for Shader {
         // so there is no runtime compile step.
         let vertex_bytes = read_wgsl_bytes(
             &self.vertex_shader_resource_loader,
-            &engine.game_resources_directory_path,
+            &engine.project_resources_directory_path,
             "vertex",
         )?;
         let fragment_bytes = read_wgsl_bytes(
             &self.fragment_shader_resource_loader,
-            &engine.game_resources_directory_path,
+            &engine.project_resources_directory_path,
             "fragment",
         )?;
         let vertex_wgsl =

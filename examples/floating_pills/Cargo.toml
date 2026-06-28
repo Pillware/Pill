@@ -1,14 +1,15 @@
 [package]
-name = "pill_project"
+name = "floating_pills"
 version = "0.1.0"
 edition = "2021"
 workspace = "NO_PATH"
 
 [lib]
 crate-type = ["cdylib"]
+path = "src/project.rs"
 
 [dependencies]
-pill_engine = {path = "../../engine/pill_engine", features = ["game"]}
+pill_engine = { path = "../../engine/pill_engine", features = ["project"] }
 
 rand = "0.8.4"
 glam = { version = "0.30.8", features = ["serde"] }

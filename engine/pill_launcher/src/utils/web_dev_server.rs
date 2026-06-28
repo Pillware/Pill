@@ -1,7 +1,7 @@
 // This file implements a dev HTTP server for WASM targets with live reload.
 //
 // Responsibilities:
-// - run(): entry point — builds the WASM bundle, then serves build/wasm/ on
+// - run(): entry point - builds the WASM bundle, then serves build/wasm/ on
 //   the given port with long-poll reload when files change.
 // - Injects a small <script> into HTML responses that polls /__reload.
 // - Watches the build output directory for file changes (polling every 500ms).
@@ -49,7 +49,7 @@ pub fn run(project_directory_path: &Path, compile_mode: &CompileMode, port: u16)
     let server = tiny_http::Server::http(&address).map_err(|e| Error::msg(e.to_string()))?;
     println!();
     println!("Serving {} at http://{}", build_wasm_dir.display(), address);
-    println!("Live reload enabled — the page will refresh on wasm rebuilds.");
+    println!("Live reload enabled - the page will refresh on wasm rebuilds.");
     println!("Ctrl+C to stop.");
 
     for request in server.incoming_requests() {
@@ -106,7 +106,7 @@ fn handle_request(
     }
     let path = build_wasm_dir.join(relative_path);
     // Canonicalize the resolved path and verify it stays within the served root.
-    // Treat canonicalization failure as a rejection — if we cannot verify the
+    // Treat canonicalization failure as a rejection - if we cannot verify the
     // path, we must not serve the file.
     let canonical = match path.canonicalize() {
         Ok(c) => c,

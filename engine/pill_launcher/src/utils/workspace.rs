@@ -2,9 +2,10 @@
 //
 // Responsibilities:
 // - Temporarily injects the project into engine/Cargo.toml's workspace members.
-// - Cleans stale build artifacts when switching between different project projects.
+// - Automatically restores engine/Cargo.toml on drop (WorkspaceGuard).
+// - Cleans stale build artifacts when switching between different projects.
 // - Rewrites the project's own Cargo.toml workspace path to point at the engine workspace.
-// - Ensures pill_native and pill_project share type IDs by compiling in the same workspace.
+// - Ensures pill_native and project share type IDs by compiling in the same workspace.
 
 use anyhow::{bail, Context, Error, Result};
 use std::{
@@ -16,22 +17,44 @@ use crate::types::*;
 use crate::utils::files::*;
 use crate::utils::paths::*;
 
+/// Restores engine/Cargo.toml to its original content when dropped.
+/// Keeps the workspace clean between builds - no user-specific paths
+/// left behind that could accidentally be committed.
+pub(crate) struct WorkspaceGuard {
+    manifest_path: PathBuf,
+    original: String,
+}
+
+impl Drop for WorkspaceGuard {
+    fn drop(&mut self) {
+        let _ = fs::write(&self.manifest_path, &self.original);
+    }
+}
+
+impl WorkspaceGuard {
+    /// Commit the current state - don't restore on drop.  Use this when
+    /// you want the project to stay linked (e.g. for IDE/rust-analyzer).
+    #[allow(dead_code)]
+    pub(crate) fn commit(self) {
+        // Leak self so Drop doesn't run.  Intentionally forget the guard
+        // to persist the workspace modification.
+        let _ = std::mem::ManuallyDrop::new(self);
+    }
+}
+
 /// Prepare the engine workspace so the given project can be built.
 ///
-/// Side effects:
-/// - May clean old project artifacts from engine/target/.
-/// - Rewrites engine/Cargo.toml to include the project as a workspace member.
-/// - Rewrites the project's Cargo.toml workspace field if needed.
-///
-/// Returns the engine workspace directory path.
+/// Returns the engine workspace directory path and a guard that restores
+/// engine/Cargo.toml on drop.  Callers should hold the guard until cargo
+/// finishes, then let it drop (or call `.commit()` to persist).
 pub(crate) fn prepare_workspace_for_project(
     project_directory_path: &Path,
     compile_mode: &CompileMode,
-) -> Result<PathBuf> {
+) -> Result<(PathBuf, WorkspaceGuard)> {
     // Validate the project structure (Cargo.toml, res/, src/, config.ini).
     check_project_validity(project_directory_path).context("Project is invalid")?;
 
-    // Both pill_native and pill_project must compile in the same workspace so that
+    // Both pill_native and project must compile in the same workspace so that
     // type IDs (used by generics/templates) are consistent between the host and project.
     let engine_workspace_directory_path = get_path(Location::EngineCrates);
     let workspace_manifest_path = engine_workspace_directory_path.join("Cargo.toml");
@@ -43,9 +66,12 @@ pub(crate) fn prepare_workspace_for_project(
     let desired_project_path = normalize_path(project_directory_path)?;
     let desired_line = format!("    \"{}\", {}", desired_project_path, PROJECT_CRATE_MARKER);
 
-    // Determine which project (if any) is currently linked in the workspace.
-    let manifest_text = fs::read_to_string(&workspace_manifest_path)
+    // Snapshot the original manifest so we can restore it on exit.
+    let original_manifest = fs::read_to_string(&workspace_manifest_path)
         .with_context(|| format!("Failed to read {}", workspace_manifest_path.display()))?;
+
+    // Determine which project (if any) is currently linked in the workspace.
+    let manifest_text = original_manifest.clone();
 
     let mut current_linked: Option<String> = None;
     for line in manifest_text.lines() {
@@ -75,7 +101,7 @@ pub(crate) fn prepare_workspace_for_project(
             .join(get_target_directory_for_compile_mode(compile_mode));
 
         // Clean artifacts for all three workspace crates that vary per-project
-        for prefix in &["pill_project", "pill_runtime", "pill_native"] {
+        for prefix in &["project", "pill_runtime", "pill_native"] {
             let artifact_prefix = if cfg!(target_os = "windows") {
                 prefix.to_string()
             } else {
@@ -104,7 +130,7 @@ pub(crate) fn prepare_workspace_for_project(
                 },
             )?;
         } else {
-            // No project currently linked — insert a new member line before
+            // No project currently linked - insert a new member line before
             // the closing `]` of the members array.
             let manifest_text = fs::read_to_string(&workspace_manifest_path)
                 .with_context(|| format!("Failed to read {}", workspace_manifest_path.display()))?;
@@ -163,5 +189,11 @@ pub(crate) fn prepare_workspace_for_project(
         )?;
     }
 
-    Ok(engine_workspace_directory_path)
+    Ok((
+        engine_workspace_directory_path,
+        WorkspaceGuard {
+            manifest_path: workspace_manifest_path,
+            original: original_manifest,
+        },
+    ))
 }

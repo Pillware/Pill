@@ -3,7 +3,7 @@
 # and all wasm-only deps are gated behind `[target.'cfg(target_arch = "wasm32")']`
 # so workspace-wide native builds compile pill_web as a no-op.
 #
-# Per-game wiring (the WebGame struct, embedded config.ini) still lives in
+# Per-project wiring (the Project struct, embedded config.ini) still lives in
 # the launcher's wasm template (pill_web_app), which depends on this crate
 # and provides a thin `#[wasm_bindgen(start)]` shim that calls pill_web::run.
 
@@ -16,7 +16,7 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-pill_engine = { path = "../pill_engine", features = ["game", "internal"] }
+pill_engine = { path = "../pill_engine", features = ["project"] }
 pill_renderer = { path = "../pill_renderer" }
 pill_core = { path = "../pill_core" }
 

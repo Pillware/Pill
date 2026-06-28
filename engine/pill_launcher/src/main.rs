@@ -1,7 +1,7 @@
-//! PillLauncher — CLI build orchestrator for the Pill game engine.
+//! PillLauncher - CLI build orchestrator for the Pill pill project engine.
 //!
 //! Manages project scaffolding, asset pipelines, native/WASM builds,
-//! and documentation generation for Pill-based game projects.
+//! and documentation generation for Pill-based pill projects.
 
 // This file is the crate root for PillLauncher.
 //
@@ -23,11 +23,14 @@ use actions::build::Build;
 use actions::cargo_passthrough::Cargo;
 use actions::create::Create;
 use actions::docs::Docs;
+use actions::link::{Link, Unlink};
 use actions::run::Run;
 use actions::Action;
 
 fn main() {
-    let actions: [&dyn Action; 6] = [&Create, &Run, &Build, &Docs, &Cargo, &Assets];
+    let actions: [&dyn Action; 8] = [
+        &Create, &Run, &Build, &Docs, &Cargo, &Assets, &Link, &Unlink,
+    ];
 
     if let Err(e) = utils::cli::run_app(&actions) {
         eprintln!("{:#}", e);

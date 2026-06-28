@@ -65,10 +65,10 @@ macro_rules! define_component_handle {
 // --- Other ---
 
 #[inline]
-pub fn get_game_error_message(result: Result<()>) -> Option<String> {
+pub fn get_project_error_message(result: Result<()>) -> Option<String> {
     result.err().map(|e| {
         use std::error::Error;
-        let mut message = format!("Game error: {e}\n");
+        let mut message = format!("Pill project error: {e}\n");
         let mut source = e.source();
         let mut i = 0usize;
         while let Some(s) = source {
@@ -81,12 +81,17 @@ pub fn get_game_error_message(result: Result<()>) -> Option<String> {
 }
 
 #[macro_export]
-macro_rules! create_game {
-    ($game_contructor:expr, $game_trait:path) => {
+macro_rules! create_project {
+    ($project_contructor:expr, $project_trait:path) => {
         #[no_mangle]
-        pub extern "C" fn get_game() -> *mut std::ffi::c_void {
-            let game: Box<dyn $game_trait> = Box::new($game_contructor);
-            Box::into_raw(Box::new(game)) as *mut std::ffi::c_void
+        pub extern "C" fn get_project() -> *mut std::ffi::c_void {
+            let project: Box<dyn $project_trait> = Box::new($project_contructor);
+            Box::into_raw(Box::new(project)) as *mut std::ffi::c_void
+        }
+
+        /// WASM entry point — returns a boxed project for pill_web::run().
+        pub fn create_project() -> Box<dyn $project_trait> {
+            Box::new($project_contructor)
         }
     };
 }

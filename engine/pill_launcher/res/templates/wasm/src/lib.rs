@@ -1,11 +1,11 @@
-// Per-game wasm shim — minimal, only the parts that genuinely need to be
-// per-game:
-//   - the `WebGame` struct from this game's `pill_game` crate
+// Per-project wasm shim - minimal, only the parts that genuinely need to be
+// per-project:
+//   - the `WebProject` struct from this pill project's crate
 //   - the embedded `config.ini` (wasm has no filesystem at runtime, so the
-//     launcher copies the game's res/config.ini next to this lib.rs and we
+//     launcher copies the pill project's res/config.ini next to this lib.rs and we
 //     pull the bytes in via include_str!)
 // Everything else (panic hook, console_log, canvas wiring, event loop) lives
-// in `pill_web::run`. This keeps the per-game cdylib tiny and the runtime
+// in `pill_web::run`. This keeps the per-project cdylib tiny and the runtime
 // shape symmetric with `pill_native` (which is also a workspace crate).
 
 use wasm_bindgen::prelude::*;
@@ -18,5 +18,5 @@ static ALLOC: lol_alloc::AssumeSingleThreaded<lol_alloc::FreeListAllocator> =
 
 #[wasm_bindgen(start)]
 pub fn wasm_main() {
-    pill_web::run(pill_game::create_pill_game(), include_str!("../config.ini"));
+    pill_web::run(project::create_project(), include_str!("../config.ini"));
 }

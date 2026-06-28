@@ -66,7 +66,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // 1. Point the Empty example's Cargo.toml at the absolute engine path
     // so cargo doc can resolve the pill_engine dependency.  Strip the
-    // workspace = "NO_PATH" line entirely — the empty example isn't a
+    // workspace = "NO_PATH" line entirely - the empty example isn't a
     // workspace member, and leaving a valid workspace path would cause
     // "package believes it's in a workspace when it's not" errors.
     modify_file(
@@ -74,7 +74,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         &empty_cargo_toml,
         |line: String| -> String {
             if line.trim_start().starts_with("workspace") {
-                return String::new(); // remove — not a workspace member
+                return String::new(); // remove - not a workspace member
             }
             if line.contains("pill_engine") {
                 return format!(
@@ -95,9 +95,9 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         &native_cargo_toml,
         &native_cargo_toml,
         |line: String| -> String {
-            if line.contains("pill_project") {
+            if line.contains("project") {
                 return format!(
-                    "pill_project = {{path = \"{}\"}}",
+                    "project = {{path = \"{}\"}}",
                     empty_example_project_path
                         .to_string_lossy()
                         .replace("\\", "/")
@@ -192,7 +192,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
             .status()
             .context("Failed to execute command for generating core dev docs")?;
 
-        // Core docs are optional — non-fatal if they fail.
+        // Core docs are optional - non-fatal if they fail.
         if status.success() {
             println!("Core dev docs generated successfully!");
         }

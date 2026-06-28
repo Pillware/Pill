@@ -1,2 +1,2 @@
 # Empty
-Empty game project for documentation purposes
+Empty project for documentation purposes

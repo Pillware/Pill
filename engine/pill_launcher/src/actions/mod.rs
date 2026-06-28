@@ -6,7 +6,7 @@
 // - build: compile native or WASM projects.
 // - run: build and launch native projects (or serve WASM).
 // - cargo_passthrough: forward arbitrary cargo commands to the workspace.
-// - create: scaffold a new game project from template.
+// - create: scaffold a new project from template.
 // - docs: generate cargo doc for engine crates.
 
 use anyhow::Result;
@@ -17,6 +17,7 @@ pub mod build;
 pub mod cargo_passthrough;
 pub mod create;
 pub mod docs;
+pub mod link;
 pub mod run;
 
 /// Common interface for every CLI action.

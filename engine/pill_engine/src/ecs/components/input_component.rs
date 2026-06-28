@@ -4,7 +4,9 @@ use crate::{
     internal::NUM_SUPPORTED_GAMEPADS,
 };
 
-use pill_core::{PillError, PillTypeMapKey, Result, Vector2f};
+#[cfg(target_arch = "wasm32")]
+use pill_core::Result;
+use pill_core::{PillError, PillTypeMapKey, Vector2f};
 use std::collections::{HashMap, VecDeque};
 use winit::event::{ElementState, MouseScrollDelta};
 

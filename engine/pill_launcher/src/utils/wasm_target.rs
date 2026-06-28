@@ -1,7 +1,7 @@
 // This file orchestrates WASM/WebGPU builds via wasm-pack.
 //
 // Responsibilities:
-// - build(): entry point — copies a WASM template into a scratch directory,
+// - build(): entry point - copies a WASM template into a scratch directory,
 //   rewrites Cargo.toml path-deps to absolute paths, runs wasm-pack, flattens
 //   outputs into build/wasm/, and prints a size report on release builds.
 // - Uses a scratch-copy strategy: nothing is written under engine/ during a
@@ -60,7 +60,7 @@ pub fn build_project(
         &build_wasm_dir.join("res"),
     )?;
 
-    // Size budget check on release — fail if the binary exceeds the limit.
+    // Size budget check on release - fail if the binary exceeds the limit.
     if *compile_mode == CompileMode::Release {
         // Enforce optional size budget (analysis moved to size-benchmark action).
         if let Some(limit) = max_size_kb {

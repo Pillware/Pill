@@ -1,4 +1,4 @@
-# City - ECS Benchmark & Game Example
+# City - ECS Benchmark & Project Example
 
 A Pill example that serves double duty: a playable city simulation in normal
 mode, and a reproducible performance benchmark with two variants (windowed / headless).
@@ -7,27 +7,27 @@ mode, and a reproducible performance benchmark with two variants (windowed / hea
 
 | Mode                 | Feature flag         | Description                                                          |
 | -------------------- | -------------------- | -------------------------------------------------------------------- |
-| Normal game          | *(none)*             | Full city with plane, pill, camera, spawner, citizen movement        |
+| Normal pill project  | *(none)*             | Full city with plane, pill, camera, spawner, citizen movement        |
 | Benchmark (windowed) | `benchmark_window`   | 10 000 citizens with PBR rendering, auto-exits after N frames        |
 | Benchmark (headless) | `benchmark_headless` | 10 000 citizens pure ECS, no GPU / window, auto-exits after N frames |
 
-The normal game and both benchmarks share zero code - `lib.rs` selects which file to
+The normal pill project and both benchmarks share zero code - `lib.rs` selects which file to
 compile at build time via `#[path]`.
 
 ## Quick start
 
 ```bash
-# Normal game
+# Normal pill project
 PillLauncher -a run -p examples/city
 
 # Windowed benchmark (needs GPU / display)
 PillLauncher -a run -p examples/city --features benchmark_window
 
 # Headless benchmark (CI-friendly, no GPU)
-cargo run -p pill_game --features benchmark_headless --bin city-bench-headless
+cargo run -p pill_project --features benchmark_headless --bin city-bench-headless
 ```
 
-## Normal game controls
+## Normal pill project controls
 
 | Key     | Action                                 |
 | ------- | -------------------------------------- |
@@ -85,8 +85,8 @@ BENCHMARK_FRAMES=2000
 
 ```
 src/
-├── lib.rs           # selects game.rs or bench.rs via #[path] + feature gates
-├── game.rs          # normal city game (no cfg gates)
+├── lib.rs           # selects project.rs or bench.rs via #[path] + feature gates
+├── project.rs          # normal city pill project (no cfg gates)
 └── bench.rs         # unified benchmark (shared ECS, rendering gated via cfg)
 ```
 

@@ -36,20 +36,22 @@ unsafe fn cstr(p: *const c_char) -> Result<&'static str> {
         .map_err(|e| -> PillError { e.to_string().into() })
 }
 
-fn load_game(game_library_path: &str) -> Result<(Library, Box<dyn PillGame>)> {
+fn load_project(project_library_path: &str) -> Result<(Library, Box<dyn PillProject>)> {
     // SAFETY:
-    // As long as the caller stops ALL functions running in the game + engine
-    // we are fine to unload + load a new Box<dyn PillGame>
-    type CreateGameFn = unsafe extern "C" fn() -> *mut c_void;
-    let game_dynamic_library = unsafe {
-        Library::new(game_library_path).map_err(|e| -> PillError {
-            format!("Failed to load game dynamic library at {game_library_path}: {e}").into()
+    // As long as the caller stops ALL functions running in the pill project + engine
+    // we are fine to unload + load a new Box<dyn PillProject>
+    type CreateProjectFn = unsafe extern "C" fn() -> *mut c_void;
+    let project_dynamic_library = unsafe {
+        Library::new(project_library_path).map_err(|e| -> PillError {
+            format!("Failed to load pill project dynamic library at {project_library_path}: {e}")
+                .into()
         })?
     };
-    let get_game_function: Symbol<CreateGameFn> = unsafe { game_dynamic_library.get(b"get_game") }
-        .map_err(|e| -> PillError { format!("Missing symbol get_game: {e}").into() })?;
-    let game = unsafe { *Box::from_raw(get_game_function() as *mut Box<dyn PillGame>) };
-    Ok((game_dynamic_library, game))
+    let get_project_function: Symbol<CreateProjectFn> =
+        unsafe { project_dynamic_library.get(b"get_project") }
+            .map_err(|e| -> PillError { format!("Missing symbol get_project: {e}").into() })?;
+    let project = unsafe { *Box::from_raw(get_project_function() as *mut Box<dyn PillProject>) };
+    Ok((project_dynamic_library, project))
 }
 
 struct Runtime {
@@ -66,18 +68,18 @@ struct Runtime {
 
     // Keep engine ptr for hot-reload
     engine: Option<Engine>,
-    game_library: Option<Library>,
+    project_library: Option<Library>,
 }
 
 impl Runtime {
-    fn build_engine(&self, game: Box<dyn PillGame>) -> Result<Engine> {
+    fn build_engine(&self, project: Box<dyn PillProject>) -> Result<Engine> {
         let renderer: Box<dyn PillRenderer> = Box::new(<Renderer as PillRenderer>::new(
             Arc::clone(&self.window),
             self.config.clone(),
         )?);
 
         let mut engine = Engine::new(
-            game,
+            project,
             self.resource_directory.clone(),
             renderer,
             self.config.clone(),
@@ -113,8 +115,8 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
             return Err("create: window_ptr is null".into());
         }
 
-        let game_library_path = unsafe { cstr(a.game_dylib_path) }?.to_string();
-        let game_resource_dir = unsafe { cstr(a.game_resources_dir) }?.to_string();
+        let project_library_path = unsafe { cstr(a.project_dylib_path) }?.to_string();
+        let project_resource_dir = unsafe { cstr(a.project_resources_dir) }?.to_string();
         let config_path = unsafe { cstr(a.config_path) }?.to_string();
 
         // Take ownership of one reference to Window that standalone gave us via
@@ -136,28 +138,35 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
         if config.get_int("WINDOW_HEIGHT").is_err() {
             config.set("WINDOW_HEIGHT", a.initial_h as i64);
         }
-        let compile_mode =
-            std::env::var("PILL_COMPILE_MODE").map_err(|_| "PILL_COMPILE_MODE is not set")?;
+        let compile_mode = std::env::var("PILL_COMPILE_MODE").unwrap_or_else(|_| {
+            // Default: if running in packaged layout it's "release", otherwise "debug".
+            // The launcher always sets this, but standalone runs (e.g. double-clicking
+            // the .exe) should just work without env vars.
+            match std::env::var("PILL_STANDALONE_LAYOUT").ok().as_deref() {
+                Some("packaged") => "release".to_string(),
+                _ => "debug".to_string(),
+            }
+        });
         let process =
             EngineProcessInfo::new(&compile_mode, pill_engine::internal::BuildTarget::Native);
 
-        let (game_library, game) = load_game(&game_library_path)?;
+        let (project_library, project) = load_project(&project_library_path)?;
 
-        let mut rt = Box::new(Runtime {
+        let mut runtime = Box::new(Runtime {
             window,
             window_size: winit::dpi::PhysicalSize::new(a.initial_w, a.initial_h),
-            resource_directory: game_resource_dir.into(),
+            resource_directory: project_resource_dir.into(),
             config,
             process,
             engine: None,
-            game_library: Some(game_library),
+            project_library: Some(project_library),
         });
 
-        let engine = rt.build_engine(game)?;
-        rt.engine = Some(engine);
+        let engine = runtime.build_engine(project)?;
+        runtime.engine = Some(engine);
 
         unsafe {
-            *out_engine = Box::into_raw(rt) as *mut c_void;
+            *out_engine = Box::into_raw(runtime) as *mut c_void;
         }
         Ok(())
     })();
@@ -176,11 +185,11 @@ extern "C" fn destroy(engine: EngineHandle) {
         return;
     }
     unsafe {
-        let mut rt = Box::from_raw(engine as *mut Runtime);
+        let mut runtime = Box::from_raw(engine as *mut Runtime);
 
-        // Drop engine and game first, then unload
-        rt.shutdown_engine();
-        rt.game_library.take();
+        // Drop engine and pill project first, then unload
+        runtime.shutdown_engine();
+        runtime.project_library.take();
         // rt drops here
     }
 }
@@ -189,8 +198,8 @@ extern "C" fn update(engine: EngineHandle, dt_ns: u64) {
     if engine.is_null() {
         return;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    if let Some(e) = rt.engine.as_mut() {
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    if let Some(e) = runtime.engine.as_mut() {
         e.update(Duration::from_nanos(dt_ns));
     }
 }
@@ -199,10 +208,10 @@ extern "C" fn resize(engine: EngineHandle, w: u32, h: u32) {
     if engine.is_null() {
         return;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    rt.window_size = winit::dpi::PhysicalSize::new(w, h);
-    if let Some(e) = rt.engine.as_mut() {
-        e.resize(rt.window_size);
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    runtime.window_size = winit::dpi::PhysicalSize::new(w, h);
+    if let Some(e) = runtime.engine.as_mut() {
+        e.resize(runtime.window_size);
     }
 }
 
@@ -210,8 +219,8 @@ extern "C" fn window_event(engine: EngineHandle, window_event_ptr: *const c_void
     if engine.is_null() || window_event_ptr.is_null() {
         return;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    if let Some(e) = rt.engine.as_mut() {
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    if let Some(e) = runtime.engine.as_mut() {
         // Soft ABI: standalone passes &WindowEvent as *const c_void
         let we = unsafe { &*(window_event_ptr as *const winit::event::WindowEvent) };
         e.pass_input_to_egui(we);
@@ -222,8 +231,8 @@ extern "C" fn key_event(engine: EngineHandle, key_event_ptr: *const c_void) {
     if engine.is_null() || key_event_ptr.is_null() {
         return;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    if let Some(e) = rt.engine.as_mut() {
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    if let Some(e) = runtime.engine.as_mut() {
         // Soft ABI: standalone passes &KeyEvent as *const c_void
         let ke = unsafe { &*(key_event_ptr as *const winit::event::KeyEvent) };
         e.pass_keyboard_key_input(ke);
@@ -246,8 +255,8 @@ extern "C" fn mouse_button(engine: EngineHandle, button: u32, pressed: bool) {
     if engine.is_null() {
         return;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    if let Some(e) = rt.engine.as_mut() {
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    if let Some(e) = runtime.engine.as_mut() {
         let decoded_button = decode_mouse_button(button);
         let state = if pressed {
             winit::event::ElementState::Pressed
@@ -262,8 +271,8 @@ extern "C" fn mouse_delta(engine: EngineHandle, dx: f64, dy: f64) {
     if engine.is_null() {
         return;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    if let Some(e) = rt.engine.as_mut() {
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    if let Some(e) = runtime.engine.as_mut() {
         e.pass_mouse_delta_input(&(dx, dy));
     }
 }
@@ -272,8 +281,8 @@ extern "C" fn cursor_position(engine: EngineHandle, x: f64, y: f64) {
     if engine.is_null() {
         return;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    if let Some(e) = rt.engine.as_mut() {
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    if let Some(e) = runtime.engine.as_mut() {
         let position = PhysicalPosition::new(x, y);
         e.pass_mouse_position_input(&position);
     }
@@ -283,32 +292,32 @@ extern "C" fn mouse_wheel_line(engine: EngineHandle, dx: f32, dy: f32) {
     if engine.is_null() {
         return;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    if let Some(e) = rt.engine.as_mut() {
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    if let Some(e) = runtime.engine.as_mut() {
         let delta = (dx as f64, dy as f64);
         e.pass_mouse_delta_input(&delta);
     }
 }
 
-extern "C" fn reload_game(engine: EngineHandle, game_dylib_path: *const c_char) -> i32 {
+extern "C" fn reload_project(engine: EngineHandle, project_dylib_path: *const c_char) -> i32 {
     if engine.is_null() {
-        set_err("reload_game: engine is null");
+        set_err("reload_project: engine is null");
         return PILL_ERR;
     }
 
     let r = (|| -> Result<()> {
-        let rt = unsafe { &mut *(engine as *mut Runtime) };
-        let game_path = unsafe { cstr(game_dylib_path) }?.to_string();
+        let runtime = unsafe { &mut *(engine as *mut Runtime) };
+        let project_path = unsafe { cstr(project_dylib_path) }?.to_string();
 
-        // Drop engine/game first then unload the lib
-        rt.shutdown_engine();
-        rt.game_library.take();
+        // Drop engine/project first then unload the lib
+        runtime.shutdown_engine();
+        runtime.project_library.take();
 
-        let (game_library, game) = load_game(&game_path)?;
-        rt.game_library = Some(game_library);
+        let (project_library, project) = load_project(&project_path)?;
+        runtime.project_library = Some(project_library);
 
-        let new_engine = rt.build_engine(game)?;
-        rt.engine = Some(new_engine);
+        let new_engine = runtime.build_engine(project)?;
+        runtime.engine = Some(new_engine);
 
         Ok(())
     })();
@@ -326,8 +335,8 @@ extern "C" fn is_exit_requested(engine: EngineHandle) -> i32 {
     if engine.is_null() {
         return 0;
     }
-    let rt = unsafe { &mut *(engine as *mut Runtime) };
-    match rt.engine.as_ref() {
+    let runtime = unsafe { &mut *(engine as *mut Runtime) };
+    match runtime.engine.as_ref() {
         Some(e) if e.is_exit_requested() => 1,
         _ => 0,
     }
@@ -348,7 +357,7 @@ static API: PillEngineApiV1 = PillEngineApiV1 {
     mouse_delta,
     cursor_position,
     mouse_wheel_line,
-    reload_game,
+    reload_project,
     is_exit_requested,
 };
 

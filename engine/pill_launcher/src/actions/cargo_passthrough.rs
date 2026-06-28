@@ -56,8 +56,9 @@ pub(crate) fn cargo_passthrough(
     }
 
     // Link the project into the workspace so cargo commands see the full context.
-    let engine_workspace_directory_path =
+    let (engine_workspace_directory_path, _workspace_guard) =
         prepare_workspace_for_project(project_directory_path, compile_mode)?;
+    // _workspace_guard restores engine/Cargo.toml on drop
 
     println!(
         "Running `cargo {}` in workspace {}...",

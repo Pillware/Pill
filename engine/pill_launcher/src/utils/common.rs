@@ -32,9 +32,9 @@ pub(crate) const EXECUTABLE_SUFFIX: &str = ".exe";
 pub(crate) const EXECUTABLE_SUFFIX: &str = ""; // Linux, macOS, etc. – no extension
 
 #[cfg(target_os = "windows")]
-pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = ""; //  pill_project.dll
+pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = ""; //  project.dll
 #[cfg(not(target_os = "windows"))]
-pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = "lib"; //  libpill_project.so / .dylib
+pub(crate) const DYNAMIC_LIBRARY_PREFIX: &str = "lib"; //  lib_project.so / .dylib
 
 #[cfg(target_os = "windows")]
 pub(crate) const DYNAMIC_LIBRARY_SUFFIX: &str = ".dll";
@@ -55,7 +55,7 @@ pub(crate) fn dynamic_library_name(name: &str) -> String {
 
 /// When set, stderr from cargo is parsed and noisy lines are suppressed,
 /// and only actionable error messages are extracted. This is experimental
-/// and may drop useful diagnostics — keep disabled by default.
+/// and may drop useful diagnostics - keep disabled by default.
 /// Set `PILL_LAUNCHER_EXPERIMENTAL_LOGS=1` to enable at runtime.
 pub(crate) fn use_experimental_logs_parser() -> bool {
     std::env::var("PILL_LAUNCHER_EXPERIMENTAL_LOGS")
@@ -254,7 +254,7 @@ pub(crate) fn rewrite_scratch_manifest(
     let pill_renderer = get_cargo_path(&engine.join("pill_renderer"));
     let pill_core = get_cargo_path(&engine.join("pill_core"));
     let pill_web = get_cargo_path(&engine.join("pill_web"));
-    let pill_project = get_cargo_path(project_directory);
+    let project = get_cargo_path(project_directory);
 
     let manifest = scratch_pill_web_app_dir.join("Cargo.toml");
 
@@ -282,9 +282,7 @@ pub(crate) fn rewrite_scratch_manifest(
         }
     }
 
-    content.push_str(&format!(
-        "\npill_project = {{ path = \"{pill_project}\" }}\n"
-    ));
+    content.push_str(&format!("\nproject = {{ path = \"{project}\" }}\n"));
     content.push_str("\n[workspace]\nresolver = \"2\"\n");
     content.push_str("\n[profile.release]\n");
     content.push_str("opt-level = \"z\"\n");

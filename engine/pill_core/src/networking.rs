@@ -37,7 +37,7 @@ use std::{
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NetworkAction {
-    /// Gameplay/state update payload.
+    /// Project state update payload.
     Update = 0,
     /// A client has joined (emitted by server events).
     Join = 1,

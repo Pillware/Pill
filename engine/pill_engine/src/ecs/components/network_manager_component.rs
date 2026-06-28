@@ -126,7 +126,7 @@ type InterpolationHookFn = fn(&mut Engine) -> Result<()>;
 ///   (`UPDATE_FREQUENCY_HZ`).
 ///
 /// Handler maps let you register type-based spawn/despawn functions without
-/// coupling your networking systems to specific game types.
+/// coupling your networking systems to specific project types.
 pub struct NetworkManagerComponent {
     /// Current side (server or client), with its state.
     pub side: NetworkSide,

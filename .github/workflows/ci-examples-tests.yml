@@ -1,9 +1,8 @@
-# Pill CI — example builds (all native + WASM)
+# Pill CI - example builds (all native + standalone)
 #
-# Builds every example project in the repo.  Runs on daily schedule and
-# manual trigger.  Separate from ci-basic.yml to keep per-push feedback fast.
-#
-# Calls devops/tests/examples_tests.sh under the hood.
+# Builds every example project in the repo (native + standalone crates).
+# WASM builds are covered by ci-basic-tests.yml.
+# Runs on daily schedule and manual trigger.
 
 name: CI Examples
 
@@ -43,7 +42,7 @@ jobs:
           path: engine/pill_launcher/target/release/PillLauncher
 
   # ------------------------------------------------------------------
-  # Native example builds (matrix — each example in parallel)
+  # Native example builds (matrix - each example in parallel)
   # ------------------------------------------------------------------
   build_native_examples:
     runs-on: ubuntu-latest
@@ -98,40 +97,3 @@ jobs:
             ${{ matrix.crate }} -> target
       - name: Build ${{ matrix.crate }}
         run: cargo build --manifest-path ${{ matrix.crate }}/Cargo.toml
-
-  # ------------------------------------------------------------------
-  # WASM example builds (matrix — each example in parallel)
-  # ------------------------------------------------------------------
-  build_wasm_examples:
-    runs-on: ubuntu-latest
-    needs: build_launcher
-    strategy:
-      fail-fast: false
-      matrix:
-        example:
-          - examples/cube
-          - examples/pill_tunel
-          - examples/pbr_helmet
-          - examples/pbr_balls
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          rustflags: ""
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            ${{ matrix.example }}/build/wasm/.build/pill_web -> target
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with: { version: latest }
-      - uses: actions/download-artifact@v4
-        with:
-          {
-            name: pilllauncher-linux,
-            path: engine/pill_launcher/target/release,
-          }
-      - name: WASM build ${{ matrix.example }}
-        run: bash devops/tests/run_examples_tests.sh "${{ matrix.example }}"

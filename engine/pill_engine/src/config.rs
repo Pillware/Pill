@@ -18,7 +18,7 @@ use std::any::TypeId;
 
 // --- General ---
 
-pub const PANIC_ON_GAME_ERRORS: bool = true;
+pub const PANIC_ON_PROJECT_ERRORS: bool = true;
 
 // --- ECS ---
 
@@ -37,39 +37,39 @@ pub struct SystemConfig {
 pub const INPUT_SYSTEM: SystemConfig = SystemConfig {
     name: "input_system",
     system_function: input_system,
-    update_phase: UpdatePhase::PreGame,
+    update_phase: UpdatePhase::PreProject,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub const HAPTICS_SYSTEM: SystemConfig = SystemConfig {
     name: "haptics_system",
     system_function: haptics_system,
-    update_phase: UpdatePhase::PostGame,
+    update_phase: UpdatePhase::PostProject,
 };
 
 pub const TIME_SYSTEM: SystemConfig = SystemConfig {
     name: "time_system",
     system_function: time_system,
-    update_phase: UpdatePhase::PostGame,
+    update_phase: UpdatePhase::PostProject,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
 pub const AUDIO_SYSTEM: SystemConfig = SystemConfig {
     name: "audio_system",
     system_function: audio_system,
-    update_phase: UpdatePhase::PostGame,
+    update_phase: UpdatePhase::PostProject,
 };
 
 pub const DEFERRED_UPDATE_SYSTEM: SystemConfig = SystemConfig {
     name: "deferred_update_system",
     system_function: deferred_update_system,
-    update_phase: UpdatePhase::PostGame,
+    update_phase: UpdatePhase::PostProject,
 };
 
 pub const RENDERING_SYSTEM: SystemConfig = SystemConfig {
     name: "rendering_system",
     system_function: rendering_system,
-    update_phase: UpdatePhase::PostGame,
+    update_phase: UpdatePhase::PostProject,
 };
 
 // --- Resources ---
@@ -82,7 +82,7 @@ pub const MAX_TEXTURES: usize = 10;
 pub const MAX_MESHES: usize = 10;
 pub const MAX_SOUNDS: usize = 10;
 
-// Convention: All resource names starting with "pill_engine_" are restricted, cannot be added and removed from game
+// Convention: All resource names starting with "pill_engine_" are restricted, cannot be added and removed from project
 pub const DEFAULT_RESOURCE_PREFIX: &str = "pill_engine";
 pub const DEFAULT_COLOR_TEXTURE_NAME: &str = "pill_engine_default_color";
 pub const DEFAULT_NORMAL_TEXTURE_NAME: &str = "pill_engine_default_normal";

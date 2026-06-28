@@ -51,7 +51,7 @@ impl MaterialTexture {
     }
 }
 
-// This needed so that renderer can get renderer texture handle from material texture while it is still hidden in game API
+// This needed so that renderer can get renderer texture handle from material texture while it is still hidden in pill project API
 pub fn get_renderer_texture_handle_from_material_texture(
     material_texture: &MaterialTexture,
 ) -> &Option<RendererTextureHandle> {

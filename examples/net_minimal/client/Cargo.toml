@@ -1,16 +1,20 @@
 [package]
-name = "pill_game"
+name = "pill_project"
 version = "0.1.0"
 edition = "2021"
 workspace = "NO_PATH"
 
 [lib]
 crate-type = ["cdylib"]
+path = "src/project.rs"
 
 [dependencies]
-pill_engine = { path = "../../../engine/pill_engine", default-features = false, features = ["internal", "networking", "game"] }
+pill_engine = { path = "../../../engine/pill_engine", default-features = false, features = [
+    "networking",
+    "project",
+] }
 
 rand = "0.9.2"
 anyhow = "1"
-log    = "0.4"
+log = "0.4"
 bincode = "1.0"

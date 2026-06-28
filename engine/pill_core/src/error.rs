@@ -30,8 +30,8 @@ pub enum RendererError {
 #[derive(Error, Debug, Clone)]
 pub enum EngineError<'a> {
     // Config
-    #[error("Invalid {} config file", "Game".module_object_style())]
-    InvalidGameConfig(),
+    #[error("Invalid {} config file", "Project".module_object_style())]
+    InvalidProjectConfig(),
 
     // Scene
     #[error("There is no active {} set", "Scene".general_object_style())]

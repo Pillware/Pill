@@ -1,12 +1,13 @@
-use pill_engine::game::*;
-
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-
 use pill_engine::internal::{
     client_go_offline, networking_system_client, NetworkEntityState, NetworkManagerComponent,
     NetworkStateComponent, TransformComponent,
 };
+use pill_engine::project::*;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+
+pub struct Project {}
+create_project!(Project {}, PillProject);
 
 // ----- CONSTANTS -----------------------------------------------------------
 
@@ -35,12 +36,12 @@ impl PillTypeMapKey for PillComponent {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-//                                GAME
+//                                POROJECT
 // ───────────────────────────────────────────────────────────────────────────
 
-pub struct Game;
+pub struct Project;
 
-impl PillGame for Game {
+impl PillProject for Project {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         // Create scene
         let active_scene = engine.create_scene("NetMinimal")?;

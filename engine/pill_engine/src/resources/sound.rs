@@ -52,7 +52,7 @@ impl Resource for Sound {
         );
 
         // Check if path to asset is correct
-        let resource_file_path = engine.game_resources_directory_path.join(&self.path);
+        let resource_file_path = engine.project_resources_directory_path.join(&self.path);
         pill_core::validate_asset_path(&resource_file_path, &["mp3", "wav"])
             .context(error_message.clone())?;
 

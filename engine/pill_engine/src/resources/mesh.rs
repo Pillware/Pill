@@ -140,7 +140,7 @@ impl Resource for Mesh {
 
         // Load from file only if mesh_data not already set (procedural mesh)
         if self.mesh_data.is_none() {
-            let base = engine.game_resources_directory_path.join(&self.path);
+            let base = engine.project_resources_directory_path.join(&self.path);
             let cooked_mesh_path = base.with_extension("cooked_mesh");
 
             if cooked_mesh_path.exists() {

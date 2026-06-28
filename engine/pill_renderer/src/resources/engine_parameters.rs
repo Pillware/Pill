@@ -2,14 +2,16 @@ use pill_core::Result;
 use wgpu::util::DeviceExt;
 
 // Layout must match the HLSL `EngineParams` in `include/common.hlsl` (std140):
-//   vec3  fog_color;       // offset 0  (12 bytes)
-//   float fog_density;     // offset 12 (4 bytes)
-//   // total: 16 bytes
+//   float3 fog_color;      // offset 0, size 12, but std140 aligns vec3 to 16
+//   float  fog_density;    // offset 16, size 4
+//   // total: 32 bytes (std140 rounds uniform buffers up to vec4 alignment)
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct EngineParametersData {
     pub fog_color: [f32; 3],
+    _pad0: f32, // std140: vec3<f32> is 16-byte aligned
     pub fog_density: f32,
+    _pad1: [f32; 3], // pad to 32 bytes (multiple of 16 for uniform buffer)
 }
 
 impl Default for EngineParametersData {
@@ -22,7 +24,9 @@ impl EngineParametersData {
     pub fn new() -> Self {
         Self {
             fog_color: [0.0; 3],
+            _pad0: 0.0,
             fog_density: 0.0,
+            _pad1: [0.0; 3],
         }
     }
 

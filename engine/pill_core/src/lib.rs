@@ -65,7 +65,7 @@ pub use bitmask_utils::{
 };
 
 pub use utils::{
-    enum_variant_eq, get_enum_variant_type_name, get_game_error_message, get_type_name,
+    enum_variant_eq, get_enum_variant_type_name, get_project_error_message, get_type_name,
     get_value_type_name, validate_asset_path,
 };
 
