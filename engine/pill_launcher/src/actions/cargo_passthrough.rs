@@ -13,11 +13,10 @@ use std::process::Command;
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::cli::parse_compile_mode;
+use crate::utils::cli::{compile_mode_flag, parse_compile_mode, path_flag, project_args_flag};
 use crate::utils::workspace::prepare_workspace_for_project;
 
-/// Registers `-p` / `--path`. Trailing args (after `--`) are collected
-/// by the global passthrough mechanism in `utils::cli` and forwarded to cargo.
+/// Run arbitrary cargo commands (fmt, clippy, check, etc.) in the engine workspace.
 #[derive(Debug)]
 pub(crate) struct Cargo;
 
@@ -26,8 +25,14 @@ impl Action for Cargo {
         "cargo"
     }
 
+    fn description(&self) -> &'static str {
+        "Run cargo commands (fmt, clippy, check, etc.)"
+    }
+
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app // shared flags (--path) registered in cli::run_app()
+        app.arg(path_flag())
+            .arg(compile_mode_flag())
+            .arg(project_args_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {

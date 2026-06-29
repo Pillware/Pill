@@ -9,6 +9,7 @@ members = [
     "pill_native",
     "pill_web",
     "pill_runtime",
+    "C:/Users/mateu/AppData/Local/Temp/pill-ci-tests-7059/CreateTest/hereh", # pill-launcher-managed-workspace-member
 ]
 
 # The per-game wasm cdylib (pill_web_app) lives as a template at

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use crate::actions::Action;
 use crate::utils::assets::run_asset_pipeline;
+use crate::utils::cli::{clean_flag, path_flag};
 
 #[derive(Debug)]
 pub(crate) struct Assets;
@@ -16,8 +17,13 @@ impl Action for Assets {
         "assets"
     }
 
+    fn description(&self) -> &'static str {
+        "Run the asset pipeline (HLSL→WGSL, etc.)"
+    }
+
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app // shared flags (--path, --clean) registered in cli::run_app()
+        app.arg(path_flag())
+            .arg(clean_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {

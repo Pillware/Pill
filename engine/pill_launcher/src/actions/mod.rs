@@ -31,9 +31,13 @@ pub(crate) trait Action {
     /// The CLI action name, e.g. "build", "check", "benchmark".
     fn name(&self) -> &'static str;
 
-    /// Register this action's CLI flags on the given `App` and return it.
+    /// A short description shown in `PillLauncher --help` next to each subcommand.
+    fn description(&self) -> &'static str { "" }
+
+    /// Register this action's CLI flags on its subcommand `App` and return it.
+    /// Shared flags (`-p`, `-c`, `-t`, etc.) must be added by the action itself.
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static>;
 
-    /// Execute the action using values extracted from the parsed CLI matches.
+    /// Execute the action using values extracted from its subcommand's matches.
     fn run(&self, matches: &ArgMatches) -> Result<()>;
 }

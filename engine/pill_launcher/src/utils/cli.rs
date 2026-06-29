@@ -14,66 +14,23 @@ use clap::{App, AppSettings, Arg, ArgMatches};
 use crate::actions::Action;
 
 /// Build the CLI from the provided actions, parse args, and dispatch.
+///
+/// Each action becomes a clap subcommand (e.g. `PillLauncher run -p . -c release`),
+/// giving context-sensitive `--help` per action.  The old `-a` / `--action` flag
+/// is no longer used.
 pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
     let mut app = App::new("PillLauncher")
         .about("Tool for managing Pill project projects")
-        .version(env!("CARGO_PKG_VERSION"));
+        .version(env!("CARGO_PKG_VERSION"))
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .setting(AppSettings::TrailingVarArg);
 
-    // Collect all valid action names for the --action possible_values list.
-    let names: Vec<&str> = actions.iter().map(|a| a.name()).collect();
-
-    // The --action flag is the only flag defined here; everything else comes
-    // from each action's register() method.
-    app = app.arg(
-        Arg::with_name("action")
-            .short("a")
-            .long("action")
-            .takes_value(true)
-            .possible_values(&names)
-            .required(true)
-            .help("Specify the action to perform"),
-    );
-
-    // Common passthrough: trailing arguments after `--` are forwarded to the
-    // project or cargo command (used by "run", "build", "cargo" actions).
-    app = app.arg(
-        Arg::with_name("project-args")
-            .help("Arguments passed through to the project or cargo (use `--` to separate)")
-            .multiple(true)
-            .last(true)
-            .allow_hyphen_values(true),
-    );
-
-    // Register shared flags once - individual actions must NOT re-register
-    // these (clap v2 panics on duplicate arg names).
-    app = app
-        .arg(path_flag())
-        .arg(compile_mode_flag())
-        .arg(target_flag())
-        .arg(output_path_flag())
-        .arg(clean_flag())
-        .arg(features_flag())
-        .arg(
-            Arg::with_name("max-wasm-size")
-                .long("max-wasm-size")
-                .takes_value(true)
-                .help("Maximum WASM binary size in KB"),
-        )
-        .arg(
-            Arg::with_name("wasm-port")
-                .long("wasm-port")
-                .takes_value(true)
-                .default_value("8080")
-                .help("Port for the WASM dev server"),
-        );
-
-    // Let each action register its own unique flags.
+    // Each action registers its own flags on its own subcommand.
     for action in actions {
-        app = action.register(app);
+        let sub = App::new(action.name()).about(action.description());
+        let sub = action.register(sub);
+        app = app.subcommand(sub);
     }
-
-    app = app.setting(AppSettings::TrailingVarArg);
-    app = app.setting(AppSettings::ArgRequiredElseHelp);
 
     // Use get_matches_safe so we don't exit() inside the library - important
     // for unit tests that call run_app directly.  We must handle
@@ -96,15 +53,16 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
         }
     };
 
-    // Find the action named by --action and delegate.
-    let action_name = matches.value_of("action").expect("Action is required");
+    // Find the matched subcommand and dispatch.
     for action in actions {
-        if action.name() == action_name {
-            return action.run(&matches);
+        if let Some(sub_matches) = matches.subcommand_matches(action.name()) {
+            return action.run(sub_matches);
         }
     }
 
-    bail!("Unknown action: {}", action_name)
+    // Should not reach here because SubcommandRequiredElseHelp handles it,
+    // but fall back to showing help.
+    bail!("No valid action specified. Use --help to see available actions.")
 }
 
 // -- Named defaults (single source of truth) -------------------------------
@@ -168,6 +126,48 @@ pub(crate) fn features_flag() -> Arg<'static, 'static> {
         .long("features")
         .takes_value(true)
         .help("Cargo features to enable for project (comma-separated)")
+}
+
+/// `--wasm-port` - port for the WASM dev server.
+pub(crate) fn wasm_port_flag() -> Arg<'static, 'static> {
+    Arg::with_name("wasm-port")
+        .long("wasm-port")
+        .takes_value(true)
+        .default_value("8080")
+        .help("Port for the WASM dev server")
+}
+
+/// `--max-wasm-size` - maximum WASM binary size in KB.
+pub(crate) fn max_wasm_size_flag() -> Arg<'static, 'static> {
+    Arg::with_name("max-wasm-size")
+        .long("max-wasm-size")
+        .takes_value(true)
+        .help("Maximum WASM binary size in KB")
+}
+
+/// `--` passthrough for project/cargo arguments.
+pub(crate) fn project_args_flag() -> Arg<'static, 'static> {
+    Arg::with_name("project-args")
+        .help("Arguments passed through to the project or cargo (use `--` to separate)")
+        .multiple(true)
+        .last(true)
+        .allow_hyphen_values(true)
+}
+
+// -- Flag-group helpers (so actions only register what they use) ------------
+
+/// Add `-p` / `--path` to an app/subcommand.
+pub(crate) fn add_path_flag(app: App<'static, 'static>) -> App<'static, 'static> {
+    app.arg(path_flag())
+}
+
+/// Add build-related flags: `-c`, `-t`, `-o`, `--clean`, `--features`.
+pub(crate) fn add_build_flags(app: App<'static, 'static>) -> App<'static, 'static> {
+    app.arg(compile_mode_flag())
+        .arg(target_flag())
+        .arg(output_path_flag())
+        .arg(clean_flag())
+        .arg(features_flag())
 }
 
 // -- Shared parsers ---------------------------------------------------------

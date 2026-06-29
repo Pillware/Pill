@@ -26,21 +26,11 @@ use crate::utils::common::{
 use crate::utils::files::codesign_ad_hoc;
 use crate::utils::files::{copy_file_if_newer, stage_packaged_resource_files};
 use crate::utils::paths::{
-    find_engine_workspace_directory, get_path, get_project_title,
-    get_standalone_layout_for_compile_mode, get_target_directory_for_compile_mode,
+    get_path, get_project_title, get_standalone_layout_for_compile_mode,
+    get_target_directory_for_compile_mode,
 };
 use crate::utils::plantuml::render_puml_for_crate;
 use crate::utils::workspace::prepare_workspace_for_project;
-
-/// Shared CLI flag registration for both "run" and "build" actions.
-pub(crate) fn register_build_flags(
-    app: clap::App<'static, 'static>,
-) -> clap::App<'static, 'static> {
-    // Shared flags (path, compile-mode, target, features, etc.) are
-    // registered once in cli::run_app().  Build and Run actions have
-    // no unique flags of their own.
-    app
-}
 
 // ---------------------------------------------------------------------------
 // Build & run logic
@@ -48,7 +38,8 @@ pub(crate) fn register_build_flags(
 
 /// Build and then launch the native standalone executable for a project.
 /// Supports optional stdout capture (for benchmarks) and --features passthrough.
-/// Sets PROJECT_DIR, PILL_ENGINE_WORKSPACE_DIR, and other env vars.
+/// Prepares the workspace once and holds the guard through both build and run
+/// so that hot-reload child processes can find the project as a workspace member.
 pub(crate) fn run_project(
     project_directory_path: &PathBuf,
     output_directory_path: &PathBuf,
@@ -57,11 +48,19 @@ pub(crate) fn run_project(
     features: Option<&str>,
     capture_stdout: bool,
 ) -> Result<Option<String>> {
-    build_project(
+    // Prepare the workspace once and hold the guard through build AND execution.
+    // Without this, the guard would drop after build_project() returns, unlinking
+    // the project from engine/Cargo.toml before the child process starts.  In
+    // hot-reload mode the child checks workspace membership and would fail.
+    let (engine_workspace_directory_path, _workspace_guard) =
+        prepare_workspace_for_project(project_directory_path, compile_mode)?;
+
+    build_project_in_workspace(
         project_directory_path,
         output_directory_path,
         compile_mode,
         features,
+        &engine_workspace_directory_path,
     )?;
 
     if !capture_stdout {
@@ -76,12 +75,14 @@ pub(crate) fn run_project(
         output_directory_path.join(format!("{project_title}{EXECUTABLE_SUFFIX}"));
 
     let launcher_bin = std::env::current_exe().context("current_exe failed")?;
-    let engine_workspace = find_engine_workspace_directory()?;
 
     let mut cmd = Command::new(&standalone_executable_path);
     cmd.current_dir(output_directory_path)
         .env("PILL_LAUNCHER_BIN", &launcher_bin)
-        .env("PILL_ENGINE_WORKSPACE_DIR", &engine_workspace)
+        .env(
+            "PILL_ENGINE_WORKSPACE_DIR",
+            &engine_workspace_directory_path,
+        )
         .env("PROJECT_DIR", project_directory_path)
         .env("PILL_COMPILE_MODE", compile_mode.to_string())
         .env(
@@ -147,6 +148,26 @@ pub(crate) fn build_project(
     compile_mode: &CompileMode,
     features: Option<&str>,
 ) -> Result<()> {
+    let (engine_workspace_directory_path, _guard) =
+        prepare_workspace_for_project(project_directory_path, compile_mode)?;
+    build_project_in_workspace(
+        project_directory_path,
+        output_directory_path,
+        compile_mode,
+        features,
+        &engine_workspace_directory_path,
+    )
+}
+
+/// Core build logic.  The caller is responsible for preparing the workspace
+/// (adding the project to engine/Cargo.toml members) before calling this.
+fn build_project_in_workspace(
+    project_directory_path: &PathBuf,
+    output_directory_path: &PathBuf,
+    compile_mode: &CompileMode,
+    features: Option<&str>,
+    engine_workspace_directory_path: &PathBuf,
+) -> Result<()> {
     println!(
         "Building project from {}...",
         project_directory_path.display()
@@ -154,10 +175,6 @@ pub(crate) fn build_project(
 
     let hot_reload_child = *compile_mode == CompileMode::HotReload
         && std::env::var("PILL_HOT_RELOAD_CHILD").ok().as_deref() == Some("1");
-
-    let (engine_workspace_directory_path, _workspace_guard) =
-        prepare_workspace_for_project(project_directory_path, compile_mode)?;
-    // _workspace_guard restores engine/Cargo.toml on drop
 
     let project_title =
         get_project_title(project_directory_path).context("Failed to get project title")?;

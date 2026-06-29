@@ -10,6 +10,7 @@ use clap::{App, ArgMatches};
 use std::fs;
 
 use crate::actions::Action;
+use crate::utils::cli::path_flag;
 use crate::utils::paths::*;
 
 // ---------------------------------------------------------------------------
@@ -23,8 +24,12 @@ impl Action for Link {
         "link"
     }
 
+    fn description(&self) -> &'static str {
+        "Link a project into the engine workspace (for IDE support)"
+    }
+
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app // shared --path registered in cli::run_app()
+        app.arg(path_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
@@ -85,6 +90,10 @@ pub(crate) struct Unlink;
 impl Action for Unlink {
     fn name(&self) -> &'static str {
         "unlink"
+    }
+
+    fn description(&self) -> &'static str {
+        "Remove a linked project from the engine workspace"
     }
 
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {

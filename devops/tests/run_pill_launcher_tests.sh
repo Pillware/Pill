@@ -63,8 +63,8 @@ test_launcher_basics() {
         report_fail "no arguments" "exited 0"
     fi
 
-    assert_fail "unknown action"   "error"    -a nonexistent_action
-    assert_fail "missing --action" "required" --path .
+    assert_fail "unknown action"   "error"    nonexistent_action
+    assert_fail "missing subcommand" "required" --path .
 }
 
 # ---------------------------------------------------------------------------
@@ -78,7 +78,7 @@ test_launcher_create() {
 
     # Basic scaffold
     local project_directory="$test_workspace_root/CreateTest"
-    assert_ok "create project" -a create -n CreateTest -p "$test_workspace_root"
+    assert_ok "create project" create -n CreateTest -p "$test_workspace_root"
 
     [ -d "$project_directory" ]                && report_pass "project directory exists"      || report_fail "project directory" "missing $project_directory"
     [ -f "$project_directory/Cargo.toml" ]     && report_pass "Cargo.toml exists"            || report_fail "Cargo.toml" "missing"
@@ -92,13 +92,13 @@ test_launcher_create() {
     fi
 
     # Error: duplicate name
-    assert_fail "duplicate create" "already exists" -a create -n CreateTest -p "$test_workspace_root"
+    assert_fail "duplicate create" "already exists" create -n CreateTest -p "$test_workspace_root"
 
     # Error: missing --name
-    assert_fail "create without --name" "name" -a create -p "$test_workspace_root"
+    assert_fail "create without --name" "name" create -p "$test_workspace_root"
 
     # Short flags
-    assert_ok "create with short flags" -a create -n CreateTest_ShortFlags -p "$test_workspace_root"
+    assert_ok "create with short flags" create -n CreateTest_ShortFlags -p "$test_workspace_root"
 }
 
 # ---------------------------------------------------------------------------
@@ -111,14 +111,14 @@ test_launcher_build() {
     echo "(3/8) Build action"
 
     local project_directory="$test_workspace_root/BuildTest"
-    invoke_launcher -a create -n BuildTest -p "$test_workspace_root" > /dev/null 2>&1 || {
+    invoke_launcher create -n BuildTest -p "$test_workspace_root" > /dev/null 2>&1 || {
         report_skip "build tests" "create failed"; return
     }
 
     # Native debug
     echo "  (native debug - this will take several minutes)"
     local build_output build_exit_code=0
-    build_output=$(invoke_launcher -a build -p "$project_directory" -c debug 2>&1) || build_exit_code=$?
+    build_output=$(invoke_launcher build -p "$project_directory" -c debug 2>&1) || build_exit_code=$?
     if [ "$build_exit_code" -eq 0 ]; then
         report_pass "build native debug"
         if [ -d "$project_directory/build/dev/data" ]; then
@@ -133,7 +133,7 @@ test_launcher_build() {
     # Native release
     echo "  (native release)"
     build_exit_code=0
-    build_output=$(invoke_launcher -a build -p "$project_directory" -c release 2>&1) || build_exit_code=$?
+    build_output=$(invoke_launcher build -p "$project_directory" -c release 2>&1) || build_exit_code=$?
     if [ "$build_exit_code" -eq 0 ]; then
         report_pass "build native release"
     else
@@ -143,7 +143,7 @@ test_launcher_build() {
     # WASM
     echo "  (WASM)"
     build_exit_code=0
-    build_output=$(invoke_launcher -a build -p "$project_directory" -t web 2>&1) || build_exit_code=$?
+    build_output=$(invoke_launcher build -p "$project_directory" -t web 2>&1) || build_exit_code=$?
     if [ "$build_exit_code" -eq 0 ]; then
         report_pass "build WASM"
         if [ -d "$project_directory/build/wasm" ]; then
@@ -157,11 +157,11 @@ test_launcher_build() {
 
     # Short flags
     local short_directory="$test_workspace_root/ShortBuild"
-    invoke_launcher -a create -n ShortBuild -p "$test_workspace_root" > /dev/null 2>&1 || {
+    invoke_launcher create -n ShortBuild -p "$test_workspace_root" > /dev/null 2>&1 || {
         report_skip "short flag build" "create failed"; return
     }
     build_exit_code=0
-    invoke_launcher -a build -p "$short_directory" -c release -t native > /dev/null 2>&1 || build_exit_code=$?
+    invoke_launcher build -p "$short_directory" -c release -t native > /dev/null 2>&1 || build_exit_code=$?
     if [ "$build_exit_code" -eq 0 ]; then
         report_pass "build with short flags"
     else
@@ -179,25 +179,25 @@ test_launcher_cargo() {
     echo "(4/8) Cargo passthrough"
 
     local project_directory="$test_workspace_root/CargoTest"
-    invoke_launcher -a create -n CargoTest -p "$test_workspace_root" > /dev/null 2>&1 || {
+    invoke_launcher create -n CargoTest -p "$test_workspace_root" > /dev/null 2>&1 || {
         report_skip "cargo tests" "create failed"; return
     }
 
-    assert_ok "cargo --version" -a cargo -p "$project_directory" -- --version
+    assert_ok "cargo --version" cargo -p "$project_directory" -- --version
 
     echo "  (cargo check)"
     local cargo_exit_code=0
-    invoke_launcher -a cargo -p "$project_directory" -- check > /dev/null 2>&1 || cargo_exit_code=$?
+    invoke_launcher cargo -p "$project_directory" -- check > /dev/null 2>&1 || cargo_exit_code=$?
     if [ "$cargo_exit_code" -eq 0 ]; then
         report_pass "cargo check on project"
     else
         report_skip "cargo check" "exit $cargo_exit_code (may need full workspace)"
     fi
 
-    assert_fail "cargo empty arguments" "at least one argument" -a cargo -p "$project_directory"
-    assert_fail "cargo bad subcommand"  "no such command"       -a cargo -p "$project_directory" -- nonexistent_cargo_command
+    assert_fail "cargo empty arguments" "at least one argument" cargo -p "$project_directory"
+    assert_fail "cargo bad subcommand"  "no such command"       cargo -p "$project_directory" -- nonexistent_cargo_command
 
-    assert_ok "cargo with short flag" -a cargo -p "$project_directory" -- --version
+    assert_ok "cargo with short flag" cargo -p "$project_directory" -- --version
 }
 
 # ---------------------------------------------------------------------------
@@ -210,12 +210,12 @@ test_launcher_assets() {
     echo "(5/8) Assets action"
 
     local project_directory="$test_workspace_root/AssetsTest"
-    invoke_launcher -a create -n AssetsTest -p "$test_workspace_root" > /dev/null 2>&1 || {
+    invoke_launcher create -n AssetsTest -p "$test_workspace_root" > /dev/null 2>&1 || {
         report_skip "assets tests" "create failed"; return
     }
 
-    assert_ok "assets on empty project" -a assets -p "$project_directory"
-    assert_ok "assets --clean" -a assets -p "$project_directory" --clean
+    assert_ok "assets on empty project" assets -p "$project_directory"
+    assert_ok "assets --clean" assets -p "$project_directory" --clean
 }
 
 # ---------------------------------------------------------------------------
@@ -232,7 +232,7 @@ test_launcher_docs() {
 
     echo "  (generating docs)"
     local docs_output docs_exit_code=0
-    docs_output=$(invoke_launcher -a docs -o "$docs_output_directory" 2>&1) || docs_exit_code=$?
+    docs_output=$(invoke_launcher docs -o "$docs_output_directory" 2>&1) || docs_exit_code=$?
 
     if [ "$docs_exit_code" -eq 0 ]; then
         report_pass "docs generation"
@@ -258,14 +258,14 @@ test_launcher_run() {
     echo "(7/8) Run action"
 
     local project_directory="$test_workspace_root/RunTest"
-    invoke_launcher -a create -n RunTest -p "$test_workspace_root" > /dev/null 2>&1 || {
+    invoke_launcher create -n RunTest -p "$test_workspace_root" > /dev/null 2>&1 || {
         report_skip "run tests" "create failed"; return
     }
 
     # Run native debug (timeout after 10s - game opens a window and waits)
     echo "  (run native debug)"
     local run_output run_exit_code=0
-    run_output=$(timeout 10s invoke_launcher -a run -p "$project_directory" -c debug 2>&1) || run_exit_code=$?
+    run_output=$(timeout 10s invoke_launcher run -p "$project_directory" -c debug 2>&1) || run_exit_code=$?
     if [ "$run_exit_code" -eq 0 ] || [ "$run_exit_code" -eq 124 ]; then
         report_pass "run native debug"
     else
@@ -275,7 +275,7 @@ test_launcher_run() {
     # Run native release
     echo "  (run native release)"
     run_exit_code=0
-    run_output=$(timeout 10s invoke_launcher -a run -p "$project_directory" -c release 2>&1) || run_exit_code=$?
+    run_output=$(timeout 10s invoke_launcher run -p "$project_directory" -c release 2>&1) || run_exit_code=$?
     if [ "$run_exit_code" -eq 0 ] || [ "$run_exit_code" -eq 124 ]; then
         report_pass "run native release"
     else
@@ -284,7 +284,7 @@ test_launcher_run() {
 
     # Passthrough arguments
     local passthrough_exit_code=0
-    invoke_launcher -a run -p "$project_directory" -c debug -- --help > /dev/null 2>&1 || passthrough_exit_code=$?
+    invoke_launcher run -p "$project_directory" -c debug -- --help > /dev/null 2>&1 || passthrough_exit_code=$?
     if [ "$passthrough_exit_code" -eq 0 ]; then
         report_pass "run with passthrough arguments"
     else
@@ -305,11 +305,11 @@ test_launcher_link() {
     local project_path="examples/cube"
 
     # Unlink first to ensure a clean state
-    invoke_launcher -a unlink -p "$project_path" > /dev/null 2>&1 || true
+    invoke_launcher unlink -p "$project_path" > /dev/null 2>&1 || true
 
     # Link
     local link_output link_exit_code=0
-    link_output=$(invoke_launcher -a link -p "$project_path" 2>&1) || link_exit_code=$?
+    link_output=$(invoke_launcher link -p "$project_path" 2>&1) || link_exit_code=$?
     if [ "$link_exit_code" -eq 0 ]; then
         # Verify the project appears in engine/Cargo.toml
         if grep -q "$project_path" "engine/Cargo.toml" 2>/dev/null; then
@@ -323,7 +323,7 @@ test_launcher_link() {
 
     # Link again (idempotent)
     local relink_exit_code=0
-    invoke_launcher -a link -p "$project_path" > /dev/null 2>&1 || relink_exit_code=$?
+    invoke_launcher link -p "$project_path" > /dev/null 2>&1 || relink_exit_code=$?
     if [ "$relink_exit_code" -eq 0 ]; then
         report_pass "link is idempotent"
     else
@@ -332,7 +332,7 @@ test_launcher_link() {
 
     # Unlink
     local unlink_exit_code=0
-    invoke_launcher -a unlink -p "$project_path" > /dev/null 2>&1 || unlink_exit_code=$?
+    invoke_launcher unlink -p "$project_path" > /dev/null 2>&1 || unlink_exit_code=$?
     if [ "$unlink_exit_code" -eq 0 ]; then
         if grep -q "$project_path" "engine/Cargo.toml" 2>/dev/null; then
             report_fail "unlink" "project still in engine/Cargo.toml"
@@ -344,7 +344,7 @@ test_launcher_link() {
     fi
 
     # Restore clean state
-    invoke_launcher -a unlink -p "$project_path" > /dev/null 2>&1 || true
+    invoke_launcher unlink -p "$project_path" > /dev/null 2>&1 || true
     git checkout -- engine/Cargo.toml 2>/dev/null || true
 }
 

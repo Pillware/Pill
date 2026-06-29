@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use crate::actions::Action;
 use crate::types::*;
+use crate::utils::cli::path_flag;
 use crate::utils::files::{copy_directory_recursive, modify_file};
 use crate::utils::paths::*;
 
@@ -23,14 +24,19 @@ impl Action for Create {
         "create"
     }
 
+    fn description(&self) -> &'static str {
+        "Scaffold a new project from template"
+    }
+
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(
-            Arg::with_name("name")
-                .short("n")
-                .long("name")
-                .takes_value(true)
-                .help("Name of new project"),
-        )
+        app.arg(path_flag())
+            .arg(
+                Arg::with_name("name")
+                    .short("n")
+                    .long("name")
+                    .takes_value(true)
+                    .help("Name of new project"),
+            )
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {

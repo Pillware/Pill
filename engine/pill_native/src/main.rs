@@ -710,7 +710,6 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
         .context("build_data_directory_path has no parent")?;
 
     let args = [
-        "-a",
         "build",
         "-p",
         project_paths.project_directory_path.to_str().unwrap(),

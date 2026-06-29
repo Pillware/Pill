@@ -12,8 +12,10 @@ use std::path::PathBuf;
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::cli::{parse_build_target, parse_compile_mode};
-use crate::utils::native_target::{build_project, register_build_flags};
+use crate::utils::cli::{
+    add_build_flags, add_path_flag, max_wasm_size_flag, parse_build_target, parse_compile_mode,
+};
+use crate::utils::native_target::build_project;
 use crate::utils::paths::get_project_build_path;
 use crate::utils::wasm_target;
 
@@ -25,8 +27,14 @@ impl Action for Build {
         "build"
     }
 
+    fn description(&self) -> &'static str {
+        "Compile a project (native or WASM)"
+    }
+
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        register_build_flags(app)
+        let app = add_path_flag(app);
+        let app = add_build_flags(app);
+        app.arg(max_wasm_size_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {

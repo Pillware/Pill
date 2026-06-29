@@ -12,8 +12,8 @@ use std::path::PathBuf;
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::native_target::{register_build_flags, run_project};
-use crate::utils::cli::{parse_build_target, parse_compile_mode};
+use crate::utils::cli::{add_build_flags, add_path_flag, parse_build_target, parse_compile_mode, project_args_flag, wasm_port_flag};
+use crate::utils::native_target::run_project;
 use crate::utils::paths::get_project_build_path;
 use crate::utils::web_dev_server;
 
@@ -25,8 +25,15 @@ impl Action for Run {
         "run"
     }
 
+    fn description(&self) -> &'static str {
+        "Build and launch a project"
+    }
+
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        register_build_flags(app)
+        let app = add_path_flag(app);
+        let app = add_build_flags(app);
+        app.arg(wasm_port_flag())
+            .arg(project_args_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
