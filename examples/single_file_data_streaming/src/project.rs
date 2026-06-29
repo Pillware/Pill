@@ -65,9 +65,9 @@ define_component!(CubeData {
 });
 
 pub struct CubeSceneDataInner {
-    pub heights: Vec<f32>,          // cached heights (0.0 = not loaded)
-    pub loaded_mask: Vec<bool>,     // which grid cells are loaded
-    pub total_loaded: usize,        // count of loaded cells
+    pub heights: Vec<f32>,      // cached heights (0.0 = not loaded)
+    pub loaded_mask: Vec<bool>, // which grid cells are loaded
+    pub total_loaded: usize,    // count of loaded cells
 }
 
 define_global_component!(CubeSceneData {
@@ -373,9 +373,7 @@ fn position_streaming_system(engine: &mut Engine) -> Result<()> {
                 let count = gx_max - gx_min + 1;
 
                 // Skip row if all cells already loaded
-                let all_loaded = (gx_min..=gx_max).all(|gx| {
-                    data.loaded_mask[gz * GRID_SIZE + gx]
-                });
+                let all_loaded = (gx_min..=gx_max).all(|gx| data.loaded_mask[gz * GRID_SIZE + gx]);
 
                 if !all_loaded {
                     let offset = (start_idx * 4) as u64;
@@ -450,10 +448,7 @@ fn register_stream_debug_ui(engine: &mut Engine) -> Result<()> {
                     let loaded = data.total_loaded;
                     let mem_bytes = total * std::mem::size_of::<f32>();
 
-                    ui.label(format!(
-                        "Cells Loaded: {} / {}",
-                        loaded, total
-                    ));
+                    ui.label(format!("Cells Loaded: {} / {}", loaded, total));
                     ui.label(format!(
                         "Stream Radius: {:.0} units ({} cells)",
                         STREAM_RADIUS,
