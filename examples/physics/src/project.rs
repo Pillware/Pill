@@ -1,4 +1,4 @@
-use pill_engine::project::*;
+use pill_engine::{define_component, define_global_component, project::*};
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},

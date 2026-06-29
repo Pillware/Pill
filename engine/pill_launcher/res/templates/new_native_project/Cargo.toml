@@ -6,6 +6,7 @@ workspace = "NO_PATH"
 
 [lib]
 crate-type = ["cdylib"]
+path = "src/project.rs"
 
 [dependencies]
 pill_engine = { path = "NO_PATH", features = ["project"] }

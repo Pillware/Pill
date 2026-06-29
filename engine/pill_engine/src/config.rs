@@ -79,7 +79,7 @@ pub const RENDERING_SYSTEM: SystemConfig = SystemConfig {
 pub const PHYSICS_SYSTEM: SystemConfig = SystemConfig {
     name: "physics_system",
     system_function: physics_system,
-    update_phase: UpdatePhase::PostGame,
+    update_phase: UpdatePhase::PostProject,
 };
 
 // --- Resources ---

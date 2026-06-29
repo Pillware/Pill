@@ -1,5 +1,5 @@
 [package]
-name = "city"
+name = "project"
 version = "0.1.0"
 edition = "2021"
 workspace = "NO_PATH"
