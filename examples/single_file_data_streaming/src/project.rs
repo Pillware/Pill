@@ -1,5 +1,5 @@
 use pill_engine::{define_component, define_global_component, project::*};
-use serde::{Deserialize, Serialize};
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
 pub struct Project {}
@@ -64,10 +64,10 @@ define_component!(CubeData {
     grid_z: usize,
 });
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CubeSceneDataInner {
-    pub heights: Vec<f32>,
-    pub loaded: bool,
+    pub heights: Vec<f32>,          // cached heights (0.0 = not loaded)
+    pub loaded_mask: Vec<bool>,     // which grid cells are loaded
+    pub total_loaded: usize,        // count of loaded cells
 }
 
 define_global_component!(CubeSceneData {
@@ -76,10 +76,12 @@ define_global_component!(CubeSceneData {
 
 impl Default for CubeSceneData {
     fn default() -> Self {
+        let total = GRID_SIZE * GRID_SIZE;
         CubeSceneData {
             inner: Arc::new(Mutex::new(CubeSceneDataInner {
-                heights: Vec::new(),
-                loaded: false,
+                heights: vec![0.0; total],
+                loaded_mask: vec![false; total],
+                total_loaded: 0,
             })),
         }
     }
@@ -197,16 +199,16 @@ impl PillProject for Project {
         };
         let heights = load_height_map(height_png)?;
 
-        // --- Build per-cube vertical values and write JSON ---
-        let mut vertical_values: Vec<f32> = Vec::with_capacity(GRID_SIZE * GRID_SIZE);
+        // --- Build per-cube vertical values and write binary file ---
+        let mut bin_bytes: Vec<u8> = Vec::with_capacity(GRID_SIZE * GRID_SIZE * 4);
         for x in 0..GRID_SIZE {
             for z in 0..GRID_SIZE {
                 let h = sample_height(&heights, map_w, map_h, x, z);
-                vertical_values.push(0.5 + h * MAX_HEIGHT);
+                let val = 0.5 + h * MAX_HEIGHT;
+                bin_bytes.extend_from_slice(&val.to_le_bytes());
             }
         }
-        let json = serde_json::to_string(&vertical_values)?;
-        std::fs::write("height_data.json", &json)?;
+        std::fs::write("height_data.bin", &bin_bytes)?;
 
         // --- 100×100 cube grid (spawn at default Y, streaming will set real height) ---
         let half_extent = (GRID_SIZE as f32 * CUBE_SPACING) / 2.0;
@@ -325,37 +327,101 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
 
 // --- Position streaming system ---
 
+const STREAM_RADIUS: f32 = 100.0;
+
 fn position_streaming_system(engine: &mut Engine) -> Result<()> {
     let inner = engine
         .get_global_component::<CubeSceneData>()?
         .inner
         .clone();
 
-    // Load JSON once
+    // --- Find camera grid position ---
+    let (cam_gx, cam_gz) = {
+        let mut cam_pos = None;
+        for (_entity, transform, _cam) in
+            engine.iterate_two_components_mut::<TransformComponent, CameraComponent>()?
+        {
+            cam_pos = Some(transform.position);
+            break;
+        }
+        match cam_pos {
+            Some(p) => {
+                let half = (GRID_SIZE as f32 * CUBE_SPACING) / 2.0;
+                let gx = ((p.x + half) / CUBE_SPACING) as isize;
+                let gz = ((p.z + half) / CUBE_SPACING) as isize;
+                (gx, gz)
+            }
+            None => return Ok(()),
+        }
+    };
+
+    let grid_radius = (STREAM_RADIUS / CUBE_SPACING).ceil() as isize;
+    let gx_min = (cam_gx - grid_radius).max(0) as usize;
+    let gx_max = (cam_gx + grid_radius).min(GRID_SIZE as isize - 1) as usize;
+    let gz_min = (cam_gz - grid_radius).max(0) as usize;
+    let gz_max = (cam_gz + grid_radius).min(GRID_SIZE as isize - 1) as usize;
+
+    // --- Partial load: read needed rows from binary file ---
     {
         let mut data = inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !data.loaded {
-            let json = std::fs::read_to_string("height_data.json")?;
-            data.heights = serde_json::from_str(&json)?;
-            data.loaded = true;
+
+        if let Ok(mut file) = std::fs::File::open("height_data.bin") {
+            for gz in gz_min..=gz_max {
+                let start_idx = gz * GRID_SIZE + gx_min;
+                let count = gx_max - gx_min + 1;
+
+                // Skip row if all cells already loaded
+                let all_loaded = (gx_min..=gx_max).all(|gx| {
+                    data.loaded_mask[gz * GRID_SIZE + gx]
+                });
+
+                if !all_loaded {
+                    let offset = (start_idx * 4) as u64;
+                    let len = count * 4;
+                    let mut buf = vec![0u8; len];
+                    file.seek(SeekFrom::Start(offset))?;
+                    file.read_exact(&mut buf)?;
+
+                    for (i, chunk) in buf.chunks_exact(4).enumerate() {
+                        let gx = gx_min + i;
+                        let idx = gz * GRID_SIZE + gx;
+                        if !data.loaded_mask[idx] {
+                            let val = f32::from_le_bytes(chunk.try_into().unwrap());
+                            data.heights[idx] = val;
+                            data.loaded_mask[idx] = true;
+                            data.total_loaded += 1;
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // Apply heights to cubes
+    // --- Apply heights: loaded → cached value, out-of-range → zero ---
     let data = inner
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let heights = &data.heights;
+
+    let grid_radius_f = STREAM_RADIUS / CUBE_SPACING;
+    let in_range = |gx: usize, gz: usize| -> bool {
+        let dx = gx as isize - cam_gx;
+        let dz = gz as isize - cam_gz;
+        let dist = ((dx * dx + dz * dz) as f32).sqrt();
+        dist <= grid_radius_f
+    };
 
     for (_entity, transform, cube_data) in
         engine.iterate_two_components_mut::<TransformComponent, CubeData>()?
     {
         let idx = cube_data.grid_z * GRID_SIZE + cube_data.grid_x;
-        if let Some(&h) = heights.get(idx) {
-            let pos = transform.position;
-            transform.set_position(Vector3f::new(pos.x, h, pos.z));
+        let pos = transform.position;
+
+        if in_range(cube_data.grid_x, cube_data.grid_z) && data.loaded_mask[idx] {
+            transform.set_position(Vector3f::new(pos.x, data.heights[idx], pos.z));
+        } else {
+            transform.set_position(Vector3f::new(pos.x, 0.0, pos.z));
         }
     }
 
@@ -380,17 +446,21 @@ fn register_stream_debug_ui(engine: &mut Engine) -> Result<()> {
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-                    let loaded = data.loaded;
-                    let count = data.heights.len();
-                    let mem_bytes = count * std::mem::size_of::<f32>();
+                    let total = GRID_SIZE * GRID_SIZE;
+                    let loaded = data.total_loaded;
+                    let mem_bytes = total * std::mem::size_of::<f32>();
 
                     ui.label(format!(
-                        "Height Data Loaded: {}",
-                        if loaded { "Yes" } else { "No" }
+                        "Cells Loaded: {} / {}",
+                        loaded, total
                     ));
-                    ui.label(format!("Entries: {}", count));
                     ui.label(format!(
-                        "Memory: {} ({:.2} KB)",
+                        "Stream Radius: {:.0} units ({} cells)",
+                        STREAM_RADIUS,
+                        (STREAM_RADIUS / CUBE_SPACING).ceil() as usize * 2
+                    ));
+                    ui.label(format!(
+                        "Cache Memory: {} ({:.2} KB)",
                         format_bytes(mem_bytes),
                         mem_bytes as f64 / 1024.0
                     ));
