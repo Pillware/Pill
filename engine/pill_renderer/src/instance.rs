@@ -1,6 +1,6 @@
 use crate::resources::Vertex;
 
-use pill_core::Matrix3f;
+use pill_core::{Matrix3f, Vector3f};
 use pill_engine::internal::TransformComponent;
 
 // --- Instance ---
@@ -13,10 +13,15 @@ pub struct Instance {
 
 impl Instance {
     pub fn new(transform_component: &TransformComponent) -> Instance {
+        let rot_radians = Vector3f::new(
+            transform_component.rotation.x.to_radians(),
+            transform_component.rotation.y.to_radians(),
+            transform_component.rotation.z.to_radians(),
+        );
         Instance {
             transform: Matrix3f::from_cols(
                 transform_component.position,
-                transform_component.rotation,
+                rot_radians,
                 transform_component.scale,
             ),
         }

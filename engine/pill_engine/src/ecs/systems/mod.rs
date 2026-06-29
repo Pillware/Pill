@@ -8,6 +8,8 @@ pub(crate) mod deferred_update_system;
 pub(crate) mod input_system;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod networking_system;
+#[cfg(feature = "physics")]
+pub(crate) mod physics_system;
 pub(crate) mod rendering_system;
 mod system_manager;
 pub(crate) mod time_system;

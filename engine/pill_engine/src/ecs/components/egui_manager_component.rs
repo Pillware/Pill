@@ -1,6 +1,6 @@
 #![cfg(feature = "debug_ui")]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     ecs::{
@@ -16,8 +16,15 @@ use pill_core::{PillTypeMapKey, Timer, TimerRecord};
 
 use pill_core::{ErrorContext, Result};
 
+type DebugUiCallback = Arc<dyn Fn(&egui::Context) + Send + Sync + 'static>;
+
+struct RegisteredUi {
+    id: String,
+    callback: DebugUiCallback,
+}
+
 pub struct EguiManagerComponent {
-    collapsing_state: HashMap<String, bool>,
+    registered_ui: Vec<RegisteredUi>,
 }
 
 impl Default for EguiManagerComponent {
@@ -26,12 +33,37 @@ impl Default for EguiManagerComponent {
     }
 }
 
-// TODO: add the build type/status
 impl EguiManagerComponent {
     pub fn new() -> Self {
         Self {
-            collapsing_state: HashMap::new(),
+            registered_ui: Vec::new(),
         }
+    }
+
+    pub fn register_ui<F>(&mut self, id: impl Into<String>, callback: F)
+    where
+        F: Fn(&egui::Context) + Send + Sync + 'static,
+    {
+        let id = id.into();
+        let callback: DebugUiCallback = Arc::new(callback);
+
+        // update existing or add a new
+        if let Some(existing) = self.registered_ui.iter_mut().find(|e| e.id == id) {
+            existing.callback = callback;
+        } else {
+            self.registered_ui.push(RegisteredUi { id, callback });
+        }
+    }
+
+    pub fn clear_registered_ui(&mut self) {
+        self.registered_ui.clear();
+    }
+
+    pub fn snapshot_registered_ui(&self) -> Vec<DebugUiCallback> {
+        self.registered_ui
+            .iter()
+            .map(|entry| Arc::clone(&entry.callback))
+            .collect()
     }
 
     pub fn get_ui(engine: &mut Engine) -> Box<dyn FnMut(&egui::Context)> {
@@ -84,6 +116,11 @@ impl EguiManagerComponent {
             .unwrap()
             .last_build_status;
 
+        let registered_ui = engine
+            .get_global_component::<EguiManagerComponent>()
+            .unwrap()
+            .snapshot_registered_ui();
+
         let ui = Box::new(move |ui: &egui::Context| {
             egui::Window::new("Pill Engine")
                 .default_open(true)
@@ -110,8 +147,6 @@ impl EguiManagerComponent {
             egui::Window::new("Details")
                 .default_open(false)
                 .resizable(true)
-                //.anchor(egui::Align2::LEFT_TOP, [0.0, 0.0]) // TODO: how to make it below the
-                // previous
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false; 2]) // optional: prevent auto shrink
@@ -168,6 +203,10 @@ impl EguiManagerComponent {
                             }
                         });
                 });
+
+            for callback in &registered_ui {
+                callback(ui);
+            }
         });
 
         ui

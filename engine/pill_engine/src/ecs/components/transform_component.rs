@@ -218,18 +218,18 @@ pub trait Matrix4fModelExt {
 
 impl Matrix3fAngleExt for Matrix3f {
     fn from_euler_angles(rotation_deg: Vector3f) -> Matrix3f {
-        let rz = Matrix3f::from_angle(rotation_deg.z.to_radians());
-        let ry = Matrix3f::from_angle(rotation_deg.y.to_radians());
-        let rx = Matrix3f::from_angle(rotation_deg.x.to_radians());
+        let rz = Matrix3f::from_rotation_z(rotation_deg.z.to_radians());
+        let ry = Matrix3f::from_rotation_y(rotation_deg.y.to_radians());
+        let rx = Matrix3f::from_rotation_x(rotation_deg.x.to_radians());
         rz * ry * rx
     }
 }
 
 impl Matrix4fModelExt for Matrix4f {
     fn model(position: Vector3f, rotation_deg: Vector3f, scale: Vector3f) -> Matrix4f {
-        let rz = Matrix3f::from_angle(rotation_deg.z.to_radians());
-        let ry = Matrix3f::from_angle(rotation_deg.y.to_radians());
-        let rx = Matrix3f::from_angle(rotation_deg.x.to_radians());
+        let rz = Matrix3f::from_rotation_z(rotation_deg.z.to_radians());
+        let ry = Matrix3f::from_rotation_y(rotation_deg.y.to_radians());
+        let rx = Matrix3f::from_rotation_x(rotation_deg.x.to_radians());
         let rot3 = rz * ry * rx;
 
         let t = Matrix4f::from_translation(position);
@@ -240,9 +240,9 @@ impl Matrix4fModelExt for Matrix4f {
     }
 
     fn from_euler_angles(rotation_deg: Vector3f) -> Matrix4f {
-        let rz = Matrix3f::from_angle(rotation_deg.z.to_radians());
-        let ry = Matrix3f::from_angle(rotation_deg.y.to_radians());
-        let rx = Matrix3f::from_angle(rotation_deg.x.to_radians());
+        let rz = Matrix3f::from_rotation_z(rotation_deg.z.to_radians());
+        let ry = Matrix3f::from_rotation_y(rotation_deg.y.to_radians());
+        let rx = Matrix3f::from_rotation_x(rotation_deg.x.to_radians());
         let rot3 = rz * ry * rx;
         Matrix4f::from_mat3(rot3)
     }

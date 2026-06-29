@@ -11,6 +11,9 @@ use crate::{
 #[cfg(not(target_arch = "wasm32"))]
 use crate::ecs::{audio_system, haptics_system, AudioManagerComponent};
 
+#[cfg(feature = "physics")]
+use crate::ecs::physics_system;
+
 use pill_core::PillSlotMapKeyData;
 
 use lazy_static::lazy_static;
@@ -70,6 +73,13 @@ pub const RENDERING_SYSTEM: SystemConfig = SystemConfig {
     name: "rendering_system",
     system_function: rendering_system,
     update_phase: UpdatePhase::PostProject,
+};
+
+#[cfg(feature = "physics")]
+pub const PHYSICS_SYSTEM: SystemConfig = SystemConfig {
+    name: "physics_system",
+    system_function: physics_system,
+    update_phase: UpdatePhase::PostGame,
 };
 
 // --- Resources ---

@@ -373,6 +373,11 @@ impl Engine {
             ))?;
         }
 
+        #[cfg(feature = "physics")]
+        {
+            self.add_global_component(PhysicsWorldComponent::default())?;
+        }
+
         // Add built-in systems
         self.system_manager.add_system(
             TIME_SYSTEM.name,
@@ -402,6 +407,15 @@ impl Engine {
                 RENDERING_SYSTEM.name,
                 RENDERING_SYSTEM.system_function,
                 RENDERING_SYSTEM.update_phase,
+            )?;
+        }
+
+        #[cfg(feature = "physics")]
+        {
+            self.system_manager.add_system(
+                PHYSICS_SYSTEM.name,
+                PHYSICS_SYSTEM.system_function,
+                PHYSICS_SYSTEM.update_phase,
             )?;
         }
 
@@ -521,6 +535,12 @@ impl Engine {
     }
 
     pub fn shutdown(&mut self) {
+        // cleanup the registered egui hooks
+        #[cfg(feature = "debug_ui")]
+        self.get_global_component_mut::<EguiManagerComponent>()
+            .unwrap()
+            .clear_registered_ui();
+
         // TODO: pass the memory to serialize to
         info!(LogContext::Engine => "Shutting down {}", "Engine".module_object_style());
         // TODO: can we serialize to some memory here?

@@ -9,6 +9,8 @@ pub(crate) mod audio_source_component;
 #[cfg(feature = "debug_ui")]
 pub(crate) mod build_status_indicator_component;
 pub(crate) mod camera_component;
+#[cfg(feature = "physics")]
+pub(crate) mod collider_component;
 mod component;
 mod component_storage;
 pub(crate) mod deferred_update_component;
@@ -20,6 +22,10 @@ pub(crate) mod mesh_rendering_component;
 pub(crate) mod network_manager_component;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod network_state_component;
+#[cfg(feature = "physics")]
+pub(crate) mod physics_world_component;
+#[cfg(feature = "physics")]
+pub(crate) mod rigid_body_component;
 pub(crate) mod time_component;
 pub(crate) mod transform_component;
 
