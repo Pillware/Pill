@@ -8,6 +8,7 @@
 // in `pill_web::run`. This keeps the per-project cdylib tiny and the runtime
 // shape symmetric with `pill_native` (which is also a workspace crate).
 
+use project::Project;
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -18,5 +19,5 @@ static ALLOC: lol_alloc::AssumeSingleThreaded<lol_alloc::FreeListAllocator> =
 
 #[wasm_bindgen(start)]
 pub fn wasm_main() {
-    pill_web::run(project::create_project(), include_str!("../config.ini"));
+    pill_web::run(Box::new(Project {}), include_str!("../config.ini"));
 }

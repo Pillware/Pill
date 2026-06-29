@@ -112,13 +112,13 @@ pub(crate) fn run_project(
             })?;
 
         if !output.status.success() {
-            eprintln!(
-                "Project exited with error code: {}",
-                output
-                    .status
-                    .code()
-                    .map_or("unknown".into(), |c| c.to_string())
-            );
+            // Child crashed or was terminated (e.g. user closed the window).
+            // Don't bail - the launcher did its job; just report the code.
+            let code = output
+                .status
+                .code()
+                .map_or("unknown".into(), |c| c.to_string());
+            eprintln!("Project exited with code: {code}");
         }
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(Some(stdout))
@@ -131,9 +131,10 @@ pub(crate) fn run_project(
         })?;
 
         if !status.success() {
+            // Child crashed or was terminated (e.g. user closed the window).
+            // Don't bail - the launcher did its job; just report the code once.
             let code = status.code().map_or("unknown".into(), |c| c.to_string());
-            eprintln!("Project exited with error code: {code}");
-            bail!("Project exited with error code: {code}");
+            eprintln!("Project exited with code: {code}");
         }
         Ok(None)
     }

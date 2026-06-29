@@ -14,6 +14,7 @@ use crate::actions::Action;
 use crate::types::*;
 use crate::utils::cli::{
     add_build_flags, add_path_flag, max_wasm_size_flag, parse_build_target, parse_compile_mode,
+    wasm_analyze_flag,
 };
 use crate::utils::native_target::build_project;
 use crate::utils::paths::get_project_build_path;
@@ -34,7 +35,7 @@ impl Action for Build {
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
         let app = add_path_flag(app);
         let app = add_build_flags(app);
-        app.arg(max_wasm_size_flag())
+        app.arg(max_wasm_size_flag()).arg(wasm_analyze_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
@@ -48,6 +49,7 @@ impl Action for Build {
         let maximum_wasm_size: Option<u64> = matches
             .value_of("max-wasm-size")
             .and_then(|s| s.parse().ok());
+        let wasm_analyze = matches.is_present("wasm-analyze");
 
         if clean {
             crate::utils::assets::run_asset_pipeline(&path.join("res"), true)?;
@@ -65,7 +67,7 @@ impl Action for Build {
                 if matches.occurrences_of("output-path") > 0 {
                     println!("Note: `-o/--output-path` is ignored with `-t wasm`; output is fixed at <project>/build/wasm/");
                 }
-                wasm_target::build_project(&path, &compile_mode, maximum_wasm_size)?;
+                wasm_target::build_project(&path, &compile_mode, maximum_wasm_size, wasm_analyze)?;
             }
         }
         Ok(())

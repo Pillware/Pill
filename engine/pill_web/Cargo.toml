@@ -16,7 +16,7 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-pill_engine = { path = "../pill_engine", features = ["project"] }
+pill_engine = { path = "../pill_engine", features = ["project", "internal"] }
 pill_renderer = { path = "../pill_renderer" }
 pill_core = { path = "../pill_core" }
 

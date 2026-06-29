@@ -13,6 +13,7 @@
 name = "pill_web_app"
 version = "0.1.0"
 edition = "2021"
+workspace = "NO_PATH"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

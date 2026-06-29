@@ -39,7 +39,7 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
     let matches = match app.get_matches_safe() {
         Ok(m) => m,
         Err(e) => {
-            // get_matches_safe() does NOT print to stdout/stderr — it returns
+            // get_matches_safe() does NOT print to stdout/stderr - it returns
             // an Error with the message.  For --help / --version, the error's
             // Display impl has the help/version text; we must print it ourselves.
             use clap::ErrorKind;
@@ -143,6 +143,13 @@ pub(crate) fn max_wasm_size_flag() -> Arg<'static, 'static> {
         .long("max-wasm-size")
         .takes_value(true)
         .help("Maximum WASM binary size in KB")
+}
+
+/// `--wasm-analyze` - run twiggy size analysis after WASM release build.
+pub(crate) fn wasm_analyze_flag() -> Arg<'static, 'static> {
+    Arg::with_name("wasm-analyze")
+        .long("wasm-analyze")
+        .help("Run twiggy size breakdown after WASM release build")
 }
 
 /// `--` passthrough for project/cargo arguments.
