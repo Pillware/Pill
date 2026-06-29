@@ -9,4 +9,4 @@ crate-type = ["cdylib"]
 path = "src/project.rs"
 
 [dependencies]
-pill_engine = { path = "NO_PATH", features = ["project"] }
+pill_engine = { path = "NO_PATH", features = ["project", "obj_loading"] }

@@ -45,14 +45,14 @@ impl Action for Create {
     }
 }
 
-/// Scaffold a new Pill project from the pill_default template.
+/// Scaffold a new Pill project from the new_project template.
 /// Copies template files, renames the directory, and rewrites config.ini
 /// and Cargo.toml with the new project name and absolute engine paths.
 pub(crate) fn create_project(
     project_parent_directory_path: &Path,
     project_name: &str,
 ) -> Result<()> {
-    const TEMPLATE_NAME: &str = "pill_default";
+    const TEMPLATE_NAME: &str = "new_project";
 
     let project_directory_path = project_parent_directory_path.join(project_name);
     // Guard against overwriting an existing directory.
@@ -118,9 +118,17 @@ pub(crate) fn create_project(
         &cargo_toml_path,
         |line: String| -> String {
             if line.contains("pill_engine") {
-                return format!(
-                    "pill_engine = {{ path = \"{pill_engine_path}\", features = [\"project\"] }}"
-                );
+                // Preserve the original features list; only rewrite the path.
+                let features = if let Some(start) = line.find("features") {
+                    let remainder = &line[start..];
+                    // Strip trailing '}' (and whitespace) from the original inline-table close.
+                    remainder
+                        .trim_end_matches(|c: char| c == '}' || c.is_whitespace())
+                        .to_string()
+                } else {
+                    "features = [\"project\"]".to_string()
+                };
+                return format!("pill_engine = {{ path = \"{pill_engine_path}\", {features} }}");
             }
             if line.contains("workspace") {
                 return format!("workspace = \"{engine_workspace_path}\"");

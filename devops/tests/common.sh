@@ -81,10 +81,10 @@ TMPDIR="${TMPDIR:-/tmp}"
 test_workspace_root="${TEST_ROOT:-$TMPDIR/pill-ci-tests-$$}"
 mkdir -p "$test_workspace_root"
 
-cleanup_workspace() {
-    rm -rf "$test_workspace_root"
-}
-trap cleanup_workspace EXIT
+# cleanup_workspace() {
+#     rm -rf "$test_workspace_root"
+# }
+# trap cleanup_workspace EXIT
 
 # ---------------------------------------------------------------------------
 # Utility helpers
@@ -163,9 +163,9 @@ print_summary() {
         local status="${entry%%|*}"
         local description="${entry#*|}"
         case "$status" in
-            PASS) echo "($index/$total_tests) ${GREEN}PASS${NC} - $description" ;;
-            FAIL) echo "($index/$total_tests) ${RED}FAIL${NC} - $description" ;;
-            SKIP) echo "($index/$total_tests) ${YELLOW}SKIP${NC} - $description" ;;
+            PASS) echo -e "($index/$total_tests) ${GREEN}PASS${NC} - $description" ;;
+            FAIL) echo -e "($index/$total_tests) ${RED}FAIL${NC} - $description" ;;
+            SKIP) echo -e "($index/$total_tests) ${YELLOW}SKIP${NC} - $description" ;;
         esac
     done
     echo "========================================"

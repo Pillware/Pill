@@ -73,6 +73,7 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
     }
 
     app = app.setting(AppSettings::TrailingVarArg);
+    app = app.setting(AppSettings::ArgRequiredElseHelp);
 
     // Use get_matches_safe so we don't exit() inside the library - important
     // for unit tests that call run_app directly.  We must handle
@@ -81,13 +82,14 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
     let matches = match app.get_matches_safe() {
         Ok(m) => m,
         Err(e) => {
-            // --help and --version print their output to stdout and return an
-            // error of kind HelpDisplayed / VersionDisplayed.  The output has
-            // already been printed by clap - just exit successfully.
+            // get_matches_safe() does NOT print to stdout/stderr — it returns
+            // an Error with the message.  For --help / --version, the error's
+            // Display impl has the help/version text; we must print it ourselves.
             use clap::ErrorKind;
             match e.kind {
                 ErrorKind::HelpDisplayed | ErrorKind::VersionDisplayed => {
-                    std::process::exit(0);
+                    print!("{e}");
+                    return Ok(());
                 }
                 _ => return Err(anyhow::anyhow!("{}", e)),
             }

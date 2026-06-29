@@ -98,7 +98,7 @@ test_launcher_create() {
     assert_fail "create without --name" "name" -a create -p "$test_workspace_root"
 
     # Short flags
-    assert_ok "create with short flags" -a create -n ShortCreate -p "$test_workspace_root"
+    assert_ok "create with short flags" -a create -n CreateTest_ShortFlags -p "$test_workspace_root"
 }
 
 # ---------------------------------------------------------------------------

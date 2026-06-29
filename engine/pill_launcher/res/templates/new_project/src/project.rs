@@ -12,7 +12,7 @@ impl PillProject for Project {
         engine.register_component::<CameraComponent>(active_scene)?;
         engine.register_component::<MeshRenderingComponent>(active_scene)?;
 
-        let mesh_handle = engine.add_resource(Mesh::new("pill", "models/pill.obj"))?;
+        let mesh_handle = engine.add_resource(Mesh::new("pill", "models/pill.obj".into()))?;
 
         let material_handle = engine.add_resource(
             Material::builder("default")
@@ -59,21 +59,20 @@ impl PillProject for Project {
 // --- Systems ---
 
 fn float_and_rotate_system(engine: &mut Engine) -> Result<()> {
-    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
-    let elapsed = engine.frame_count() as f32 * delta_time;
+    let elapsed = engine.get_global_component::<TimeComponent>()?.time;
 
     for (_entity, transform, _mesh) in
         engine.iterate_two_components_mut::<TransformComponent, MeshRenderingComponent>()?
     {
-        let float_offset = (elapsed * 1.5).sin() * 0.3;
+        let float_offset = (elapsed * 2.5).sin() * 0.3;
         transform.set_position(Vector3f::new(
             transform.position.x,
             0.5 + float_offset,
             transform.position.z,
         ));
         transform.set_rotation(Vector3f::new(
-            (elapsed * 30.0).sin() * 15.0,
-            elapsed * 45.0,
+            (elapsed * 2.0).sin() * 5.0,
+            elapsed * 60.0,
             0.0,
         ));
     }

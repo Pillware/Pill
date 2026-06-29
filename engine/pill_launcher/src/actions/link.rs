@@ -10,7 +10,6 @@ use clap::{App, ArgMatches};
 use std::fs;
 
 use crate::actions::Action;
-use crate::utils::cli::path_flag;
 use crate::utils::paths::*;
 
 // ---------------------------------------------------------------------------
@@ -25,7 +24,7 @@ impl Action for Link {
     }
 
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(path_flag())
+        app // shared --path registered in cli::run_app()
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
