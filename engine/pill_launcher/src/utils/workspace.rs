@@ -17,17 +17,21 @@ use crate::types::*;
 use crate::utils::files::*;
 use crate::utils::paths::*;
 
-/// Restores engine/Cargo.toml to its original content when dropped.
-/// Keeps the workspace clean between builds - no user-specific paths
-/// left behind that could accidentally be committed.
+/// Restores engine/Cargo.toml (and optionally the project's Cargo.toml)
+/// to its original content when dropped.
 pub(crate) struct WorkspaceGuard {
     manifest_path: PathBuf,
     original: String,
+    /// If the project manifest was patched (NO_PATH placeholders), restore it too.
+    project_manifest: Option<(PathBuf, String)>,
 }
 
 impl Drop for WorkspaceGuard {
     fn drop(&mut self) {
         let _ = fs::write(&self.manifest_path, &self.original);
+        if let Some((path, original)) = &self.project_manifest {
+            let _ = fs::write(path, original);
+        }
     }
 }
 
@@ -53,6 +57,12 @@ pub(crate) fn prepare_workspace_for_project(
 ) -> Result<(PathBuf, WorkspaceGuard)> {
     // Validate the project structure (Cargo.toml, res/, src/, config.ini).
     check_project_validity(project_directory_path).context("Project is invalid")?;
+
+    // Rewrite NO_PATH placeholders in the project's Cargo.toml (if present).
+    // Projects created outside the launcher (or with stale templates) may
+    // still have `path = "NO_PATH"` or `workspace = "NO_PATH"` that need to
+    // be replaced with absolute engine paths before cargo can build.
+    let project_manifest_patch = patch_project_manifest(project_directory_path)?;
 
     // Both pill_native and project must compile in the same workspace so that
     // type IDs (used by generics/templates) are consistent between the host and project.
@@ -194,6 +204,64 @@ pub(crate) fn prepare_workspace_for_project(
         WorkspaceGuard {
             manifest_path: workspace_manifest_path,
             original: original_manifest,
+            project_manifest: project_manifest_patch,
         },
     ))
+}
+
+/// Rewrite `NO_PATH` placeholders in the project's Cargo.toml to absolute
+/// engine paths.  Returns `None` if no rewriting was needed, or
+/// `Some((path, original_content))` so the caller can restore on drop.
+fn patch_project_manifest(project_path: &Path) -> Result<Option<(PathBuf, String)>> {
+    let pill_engine_path = get_path(Location::PillEngineCrate)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let engine_workspace = get_path(Location::EngineCrates)
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let manifest = project_path.join("Cargo.toml");
+    if !manifest.exists() {
+        return Ok(None);
+    }
+    let original = fs::read_to_string(&manifest)
+        .with_context(|| format!("Failed to read {}", manifest.display()))?;
+
+    let mut patched = String::new();
+    let mut changed = false;
+    for line in original.lines() {
+        if line.contains("NO_PATH") {
+            changed = true;
+            if line.contains("pill_engine") {
+                // Preserve features, only replace path.
+                let features = if let Some(start) = line.find("features") {
+                    let remainder = &line[start..];
+                    remainder
+                        .trim_end_matches(|c: char| c == '}' || c.is_whitespace())
+                        .to_string()
+                } else {
+                    "features = [\"project\"]".to_string()
+                };
+                patched.push_str(&format!(
+                    "pill_engine = {{ path = \"{pill_engine_path}\", {features} }}\n"
+                ));
+            } else if line.contains("workspace") {
+                patched.push_str(&format!("workspace = \"{engine_workspace}\"\n"));
+            } else {
+                patched.push_str(line);
+                patched.push('\n');
+            }
+        } else {
+            patched.push_str(line);
+            patched.push('\n');
+        }
+    }
+
+    if changed {
+        fs::write(&manifest, &patched)
+            .with_context(|| format!("Failed to patch {}", manifest.display()))?;
+        Ok(Some((manifest, original)))
+    } else {
+        Ok(None)
+    }
 }

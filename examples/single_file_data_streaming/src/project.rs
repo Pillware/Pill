@@ -65,9 +65,12 @@ define_component!(CubeData {
 });
 
 pub struct CubeSceneDataInner {
-    pub heights: Vec<f32>,      // cached heights (0.0 = not loaded)
-    pub loaded_mask: Vec<bool>, // which grid cells are loaded
-    pub total_loaded: usize,    // count of loaded cells
+    pub file_exists: bool,
+    pub heights: Vec<f32>,
+    pub cells_in_range: usize,
+    pub bytes_read_this_frame: u64,
+    pub total_bytes_read: u64,
+    pub frame_count: u64,
 }
 
 define_global_component!(CubeSceneData {
@@ -79,9 +82,12 @@ impl Default for CubeSceneData {
         let total = GRID_SIZE * GRID_SIZE;
         CubeSceneData {
             inner: Arc::new(Mutex::new(CubeSceneDataInner {
+                file_exists: false,
                 heights: vec![0.0; total],
-                loaded_mask: vec![false; total],
-                total_loaded: 0,
+                cells_in_range: 0,
+                bytes_read_this_frame: 0,
+                total_bytes_read: 0,
+                frame_count: 0,
             })),
         }
     }
@@ -199,16 +205,23 @@ impl PillProject for Project {
         };
         let heights = load_height_map(height_png)?;
 
-        // --- Build per-cube vertical values and write binary file ---
-        let mut bin_bytes: Vec<u8> = Vec::with_capacity(GRID_SIZE * GRID_SIZE * 4);
-        for x in 0..GRID_SIZE {
-            for z in 0..GRID_SIZE {
+        // --- Build per-cube vertical values and write fixed-width file ---
+        // One value per line, exactly 9 bytes each ({:>8.4} + \n) → O(1) seekable
+        const LINE_BYTES: usize = 9; // 8-char float + newline
+        let total = GRID_SIZE * GRID_SIZE;
+        let mut data = vec![0u8; total * LINE_BYTES];
+        let mut idx = 0;
+        for z in 0..GRID_SIZE {
+            for x in 0..GRID_SIZE {
                 let h = sample_height(&heights, map_w, map_h, x, z);
                 let val = 0.5 + h * MAX_HEIGHT;
-                bin_bytes.extend_from_slice(&val.to_le_bytes());
+                let s = format!("{:>8.4}\n", val);
+                data[idx * LINE_BYTES..(idx + 1) * LINE_BYTES].copy_from_slice(s.as_bytes());
+                idx += 1;
             }
         }
-        std::fs::write("height_data.bin", &bin_bytes)?;
+        std::fs::create_dir_all("res/data")?;
+        std::fs::write("res/data/height_data.json", &data)?;
 
         // --- 100×100 cube grid (spawn at default Y, streaming will set real height) ---
         let half_extent = (GRID_SIZE as f32 * CUBE_SPACING) / 2.0;
@@ -222,6 +235,7 @@ impl PillProject for Project {
                     .with_component(
                         TransformComponent::builder()
                             .position(Vector3f::new(pos_x, 0.5, pos_z))
+                            .scale(Vector3f::new(1.8, 1.8, 1.8))
                             .build(),
                     )
                     .with_component(
@@ -355,53 +369,6 @@ fn position_streaming_system(engine: &mut Engine) -> Result<()> {
         }
     };
 
-    let grid_radius = (STREAM_RADIUS / CUBE_SPACING).ceil() as isize;
-    let gx_min = (cam_gx - grid_radius).max(0) as usize;
-    let gx_max = (cam_gx + grid_radius).min(GRID_SIZE as isize - 1) as usize;
-    let gz_min = (cam_gz - grid_radius).max(0) as usize;
-    let gz_max = (cam_gz + grid_radius).min(GRID_SIZE as isize - 1) as usize;
-
-    // --- Partial load: read needed rows from binary file ---
-    {
-        let mut data = inner
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        if let Ok(mut file) = std::fs::File::open("height_data.bin") {
-            for gz in gz_min..=gz_max {
-                let start_idx = gz * GRID_SIZE + gx_min;
-                let count = gx_max - gx_min + 1;
-
-                // Skip row if all cells already loaded
-                let all_loaded = (gx_min..=gx_max).all(|gx| data.loaded_mask[gz * GRID_SIZE + gx]);
-
-                if !all_loaded {
-                    let offset = (start_idx * 4) as u64;
-                    let len = count * 4;
-                    let mut buf = vec![0u8; len];
-                    file.seek(SeekFrom::Start(offset))?;
-                    file.read_exact(&mut buf)?;
-
-                    for (i, chunk) in buf.chunks_exact(4).enumerate() {
-                        let gx = gx_min + i;
-                        let idx = gz * GRID_SIZE + gx;
-                        if !data.loaded_mask[idx] {
-                            let val = f32::from_le_bytes(chunk.try_into().unwrap());
-                            data.heights[idx] = val;
-                            data.loaded_mask[idx] = true;
-                            data.total_loaded += 1;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // --- Apply heights: loaded → cached value, out-of-range → zero ---
-    let data = inner
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-
     let grid_radius_f = STREAM_RADIUS / CUBE_SPACING;
     let in_range = |gx: usize, gz: usize| -> bool {
         let dx = gx as isize - cam_gx;
@@ -410,18 +377,71 @@ fn position_streaming_system(engine: &mut Engine) -> Result<()> {
         dist <= grid_radius_f
     };
 
+    // --- Open file and read only uncached cells with O(1) seek ---
+    let mut file = match std::fs::File::open("res/data/height_data.json") {
+        Ok(f) => f,
+        Err(_) => {
+            inner.lock().unwrap_or_else(|p| p.into_inner()).file_exists = false;
+            return Ok(());
+        }
+    };
+    inner.lock().unwrap_or_else(|p| p.into_inner()).file_exists = true;
+
+    const LINE_BYTES: u64 = 9; // {:>8.4}\n
+    let mut bytes_read: u64 = 0;
+    let mut line_buf = [0u8; LINE_BYTES as usize];
+
+    // --- Apply: stream per-cell from disk, cache, zero out-of-range ---
+    let mut cells_in_range: usize = 0;
+    let mut data = inner.lock().unwrap_or_else(|p| p.into_inner());
+
     for (_entity, transform, cube_data) in
         engine.iterate_two_components_mut::<TransformComponent, CubeData>()?
     {
         let idx = cube_data.grid_z * GRID_SIZE + cube_data.grid_x;
         let pos = transform.position;
 
-        if in_range(cube_data.grid_x, cube_data.grid_z) && data.loaded_mask[idx] {
-            transform.set_position(Vector3f::new(pos.x, data.heights[idx], pos.z));
+        if in_range(cube_data.grid_x, cube_data.grid_z) {
+            cells_in_range += 1;
+            if data.heights[idx] == 0.0 {
+                // Uncached — read exactly one 9-byte line from disk
+                file.seek(SeekFrom::Start(idx as u64 * LINE_BYTES))?;
+                file.read_exact(&mut line_buf)?;
+                bytes_read += LINE_BYTES;
+                // Parse "  0.5000\n" → f32
+                let s = std::str::from_utf8(&line_buf[..8])?;
+                let h: f32 = s.trim().parse().unwrap_or(0.0);
+                data.heights[idx] = h;
+                transform.set_position(Vector3f::new(pos.x, h, pos.z));
+            } else {
+                // Cached — use existing value
+                transform.set_position(Vector3f::new(pos.x, data.heights[idx], pos.z));
+            }
         } else {
+            data.heights[idx] = 0.0;
             transform.set_position(Vector3f::new(pos.x, 0.0, pos.z));
         }
     }
+
+    // --- Update stats and log ---
+    data.cells_in_range = cells_in_range;
+    data.bytes_read_this_frame = bytes_read;
+    data.total_bytes_read += bytes_read;
+    data.frame_count += 1;
+
+    if bytes_read > 0 {
+        println!(
+            "[Stream] frame {:>6} | in_range={:>5} | loaded={:>5} cells | read={:>6} B ({:.1} KB) | total_read={:>8} B ({:.1} KB)",
+            data.frame_count,
+            cells_in_range,
+            bytes_read / LINE_BYTES,
+            bytes_read,
+            bytes_read as f64 / 1024.0,
+            data.total_bytes_read,
+            data.total_bytes_read as f64 / 1024.0,
+        );
+    }
+    drop(data);
 
     Ok(())
 }
@@ -444,35 +464,42 @@ fn register_stream_debug_ui(engine: &mut Engine) -> Result<()> {
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
 
-                    let total = GRID_SIZE * GRID_SIZE;
-                    let loaded = data.total_loaded;
-                    let mem_bytes = total * std::mem::size_of::<f32>();
+                    let cache_kb = (GRID_SIZE * GRID_SIZE * 4) as f64 / 1024.0;
 
-                    ui.label(format!("Cells Loaded: {} / {}", loaded, total));
                     ui.label(format!(
-                        "Stream Radius: {:.0} units ({} cells)",
-                        STREAM_RADIUS,
-                        (STREAM_RADIUS / CUBE_SPACING).ceil() as usize * 2
+                        "Data Source: {}",
+                        if data.file_exists {
+                            "res/data/height_data.json"
+                        } else {
+                            "Not found"
+                        }
+                    ));
+                    ui.label(format!("Stream Radius: {:.0} world units", STREAM_RADIUS));
+                    ui.separator();
+                    ui.label(format!("Cells In Range: {}", data.cells_in_range));
+                    ui.label(format!(
+                        "Active Data Size: {:.1} KB",
+                        (data.cells_in_range * 4) as f64 / 1024.0
+                    ));
+                    ui.label(format!("Cache Size: {:.1} KB (full grid)", cache_kb));
+                    ui.separator();
+                    ui.label(format!(
+                        "Bytes Read (frame): {} ({:.1} KB)",
+                        data.bytes_read_this_frame,
+                        data.bytes_read_this_frame as f64 / 1024.0
                     ));
                     ui.label(format!(
-                        "Cache Memory: {} ({:.2} KB)",
-                        format_bytes(mem_bytes),
-                        mem_bytes as f64 / 1024.0
+                        "Bytes Read (total): {} ({:.1} KB)",
+                        data.total_bytes_read,
+                        data.total_bytes_read as f64 / 1024.0
                     ));
+                    ui.label(format!("Frames Streamed: {}", data.frame_count));
+                    ui.separator();
+                    ui.label("Mode: Row-based JSON streaming");
                 });
         });
 
     Ok(())
-}
-
-fn format_bytes(bytes: usize) -> String {
-    if bytes >= 1024 * 1024 {
-        format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else if bytes >= 1024 {
-        format!("{:.2} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{} B", bytes)
-    }
 }
 
 // --- Camera debug UI systems ---
