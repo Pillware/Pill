@@ -70,9 +70,13 @@ pub(crate) fn use_experimental_logs_parser() -> bool {
 
 /// Lazily-initialized ANSI escape wrappers for success / failure messages.
 /// Cached so `is_terminal()` is called only once per process.
+/// When running as a hot-reload child (PILL_HOT_RELOAD_CHILD=1), stdout is
+/// piped to pill_native but the output is ultimately displayed on a terminal,
+/// so we force ANSI codes on.
 pub(crate) fn ansi_green() -> (&'static str, &'static str) {
     static ANSI: LazyLock<(&str, &str)> = LazyLock::new(|| {
-        if std::io::stdout().is_terminal() {
+        let hot_reload_child = std::env::var("PILL_HOT_RELOAD_CHILD").ok().as_deref() == Some("1");
+        if hot_reload_child || std::io::stdout().is_terminal() {
             ("\x1b[32m", "\x1b[0m")
         } else {
             ("", "")
@@ -84,7 +88,8 @@ pub(crate) fn ansi_green() -> (&'static str, &'static str) {
 /// Lazily-initialized ANSI escape wrappers for error messages.
 pub(crate) fn ansi_red() -> (&'static str, &'static str) {
     static ANSI: LazyLock<(&str, &str)> = LazyLock::new(|| {
-        if std::io::stdout().is_terminal() {
+        let hot_reload_child = std::env::var("PILL_HOT_RELOAD_CHILD").ok().as_deref() == Some("1");
+        if hot_reload_child || std::io::stdout().is_terminal() {
             ("\x1b[31m", "\x1b[0m")
         } else {
             ("", "")
@@ -161,15 +166,16 @@ pub(crate) fn parse_cargo_stderr(stderr: &str) -> String {
 // Time formatting
 // ---------------------------------------------------------------------------
 
-/// Format a duration as "after Xmin Ysec" or "after Ysec".
+/// Format a duration as "after X.Ys" with microsecond precision, or
+/// "after Xmin Y.Zs" when the duration exceeds one minute.
 pub(crate) fn format_elapsed_time(elapsed: Duration) -> String {
-    let seconds = elapsed.as_secs();
-    let minutes = seconds / 60;
-    let remainder = seconds % 60;
+    let total_seconds = elapsed.as_secs_f64();
+    let minutes = (total_seconds / 60.0).floor() as u64;
     if minutes > 0 {
-        format!("after {}min {}sec", minutes, remainder)
+        let remainder = total_seconds - (minutes as f64 * 60.0);
+        format!("after {}min {:.3}s", minutes, remainder)
     } else {
-        format!("after {}sec", remainder)
+        format!("after {:.3}s", total_seconds)
     }
 }
 

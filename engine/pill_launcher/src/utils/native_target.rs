@@ -225,20 +225,27 @@ fn build_project_in_workspace(
         }
     }
     let start = Instant::now();
+    let mut cargo_command = Command::new("cargo");
+    cargo_command
+        .args(&arguments)
+        .current_dir(&engine_workspace_directory_path)
+        .env("CARGO_TARGET_DIR", &cargo_target_dir);
+
+    // When pill_native captures our output via pipes, cargo detects
+    // no TTY and strips ANSI colors from error messages.  Force color
+    // in hot-reload child builds so compiler diagnostics remain readable.
+    if hot_reload_child {
+        cargo_command.env("CARGO_TERM_COLOR", "always");
+    }
+
     let mut cargo_child = if use_experimental_logs_parser() {
-        Command::new("cargo")
-            .args(&arguments)
-            .current_dir(&engine_workspace_directory_path)
-            .env("CARGO_TARGET_DIR", &cargo_target_dir)
+        cargo_command
             .stdout(Stdio::inherit())
             .stderr(Stdio::piped())
             .spawn()
             .context("failed to spawn cargo build")?
     } else {
-        Command::new("cargo")
-            .args(&arguments)
-            .current_dir(&engine_workspace_directory_path)
-            .env("CARGO_TARGET_DIR", &cargo_target_dir)
+        cargo_command
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
@@ -368,8 +375,6 @@ fn build_project_in_workspace(
             println!("Copied project dynamic library");
             #[cfg(target_os = "macos")]
             codesign_ad_hoc(&data_directory.join(dynamic_library_name("project")))?;
-        } else {
-            println!("Skipping copying of project dynamic library");
         }
         if copy_file_if_newer(
             &runtime_source,
@@ -378,8 +383,6 @@ fn build_project_in_workspace(
             println!("Copied runtime dynamic library");
             #[cfg(target_os = "macos")]
             codesign_ad_hoc(&data_directory.join(dynamic_library_name("pill_runtime")))?;
-        } else {
-            println!("Skipping copying of runtime dynamic library");
         }
     }
 
@@ -389,16 +392,12 @@ fn build_project_in_workspace(
             &data_directory.join(dynamic_library_name("project_hot_reloaded")),
         )? {
             println!("Copied project hot-reload dynamic library");
-        } else {
-            println!("Skipping copying of project hot-reload dynamic library");
         }
         if copy_file_if_newer(
             &runtime_source,
             &data_directory.join(dynamic_library_name("pill_runtime_hot_reloaded")),
         )? {
             println!("Copied runtime hot-reload dynamic library");
-        } else {
-            println!("Skipping copying of runtime hot-reload dynamic library");
         }
     }
 

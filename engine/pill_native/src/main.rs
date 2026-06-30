@@ -988,7 +988,7 @@ fn check_and_reload(
 
             return Ok(());
         }
-        info!(LogContext::HotReload => "Hot-reload succeeded; Rebuild took: {:?}", build_start.elapsed());
+        info!(LogContext::HotReload => "Hot-reload build completed; Took: {:.3}s", build_start.elapsed().as_secs_f64());
     }
 
     // --- 5. Detect which dylibs were (re)built ---
@@ -1031,7 +1031,6 @@ fn check_and_reload(
     //      project dylib path and window handle.
     if runtime_hot_reload {
         info!(LogContext::HotReload => "Runtime hot-reload; Reloading runtime...");
-        let runtime_reload_start = Instant::now();
 
         // 1. Destroy the old runtime.  This drops the Engine, Renderer,
         //    wgpu Surface/Device/Queue, and unloads the old project dylib.
@@ -1075,11 +1074,10 @@ fn check_and_reload(
         // Swap the old runtime (already dropped) with the new one.
         *runtime_host = Some(new_runtime);
 
-        warn!(
-            "Runtime hot-reload took: {:?} time",
-            runtime_reload_start.elapsed()
+        info!(LogContext::HotReload =>
+            "Hot-reload completed (runtime + project); Took: {:.3}s",
+            build_start.elapsed().as_secs_f64()
         );
-        warn!("Total hot-reload took: {:?} time", build_start.elapsed());
     }
     // --- 5b. Project-only reload (game code changed, engine unchanged) ---
     //
@@ -1095,7 +1093,6 @@ fn check_and_reload(
     //        - Calls project.start() on the new project to reinitialise.
     else if project_hot_reload {
         info!(LogContext::HotReload => "Project hot-reload; Reloading project...");
-        let project_reload_start = Instant::now();
 
         // 1. Copy the rebuilt project dylib to avoid OS file locks.
         let loaded_project_path = next_loaded_project_dylib_path(project_paths);
@@ -1113,11 +1110,10 @@ fn check_and_reload(
             bail!("Engine not initialized");
         }
 
-        warn!(
-            "Project hot-reload took: {:?} time",
-            project_reload_start.elapsed()
+        info!(LogContext::HotReload =>
+            "Hot-reload completed (project only); Took: {:.3}s",
+            build_start.elapsed().as_secs_f64()
         );
-        warn!("Total hot-reload took: {:?} time", build_start.elapsed());
     }
 
     Ok(())
@@ -1240,11 +1236,15 @@ impl ApplicationHandler for App {
     // Creates the window, loads the runtime, initialises the engine,
     // and sets up file watchers if hot-reload is enabled.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        // Guard against multiple resumes.
+        // Guard against multiple resumes — winit may call this more
+        // than once on some platforms (e.g. after a suspend/resume).
         if self.window.is_some() {
             return;
         }
 
+        // 1. Create the native window from the prepared attributes.
+        //    The window starts hidden to avoid a white flash before
+        //    the renderer draws the first frame.
         let init = self.window_init.take().expect("WindowInit missing");
         let window = Arc::new(
             event_loop
@@ -1252,25 +1252,41 @@ impl ApplicationHandler for App {
                 .expect("Failed to create window"),
         );
 
+        // 2. Apply borderless fullscreen on the primary monitor if
+        //    requested in the project configuration.
         if init.fullscreen {
             let monitor_handle = window.current_monitor();
             window.set_fullscreen(Some(Fullscreen::Borderless(monitor_handle)));
         }
 
+        // Store the initial window size so the renderer can create
+        // a swapchain matching the actual pixel dimensions.
         self.window_size = window.inner_size();
 
+        // 3. Set up file watchers if hot-reload is active.  These
+        //    monitor engine crate sources, project sources, resources,
+        //    and the output dylib directory for changes.
         self.file_watchers = if self.hot_reload_enabled {
             Some(create_file_watchers(&self.project_paths))
         } else {
             None
         };
 
+        // 4. Load the runtime dynamic library.  On Windows this opens
+        //    pill_runtime.dll via libloading and fetches the FFI vtable
+        //    so we can call into the runtime without linking against it.
         let mut runtime_host = RuntimeHost::load(
             &self.project_paths.runtime_dynamic_library_path,
             self.runtime_load_mode,
         )
         .expect("Failed to load runtime");
 
+        // 5. Build the context object that holds everything the runtime
+        //    needs to bootstrap the engine:
+        //    - Paths to project resources and config.ini (as CStrings
+        //      for the FFI boundary).
+        //    - A clone of the window Arc so the runtime can create a
+        //      wgpu Surface from the window handle.
         let runtime_context = RuntimeCreateContext {
             project_resources_dir: CString::new(
                 self.project_paths
@@ -1284,6 +1300,7 @@ impl ApplicationHandler for App {
             window: Arc::clone(&window),
         };
 
+        // Convert the project dylib path to a CString for the FFI call.
         let project_dylib_path = CString::new(
             self.project_paths
                 .project_dynamic_library_path
@@ -1292,15 +1309,24 @@ impl ApplicationHandler for App {
         )
         .expect("Failed to create pill project dylib path CString");
 
+        // 6. Call into the runtime to create the engine.  This:
+        //    - Loads the project dylib and calls PillProject::start().
+        //    - Creates the wgpu Instance, Adapter, Device, and Surface.
+        //    - Initialises the renderer, ECS, and resource manager.
+        //    - The window is passed via Arc::into_raw / Arc::from_raw
+        //      so ownership is shared across the FFI boundary.
         let args = runtime_context.make_args(&project_dylib_path, self.window_size);
         runtime_host
             .create(&args)
             .expect("RuntimeHost.create failed");
 
-        // Show the window only after everything is initialised to avoid
-        // a flash of unrendered content.
+        // 7. Make the window visible now that the engine and renderer
+        //    are fully initialised — the very next RedrawRequested will
+        //    produce a complete frame instead of a blank surface.
         window.set_visible(true);
 
+        // Store everything in the App state so the event loop can
+        // access them during subsequent callbacks.
         self.runtime_context = Some(runtime_context);
         self.runtime_host = Some(runtime_host);
         self.window = Some(window);
