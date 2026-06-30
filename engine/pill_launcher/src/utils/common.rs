@@ -64,6 +64,43 @@ pub(crate) fn use_experimental_logs_parser() -> bool {
         == Some("1")
 }
 
+/// When set (`PILL_LAUNCHER_TIMING=1`), enables verbose per-crate timing inside
+/// `cargo build` by switching to `--message-format=json` and printing each
+/// compiler-artifact / build-script event with a relative timestamp.
+pub(crate) fn use_verbose_timing() -> bool {
+    std::env::var("PILL_LAUNCHER_TIMING").ok().as_deref() == Some("1")
+}
+
+// ---------------------------------------------------------------------------
+// Minimal JSON helpers for cargo --message-format=json parsing
+// (avoids pulling in serde_json for a small subset of fields)
+// ---------------------------------------------------------------------------
+
+/// Extract the value of a top-level string field from a flat JSON line.
+/// e.g. `extract_json_str(line, "reason")` on `{"reason":"compiler-artifact",...}`
+/// returns `Some("compiler-artifact")`.
+pub(crate) fn extract_json_str<'a>(json: &'a str, key: &str) -> Option<&'a str> {
+    // Search for `"key":"` and return the string between the next pair of quotes.
+    let needle = format!("\"{}\":\"", key);
+    let start = json.find(needle.as_str())? + needle.len();
+    let end = start + json[start..].find('"')?;
+    Some(&json[start..end])
+}
+
+/// Extract the value of a top-level bool field from a flat JSON line.
+pub(crate) fn extract_json_bool(json: &str, key: &str) -> Option<bool> {
+    let needle = format!("\"{}\":", key);
+    let pos = json.find(needle.as_str())? + needle.len();
+    let rest = json[pos..].trim_start();
+    if rest.starts_with("true") {
+        Some(true)
+    } else if rest.starts_with("false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ANSI helpers (cached terminal detection)
 // ---------------------------------------------------------------------------

@@ -146,9 +146,9 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
         // 5. Pre-render PlantUML diagrams so they appear in the generated docs.
         let pill_engine_dir = get_path(Location::PillEngineCrate);
-        if let Err(e) = render_puml_for_crate(&pill_engine_dir) {
-            eprintln!("Warning: skipping PlantUML render ({})", e);
-        }
+        // if let Err(e) = render_puml_for_crate(&pill_engine_dir) {
+        //     eprintln!("Warning: skipping PlantUML render ({})", e);
+        // }
 
         // 6. Generate project_dev docs: public API surface (project + internal
         // features).  Features are enabled via the pill_engine dependency spec

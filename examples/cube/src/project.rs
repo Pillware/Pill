@@ -60,7 +60,7 @@ fn rotate_cubes_system(engine: &mut Engine) -> Result<()> {
     {
         let rot = transform.rotation;
         transform.set_rotation(Vector3f::new(
-            rot.x + 2.0 * dt,
+            rot.x + 400.0 * dt,
             rot.y + 3.5 * dt,
             rot.z + 1.0 * dt,
         ));

@@ -7,7 +7,7 @@ use pill_core::{
 };
 
 use pill_core::{ErrorContext, Result};
-use std::{any::TypeId, collections::VecDeque};
+use std::{any::TypeId, collections::VecDeque, time::Instant};
 use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
 // -------------------------------------------------------------------------------
@@ -176,6 +176,7 @@ impl Engine {
 
         // Create default resources
         // Load default lit shader data to executable
+        let t_shader = Instant::now();
         let default_lit_shader_handle = self.add_default_resource(Shader::new(
             DEFAULT_LIT_SHADER_NAME,
             ResourceLoader::Bytes(Box::new(*include_bytes!(
@@ -217,7 +218,9 @@ impl Engine {
             true,
             true,
         ))?;
+        println!("[TIMING]         default_lit_shader pipeline: {:.3}s", t_shader.elapsed().as_secs_f64());
 
+        let t_shader = Instant::now();
         let default_unlit_shader_handle = self.add_default_resource(Shader::new(
             DEFAULT_UNLIT_SHADER_NAME,
             ResourceLoader::Bytes(Box::new(*include_bytes!(
@@ -244,6 +247,7 @@ impl Engine {
             true,
             true,
         ))?;
+        println!("[TIMING]         default_unlit_shader pipeline: {:.3}s", t_shader.elapsed().as_secs_f64());
 
         debug!(LogContext::Engine => "Default unlit shader {} created", DEFAULT_UNLIT_SHADER_NAME.name_style());
         debug!(LogContext::Engine => "Creating default color texture {}...", DEFAULT_COLOR_TEXTURE_NAME.name_style());
@@ -367,10 +371,12 @@ impl Engine {
                 self.config
                     .get_int("MAX_CONCURRENT_3D_SOUNDS")
                     .unwrap_or(MAX_CONCURRENT_3D_SOUNDS as i64) as usize;
+            let t_audio = Instant::now();
             self.add_global_component(AudioManagerComponent::new(
                 max_ambient_sink_count,
                 max_spatial_sink_count,
             ))?;
+            println!("[TIMING]       AudioManagerComponent::new: {:.3}s", t_audio.elapsed().as_secs_f64());
         }
 
         #[cfg(feature = "physics")]
@@ -427,11 +433,15 @@ impl Engine {
         )?;
 
         // Create default resources
+        let t_res = Instant::now();
         self.create_default_resources()
             .context("Failed to create default resources")?;
+        println!("[TIMING]       create_default_resources: {:.3}s", t_res.elapsed().as_secs_f64());
 
         // Start pill project
+        let t_proj = Instant::now();
         self.start_project()?;
+        println!("[TIMING]       start_project: {:.3}s", t_proj.elapsed().as_secs_f64());
 
         Ok(())
     }

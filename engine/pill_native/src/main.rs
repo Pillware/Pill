@@ -1035,12 +1035,16 @@ impl ApplicationHandler for App {
             return;
         }
 
+        let t_resumed = Instant::now();
+
         let init = self.window_init.take().expect("WindowInit missing");
+        let t = Instant::now();
         let window = Arc::new(
             event_loop
                 .create_window(init.attributes)
                 .expect("Failed to create window"),
         );
+        println!("[TIMING] create_window: {:.3}s", t.elapsed().as_secs_f64());
 
         if init.fullscreen {
             let monitor_handle = window.current_monitor();
@@ -1049,17 +1053,21 @@ impl ApplicationHandler for App {
 
         self.window_size = window.inner_size();
 
+        let t = Instant::now();
         self.file_watchers = if self.hot_reload_enabled {
             Some(create_file_watchers(&self.project_paths))
         } else {
             None
         };
+        println!("[TIMING] create_file_watchers: {:.3}s", t.elapsed().as_secs_f64());
 
+        let t = Instant::now();
         let mut runtime_host = RuntimeHost::load(
             &self.project_paths.runtime_dynamic_library_path,
             self.runtime_load_mode,
         )
         .expect("Failed to load runtime");
+        println!("[TIMING] RuntimeHost::load (dylib load): {:.3}s", t.elapsed().as_secs_f64());
 
         let runtime_context = RuntimeCreateContext {
             project_resources_dir: CString::new(
@@ -1082,12 +1090,18 @@ impl ApplicationHandler for App {
         )
         .expect("Failed to create pill project dylib path CString");
 
+        let t = Instant::now();
         let args = runtime_context.make_args(&project_dylib_path, self.window_size);
         runtime_host
             .create(&args)
             .expect("RuntimeHost.create failed");
+        println!("[TIMING] RuntimeHost::create (engine init): {:.3}s", t.elapsed().as_secs_f64());
 
+        let t = Instant::now();
         window.set_visible(true);
+        println!("[TIMING] set_visible: {:.3}s", t.elapsed().as_secs_f64());
+
+        println!("[TIMING] resumed() TOTAL: {:.3}s", t_resumed.elapsed().as_secs_f64());
 
         self.runtime_context = Some(runtime_context);
         self.runtime_host = Some(runtime_host);
@@ -1360,9 +1374,13 @@ fn run_app() -> Result<()> {
         runtime_load_mode
     );
 
+    let t = Instant::now();
     let window_init = make_window_init(&config, &project_paths.project_resources_directory_path);
+    println!("[TIMING] make_window_init: {:.3}s", t.elapsed().as_secs_f64());
 
+    let t = Instant::now();
     let event_loop = EventLoop::new().context("Failed to create event loop")?;
+    println!("[TIMING] EventLoop::new: {:.3}s", t.elapsed().as_secs_f64());
     event_loop.set_control_flow(ControlFlow::Poll);
 
     let mut app = App::new(

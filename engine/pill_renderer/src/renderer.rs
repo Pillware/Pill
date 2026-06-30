@@ -327,6 +327,8 @@ impl State {
         #[cfg(feature = "debug_ui")]
         let window_ref = window.clone();
 
+        let t_wgpu = std::time::Instant::now();
+
         // 1. Create instance and surface
         let (instance, surface) = {
             let backends = match std::env::var("WGPU_BACKENDS").as_deref() {
@@ -335,7 +337,18 @@ impl State {
                 std::result::Result::Ok("METAL") => wgpu::Backends::METAL,
                 std::result::Result::Ok("GL") => wgpu::Backends::GL,
                 std::result::Result::Ok("BROWSER_WEBGPU") => wgpu::Backends::BROWSER_WEBGPU,
-                _ => wgpu::Backends::all(),
+                std::result::Result::Ok("ALL") => wgpu::Backends::all(),
+                _ => {
+                    // Default to the primary native backend for faster startup.
+                    // Probing all backends (Vulkan + DX12 + DX11 + GL on Windows) adds ~600ms.
+                    // Override with WGPU_BACKENDS env var if needed.
+                    #[cfg(target_os = "windows")]
+                    { wgpu::Backends::VULKAN }
+                    #[cfg(target_os = "macos")]
+                    { wgpu::Backends::METAL }
+                    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+                    { wgpu::Backends::VULKAN | wgpu::Backends::GL }
+                }
             };
 
             let instance_descriptor = wgpu::InstanceDescriptor {
@@ -348,10 +361,12 @@ impl State {
             let surface = instance
                 .create_surface(window)
                 .context("Failed to create surface")?;
+            println!("[TIMING]       wgpu instance+surface: {:.3}s", t_wgpu.elapsed().as_secs_f64());
             (instance, surface)
         };
 
         // 2. Adapter
+        let t_adapter = std::time::Instant::now();
         let adapter = {
             let request_adapter_options = wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -363,11 +378,13 @@ impl State {
                 .await
                 .context("Failed to request adapter")?
         };
+        println!("[TIMING]       request_adapter: {:.3}s", t_adapter.elapsed().as_secs_f64());
 
         let info = adapter.get_info();
         info!(LogContext::Rendering => "Using GPU: {} ({:?})", info.name, info.backend);
 
         // 3. Device and queue
+        let t_device = std::time::Instant::now();
         let (device, queue) = {
             // Ask only for features the adapter actually supports. On Metal
             // (macOS) PIPELINE_STATISTICS_QUERY isn't available; on some
@@ -392,6 +409,7 @@ impl State {
                 .await
                 .context("Failed to request device")?
         };
+        println!("[TIMING]       request_device: {:.3}s", t_device.elapsed().as_secs_f64());
 
         // 4. Surface configuration
         let (surface_configuration, color_format, depth_format) = {

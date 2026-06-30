@@ -73,10 +73,12 @@ struct Runtime {
 
 impl Runtime {
     fn build_engine(&self, project: Box<dyn PillProject>) -> Result<Engine> {
+        let t = std::time::Instant::now();
         let renderer: Box<dyn PillRenderer> = Box::new(<Renderer as PillRenderer>::new(
             Arc::clone(&self.window),
             self.config.clone(),
         )?);
+        println!("[TIMING]     Renderer::new (wgpu init): {:.3}s", t.elapsed().as_secs_f64());
 
         let mut engine = Engine::new(
             project,
@@ -85,7 +87,9 @@ impl Runtime {
             self.config.clone(),
             self.process.clone(),
         );
+        let t = std::time::Instant::now();
         engine.initialize(Some(self.window_size))?;
+        println!("[TIMING]     engine.initialize: {:.3}s", t.elapsed().as_secs_f64());
         Ok(engine)
     }
 
@@ -150,7 +154,9 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
         let process =
             EngineProcessInfo::new(&compile_mode, pill_engine::internal::BuildTarget::Native);
 
+        let t = std::time::Instant::now();
         let (project_library, project) = load_project(&project_library_path)?;
+        println!("[TIMING]   load_project (project.dll): {:.3}s", t.elapsed().as_secs_f64());
 
         let mut runtime = Box::new(Runtime {
             window,
@@ -162,7 +168,9 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
             project_library: Some(project_library),
         });
 
+        let t = std::time::Instant::now();
         let engine = runtime.build_engine(project)?;
+        println!("[TIMING]   build_engine total: {:.3}s", t.elapsed().as_secs_f64());
         runtime.engine = Some(engine);
 
         unsafe {

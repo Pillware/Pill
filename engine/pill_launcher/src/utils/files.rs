@@ -1,7 +1,11 @@
 // This file provides reusable file-system operations for the launcher.
 
 use anyhow::{bail, Context, Result};
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::Path,
+    time::SystemTime,
+};
 // Used by codesign_ad_hoc on macOS:
 #[cfg(target_os = "macos")]
 use std::process::Command;
@@ -294,4 +298,92 @@ pub(crate) fn delete_cooked_resource_files_recursive(directory: &Path) -> Result
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Source mtime pre-check (used to skip cargo when nothing has changed)
+// ---------------------------------------------------------------------------
+
+/// Walk a directory recursively and return the newest mtime found among all files.
+/// Returns `None` if the directory does not exist or contains no files.
+fn newest_mtime_recursive(dir: &Path) -> Option<SystemTime> {
+    let mut newest: Option<SystemTime> = None;
+    let Ok(entries) = fs::read_dir(dir) else { return None };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(t) = newest_mtime_recursive(&path) {
+                if newest.map_or(true, |n| t > n) {
+                    newest = Some(t);
+                }
+            }
+        } else if let Ok(meta) = fs::metadata(&path) {
+            if let Ok(mtime) = meta.modified() {
+                if newest.map_or(true, |n| mtime > n) {
+                    newest = Some(mtime);
+                }
+            }
+        }
+    }
+    newest
+}
+
+/// Return the mtime of a single file, or `None` if it does not exist.
+fn file_mtime(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).ok()?.modified().ok()
+}
+
+/// Check whether all `artifacts` are newer than every source file in every
+/// `source_dirs` directory (recursively) and every `extra_files` path.
+///
+/// Returns `true` (skip cargo) when:
+/// - Every artifact exists.
+/// - The oldest artifact mtime ≥ the newest source mtime.
+///
+/// Returns `false` (run cargo) when any artifact is missing, any source is
+/// newer than an artifact, or any mtime is unavailable.
+pub(crate) fn artifacts_up_to_date(
+    source_dirs: &[&Path],
+    extra_files: &[&Path],
+    artifacts: &[&Path],
+) -> bool {
+    // All artifacts must exist.
+    let oldest_artifact = artifacts
+        .iter()
+        .map(|p| file_mtime(p))
+        .reduce(|acc, t| match (acc, t) {
+            (Some(a), Some(b)) => Some(if a < b { a } else { b }),
+            _ => None,
+        })
+        .flatten();
+
+    let Some(oldest_artifact) = oldest_artifact else {
+        return false; // at least one artifact is missing
+    };
+
+    // Find the newest source mtime across all watched dirs and files.
+    let mut newest_source: Option<SystemTime> = None;
+    let update = |newest: &mut Option<SystemTime>, t: SystemTime| {
+        if newest.map_or(true, |n| t > n) {
+            *newest = Some(t);
+        }
+    };
+
+    for dir in source_dirs {
+        if let Some(t) = newest_mtime_recursive(dir) {
+            update(&mut newest_source, t);
+        }
+    }
+    for file in extra_files {
+        if let Some(t) = file_mtime(file) {
+            update(&mut newest_source, t);
+        }
+    }
+
+    // If there are no source files at all, something is wrong — don't skip.
+    let Some(newest_source) = newest_source else {
+        return false;
+    };
+
+    oldest_artifact >= newest_source
 }
