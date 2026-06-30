@@ -166,9 +166,9 @@ macro_rules! info {
         $crate::log_context!(info, $ctx, $($arg)+)
     };
 
-    // Fallback to standard logging
+    // Fallback to standard logging at INFO level
     ($($arg:tt)+) => {
-        $crate::log_context!(debug, "default", $($arg)+)
+        $crate::log_context!(info, "default", $($arg)+)
     };
 }
 

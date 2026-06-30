@@ -131,8 +131,6 @@ define_component!(PillParticleComponent {
 });
 define_component!(HeroPillComponent {});
 
-pub struct WebProject {}
-
 // --- Systems -----------------------------------------------------------------
 
 fn pill_particle_system(engine: &mut Engine) -> Result<()> {
@@ -190,7 +188,7 @@ fn camera_drift_system(engine: &mut Engine) -> Result<()> {
 
 // --- Project --------------------------------------------------------------------
 
-impl PillProject for WebProject {
+impl PillProject for Project {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;

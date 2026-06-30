@@ -21,14 +21,27 @@ use winit::{
     window::{Fullscreen, Icon, Window, WindowAttributes},
 };
 
+// Minimum time between successive hot-reload attempts to avoid
+// triggering rebuilds on every file-system event.
 const RELOAD_COOLDOWN: Duration = Duration::from_millis(1000);
+
+// Monotonic counter used to generate unique suffixes for
+// hot-reloaded dynamic libraries so that old copies can coexist
+// with the newly loaded ones.
 static RELOAD_GEN: AtomicU64 = AtomicU64::new(0);
 
+// Holds the winit window attributes and desired fullscreen state
+// before the window is actually created.
 struct WindowInit {
     attributes: WindowAttributes,
     fullscreen: bool,
 }
 
+// Groups together all file watchers used during hot-reload.
+// Each watcher tracks a different directory:
+//   - Engine source crates (pill_core, pill_engine, pill_renderer)
+//   - Dynamic libraries output folder
+//   - Project source and resources folders
 struct FileWatchers {
     engine_core_source_files_watcher: FileWatcher,
     engine_engine_source_files_watcher: FileWatcher,
@@ -38,6 +51,8 @@ struct FileWatchers {
     project_resources_files_watcher: FileWatcher,
 }
 
+// Central store for every path the standalone runner needs at runtime.
+// Avoids scattering path joins throughout the codebase.
 struct ProjectPaths {
     build_data_directory_path: PathBuf,
     engine_source_directory_path: Option<PathBuf>,
@@ -51,6 +66,7 @@ struct ProjectPaths {
     project_dynamic_library_hot_reloaded_path: PathBuf,
 }
 
+// Platform-specific dynamic-library naming conventions.
 #[cfg(target_os = "windows")]
 const DYLIB_PREFIX: &str = "";
 #[cfg(not(target_os = "windows"))]
@@ -63,16 +79,20 @@ const DYLIB_SUFFIX: &str = ".so";
 #[cfg(target_os = "macos")]
 const DYLIB_SUFFIX: &str = ".dylib";
 
+// Builds a platform-appropriate dynamic-library file name from a base name.
 fn dylib(name: &str) -> String {
     format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
 }
 
+// Describes whether the runtime (pill_runtime) is loaded as a separate
+// dynamic library or compiled directly into the executable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RuntimeLoadMode {
     Dylib,
     InProcess,
 }
 
+// Parses the runtime load mode from an environment variable value.
 fn parse_runtime_load_mode(value: Option<String>) -> Option<RuntimeLoadMode> {
     match value.as_deref() {
         Some("dylib") => Some(RuntimeLoadMode::Dylib),
@@ -81,19 +101,26 @@ fn parse_runtime_load_mode(value: Option<String>) -> Option<RuntimeLoadMode> {
     }
 }
 
+// Distinguishes between a development workspace layout (project lives
+// alongside the engine) and a packaged release layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RunLayout {
     Development,
     Packaged,
 }
 
+// Checks whether a directory contains the minimum set of files
+// required to be treated as a valid Pill project.
 fn project_exists(path: &Path) -> bool {
     path.join("Cargo.toml").exists()
         && path.join("res").join("config.ini").exists()
         && path.join("src").exists()
 }
 
+// Determines the project directory from either the PROJECT_DIR
+// environment variable or by walking up from the executable path.
 fn infer_project_directory(current_directory_path: &Path) -> Result<PathBuf> {
+    // First check the explicit environment override.
     if let Ok(value) = std::env::var("PROJECT_DIR") {
         let path = PathBuf::from(value);
         if project_exists(&path) {
@@ -105,6 +132,8 @@ fn infer_project_directory(current_directory_path: &Path) -> Result<PathBuf> {
         );
     }
 
+    // Fall back: the executable is at <project>/build/<dev|release>/pill_native.exe,
+    // so go up two levels to reach the project root.
     current_directory_path
         .parent()
         .context("Build directory has no parent")?
@@ -113,6 +142,8 @@ fn infer_project_directory(current_directory_path: &Path) -> Result<PathBuf> {
         .map(Path::to_path_buf)
 }
 
+// Classifies the current run as Development or Packaged based on
+// environment variables and filesystem heuristics.
 fn resolve_run_layout(project_directory_path: &Path) -> RunLayout {
     match std::env::var("PILL_STANDALONE_LAYOUT").ok().as_deref() {
         Some("development") => RunLayout::Development,
@@ -122,6 +153,8 @@ fn resolve_run_layout(project_directory_path: &Path) -> RunLayout {
     }
 }
 
+// Returns true when the engine workspace's Cargo.toml lists the given
+// project directory name as a workspace member.
 fn workspace_includes_project(
     engine_source_directory_path: &Path,
     project_directory_path: &Path,
@@ -139,12 +172,16 @@ fn workspace_includes_project(
     contents.contains(project_dir_name)
 }
 
+// Quick heuristic: a directory looks like the engine workspace if it
+// contains the three core engine crates.
 fn looks_like_engine_workspace(path: &Path) -> bool {
     path.join("pill_core").exists()
         && path.join("pill_engine").exists()
         && path.join("pill_renderer").exists()
 }
 
+// Attempts to read the `workspace` key from the project's Cargo.toml
+// and returns the resolved path if it points to an existing directory.
 fn engine_workspace_from_project_manifest(project_directory_path: &Path) -> Option<PathBuf> {
     let manifest_path = project_directory_path.join("Cargo.toml");
     let contents = fs::read_to_string(manifest_path).ok()?;
@@ -165,10 +202,14 @@ fn engine_workspace_from_project_manifest(project_directory_path: &Path) -> Opti
     None
 }
 
+// Searches for the engine workspace directory by walking up from the
+// executable location and by scanning sibling directories of the project.
+// Returns the first path that looks like a valid engine workspace.
 fn find_engine_source_directory(
     current_directory_path: &Path,
     project_directory_path: &Path,
 ) -> Option<PathBuf> {
+    // Walk up the directory tree from the current executable path.
     for ancestor in current_directory_path.ancestors() {
         let engine_candidate = ancestor.join("engine");
         if looks_like_engine_workspace(&engine_candidate)
@@ -187,6 +228,7 @@ fn find_engine_source_directory(
         }
     }
 
+    // Scan sibling directories of the project as a fallback.
     if let Some(parent) = project_directory_path.parent() {
         if let Ok(entries) = fs::read_dir(parent) {
             for entry in entries.flatten() {
@@ -217,6 +259,11 @@ fn find_engine_source_directory(
     None
 }
 
+// Resolves the engine workspace directory using a priority chain:
+//   1. The `workspace` key in the project's Cargo.toml
+//   2. The PILL_ENGINE_WORKSPACE_DIR environment variable
+//   3. Filesystem scanning (ancestor and sibling search)
+// Optionally validates that the workspace actually includes the project.
 fn resolve_engine_workspace_dir(
     current_directory_path: &Path,
     project_directory_path: &Path,
@@ -229,10 +276,12 @@ fn resolve_engine_workspace_dir(
     let by_scan = find_engine_source_directory(current_directory_path, project_directory_path);
 
     for candidate in [by_manifest, by_env, by_scan].into_iter().flatten() {
+        // Skip candidates that don't look like valid engine workspaces.
         if !looks_like_engine_workspace(&candidate) && !candidate.join("pill_engine").exists() {
             continue;
         }
 
+        // Optionally check that the workspace manifest lists this project.
         if require_workspace_membership
             && !workspace_includes_project(&candidate, project_directory_path)
         {
@@ -252,6 +301,9 @@ fn resolve_engine_workspace_dir(
     )
 }
 
+// Builds a list of candidate paths where a runtime dynamic library
+// might be found, covering both the build data directory and the
+// engine workspace target directories (debug and release).
 fn resolve_runtime_dylib_candidates(
     build_data_directory_path: &Path,
     engine_source_directory_path: Option<&Path>,
@@ -260,6 +312,7 @@ fn resolve_runtime_dylib_candidates(
     let mut candidates = vec![build_data_directory_path.join(dylib(name))];
 
     if let Some(engine_source_directory_path) = engine_source_directory_path {
+        // Also search the workspace-level target directories.
         if let Some(engine_workspace_root) = engine_source_directory_path.parent() {
             candidates.extend([
                 engine_workspace_root
@@ -288,6 +341,8 @@ fn resolve_runtime_dylib_candidates(
     candidates
 }
 
+// Finds the first existing candidate for a runtime dynamic library.
+// Errors if no candidate exists on disk.
 fn resolve_runtime_dylib(
     build_data_directory_path: &Path,
     engine_source_directory_path: Option<&Path>,
@@ -314,6 +369,8 @@ fn resolve_runtime_dylib(
     bail!("Failed to find {name} runtime dylib. Checked: {candidates_display}")
 }
 
+// Same search as resolve_runtime_dylib but returns None instead of
+// an error when the library cannot be found.
 fn resolve_runtime_dylib_optional(
     build_data_directory_path: &Path,
     engine_source_directory_path: Option<&Path>,
@@ -328,6 +385,8 @@ fn resolve_runtime_dylib_optional(
     .find(|candidate| candidate.exists())
 }
 
+// Generates a unique file path for a hot-reloaded runtime library by
+// appending a monotonically increasing generation number.
 fn next_loaded_runtime_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
     let generation = RELOAD_GEN.fetch_add(1, Ordering::Relaxed);
     project_paths
@@ -335,6 +394,7 @@ fn next_loaded_runtime_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
         .join(dylib(&format!("pill_runtime_loaded_{generation}")))
 }
 
+// Generates a unique file path for a hot-reloaded project library.
 fn next_loaded_project_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
     let generation = RELOAD_GEN.fetch_add(1, Ordering::Relaxed);
     project_paths
@@ -342,6 +402,7 @@ fn next_loaded_project_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
         .join(dylib(&format!("project_loaded_{generation}")))
 }
 
+// Maps winit's MouseButton enum to a stable u32 for the FFI boundary.
 fn encode_mouse_button(button: &winit::event::MouseButton) -> u32 {
     use winit::event::MouseButton::*;
 
@@ -355,6 +416,9 @@ fn encode_mouse_button(button: &winit::event::MouseButton) -> u32 {
     }
 }
 
+// Holds the data needed to construct a PillEngineCreateArgsV1 each time
+// the runtime is (re)created. The window Arc is cloned so the runtime
+// receives its own counted reference.
 struct RuntimeCreateContext {
     project_resources_dir: CString,
     config_path: CString,
@@ -362,6 +426,8 @@ struct RuntimeCreateContext {
 }
 
 impl RuntimeCreateContext {
+    // Builds the FFI argument struct for pill_runtime::create.
+    // Transfers one Arc<Window> reference to the runtime via Arc::into_raw.
     fn make_args(
         &self,
         project_dylib_path: &CString,
@@ -381,15 +447,24 @@ impl RuntimeCreateContext {
     }
 }
 
+// Owns a loaded runtime dynamic library and provides typed access to every
+// function in the pill_abi FFI table. All FFI calls go through the `api`
+// vtable so that the host never links directly against pill_runtime symbols.
 struct RuntimeHost {
+    // Keeps the dynamic library loaded; dropped after `api` is no longer used.
     _lib: Option<Library>,
+    // Pointer to the static PillEngineApiV1 exported by the runtime.
     api: *const PillEngineApiV1,
+    // Opaque pointer the runtime uses to identify the engine instance.
     handle: EngineHandle,
 }
 
 impl RuntimeHost {
+    // Loads the runtime, either by dynamically opening the shared library
+    // or by calling the in-process symbol directly.
     fn load(runtime_dylib_path: &Path, load_mode: RuntimeLoadMode) -> Result<Self> {
         if load_mode == RuntimeLoadMode::InProcess {
+            // When compiled in-process the vtable is a direct function call.
             let api = pill_runtime::get_pill_engine_api_v1();
             if api.is_null() {
                 bail!("pill_runtime get_pill_engine_api_v1 returned null");
@@ -411,6 +486,7 @@ impl RuntimeHost {
             });
         }
 
+        // Dynamic-library path: use libloading to open the .dll/.so/.dylib.
         let lib = unsafe { Library::new(runtime_dylib_path) }.with_context(|| {
             format!(
                 "Failed to load runtime dynamic library at {}",
@@ -443,6 +519,8 @@ impl RuntimeHost {
         })
     }
 
+    // Initialises the engine inside the runtime with the given
+    // creation arguments.  Must be called after `load`.
     fn create(&mut self, args: &PillEngineCreateArgsV1) -> Result<()> {
         let runtime_api = unsafe { &*self.api };
         let ret = (runtime_api.create)(args as *const _, &mut self.handle as *mut _);
@@ -453,6 +531,8 @@ impl RuntimeHost {
         Ok(())
     }
 
+    // Tears down the engine and releases the runtime's resources.
+    // Safe to call multiple times (no-op if already destroyed).
     fn destroy(&mut self) {
         if self.handle.is_null() {
             return;
@@ -463,24 +543,29 @@ impl RuntimeHost {
         self.handle = std::ptr::null_mut();
     }
 
-    fn update(&mut self, dt: Duration) {
+    // Advances the engine by one frame. `delta_time` is the wall-clock
+    // duration since the previous call to `update`.
+    fn update(&mut self, delta_time: Duration) {
         if self.handle.is_null() {
             return;
         }
 
         let runtime_api = unsafe { &*self.api };
-        (runtime_api.update)(self.handle, dt.as_nanos() as u64);
+        (runtime_api.update)(self.handle, delta_time.as_nanos() as u64);
     }
 
-    fn resize(&mut self, w: u32, h: u32) {
+    // Notifies the engine that the window has been resized.
+    fn resize(&mut self, width: u32, height: u32) {
         if self.handle.is_null() {
             return;
         }
 
         let runtime_api = unsafe { &*self.api };
-        (runtime_api.resize)(self.handle, w, h);
+        (runtime_api.resize)(self.handle, width, height);
     }
 
+    // Forwards a raw winit WindowEvent to the engine for egui input
+    // processing (no-op when the debug_ui feature is disabled).
     fn window_event(&mut self, window_event: &WindowEvent) {
         if self.handle.is_null() {
             return;
@@ -490,6 +575,7 @@ impl RuntimeHost {
         (runtime_api.window_event)(self.handle, window_event as *const _ as *const c_void);
     }
 
+    // Forwards a keyboard event to the engine.
     fn key_event(&mut self, key_event: &winit::event::KeyEvent) {
         if self.handle.is_null() {
             return;
@@ -499,6 +585,7 @@ impl RuntimeHost {
         (runtime_api.key_event)(self.handle, key_event as *const _ as *const c_void);
     }
 
+    // Forwards a mouse button press/release.
     fn mouse_button(&mut self, button: u32, pressed: bool) {
         if self.handle.is_null() {
             return;
@@ -508,15 +595,17 @@ impl RuntimeHost {
         (runtime_api.mouse_button)(self.handle, button, pressed);
     }
 
-    fn mouse_delta(&mut self, dx: f64, dy: f64) {
+    // Forwards raw mouse motion delta.
+    fn mouse_delta(&mut self, delta_x: f64, delta_y: f64) {
         if self.handle.is_null() {
             return;
         }
 
         let runtime_api = unsafe { &*self.api };
-        (runtime_api.mouse_delta)(self.handle, dx, dy);
+        (runtime_api.mouse_delta)(self.handle, delta_x, delta_y);
     }
 
+    // Forwards cursor position in physical pixels.
     fn cursor_position(&mut self, x: f64, y: f64) {
         if self.handle.is_null() {
             return;
@@ -526,15 +615,18 @@ impl RuntimeHost {
         (runtime_api.cursor_position)(self.handle, x, y);
     }
 
-    fn mouse_wheel_line(&mut self, dx: f32, dy: f32) {
+    // Forwards mouse wheel line-scroll deltas.
+    fn mouse_wheel_line(&mut self, delta_x: f32, delta_y: f32) {
         if self.handle.is_null() {
             return;
         }
 
         let runtime_api = unsafe { &*self.api };
-        (runtime_api.mouse_wheel_line)(self.handle, dx, dy);
+        (runtime_api.mouse_wheel_line)(self.handle, delta_x, delta_y);
     }
 
+    // Instructs the runtime to swap the currently loaded pill project
+    // for a newly compiled one (hot-reload).
     fn reload_project(&mut self, project_dylib_path: &Path) -> Result<()> {
         if self.handle.is_null() {
             bail!("Engine not initialized");
@@ -550,7 +642,8 @@ impl RuntimeHost {
         Ok(())
     }
 
-    /// Returns true if the engine has requested graceful shutdown (e.g. benchmark finished).
+    // Returns true when the engine has requested graceful shutdown
+    // (for example, a benchmark that finishes after N frames).
     fn should_exit(&self) -> bool {
         if self.handle.is_null() {
             return false;
@@ -560,12 +653,17 @@ impl RuntimeHost {
     }
 }
 
+// Ensures the runtime engine is always torn down, even if the App
+// is dropped abnormally (e.g. during a panic unwind).
 impl Drop for RuntimeHost {
     fn drop(&mut self) {
         self.destroy();
     }
 }
 
+// Reads the LOG_LEVELS key from the project's config.ini and applies
+// it to the pill_core logger.  Falls back to built-in defaults when
+// the key is missing.
 fn configure_logging(config: &Config) {
     let (log_level, using_default_log_levels) = match config.get_str("LOG_LEVELS") {
         Ok(value) => (value, false),
@@ -575,45 +673,21 @@ fn configure_logging(config: &Config) {
     set_log_levels(&log_level, false);
 
     if using_default_log_levels {
-        warn!("Using default log levels: {}", log_level);
+        info!("Using default log levels: {}", log_level);
     }
-
-    // // Configure logging
-    // let log_level = config.get_str("LOG_LEVEL").unwrap_or("Info".to_string());
-    // let log_level = match log_level.as_str() {
-    //     "Info" => log::LevelFilter::Info,
-    //     "Warning" => log::LevelFilter::Warn,
-    //     "Debug" => log::LevelFilter::Debug,
-    //     "Error" => log::LevelFilter::Error,
-    //     "Off" => log::LevelFilter::Off,
-    //     _ => log::LevelFilter::Info,
-    // };
-
-    // #[cfg(debug_assertions)]
-    // env_logger::Builder::new()
-    //     .format(|buf, record| {
-    //         writeln!(buf, "[{}] {} {}:{}: {}",
-    //             record.level(),
-    //             chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
-    //             record.file().unwrap_or("unknown"),
-    //             record.line().unwrap_or(0),
-    //             record.args()
-    //         )
-    //     })
-    //     .filter_module("pill_core", log_level)
-    //     .filter_module("pill_native", log_level)
-    //     .filter_module("pill_engine", log_level)
-    //     .filter_module("pill_renderer", log_level)
-    //     .filter_module("pill_project",       log_level)
-    //     .init();
 }
 
+// Loads an icon from disk and converts it to a winit Icon.
+// Returns None if the file is missing or cannot be decoded.
 pub fn load_window_icon(path: &Path) -> Option<Icon> {
     let image = image::open(path).ok()?.into_rgba8();
     let (width, height) = image.dimensions();
     Icon::from_rgba(image.into_raw(), width, height).ok()
 }
 
+// Builds the WindowInit descriptor from the project configuration.
+// Sets title, size, fullscreen mode, and attempts to load a custom
+// window icon (falls back to the embedded default icon).
 fn make_window_init(config: &Config, project_resources_directory_path: &Path) -> WindowInit {
     let window_title = config
         .get_str("WINDOW_TITLE")
@@ -635,10 +709,10 @@ fn make_window_init(config: &Config, project_resources_directory_path: &Path) ->
     let window_icon = load_window_icon(&project_icon_path)
         .or_else(|| Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128).ok());
 
-    let min_size = winit::dpi::PhysicalSize::new(100, 100);
+    let minimum_window_size = winit::dpi::PhysicalSize::new(100, 100);
     let attributes = WindowAttributes::default()
         .with_title(window_title)
-        .with_min_inner_size(min_size)
+        .with_min_inner_size(minimum_window_size)
         .with_inner_size(window_size)
         .with_window_icon(window_icon)
         .with_visible(false);
@@ -649,6 +723,12 @@ fn make_window_init(config: &Config, project_resources_directory_path: &Path) ->
     }
 }
 
+// Resolves the path (or command) to the PillLauncher binary used for
+// hot-reload builds.  Checks, in order:
+//   1. PILL_LAUNCHER_BIN env var (explicit path)
+//   2. PILL_LAUNCHER_CMD env var (shell command)
+//   3. Standard target directories under pill_launcher/
+// Falls back to "PillLauncherUpstream" on PATH if nothing is found.
 fn resolve_launcher_command(engine_source_directory_path: &Path) -> Result<OsString> {
     if let Ok(value) = std::env::var("PILL_LAUNCHER_BIN") {
         let path = PathBuf::from(value);
@@ -697,19 +777,22 @@ fn resolve_launcher_command(engine_source_directory_path: &Path) -> Result<OsStr
     Ok(OsString::from("PillLauncherUpstream"))
 }
 
+// Invokes PillLauncher to perform a hot-reload build of the project.
+// Sets PILL_HOT_RELOAD_STATUS so external tooling can react to
+// success / warning / failure.
 fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
     let engine_source_directory_path = project_paths
         .engine_source_directory_path
         .as_ref()
         .context("engine_source_directory_path missing for hot reload")?;
 
-    let launcher_cmd = resolve_launcher_command(engine_source_directory_path)?;
+    let launcher_command = resolve_launcher_command(engine_source_directory_path)?;
     let output_directory = project_paths
         .build_data_directory_path
         .parent()
         .context("build_data_directory_path has no parent")?;
 
-    let args = [
+    let arguments = [
         "build",
         "-p",
         project_paths.project_directory_path.to_str().unwrap(),
@@ -719,8 +802,10 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
         output_directory.to_str().unwrap(),
     ];
 
-    let output = std::process::Command::new(&launcher_cmd)
-        .args(args)
+    // Try running the launcher binary; fall back to `cargo run` if it
+    // hasn't been compiled yet.
+    let output = std::process::Command::new(&launcher_command)
+        .args(arguments)
         .env("PILL_HOT_RELOAD_CHILD", "1")
         .env("PILL_ENGINE_WORKSPACE_DIR", engine_source_directory_path)
         .output();
@@ -733,7 +818,7 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
                 .join("Cargo.toml");
             std::process::Command::new("cargo")
                 .args(["run", "--manifest-path", manifest.to_str().unwrap(), "--"])
-                .args(args)
+                .args(arguments)
                 .env("PILL_HOT_RELOAD_CHILD", "1")
                 .env("PILL_ENGINE_WORKSPACE_DIR", engine_source_directory_path)
                 .output()
@@ -742,18 +827,18 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
         Err(error) => return Err(error).context("Failed to invoke pill_launcher for hot reload"),
     };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let standard_output = String::from_utf8_lossy(&output.stdout);
+    let standard_error = String::from_utf8_lossy(&output.stderr);
 
-    print!("{stdout}");
-    eprint!("{stderr}");
+    print!("{standard_output}");
+    eprint!("{standard_error}");
 
     if !output.status.success() {
         std::env::set_var("PILL_HOT_RELOAD_STATUS", "fail");
         bail!("pill_launcher build hot-reload failed");
     }
 
-    let has_warnings = stdout.contains("warning:") || stderr.contains("warning:");
+    let has_warnings = standard_output.contains("warning:") || standard_error.contains("warning:");
     if has_warnings {
         std::env::set_var("PILL_HOT_RELOAD_STATUS", "warn");
     } else {
@@ -762,6 +847,15 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
     Ok(())
 }
 
+// Polls all file watchers for changes and triggers a hot-reload build
+// followed by runtime / project reload when needed.
+//
+// High-level flow:
+//   1. Check that the cooldown period has elapsed.
+//   2. Collect changed paths from every file watcher.
+//   3. If only resource files changed, skip the build (no recompilation needed).
+//   4. If source files changed, invoke pill_launcher to rebuild.
+//   5. If new dylibs appeared, reload the runtime and/or project in-place.
 fn check_and_reload(
     runtime_host: &mut Option<RuntimeHost>,
     runtime_context: &RuntimeCreateContext,
@@ -771,62 +865,66 @@ fn check_and_reload(
     file_watchers: &mut FileWatchers,
     runtime_load_mode: RuntimeLoadMode,
 ) -> Result<()> {
+    // --- 1. Cooldown gate ---
     let now = Instant::now();
     if now.duration_since(*last_reload_poll) < RELOAD_COOLDOWN {
         return Ok(());
     }
     *last_reload_poll = now;
 
-    let mut engine_source_changed = Vec::<PathBuf>::new();
-    let mut project_source_changed = Vec::<PathBuf>::new();
-    let mut project_resources_changed = Vec::<PathBuf>::new();
+    // --- 2. Collect file changes ---
+    let mut engine_source_changes = Vec::<PathBuf>::new();
+    let mut project_source_changes = Vec::<PathBuf>::new();
+    let mut project_resources_changes = Vec::<PathBuf>::new();
 
     if let Some(paths) = file_watchers.engine_core_source_files_watcher.get_changes() {
         info!(LogContext::HotReload => "Engine pill_core source file change detected: {:?}", paths);
-        engine_source_changed.extend(paths);
+        engine_source_changes.extend(paths);
     }
     if let Some(paths) = file_watchers
         .engine_engine_source_files_watcher
         .get_changes()
     {
         info!(LogContext::HotReload => "Engine pill_engine source file change detected: {:?}", paths);
-        engine_source_changed.extend(paths);
+        engine_source_changes.extend(paths);
     }
     if let Some(paths) = file_watchers
         .engine_renderer_source_files_watcher
         .get_changes()
     {
         info!(LogContext::HotReload => "Engine pill_renderer source file change detected: {:?}", paths);
-        engine_source_changed.extend(paths);
+        engine_source_changes.extend(paths);
     }
 
     if let Some(paths) = file_watchers.project_resources_files_watcher.get_changes() {
         info!(LogContext::HotReload => "Pill project resources file change detected: {:?}", paths);
-        project_resources_changed.extend(paths);
+        project_resources_changes.extend(paths);
     }
     if let Some(paths) = file_watchers.project_source_files_watcher.get_changes() {
         info!(LogContext::HotReload => "Pill project source file change detected: {:?}", paths);
-        project_source_changed.extend(paths);
+        project_source_changes.extend(paths);
     }
 
-    if !project_resources_changed.is_empty()
-        && project_source_changed.is_empty()
-        && engine_source_changed.is_empty()
+    // --- 3. Resource-only changes: no rebuild needed ---
+    if !project_resources_changes.is_empty()
+        && project_source_changes.is_empty()
+        && engine_source_changes.is_empty()
     {
-        info!(LogContext::HotReload => "Pill project resources changed; no code rebuild needed: {:?}", project_resources_changed);
+        info!(LogContext::HotReload => "Pill project resources changed; no code rebuild needed: {:?}", project_resources_changes);
         return Ok(());
     }
 
+    // --- 4. Build via launcher ---
     let build_start = Instant::now();
-    if !project_source_changed.is_empty() || !engine_source_changed.is_empty() {
+    if !project_source_changes.is_empty() || !engine_source_changes.is_empty() {
         if let Err(error) = build_hot_reload_via_launcher(project_paths) {
             warn!(
                 LogContext::HotReload =>
                 "Hot-reload build failed; keeping currently loaded runtime project. Error: {error:?}"
             );
 
-            // drain dylib watcher changes to reduce stale/partial build triggers (fat or fast
-            // fingers)
+            // Drain the dylib watcher so stale events don't trigger
+            // another build immediately.
             let _ = file_watchers.dynamic_libraries_files_watcher.get_changes();
 
             return Ok(());
@@ -834,6 +932,7 @@ fn check_and_reload(
         warn!("Build took: {:?} time", build_start.elapsed());
     }
 
+    // --- 5. Detect which dylibs were (re)built ---
     let mut runtime_hot_reload = false;
     let mut project_hot_reload = false;
     if let Some(paths) = file_watchers.dynamic_libraries_files_watcher.get_changes() {
@@ -850,15 +949,18 @@ fn check_and_reload(
         }
     }
 
+    // In-process runtime cannot be hot-reloaded; skip with a warning.
     if runtime_hot_reload && runtime_load_mode == RuntimeLoadMode::InProcess {
         warn!(LogContext::HotReload => "Runtime hot-reload skipped for in-process runtime.");
         runtime_hot_reload = false;
     }
 
+    // --- 5a. Full runtime reload (engine code changed) ---
     if runtime_hot_reload {
         info!(LogContext::HotReload => "Reloading runtime (engine hot-reload)...");
         let runtime_reload_start = Instant::now();
 
+        // Drop the old runtime, which unloads the old engine and project.
         drop(runtime_host.take());
 
         let loaded_runtime_path = next_loaded_runtime_dylib_path(project_paths);
@@ -892,7 +994,9 @@ fn check_and_reload(
             runtime_reload_start.elapsed()
         );
         warn!("Total reload took: {:?} time", build_start.elapsed());
-    } else if project_hot_reload {
+    }
+    // --- 5b. Project-only reload (game code changed, engine unchanged) ---
+    else if project_hot_reload {
         info!(LogContext::HotReload => "Reloading pill project...");
         let project_reload_start = Instant::now();
 
@@ -919,6 +1023,8 @@ fn check_and_reload(
     Ok(())
 }
 
+// Creates a full set of file watchers for all directories relevant
+// to hot-reload: engine crates, output dylibs, and project source/resources.
 fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     let engine_workspace_directory_path = project_paths
         .engine_source_directory_path
@@ -954,6 +1060,9 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     }
 }
 
+// Removes files whose names start with the given prefix from a directory.
+// Used during startup to clean up stale hot-reloaded libraries from
+// previous runs. Failures are logged but otherwise ignored.
 fn try_remove_files_starting_with(directory_path: &Path, file_name_prefix: &str) {
     if !directory_path.exists() || !directory_path.is_dir() {
         return;
@@ -977,6 +1086,7 @@ fn try_remove_files_starting_with(directory_path: &Path, file_name_prefix: &str)
             continue;
         };
 
+        // Only remove regular files with the expected prefix.
         if !path.is_file() || !name.starts_with(file_name_prefix) {
             continue;
         }
@@ -991,6 +1101,10 @@ fn try_remove_files_starting_with(directory_path: &Path, file_name_prefix: &str)
     }
 }
 
+// Top-level application state.
+// Owns the window, the runtime host, file watchers, and all path
+// configuration.  Implements winit's ApplicationHandler so it can
+// respond to window and device events.
 struct App {
     project_paths: ProjectPaths,
     hot_reload_enabled: bool,
@@ -1007,6 +1121,9 @@ struct App {
 }
 
 impl App {
+    // Constructs the App in a pre-initialised state.
+    // The window and runtime are created lazily when the event loop
+    // calls `resumed` for the first time.
     fn new(
         project_paths: ProjectPaths,
         hot_reload_enabled: bool,
@@ -1030,7 +1147,11 @@ impl App {
 }
 
 impl ApplicationHandler for App {
+    // Called once when the event loop is ready.
+    // Creates the window, loads the runtime, initialises the engine,
+    // and sets up file watchers if hot-reload is enabled.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        // Guard against multiple resumes.
         if self.window.is_some() {
             return;
         }
@@ -1087,6 +1208,8 @@ impl ApplicationHandler for App {
             .create(&args)
             .expect("RuntimeHost.create failed");
 
+        // Show the window only after everything is initialised to avoid
+        // a flash of unrendered content.
         window.set_visible(true);
 
         self.runtime_context = Some(runtime_context);
@@ -1094,12 +1217,16 @@ impl ApplicationHandler for App {
         self.window = Some(window);
     }
 
+    // Called when the event loop is about to wait for new events.
+    // We use a Poll control flow, so this requests a redraw on every
+    // iteration to drive continuous rendering.
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
     }
 
+    // Handles raw device events (currently only mouse motion).
     fn device_event(
         &mut self,
         _event_loop: &ActiveEventLoop,
@@ -1113,6 +1240,10 @@ impl ApplicationHandler for App {
         }
     }
 
+    // Main window event handler.
+    // Dispatches every event to the runtime for input processing,
+    // then handles engine updates, rendering, hot-reload polling,
+    // and shutdown.
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -1122,10 +1253,12 @@ impl ApplicationHandler for App {
         let Some(window) = &self.window else {
             return;
         };
+        // Ignore events for other windows (shouldn't happen, but safe).
         if window_id != window.id() {
             return;
         }
 
+        // Forward every event to the engine for egui/input handling.
         if let Some(runtime_host) = self.runtime_host.as_mut() {
             runtime_host.window_event(&event);
         }
@@ -1136,6 +1269,7 @@ impl ApplicationHandler for App {
                 let delta = now - self.last_render_time;
                 self.last_render_time = now;
 
+                // Advance the engine by one frame.
                 if let Some(runtime_host) = self.runtime_host.as_mut() {
                     runtime_host.update(delta);
 
@@ -1147,6 +1281,7 @@ impl ApplicationHandler for App {
                     }
                 }
 
+                // Poll for hot-reload changes after each frame.
                 if self.hot_reload_enabled {
                     if let (Some(runtime_context), Some(file_watchers)) =
                         (self.runtime_context.as_ref(), self.file_watchers.as_mut())
@@ -1177,8 +1312,8 @@ impl ApplicationHandler for App {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 if let Some(runtime_host) = self.runtime_host.as_mut() {
-                    if let MouseScrollDelta::LineDelta(dx, dy) = delta {
-                        runtime_host.mouse_wheel_line(dx, dy);
+                    if let MouseScrollDelta::LineDelta(delta_x, delta_y) = delta {
+                        runtime_host.mouse_wheel_line(delta_x, delta_y);
                     }
                 }
             }
@@ -1193,6 +1328,9 @@ impl ApplicationHandler for App {
                     runtime_host.resize(size.width, size.height);
                 }
             }
+            // Let the event loop exit cleanly.
+            // The runtime/engine/renderer/wgpu stack is torn down later
+            // when `App` is dropped, after the event loop has stopped.
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
@@ -1201,6 +1339,13 @@ impl ApplicationHandler for App {
     }
 }
 
+// Main application entry point.
+//
+// Responsibilities:
+//   - Detect the project and engine workspace directories.
+//   - Resolve paths to runtime and project dynamic libraries.
+//   - Load configuration, set up logging, and create the winit window.
+//   - Initialise the App and hand control to the winit event loop.
 fn run_app() -> Result<()> {
     // In the development build, standalone will look for the resource files in the "res" directory of the pill project directory
     // In the release build, "res" directory is copied to /build/release/data/res (TODO: pack all resources use by pill project into a single data file)
@@ -1229,6 +1374,7 @@ fn run_app() -> Result<()> {
     let mut hot_reload_enabled =
         std::env::var("PILL_COMPILE_MODE").ok().as_deref() == Some("hot-reload");
 
+    // Determine the project directory relative to the executable.
     let current_directory_path = std::env::current_exe()
         .context("Failed to get current executable path")?
         .parent()
@@ -1242,6 +1388,7 @@ fn run_app() -> Result<()> {
         bail!("Hot reload requires development layout paths");
     }
 
+    // Build all the path information the app will need.
     let build_data_directory_path = current_directory_path.join("data");
     let project_resources_directory_path = project_directory_path.join("res");
     let build_resources_directory_path = build_data_directory_path.join("res");
@@ -1257,6 +1404,7 @@ fn run_app() -> Result<()> {
     let project_source_directory_path = project_directory_path.join("src");
     let config_path = project_resources_directory_path.join("config.ini");
 
+    // Decide how to load the runtime (dynamic library or in-process).
     let in_process = std::env::var("PILL_RUNTIME_IN_PROCESS").ok().as_deref() == Some("1");
 
     let runtime_load_mode = parse_runtime_load_mode(std::env::var("PILL_RUNTIME_MODE").ok())
@@ -1279,6 +1427,7 @@ fn run_app() -> Result<()> {
         None
     };
 
+    // Resolve paths to the runtime dynamic library.
     let runtime_dynamic_library_path = if runtime_load_mode == RuntimeLoadMode::Dylib {
         resolve_runtime_dylib(
             &build_data_directory_path,
@@ -1321,6 +1470,7 @@ fn run_app() -> Result<()> {
         project_dynamic_library_hot_reloaded_path,
     };
 
+    // Clean up stale hot-reloaded libraries from previous runs.
     if hot_reload_enabled {
         try_remove_files_starting_with(
             &project_paths.build_data_directory_path,
@@ -1332,6 +1482,7 @@ fn run_app() -> Result<()> {
         );
     }
 
+    // Load and apply project configuration.
     let mut config = Config::default();
     config
         .merge(config::File::with_name(
@@ -1346,12 +1497,16 @@ fn run_app() -> Result<()> {
 
     configure_logging(&config);
 
-    info!(
-        LogContext::HotReload => "Hot reload {} (watching src: {}, res: {})",
-        if hot_reload_enabled { "enabled" } else { "disabled" },
-        project_paths.project_source_directory_path.display(),
-        project_paths.project_resources_directory_path.display()
-    );
+    // Log hot-reload status; only include watch paths when enabled.
+    if hot_reload_enabled {
+        info!(
+            LogContext::HotReload => "Hot reload enabled (watching src: {}, res: {})",
+            project_paths.project_source_directory_path.display(),
+            project_paths.project_resources_directory_path.display()
+        );
+    } else {
+        info!(LogContext::HotReload => "Hot reload disabled");
+    }
     info!(
         "Initializing {} ({:?} layout, {:?} runtime)",
         "Standalone".module_object_style(),
@@ -1361,6 +1516,7 @@ fn run_app() -> Result<()> {
 
     let window_init = make_window_init(&config, &project_paths.project_resources_directory_path);
 
+    // Create the event loop and hand control to the App.
     let event_loop = EventLoop::new().context("Failed to create event loop")?;
     event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -1372,9 +1528,12 @@ fn run_app() -> Result<()> {
     );
     event_loop.run_app(&mut app).context("run_app failed")?;
 
+    // When the event loop exits, `app` is dropped, which tears down
+    // the runtime, renderer, window, and file watchers in the correct order.
     Ok(())
 }
 
+// Process entry point.  Runs the app and prints any fatal error to stderr.
 fn main() {
     if let Err(error) = run_app() {
         eprintln!("Error: {error:#}");
