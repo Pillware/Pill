@@ -207,7 +207,13 @@ fn build_project_in_workspace(
     if *compile_mode == CompileMode::HotReload {
         arguments.push("--profile");
         arguments.push("hot-reload");
-        arguments.push("--quiet");
+        // Suppress cargo's per-crate progress only during background
+        // hot-reload builds triggered by pill_native.  When the user
+        // runs `PillLauncher run -c hot-reload` directly, they should
+        // see the full compilation output.
+        if hot_reload_child {
+            arguments.push("--quiet");
+        }
     }
     if *compile_mode == CompileMode::Release {
         arguments.push("--release");

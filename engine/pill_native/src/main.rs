@@ -956,11 +956,11 @@ fn check_and_reload(
     }
 
     if let Some(paths) = file_watchers.project_resources_files_watcher.get_changes() {
-        info!(LogContext::HotReload => "Pill project resources file change detected: {:?}", paths);
+        info!(LogContext::HotReload => "Project resources file change detected: {:?}", paths);
         project_resources_changes.extend(paths);
     }
     if let Some(paths) = file_watchers.project_source_files_watcher.get_changes() {
-        info!(LogContext::HotReload => "Pill project source file change detected: {:?}", paths);
+        info!(LogContext::HotReload => "Project source file change detected: {:?}", paths);
         project_source_changes.extend(paths);
     }
 
@@ -969,7 +969,7 @@ fn check_and_reload(
         && project_source_changes.is_empty()
         && engine_source_changes.is_empty()
     {
-        info!(LogContext::HotReload => "Pill project resources changed; no code rebuild needed: {:?}", project_resources_changes);
+        info!(LogContext::HotReload => "Project resources changed; No code rebuild needed: {:?}", project_resources_changes);
         return Ok(());
     }
 
@@ -979,7 +979,7 @@ fn check_and_reload(
         if let Err(error) = build_hot_reload_via_launcher(project_paths) {
             warn!(
                 LogContext::HotReload =>
-                "Hot-reload build failed; keeping currently loaded runtime project. Error: {error:?}"
+                "Hot-reload failed; Keeping currently loaded runtime project. Error: {error:?}"
             );
 
             // Drain the dylib watcher so stale events don't trigger
@@ -988,7 +988,7 @@ fn check_and_reload(
 
             return Ok(());
         }
-        warn!("Build took: {:?} time", build_start.elapsed());
+        info!(LogContext::HotReload => "Hot-reload succeeded; Rebuild took: {:?}", build_start.elapsed());
     }
 
     // --- 5. Detect which dylibs were (re)built ---
@@ -1010,18 +1010,36 @@ fn check_and_reload(
 
     // In-process runtime cannot be hot-reloaded; skip with a warning.
     if runtime_hot_reload && runtime_load_mode == RuntimeLoadMode::InProcess {
-        warn!(LogContext::HotReload => "Runtime hot-reload skipped for in-process runtime.");
+        warn!(LogContext::HotReload => "Runtime hot-reload; Skipped for in-process runtime");
         runtime_hot_reload = false;
     }
 
     // --- 5a. Full runtime reload (engine code changed) ---
+    //
+    // When any engine crate (pill_core, pill_engine, pill_renderer) is
+    // rebuilt, we must tear down the entire runtime and load the new one
+    // from the freshly compiled dylib.
+    //
+    // Steps:
+    //   1. Drop the old runtime (destroys engine, renderer, wgpu stack).
+    //   2. Copy the new runtime dylib to a unique path so the OS loader
+    //      does not lock the original build artifact.
+    //   3. If the project dylib was also rebuilt, copy it to a unique
+    //      path as well; otherwise reuse the existing project dylib.
+    //   4. Load the new runtime dylib via libloading.
+    //   5. Create a fresh engine inside the new runtime, passing the
+    //      project dylib path and window handle.
     if runtime_hot_reload {
-        info!(LogContext::HotReload => "Reloading runtime (engine hot-reload)...");
+        info!(LogContext::HotReload => "Runtime hot-reload; Reloading runtime...");
         let runtime_reload_start = Instant::now();
 
-        // Drop the old runtime, which unloads the old engine and project.
+        // 1. Destroy the old runtime.  This drops the Engine, Renderer,
+        //    wgpu Surface/Device/Queue, and unloads the old project dylib.
         drop(runtime_host.take());
 
+        // 2. Copy the freshly built runtime dylib to a generation-unique
+        //    path.  This avoids Windows file-locking the compiler output
+        //    and lets us keep the old dylib loaded until we're ready.
         let loaded_runtime_path = next_loaded_runtime_dylib_path(project_paths);
         fs::copy(
             &project_paths.runtime_dynamic_library_hot_reloaded_path,
@@ -1029,43 +1047,66 @@ fn check_and_reload(
         )
         .context("Failed to copy hot-reloaded runtime dylib to unique loaded path")?;
 
+        // 3. Decide which project dylib to load into the new runtime.
+        //    If the project was also rebuilt, use the hot-reloaded copy;
+        //    otherwise keep using the original project dylib.
         let project_path_for_create = if project_hot_reload {
             let loaded_project_path = next_loaded_project_dylib_path(project_paths);
             fs::copy(
                 &project_paths.project_dynamic_library_hot_reloaded_path,
                 &loaded_project_path,
             )
-            .context("Failed to copy hot-reloaded pill project dylib to unique loaded path")?;
+            .context("Failed to copy hot-reloaded project dylib to unique loaded path")?;
             loaded_project_path
         } else {
             project_paths.project_dynamic_library_path.clone()
         };
 
+        // 4. Open the new runtime dylib and obtain its FFI vtable.
         let mut new_runtime = RuntimeHost::load(&loaded_runtime_path, runtime_load_mode)?;
+
+        // 5. Build the create-args (window pointer, paths, size) and
+        //    initialise a fresh engine inside the new runtime.
         let project_dylib_path =
             CString::new(project_path_for_create.to_string_lossy().as_bytes())?;
         let args = runtime_context.make_args(&project_dylib_path, window_size);
         new_runtime.create(&args)?;
+
+        // Swap the old runtime (already dropped) with the new one.
         *runtime_host = Some(new_runtime);
 
         warn!(
-            "Runtime reload took: {:?} time",
+            "Runtime hot-reload took: {:?} time",
             runtime_reload_start.elapsed()
         );
-        warn!("Total reload took: {:?} time", build_start.elapsed());
+        warn!("Total hot-reload took: {:?} time", build_start.elapsed());
     }
     // --- 5b. Project-only reload (game code changed, engine unchanged) ---
+    //
+    // When only the project crate is rebuilt, we can hot-swap the project
+    // dylib without tearing down the engine.  This is much faster because
+    // the renderer, GPU resources, and all engine state survive.
+    //
+    // Steps:
+    //   1. Copy the new project dylib to a unique path.
+    //   2. Ask the runtime to call reload_project(), which:
+    //        - Drops the old Box<dyn PillProject> and unloads the old dylib.
+    //        - Loads the new dylib and constructs a fresh PillProject.
+    //        - Calls project.start() on the new project to reinitialise.
     else if project_hot_reload {
-        info!(LogContext::HotReload => "Reloading pill project...");
+        info!(LogContext::HotReload => "Project hot-reload; Reloading project...");
         let project_reload_start = Instant::now();
 
+        // 1. Copy the rebuilt project dylib to avoid OS file locks.
         let loaded_project_path = next_loaded_project_dylib_path(project_paths);
         fs::copy(
             &project_paths.project_dynamic_library_hot_reloaded_path,
             &loaded_project_path,
         )
-        .context("Failed to copy hot-reloaded pill project dylib to unique loaded path")?;
+        .context("Failed to copy hot-reloaded project dylib to unique loaded path")?;
 
+        // 2. In-place project swap — the runtime unloads the old project
+        //    dylib, loads the new one, and calls start() on it.
         if let Some(runtime) = runtime_host.as_mut() {
             runtime.reload_project(&loaded_project_path)?;
         } else {
@@ -1073,10 +1114,10 @@ fn check_and_reload(
         }
 
         warn!(
-            "Pill project hot-reload took: {:?} time",
+            "Project hot-reload took: {:?} time",
             project_reload_start.elapsed()
         );
-        warn!("Total reload took: {:?} time", build_start.elapsed());
+        warn!("Total hot-reload took: {:?} time", build_start.elapsed());
     }
 
     Ok(())
@@ -1552,12 +1593,12 @@ fn run_app() -> Result<()> {
     // Log hot-reload status; only include watch paths when enabled.
     if hot_reload_enabled {
         info!(
-            LogContext::HotReload => "Hot reload enabled (watching src: {}, res: {})",
+            LogContext::HotReload => "Hot-reload enabled (watching src: {}, res: {})",
             project_paths.project_source_directory_path.display(),
             project_paths.project_resources_directory_path.display()
         );
     } else {
-        info!(LogContext::HotReload => "Hot reload disabled");
+        info!(LogContext::HotReload => "Hot-reload disabled");
     }
     info!(
         "Initializing {} ({:?} layout, {:?} runtime)",
