@@ -21,6 +21,10 @@ use winit::{
     window::{Fullscreen, Icon, Window, WindowAttributes},
 };
 
+// ---------------------------------------------------------------------------
+// Constants & Statics
+// ---------------------------------------------------------------------------
+
 // Minimum time between successive hot-reload attempts to avoid
 // triggering rebuilds on every file-system event.
 const RELOAD_COOLDOWN: Duration = Duration::from_millis(1000);
@@ -29,6 +33,32 @@ const RELOAD_COOLDOWN: Duration = Duration::from_millis(1000);
 // hot-reloaded dynamic libraries so that old copies can coexist
 // with the newly loaded ones.
 static RELOAD_GEN: AtomicU64 = AtomicU64::new(0);
+
+// ---------------------------------------------------------------------------
+// Platform Helpers
+// ---------------------------------------------------------------------------
+
+// Platform-specific dynamic-library naming conventions.
+#[cfg(target_os = "windows")]
+const DYLIB_PREFIX: &str = "";
+#[cfg(not(target_os = "windows"))]
+const DYLIB_PREFIX: &str = "lib";
+
+#[cfg(target_os = "windows")]
+const DYLIB_SUFFIX: &str = ".dll";
+#[cfg(target_os = "linux")]
+const DYLIB_SUFFIX: &str = ".so";
+#[cfg(target_os = "macos")]
+const DYLIB_SUFFIX: &str = ".dylib";
+
+// Builds a platform-appropriate dynamic-library file name from a base name.
+fn dylib(name: &str) -> String {
+    format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
+}
+
+// ---------------------------------------------------------------------------
+// Data Structures
+// ---------------------------------------------------------------------------
 
 // Holds the winit window attributes and desired fullscreen state
 // before the window is actually created.
@@ -66,24 +96,6 @@ struct ProjectPaths {
     project_dynamic_library_hot_reloaded_path: PathBuf,
 }
 
-// Platform-specific dynamic-library naming conventions.
-#[cfg(target_os = "windows")]
-const DYLIB_PREFIX: &str = "";
-#[cfg(not(target_os = "windows"))]
-const DYLIB_PREFIX: &str = "lib";
-
-#[cfg(target_os = "windows")]
-const DYLIB_SUFFIX: &str = ".dll";
-#[cfg(target_os = "linux")]
-const DYLIB_SUFFIX: &str = ".so";
-#[cfg(target_os = "macos")]
-const DYLIB_SUFFIX: &str = ".dylib";
-
-// Builds a platform-appropriate dynamic-library file name from a base name.
-fn dylib(name: &str) -> String {
-    format!("{DYLIB_PREFIX}{name}{DYLIB_SUFFIX}")
-}
-
 // Describes whether the runtime (pill_runtime) is loaded as a separate
 // dynamic library or compiled directly into the executable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,6 +120,47 @@ enum RunLayout {
     Development,
     Packaged,
 }
+
+// Top-level application state.
+// Owns the window, the runtime host, file watchers, and all path
+// configuration.  Implements winit's ApplicationHandler so it can
+// respond to window and device events.
+struct App {
+    project_paths: ProjectPaths,
+    hot_reload_enabled: bool,
+    runtime_load_mode: RuntimeLoadMode,
+    window_init: Option<WindowInit>,
+
+    window: Option<Arc<Window>>,
+    window_size: winit::dpi::PhysicalSize<u32>,
+    runtime_host: Option<RuntimeHost>,
+    runtime_context: Option<RuntimeCreateContext>,
+    file_watchers: Option<FileWatchers>,
+    last_render_time: Instant,
+    last_reload_poll: Instant,
+}
+
+// ---------------------------------------------------------------------------
+// Input Encoding
+// ---------------------------------------------------------------------------
+
+// Maps winit's MouseButton enum to a stable u32 for the FFI boundary.
+fn encode_mouse_button(button: &winit::event::MouseButton) -> u32 {
+    use winit::event::MouseButton::*;
+
+    match button {
+        Left => 0,
+        Right => 1,
+        Middle => 2,
+        Back => 3,
+        Forward => 4,
+        Other(n) => 5u32.saturating_add(*n as u32),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Path Resolution
+// ---------------------------------------------------------------------------
 
 // Checks whether a directory contains the minimum set of files
 // required to be treated as a valid Pill project.
@@ -163,13 +216,13 @@ fn workspace_includes_project(
     let Ok(contents) = fs::read_to_string(cargo_toml_path) else {
         return false;
     };
-    let Some(project_dir_name) = project_directory_path
+    let Some(project_directory_name) = project_directory_path
         .file_name()
         .and_then(|name| name.to_str())
     else {
         return false;
     };
-    contents.contains(project_dir_name)
+    contents.contains(project_directory_name)
 }
 
 // Quick heuristic: a directory looks like the engine workspace if it
@@ -270,12 +323,12 @@ fn resolve_engine_workspace_dir(
     require_workspace_membership: bool,
 ) -> Result<PathBuf> {
     let by_manifest = engine_workspace_from_project_manifest(project_directory_path);
-    let by_env = std::env::var("PILL_ENGINE_WORKSPACE_DIR")
+    let by_environment = std::env::var("PILL_ENGINE_WORKSPACE_DIR")
         .ok()
         .map(PathBuf::from);
     let by_scan = find_engine_source_directory(current_directory_path, project_directory_path);
 
-    for candidate in [by_manifest, by_env, by_scan].into_iter().flatten() {
+    for candidate in [by_manifest, by_environment, by_scan].into_iter().flatten() {
         // Skip candidates that don't look like valid engine workspaces.
         if !looks_like_engine_workspace(&candidate) && !candidate.join("pill_engine").exists() {
             continue;
@@ -300,6 +353,10 @@ fn resolve_engine_workspace_dir(
         }
     )
 }
+
+// ---------------------------------------------------------------------------
+// Dynamic Library Resolution
+// ---------------------------------------------------------------------------
 
 // Builds a list of candidate paths where a runtime dynamic library
 // might be found, covering both the build data directory and the
@@ -402,19 +459,75 @@ fn next_loaded_project_dylib_path(project_paths: &ProjectPaths) -> PathBuf {
         .join(dylib(&format!("project_loaded_{generation}")))
 }
 
-// Maps winit's MouseButton enum to a stable u32 for the FFI boundary.
-fn encode_mouse_button(button: &winit::event::MouseButton) -> u32 {
-    use winit::event::MouseButton::*;
+// ---------------------------------------------------------------------------
+// Configuration & Window Setup
+// ---------------------------------------------------------------------------
 
-    match button {
-        Left => 0,
-        Right => 1,
-        Middle => 2,
-        Back => 3,
-        Forward => 4,
-        Other(n) => 5u32.saturating_add(*n as u32),
+// Reads the LOG_LEVELS key from the project's config.ini and applies
+// it to the pill_core logger.  Falls back to built-in defaults when
+// the key is missing.
+fn configure_logging(config: &Config) {
+    let (log_level, using_default_log_levels) = match config.get_str("LOG_LEVELS") {
+        Ok(value) => (value, false),
+        Err(_) => (pill_core::get_default_log_levels(), true),
+    };
+
+    set_log_levels(&log_level, false);
+
+    if using_default_log_levels {
+        info!("Using default log levels: {}", log_level);
     }
 }
+
+// Loads an icon from disk and converts it to a winit Icon.
+// Returns None if the file is missing or cannot be decoded.
+pub fn load_window_icon(path: &Path) -> Option<Icon> {
+    let image = image::open(path).ok()?.into_rgba8();
+    let (width, height) = image.dimensions();
+    Icon::from_rgba(image.into_raw(), width, height).ok()
+}
+
+// Builds the WindowInit descriptor from the project configuration.
+// Sets title, size, fullscreen mode, and attempts to load a custom
+// window icon (falls back to the embedded default icon).
+fn make_window_init(config: &Config, project_resources_directory_path: &Path) -> WindowInit {
+    let window_title = config
+        .get_str("WINDOW_TITLE")
+        .or_else(|_| config.get_str("TITLE"))
+        .unwrap_or_else(|_| "Pill".to_owned());
+
+    let window_size = match (
+        config.get_int("WINDOW_WIDTH"),
+        config.get_int("WINDOW_HEIGHT"),
+    ) {
+        (Ok(width), Ok(height)) => winit::dpi::PhysicalSize::new(width as u32, height as u32),
+        _ => winit::dpi::PhysicalSize::new(1280, 720),
+    };
+
+    let fullscreen = config.get_bool("WINDOW_FULLSCREEN").unwrap_or(false);
+
+    let default_icon_bytes = include_bytes!("../res/icon.raw");
+    let project_icon_path = project_resources_directory_path.join("icon.ico");
+    let window_icon = load_window_icon(&project_icon_path)
+        .or_else(|| Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128).ok());
+
+    let minimum_window_size = winit::dpi::PhysicalSize::new(100, 100);
+    let attributes = WindowAttributes::default()
+        .with_title(window_title)
+        .with_min_inner_size(minimum_window_size)
+        .with_inner_size(window_size)
+        .with_window_icon(window_icon)
+        .with_visible(false);
+
+    WindowInit {
+        attributes,
+        fullscreen,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FFI Bridge - RuntimeCreateContext
+// ---------------------------------------------------------------------------
 
 // Holds the data needed to construct a PillEngineCreateArgsV1 each time
 // the runtime is (re)created. The window Arc is cloned so the runtime
@@ -446,6 +559,10 @@ impl RuntimeCreateContext {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// FFI Bridge - RuntimeHost
+// ---------------------------------------------------------------------------
 
 // Owns a loaded runtime dynamic library and provides typed access to every
 // function in the pill_abi FFI table. All FFI calls go through the `api`
@@ -661,67 +778,9 @@ impl Drop for RuntimeHost {
     }
 }
 
-// Reads the LOG_LEVELS key from the project's config.ini and applies
-// it to the pill_core logger.  Falls back to built-in defaults when
-// the key is missing.
-fn configure_logging(config: &Config) {
-    let (log_level, using_default_log_levels) = match config.get_str("LOG_LEVELS") {
-        Ok(value) => (value, false),
-        Err(_) => (pill_core::get_default_log_levels(), true),
-    };
-
-    set_log_levels(&log_level, false);
-
-    if using_default_log_levels {
-        info!("Using default log levels: {}", log_level);
-    }
-}
-
-// Loads an icon from disk and converts it to a winit Icon.
-// Returns None if the file is missing or cannot be decoded.
-pub fn load_window_icon(path: &Path) -> Option<Icon> {
-    let image = image::open(path).ok()?.into_rgba8();
-    let (width, height) = image.dimensions();
-    Icon::from_rgba(image.into_raw(), width, height).ok()
-}
-
-// Builds the WindowInit descriptor from the project configuration.
-// Sets title, size, fullscreen mode, and attempts to load a custom
-// window icon (falls back to the embedded default icon).
-fn make_window_init(config: &Config, project_resources_directory_path: &Path) -> WindowInit {
-    let window_title = config
-        .get_str("WINDOW_TITLE")
-        .or_else(|_| config.get_str("TITLE"))
-        .unwrap_or_else(|_| "Pill".to_owned());
-
-    let window_size = match (
-        config.get_int("WINDOW_WIDTH"),
-        config.get_int("WINDOW_HEIGHT"),
-    ) {
-        (Ok(width), Ok(height)) => winit::dpi::PhysicalSize::new(width as u32, height as u32),
-        _ => winit::dpi::PhysicalSize::new(1280, 720),
-    };
-
-    let fullscreen = config.get_bool("WINDOW_FULLSCREEN").unwrap_or(false);
-
-    let default_icon_bytes = include_bytes!("../res/icon.raw");
-    let project_icon_path = project_resources_directory_path.join("icon.ico");
-    let window_icon = load_window_icon(&project_icon_path)
-        .or_else(|| Icon::from_rgba(default_icon_bytes.to_vec(), 128, 128).ok());
-
-    let minimum_window_size = winit::dpi::PhysicalSize::new(100, 100);
-    let attributes = WindowAttributes::default()
-        .with_title(window_title)
-        .with_min_inner_size(minimum_window_size)
-        .with_inner_size(window_size)
-        .with_window_icon(window_icon)
-        .with_visible(false);
-
-    WindowInit {
-        attributes,
-        fullscreen,
-    }
-}
+// ---------------------------------------------------------------------------
+// Hot-Reload System
+// ---------------------------------------------------------------------------
 
 // Resolves the path (or command) to the PillLauncher binary used for
 // hot-reload builds.  Checks, in order:
@@ -1101,24 +1160,9 @@ fn try_remove_files_starting_with(directory_path: &Path, file_name_prefix: &str)
     }
 }
 
-// Top-level application state.
-// Owns the window, the runtime host, file watchers, and all path
-// configuration.  Implements winit's ApplicationHandler so it can
-// respond to window and device events.
-struct App {
-    project_paths: ProjectPaths,
-    hot_reload_enabled: bool,
-    runtime_load_mode: RuntimeLoadMode,
-    window_init: Option<WindowInit>,
-
-    window: Option<Arc<Window>>,
-    window_size: winit::dpi::PhysicalSize<u32>,
-    runtime_host: Option<RuntimeHost>,
-    runtime_context: Option<RuntimeCreateContext>,
-    file_watchers: Option<FileWatchers>,
-    last_render_time: Instant,
-    last_reload_poll: Instant,
-}
+// ---------------------------------------------------------------------------
+// Application - App
+// ---------------------------------------------------------------------------
 
 impl App {
     // Constructs the App in a pre-initialised state.
@@ -1145,6 +1189,10 @@ impl App {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Application - ApplicationHandler
+// ---------------------------------------------------------------------------
 
 impl ApplicationHandler for App {
     // Called once when the event loop is ready.
@@ -1339,6 +1387,10 @@ impl ApplicationHandler for App {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Entry Point
+// ---------------------------------------------------------------------------
+
 // Main application entry point.
 //
 // Responsibilities:
@@ -1528,8 +1580,17 @@ fn run_app() -> Result<()> {
     );
     event_loop.run_app(&mut app).context("run_app failed")?;
 
-    // When the event loop exits, `app` is dropped, which tears down
-    // the runtime, renderer, window, and file watchers in the correct order.
+    // --- Graceful shutdown ---
+    // The last frame's GPU commands may still be in-flight when the
+    // event loop exits.  Give the GPU a chance to drain its command
+    // queue before we tear down the wgpu Surface during runtime drop.
+    std::thread::sleep(Duration::from_millis(100));
+
+    // Explicitly destroy the runtime host now, while the event loop
+    // and window are both still alive. This ensures wgpu can clean
+    // up its surface resources before the native window is destroyed.
+    drop(app.runtime_host.take());
+
     Ok(())
 }
 
@@ -1541,27 +1602,36 @@ fn main() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn unique_tmp_dir(name: &str) -> PathBuf {
-        let nanos = SystemTime::now()
+    // Creates a unique temporary directory for a test, keyed by name and
+    // nanosecond timestamp to prevent collisions between parallel test runs.
+    fn unique_temporary_directory(name: &str) -> PathBuf {
+        let nanoseconds = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("pill_test_{name}_{nanos}"))
+        std::env::temp_dir().join(format!("pill_test_{name}_{nanoseconds}"))
     }
 
+    // Verifies that the workspace declared in the project's Cargo.toml
+    // (via `workspace = "..."`) takes priority over both the
+    // PILL_ENGINE_WORKSPACE_DIR env var and filesystem scanning.
     #[test]
     fn prefers_project_manifest_workspace_over_env_and_sibling_scan() {
-        let root = unique_tmp_dir("hot_reload_workspace_pick");
+        let root = unique_temporary_directory("hot_reload_workspace_pick");
         let _ = fs::remove_dir_all(&root);
 
-        let project_dir = root.join("my_project");
-        fs::create_dir_all(project_dir.join("src")).unwrap();
-        fs::create_dir_all(project_dir.join("res")).unwrap();
+        let project_directory = root.join("my_project");
+        fs::create_dir_all(project_directory.join("src")).unwrap();
+        fs::create_dir_all(project_directory.join("res")).unwrap();
 
         let engine_a = root.join("Pill-Engine").join("engine");
         let engine_b = root.join("Pill-Engine-Upstream").join("engine");
@@ -1572,6 +1642,7 @@ mod tests {
         fs::create_dir_all(engine_b.join("pill_engine")).unwrap();
         fs::create_dir_all(engine_b.join("pill_renderer")).unwrap();
 
+        // Both engine workspaces claim the project as a member.
         fs::write(
             engine_a.join("Cargo.toml"),
             r#"[workspace]
@@ -1587,8 +1658,9 @@ members = ["my_project"]
         )
         .unwrap();
 
+        // The project manifest points to engine_b.
         fs::write(
-            project_dir.join("Cargo.toml"),
+            project_directory.join("Cargo.toml"),
             format!(
                 r#"[package]
 name = "my_project"
@@ -1601,32 +1673,37 @@ workspace = "{}"
         )
         .unwrap();
 
+        // The env var points to engine_a, but the manifest should win.
         std::env::set_var("PILL_ENGINE_WORKSPACE_DIR", &engine_a);
-        let resolved = resolve_engine_workspace_dir(&project_dir, &project_dir, true).unwrap();
+        let resolved =
+            resolve_engine_workspace_dir(&project_directory, &project_directory, true).unwrap();
         assert_eq!(resolved, engine_b);
 
         let _ = fs::remove_dir_all(root);
     }
 
+    // Verifies that resolve_launcher_command prefers a compiled
+    // PillLauncher binary in the engine workspace over a PATH fallback.
     #[test]
     fn resolve_launcher_prefers_engine_pill_launcher_target_binary() {
-        let root = unique_tmp_dir("hot_reload_launcher_pick");
+        let root = unique_temporary_directory("hot_reload_launcher_pick");
         let _ = fs::remove_dir_all(&root);
 
-        let engine_dir = root.join("engine");
-        let launcher_bin = engine_dir
+        let engine_directory = root.join("engine");
+        let launcher_binary = engine_directory
             .join("pill_launcher")
             .join("target")
             .join("debug")
             .join("PillLauncher");
-        fs::create_dir_all(launcher_bin.parent().unwrap()).unwrap();
-        fs::write(&launcher_bin, b"").unwrap();
+        fs::create_dir_all(launcher_binary.parent().unwrap()).unwrap();
+        fs::write(&launcher_binary, b"").unwrap();
 
+        // Clear env overrides so the filesystem fallback is tested.
         std::env::remove_var("PILL_LAUNCHER_BIN");
         std::env::remove_var("PILL_LAUNCHER_CMD");
 
-        let resolved = resolve_launcher_command(&engine_dir).unwrap();
-        assert_eq!(PathBuf::from(resolved), launcher_bin);
+        let resolved = resolve_launcher_command(&engine_directory).unwrap();
+        assert_eq!(PathBuf::from(resolved), launcher_binary);
 
         let _ = fs::remove_dir_all(root);
     }
