@@ -1194,7 +1194,6 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CloseRequested => {
-                drop(self.runtime_host.take());
                 event_loop.exit();
             }
             _ => {}
