@@ -12,7 +12,11 @@ use std::path::PathBuf;
 
 use crate::actions::Action;
 use crate::types::*;
-use crate::utils::cli::{add_build_flags, add_path_flag, parse_build_target, parse_compile_mode, project_args_flag, wasm_port_flag};
+use crate::utils::cli::{
+    add_build_flags, add_path_flag, parse_build_target, parse_compile_mode, project_args_flag,
+    wasm_port_flag,
+};
+use crate::utils::common::print_build_summary;
 use crate::utils::native_target::run_project;
 use crate::utils::paths::get_project_build_path;
 use crate::utils::web_dev_server;
@@ -32,8 +36,7 @@ impl Action for Run {
     fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
         let app = add_path_flag(app);
         let app = add_build_flags(app);
-        app.arg(wasm_port_flag())
-            .arg(project_args_flag())
+        app.arg(wasm_port_flag()).arg(project_args_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
@@ -48,6 +51,15 @@ impl Action for Run {
             .map(|v| v.map(String::from).collect())
             .unwrap_or_default();
         let clean = matches.is_present("clean");
+
+        print_build_summary(
+            "Running",
+            &path,
+            &target,
+            &compile_mode,
+            matches.value_of("output-path"),
+            features,
+        );
 
         if clean {
             crate::utils::assets::run_asset_pipeline(&path.join("res"), true)?;

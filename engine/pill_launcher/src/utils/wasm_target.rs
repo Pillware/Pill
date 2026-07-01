@@ -13,13 +13,14 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Instant;
 
 use anyhow::{bail, Context, Error, Result};
 
 use crate::types::CompileMode;
 use crate::utils::common::{
-    copy_dir_files, copy_project_assets, embed_project_config, get_template_directory,
-    prepare_scratch_crate, rewrite_scratch_manifest,
+    ansi_green, copy_dir_files, copy_project_assets, embed_project_config, format_elapsed_time,
+    get_template_directory, prepare_scratch_crate, rewrite_scratch_manifest,
 };
 
 /// Build a WASM/WebGPU bundle via wasm-pack using a scratch directory.
@@ -31,9 +32,11 @@ pub fn build_project(
     max_size_kb: Option<u64>,
     wasm_analyze: bool,
 ) -> Result<()> {
-    println!("Building WASM/WebGPU target for project at {project_directory_path:?}...");
+    let build_start = Instant::now();
+
+    println!("Building WASM target...");
     if *compile_mode == CompileMode::HotReload {
-        println!("Note: hot-reload is not meaningful for WASM; using --dev mode.");
+        println!("NOTE: hot-reload is not meaningful for WASM; using --dev mode.");
     }
 
     // Paths: templates are in pill_launcher/res/templates/, output goes to <project>/build/wasm/.
@@ -42,6 +45,20 @@ pub fn build_project(
     let build_wasm_dir = project_directory_path.join("build").join("wasm");
     let scratch_pill_web_app_dir = build_wasm_dir.join(".build").join("pill_web_app");
     let scratch_package_directory = build_wasm_dir.join(".build").join("pkg");
+    let scratch_target_dir = build_wasm_dir.join(".build").join("target");
+
+    // Clean stale source and package artifacts from previous builds to
+    // prevent contamination (stale crates, old API code referencing removed
+    // assets).  Keep the target/ directory so compiled dependencies are
+    // cached across rebuilds.
+    if scratch_pill_web_app_dir.exists() {
+        fs::remove_dir_all(&scratch_pill_web_app_dir)
+            .context("Failed to clean stale pill_web_app directory")?;
+    }
+    if scratch_package_directory.exists() {
+        fs::remove_dir_all(&scratch_package_directory)
+            .context("Failed to clean stale pkg directory")?;
+    }
 
     // Pipeline: prepare scratch crate → embed config → rewrite manifest → wasm-pack → copy outputs.
     prepare_scratch_crate(&wasm_get_template_directory, &scratch_pill_web_app_dir)?;
@@ -57,6 +74,7 @@ pub fn build_project(
         compile_mode,
         &scratch_pill_web_app_dir,
         &scratch_package_directory,
+        &scratch_target_dir,
     )?;
 
     drop(_member_guard);
@@ -99,9 +117,21 @@ pub fn build_project(
     }
 
     println!();
-    println!("Done! Serve with:");
-    println!("  PillLauncher run -t web -p {project_directory_path:?}");
-    println!("  (or any static server pointed at {build_wasm_dir:?})");
+    let elapsed = build_start.elapsed();
+    let time_str = format_elapsed_time(elapsed);
+    let (open, close) = ansi_green();
+
+    let final_wasm = build_wasm_dir.join("pill_web_app_bg.wasm");
+    let size_str = match fs::metadata(&final_wasm) {
+        Ok(meta) => {
+            let bytes = meta.len();
+            format!("{:.3} MB", bytes as f64 / (1024.0 * 1024.0))
+        }
+        Err(_) => "unknown".to_string(),
+    };
+
+    println!("{open}Build completed successfully {time_str}{close}");
+    println!("Build size: {size_str}");
     Ok(())
 }
 
@@ -110,6 +140,7 @@ fn run_wasm_pack(
     compile_mode: &CompileMode,
     scratch_pill_web_app_dir: &Path,
     scratch_package_directory: &Path,
+    scratch_target_dir: &Path,
 ) -> Result<()> {
     let mut args: Vec<String> = vec![
         "build".into(),
@@ -121,8 +152,13 @@ fn run_wasm_pack(
     if !matches!(compile_mode, CompileMode::Release) {
         args.push("--dev".into());
     }
+    // Isolate cargo target directory per project so artifacts from different
+    // projects (which share the crate name "project") never collide.
+    args.push("--".into());
+    args.push("--target-dir".into());
+    args.push(scratch_target_dir.to_string_lossy().to_string());
 
-    println!("Running wasm-pack in scratch crate {scratch_pill_web_app_dir:?}...");
+    println!("Running WASM-pack in scratch crate {scratch_pill_web_app_dir:?}...");
 
     let mut cmd = Command::new("wasm-pack");
     cmd.args(&args).current_dir(scratch_pill_web_app_dir);

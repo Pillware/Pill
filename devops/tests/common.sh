@@ -42,9 +42,13 @@ test_results=()  # stores "PASS|<description>", "FAIL|<description> - reason", e
 find_launcher() {
     local search_paths=(
         "./engine/pill_launcher/target/release/PillLauncher"
+        "./engine/pill_launcher/target/release/PillLauncher.exe"
         "./target/release/PillLauncher"
+        "./target/release/PillLauncher.exe"
         "./engine/pill_launcher/target/debug/PillLauncher"
+        "./engine/pill_launcher/target/debug/PillLauncher.exe"
         "./target/debug/PillLauncher"
+        "./target/debug/PillLauncher.exe"
     )
     for candidate_path in "${search_paths[@]}"; do
         if [ -x "$candidate_path" ] || [ -f "$candidate_path" ]; then
@@ -77,7 +81,14 @@ fi
 # Temporary test directory
 # ---------------------------------------------------------------------------
 
-TMPDIR="${TMPDIR:-/tmp}"
+# Use Windows TEMP if available (Git Bash), fall back to /tmp
+if [ -d "$TEMP" ]; then
+    TMPDIR="${TMPDIR:-$TEMP}"
+elif [ -d "$TMP" ]; then
+    TMPDIR="${TMPDIR:-$TMP}"
+else
+    TMPDIR="${TMPDIR:-/tmp}"
+fi
 test_workspace_root="${TEST_ROOT:-$TMPDIR/pill-ci-tests-$$}"
 mkdir -p "$test_workspace_root"
 
@@ -128,10 +139,21 @@ report_skip() {
     test_results+=("SKIP|$1 - $2")
 }
 
+# Export binary path so timeout (separate process) can use it
+export pill_launcher_bin
+
 invoke_launcher() {
     "$pill_launcher_bin" "$@"
 }
 
+# Also export the function for timeout/background processes
+export -f invoke_launcher
+
+# ---------------------------------------------------------------------------
+# assert_ok — Run a launcher command and expect exit 0
+# Usage: assert_ok "test description" <launcher args...>
+#   Example: assert_ok "create project" create -n MyGame -p /tmp
+# ---------------------------------------------------------------------------
 assert_ok() {
     local test_description="$1"; shift
     if invoke_launcher "$@" > /dev/null 2>&1; then
@@ -141,6 +163,12 @@ assert_ok() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# assert_fail — Run a launcher command, expect non-zero exit +
+#   stderr containing a case-insensitive substring
+# Usage: assert_fail "test description" "expected error substring" <launcher args...>
+#   Example: assert_fail "duplicate create" "already exists" create -n Foo -p /tmp
+# ---------------------------------------------------------------------------
 assert_fail() {
     local test_description="$1"; local expected_substring="$2"; shift 2
     local launcher_output exit_code

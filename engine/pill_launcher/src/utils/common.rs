@@ -18,8 +18,8 @@ use std::{
 use anyhow::{Context, Error, Result};
 use fs_extra::dir::CopyOptions;
 
-use crate::types::Location;
-use crate::utils::paths::get_path;
+use crate::types::{BuildTarget, CompileMode, Location};
+use crate::utils::paths::{get_path, get_project_build_path, get_project_title};
 
 // ---------------------------------------------------------------------------
 // OS-specific constants and the dynamic library naming helper.
@@ -421,4 +421,40 @@ pub(crate) fn format_build_error(detail: &str, elapsed: Duration) -> String {
     format!(
         "{open}Pill Standalone \"run\" command failed {time_str}{close}\n\nCaused by:\n{detail}"
     )
+}
+
+// ---------------------------------------------------------------------------
+// Build / Run summary
+// ---------------------------------------------------------------------------
+
+/// Print a human-readable summary of the build/run configuration before starting.
+pub(crate) fn print_build_summary(
+    action: &str,
+    path: &Path,
+    target: &BuildTarget,
+    compile_mode: &CompileMode,
+    output_path_override: Option<&str>,
+    features: Option<&str>,
+) {
+    let project_name = get_project_title(path).unwrap_or_else(|_| "unknown".to_string());
+    let output_path = match target {
+        BuildTarget::Native => {
+            let out_dir = PathBuf::from(output_path_override.unwrap_or("."));
+            get_project_build_path(path, &out_dir, compile_mode)
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "<error>".to_string())
+        }
+        BuildTarget::Web => path.join("build").join("wasm").display().to_string(),
+    };
+    let features_display = features.unwrap_or("none");
+
+    println!("-----");
+    println!("{}:", action);
+    println!("  Project name: {}", project_name);
+    println!("  Project path: {}", path.display());
+    println!("  Target:       {}", target);
+    println!("  Compile mode: {}", compile_mode);
+    println!("  Output path:  {}", output_path);
+    println!("  Features:     {}", features_display);
+    println!("-----");
 }

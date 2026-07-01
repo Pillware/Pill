@@ -16,6 +16,7 @@ use crate::utils::cli::{
     add_build_flags, add_path_flag, max_wasm_size_flag, parse_build_target, parse_compile_mode,
     wasm_analyze_flag,
 };
+use crate::utils::common::print_build_summary;
 use crate::utils::native_target::build_project;
 use crate::utils::paths::get_project_build_path;
 use crate::utils::wasm_target;
@@ -51,6 +52,15 @@ impl Action for Build {
             .and_then(|s| s.parse().ok());
         let wasm_analyze = matches.is_present("wasm-analyze");
 
+        print_build_summary(
+            "Building",
+            &path,
+            &target,
+            &compile_mode,
+            matches.value_of("output-path"),
+            features,
+        );
+
         if clean {
             crate::utils::assets::run_asset_pipeline(&path.join("res"), true)?;
         }
@@ -68,6 +78,11 @@ impl Action for Build {
                     println!("Note: `-o/--output-path` is ignored with `-t wasm`; output is fixed at <project>/build/wasm/");
                 }
                 wasm_target::build_project(&path, &compile_mode, maximum_wasm_size, wasm_analyze)?;
+
+                let build_wasm_dir = path.join("build").join("wasm");
+                println!("Done! Serve with:");
+                println!("  PillLauncher run -t web -p {:?}", &path);
+                println!("  (or any static server pointed at {:?})", build_wasm_dir);
             }
         }
         Ok(())

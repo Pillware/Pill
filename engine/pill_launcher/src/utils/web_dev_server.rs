@@ -43,20 +43,28 @@ pub fn run(project_directory_path: &Path, compile_mode: &CompileMode, port: u16)
     let subscribers: Subscribers = Arc::new(Mutex::new(Vec::new()));
     let address = format!("{ADDRESS_HOST}:{port}");
 
-    // Start a background watcher that notifies long-poll clients on file changes.
-    spawn_watcher(build_wasm_dir.clone(), Arc::clone(&subscribers));
+    let hot_reload_enabled = *compile_mode == CompileMode::HotReload;
+
+    // Only start the file watcher in hot-reload mode.
+    if hot_reload_enabled {
+        spawn_watcher(build_wasm_dir.clone(), Arc::clone(&subscribers));
+    }
 
     let server = tiny_http::Server::http(&address).map_err(|e| Error::msg(e.to_string()))?;
     println!();
     println!("Serving {} at http://{}", build_wasm_dir.display(), address);
-    println!("Live reload enabled - the page will refresh on wasm rebuilds.");
+    if hot_reload_enabled {
+        println!("Live reload enabled - the page will refresh on wasm rebuilds.");
+    }
     println!("Ctrl+C to stop.");
 
     for request in server.incoming_requests() {
         let subscribers = Arc::clone(&subscribers);
         let build_wasm_dir = build_wasm_dir.clone();
         thread::spawn(move || {
-            if let Err(e) = handle_request(request, &build_wasm_dir, subscribers) {
+            if let Err(e) =
+                handle_request(request, &build_wasm_dir, subscribers, hot_reload_enabled)
+            {
                 eprintln!("http request error: {:#}", e);
             }
         });
@@ -82,11 +90,12 @@ fn handle_request(
     request: tiny_http::Request,
     build_wasm_dir: &Path,
     subscribers: Subscribers,
+    hot_reload_enabled: bool,
 ) -> Result<()> {
     let url_path = request.url().split('?').next().unwrap_or("/").to_string();
 
-    // /__reload is the long-poll endpoint for live-reload clients.
-    if url_path == "/__reload" {
+    // /__reload is the long-poll endpoint for live-reload clients (hot-reload only).
+    if hot_reload_enabled && url_path == "/__reload" {
         return handle_reload(request, subscribers);
     }
 
@@ -127,8 +136,8 @@ fn handle_request(
     let content_type_header = tiny_http::Header::from_bytes("Content-Type", content_type)
         .map_err(|_| Error::msg("invalid content-type header"))?;
 
-    // Inject the live-reload <script> into HTML responses before </body>.
-    if content_type.starts_with("text/html") {
+    // Inject the live-reload <script> into HTML responses only in hot-reload mode.
+    if hot_reload_enabled && content_type.starts_with("text/html") {
         let mut html = fs::read_to_string(&path)?;
         if let Some(idx) = html.rfind("</body>") {
             html.insert_str(idx, RELOAD_SCRIPT);

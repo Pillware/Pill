@@ -403,7 +403,18 @@ fn build_project_in_workspace(
 
     let time_str = format_elapsed_time(start.elapsed());
     let (open, close) = ansi_green();
-    println!("{open}Project built successfully {time_str}{close}");
+
+    let standalone_path = output_directory_path.join(format!("{project_title}{EXECUTABLE_SUFFIX}"));
+    let size_str = match fs::metadata(&standalone_path) {
+        Ok(meta) => {
+            let bytes = meta.len();
+            format!("{:.3} MB", bytes as f64 / (1024.0 * 1024.0))
+        }
+        Err(_) => "unknown".to_string(),
+    };
+
+    println!("{open}Build completed successfully {time_str}{close}");
+    println!("Artifact size: {size_str}");
 
     Ok(())
 }
