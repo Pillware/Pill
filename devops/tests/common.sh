@@ -39,16 +39,39 @@ test_results=()  # stores "PASS|<description>", "FAIL|<description> - reason", e
 # the repo root or from inside engine/pill_launcher.  CI sets
 # PILL_LAUNCHER_BIN explicitly after downloading the build artifact.
 
+# Walk up from the directory containing this script until we find a known
+# project-root marker, then return that absolute path.
+find_project_root() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local current_dir="$script_dir"
+    while [ "$current_dir" != "/" ]; do
+        if [ -f "$current_dir/engine/Cargo.toml" ] || [ -f "$current_dir/engine/pill_launcher/Cargo.toml" ]; then
+            echo "$current_dir"
+            return 0
+        fi
+        current_dir="$(dirname "$current_dir")"
+    done
+    # Fallback: use git root if available
+    if command -v git > /dev/null 2>&1; then
+        git rev-parse --show-toplevel 2>/dev/null && return 0 || true
+    fi
+    return 1
+}
+
 find_launcher() {
+    local project_root
+    project_root="$(find_project_root)" || project_root="."
+
     local search_paths=(
-        "./engine/pill_launcher/target/release/PillLauncher"
-        "./engine/pill_launcher/target/release/PillLauncher.exe"
-        "./target/release/PillLauncher"
-        "./target/release/PillLauncher.exe"
-        "./engine/pill_launcher/target/debug/PillLauncher"
-        "./engine/pill_launcher/target/debug/PillLauncher.exe"
-        "./target/debug/PillLauncher"
-        "./target/debug/PillLauncher.exe"
+        "$project_root/engine/pill_launcher/target/release/PillLauncher"
+        "$project_root/engine/pill_launcher/target/release/PillLauncher.exe"
+        "$project_root/target/release/PillLauncher"
+        "$project_root/target/release/PillLauncher.exe"
+        "$project_root/engine/pill_launcher/target/debug/PillLauncher"
+        "$project_root/engine/pill_launcher/target/debug/PillLauncher.exe"
+        "$project_root/target/debug/PillLauncher"
+        "$project_root/target/debug/PillLauncher.exe"
     )
     for candidate_path in "${search_paths[@]}"; do
         if [ -x "$candidate_path" ] || [ -f "$candidate_path" ]; then
@@ -56,13 +79,24 @@ find_launcher() {
             return
         fi
     done
+
+    # Check system PATH as a last resort
+    if command -v PillLauncher > /dev/null 2>&1; then
+        command -v PillLauncher
+        return
+    fi
+
     echo ""
 }
+
+# Determine the project root once and export it for all sourcing scripts.
+PROJECT_ROOT="$(find_project_root)"
+export PROJECT_ROOT
 
 pill_launcher_bin="${PILL_LAUNCHER_BIN:-$(find_launcher)}"
 if [ -z "$pill_launcher_bin" ] || [ ! -f "$pill_launcher_bin" ]; then
     echo -e "${RED}FATAL: PillLauncher binary not found.${NC}"
-    echo "Build it first:  cargo build -p pill_launcher --manifest-path engine/Cargo.toml"
+    echo "Build it first:  cargo build --release --manifest-path engine/pill_launcher/Cargo.toml"
     echo "Or set PILL_LAUNCHER_BIN=/path/to/PillLauncher"
     exit 1
 fi

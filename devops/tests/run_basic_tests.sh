@@ -4,7 +4,7 @@
 #               a compiled PillLauncher binary (auto-discovered or set via
 #               PILL_LAUNCHER_BIN).
 
-# DESCRIPTION: Pill  CI fast checks - Tests that validate
+# DESCRIPTION: Pill CI fast checks - Tests that validate
 #   code formatting, linting, native & WASM builds, performance benchmarking
 #   binary size measurement, and WASM size budget enforcement.
 #
@@ -16,11 +16,9 @@
 #   all                                   run all checks (default)
 #   code_formatting_check                 cargo fmt + git diff
 #   code_linting_check                    cargo clippy -D warnings
-#   build_native_cube_example             build examples/cube (native, release)
-#   build_wasm_cube_example               build WASM (cube) + verify artifact
+#   build_native_cube_example             build examples/cube (native) + artifact size report
+#   build_wasm_cube_example               build WASM (cube) + artifact size report + budget
 #   benchmark_native_performance          build + run city (release, 3 runs)
-#   benchmark_native_size                 release build + binary size JSON
-#   benchmark_wasm_size [path]            WASM binary size budget (≤ 499 KB)
 
 # EXAMPLE USAGE:
 #   bash devops/tests/run_basic_tests.sh all
@@ -35,6 +33,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
 
+# All paths in this script are relative to the project root.
+cd "$PROJECT_ROOT"
+
 # ---------------------------------------------------------------------------
 # 1. code_formatting_check - cargo fmt (direct) + git diff
 # ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ source "$SCRIPT_DIR/common.sh"
 code_formatting_check() {
     echo ""
     echo "------------------------------------------------------------------"
-    echo "(1/7) Code formatting check"
+    echo "(1/5) Code formatting check"
     echo "Running cargo fmt"
     cargo fmt --all --manifest-path engine/Cargo.toml
 
@@ -64,7 +65,7 @@ code_formatting_check() {
 code_linting_check() {
     echo ""
     echo "------------------------------------------------------------------"
-    echo "(2/7) Code linting check"
+    echo "(2/5) Code linting check"
     echo "Running clippy"
     local clippy_output exit_code
     clippy_output=$(cargo clippy --all --manifest-path engine/Cargo.toml -- -D warnings 2>&1) && exit_code=$? || exit_code=$?
@@ -77,13 +78,13 @@ code_linting_check() {
 }
 
 # ---------------------------------------------------------------------------
-# 3. build_native_cube_example - launcher build examples/cube
+# 3. build_native_cube_example - release native build + artifact size report
 # ---------------------------------------------------------------------------
 
 build_native_cube_example() {
     echo ""
     echo "------------------------------------------------------------------"
-    echo "(3/7) Native build check"
+    echo "(3/5) Native build and artifact size report"
     local cube_dir="examples/cube"
 
     if [ ! -f "$cube_dir/Cargo.toml" ]; then
@@ -93,33 +94,60 @@ build_native_cube_example() {
 
     echo "Building - this may take a moment"
     local exit_code=0
-    invoke_launcher -a build -p "$cube_dir" -c release 2>&1 || exit_code=$?
+    invoke_launcher build -p "$cube_dir" -c release 2>&1 || exit_code=$?
 
     if [ "$exit_code" -eq 0 ]; then
         report_pass "native cube build succeeds"
-        if [ -d "$cube_dir/build/release/data" ]; then
-            report_pass "native cube build output data/ exists"
-        else
-            report_fail "native cube build output data/" "missing $cube_dir/build/release/data"
-        fi
     else
         report_skip "native cube build" "exit $exit_code"
+        return
+    fi
+
+    # Binary size report on all native build artifacts
+    local data_dir="$cube_dir/build/release/data"
+    if [ -d "$data_dir" ]; then
+        local total_bytes=0
+        local file_count=0
+        local json_entries=""
+        while IFS= read -r -d '' file; do
+            local size
+            size=$(wc -c < "$file" 2>/dev/null || echo 0)
+            total_bytes=$((total_bytes + size))
+            file_count=$((file_count + 1))
+            local relative_path="${file#$data_dir/}"
+            if [ -n "$json_entries" ]; then
+                json_entries+=$',\n'
+            fi
+            json_entries+="        {\"file\": \"${relative_path}\", \"bytes\": ${size}, \"megabytes\": $(awk "BEGIN { printf \"%.4f\", $size / 1048576 }")}"
+        done < <(find "$data_dir" -type f -print0 2>/dev/null | sort -z)
+        echo "  Binary sizes:"
+        echo "  {"
+        echo "    \"total_bytes\": $total_bytes,"
+        echo "    \"file_count\": $file_count,"
+        echo "    \"files\": ["
+        echo -e "$json_entries"
+        echo "    ]"
+        echo "  }"
+        report_pass "native artifact size report"
+    else
+        report_fail "native artifact size report" "missing $data_dir"
     fi
 }
 
 # ---------------------------------------------------------------------------
-# 4. build_wasm_cube_example - launcher build -t web + artifact & size check
+# 4. build_wasm_cube_example - release WASM build + artifact size report + budget
 # ---------------------------------------------------------------------------
 
 build_wasm_cube_example() {
     echo ""
     echo "------------------------------------------------------------------"
-    echo "(4/7) WASM build check"
+    echo "(4/5) WASM build, artifact size report + budget"
     local cube_path="examples/cube"
 
+    # 1. Build the WASM target (pill_web_app) for the cube example
     echo "Building - this may take a moment"
     local launcher_output exit_code
-    launcher_output=$(invoke_launcher -a build -p "$cube_path" -t web 2>&1) && exit_code=$? || exit_code=$?
+    launcher_output=$(invoke_launcher build -p "$cube_path" -t web -c release 2>&1) && exit_code=$? || exit_code=$?
 
     if [ "$exit_code" -eq 0 ]; then
         report_pass "WASM build succeeds"
@@ -128,15 +156,94 @@ build_wasm_cube_example() {
         return
     fi
 
-    # Verify the .wasm artifact exists (launcher flattens output to build/wasm/)
-    local wasm_file="$cube_path/build/wasm/pill_web_app_bg.wasm"
+    # 2. Verify the .wasm artifact exists (launcher flattens output to build/wasm/)
+    local wasm_dir="$cube_path/build/wasm"
+    local wasm_file="$wasm_dir/pill_web_app_bg.wasm"
     if [ -f "$wasm_file" ]; then
         local wasm_size
         wasm_size=$(wc -c < "$wasm_file" 2>/dev/null || echo 0)
         local wasm_kb=$((wasm_size / 1024))
-        report_pass "WASM artifact exists (${wasm_kb} KB)"
+        local wasm_mb
+        wasm_mb=$(awk "BEGIN { printf \"%.4f\", $wasm_size / 1048576 }")
+        report_pass "WASM artifact exists (${wasm_kb} KB, ${wasm_mb} MB)"
     else
         report_fail "WASM artifact" "missing $wasm_file"
+        return
+    fi
+
+    # 3. Binary size report on all WASM build artifacts
+    if [ -d "$wasm_dir" ]; then
+        local total_bytes=0
+        local file_count=0
+        local json_entries=""
+        while IFS= read -r -d '' file; do
+            local size
+            size=$(wc -c < "$file" 2>/dev/null || echo 0)
+            total_bytes=$((total_bytes + size))
+            file_count=$((file_count + 1))
+            local relative_path="${file#$wasm_dir/}"
+            if [ -n "$json_entries" ]; then
+                json_entries+=$',\n'
+            fi
+            json_entries+="        {\"file\": \"${relative_path}\", \"bytes\": ${size}, \"megabytes\": $(awk "BEGIN { printf \"%.4f\", $size / 1048576 }")"}
+        done < <(find "$wasm_dir" -type f -print0 2>/dev/null | sort -z)
+        echo "  Binary sizes:"
+        echo "  {"
+        echo "    \"total_bytes\": $total_bytes,"
+        echo "    \"file_count\": $file_count,"
+        echo "    \"files\": ["
+        echo -e "$json_entries"
+        echo "    ]"
+        echo "  }"
+
+        # 4. Size budget check (≤ 499 KB for the .wasm file)
+        local wasm_size wasm_kb wasm_mb
+        wasm_size=$(wc -c < "$wasm_file" 2>/dev/null || echo 0)
+        wasm_kb=$((wasm_size / 1024))
+        wasm_mb=$(awk "BEGIN { printf \"%.4f\", $wasm_size / 1048576 }")
+        echo "  WASM: $wasm_file → ${wasm_kb} KB (${wasm_mb} MB)"
+        if [ "$wasm_size" -le 511000 ]; then
+            report_pass "WASM size within 499 KB budget (${wasm_kb} KB, ${wasm_mb} MB)"
+        else
+            report_fail "WASM size budget" "${wasm_kb} KB (${wasm_mb} MB) exceeds 499 KB limit"
+        fi
+
+        # 5. Dev server smoke test - serve the WASM build and verify key files
+        if command -v python3 > /dev/null 2>&1; then
+            echo "  Starting dev server on port 8080..."
+            python3 -m http.server 8080 --directory "$wasm_dir" &
+            local server_pid=$!
+            trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+            # Wait up to 30s for the server to bind
+            local server_ready=0
+            for _ in $(seq 1 30); do
+                if curl -sf -o /dev/null http://127.0.0.1:8080/ 2>/dev/null; then
+                    server_ready=1
+                    break
+                fi
+                sleep 1
+            done
+
+            if [ "$server_ready" -eq 1 ]; then
+                local smoke_ok=1
+                curl -sf -o /dev/null http://127.0.0.1:8080/ || smoke_ok=0
+                curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app.js || smoke_ok=0
+                curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app_bg.wasm || smoke_ok=0
+                if [ "$smoke_ok" -eq 1 ]; then
+                    report_pass "WASM dev server smoke test"
+                else
+                    report_fail "WASM dev server smoke test" "one or more key files not served"
+                fi
+            else
+                report_skip "WASM dev server smoke test" "server did not start in time"
+            fi
+
+            kill "$server_pid" 2>/dev/null || true
+            trap - EXIT
+        else
+            report_skip "WASM dev server smoke test" "python3 not available"
+        fi
     fi
 }
 
@@ -155,7 +262,7 @@ build_wasm_cube_example() {
 benchmark_native_performance() {
     echo ""
     echo "------------------------------------------------------------------"
-    echo "(5/7) Performance benchmark"
+    echo "(5/5) Performance benchmark"
 
     local operating_system
     operating_system=$(uname -s 2>/dev/null || echo "Windows")
@@ -204,7 +311,7 @@ _run_benchmark_loop() {
     # Build once, then run the compiled executable directly for each iteration
     echo "  Building..."
     local build_exit_code=0
-    invoke_launcher -a build -p "$project_directory" -c release --features "$feature" 2>&1 || build_exit_code=$?
+    invoke_launcher build -p "$project_directory" -c release --features "$feature" 2>&1 || build_exit_code=$?
     if [ "$build_exit_code" -ne 0 ]; then
         report_skip "native perf benchmark" "build failed (exit $build_exit_code)"
         return 1
@@ -332,99 +439,6 @@ _print_statistic_summary() {
 }
 
 # ---------------------------------------------------------------------------
-# 6. benchmark_native_size - temp project release build + binary size JSON
-# ---------------------------------------------------------------------------
-
-benchmark_native_size() {
-    echo ""
-    echo "------------------------------------------------------------------"
-    echo "(6/7) Binary size benchmark"
-    local project_directory="$test_workspace_root/SizeBenchTest"
-
-    # Create a temp project and build it
-    invoke_launcher -a create -n SizeBenchTest -p "$test_workspace_root" > /dev/null 2>&1 || {
-        report_skip "native size benchmark" "create failed"; return
-    }
-
-    echo "Building in release mode"
-    local build_output exit_code
-    build_output=$(invoke_launcher -a build -p "$project_directory" -c release 2>&1) && exit_code=$? || exit_code=$?
-
-    if [ "$exit_code" -ne 0 ]; then
-        report_skip "native size benchmark" "build failed: ${build_output:0:200}"
-        return
-    fi
-
-    # Measure binary sizes
-    local data_directory="$project_directory/build/release/data"
-    if [ -d "$data_directory" ]; then
-        local total_bytes=0
-        local file_count=0
-        local json_entries=""
-        while IFS= read -r -d '' file; do
-            local size
-            size=$(wc -c < "$file" 2>/dev/null || echo 0)
-            total_bytes=$((total_bytes + size))
-            file_count=$((file_count + 1))
-            local relative_path="${file#$data_directory/}"
-            if [ -n "$json_entries" ]; then
-                json_entries+=$',\n'
-            fi
-            json_entries+="        {\"file\": \"${relative_path}\", \"bytes\": ${size}, \"megabytes\": $(awk "BEGIN { printf \"%.2f\", $size / 1048576 }")}"
-        done < <(find "$data_directory" -type f -print0 2>/dev/null | sort -z)
-        echo "  Binary sizes:"
-        echo "  {"
-        echo "    \"total_bytes\": $total_bytes,"
-        echo "    \"file_count\": $file_count,"
-        echo "    \"files\": ["
-        echo -e "$json_entries"
-        echo "    ]"
-        echo "  }"
-        report_pass "native size benchmark"
-    else
-        report_skip "native size benchmark" "no release/data/ output"
-    fi
-}
-
-# ---------------------------------------------------------------------------
-# 7. benchmark_wasm_size - WASM binary must be ≤ 499 KB
-# ---------------------------------------------------------------------------
-
-benchmark_wasm_size() {
-    echo ""
-    echo "------------------------------------------------------------------"
-    echo "(7/7) WASM size budget"
-    local example_path="${1:-examples/cube}"
-
-    # Build WASM in release mode (debug sizes are meaningless)
-    echo "Building WASM release - this may take a moment"
-    if ! invoke_launcher -a build -p "$example_path" -t web -c release > /dev/null 2>&1; then
-        report_skip "WASM size budget" "build failed"
-        return
-    fi
-
-    # Find the .wasm file (launcher flattens to build/wasm/)
-    local wasm_file="$example_path/build/wasm/pill_web_app_bg.wasm"
-
-    if [ -z "$wasm_file" ]; then
-        report_fail "WASM size budget" "no .wasm file found in build output"
-        return
-    fi
-
-    local wasm_size
-    wasm_size=$(wc -c < "$wasm_file" 2>/dev/null || echo 0)
-    local wasm_kb=$((wasm_size / 1024))
-
-    echo "  WASM: $wasm_file → ${wasm_kb} KB"
-
-    if [ "$wasm_size" -le 511000 ]; then  # 499 KB + small margin for rounding
-        report_pass "WASM size within 499 KB budget (${wasm_kb} KB)"
-    else
-        report_fail "WASM size budget" "${wasm_kb} KB exceeds 499 KB limit"
-    fi
-}
-
-# ---------------------------------------------------------------------------
 # Dispatch (only when executed directly)
 # ---------------------------------------------------------------------------
 
@@ -438,8 +452,6 @@ case "${1:-all}" in
     build_native_cube_example)   build_native_cube_example ;;
     build_wasm_cube_example)     build_wasm_cube_example ;;
     benchmark_native_performance) benchmark_native_performance ;;
-    benchmark_native_size)       benchmark_native_size ;;
-    benchmark_wasm_size)         benchmark_wasm_size "${2:-examples/cube}" ;;
 
     all|"")
         code_formatting_check
@@ -447,8 +459,6 @@ case "${1:-all}" in
         build_native_cube_example
         build_wasm_cube_example
         benchmark_native_performance
-        benchmark_native_size
-        benchmark_wasm_size
         ;;
 
     *)
@@ -457,11 +467,9 @@ case "${1:-all}" in
         echo "Checks:"
         echo "  code_formatting_check        cargo fmt + git diff"
         echo "  code_linting_check           cargo clippy -D warnings"
-        echo "  build_native_cube_example    build examples/cube (native)"
-        echo "  build_wasm_cube_example      build WASM (cube) + verify artifacts"
+        echo "  build_native_cube_example    build examples/cube (native) + artifact size report"
+        echo "  build_wasm_cube_example      build WASM (cube) + artifact size report + budget"
         echo "  benchmark_native_performance build + run city (release)"
-        echo "  benchmark_native_size        release build + binary size report"
-        echo "  benchmark_wasm_size [path]   WASM binary ≤ 499 KB"
         exit 1
         ;;
 esac

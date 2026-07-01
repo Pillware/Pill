@@ -24,6 +24,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
 
+# All paths in this script are relative to the project root.
+cd "$PROJECT_ROOT"
+
 # ---------------------------------------------------------------------------
 # Example lists
 # ---------------------------------------------------------------------------
@@ -49,7 +52,7 @@ STANDALONE_CRATES=(
 _build_pill_example() {
     local example_path="$1"
     local build_exit_code=0
-    invoke_launcher -a build -p "$example_path" -c release 2>&1 || build_exit_code=$?
+    invoke_launcher build -p "$example_path" -c release 2>&1 || build_exit_code=$?
     if [ "$build_exit_code" -eq 0 ]; then
         report_pass "$example_path"
     else

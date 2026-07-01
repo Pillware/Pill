@@ -21,6 +21,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
 
+# All paths in this script are relative to the project root.
+cd "$PROJECT_ROOT"
+
 # ---------------------------------------------------------------------------
 # Documentation generation
 # ---------------------------------------------------------------------------
@@ -34,7 +37,7 @@ generate_documentation() {
 
     echo "Running docs generation - this may take a moment"
     local documentation_output documentation_exit_code=0
-    documentation_output=$(invoke_launcher -a docs -o "$docs_output_directory" 2>&1) || documentation_exit_code=$?
+    documentation_output=$(invoke_launcher docs -o "$docs_output_directory" 2>&1) || documentation_exit_code=$?
 
     if [ "$documentation_exit_code" -eq 0 ]; then
         report_pass "documentation generated"

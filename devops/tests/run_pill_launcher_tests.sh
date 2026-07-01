@@ -37,6 +37,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=./common.sh
 source "$SCRIPT_DIR/common.sh"
 
+# All paths in this script are relative to the project root.
+cd "$PROJECT_ROOT"
+
 # ---------------------------------------------------------------------------
 # 1. basics - smoke-test the binary itself
 # ---------------------------------------------------------------------------
