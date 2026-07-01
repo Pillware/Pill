@@ -156,94 +156,66 @@ build_wasm_cube_example() {
         return
     fi
 
-    # 2. Verify the .wasm artifact exists (launcher flattens output to build/wasm/)
+    # Verify the .wasm artifact exists (launcher flattens output to build/wasm/)
     local wasm_dir="$cube_path/build/wasm"
     local wasm_file="$wasm_dir/pill_web_app_bg.wasm"
-    if [ -f "$wasm_file" ]; then
-        local wasm_size
-        wasm_size=$(wc -c < "$wasm_file" 2>/dev/null || echo 0)
-        local wasm_kb=$((wasm_size / 1024))
-        local wasm_mb
-        wasm_mb=$(awk "BEGIN { printf \"%.4f\", $wasm_size / 1048576 }")
-        report_pass "WASM artifact exists (${wasm_kb} KB, ${wasm_mb} MB)"
-    else
+    if [ ! -f "$wasm_file" ]; then
         report_fail "WASM artifact" "missing $wasm_file"
         return
     fi
 
-    # 3. Binary size report on all WASM build artifacts
+    # Binary size — only the .wasm file, in MB (mebibytes, 4 decimal places)
+    local wasm_size wasm_mb
+    wasm_size=$(wc -c < "$wasm_file" 2>/dev/null || echo 0)
+    wasm_mb=$(awk "BEGIN { printf \"%.4f\", $wasm_size / 1048576 }")
+    echo "  Binary size:"
+    echo "  {"
+    echo "    \"file\": \"pill_web_app_bg.wasm\","
+    echo "    \"bytes\": $wasm_size,"
+    echo "    \"megabytes\": $wasm_mb"
+    echo "  }"
+
+    # Size budget: ≤ 0.4990 MB (523 239 bytes)
+    local limit_bytes=523239
+    if [ "$wasm_size" -le "$limit_bytes" ]; then
+        report_pass "WASM artifact size (${wasm_mb} MB within 0.4990 MB budget)"
+    else
+        report_fail "WASM size budget" "${wasm_mb} MB exceeds 0.4990 MB limit"
+    fi
+
+    # Dev server smoke test — use PillLauncher's built-in server
     if [ -d "$wasm_dir" ]; then
-        local total_bytes=0
-        local file_count=0
-        local json_entries=""
-        while IFS= read -r -d '' file; do
-            local size
-            size=$(wc -c < "$file" 2>/dev/null || echo 0)
-            total_bytes=$((total_bytes + size))
-            file_count=$((file_count + 1))
-            local relative_path="${file#$wasm_dir/}"
-            if [ -n "$json_entries" ]; then
-                json_entries+=$',\n'
+        echo "  Starting PillLauncher dev server on port 8080..."
+        invoke_launcher run -t web -p "$cube_path" -c release &
+        local server_pid=$!
+        trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+        # Wait up to 30s for the server to bind
+        local server_ready=0
+        for _ in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:8080/ 2>/dev/null; then
+                server_ready=1
+                break
             fi
-            json_entries+="        {\"file\": \"${relative_path}\", \"bytes\": ${size}, \"megabytes\": $(awk "BEGIN { printf \"%.4f\", $size / 1048576 }")"}
-        done < <(find "$wasm_dir" -type f -print0 2>/dev/null | sort -z)
-        echo "  Binary sizes:"
-        echo "  {"
-        echo "    \"total_bytes\": $total_bytes,"
-        echo "    \"file_count\": $file_count,"
-        echo "    \"files\": ["
-        echo -e "$json_entries"
-        echo "    ]"
-        echo "  }"
+            sleep 1
+        done
 
-        # 4. Size budget check (≤ 499 KB for the .wasm file)
-        local wasm_size wasm_kb wasm_mb
-        wasm_size=$(wc -c < "$wasm_file" 2>/dev/null || echo 0)
-        wasm_kb=$((wasm_size / 1024))
-        wasm_mb=$(awk "BEGIN { printf \"%.4f\", $wasm_size / 1048576 }")
-        echo "  WASM: $wasm_file → ${wasm_kb} KB (${wasm_mb} MB)"
-        if [ "$wasm_size" -le 511000 ]; then
-            report_pass "WASM size within 499 KB budget (${wasm_kb} KB, ${wasm_mb} MB)"
-        else
-            report_fail "WASM size budget" "${wasm_kb} KB (${wasm_mb} MB) exceeds 499 KB limit"
-        fi
-
-        # 5. Dev server smoke test - serve the WASM build and verify key files
-        if command -v python3 > /dev/null 2>&1; then
-            echo "  Starting dev server on port 8080..."
-            python3 -m http.server 8080 --directory "$wasm_dir" &
-            local server_pid=$!
-            trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-
-            # Wait up to 30s for the server to bind
-            local server_ready=0
-            for _ in $(seq 1 30); do
-                if curl -sf -o /dev/null http://127.0.0.1:8080/ 2>/dev/null; then
-                    server_ready=1
-                    break
-                fi
-                sleep 1
-            done
-
-            if [ "$server_ready" -eq 1 ]; then
-                local smoke_ok=1
-                curl -sf -o /dev/null http://127.0.0.1:8080/ || smoke_ok=0
-                curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app.js || smoke_ok=0
-                curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app_bg.wasm || smoke_ok=0
-                if [ "$smoke_ok" -eq 1 ]; then
-                    report_pass "WASM dev server smoke test"
-                else
-                    report_fail "WASM dev server smoke test" "one or more key files not served"
-                fi
+        if [ "$server_ready" -eq 1 ]; then
+            local smoke_ok=1
+            curl -sf -o /dev/null http://127.0.0.1:8080/ || smoke_ok=0
+            curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app.js || smoke_ok=0
+            curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app_bg.wasm || smoke_ok=0
+            if [ "$smoke_ok" -eq 1 ]; then
+                report_pass "WASM dev server smoke test"
             else
-                report_skip "WASM dev server smoke test" "server did not start in time"
+                report_fail "WASM dev server smoke test" "one or more key files not served"
             fi
-
-            kill "$server_pid" 2>/dev/null || true
-            trap - EXIT
         else
-            report_skip "WASM dev server smoke test" "python3 not available"
+            report_skip "WASM dev server smoke test" "server did not start in time"
         fi
+
+        kill "$server_pid" 2>/dev/null || true
+        trap - EXIT
     fi
 }
 

@@ -105,11 +105,16 @@ chmod +x "$pill_launcher_bin" 2>/dev/null || true
 # Clear stale cargo package-cache lock (can block parallel builds).
 rm -f "${HOME}/.cargo/.package-cache" 2>/dev/null || true
 
-# Restore engine/Cargo.toml to its committed state - previous test runs may
-# have left stale workspace-member entries if they crashed mid-build.
-if [ -f "engine/Cargo.toml" ] && command -v git > /dev/null 2>&1; then
-    git checkout -- engine/Cargo.toml 2>/dev/null || true
-fi
+# Fix engine/Cargo.toml workspace members — the launcher injects absolute-path
+# workspace members during builds and may leave them stale if interrupted.
+# This sed removes any line that has the pill-launcher-managed marker.
+fix_stale_workspace_members() {
+    local cargo_toml="${PROJECT_ROOT:-.}/engine/Cargo.toml"
+    if [ -f "$cargo_toml" ]; then
+        sed -i '/pill-launcher-managed-workspace-member/d' "$cargo_toml" 2>/dev/null || true
+    fi
+}
+fix_stale_workspace_members
 
 # ---------------------------------------------------------------------------
 # Temporary test directory
