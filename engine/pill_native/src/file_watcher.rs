@@ -1,3 +1,12 @@
+// This file implements a lightweight file-system watcher for hot-reload.
+//
+// Polls a directory tree for file additions, modifications, and deletions
+// by comparing last-modified timestamps against a stored snapshot.  Skips
+// hidden files, editor temp files, and swap files to avoid false positives.
+//
+// Used by pill_native to detect source/resource changes and trigger
+// hot-reload rebuilds without relying on platform-specific notification APIs.
+
 use std::{
     collections::HashMap,
     fs,

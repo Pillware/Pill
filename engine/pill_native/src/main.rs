@@ -1,3 +1,12 @@
+// This file is the native standalone runner for Pill Engine projects.
+//
+// Responsibilities:
+//   - Detects the project and engine workspace directories at startup.
+//   - Resolves paths to runtime and project dynamic libraries (dylibs).
+//   - Creates a winit window and loads the runtime via FFI (libloading).
+//   - Runs the main event loop: rendering, input dispatch, hot-reload polling.
+//   - Handles graceful shutdown with GPU synchronisation.
+
 mod file_watcher;
 
 use crate::file_watcher::FileWatcher;
