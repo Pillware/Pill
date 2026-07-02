@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 
 # REQUIREMENTS: Rust toolchain (cargo), PlantUML (optional), a compiled
-#               PillLauncher binary (auto-discovered or set via PILL_LAUNCHER_BIN).
+#               PillLauncher binary.  Set PILL_LAUNCHER_BIN to override
+#               auto-discovery, or ensure it is on PATH.
 
-# DESCRIPTION: Generate rustdoc documentation for all Pill crates via
-#   PillLauncher.  Supports two output profiles: project_dev (public API with
-#   project + internal features) and engine_dev (private items + pill_core).
+# DESCRIPTION: Generate rustdoc documentation for all Pill engine crates.
+#   Produces two doc sets under <output>/generated/:
+#     project_dev — public API (project + internal features)
+#     engine_dev  — private items + pill_core
+#   PlantUML diagrams are pre-rendered if PlantUML is installed.
 
-# USAGE: bash devops/utils/generate_documentation.sh
+# USAGE: bash devops/utils/generate_documentation.sh [-o <output_dir>]
+#
+#   -o <directory>    Output directory (default: ../docs)
 
 # EXAMPLE USAGE:
 #   bash devops/utils/generate_documentation.sh
+#   bash devops/utils/generate_documentation.sh -o /tmp/pill-docs
 
 # --- SCRIPT ---
 
@@ -20,45 +26,37 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../common.sh
 source "$SCRIPT_DIR/../common.sh"
 
-# All paths in this script are relative to the project root.
-cd "$PROJECT_ROOT"
+# ---- helpers ---------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Documentation generation
-# ---------------------------------------------------------------------------
+say()  { echo -e "${GREEN}[INFO]${NC} $*"; }
+die()  { echo -e "${RED}[FATAL]${NC} $*" >&2; exit 1; }
 
-generate_documentation() {
-    echo ""
-    echo "------------------------------------------------------------------"
-    echo "Generating Pill documentation"
-    local docs_output_directory="$test_workspace_root/documentation_output"
-    mkdir -p "$docs_output_directory"
+# ---- parse args ------------------------------------------------------------
 
-    echo "Running docs generation - this may take a while"
-    local documentation_output documentation_exit_code=0
-    documentation_output=$(invoke_launcher docs -o "$docs_output_directory" 2>&1) || documentation_exit_code=$?
+OUTPUT_DIR="../docs"
+while getopts "o:h" opt; do
+    case "$opt" in
+        o) OUTPUT_DIR="$OPTARG" ;;
+        h) echo "Usage: $0 [-o <output_dir>]"; exit 0 ;;
+        *) echo "Usage: $0 [-o <output_dir>]"; exit 1 ;;
+    esac
+done
 
-    if [ "$documentation_exit_code" -eq 0 ]; then
-        report_pass "documentation generated"
-        if [ -d "$docs_output_directory/docs" ]; then
-            report_pass "documentation output directory exists"
-        else
-            report_fail "documentation output" "missing $docs_output_directory/docs/"
-        fi
-    elif echo "$documentation_output" | grep -qi "plantuml\|Cannot locate\|manifest"; then
-        report_skip "documentation generation" "PlantUML not installed or manifest issue"
+# ---- main ------------------------------------------------------------------
+
+say "Project root : $PROJECT_ROOT"
+say "Launcher     : $pill_launcher_bin"
+say "Output       : $OUTPUT_DIR"
+
+mkdir -p "$OUTPUT_DIR"
+
+say "Generating documentation (this may take a while)..."
+if invoke_launcher docs -o "$OUTPUT_DIR"; then
+    if [ -d "$OUTPUT_DIR/generated" ]; then
+        say "Documentation generated successfully → $OUTPUT_DIR/generated/"
     else
-        report_fail "documentation generation" "exit $documentation_exit_code"
+        die "Launcher reported success but $OUTPUT_DIR/generated/ is missing"
     fi
-}
-
-# ---------------------------------------------------------------------------
-# Dispatch
-# ---------------------------------------------------------------------------
-
-if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
-    return 0
+else
+    die "Documentation generation failed"
 fi
-
-generate_documentation
-print_summary

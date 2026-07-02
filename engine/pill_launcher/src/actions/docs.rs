@@ -2,7 +2,7 @@
 //
 // Responsibilities:
 // - Generates two doc sets: project_dev (public API) and engine_dev (private items).
-// - Temporarily rewrites the Empty example's Cargo.toml and pill_native's Cargo.toml
+// - Temporarily rewrites the Cube example's Cargo.toml and pill_native's Cargo.toml
 //   to point at absolute engine paths so cargo doc resolves dependencies correctly.
 // - Pre-renders PlantUML diagrams before doc generation.
 
@@ -50,33 +50,31 @@ impl Action for Docs {
 /// simultaneously, they race on the same Cargo.toml files and may produce
 /// incorrect documentation or leave manifests in a modified state.
 pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
-    // The Empty example serves as a workspace anchor so cargo doc can resolve deps.
-    let empty_example_project_path = get_path(Location::EngineProjectRoot)
+    // The Cube example serves as a workspace anchor so cargo doc can resolve deps.
+    let cube_example_project_path = get_path(Location::EngineProjectRoot)
         .join("examples")
-        .join("Empty");
-    if !empty_example_project_path.exists() {
-        return Err(Error::msg(
-            "Cannot find Empty project in examples directory",
-        ));
+        .join("Cube");
+    if !cube_example_project_path.exists() {
+        return Err(Error::msg("Cannot find Cube project in examples directory"));
     }
 
-    let empty_cargo_toml = empty_example_project_path.join("Cargo.toml");
+    let cube_cargo_toml = cube_example_project_path.join("Cargo.toml");
     let native_cargo_toml = get_path(Location::PillNativeCrate).join("Cargo.toml");
 
     // Snapshot original manifests so we can restore them on exit.
-    let original_empty = fs::read_to_string(&empty_cargo_toml)
-        .with_context(|| format!("Failed to read {}", empty_cargo_toml.display()))?;
+    let original_cube = fs::read_to_string(&cube_cargo_toml)
+        .with_context(|| format!("Failed to read {}", cube_cargo_toml.display()))?;
     let original_native = fs::read_to_string(&native_cargo_toml)
         .with_context(|| format!("Failed to read {}", native_cargo_toml.display()))?;
 
-    // 1. Point the Empty example's Cargo.toml at the absolute engine path
+    // 1. Point the Cube example's Cargo.toml at the absolute engine path
     // so cargo doc can resolve the pill_engine dependency.  Strip the
-    // workspace = "NO_PATH" line entirely - the empty example isn't a
+    // workspace = "NO_PATH" line entirely - the Cube example isn't a
     // workspace member, and leaving a valid workspace path would cause
     // "package believes it's in a workspace when it's not" errors.
     modify_file(
-        &empty_cargo_toml,
-        &empty_cargo_toml,
+        &cube_cargo_toml,
+        &cube_cargo_toml,
         |line: String| -> String {
             if line.trim_start().starts_with("workspace") {
                 return String::new(); // remove - not a workspace member
@@ -94,7 +92,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         },
     )?;
 
-    // 2. Point pill_native's Cargo.toml at the Empty example so it can be
+    // 2. Point pill_native's Cargo.toml at the Cube example so it can be
     // used as a workspace anchor for doc generation.
     modify_file(
         &native_cargo_toml,
@@ -103,7 +101,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
             if line.contains("project") {
                 return format!(
                     "project = {{path = \"{}\"}}",
-                    empty_example_project_path
+                    cube_example_project_path
                         .to_string_lossy()
                         .replace("\\", "/")
                 );
@@ -124,7 +122,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
                 .to_path_buf()
         };
 
-        let docs_path = output_path.join("docs");
+        let docs_path = output_path.join("generated");
 
         // 4. Clean any previous doc output so stale files don't persist.
         if docs_path.exists() {
@@ -142,7 +140,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         fs::create_dir_all(&output_engine_dev_path)?;
 
         let engine_crate_manifest_path = get_path(Location::PillEngineCrate).join("Cargo.toml");
-        let full_engine_manifest_path = empty_example_project_path.join("Cargo.toml");
+        let full_engine_manifest_path = cube_example_project_path.join("Cargo.toml");
 
         // 5. Pre-render PlantUML diagrams so they appear in the generated docs.
         let pill_engine_dir = get_path(Location::PillEngineCrate);
@@ -152,7 +150,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
         // 6. Generate project_dev docs: public API surface (project + internal
         // features).  Features are enabled via the pill_engine dependency spec
-        // in the Empty example's Cargo.toml (set above), not via --features on
+        // in the Cube example's Cargo.toml (set above), not via --features on
         // the cargo doc CLI (which would apply to the wrong crate).
         let manifest = full_engine_manifest_path.to_string_lossy();
         let target = output_project_dev_path.to_string_lossy();
@@ -234,8 +232,8 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
     })();
 
     // Restore original manifests regardless of success/failure.
-    fs::write(&empty_cargo_toml, &original_empty)
-        .with_context(|| format!("Failed to restore {}", empty_cargo_toml.display()))?;
+    fs::write(&cube_cargo_toml, &original_cube)
+        .with_context(|| format!("Failed to restore {}", cube_cargo_toml.display()))?;
     fs::write(&native_cargo_toml, &original_native)
         .with_context(|| format!("Failed to restore {}", native_cargo_toml.display()))?;
 
