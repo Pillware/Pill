@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
 
-# REQUIREMENTS: Rust toolchain (cargo), a compiled PillLauncher binary
-#               (auto-discovered or set via PILL_LAUNCHER_BIN).
+# REQUIREMENTS: Rust toolchain (cargo), PlantUML (optional), a compiled
+#               PillLauncher binary (auto-discovered or set via PILL_LAUNCHER_BIN).
 
-# DESCRIPTION: Generate rustdoc documentation for all Pill crates
-#   via PillLauncher. Supports two output profiles: project_dev (public API
-#   with project + internal features) and engine_dev (private items +
-#   pill_core).
+# DESCRIPTION: Generate rustdoc documentation for all Pill crates via
+#   PillLauncher.  Supports two output profiles: project_dev (public API with
+#   project + internal features) and engine_dev (private items + pill_core).
 
-# USAGE: bash devops/tests/generate_documentation.sh
+# USAGE: bash devops/utils/generate_documentation.sh
 
 # EXAMPLE USAGE:
-#   bash devops/tests/generate_documentation.sh
+#   bash devops/utils/generate_documentation.sh
 
 # --- SCRIPT ---
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=./common.sh
-source "$SCRIPT_DIR/common.sh"
+# shellcheck source=../common.sh
+source "$SCRIPT_DIR/../common.sh"
 
 # All paths in this script are relative to the project root.
 cd "$PROJECT_ROOT"
@@ -35,7 +34,7 @@ generate_documentation() {
     local docs_output_directory="$test_workspace_root/documentation_output"
     mkdir -p "$docs_output_directory"
 
-    echo "Running docs generation - this may take a moment"
+    echo "Running docs generation - this may take a while"
     local documentation_output documentation_exit_code=0
     documentation_output=$(invoke_launcher docs -o "$docs_output_directory" 2>&1) || documentation_exit_code=$?
 
@@ -63,4 +62,3 @@ fi
 
 generate_documentation
 print_summary
-

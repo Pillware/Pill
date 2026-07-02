@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-# ---------------------------------------------------------------------------==
-# devops/tests/common.sh - shared test infrastructure
-# ---------------------------------------------------------------------------==
-#
-# Sourced by all test scripts.  Provides:
-#   - terminal colours & global test counters
-#   - PillLauncher binary auto-discovery
-#   - temporary workspace creation / cleanup
-#   - report_pass / report_fail / report_skip helpers
-#   - invoke_launcher, assert_ok, assert_fail
-#   - print_summary
-#
-# Idempotent - safe to source multiple times (e.g. from nested scripts).
 
-# ---- idempotency guard ------------------------------------------------------
+# REQUIREMENTS: cargo, git, bash 4+, awk, curl, sed
+#
+# DESCRIPTION: Shared test infrastructure for Pill CI Pipeline and local
+#   development.  Provides binary auto-discovery, project root resolution,
+#   stale workspace-member cleanup, temporary workspace management, binary
+#   size reporting, dev-server smoke testing, and coloured pass/fail/skip
+#   result helpers.  Sourced (not executed) by all test scripts.
+#   Idempotent - safe to source multiple times.
+
+# --- SCRIPT ---
+
+# ---- Idempotency guard ------------------------------------------------------
 if [[ "${COMMON_SH_LOADED:-}" == "1" ]]; then
     return 0
 fi
@@ -28,7 +26,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'   # No Color (reset)
 
-# ---- global test counters & per-result log ---------------------------------
+# ---- Global test counters & per-result log ---------------------------------
 tests_passed=0; tests_failed=0; tests_skipped=0
 test_results=()  # stores "PASS|<description>", "FAIL|<description> - reason", etc.
 
@@ -36,7 +34,7 @@ test_results=()  # stores "PASS|<description>", "FAIL|<description> - reason", e
 # Binary discovery
 # ---------------------------------------------------------------------------
 # We try several well-known locations so the script works whether run from
-# the repo root or from inside engine/pill_launcher.  CI sets
+# the repo root or from inside engine/pill_launcher. CI sets
 # PILL_LAUNCHER_BIN explicitly after downloading the build artifact.
 
 # Walk up from the directory containing this script until we find a known
@@ -105,7 +103,7 @@ chmod +x "$pill_launcher_bin" 2>/dev/null || true
 # Clear stale cargo package-cache lock (can block parallel builds).
 rm -f "${HOME}/.cargo/.package-cache" 2>/dev/null || true
 
-# Fix engine/Cargo.toml workspace members — the launcher injects absolute-path
+# Fix engine/Cargo.toml workspace members - the launcher injects absolute-path
 # workspace members during builds and may leave them stale if interrupted.
 # This sed removes any line that has the pill-launcher-managed marker.
 fix_stale_workspace_members() {
@@ -242,7 +240,7 @@ invoke_launcher() {
 export -f invoke_launcher
 
 # ---------------------------------------------------------------------------
-# assert_ok — Run a launcher command and expect exit 0
+# assert_ok - Run a launcher command and expect exit 0
 # Usage: assert_ok "test description" <launcher args...>
 #   Example: assert_ok "create project" create -n MyGame -p /tmp
 # ---------------------------------------------------------------------------
@@ -256,7 +254,7 @@ assert_ok() {
 }
 
 # ---------------------------------------------------------------------------
-# assert_fail — Run a launcher command, expect non-zero exit +
+# assert_fail - Run a launcher command, expect non-zero exit +
 #   stderr containing a case-insensitive substring
 # Usage: assert_fail "test description" "expected error substring" <launcher args...>
 #   Example: assert_fail "duplicate create" "already exists" create -n Foo -p /tmp

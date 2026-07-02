@@ -1,4 +1,4 @@
-# Pill CI - example builds (all native + standalone)
+# Pill CI Pipeline - example builds (all native + standalone)
 #
 # Builds every example project in the repo (native + standalone crates).
 # WASM builds are covered by ci-basic-tests.yml.

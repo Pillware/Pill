@@ -1,6 +1,9 @@
-# Build & push the Pill CI Docker image to GHCR.
+# Pill CI Pipeline - Preparation
+# Build Pill CI Docker image and push it to GitHub Container Registry (GHCR).
+
 # Only runs when the Dockerfile or this workflow changes.
-# All other CI workflows pull this pre-built image — zero setup time.
+# All other CI workflows pull this pre-built image for
+# minimalizing action environment setup time.
 
 name: CI Image
 

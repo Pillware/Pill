@@ -30,8 +30,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=./common.sh
-source "$SCRIPT_DIR/common.sh"
+# shellcheck source=../common.sh
+source "$SCRIPT_DIR/../common.sh"
 
 # All paths in this script are relative to the project root.
 cd "$PROJECT_ROOT"
@@ -95,7 +95,7 @@ build_native_cube_example() {
     echo "Cleaning previous build artifacts..."
     cargo clean --manifest-path engine/Cargo.toml --release 2>/dev/null || true
 
-    echo "Building - this may take a moment"
+    echo "Building - this may take a while"
     local exit_code=0
     invoke_launcher build -p "$cube_dir" -c release --clean 2>&1 || exit_code=$?
 
@@ -133,7 +133,7 @@ build_wasm_cube_example() {
     echo "Cleaning previous build artifacts..."
     cargo clean --manifest-path engine/Cargo.toml --release 2>/dev/null || true
 
-    echo "Building - this may take a moment"
+    echo "Building - this may take a while"
     local launcher_output exit_code
     launcher_output=$(invoke_launcher build -p "$cube_path" -t web -c release --clean 2>&1) && exit_code=$? || exit_code=$?
 
@@ -152,7 +152,7 @@ build_wasm_cube_example() {
         return
     fi
 
-    # Binary size — only the .wasm file, in MB (mebibytes, 4 decimal places)
+    # Binary size - only the .wasm file, in MB (mebibytes, 4 decimal places)
     echo ""
     echo "------------------------------------------------------------------"
     echo "WASM artifact size + budget"
@@ -173,7 +173,7 @@ build_wasm_cube_example() {
         report_fail "WASM size budget" "${wasm_mb} MB exceeds 0.4990 MB limit"
     fi
 
-    # Dev server smoke test — use PillLauncher's built-in server
+    # Dev server smoke test - use PillLauncher's built-in server
     if [ -d "$wasm_dir" ]; then
         echo ""
         echo "------------------------------------------------------------------"

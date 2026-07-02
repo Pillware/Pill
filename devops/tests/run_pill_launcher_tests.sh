@@ -34,8 +34,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=./common.sh
-source "$SCRIPT_DIR/common.sh"
+# shellcheck source=../common.sh
+source "$SCRIPT_DIR/../common.sh"
 
 # All paths in this script are relative to the project root.
 cd "$PROJECT_ROOT"
@@ -143,7 +143,7 @@ test_launcher_build() {
     }
 
     # `PillLauncher build -p ./examples/cube` - Debug build → copies artifacts to output directory
-    echo "  (native debug - this will take several minutes)"
+    echo "  (native debug - this may take a while)"
     local build_output build_exit_code=0
     build_output=$(invoke_launcher build -p "$project_directory" -c debug 2>&1) || build_exit_code=$?
     if [ "$build_exit_code" -eq 0 ]; then
@@ -504,7 +504,7 @@ test_launcher_hot_reload() {
         report_skip "hot-reload survived" "process died (may be normal on headless CI)"
     fi
 
-    # Clean up — kill the launcher and any spawned game processes
+    # Clean up - kill the launcher and any spawned game processes
     kill "$launcher_pid" 2>/dev/null || true
     wait "$launcher_pid" 2>/dev/null || true
     taskkill //F //IM HotReloadTest.exe > /dev/null 2>&1 || true

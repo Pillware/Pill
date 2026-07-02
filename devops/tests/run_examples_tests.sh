@@ -24,8 +24,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=./common.sh
-source "$SCRIPT_DIR/common.sh"
+# shellcheck source=../common.sh
+source "$SCRIPT_DIR/../common.sh"
 
 # All paths in this script are relative to the project root.
 cd "$PROJECT_ROOT"
@@ -99,15 +99,15 @@ build_all_examples() {
         example_index=$((example_index + 1))
         echo ""
         echo "($example_index/$total_examples) $example_path"
-        echo "Building - this may take a moment"
-        _build_pill_example "$example_path"
+        echo "Building - this may take a while"
+        _build_pill_example "$example_pathmoment"
     done
 
     for crate_path in "${STANDALONE_CRATES[@]}"; do
         example_index=$((example_index + 1))
         echo ""
         echo "($example_index/$total_examples) $crate_path"
-        echo "Building - this may take a moment"
+        echo "Building - this may take a while"
         _build_standalone_crate "$crate_path"
     done
 }
@@ -117,7 +117,7 @@ build_single_example() {
     echo ""
     echo "------------------------------------------------------------------"
     echo "Building $example_path (release)"
-    echo "Building - this may take a moment"
+    echo "Building - this may take a while"
 
     if [ -d "$example_path/res" ]; then
         _build_pill_example "$example_path"

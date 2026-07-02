@@ -1,15 +1,15 @@
-# Pill CI - launcher action validation
+# Pill CI Pipeline - launcher action validation
 #
 # Quick suite: smoke tests (basics, create, cargo, assets).
 # Full suite: heavier actions (build, run, docs).
-# Triggered weekly or manually.
+# Runs on daily schedule and manual trigger.
 
 name: CI Full Suite
 
 on:
   schedule:
-    # Every Sunday at 04:00 UTC
-    - cron: "0 4 * * 0"
+    # Every day at 03:30 UTC (staggered after ci-basic daily)
+    - cron: "30 3 * * *"
   workflow_dispatch:
 
 permissions:
