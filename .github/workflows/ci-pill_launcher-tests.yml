@@ -24,10 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup
         with:
-          toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -49,9 +47,6 @@ jobs:
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: stable }
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -71,15 +66,10 @@ jobs:
   # ------------------------------------------------------------------
   full_suite:
     runs-on: ubuntu-latest
+    container: ghcr.io/mattszymonski/pill-ci:latest
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          rustflags: ""
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -89,8 +79,6 @@ jobs:
             examples/floating_pills -> target
             examples/italian_brainrot -> target
             examples/cube/build/wasm/.build/pill_web -> target
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with: { version: latest }
       - uses: actions/download-artifact@v4
         with:
           {

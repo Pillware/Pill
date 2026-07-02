@@ -24,13 +24,9 @@ jobs:
   # ------------------------------------------------------------------
   build_launcher:
     runs-on: ubuntu-latest
+    container: ghcr.io/mattszymonski/pill-ci:latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -48,12 +44,10 @@ jobs:
   # ------------------------------------------------------------------
   code_formatting_check:
     runs-on: ubuntu-latest
+    container: ghcr.io/mattszymonski/pill-ci:latest
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: stable, components: rustfmt }
       - uses: actions/download-artifact@v4
         with:
           {
@@ -68,12 +62,10 @@ jobs:
   # ------------------------------------------------------------------
   code_linting_check:
     runs-on: ubuntu-latest
+    container: ghcr.io/mattszymonski/pill-ci:latest
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: stable, components: clippy }
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: "engine -> target" }
       - uses: actions/download-artifact@v4
@@ -86,16 +78,14 @@ jobs:
         run: bash devops/tests/run_basic_tests.sh code_linting_check
 
   # ------------------------------------------------------------------
-  # 3. build_native_cube_example - native build + artifact size report
+  # 3. build_native_cube_example
   # ------------------------------------------------------------------
-  build_cube:
+  build_native_cube_example:
     runs-on: ubuntu-latest
+    container: ghcr.io/mattszymonski/pill-ci:latest
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: stable }
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -111,25 +101,18 @@ jobs:
         run: bash devops/tests/run_basic_tests.sh build_native_cube_example
 
   # ------------------------------------------------------------------
-  # 4. build_wasm_cube_example - WASM build + artifact size report + budget
+  # 4. build_wasm_cube_example
   # ------------------------------------------------------------------
-  build_wasm:
+  build_wasm_cube_example:
     runs-on: ubuntu-latest
+    container: ghcr.io/mattszymonski/pill-ci:latest
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          rustflags: ""
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             examples/cube/build/wasm/.build/pill_web -> target
-      - uses: jetli/wasm-pack-action@v0.4.0
-        with: { version: latest }
       - uses: actions/download-artifact@v4
         with:
           {
@@ -140,16 +123,14 @@ jobs:
         run: bash devops/tests/run_basic_tests.sh build_wasm_cube_example
 
   # ------------------------------------------------------------------
-  # 5. benchmark_native_performance (headless - no GPU needed)
+  # 5. benchmark_native_performance
   # ------------------------------------------------------------------
   benchmark_performance:
     runs-on: ubuntu-latest
+    container: ghcr.io/mattszymonski/pill-ci:latest
     needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/linux-deps
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with: { toolchain: stable }
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
