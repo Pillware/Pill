@@ -11,6 +11,8 @@ FROM rust:1.92-alpine
 # -- System packages ---------------------------------------------------------
 # mold: fast linker     gcompat: run glibc binaries on musl (slangc)
 # alsa-lib-dev: audio   eudev-dev: gamepad     pkgconfig: build scripts
+# plantuml: docs        openjdk21-jre: plantuml runtime
+# Headless benchmarking is handled via --features benchmark_headless (no xvfb needed).
 RUN apk add --no-cache \
     mold \
     gcompat \
@@ -21,8 +23,7 @@ RUN apk add --no-cache \
     plantuml \
     curl \
     git \
-    bash \
-    xorg-server-xvfb
+    bash
 
 # -- Rust components ---------------------------------------------------------
 RUN rustup component add rustfmt clippy
