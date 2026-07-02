@@ -156,6 +156,59 @@ format_size() {
     fi
 }
 
+# Kill any process listening on the given port.  Works on Windows (netstat +
+# taskkill) and Unix (fuser / lsof + kill).  Also kills any lingering
+# PillLauncher processes to release locked executables.
+kill_server_on_port() {
+    local port="$1"
+    # Windows: netstat + taskkill
+    local stale_pid
+    stale_pid=$(netstat -ano 2>/dev/null | grep ":${port} " | grep LISTENING | awk '{print $NF}' | head -1 || true)
+    if [ -n "$stale_pid" ]; then
+        taskkill //PID "$stale_pid" //F //T > /dev/null 2>&1 || true
+    fi
+    # Also kill any remaining PillLauncher processes (may hold exe lock)
+    taskkill //F //IM PillLauncher.exe > /dev/null 2>&1 || true
+    # Unix fallback
+    if command -v fuser > /dev/null 2>&1; then
+        fuser -k "${port}/tcp" > /dev/null 2>&1 || true
+    fi
+    sleep 1
+}
+
+# Print a JSON binary-size report for all files under a directory.
+# Outputs nothing if the directory does not exist.  Sizes in MB (x.xxxx).
+print_size_report() {
+    local directory="$1"
+    if [ ! -d "$directory" ]; then
+        return
+    fi
+    local total_mb=0
+    local file_count=0
+    local json_entries=""
+    while IFS= read -r -d '' file; do
+        local size
+        size=$(wc -c < "$file" 2>/dev/null || echo 0)
+        local mb
+        mb=$(awk "BEGIN { printf \"%.4f\", $size / 1048576 }")
+        total_mb=$(awk "BEGIN { printf \"%.4f\", $total_mb + $mb }")
+        file_count=$((file_count + 1))
+        local relative_path="${file#$directory/}"
+        if [ -n "$json_entries" ]; then
+            json_entries+=$',\n'
+        fi
+        json_entries+="        {\"file\": \"${relative_path}\", \"mb\": ${mb}}"
+    done < <(find "$directory" -type f -print0 2>/dev/null | sort -z)
+    echo "  Binary sizes:"
+    echo "  {"
+    echo "    \"total_mb\": $total_mb,"
+    echo "    \"file_count\": $file_count,"
+    echo "    \"files\": ["
+    echo -e "$json_entries"
+    echo "    ]"
+    echo "  }"
+}
+
 # ---------------------------------------------------------------------------
 # Test result helpers
 # ---------------------------------------------------------------------------

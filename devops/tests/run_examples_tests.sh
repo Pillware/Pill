@@ -3,9 +3,12 @@
 # REQUIREMENTS: Rust toolchain (cargo), a compiled PillLauncher binary
 #               (auto-discovered or set via PILL_LAUNCHER_BIN).
 
-# DESCRIPTION: Build every Pill example project to verify they all compile.
-#   Each example is built via PillLauncher in release mode. Standalone Cargo
-#   crates (net_minimal) are built directly with cargo.
+# DESCRIPTION: Build every Pill example project in release mode and report
+#   binary sizes.  Pill projects are built via PillLauncher; standalone
+#   Cargo crates (net_minimal) are built directly with cargo.
+#
+#   Designed for both local development and GitHub Actions CI
+#   (ci-examples-tests.yml).
 
 # USAGE: bash devops/tests/run_examples_tests.sh [all|<example-path>]
 #
@@ -53,26 +56,31 @@ _build_pill_example() {
     local example_path="$1"
     local build_exit_code=0
     invoke_launcher build -p "$example_path" -c release 2>&1 || build_exit_code=$?
-    if [ "$build_exit_code" -eq 0 ]; then
-        report_pass "$example_path"
-    else
+
+    if [ "$build_exit_code" -ne 0 ]; then
         report_fail "$example_path" "build failed (exit $build_exit_code)"
+        return
     fi
+
+    report_pass "$example_path build"
+    print_size_report "$example_path/build/release/data"
+    report_pass "$example_path artifact size report"
 }
 
 _build_standalone_crate() {
     local crate_path="$1"
     local build_exit_code=0
     cargo build --manifest-path "$crate_path/Cargo.toml" --release 2>&1 || build_exit_code=$?
+
     if [ "$build_exit_code" -eq 0 ]; then
-        report_pass "$crate_path"
+        report_pass "$crate_path build"
     else
         report_fail "$crate_path" "build failed (exit $build_exit_code)"
     fi
 }
 
 # ---------------------------------------------------------------------------
-# Main
+# Main entry points
 # ---------------------------------------------------------------------------
 
 build_all_examples() {
@@ -87,7 +95,6 @@ build_all_examples() {
     local example_index=0
     local total_examples=$((${#PILL_EXAMPLES[@]} + ${#STANDALONE_CRATES[@]}))
 
-    # Pill projects
     for example_path in "${PILL_EXAMPLES[@]}"; do
         example_index=$((example_index + 1))
         echo ""
@@ -96,7 +103,6 @@ build_all_examples() {
         _build_pill_example "$example_path"
     done
 
-    # Standalone Cargo crates
     for crate_path in "${STANDALONE_CRATES[@]}"; do
         example_index=$((example_index + 1))
         echo ""

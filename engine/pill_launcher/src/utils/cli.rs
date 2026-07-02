@@ -122,8 +122,8 @@ pub(crate) fn clean_flag() -> Arg<'static, 'static> {
 
 /// `--features` - comma-separated Cargo features for project.
 pub(crate) fn features_flag() -> Arg<'static, 'static> {
-    Arg::with_name("features")
-        .long("features")
+    Arg::with_name("additional-features")
+        .long("additional-features")
         .takes_value(true)
         .help("Cargo features to enable for project (comma-separated)")
 }

@@ -84,7 +84,7 @@ code_linting_check() {
 build_native_cube_example() {
     echo ""
     echo "------------------------------------------------------------------"
-    echo "(3/5) Native build and artifact size report"
+    echo "(3/5) Native build"
     local cube_dir="examples/cube"
 
     if [ ! -f "$cube_dir/Cargo.toml" ]; then
@@ -92,9 +92,12 @@ build_native_cube_example() {
         return
     fi
 
+    echo "Cleaning previous build artifacts..."
+    cargo clean --manifest-path engine/Cargo.toml --release 2>/dev/null || true
+
     echo "Building - this may take a moment"
     local exit_code=0
-    invoke_launcher build -p "$cube_dir" -c release 2>&1 || exit_code=$?
+    invoke_launcher build -p "$cube_dir" -c release --clean 2>&1 || exit_code=$?
 
     if [ "$exit_code" -eq 0 ]; then
         report_pass "native cube build succeeds"
@@ -104,30 +107,12 @@ build_native_cube_example() {
     fi
 
     # Binary size report on all native build artifacts
+    echo ""
+    echo "------------------------------------------------------------------"
+    echo "Native artifact size report"
     local data_dir="$cube_dir/build/release/data"
     if [ -d "$data_dir" ]; then
-        local total_bytes=0
-        local file_count=0
-        local json_entries=""
-        while IFS= read -r -d '' file; do
-            local size
-            size=$(wc -c < "$file" 2>/dev/null || echo 0)
-            total_bytes=$((total_bytes + size))
-            file_count=$((file_count + 1))
-            local relative_path="${file#$data_dir/}"
-            if [ -n "$json_entries" ]; then
-                json_entries+=$',\n'
-            fi
-            json_entries+="        {\"file\": \"${relative_path}\", \"bytes\": ${size}, \"megabytes\": $(awk "BEGIN { printf \"%.4f\", $size / 1048576 }")}"
-        done < <(find "$data_dir" -type f -print0 2>/dev/null | sort -z)
-        echo "  Binary sizes:"
-        echo "  {"
-        echo "    \"total_bytes\": $total_bytes,"
-        echo "    \"file_count\": $file_count,"
-        echo "    \"files\": ["
-        echo -e "$json_entries"
-        echo "    ]"
-        echo "  }"
+        print_size_report "$data_dir"
         report_pass "native artifact size report"
     else
         report_fail "native artifact size report" "missing $data_dir"
@@ -141,13 +126,16 @@ build_native_cube_example() {
 build_wasm_cube_example() {
     echo ""
     echo "------------------------------------------------------------------"
-    echo "(4/5) WASM build, artifact size report + budget"
+    echo "(4/5) WASM build"
     local cube_path="examples/cube"
 
     # 1. Build the WASM target (pill_web_app) for the cube example
+    echo "Cleaning previous build artifacts..."
+    cargo clean --manifest-path engine/Cargo.toml --release 2>/dev/null || true
+
     echo "Building - this may take a moment"
     local launcher_output exit_code
-    launcher_output=$(invoke_launcher build -p "$cube_path" -t web -c release 2>&1) && exit_code=$? || exit_code=$?
+    launcher_output=$(invoke_launcher build -p "$cube_path" -t web -c release --clean 2>&1) && exit_code=$? || exit_code=$?
 
     if [ "$exit_code" -eq 0 ]; then
         report_pass "WASM build succeeds"
@@ -165,14 +153,16 @@ build_wasm_cube_example() {
     fi
 
     # Binary size — only the .wasm file, in MB (mebibytes, 4 decimal places)
+    echo ""
+    echo "------------------------------------------------------------------"
+    echo "WASM artifact size + budget"
     local wasm_size wasm_mb
     wasm_size=$(wc -c < "$wasm_file" 2>/dev/null || echo 0)
     wasm_mb=$(awk "BEGIN { printf \"%.4f\", $wasm_size / 1048576 }")
     echo "  Binary size:"
     echo "  {"
     echo "    \"file\": \"pill_web_app_bg.wasm\","
-    echo "    \"bytes\": $wasm_size,"
-    echo "    \"megabytes\": $wasm_mb"
+    echo "    \"mb\": $wasm_mb"
     echo "  }"
 
     # Size budget: ≤ 0.4990 MB (523 239 bytes)
@@ -185,16 +175,24 @@ build_wasm_cube_example() {
 
     # Dev server smoke test — use PillLauncher's built-in server
     if [ -d "$wasm_dir" ]; then
-        echo "  Starting PillLauncher dev server on port 8080..."
-        invoke_launcher run -t web -p "$cube_path" -c release &
+        echo ""
+        echo "------------------------------------------------------------------"
+        echo "WASM dev server smoke test"
+        local test_port=8080
+        kill_server_on_port "$test_port"
+
+        echo "  Starting PillLauncher dev server on port ${test_port}..."
+        invoke_launcher run -t web -p "$cube_path" -c release 2>&1 &
         local server_pid=$!
-        trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 
         # Wait up to 30s for the server to bind
         local server_ready=0
         for _ in $(seq 1 30); do
-            if curl -sf -o /dev/null http://127.0.0.1:8080/ 2>/dev/null; then
+            if curl -sf -o /dev/null "http://127.0.0.1:${test_port}/" 2>/dev/null; then
                 server_ready=1
+                break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
                 break
             fi
             sleep 1
@@ -202,9 +200,9 @@ build_wasm_cube_example() {
 
         if [ "$server_ready" -eq 1 ]; then
             local smoke_ok=1
-            curl -sf -o /dev/null http://127.0.0.1:8080/ || smoke_ok=0
-            curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app.js || smoke_ok=0
-            curl -sf -o /dev/null http://127.0.0.1:8080/pill_web_app_bg.wasm || smoke_ok=0
+            curl -sf -o /dev/null "http://127.0.0.1:${test_port}/" || smoke_ok=0
+            curl -sf -o /dev/null "http://127.0.0.1:${test_port}/pill_web_app.js" || smoke_ok=0
+            curl -sf -o /dev/null "http://127.0.0.1:${test_port}/pill_web_app_bg.wasm" || smoke_ok=0
             if [ "$smoke_ok" -eq 1 ]; then
                 report_pass "WASM dev server smoke test"
             else
@@ -214,8 +212,7 @@ build_wasm_cube_example() {
             report_skip "WASM dev server smoke test" "server did not start in time"
         fi
 
-        kill "$server_pid" 2>/dev/null || true
-        trap - EXIT
+        kill_server_on_port "$test_port"
     fi
 }
 
@@ -227,7 +224,7 @@ build_wasm_cube_example() {
 #   Windows    → build once, then run the compiled exe directly 3 times.
 #   Linux/macOS → if no $DISPLAY / $WAYLAND_DISPLAY, skip to headless;
 #                 otherwise try windowed first; fall back to
-#                 `--features benchmark_headless` on GPU failure.
+#                 `--additional-features benchmark_headless` on GPU failure.
 #   The benchmark spawns 10 000 citizens, runs 5 000 frames (1 000 warmup),
 #   prints per-frame stats as JSON, then auto-exits.
 
@@ -281,9 +278,12 @@ _run_benchmark_loop() {
     local project_directory="examples/city"
 
     # Build once, then run the compiled executable directly for each iteration
+    echo "  Cleaning previous build artifacts..."
+    cargo clean --manifest-path engine/Cargo.toml --release 2>/dev/null || true
+
     echo "  Building..."
     local build_exit_code=0
-    invoke_launcher build -p "$project_directory" -c release --features "$feature" 2>&1 || build_exit_code=$?
+    invoke_launcher build -p "$project_directory" -c release --clean --additional-features "$feature" 2>&1 || build_exit_code=$?
     if [ "$build_exit_code" -ne 0 ]; then
         report_skip "native perf benchmark" "build failed (exit $build_exit_code)"
         return 1

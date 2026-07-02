@@ -55,6 +55,8 @@ jobs:
           - examples/floating_pills
           - examples/italian_brainrot
           - examples/city
+          - examples/empty
+          - examples/pill_tunel
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/linux-deps

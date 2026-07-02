@@ -414,7 +414,7 @@ fn build_project_in_workspace(
     };
 
     println!("{open}Build completed successfully {time_str}{close}");
-    println!("Artifact size: {size_str}");
+    println!("Build size: {size_str}");
 
     Ok(())
 }

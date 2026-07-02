@@ -16,7 +16,7 @@ use crate::utils::cli::{
     add_build_flags, add_path_flag, max_wasm_size_flag, parse_build_target, parse_compile_mode,
     wasm_analyze_flag,
 };
-use crate::utils::common::print_build_summary;
+use crate::utils::common::{clean_build_cache, print_build_summary};
 use crate::utils::native_target::build_project;
 use crate::utils::paths::get_project_build_path;
 use crate::utils::wasm_target;
@@ -45,7 +45,7 @@ impl Action for Build {
             .to_path_buf();
         let compile_mode = parse_compile_mode(matches);
         let target = parse_build_target(matches);
-        let features = matches.value_of("features");
+        let additional_features = matches.value_of("additional-features");
         let clean = matches.is_present("clean");
         let maximum_wasm_size: Option<u64> = matches
             .value_of("max-wasm-size")
@@ -58,10 +58,11 @@ impl Action for Build {
             &target,
             &compile_mode,
             matches.value_of("output-path"),
-            features,
+            additional_features,
         );
 
         if clean {
+            clean_build_cache()?;
             crate::utils::assets::run_asset_pipeline(&path.join("res"), true)?;
         }
 
@@ -71,7 +72,7 @@ impl Action for Build {
                     PathBuf::from(matches.value_of("output-path").unwrap_or("."));
                 let output_directory =
                     get_project_build_path(&path, &output_directory, &compile_mode)?;
-                build_project(&path, &output_directory, &compile_mode, features)?;
+                build_project(&path, &output_directory, &compile_mode, additional_features)?;
             }
             BuildTarget::Web => {
                 if matches.occurrences_of("output-path") > 0 {

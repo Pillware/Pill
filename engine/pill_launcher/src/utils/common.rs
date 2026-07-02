@@ -11,6 +11,7 @@ use std::{
     fs,
     io::IsTerminal,
     path::{Path, PathBuf},
+    process::Command,
     sync::LazyLock,
     time::{Duration, SystemTime},
 };
@@ -424,6 +425,29 @@ pub(crate) fn format_build_error(detail: &str, elapsed: Duration) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Build cache cleaning
+// ---------------------------------------------------------------------------
+
+/// Run `cargo clean` on the engine workspace to wipe cached compilation artifacts.
+/// Called when the user passes `--clean` to the build or run subcommands.
+pub(crate) fn clean_build_cache() -> Result<()> {
+    let engine = get_path(Location::EngineCrates);
+    let manifest = engine.join("Cargo.toml");
+    println!("Cleaning build cache...");
+    let status = Command::new("cargo")
+        .args(["clean", "--manifest-path"])
+        .arg(&manifest)
+        .arg("--release")
+        .current_dir(&engine)
+        .status()
+        .context("Failed to run cargo clean")?;
+    if !status.success() {
+        eprintln!("Warning: cargo clean exited with non-zero status");
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Build / Run summary
 // ---------------------------------------------------------------------------
 
@@ -455,6 +479,6 @@ pub(crate) fn print_build_summary(
     println!("  Target:       {}", target);
     println!("  Compile mode: {}", compile_mode);
     println!("  Output path:  {}", output_path);
-    println!("  Features:     {}", features_display);
+    println!("  Additional features: {}", features_display);
     println!("-----");
 }

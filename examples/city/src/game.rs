@@ -57,8 +57,8 @@ impl PillProject for Project {
             .build_entity(active_scene)
             .with_component(
                 TransformComponent::builder()
-                    .position(PLANE_POSITION)
-                    .scale(PLANE_SCALE)
+                    .position(shared::PLANE_POSITION)
+                    .scale(shared::PLANE_SCALE)
                     .build(),
             )
             .with_component(
@@ -116,8 +116,9 @@ fn pill_spawner_system(engine: &mut Engine) -> Result<()> {
 
     if input.get_key_pressed(SPAWN_PILL_BUTTON) {
         let scene = engine.get_active_scene_handle()?;
-        let orange_material = engine.get_resource_handle::<Material>(ORANGE_MATERIAL_NAME)?;
-        let pill_mesh = engine.get_resource_handle::<Mesh>(PILL_MESH_NAME)?;
+        let orange_material =
+            engine.get_resource_handle::<Material>(shared::ORANGE_MATERIAL_NAME)?;
+        let pill_mesh = engine.get_resource_handle::<Mesh>(shared::PILL_MESH_NAME)?;
         let mut rng = thread_rng();
 
         engine

@@ -16,7 +16,7 @@ use crate::utils::cli::{
     add_build_flags, add_path_flag, parse_build_target, parse_compile_mode, project_args_flag,
     wasm_port_flag,
 };
-use crate::utils::common::print_build_summary;
+use crate::utils::common::{clean_build_cache, print_build_summary};
 use crate::utils::native_target::run_project;
 use crate::utils::paths::get_project_build_path;
 use crate::utils::web_dev_server;
@@ -45,7 +45,7 @@ impl Action for Run {
             .to_path_buf();
         let compile_mode = parse_compile_mode(matches);
         let target = parse_build_target(matches);
-        let features = matches.value_of("features");
+        let additional_features = matches.value_of("additional-features");
         let passthrough: Vec<String> = matches
             .values_of("project-args")
             .map(|v| v.map(String::from).collect())
@@ -58,10 +58,11 @@ impl Action for Run {
             &target,
             &compile_mode,
             matches.value_of("output-path"),
-            features,
+            additional_features,
         );
 
         if clean {
+            clean_build_cache()?;
             crate::utils::assets::run_asset_pipeline(&path.join("res"), true)?;
         }
 
@@ -76,7 +77,7 @@ impl Action for Run {
                     &output_directory,
                     &compile_mode,
                     &passthrough,
-                    features,
+                    additional_features,
                     false,
                 )?;
             }
