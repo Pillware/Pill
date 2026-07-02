@@ -1,4 +1,4 @@
-// This file handles all path resolution and workspace discovery for the launcher.
+//! This file handles all path resolution and workspace discovery for the launcher.
 
 use anyhow::{bail, Context, Error, Result};
 use config::Config;

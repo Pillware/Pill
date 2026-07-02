@@ -1,12 +1,11 @@
-// Per-project wasm shim - minimal, only the parts that genuinely need to be
-// per-project:
-//   - the `WebProject` struct from this pill project's crate
-//   - the embedded `config.ini` (wasm has no filesystem at runtime, so the
-//     launcher copies the pill project's res/config.ini next to this lib.rs and we
-//     pull the bytes in via include_str!)
-// Everything else (panic hook, console_log, canvas wiring, event loop) lives
-// in `pill_web::run`. This keeps the per-project cdylib tiny and the runtime
-// shape symmetric with `pill_native` (which is also a workspace crate).
+//! WASM entry point - scaffolded by `PillLauncher create`.
+//!
+//! This is a minimal shim that wires together:
+//! - The project's `Project` struct (from `src/project.rs`).
+//! - The project's `config.ini` (embedded at compile time - WASM has no filesystem).
+//! - The shared `pill_web::run` runtime (panic hook, canvas, event loop).
+//!
+//! Keeping this file tiny ensures the per-project `.wasm` binary stays small.
 
 use project::Project;
 use wasm_bindgen::prelude::*;

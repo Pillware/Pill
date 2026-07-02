@@ -1,9 +1,9 @@
-// This file implements the "cargo" passthrough action.
-//
-// Responsibilities:
-// - Prepares the engine workspace for the given project.
-// - Runs an arbitrary cargo command (fmt, clippy, check, etc.) in that workspace.
-// - Depends on: workspace (prepare_workspace_for_project).
+//! This file implements the "cargo" passthrough action.
+//!
+//! Responsibilities:
+//! - Prepares the engine workspace for the given project.
+//! - Runs an arbitrary cargo command (fmt, clippy, check, etc.) in that workspace.
+//! - Depends on: workspace (prepare_workspace_for_project).
 
 use anyhow::{bail, Context, Result};
 use clap::{App, ArgMatches};
@@ -29,8 +29,9 @@ impl Action for Cargo {
         "Run cargo commands (fmt, clippy, check, etc.)"
     }
 
-    fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(path_flag())
+    fn register(&self, application: App<'static, 'static>) -> App<'static, 'static> {
+        application
+            .arg(path_flag())
             .arg(compile_mode_flag())
             .arg(project_args_flag())
     }

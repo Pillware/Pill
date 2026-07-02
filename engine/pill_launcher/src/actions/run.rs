@@ -1,9 +1,9 @@
-// This file implements the "run" action: build and launch a native project.
-//
-// Responsibilities:
-// - Parses CLI flags (shared with the "build" action via native_target).
-// - Delegates to native_target::run_project() for the actual build+run logic.
-// - Supports WASM target by delegating to web_dev_server.
+//! This file implements the "run" action: build and launch a project.
+//!
+//! Responsibilities:
+//! - Parses CLI flags (shared with the "build" action via `utils::cli`).
+//! - Delegates to `native_target::run_project()` for native build+run.
+//! - Delegates to `web_dev_server::run()` for WASM dev server.
 
 use anyhow::Result;
 use clap::{App, ArgMatches};
@@ -21,6 +21,7 @@ use crate::utils::native_target::run_project;
 use crate::utils::paths::get_project_build_path;
 use crate::utils::web_dev_server;
 
+/// The `run` subcommand: build and launch a project (native or WASM dev server).
 #[derive(Debug)]
 pub(crate) struct Run;
 
@@ -33,13 +34,14 @@ impl Action for Run {
         "Build and launch a project"
     }
 
-    fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        let app = add_path_flag(app);
-        let app = add_build_flags(app);
-        app.arg(wasm_port_flag()).arg(project_args_flag())
+    fn register(&self, application: App<'static, 'static>) -> App<'static, 'static> {
+        let application = add_path_flag(application);
+        let application = add_build_flags(application);
+        application.arg(wasm_port_flag()).arg(project_args_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
+        // 1. Parse CLI flags.
         let path = PathBuf::from(matches.value_of("path").unwrap_or("."))
             .absolutize()?
             .to_path_buf();
@@ -48,10 +50,11 @@ impl Action for Run {
         let additional_features = matches.value_of("additional-features");
         let passthrough: Vec<String> = matches
             .values_of("project-args")
-            .map(|v| v.map(String::from).collect())
+            .map(|values| values.map(String::from).collect())
             .unwrap_or_default();
         let clean = matches.is_present("clean");
 
+        // 2. Print a summary of what we're about to build and run.
         print_build_summary(
             "Running",
             &path,
@@ -61,11 +64,13 @@ impl Action for Run {
             additional_features,
         );
 
+        // 3. If --clean was requested, wipe the build cache and rebuild assets.
         if clean {
             clean_build_cache()?;
             crate::utils::assets::run_asset_pipeline(&path.join("res"), true)?;
         }
 
+        // 4. Dispatch to the appropriate backend.
         match target {
             BuildTarget::Native => {
                 let output_directory =

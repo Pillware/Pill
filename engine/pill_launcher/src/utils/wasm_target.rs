@@ -1,12 +1,12 @@
-// This file orchestrates WASM/WebGPU builds via wasm-pack.
-//
-// Responsibilities:
-// - build(): entry point - copies a WASM template into a scratch directory,
-//   rewrites Cargo.toml path-deps to absolute paths, runs wasm-pack, flattens
-//   outputs into build/wasm/, and prints a size report on release builds.
-// - Uses a scratch-copy strategy: nothing is written under engine/ during a
-//   WASM build, keeping the workspace pristine across multi-project use.
-// - Handles pseudo-symlinks (Git on Windows without core.symlinks).
+//! This file orchestrates WASM/WebGPU builds via wasm-pack.
+//!
+//! Responsibilities:
+//! - build(): entry point - copies a WASM template into a scratch directory,
+//!   rewrites Cargo.toml path-deps to absolute paths, runs wasm-pack, flattens
+//!   outputs into build/wasm/, and prints a size report on release builds.
+//! - Uses a scratch-copy strategy: nothing is written under engine/ during a
+//!   WASM build, keeping the workspace pristine across multi-project use.
+//! - Handles pseudo-symlinks (Git on Windows without core.symlinks).
 
 use std::collections::HashMap;
 use std::env;
@@ -160,24 +160,24 @@ fn run_wasm_pack(
 
     println!("Running WASM-pack in scratch crate {scratch_pill_web_app_dir:?}...");
 
-    let mut cmd = Command::new("wasm-pack");
-    cmd.args(&args).current_dir(scratch_pill_web_app_dir);
+    let mut command = Command::new("wasm-pack");
+    command.args(&args).current_dir(scratch_pill_web_app_dir);
     // getrandom >=0.3 requires explicit opt-in for wasm32-unknown-unknown.
-    cmd.env("RUSTFLAGS", "--cfg getrandom_backend=\"wasm_js\"");
+    command.env("RUSTFLAGS", "--cfg getrandom_backend=\"wasm_js\"");
     if let Some(home) = env::var_os("HOME") {
         let cargo_bin = PathBuf::from(home).join(".cargo").join("bin");
         let existing = env::var_os("PATH").unwrap_or_default();
         let mut parts: Vec<PathBuf> = vec![cargo_bin];
         parts.extend(env::split_paths(&existing));
         if let Ok(joined) = env::join_paths(parts) {
-            cmd.env("PATH", joined);
+            command.env("PATH", joined);
         }
     }
-    let status = cmd.status().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
+    let status = command.status().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
             Error::msg("wasm-pack not found on PATH. Install it with: cargo install wasm-pack")
         } else {
-            Error::new(e).context("Failed to execute wasm-pack")
+            Error::new(error).context("Failed to execute wasm-pack")
         }
     })?;
 
@@ -281,15 +281,20 @@ fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
     println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
     for lib in ENGINE_LIBS {
         let bytes = by_crate.get(*lib).copied().unwrap_or(0);
-        let pct = 100.0 * bytes as f64 / total as f64;
-        println!("    {:<20} {:>10} {:>6.1}%", lib, fmt_bytes(bytes), pct);
+        let percentage = 100.0 * bytes as f64 / total as f64;
+        println!(
+            "    {:<20} {:>10} {:>6.1}%",
+            lib,
+            fmt_bytes(bytes),
+            percentage
+        );
     }
-    let epct = 100.0 * engine_total as f64 / total as f64;
+    let engine_percentage = 100.0 * engine_total as f64 / total as f64;
     println!(
         "    {:<20} {:>10} {:>6.1}%  ← engine total",
         "---",
         fmt_bytes(engine_total),
-        epct
+        engine_percentage
     );
 
     println!();
@@ -301,28 +306,33 @@ fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
         .filter(|(k, _)| !excluded.contains(&k.as_str()))
         .take(15)
     {
-        let pct = 100.0 * *bytes as f64 / total as f64;
+        let percentage = 100.0 * *bytes as f64 / total as f64;
         println!(
             "    {:<20} {:>10} {:>6.1}%",
             crate_name,
             fmt_bytes(*bytes),
-            pct
+            percentage
         );
     }
 
     println!();
     println!("  Top 10 symbols:");
     for (bytes, name) in items.iter().take(10) {
-        let pct = 100.0 * *bytes as f64 / total as f64;
+        let percentage = 100.0 * *bytes as f64 / total as f64;
         let display = truncate_display(name, 72);
-        println!("  {:>10} {:>5.1}%  {}", fmt_bytes(*bytes), pct, display);
+        println!(
+            "  {:>10} {:>5.1}%  {}",
+            fmt_bytes(*bytes),
+            percentage,
+            display
+        );
     }
 
     TwiggyResult::Done
 }
 
 /// Parse twiggy's default text output. Each data row:
-///   "   <bytes> ┊ <pct>% ┊ <item name>"
+///   "   <bytes> ┊ <percentage>% ┊ <item name>"
 fn parse_twiggy(stdout: &str) -> Vec<(u64, String)> {
     let mut items = Vec::new();
     for line in stdout.lines() {

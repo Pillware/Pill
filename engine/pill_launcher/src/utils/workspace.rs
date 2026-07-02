@@ -1,11 +1,11 @@
-// This file manages Cargo workspace membership for project compilation.
-//
-// Responsibilities:
-// - Temporarily injects the project into engine/Cargo.toml's workspace members.
-// - Automatically restores engine/Cargo.toml on drop (WorkspaceGuard).
-// - Cleans stale build artifacts when switching between different projects.
-// - Rewrites the project's own Cargo.toml workspace path to point at the engine workspace.
-// - Ensures pill_native and project share type IDs by compiling in the same workspace.
+//! This file manages Cargo workspace membership for project compilation.
+//!
+//! Responsibilities:
+//! - Temporarily injects the project into engine/Cargo.toml's workspace members.
+//! - Automatically restores engine/Cargo.toml on drop (WorkspaceGuard).
+//! - Cleans stale build artifacts when switching between different projects.
+//! - Rewrites the project's own Cargo.toml workspace path to point at the engine workspace.
+//! - Ensures pill_native and project share type IDs by compiling in the same workspace.
 
 use anyhow::{bail, Context, Error, Result};
 use std::{

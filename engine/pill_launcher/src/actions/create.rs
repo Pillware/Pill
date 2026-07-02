@@ -1,9 +1,9 @@
-// This file implements the "create" action: scaffolding a new project.
-//
-// Responsibilities:
-// - Copies the pill_default template into the target directory.
-// - Rewrites config.ini (TITLE, WINDOW_TITLE) and Cargo.toml (pill_engine path,
-//   workspace membership) to match the new project.
+//! This file implements the "create" action: scaffolding a new project.
+//!
+//! Responsibilities:
+//! - Copies the pill_default template into the target directory.
+//! - Rewrites config.ini (TITLE, WINDOW_TITLE) and Cargo.toml (pill_engine path,
+//!   workspace membership) to match the new project.
 
 use anyhow::{Context, Error, Result};
 use clap::{App, Arg, ArgMatches};
@@ -16,6 +16,7 @@ use crate::utils::cli::path_flag;
 use crate::utils::files::{copy_directory_recursive, modify_file};
 use crate::utils::paths::*;
 
+/// The `create` subcommand: scaffold a new Pill project from a template.
 #[derive(Debug)]
 pub(crate) struct Create;
 
@@ -28,15 +29,14 @@ impl Action for Create {
         "Scaffold a new project from template"
     }
 
-    fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(path_flag())
-            .arg(
-                Arg::with_name("name")
-                    .short("n")
-                    .long("name")
-                    .takes_value(true)
-                    .help("Name of new project"),
-            )
+    fn register(&self, application: App<'static, 'static>) -> App<'static, 'static> {
+        application.arg(path_flag()).arg(
+            Arg::with_name("name")
+                .short("n")
+                .long("name")
+                .takes_value(true)
+                .help("Name of new project"),
+        )
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
@@ -52,8 +52,11 @@ impl Action for Create {
 }
 
 /// Scaffold a new Pill project from the new_project template.
-/// Copies template files, renames the directory, and rewrites config.ini
-/// and Cargo.toml with the new project name and absolute engine paths.
+///
+/// 1. Guards against overwriting an existing directory.
+/// 2. Copies the template directory to the target location.
+/// 3. Rewrites config.ini with the project name.
+/// 4. Rewrites Cargo.toml with absolute engine paths and workspace membership.
 pub(crate) fn create_project(
     project_parent_directory_path: &Path,
     project_name: &str,
@@ -61,7 +64,8 @@ pub(crate) fn create_project(
     const TEMPLATE_NAME: &str = "new_project";
 
     let project_directory_path = project_parent_directory_path.join(project_name);
-    // Guard against overwriting an existing directory.
+
+    // 1. Guard against overwriting an existing directory.
     if project_directory_path.exists() {
         return Err(Error::msg(format!(
             "Project directory {} already exists",
@@ -77,23 +81,19 @@ pub(crate) fn create_project(
         project_directory_path.display()
     );
 
-    // Get templates (assuming that they are stored in res folder of pill_launcher crate)
+    // 2. Copy the template to the target directory.
     let template_project_directory_path = get_path(Location::PillLauncherCrate)
         .join("res")
         .join("templates");
 
-    // Copy the pill_default template directly to the target project name.
-    // Uses std::fs-based recursive copy (not fs_extra) to avoid a known
-    // Windows path-resolution issue with fs_extra::dir::copy.
     println!("Copying project template...");
-
     copy_directory_recursive(
         &template_project_directory_path.join(TEMPLATE_NAME),
         &project_directory_path,
     )
     .context("Cannot copy template directory")?;
 
-    // Setup config file
+    // 3. Rewrite config.ini: replace TITLE and WINDOW_TITLE with the project name.
     println!("Setting up config file...");
     modify_file(
         &project_resource_directory_path.join("config.ini"),
@@ -109,8 +109,7 @@ pub(crate) fn create_project(
         },
     )?;
 
-    // Rewrite Cargo.toml in a single pass - point pill_engine at the absolute path
-    // and set the workspace field to the engine workspace directory.
+    // 4. Rewrite Cargo.toml: set absolute engine paths and workspace.
     println!("Setting up manifest file...");
     let cargo_toml_path = project_directory_path.join("Cargo.toml");
     let pill_engine_path = get_path(Location::PillEngineCrate)
@@ -127,9 +126,10 @@ pub(crate) fn create_project(
                 // Preserve the original features list; only rewrite the path.
                 let features = if let Some(start) = line.find("features") {
                     let remainder = &line[start..];
-                    // Strip trailing '}' (and whitespace) from the original inline-table close.
                     remainder
-                        .trim_end_matches(|c: char| c == '}' || c.is_whitespace())
+                        .trim_end_matches(|character: char| {
+                            character == '}' || character.is_whitespace()
+                        })
                         .to_string()
                 } else {
                     "features = [\"project\"]".to_string()
@@ -143,8 +143,6 @@ pub(crate) fn create_project(
         },
     )?;
 
-    // Success
     println!("Project creation completed!");
-
     Ok(())
 }

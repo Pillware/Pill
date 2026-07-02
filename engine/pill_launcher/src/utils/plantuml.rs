@@ -1,7 +1,7 @@
-// PlantUML diagram rendering for crate documentation.
-//
-// Renders *.puml files under <crate>/docs/uml/ into SVGs in <crate>/docs/uml_out/
-// using the plantuml CLI. Gracefully skips if plantuml is not installed.
+//! This file defines and implements PlantUML diagram rendering for crate documentation.
+//!
+//! Renders *.puml files under <crate>/docs/uml/ into SVGs in <crate>/docs/uml_out/
+//! using the plantuml CLI. Gracefully skips if plantuml is not installed.
 
 use anyhow::{bail, Context, Result};
 use std::{

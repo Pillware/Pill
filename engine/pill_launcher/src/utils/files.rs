@@ -1,4 +1,4 @@
-// This file provides reusable file-system operations for the launcher.
+//! This file provides reusable file-system operations for the launcher.
 
 use anyhow::{bail, Context, Result};
 use std::{fs, path::Path};
@@ -131,6 +131,9 @@ pub(crate) fn copy_file_if_newer(source: &Path, destination: &Path) -> Result<bo
     Ok(true)
 }
 
+/// Recursively copy all files and subdirectories from `source` to `destination`.
+/// Creates the destination directory if it does not exist.  Preserves the full
+/// directory tree structure.  Fails if `source` is missing or is not a directory.
 pub(crate) fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<()> {
     if !source.exists() {
         bail!("Source directory does not exist: {}", source.display());
@@ -285,8 +288,8 @@ pub(crate) fn delete_cooked_resource_files_recursive(directory: &Path) -> Result
         if file_type.is_dir() {
             delete_cooked_resource_files_recursive(&path)?;
         } else if file_type.is_file() {
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if ext == "cooked_mesh" || ext == "cooked_tex" {
+            let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if extension == "cooked_mesh" || extension == "cooked_tex" {
                 fs::remove_file(&path)
                     .with_context(|| format!("Failed to delete {}", path.display()))?;
                 println!("Deleted {}", path.display());

@@ -1,4 +1,9 @@
-// This file implements the "assets" action: run the asset pipeline.
+//! This file implements the "assets" action: run the asset pipeline.
+//!
+//! Responsibilities:
+//! - Registers the `assets` subcommand with `-p`/`--path` and `--clean` flags.
+//! - Delegates to `utils::assets::run_asset_pipeline` to process raw assets
+//!   (models, textures, shaders) into cooked formats.
 
 use anyhow::Result;
 use clap::{App, ArgMatches};
@@ -18,12 +23,11 @@ impl Action for Assets {
     }
 
     fn description(&self) -> &'static str {
-        "Run the asset pipeline (HLSL→WGSL, etc.)"
+        "Run the asset pipeline (raw → cooked assets)"
     }
 
-    fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(path_flag())
-            .arg(clean_flag())
+    fn register(&self, application: App<'static, 'static>) -> App<'static, 'static> {
+        application.arg(path_flag()).arg(clean_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
@@ -31,6 +35,8 @@ impl Action for Assets {
             .absolutize()?
             .to_path_buf();
         let clean = matches.is_present("clean");
+        // Run the pipeline on the project's res/ directory.
+        // When --clean is set, previously cooked files are deleted first.
         run_asset_pipeline(&path.join("res"), clean)
     }
 }

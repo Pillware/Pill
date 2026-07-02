@@ -1,11 +1,11 @@
-// This file provides general-purpose utility functions used across the launcher.
-//
-// Responsibilities:
-// - Runtime feature-flag detection (env vars).
-// - ANSI terminal escape helpers (cached terminal detection).
-// - Cargo stderr parsing for user-friendly error messages.
-// - Duration formatting.
-// - Filesystem helpers: pseudo-symlink resolution, directory copy, atomic writes.
+//! This file provides general-purpose utility functions used across the launcher.
+//!
+//! Responsibilities:
+//! - Runtime feature-flag detection (env vars).
+//! - ANSI terminal escape helpers (cached terminal detection).
+//! - Cargo stderr parsing for user-friendly error messages.
+//! - Duration formatting.
+//! - Filesystem helpers: pseudo-symlink resolution, directory copy, atomic writes.
 
 use std::{
     fs,
@@ -304,13 +304,17 @@ pub(crate) fn rewrite_scratch_manifest(
     content.push_str("\n[target.'cfg(target_arch = \"wasm32\")'.dependencies]\n");
     content.push_str("lol_alloc = \"0.4\"\n");
 
-    let tmp_path = manifest.with_extension(format!("toml-tmp-{}", std::process::id()));
-    fs::write(&tmp_path, &content)
-        .with_context(|| format!("Failed to write scratch manifest to {}", tmp_path.display()))?;
-    fs::rename(&tmp_path, &manifest).with_context(|| {
+    let temporary_path = manifest.with_extension(format!("toml-temporary-{}", std::process::id()));
+    fs::write(&temporary_path, &content).with_context(|| {
+        format!(
+            "Failed to write scratch manifest to {}",
+            temporary_path.display()
+        )
+    })?;
+    fs::rename(&temporary_path, &manifest).with_context(|| {
         format!(
             "Failed to rename {} to {}",
-            tmp_path.display(),
+            temporary_path.display(),
             manifest.display()
         )
     })?;
@@ -396,17 +400,17 @@ pub(crate) fn resolve_pseudo_symlink(path: &Path) -> PathBuf {
 pub(crate) fn get_latest_mtime_in_directory(directory: &Path) -> Option<SystemTime> {
     fs::read_dir(directory)
         .ok()?
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name();
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| {
+            let name = entry.file_name();
             if name.to_string_lossy().starts_with('.') {
                 return None;
             }
-            let md = e.metadata().ok()?;
-            if !md.is_file() {
+            let metadata = entry.metadata().ok()?;
+            if !metadata.is_file() {
                 return None;
             }
-            md.modified().ok()
+            metadata.modified().ok()
         })
         .max()
 }

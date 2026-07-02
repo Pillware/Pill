@@ -1,5 +1,4 @@
-// This file manages the asset pipeline (raw → cooked asset processing).
-
+//! This file manages the asset pipeline (raw → cooked asset processing).
 use anyhow::{Context, Result};
 use std::path::Path;
 

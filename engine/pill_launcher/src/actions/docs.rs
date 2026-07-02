@@ -1,10 +1,10 @@
-// This file implements the "docs" action: generating rustdoc for engine crates.
-//
-// Responsibilities:
-// - Generates two doc sets: project_dev (public API) and engine_dev (private items).
-// - Temporarily rewrites the Cube example's Cargo.toml and pill_native's Cargo.toml
-//   to point at absolute engine paths so cargo doc resolves dependencies correctly.
-// - Pre-renders PlantUML diagrams before doc generation.
+//! This file implements the "docs" action: generating rustdoc for engine crates.
+//!
+//! Responsibilities:
+//! - Generates two doc sets: project_dev (public API) and engine_dev (private items).
+//! - Temporarily rewrites the Cube example's Cargo.toml and pill_native's Cargo.toml
+//!   to point at absolute engine paths so cargo doc resolves dependencies correctly.
+//! - Pre-renders PlantUML diagrams before doc generation.
 
 use anyhow::{bail, Context, Error, Result};
 use clap::{App, ArgMatches};
@@ -30,8 +30,8 @@ impl Action for Docs {
         "Generate rustdoc for engine crates"
     }
 
-    fn register(&self, app: App<'static, 'static>) -> App<'static, 'static> {
-        app.arg(output_path_flag())
+    fn register(&self, application: App<'static, 'static>) -> App<'static, 'static> {
+        application.arg(output_path_flag())
     }
 
     fn run(&self, matches: &ArgMatches) -> Result<()> {
@@ -68,10 +68,10 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
         .with_context(|| format!("Failed to read {}", native_cargo_toml.display()))?;
 
     // 1. Point the Cube example's Cargo.toml at the absolute engine path
-    // so cargo doc can resolve the pill_engine dependency.  Strip the
-    // workspace = "NO_PATH" line entirely - the Cube example isn't a
-    // workspace member, and leaving a valid workspace path would cause
-    // "package believes it's in a workspace when it's not" errors.
+    // so cargo doc can resolve the pill_engine dependency.  Remove any
+    // workspace field - the Cube example isn't a workspace member, and
+    // leaving a valid workspace path would cause "package believes it's in
+    // a workspace when it's not" errors.
     modify_file(
         &cube_cargo_toml,
         &cube_cargo_toml,
@@ -112,7 +112,7 @@ pub(crate) fn generate_docs(output_directory_path: &PathBuf) -> Result<()> {
 
     // Run the main doc generation in a closure so manifests are always restored.
     let result = (|| -> Result<()> {
-        // 3. Determine where to write the docs output. Defaults to ./docs/.
+        // 3. Determine where to write the docs output.  Defaults to ./generated/.
         let output_path = if output_directory_path.as_os_str() == "." {
             env::current_dir().context("Failed to get current directory")?
         } else {

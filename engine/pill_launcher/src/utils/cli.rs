@@ -1,11 +1,12 @@
-// This file contains the CLI entry point: a generic action dispatcher
-// and shared CLI flag constructors and argument parsers used by multiple actions.
-//
-// Responsibilities:
-// - Takes a list of Action trait objects.
-// - Iterates over them, calling register() on each to build the full CLI.
-// - Adds the common --action flag and -- project-args passthrough.
-// - After parsing, dispatches to the matching action's run() method.
+//! This file contains the CLI entry point: a generic action dispatcher
+//! and shared CLI flag constructors and argument parsers used by multiple actions.
+//!
+//! Responsibilities:
+//! - Takes a list of Action trait objects.
+//! - Iterates over them, calling register() on each to build the full CLI.
+//! - Builds subcommands from actions and dispatches to the matching action's
+//!   run() method.
+//! - After parsing, dispatches to the matching action's run() method.
 
 use crate::types::{BuildTarget, CompileMode};
 use anyhow::{bail, Result};
@@ -19,7 +20,7 @@ use crate::actions::Action;
 /// giving context-sensitive `--help` per action.  The old `-a` / `--action` flag
 /// is no longer used.
 pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
-    let mut app = App::new("PillLauncher")
+    let mut application = App::new("PillLauncher")
         .about("Tool for managing Pill project projects")
         .version(env!("CARGO_PKG_VERSION"))
         .setting(AppSettings::SubcommandRequiredElseHelp)
@@ -29,14 +30,14 @@ pub(crate) fn run_app(actions: &[&dyn Action]) -> Result<()> {
     for action in actions {
         let sub = App::new(action.name()).about(action.description());
         let sub = action.register(sub);
-        app = app.subcommand(sub);
+        application = application.subcommand(sub);
     }
 
     // Use get_matches_safe so we don't exit() inside the library - important
     // for unit tests that call run_app directly.  We must handle
     // HelpDisplayed / VersionDisplayed ourselves because clap returns them
     // as errors even though the user expects exit code 0.
-    let matches = match app.get_matches_safe() {
+    let matches = match application.get_matches_safe() {
         Ok(m) => m,
         Err(e) => {
             // get_matches_safe() does NOT print to stdout/stderr - it returns
@@ -120,7 +121,7 @@ pub(crate) fn clean_flag() -> Arg<'static, 'static> {
         .help("Delete all cooked asset files and rebuild from source")
 }
 
-/// `--features` - comma-separated Cargo features for project.
+/// `--additional-features` - comma-separated Cargo features for the project.
 pub(crate) fn features_flag() -> Arg<'static, 'static> {
     Arg::with_name("additional-features")
         .long("additional-features")
@@ -164,13 +165,14 @@ pub(crate) fn project_args_flag() -> Arg<'static, 'static> {
 // -- Flag-group helpers (so actions only register what they use) ------------
 
 /// Add `-p` / `--path` to an app/subcommand.
-pub(crate) fn add_path_flag(app: App<'static, 'static>) -> App<'static, 'static> {
-    app.arg(path_flag())
+pub(crate) fn add_path_flag(application: App<'static, 'static>) -> App<'static, 'static> {
+    application.arg(path_flag())
 }
 
 /// Add build-related flags: `-c`, `-t`, `-o`, `--clean`, `--features`.
-pub(crate) fn add_build_flags(app: App<'static, 'static>) -> App<'static, 'static> {
-    app.arg(compile_mode_flag())
+pub(crate) fn add_build_flags(application: App<'static, 'static>) -> App<'static, 'static> {
+    application
+        .arg(compile_mode_flag())
         .arg(target_flag())
         .arg(output_path_flag())
         .arg(clean_flag())
