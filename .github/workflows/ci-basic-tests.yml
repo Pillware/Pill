@@ -14,6 +14,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  packages: read
+
 env:
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
   CARGO_TERM_COLOR: always
