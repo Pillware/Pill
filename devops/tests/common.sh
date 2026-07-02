@@ -121,9 +121,9 @@ fix_stale_workspace_members
 # ---------------------------------------------------------------------------
 
 # Use Windows TEMP if available (Git Bash), fall back to /tmp
-if [ -d "$TEMP" ]; then
+if [ -d "${TEMP:-}" ]; then
     TMPDIR="${TMPDIR:-$TEMP}"
-elif [ -d "$TMP" ]; then
+elif [ -d "${TMP:-}" ]; then
     TMPDIR="${TMPDIR:-$TMP}"
 else
     TMPDIR="${TMPDIR:-/tmp}"
