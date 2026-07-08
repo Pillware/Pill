@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -25,11 +26,11 @@ impl Rule for PngToCookedTex {
 
     fn build(&self, input: &Path, output: &Path) -> Result<()> {
         let bytes = std::fs::read(input).with_context(|| format!("read {input:?}"))?;
-        let mut decoder = png::Decoder::new(bytes.as_slice());
+        let mut decoder = png::Decoder::new(Cursor::new(bytes));
         // Expand palette/indexed images to RGB and low-bit depths to 8-bit.
         decoder.set_transformations(png::Transformations::EXPAND);
         let mut reader = decoder.read_info().context("png read_info")?;
-        let mut buf = vec![0u8; reader.output_buffer_size()];
+        let mut buf = vec![0u8; reader.output_buffer_size().unwrap_or(0)];
         let info = reader.next_frame(&mut buf).context("png next_frame")?;
         let width = info.width;
         let height = info.height;

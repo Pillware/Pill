@@ -4,16 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-pill_core = {path = "../pill_core"}
+pill_core = { path = "../pill_core" }
 pill_abi = { path = "../pill_abi" }
 pill_runtime = { path = "../pill_runtime" }
 
-winit = "0.30.12"
+winit = "0.30"
 log = "0.4"
 config = "0.11"
-anyhow = "1.0.45"
-libloading = "0.8.8"
-image = "0.25.6"
+anyhow = "1"
+libloading = "0.9"
+image = "0.25"
 
 [build-dependencies]
 winres = "0.1"

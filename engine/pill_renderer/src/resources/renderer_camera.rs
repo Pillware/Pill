@@ -54,6 +54,7 @@ impl CameraParametersData {
                 * CameraParametersData::calculate_view_matrix(transform_component);
     }
 
+    #[allow(deprecated)]
     fn calculate_view_matrix(transform_component: &TransformComponent) -> Matrix4f {
         let roll_matrix = Matrix3f::from_rotation_z(transform_component.rotation.z.to_radians());
         let yaw_matrix = Matrix3f::from_rotation_y(transform_component.rotation.y.to_radians());
@@ -64,6 +65,7 @@ impl CameraParametersData {
         Matrix4f::look_to_rh(transform_component.position, direction, Vector3f::Y)
     }
 
+    #[allow(deprecated)]
     fn calculate_projection_matrix(camera_component: &CameraComponent) -> Matrix4f {
         OPENGL_TO_WGPU_MATRIX
             * Matrix4f::perspective_rh(
