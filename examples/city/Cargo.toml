@@ -16,6 +16,6 @@ pill_engine = { path = "../../engine/pill_engine", features = [
 rand = "0.8.4"
 
 [features]
-benchmark_window = []
+benchmark_windowed = []
 benchmark_headless = []
 default = []

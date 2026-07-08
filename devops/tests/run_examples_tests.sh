@@ -27,6 +27,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../common.sh
 source "$SCRIPT_DIR/../common.sh"
 
+# Shortcuts for colored section headers
+BOLD='\033[1m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
 # All paths in this script are relative to the project root.
 cd "$PROJECT_ROOT"
 
@@ -85,7 +90,7 @@ _build_standalone_crate() {
 
 build_all_examples() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "Building all Pill example projects (release, shared target dir)"
 
     # Use a shared cargo target directory so pill_engine (and its
@@ -100,7 +105,7 @@ build_all_examples() {
         echo ""
         echo "($example_index/$total_examples) $example_path"
         echo "Building - this may take a while"
-        _build_pill_example "$example_pathmoment"
+        _build_pill_example "$example_path"
     done
 
     for crate_path in "${STANDALONE_CRATES[@]}"; do
@@ -115,7 +120,7 @@ build_all_examples() {
 build_single_example() {
     local example_path="$1"
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "Building $example_path (release)"
     echo "Building - this may take a while"
 

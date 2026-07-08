@@ -12,7 +12,6 @@ use std::{
     cell::RefCell,
     ffi::{c_char, c_void, CStr, CString},
     path::PathBuf,
-    sync::Arc,
     time::Duration,
 };
 
@@ -20,11 +19,9 @@ use libloading::{Library, Symbol};
 use pill_abi::*;
 use pill_core::{set_log_levels, PillError, Result};
 use pill_engine::internal::*;
-use pill_renderer::Renderer;
-use winit::{
-    dpi::{PhysicalPosition, PhysicalSize},
-    window::Window,
-};
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+#[cfg(not(feature = "headless"))]
+use {pill_renderer::Renderer, std::sync::Arc, winit::window::Window};
 
 // ---------------------------------------------------------------------------
 // Error Handling Helpers
@@ -106,6 +103,8 @@ fn load_project(project_library_path: &str) -> Result<(Library, Box<dyn PillProj
 // by the `create` FFI entry point and destroyed by `destroy`.
 struct Runtime {
     // Keeps the winit Window alive for the wgpu Renderer.
+    // Only present in windowed mode.
+    #[cfg(not(feature = "headless"))]
     window: Arc<Window>,
     // Last known physical window size, updated on resize.
     window_size: PhysicalSize<u32>,
@@ -124,9 +123,9 @@ struct Runtime {
 }
 
 impl Runtime {
-    // Creates and initialises an Engine from the given project.
-    // Builds the wgpu Renderer, wires up the ECS, and calls
-    // engine.initialize() to run startup systems.
+    /// Creates and initialises an Engine from the given project.
+    /// Windowed mode: builds a wgpu Renderer and passes the winit Window.
+    #[cfg(not(feature = "headless"))]
     fn build_engine(&self, project: Box<dyn PillProject>) -> Result<Engine> {
         // Create the wgpu-backed renderer, passing a clone of the window Arc.
         let renderer: Box<dyn PillRenderer> = Box::new(<Renderer as PillRenderer>::new(
@@ -142,6 +141,14 @@ impl Runtime {
             self.process.clone(),
         );
         engine.initialize(Some(self.window_size))?;
+        Ok(engine)
+    }
+
+    /// Headless mode: uses the engine's headless constructor (DummyRenderer).
+    #[cfg(feature = "headless")]
+    fn build_engine(&self, project: Box<dyn PillProject>) -> Result<Engine> {
+        let mut engine = Engine::new(project, self.config.clone(), self.process.clone());
+        engine.initialize(None)?;
         Ok(engine)
     }
 
@@ -181,7 +188,8 @@ extern "C" fn last_error_utf8() -> *const c_char {
 // Creates the engine inside the runtime.
 //
 // Takes ownership of:
-//   - One Arc<Window> reference (transferred via Arc::into_raw by the host).
+//   - One Arc<Window> reference (transferred via Arc::into_raw by the host)
+//     — only when building with benchmark_window feature.
 //   - The project dynamic library path (loaded via libloading).
 //
 // Writes the opaque engine handle to *out_engine on success.
@@ -197,6 +205,8 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
     let result = (|| -> Result<()> {
         let create_args = unsafe { &*args };
 
+        // Window pointer is required for windowed builds, optional for headless.
+        #[cfg(not(feature = "headless"))]
         if create_args.window_ptr.is_null() {
             return Err("create: window_ptr is null".into());
         }
@@ -210,6 +220,7 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
 
         // Reconstruct the Arc<Window> from the raw pointer the host gave us.
         // This consumes exactly one reference count.
+        #[cfg(not(feature = "headless"))]
         let window = unsafe { Arc::from_raw(create_args.window_ptr as *const Window) };
 
         // Load and parse the project configuration file.
@@ -248,6 +259,7 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
 
         // Assemble the Runtime struct — the engine is built immediately after.
         let mut runtime = Box::new(Runtime {
+            #[cfg(not(feature = "headless"))]
             window,
             window_size: winit::dpi::PhysicalSize::new(
                 create_args.initial_w,
@@ -260,7 +272,8 @@ extern "C" fn create(args: *const PillEngineCreateArgsV1, out_engine: *mut Engin
             project_library: Some(project_library),
         });
 
-        // Build the engine (creates wgpu device, initialises renderer & ECS).
+        // Build the engine (creates wgpu device, initialises renderer & ECS,
+        // or uses DummyRenderer in headless mode).
         let engine = runtime.build_engine(project)?;
         runtime.engine = Some(engine);
 

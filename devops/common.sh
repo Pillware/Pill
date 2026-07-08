@@ -61,16 +61,28 @@ find_launcher() {
     local project_root
     project_root="$(find_project_root)" || project_root="."
 
+    # On Linux/macOS, skip .exe files — they are Windows binaries and won't run.
+    local windows_host=false
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*) windows_host=true ;;
+        *)                      windows_host=false ;;
+    esac
+
     local search_paths=(
         "$project_root/engine/pill_launcher/target/release/PillLauncher"
-        "$project_root/engine/pill_launcher/target/release/PillLauncher.exe"
         "$project_root/target/release/PillLauncher"
-        "$project_root/target/release/PillLauncher.exe"
         "$project_root/engine/pill_launcher/target/debug/PillLauncher"
-        "$project_root/engine/pill_launcher/target/debug/PillLauncher.exe"
         "$project_root/target/debug/PillLauncher"
-        "$project_root/target/debug/PillLauncher.exe"
     )
+    if [ "$windows_host" = true ]; then
+        search_paths=(
+            "$project_root/engine/pill_launcher/target/release/PillLauncher.exe"
+            "$project_root/target/release/PillLauncher.exe"
+            "$project_root/engine/pill_launcher/target/debug/PillLauncher.exe"
+            "$project_root/target/debug/PillLauncher.exe"
+        )
+    fi
+
     for candidate_path in "${search_paths[@]}"; do
         if [ -x "$candidate_path" ] || [ -f "$candidate_path" ]; then
             echo "$candidate_path"
@@ -205,6 +217,91 @@ print_size_report() {
     echo -e "$json_entries"
     echo "    ]"
     echo "  }"
+}
+
+# ---------------------------------------------------------------------------
+# System info — machine specs for benchmark context
+# ---------------------------------------------------------------------------
+
+print_system_info() {
+    echo ""
+    echo "---------- System Information ----------"
+
+    # --- OS & kernel ---
+    echo "  OS:      $(uname -s 2>/dev/null || echo 'Windows') $(uname -r 2>/dev/null || echo '')"
+    if command -v sw_vers >/dev/null 2>&1; then
+        echo "  macOS:   $(sw_vers -productName 2>/dev/null) $(sw_vers -productVersion 2>/dev/null)"
+    elif [ -f /etc/os-release ]; then
+        echo "  Distro:  $(grep ^PRETTY_NAME= /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')"
+    fi
+
+    # --- CPU ---
+    local cpu_model="unknown"
+    local cpu_cores="unknown"
+    if [ -f /proc/cpuinfo ]; then
+        cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs || echo "unknown")
+        cpu_cores=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo "unknown")
+    elif command -v sysctl >/dev/null 2>&1; then
+        cpu_model=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "unknown")
+        cpu_cores=$(sysctl -n hw.ncpu 2>/dev/null || echo "unknown")
+    elif command -v wmic >/dev/null 2>&1; then
+        cpu_model=$(wmic cpu get name 2>/dev/null | tail -n +2 | head -1 | xargs || echo "unknown")
+        cpu_cores=$(wmic cpu get NumberOfCores 2>/dev/null | tail -n +2 | head -1 | xargs || echo "unknown")
+    fi
+    echo "  CPU:     ${cpu_model} (${cpu_cores} cores)"
+
+    # --- RAM ---
+    local ram_total="unknown"
+    local ram_available="unknown"
+    if [ -f /proc/meminfo ]; then
+        ram_total=$(awk '/^MemTotal:/ {printf "%.1f GB", $2/1048576}' /proc/meminfo 2>/dev/null || echo "unknown")
+        ram_available=$(awk '/^MemAvailable:/ {printf "%.1f GB", $2/1048576}' /proc/meminfo 2>/dev/null || echo "unknown")
+    elif command -v sysctl >/dev/null 2>&1; then
+        local mem_bytes
+        mem_bytes=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
+        ram_total=$(awk "BEGIN {printf \"%.1f GB\", $mem_bytes/1073741824}" 2>/dev/null || echo "unknown")
+        ram_available="N/A (macOS)"
+    elif command -v wmic >/dev/null 2>&1; then
+        local mem_kb
+        mem_kb=$(wmic OS get TotalVisibleMemorySize 2>/dev/null | tail -n +2 | head -1 | xargs || echo 0)
+        ram_total=$(awk "BEGIN {printf \"%.1f GB\", $mem_kb/1048576}" 2>/dev/null || echo "unknown")
+        ram_available="N/A (Windows)"
+    fi
+    echo "  RAM:     ${ram_total} total, ${ram_available} available"
+
+    # --- Docker / cgroup limits (if running in container) ---
+    if [ -f /proc/1/cgroup ] && grep -q 'docker\|container' /proc/1/cgroup 2>/dev/null; then
+        echo "  Environment: Docker container"
+        if [ -f /sys/fs/cgroup/cpu.max ]; then
+            local cpu_quota cpu_period
+            read -r cpu_quota cpu_period < /sys/fs/cgroup/cpu.max 2>/dev/null || true
+            if [ -n "$cpu_quota" ] && [ "$cpu_quota" != "max" ] && [ -n "$cpu_period" ]; then
+                echo "  CPU limit: $(awk "BEGIN {printf \"%.2f\", $cpu_quota/$cpu_period}" 2>/dev/null) cores"
+            else
+                echo "  CPU limit: unrestricted"
+            fi
+        fi
+        if [ -f /sys/fs/cgroup/memory.max ]; then
+            local mem_limit
+            mem_limit=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "unknown")
+            if [ "$mem_limit" != "max" ]; then
+                echo "  RAM limit: $(awk "BEGIN {printf \"%.1f GB\", $mem_limit/1073741824}" 2>/dev/null) "
+            else
+                echo "  RAM limit: unrestricted"
+            fi
+        fi
+    fi
+
+    # --- Rust toolchain ---
+    if command -v rustc >/dev/null 2>&1; then
+        echo "  rustc:   $(rustc --version 2>/dev/null || echo 'unknown')"
+    fi
+    if command -v cargo >/dev/null 2>&1; then
+        echo "  cargo:   $(cargo --version 2>/dev/null || echo 'unknown')"
+    fi
+
+    echo "----------------------------------------"
+    echo ""
 }
 
 # ---------------------------------------------------------------------------

@@ -50,6 +50,7 @@ impl Action for Build {
         let compile_mode = parse_compile_mode(matches);
         let target = parse_build_target(matches);
         let additional_features = matches.value_of("additional-features");
+        let headless = matches.is_present("headless");
         let clean = matches.is_present("clean");
         let maximum_wasm_size: Option<u64> = matches
             .value_of("max-wasm-size")
@@ -58,7 +59,7 @@ impl Action for Build {
 
         // 2. Print a summary of what we're about to build.
         print_build_summary(
-            "Building",
+            "Building project",
             &path,
             &target,
             &compile_mode,
@@ -79,9 +80,18 @@ impl Action for Build {
                     PathBuf::from(matches.value_of("output-path").unwrap_or("."));
                 let output_directory =
                     get_project_build_path(&path, &output_directory, &compile_mode)?;
-                build_project(&path, &output_directory, &compile_mode, additional_features)?;
+                build_project(
+                    &path,
+                    &output_directory,
+                    &compile_mode,
+                    additional_features,
+                    headless,
+                )?;
             }
             BuildTarget::Web => {
+                if headless {
+                    println!("Note: `--headless` is ignored for WASM builds; headless mode only applies to native targets.");
+                }
                 if matches.occurrences_of("output-path") > 0 {
                     println!("Note: `-o/--output-path` is ignored with `-t wasm`; output is fixed at <project>/build/wasm/");
                 }

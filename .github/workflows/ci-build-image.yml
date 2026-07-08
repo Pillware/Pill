@@ -1,7 +1,7 @@
 # Pill CI Pipeline - Preparation
 # Build Pill CI Docker image and push it to GitHub Container Registry (GHCR).
 
-# Only runs when the Dockerfile or this workflow changes.
+# Only runs when the Dockerfile, the PillLauncher source code, or this workflow changes.
 # All other CI workflows pull this pre-built image for
 # minimalizing action environment setup time.
 
@@ -12,6 +12,7 @@ on:
     paths:
       - "devops/tests/Dockerfile"
       - ".github/workflows/ci-build-image.yml"
+      - "engine/pill_launcher/**"
   workflow_dispatch:
 
 env:

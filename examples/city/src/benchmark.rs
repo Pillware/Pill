@@ -1,6 +1,6 @@
 //! Benchmark mode for the city example.
 //!
-//! Compiled via `--features benchmark_window` or `--features benchmark_headless`.
+//! Compiled via `--features benchmark_windowed` or `--features benchmark_headless`.
 //! Spawns 10 000 citizens, runs the simulation for N frames, collects per‑frame
 //! timing statistics, prints a JSON report to stdout, and exits automatically.
 
@@ -41,7 +41,7 @@ impl PillProject for Project {
         engine.register_component::<shared::CitizenComponent>(scene)?;
 
         // -- Windowed-only: rendering setup ------------------------------
-        #[cfg(feature = "benchmark_window")]
+        #[cfg(feature = "benchmark_windowed")]
         {
             engine.register_component::<MeshRenderingComponent>(scene)?;
             engine.register_component::<CameraComponent>(scene)?;
@@ -157,7 +157,7 @@ fn spawn_citizens(engine: &mut Engine, scene: SceneHandle, count: usize) -> Resu
 
     // Windowed mode: citizens get PBR renderable components.
     // Headless mode: citizens are pure simulation entities.
-    #[cfg(feature = "benchmark_window")]
+    #[cfg(feature = "benchmark_windowed")]
     let (orange_material, pill_mesh) = {
         let material = engine.get_resource_handle::<Material>("orange")?;
         let mesh = engine.get_resource_handle::<Mesh>("pill")?;
@@ -182,7 +182,7 @@ fn spawn_citizens(engine: &mut Engine, scene: SceneHandle, count: usize) -> Resu
                 ),
             });
 
-        #[cfg(feature = "benchmark_window")]
+        #[cfg(feature = "benchmark_windowed")]
         {
             builder = builder.with_component(
                 MeshRenderingComponent::builder()
@@ -227,7 +227,7 @@ fn print_report(state: &BenchmarkState) {
     let standard_deviation = variance.sqrt();
 
     // Pick the mode string based on which feature is active.
-    #[cfg(feature = "benchmark_window")]
+    #[cfg(feature = "benchmark_windowed")]
     let mode = "windowed";
     #[cfg(feature = "benchmark_headless")]
     let mode = "headless";

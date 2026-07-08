@@ -48,6 +48,7 @@ impl Action for Run {
         let compile_mode = parse_compile_mode(matches);
         let target = parse_build_target(matches);
         let additional_features = matches.value_of("additional-features");
+        let headless = matches.is_present("headless");
         let passthrough: Vec<String> = matches
             .values_of("project-args")
             .map(|values| values.map(String::from).collect())
@@ -56,7 +57,7 @@ impl Action for Run {
 
         // 2. Print a summary of what we're about to build and run.
         print_build_summary(
-            "Running",
+            "Running project",
             &path,
             &target,
             &compile_mode,
@@ -84,6 +85,7 @@ impl Action for Run {
                     &passthrough,
                     additional_features,
                     false,
+                    headless,
                 )?;
             }
             BuildTarget::Web => {

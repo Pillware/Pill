@@ -162,6 +162,13 @@ pub(crate) fn project_args_flag() -> Arg<'static, 'static> {
         .allow_hyphen_values(true)
 }
 
+/// `--headless` - build/run without a window (native target only).
+pub(crate) fn headless_flag() -> Arg<'static, 'static> {
+    Arg::with_name("headless")
+        .long("headless")
+        .help("Build and run without a window (native only, for benchmarks/CI)")
+}
+
 // -- Flag-group helpers (so actions only register what they use) ------------
 
 /// Add `-p` / `--path` to an app/subcommand.
@@ -169,7 +176,7 @@ pub(crate) fn add_path_flag(application: App<'static, 'static>) -> App<'static, 
     application.arg(path_flag())
 }
 
-/// Add build-related flags: `-c`, `-t`, `-o`, `--clean`, `--features`.
+/// Add build-related flags: `-c`, `-t`, `-o`, `--clean`, `--features`, `--headless`.
 pub(crate) fn add_build_flags(application: App<'static, 'static>) -> App<'static, 'static> {
     application
         .arg(compile_mode_flag())
@@ -177,6 +184,7 @@ pub(crate) fn add_build_flags(application: App<'static, 'static>) -> App<'static
         .arg(output_path_flag())
         .arg(clean_flag())
         .arg(features_flag())
+        .arg(headless_flag())
 }
 
 // -- Shared parsers ---------------------------------------------------------

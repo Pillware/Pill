@@ -37,7 +37,8 @@ use crate::utils::workspace::prepare_workspace_for_project;
 // ---------------------------------------------------------------------------
 
 /// Build and then launch the native standalone executable for a project.
-/// Supports optional stdout capture (for benchmarks) and --features passthrough.
+/// Supports optional stdout capture (for benchmarks), --features passthrough,
+/// and --headless mode.
 /// Prepares the workspace once and holds the guard through both build and run
 /// so that hot-reload child processes can find the project as a workspace member.
 pub(crate) fn run_project(
@@ -47,6 +48,7 @@ pub(crate) fn run_project(
     project_args: &[String],
     features: Option<&str>,
     capture_stdout: bool,
+    headless: bool,
 ) -> Result<Option<String>> {
     // 1. Prepare the workspace - adds the project to engine/Cargo.toml members.
     // The guard must live through both build AND execution so that hot-reload
@@ -61,6 +63,7 @@ pub(crate) fn run_project(
         compile_mode,
         features,
         &engine_workspace_directory_path,
+        headless,
     )?;
 
     if !capture_stdout {
@@ -144,12 +147,13 @@ pub(crate) fn run_project(
 
 /// Build project + pill_native + pill_runtime via cargo in the engine workspace.
 /// Copies the standalone executable and dynamic libraries into the output directory.
-/// Supports --features, hot-reload, PlantUML pre-rendering, and per-project target dirs.
+/// Supports --features, hot-reload, PlantUML pre-rendering, --headless, and per-project target dirs.
 pub(crate) fn build_project(
     project_directory_path: &PathBuf,
     output_directory_path: &PathBuf,
     compile_mode: &CompileMode,
     features: Option<&str>,
+    headless: bool,
 ) -> Result<()> {
     let (engine_workspace_directory_path, _guard) =
         prepare_workspace_for_project(project_directory_path, compile_mode)?;
@@ -159,6 +163,7 @@ pub(crate) fn build_project(
         compile_mode,
         features,
         &engine_workspace_directory_path,
+        headless,
     )
 }
 
@@ -170,6 +175,7 @@ fn build_project_in_workspace(
     compile_mode: &CompileMode,
     features: Option<&str>,
     engine_workspace_directory_path: &PathBuf,
+    headless: bool,
 ) -> Result<()> {
     println!(
         "Building project from {}...",
@@ -231,6 +237,17 @@ fn build_project_in_workspace(
             arguments.push("--features");
             arguments.push(feature);
         }
+    }
+
+    // When --headless is set, enable headless code paths in pill_native,
+    // pill_runtime, pill_engine, and the project crate.
+    if headless {
+        arguments.push("--features");
+        arguments.push("pill_native/headless");
+        arguments.push("--features");
+        arguments.push("pill_runtime/headless");
+        arguments.push("--features");
+        arguments.push("pill_engine/headless");
     }
 
     // 4. Run cargo build

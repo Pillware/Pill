@@ -1,18 +1,43 @@
-# devops/tests/Dockerfile - Pill-Engine CI image (Debian Bookworm)
+# devops/tests/Dockerfile - Pill CI image (Debian Bookworm)
+#
+# Multi-stage build: compiles PillLauncher once at image build time,
+# so it's instantly available when the container starts.
 #
 # Build once:
 #   docker build -t pill-ci -f devops/tests/Dockerfile .
 #
 # Run:
-#   docker run --rm -v .:/src -w /src pill-ci ./devops/tests/tests.sh all
+#   docker run --rm -v .:/src -w /src pill-ci bash devops/tests/run_basic_tests.sh all
 
-FROM rust:1.92-bookworm
+# ---------------------------------------------------------------------------
+# Stage 1: Build PillLauncher
+# ---------------------------------------------------------------------------
+FROM rust:1.92-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    mold clang pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only the engine workspace (launcher + its dependencies).
+COPY engine/ /src/engine/
+
+# Fix any absolute host paths that leaked into Cargo.toml (e.g. from Windows).
+# Also strip stale workspace members left by interrupted launcher builds.
+RUN sed -i 's|"[^"]*/examples/|"examples/|' /src/engine/Cargo.toml 2>/dev/null || true \
+    && sed -i '/pill-launcher-managed-workspace-member/d' /src/engine/Cargo.toml 2>/dev/null || true
+
+RUN cargo build --release --manifest-path /src/engine/pill_launcher/Cargo.toml
+
+# ---------------------------------------------------------------------------
+# Stage 2: CI runtime image
+# ---------------------------------------------------------------------------
+FROM rust:1.92-slim-bookworm
 
 # -- System packages ---------------------------------------------------------
 # mold: fast linker     clang: C linker for cargo
 # libasound2-dev: audio   libudev-dev: gamepad     pkg-config: build scripts
 # plantuml: docs
-# Headless benchmarking is handled via --features benchmark_headless (no xvfb needed).
+# Headless benchmarking is handled via --headless (no xvfb needed).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     mold \
     clang \
@@ -34,8 +59,7 @@ RUN curl -L https://github.com/rustwasm/wasm-pack/releases/download/v0.13.1/wasm
     | tar xz -C /usr/local/bin --strip-components=1
 
 # -- slangc (shader compiler) ------------------------------------------------
-# slangc ships glibc binaries. gcompat (installed above) provides the glibc
-# compatibility layer needed to run them on musl.
+# Debian Bookworm is glibc-based, so slangc's glibc binaries work natively.
 ARG SLANG_VERSION=2025.21.2
 RUN curl -L "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-x86_64.zip" \
     -o /tmp/slang.zip \
@@ -45,22 +69,26 @@ RUN curl -L "https://github.com/shader-slang/slang/releases/download/v${SLANG_VE
     && chmod +x /usr/local/bin/slangc /usr/local/bin/slangd \
     && rm -rf /tmp/slang /tmp/slang.zip
 
-# Quick smoke test: if gcompat fails, fall back gracefully.
-RUN slangc --version 2>/dev/null || echo "slangc installed (gcompat runtime check at container start)"
+RUN slangc --version 2>/dev/null || echo "slangc installed (runtime check)"
 
-# -- Pre-seed cargo registry (optional, speeds up first build) ----------------
-# Uncomment the lines below and run a dummy build to cache crates in the image.
-# COPY engine/Cargo.toml engine/Cargo.lock engine/
-# COPY engine/pill_core/Cargo.toml engine/pill_core/
-# RUN cargo check -p pill_core --manifest-path engine/Cargo.toml 2>/dev/null || true
+# -- PillLauncher binary (pre-built in Stage 1) ------------------------------
+COPY --from=builder /src/engine/target/release/PillLauncher /usr/local/bin/PillLauncher
+ENV PILL_LAUNCHER_BIN=/usr/local/bin/PillLauncher
 
 # -- Entrypoint --------------------------------------------------------------
-# 1. Touches WGSL files so build.rs skips HLSL→WGSL conversion (avoids slangc
-#    gcompat edge cases).
-# 2. Rewrites absolute host paths in engine/Cargo.toml (e.g.
-#    "D:/.../examples/city" or "/home/.../examples/city") to repo-relative
-#    paths ("examples/city") because the repo is mounted at /src inside the
-#    container. Relative paths are left untouched.
-# 3. Execs the user command.
-ENTRYPOINT ["/bin/bash", "-c", "for wgsl in /src/engine/pill_engine/res/shaders/*.wgsl; do [[ -f \"$wgsl\" ]] && touch \"$wgsl\"; done; sed -i 's|\"[^\"]*/examples/|\"examples/|' /src/engine/Cargo.toml 2>/dev/null || true; exec \"$@\"", "--"]
-CMD ["./devops/tests/tests.sh", "all"]
+# Only does runtime fixups on the mounted source volume (no launcher build).
+RUN echo '#!/bin/bash'                   > /usr/local/bin/entrypoint.sh \
+ && echo 'set -euo pipefail'            >> /usr/local/bin/entrypoint.sh \
+ && echo ''                             >> /usr/local/bin/entrypoint.sh \
+ && echo '# Touch WGSL shaders so build.rs skips HLSL→WGSL conversion' >> /usr/local/bin/entrypoint.sh \
+ && echo 'for wgsl in /src/engine/pill_engine/res/shaders/*.wgsl; do' >> /usr/local/bin/entrypoint.sh \
+ && echo '    [ -f "$wgsl" ] && touch "$wgsl"'                        >> /usr/local/bin/entrypoint.sh \
+ && echo 'done'                                                        >> /usr/local/bin/entrypoint.sh \
+ && echo ''                                                             >> /usr/local/bin/entrypoint.sh \
+ && echo '# Rewrite absolute host paths to repo-relative in engine/Cargo.toml' >> /usr/local/bin/entrypoint.sh \
+ && echo 'sed -i "s|\"[^\"]*/examples/|\"examples/|" /src/engine/Cargo.toml 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh \
+ && echo ''                                                             >> /usr/local/bin/entrypoint.sh \
+ && echo 'exec "$@"'                                                   >> /usr/local/bin/entrypoint.sh \
+ && chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["bash", "devops/tests/run_basic_tests.sh", "all"]

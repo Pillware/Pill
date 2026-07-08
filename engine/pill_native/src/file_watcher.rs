@@ -1,11 +1,10 @@
-// This file implements a lightweight file-system watcher for hot-reload.
-//
-// Polls a directory tree for file additions, modifications, and deletions
-// by comparing last-modified timestamps against a stored snapshot.  Skips
-// hidden files, editor temp files, and swap files to avoid false positives.
-//
-// Used by pill_native to detect source/resource changes and trigger
-// hot-reload rebuilds without relying on platform-specific notification APIs.
+//! This file implements a lightweight file-system watcher for hot-reload.
+//!
+//! Polls a directory tree for file additions, modifications, and deletions
+//! by comparing last-modified timestamps against a stored snapshot. Skips
+//! hidden files, editor temp files, and swap files to avoid false positives.
+//!
+//! Used by: hot_reload (create_file_watchers, FileWatchers struct)
 
 use std::{
     collections::HashMap,
@@ -14,11 +13,11 @@ use std::{
     time::SystemTime,
 };
 
-// Polls a directory for file additions, modifications, and deletions.
-//
-// Stores a snapshot of every tracked file's last-modified timestamp and
-// compares against it on each poll.  Skips hidden files, editor temp files,
-// and swap files to avoid false positives during editing.
+/// Polls a directory for file additions, modifications, and deletions.
+///
+/// Stores a snapshot of every tracked file's last-modified timestamp and
+/// compares against it on each poll.  Skips hidden files, editor temp files,
+/// and swap files to avoid false positives during editing.
 pub struct FileWatcher {
     // The directory being watched.
     path: PathBuf,
@@ -29,8 +28,8 @@ pub struct FileWatcher {
 }
 
 impl FileWatcher {
-    // Creates a new watcher for a single directory (non-recursive by default).
-    // Takes an immediate snapshot of the current file state.
+    /// Creates a new watcher for a single directory (non-recursive by default).
+    /// Takes an immediate snapshot of the current file state.
     pub fn new(path: PathBuf) -> Self {
         let previous_metadata = Self::collect_file_metadata(&path, false);
         Self {
@@ -40,24 +39,24 @@ impl FileWatcher {
         }
     }
 
-    // Enables recursive watching and immediately rescans the directory.
-    // Returns self for builder-style chaining.
+    /// Enables recursive watching and immediately rescans the directory.
+    /// Returns self for builder-style chaining.
     pub fn set_recursive(mut self, recursive: bool) -> Self {
         self.recursive = recursive;
         self.previous_metadata = Self::collect_file_metadata(&self.path, recursive);
         self
     }
 
-    // Scans a directory and returns a map of canonical path → last modified time
-    // for every non-hidden, non-temp file found.
+    /// Scans a directory and returns a map of canonical path → last modified time
+    /// for every non-hidden, non-temp file found.
     fn collect_file_metadata(path: &Path, recursive: bool) -> HashMap<PathBuf, SystemTime> {
         let mut file_metadata = HashMap::new();
         Self::scan_directory(path, recursive, &mut file_metadata);
         file_metadata
     }
 
-    // Recursively walks a directory tree, recording the last-modified
-    // timestamp for each regular file encountered.
+    /// Recursively walks a directory tree, recording the last-modified
+    /// timestamp for each regular file encountered.
     fn scan_directory(
         path: &Path,
         recursive: bool,

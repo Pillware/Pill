@@ -480,13 +480,32 @@ pub(crate) fn print_build_summary(
     };
     let features_display = features.unwrap_or("none");
 
-    println!("-----");
-    println!("{}:", action);
-    println!("  Project name: {}", project_name);
-    println!("  Project path: {}", path.display());
-    println!("  Target:       {}", target);
-    println!("  Compile mode: {}", compile_mode);
-    println!("  Output path:  {}", output_path);
+    // Determine the build cache directory (native only; WASM uses wasm-pack's own cache).
+    let cache_info = if *target == BuildTarget::Native {
+        let cache_dir = if let Ok(shared) = std::env::var("PILL_TARGET_DIR") {
+            std::path::PathBuf::from(shared)
+        } else {
+            get_path(Location::EngineCrates)
+                .join("target_projects")
+                .join(&project_name)
+        };
+        if cache_dir.join(compile_mode.to_string()).exists() {
+            format!("yes ({})", cache_dir.display())
+        } else {
+            "no".to_string()
+        }
+    } else {
+        "n/a (WASM)".to_string()
+    };
+
+    println!("-------------- Launching ---------------");
+    println!("  Action:              {}", action);
+    println!("  Project name:        {}", project_name);
+    println!("  Project path:        {}", path.display());
+    println!("  Target:              {}", target);
+    println!("  Compile mode:        {}", compile_mode);
+    println!("  Output path:         {}", output_path);
     println!("  Additional features: {}", features_display);
-    println!("-----");
+    println!("  Using cache:         {}", cache_info);
+    println!("----------------------------------------");
 }

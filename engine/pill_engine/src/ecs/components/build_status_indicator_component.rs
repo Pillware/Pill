@@ -1,5 +1,3 @@
-#![cfg(feature = "debug_ui")]
-
 use crate::ecs::components::{GlobalComponent, GlobalComponentStorage};
 
 use pill_core::PillTypeMapKey;

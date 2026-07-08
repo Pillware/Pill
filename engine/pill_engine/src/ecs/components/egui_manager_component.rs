@@ -1,5 +1,3 @@
-#![cfg(feature = "debug_ui")]
-
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{

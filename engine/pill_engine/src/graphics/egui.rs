@@ -1,5 +1,3 @@
-#![cfg(feature = "debug_ui")]
-
 pub struct EguiUI<'a> {
     frame_delta_time: &'a f32, // Use a reference to frame_delta_time
 }

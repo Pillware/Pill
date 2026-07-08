@@ -37,6 +37,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../common.sh
 source "$SCRIPT_DIR/../common.sh"
 
+# Shortcuts for colored section headers
+BOLD='\033[1m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
 # All paths in this script are relative to the project root.
 cd "$PROJECT_ROOT"
 
@@ -46,7 +51,7 @@ cd "$PROJECT_ROOT"
 
 test_launcher_basics() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(1/9) Launcher basics"
 
     # `PillLauncher --help` - Prints help (exit 0)
@@ -98,7 +103,7 @@ test_launcher_basics() {
 
 test_launcher_create() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(2/9) Create action"
 
     # `PillLauncher create -n MyGame` - Creates ./MyGame/ from template,
@@ -134,7 +139,7 @@ test_launcher_create() {
 
 test_launcher_build() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(3/9) Build action"
 
     local project_directory="$test_workspace_root/BuildTest"
@@ -248,7 +253,7 @@ test_launcher_build() {
 
 test_launcher_cargo() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(4/9) Cargo passthrough"
 
     local project_directory="$test_workspace_root/CargoTest"
@@ -306,7 +311,7 @@ test_launcher_cargo() {
 
 test_launcher_assets() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(5/9) Assets action"
 
     local project_directory="$test_workspace_root/AssetsTest"
@@ -330,7 +335,7 @@ test_launcher_assets() {
 
 test_launcher_docs() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(6/9) Docs action"
 
     # `PillLauncher docs -o ../docs_output` - Outputs docs to custom directory
@@ -343,10 +348,10 @@ test_launcher_docs() {
 
     if [ "$docs_exit_code" -eq 0 ]; then
         report_pass "docs generation with -o"
-        if [ -d "$docs_output_directory/docs" ]; then
+        if [ -d "$docs_output_directory/generated" ]; then
             report_pass "docs output directory exists"
         else
-            report_fail "docs output" "missing $docs_output_directory/docs/"
+            report_fail "docs output" "missing $docs_output_directory/generated/"
         fi
     elif echo "$docs_output" | grep -qi "plantuml\|Cannot locate\|manifest\|Cannot find Empty"; then
         report_skip "docs generation" "PlantUML or required tool not available"
@@ -361,7 +366,7 @@ test_launcher_docs() {
 
 test_launcher_run() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(7/9) Run action"
 
     local project_directory="$test_workspace_root/RunTest"
@@ -451,7 +456,7 @@ test_launcher_run() {
 
 test_launcher_hot_reload() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(8/9) Hot-reload workflow"
 
     # `PillLauncher run -p ./examples/cube -c hot-reload` -
@@ -517,7 +522,7 @@ test_launcher_hot_reload() {
 
 test_launcher_link() {
     echo ""
-    echo "------------------------------------------------------------------"
+    echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo "(9/9) Link / Unlink actions"
 
     # Use the existing cube example (no need to create a new one)

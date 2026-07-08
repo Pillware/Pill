@@ -59,11 +59,18 @@ fn decode_cooked_tex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn decode_png(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
-    let decoder = png::Decoder::new(bytes);
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     let mut reader = decoder
         .read_info()
         .map_err(|e| -> pill_core::PillError { e.to_string().into() })?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let mut buf = vec![
+        0u8;
+        reader
+            .output_buffer_size()
+            .ok_or_else(|| pill_core::PillError::from(
+                "failed to determine output buffer size"
+            ))?
+    ];
     let info = reader
         .next_frame(&mut buf)
         .map_err(|e| -> pill_core::PillError { e.to_string().into() })?;

@@ -1,4 +1,3 @@
-#![cfg(feature = "debug_ui")]
 use crate::{
     ecs::{BuildStatus, BuildStatusIndicatorComponent},
     engine::Engine,

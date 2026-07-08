@@ -3,6 +3,9 @@ name = "pill_native"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+headless = []
+
 [dependencies]
 pill_core = { path = "../pill_core" }
 pill_abi = { path = "../pill_abi" }

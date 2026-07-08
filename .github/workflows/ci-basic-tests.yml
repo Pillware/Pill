@@ -23,26 +23,6 @@ env:
 
 jobs:
   # ------------------------------------------------------------------
-  # Build the launcher once, upload as artifact for all downstream jobs
-  # ------------------------------------------------------------------
-  build_launcher:
-    runs-on: ubuntu-latest
-    container: ghcr.io/mattszymonski/pill-ci:latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            engine -> target
-      - name: Build PillLauncher (release)
-        run: cargo build --release --manifest-path engine/pill_launcher/Cargo.toml
-      - name: Upload PillLauncher artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pilllauncher-linux
-          path: engine/pill_launcher/target/release/PillLauncher
-
-  # ------------------------------------------------------------------
   # 1. code_formatting_check
   # ------------------------------------------------------------------
   code_formatting_check:
