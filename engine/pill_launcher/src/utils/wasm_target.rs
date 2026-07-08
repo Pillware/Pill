@@ -65,19 +65,12 @@ pub fn build_project(
     embed_project_config(project_directory_path, &scratch_pill_web_app_dir)?;
     rewrite_scratch_manifest(&scratch_pill_web_app_dir, project_directory_path)?;
 
-    // The WASM scratch app joins the engine workspace (via workspace = "..."
-    // in its generated Cargo.toml).  Temporarily add it to engine/Cargo.toml's
-    // members list so cargo accepts it as a workspace member.
-    let _member_guard = ScratchMemberGuard::add(&scratch_pill_web_app_dir)?;
-
     run_wasm_pack(
         compile_mode,
         &scratch_pill_web_app_dir,
         &scratch_package_directory,
         &scratch_target_dir,
     )?;
-
-    drop(_member_guard);
 
     copy_build_outputs(
         &scratch_package_directory,
@@ -94,25 +87,30 @@ pub fn build_project(
     if *compile_mode == CompileMode::Release {
         let final_wasm = build_wasm_dir.join("pill_web_app_bg.wasm");
         if let Some(limit) = max_size_kb {
+            let limit_bytes = limit * 1024;
             let actual = fs::metadata(&final_wasm)
                 .context("Cannot stat final WASM")?
                 .len();
-            if actual > limit * 1024 {
+            if actual > limit_bytes {
                 bail!(
-                    "WASM binary {:.1} KB exceeds budget {} KB",
-                    actual as f64 / 1024.0,
-                    limit
+                    "WASM binary {} exceeds budget {}",
+                    fmt_bytes(actual),
+                    fmt_bytes(limit_bytes)
                 );
             }
             println!(
-                "Size guard OK ({:.1} KB ≤ {} KB)",
-                actual as f64 / 1024.0,
-                limit
+                "Size guard OK ({} ≤ {})",
+                fmt_bytes(actual),
+                fmt_bytes(limit_bytes)
             );
         }
 
         if wasm_analyze {
-            print_wasm_size_report(&final_wasm);
+            let pre_optimization_wasm = scratch_target_dir
+                .join("wasm32-unknown-unknown")
+                .join("release")
+                .join("pill_web_app.wasm");
+            print_wasm_size_report(&final_wasm, &pre_optimization_wasm);
         }
     }
 
@@ -123,10 +121,7 @@ pub fn build_project(
 
     let final_wasm = build_wasm_dir.join("pill_web_app_bg.wasm");
     let size_str = match fs::metadata(&final_wasm) {
-        Ok(meta) => {
-            let bytes = meta.len();
-            format!("{:.3} MB", bytes as f64 / (1024.0 * 1024.0))
-        }
+        Ok(meta) => fmt_bytes(meta.len()),
         Err(_) => "unknown".to_string(),
     };
 
@@ -214,33 +209,110 @@ fn copy_build_outputs(
 // WASM size report (twiggy-backed, opt-in via --wasm-analyze)
 // ---------------------------------------------------------------------------
 
-/// Print a per-crate size breakdown and top-symbols report for a WASM binary.
-/// Requires `twiggy` on PATH (cargo install twiggy); prints a hint if missing.
-fn print_wasm_size_report(wasm_path: &Path) {
-    let Ok(total) = fs::metadata(wasm_path).map(|m| m.len()) else {
+/// Print a side-by-side size report comparing the final (post-wasm-opt) and
+/// pre-optimization WASM binaries.  The pre-opt binary retains function-name
+/// sections that wasm-opt strips, so crate-level attribution is only available
+/// from the pre-opt analysis.  Requires `twiggy` on PATH (cargo install twiggy).
+fn print_wasm_size_report(final_wasm: &Path, pre_optimization_wasm: &Path) {
+    let Ok(final_size) = fs::metadata(final_wasm).map(|metadata| metadata.len()) else {
         return;
     };
+    let pre_optimization_size = fs::metadata(pre_optimization_wasm)
+        .ok()
+        .map(|metadata| metadata.len());
 
+    // Summary line with savings.
     println!();
-    println!("--- WASM size analysis ({}) ---", fmt_bytes(total));
-
-    match run_twiggy_analysis(wasm_path, total) {
-        TwiggyResult::NoTwiggy => {
-            println!("(install twiggy: cargo install twiggy)");
+    match pre_optimization_size {
+        Some(pre_optimization_bytes) => {
+            let saved = pre_optimization_bytes.saturating_sub(final_size);
+            let saved_percentage = if pre_optimization_bytes > 0 {
+                100.0 * saved as f64 / pre_optimization_bytes as f64
+            } else {
+                0.0
+            };
+            println!(
+                "wasm size: final {} | pre-opt {} (wasm-opt: −{}, −{:.1}%)",
+                fmt_bytes(final_size),
+                fmt_bytes(pre_optimization_bytes),
+                fmt_bytes(saved),
+                saved_percentage
+            );
         }
-        TwiggyResult::Done => {}
-        TwiggyResult::Empty | TwiggyResult::Error => {}
+        None => println!("wasm size: {}", fmt_bytes(final_size)),
+    }
+
+    // Pre-optimization analysis — the only one with crate-level attribution.
+    let pre_items =
+        pre_optimization_size.and_then(|size| match collect_twiggy_items(pre_optimization_wasm) {
+            Ok(items) if !items.is_empty() => Some((size, items)),
+            _ => None,
+        });
+
+    if let Some((pre_size, ref pre_items)) = pre_items {
+        let pre_by_crate = aggregate_by_crate(pre_items);
+        print_crate_table(
+            "Crate breakdown (pre-optimization, where attribution is available)",
+            pre_size,
+            &pre_by_crate,
+        );
+        print_symbol_table("Top symbols (pre-optimization)", pre_size, pre_items);
+    } else {
+        println!();
+        println!("(install twiggy for per-crate breakdown: cargo install twiggy)");
+    }
+
+    // Final analysis — coarse sections only (code, data, wasm-meta).
+    if let Ok(final_items) = collect_twiggy_items(final_wasm) {
+        if !final_items.is_empty() {
+            let final_by_crate = aggregate_by_crate(&final_items);
+            println!();
+            println!(
+                "--- Final binary layout (post-optimization, no function-name attribution) ---"
+            );
+            println!();
+            // Show the meaningful WASM sections: code, data, and meta.
+            let section_order = ["code", "data", "export", "[wasm-meta]", "[custom]"];
+            let lookup: HashMap<&str, u64> = final_by_crate
+                .iter()
+                .map(|(k, v)| (k.as_str(), *v))
+                .collect();
+            let mut accounted: u64 = 0;
+            println!("  {:<20} {:>10} {:>7}", "section", "size", "%");
+            for section in &section_order {
+                if let Some(bytes) = lookup.get(section).copied() {
+                    accounted += bytes;
+                    println!(
+                        "    {:<18} {:>10} {:>6.1}%",
+                        section,
+                        fmt_bytes(bytes),
+                        pct(bytes, final_size)
+                    );
+                }
+            }
+            if accounted < final_size {
+                let remainder = final_size - accounted;
+                println!(
+                    "    {:<18} {:>10} {:>6.1}%",
+                    "(other)",
+                    fmt_bytes(remainder),
+                    pct(remainder, final_size)
+                );
+            }
+            println!(
+                "    {:<18} {:>10} {:>6} ",
+                "---",
+                fmt_bytes(final_size),
+                "100%"
+            );
+            print_symbol_table("Top symbols (final)", final_size, &final_items);
+        }
     }
 }
 
-enum TwiggyResult {
-    Done,
-    Empty,
-    Error,
-    NoTwiggy,
-}
-
-fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
+/// Collect twiggy items for a WASM binary.  Returns empty Vec if twiggy is not
+/// installed or fails.
+fn collect_twiggy_items(wasm_path: &Path) -> Result<Vec<(u64, String)>, TwiggyError> {
     let output = match Command::new("twiggy")
         .args(["top", "-n", "15000"])
         .arg(wasm_path)
@@ -248,75 +320,184 @@ fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
         .output()
     {
         Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return TwiggyResult::NoTwiggy,
-        Err(_) => return TwiggyResult::Error,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(TwiggyError::NotFound),
+        Err(_) => return Err(TwiggyError::Failed),
     };
     if !output.status.success() {
-        return TwiggyResult::Error;
+        return Err(TwiggyError::Failed);
     }
-    let Ok(stdout) = String::from_utf8(output.stdout) else {
-        return TwiggyResult::Error;
-    };
-
+    let stdout = String::from_utf8(output.stdout).map_err(|_| TwiggyError::Failed)?;
     let items = parse_twiggy(&stdout);
-    if items.is_empty() {
-        return TwiggyResult::Empty;
-    }
+    Ok(items)
+}
 
+enum TwiggyError {
+    NotFound,
+    Failed,
+}
+
+/// Aggregate twiggy items into crate-family buckets.
+fn aggregate_by_crate(items: &[(u64, String)]) -> Vec<(String, u64)> {
     let mut by_crate: HashMap<String, u64> = HashMap::new();
-    for (bytes, name) in &items {
+    for (bytes, name) in items {
         *by_crate.entry(classify_crate(name)).or_insert(0) += *bytes;
     }
-    let mut groups: Vec<(String, u64)> = by_crate.clone().into_iter().collect();
+    let mut groups: Vec<(String, u64)> = by_crate.into_iter().collect();
     groups.sort_by(|a, b| b.1.cmp(&a.1));
+    groups
+}
 
+/// Print a unified crate-size table with engine libs, project, 3rd-party
+/// crates, and WASM internal sections.
+///
+/// Percentages use twiggy's retained-size model — items may overlap, so
+/// percentages can sum beyond 100%.  Use the relative sizes, not the absolute
+/// percentages, to compare categories.
+fn print_crate_table(title: &str, total: u64, by_crate: &[(String, u64)]) {
     const ENGINE_LIBS: &[&str] = &["pill_engine", "pill_renderer", "pill_core", "pill_web"];
+    const PROJECT_KEY: &str = "project";
+    const PROJECT_ASSETS_KEY: &str = "[project-assets]";
+    // WASM internal / metadata sections (not crates, but useful for breakdown).
+    // `export` is twiggy's accounting for exported symbols — they live inside
+    // code/data, so the export percentage overlaps with those sections.
+    const WASM_SECTIONS: &[&str] = &[
+        "[wasm-bindgen]",
+        "[debug:names]",
+        "[rust-std]",
+        "[rodata]",
+        "[wasm-meta]",
+        "[custom]",
+        "export",
+    ];
+    // Items to never display (unhelpful catch-all).
+    const SKIP: &[&str] = &["[other]"];
+
+    let lookup: HashMap<&str, u64> = by_crate.iter().map(|(k, v)| (k.as_str(), *v)).collect();
+
+    println!();
+    println!("--- {title} (% of {}) ---", fmt_bytes(total));
+    println!();
+
+    // -- Engine libs ----------------------------------------------------
     let engine_total: u64 = ENGINE_LIBS
         .iter()
-        .map(|k| by_crate.get(*k).copied().unwrap_or(0))
+        .map(|k| lookup.get(k).copied().unwrap_or(0))
         .sum();
-
-    println!();
-    println!("  Engine libs (% of {}):", fmt_bytes(total));
-    println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
+    println!("  {:<28} {:>10} {:>7}", "Engine libs", "size", "%");
     for lib in ENGINE_LIBS {
-        let bytes = by_crate.get(*lib).copied().unwrap_or(0);
-        let percentage = 100.0 * bytes as f64 / total as f64;
+        let bytes = lookup.get(lib).copied().unwrap_or(0);
         println!(
-            "    {:<20} {:>10} {:>6.1}%",
-            lib,
+            "    {:<26} {:>10} {:>6.1}%",
+            *lib,
             fmt_bytes(bytes),
-            percentage
+            pct(bytes, total)
         );
     }
-    let engine_percentage = 100.0 * engine_total as f64 / total as f64;
     println!(
-        "    {:<20} {:>10} {:>6.1}%  ← engine total",
+        "    {:<26} {:>10} {:>6.1}%  ← engine total",
         "---",
         fmt_bytes(engine_total),
-        engine_percentage
+        pct(engine_total, total)
     );
 
+    // -- Project --------------------------------------------------------
+    let project_bytes = lookup.get(PROJECT_KEY).copied().unwrap_or(0);
+    let project_assets = lookup.get(PROJECT_ASSETS_KEY).copied().unwrap_or(0);
     println!();
-    println!("  3rd party (top 15):");
-    println!("    {:<20} {:>10} {:>7}", "crate", "size", "%");
-    let excluded: Vec<&str> = ENGINE_LIBS.iter().copied().collect();
-    for (crate_name, bytes) in groups
+    println!("  {:<28} {:>10} {:>7}", "Project", "size", "%");
+    println!(
+        "    {:<26} {:>10} {:>6.1}%  (logic)",
+        PROJECT_KEY,
+        fmt_bytes(project_bytes),
+        pct(project_bytes, total)
+    );
+    println!(
+        "    {:<26} {:>10} {:>6.1}%  (embedded assets)",
+        PROJECT_ASSETS_KEY,
+        fmt_bytes(project_assets),
+        pct(project_assets, total)
+    );
+
+    // -- 3rd-party crates -----------------------------------------------
+    let excluded: Vec<&str> = ENGINE_LIBS
         .iter()
-        .filter(|(k, _)| !excluded.contains(&k.as_str()))
+        .chain([PROJECT_KEY, PROJECT_ASSETS_KEY].iter())
+        .chain(WASM_SECTIONS.iter())
+        .chain(SKIP.iter())
+        .copied()
+        .collect();
+    let crates: Vec<_> = by_crate
+        .iter()
+        .filter(|(k, _)| !excluded.contains(&k.as_str()) && !k.starts_with('['))
         .take(15)
-    {
-        let percentage = 100.0 * *bytes as f64 / total as f64;
+        .collect();
+    if !crates.is_empty() {
+        let crate_total: u64 = crates.iter().map(|(_, b)| *b).sum();
+        println!();
+        println!("  {:<28} {:>10} {:>7}", "3rd-party crates", "size", "%");
+        for (name, bytes) in &crates {
+            println!(
+                "    {:<26} {:>10} {:>6.1}%",
+                name,
+                fmt_bytes(*bytes),
+                pct(*bytes, total)
+            );
+        }
         println!(
-            "    {:<20} {:>10} {:>6.1}%",
-            crate_name,
-            fmt_bytes(*bytes),
-            percentage
+            "    {:<26} {:>10} {:>6.1}%  ← crate subtotal",
+            "---",
+            fmt_bytes(crate_total),
+            pct(crate_total, total)
         );
     }
 
+    // -- WASM internal sections -----------------------------------------
+    let sections: Vec<_> = WASM_SECTIONS
+        .iter()
+        .filter_map(|s| lookup.get(s).map(|b| (*s, *b)))
+        .filter(|(_, b)| *b > 0)
+        .collect();
+    if !sections.is_empty() {
+        let section_total: u64 = sections.iter().map(|(_, b)| *b).sum();
+        println!();
+        println!("  {:<28} {:>10} {:>7}", "WASM internals", "size", "%");
+        for (name, bytes) in &sections {
+            let note = if *name == "export" {
+                "  (overlaps code/data)"
+            } else {
+                ""
+            };
+            println!(
+                "    {:<26} {:>10} {:>6.1}%{}",
+                name,
+                fmt_bytes(*bytes),
+                pct(*bytes, total),
+                note
+            );
+        }
+        println!(
+            "    {:<26} {:>10} {:>6.1}%  ← section subtotal",
+            "---",
+            fmt_bytes(section_total),
+            pct(section_total, total)
+        );
+    }
+}
+
+/// Helper: percentage with zero-guard.
+fn pct(bytes: u64, total: u64) -> f64 {
+    if total > 0 {
+        100.0 * bytes as f64 / total as f64
+    } else {
+        0.0
+    }
+}
+
+/// Print the top symbols from a twiggy analysis.
+fn print_symbol_table(title: &str, total: u64, items: &[(u64, String)]) {
     println!();
-    println!("  Top 10 symbols:");
+    println!("--- {title} ---",);
+    println!();
     for (bytes, name) in items.iter().take(10) {
         let percentage = 100.0 * *bytes as f64 / total as f64;
         let display = truncate_display(name, 72);
@@ -327,8 +508,6 @@ fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
             display
         );
     }
-
-    TwiggyResult::Done
 }
 
 /// Parse twiggy's default text output. Each data row:
@@ -339,7 +518,7 @@ fn parse_twiggy(stdout: &str) -> Vec<(u64, String)> {
         let trimmed = line.trim();
         if trimmed.is_empty()
             || trimmed.starts_with("Shallow")
-            || trimmed.starts_with('─')
+            || trimmed.starts_with('-')
             || trimmed.starts_with('Σ')
             || (trimmed.contains("and ") && trimmed.contains("more"))
         {
@@ -385,6 +564,9 @@ fn fmt_bytes(n: u64) -> String {
 /// Coarse bucketing of twiggy item names into crate families.
 fn classify_crate(name: &str) -> String {
     if name.contains(".rodata") || name.contains("data segment") {
+        if name.contains("project") {
+            return "[project-assets]".into();
+        }
         return "[rodata]".into();
     }
     if name.contains("function names") {
@@ -428,65 +610,5 @@ fn classify_crate(name: &str) -> String {
         "wgpu_hal" | "wgpu_core" | "wgpu_types" => "wgpu".into(),
         "js_sys" => "web_sys".into(),
         _ => ident,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Scratch member guard for WASM builds
-// ---------------------------------------------------------------------------
-
-/// Temporarily adds the WASM scratch directory to engine/Cargo.toml's
-/// workspace members so cargo accepts the scratch app as a workspace member.
-/// Restores the original manifest on drop.
-struct ScratchMemberGuard {
-    manifest_path: PathBuf,
-    original: String,
-}
-
-impl ScratchMemberGuard {
-    fn add(scratch_dir: &Path) -> Result<Self> {
-        use crate::types::Location;
-        use crate::utils::paths::{get_path, PROJECT_CRATE_MARKER};
-
-        let engine_manifest = get_path(Location::EngineCrates).join("Cargo.toml");
-        let original = fs::read_to_string(&engine_manifest)
-            .with_context(|| format!("Failed to read {}", engine_manifest.display()))?;
-
-        let normalized = scratch_dir.to_string_lossy().replace('\\', "/");
-        let member_line = format!("    \"{normalized}\", {PROJECT_CRATE_MARKER}");
-
-        let mut in_members = false;
-        let mut patched = String::with_capacity(original.len() + member_line.len() + 2);
-        let mut inserted = false;
-        for line in original.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("members") && trimmed.contains('[') {
-                in_members = true;
-            }
-            if in_members && !inserted && trimmed == "]" {
-                patched.push_str(&member_line);
-                patched.push('\n');
-                inserted = true;
-            }
-            patched.push_str(line);
-            patched.push('\n');
-        }
-        if !inserted {
-            bail!("Could not find closing `]` of workspace members array");
-        }
-
-        fs::write(&engine_manifest, patched.trim_end())
-            .with_context(|| format!("Failed to update {}", engine_manifest.display()))?;
-
-        Ok(Self {
-            manifest_path: engine_manifest,
-            original,
-        })
-    }
-}
-
-impl Drop for ScratchMemberGuard {
-    fn drop(&mut self) {
-        let _ = fs::write(&self.manifest_path, &self.original);
     }
 }

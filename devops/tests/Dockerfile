@@ -1,4 +1,4 @@
-# devops/tests/Dockerfile - Pill-Engine CI image (Alpine)
+# devops/tests/Dockerfile - Pill-Engine CI image (Debian Bookworm)
 #
 # Build once:
 #   docker build -t pill-ci -f devops/tests/Dockerfile .
@@ -6,24 +6,24 @@
 # Run:
 #   docker run --rm -v .:/src -w /src pill-ci ./devops/tests/tests.sh all
 
-FROM rust:1.92-alpine
+FROM rust:1.92-bookworm
 
 # -- System packages ---------------------------------------------------------
-# mold: fast linker     gcompat: run glibc binaries on musl (slangc)
-# alsa-lib-dev: audio   eudev-dev: gamepad     pkgconfig: build scripts
-# plantuml: docs        openjdk21-jre: plantuml runtime
+# mold: fast linker     clang: C linker for cargo
+# libasound2-dev: audio   libudev-dev: gamepad     pkg-config: build scripts
+# plantuml: docs
 # Headless benchmarking is handled via --features benchmark_headless (no xvfb needed).
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     mold \
-    gcompat \
-    alsa-lib-dev \
-    eudev-dev \
-    pkgconfig \
-    openjdk21-jre \
+    clang \
+    libasound2-dev \
+    libudev-dev \
+    pkg-config \
     plantuml \
     curl \
     git \
-    bash
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # -- Rust components ---------------------------------------------------------
 RUN rustup component add rustfmt clippy

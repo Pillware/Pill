@@ -269,11 +269,13 @@ pub(crate) fn rewrite_scratch_manifest(
         .with_context(|| format!("Failed to read scratch manifest {}", manifest.display()))?;
 
     let mut content = String::new();
-    let engine_workspace = get_cargo_path(&get_path(Location::EngineCrates));
     for line in template.lines() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("workspace ") || trimmed.starts_with("workspace=") {
-            content.push_str(&format!("workspace = \"{engine_workspace}\"\n"));
+            // Make the scratch crate a standalone workspace (not a member of the
+            // engine workspace).  This isolates feature resolution so native-only
+            // features from pill_native/pill_runtime don't leak into the WASM build.
+            content.push_str("[workspace]\nresolver = \"2\"\n");
         } else if trimmed.starts_with("pill_engine ") || trimmed.starts_with("pill_engine=") {
             content.push_str(&format!(
                 "pill_engine = {{ path = \"{pill_engine}\", features = [\"project\", \"internal\"] }}\n"
@@ -298,7 +300,9 @@ pub(crate) fn rewrite_scratch_manifest(
     content.push_str("lto = \"fat\"\n");
     content.push_str("codegen-units = 1\n");
     content.push_str("panic = \"abort\"\n");
-    content.push_str("strip = true\n");
+    // NOTE: do NOT add `strip = true` here — the pre-optimization binary must
+    // retain function-name sections so twiggy can attribute sizes to crates.
+    // wasm-opt strips the shipped binary via --strip-debug --strip-producers.
     content.push_str("\n[package.metadata.wasm-pack.profile.release]\n");
     content.push_str("wasm-opt = [\"-Oz\", \"--strip-debug\", \"--strip-producers\", \"--enable-nontrapping-float-to-int\", \"--enable-bulk-memory\", \"--enable-sign-ext\", \"--enable-mutable-globals\", \"--enable-reference-types\"]\n");
     content.push_str("\n[target.'cfg(target_arch = \"wasm32\")'.dependencies]\n");

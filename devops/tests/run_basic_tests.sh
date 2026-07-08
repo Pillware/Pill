@@ -51,7 +51,8 @@ code_formatting_check() {
     # (NO_PATH → absolute), which are not formatting issues.
     if git diff --exit-code -- . \
         ':(exclude)engine/Cargo.toml' \
-        ':(exclude)examples/cube/Cargo.toml'; then
+        ':(exclude)examples/*/Cargo.toml' \
+        ':(exclude)examples/*/*/Cargo.toml'; then
         report_pass "code formatting"
     else
         report_fail "code formatting" "rustfmt produced changes - run 'cargo fmt'"
@@ -73,7 +74,9 @@ code_linting_check() {
     if [ "$exit_code" -eq 0 ]; then
         report_pass "code linting"
     else
-        report_fail "clippy warnings" "${clippy_output:0:300}"
+        # Show the last 500 chars — cargo's "Updating/Locking" spam is at the
+        # beginning; the actual clippy diagnostics are at the end.
+        report_fail "clippy warnings" "$(echo "$clippy_output" | tail -c 500)"
     fi
 }
 
@@ -134,13 +137,13 @@ build_wasm_cube_example() {
     cargo clean --manifest-path engine/Cargo.toml --release 2>/dev/null || true
 
     echo "Building - this may take a while"
-    local launcher_output exit_code
-    launcher_output=$(invoke_launcher build -p "$cube_path" -t web -c release --clean 2>&1) && exit_code=$? || exit_code=$?
+    local exit_code=0
+    invoke_launcher build -p "$cube_path" -t web -c release --wasm-analyze --clean 2>&1 || exit_code=$?
 
     if [ "$exit_code" -eq 0 ]; then
         report_pass "WASM build succeeds"
     else
-        report_fail "WASM build" "exit $exit_code: ${launcher_output:0:200}"
+        report_fail "WASM build" "exit $exit_code (see output above)"
         return
     fi
 
