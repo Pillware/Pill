@@ -1,5 +1,11 @@
+# Only the engine source is needed for the builder stage.
+# Exclude everything by default, then selectively re-include.
+*
+!engine/
+!engine/**
+# Re-exclude build output directories that live under engine/.
 engine/target/
+engine/target_games/
 engine/target_projects/
-target/
-target_games/
-**/target/
+engine/pill_launcher/target/
+

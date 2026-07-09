@@ -26,7 +26,7 @@ COPY engine/ /src/engine/
 RUN sed -i 's|"[^"]*/examples/|"examples/|' /src/engine/Cargo.toml 2>/dev/null || true \
     && sed -i '/pill-launcher-managed-workspace-member/d' /src/engine/Cargo.toml 2>/dev/null || true
 
-RUN cargo build --release --manifest-path /src/engine/pill_launcher/Cargo.toml
+RUN cargo build --release --manifest-path /src/engine/pill_launcher/Cargo.toml --target-dir /tmp/pill-launcher-build
 
 # ---------------------------------------------------------------------------
 # Stage 2: CI runtime image
@@ -72,7 +72,7 @@ RUN curl -L "https://github.com/shader-slang/slang/releases/download/v${SLANG_VE
 RUN slangc --version 2>/dev/null || echo "slangc installed (runtime check)"
 
 # -- PillLauncher binary (pre-built in Stage 1) ------------------------------
-COPY --from=builder /src/engine/target/release/PillLauncher /usr/local/bin/PillLauncher
+COPY --from=builder /tmp/pill-launcher-build/release/PillLauncher /usr/local/bin/PillLauncher
 ENV PILL_LAUNCHER_BIN=/usr/local/bin/PillLauncher
 
 # -- Entrypoint --------------------------------------------------------------
