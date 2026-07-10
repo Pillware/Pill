@@ -8,6 +8,7 @@ mod ecs;
 mod engine;
 mod graphics;
 mod resources;
+mod serdeserialization;
 
 // --- Macros ---
 

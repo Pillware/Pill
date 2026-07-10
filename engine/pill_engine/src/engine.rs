@@ -1,4 +1,5 @@
 use crate::app_config::EngineProcessInfo;
+use crate::serdeserialization::{JsonBackend, Serdeser, SerdeserBackend};
 use crate::{app_config::EngineConfig, config::*, ecs::*, graphics::*, resources::*};
 
 use pill_core::{
@@ -7,7 +8,7 @@ use pill_core::{
 };
 
 use pill_core::{ErrorContext, Result};
-use std::{any::TypeId, collections::VecDeque};
+use std::{any::TypeId, collections::VecDeque, path::Path};
 use winit::{dpi::PhysicalPosition, event::KeyEvent};
 
 // -------------------------------------------------------------------------------
@@ -38,6 +39,8 @@ pub struct Engine {
     pub(crate) window_size: winit::dpi::PhysicalSize<u32>,
     pub(crate) game_resources_directory_path: std::path::PathBuf,
     pub(crate) frame_delta_time: f32, // In milliseconds
+    pub(crate) serdeser: Serdeser,
+    pub(crate) serdeser_backend: Box<dyn SerdeserBackend>,
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -71,6 +74,8 @@ impl Engine {
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path,
             frame_delta_time: 0.0,
+            serdeser: Serdeser::new(),
+            serdeser_backend: Box::new(JsonBackend),
         }
     }
 
@@ -94,7 +99,9 @@ impl Engine {
             render_queue: Vec::<RenderQueueItem>::with_capacity(max_entity_count),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path: std::path::PathBuf::new(),
-            frame_delta_time: 0.0.into(),
+            frame_delta_time: 0.0,
+            serdeser: Serdeser::new(),
+            serdeser_backend: Box::new(JsonBackend),
         }
     }
 
@@ -391,6 +398,11 @@ impl Engine {
         self.create_default_resources()
             .context("Failed to create default resources")?;
 
+        // TODO: register resources in serializer?
+        // register desired components in serializer's registry
+        self.serdeser.register_component::<TransformComponent>()?;
+        self.serdeser.register_component::<UuidComponent>()?;
+
         // Start game
         self.start_game()?;
 
@@ -569,6 +581,35 @@ impl Engine {
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
         &self.input_queue
     }
+
+    // TODO: temporary functions to trigger scene loading/saving
+    pub fn save_scene(&self) -> Result<()> {
+        let entities = self.iterate_two_components::<UuidComponent, TransformComponent>()?;
+        // TODO: for now not dancing around this - later we get into trouble as we pass entities
+        // here that contain mut ref to the engine
+        let mut backend = JsonBackend;
+        let path = Path::new("test.scene");
+        self.serdeser.serialize(entities, &mut backend, path)?;
+        println!("SCENE SAVED!");
+
+        Ok(())
+    }
+
+    pub fn load_scene(&mut self, scene_handle: SceneHandle) -> Result<()> {
+        // TODO: not loading the scene yet, just reading out what we have parsed from the file
+        // TODO: for now not dancing around this - later we get into trouble as we pass entities
+        // here that contain mut ref to the engine
+        let mut backend = JsonBackend;
+        let path = Path::new("test.scene");
+        let decoded = self.serdeser.deserialize(&mut backend, path)?;
+        println!("Num of decoded entities: {}", decoded.len());
+        for entity in decoded {
+            println!("Entity with uuid: {}", entity.uuid);
+            // TODO: spawn necessary objects
+        }
+        println!("SCENE LOADED !");
+        Ok(())
+    }
 }
 
 // --- API ------------------------------------------------------------------
@@ -679,12 +720,21 @@ impl Engine {
                 .name_style()
         );
 
-        self.scene_manager
+        let entity_handle = self
+            .scene_manager
             .create_entity(scene_handle)
             .context(format!(
                 "Creating {} failed",
                 "Entity".general_object_style()
-            ))
+            ));
+
+        if let Ok(handle) = entity_handle {
+            // add UUID to all created entities
+            self.add_component_to_entity(scene_handle, handle, UuidComponent::new())
+                .unwrap();
+        }
+
+        entity_handle
     }
 
     // Removes entity specified with entity handle from scene specified with scene handle
@@ -1020,10 +1070,17 @@ impl Engine {
     // Creates scene
     pub fn create_scene(&mut self, name: &str) -> Result<SceneHandle> {
         info!(LogContext::ECS => "Creating scene: {}", name);
-        self.scene_manager.create_scene(name).context(format!(
+        let scene_handle = self.scene_manager.create_scene(name).context(format!(
             "Creating new {} failed",
             "Scene".general_object_style()
-        ))
+        ));
+
+        // always register the uuid component with every scene
+        if let Ok(scene) = scene_handle {
+            self.register_component::<UuidComponent>(scene)?;
+        };
+
+        scene_handle
     }
 
     /// Returns handle to the scene specified by its name

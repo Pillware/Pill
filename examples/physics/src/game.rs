@@ -902,6 +902,19 @@ fn demo_keyboard_control_system(engine: &mut Engine) -> Result<()> {
 
     let reset_pressed = input.get_key(KeyboardKey::KeyR);
     let spawn_pressed = input.get_key_pressed(KeyboardKey::Space);
+    let save_pressed = input.get_key_pressed(KeyboardKey::KeyS);
+    let load_pressed = input.get_key_pressed(KeyboardKey::KeyL);
+    let ctrl_pressed = input.get_key(KeyboardKey::ControlLeft);
+    // TODO: temporarily for demo
+    if save_pressed && ctrl_pressed {
+        println!("SAVING SCENE!");
+        engine.save_scene()?;
+    }
+
+    if load_pressed && ctrl_pressed {
+        println!("LOADING SCENE!");
+        engine.load_scene(engine.get_active_scene_handle()?)?;
+    }
 
     if !reset_pressed && !spawn_pressed {
         return Ok(());

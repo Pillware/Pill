@@ -28,6 +28,7 @@ pub(crate) mod physics_world_component;
 pub(crate) mod rigid_body_component;
 pub(crate) mod time_component;
 pub(crate) mod transform_component;
+pub(crate) mod uuid_component;
 
 // --- Use ---
 

@@ -74,6 +74,8 @@ pub use components::network_manager_component::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use components::network_state_component::{NetworkEntityState, NetworkStateComponent};
 
+pub use components::uuid_component::UuidComponent;
+
 // - Systems
 
 pub use systems::{SystemFunction, SystemManager, UpdatePhase};
