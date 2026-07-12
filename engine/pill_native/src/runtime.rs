@@ -12,7 +12,6 @@ use anyhow::{bail, Context, Result};
 use libloading::{Library, Symbol};
 use pill_abi::*;
 use std::ffi::{c_void, CString};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
