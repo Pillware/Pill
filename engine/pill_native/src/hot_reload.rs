@@ -158,6 +158,11 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
         .parent()
         .context("build_data_directory_path has no parent")?;
 
+    // When pill_native was compiled in headless mode, the hot-reload
+    // rebuild must also enable headless so the new runtime DLL accepts
+    // a null window_ptr. The `mut` is only needed with that feature;
+    // suppress the clippy lint when building without it.
+    #[cfg_attr(not(feature = "headless"), allow(unused_mut))]
     let mut arguments = vec![
         "build",
         "-p",
@@ -168,9 +173,6 @@ fn build_hot_reload_via_launcher(project_paths: &ProjectPaths) -> Result<()> {
         output_directory.to_str().unwrap(),
     ];
 
-    // When pill_native was compiled in headless mode, the hot-reload
-    // rebuild must also enable headless so the new runtime DLL accepts
-    // a null window_ptr.
     #[cfg(feature = "headless")]
     arguments.push("--headless");
 
