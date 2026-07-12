@@ -5,7 +5,7 @@
 # native build + artifact size, WASM build + artifact size + budget,
 # performance benchmark.
 
-name: CI
+name: CI Basic Tests
 
 on:
   push:

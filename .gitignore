@@ -20,3 +20,8 @@ studio_small_08.hdr
 /.github/skills
 /temp
 *.blend1
+
+.claude/
+
+graphify-out/
+.github/copilot-instructions.md

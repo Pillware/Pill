@@ -5,7 +5,7 @@
 # All other CI workflows pull this pre-built image for
 # minimalizing action environment setup time.
 
-name: CI Image
+name: CI Build Docker Image
 
 on:
   push:

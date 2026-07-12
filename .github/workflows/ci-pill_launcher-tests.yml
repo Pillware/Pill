@@ -4,7 +4,7 @@
 # Full suite: heavier actions (build, run, docs).
 # Runs on daily schedule and manual trigger.
 
-name: CI Full Suite
+name: CI Pill Launcher Tests
 
 on:
   schedule:

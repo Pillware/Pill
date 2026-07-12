@@ -4,7 +4,7 @@
 # WASM builds are covered by ci-basic-tests.yml.
 # Runs on daily schedule and manual trigger.
 
-name: CI Examples
+name: CI Compile Examples
 
 on:
   schedule:
