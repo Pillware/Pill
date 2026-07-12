@@ -1,9 +1,9 @@
 # Pill CI Pipeline - fast checks on every push
 #
-# Triggers on every push. Builds the launcher once, then fans out to parallel
-# jobs covering all 5 checks from run_basic_tests.sh: code formatting, linting,
-# native build + artifact size, WASM build + artifact size + budget,
-# performance benchmark.
+# Triggers on every push. All jobs run in the pre-built pill-ci container
+# (which includes PillLauncher, Rust toolchain, and WASM tooling), fanning out
+# to 5 parallel checks: code formatting, linting, native build + artifact size,
+# WASM build + artifact size + budget, performance benchmark.
 
 name: CI Basic Tests
 
@@ -28,15 +28,8 @@ jobs:
   code_formatting_check:
     runs-on: ubuntu-latest
     container: ghcr.io/mattszymonski/pill-ci:latest
-    needs: build_launcher
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          {
-            name: pilllauncher-linux,
-            path: engine/pill_launcher/target/release,
-          }
       - name: rustfmt check
         run: bash devops/tests/run_basic_tests.sh code_formatting_check
 
@@ -46,17 +39,10 @@ jobs:
   code_linting_check:
     runs-on: ubuntu-latest
     container: ghcr.io/mattszymonski/pill-ci:latest
-    needs: build_launcher
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: "engine -> target" }
-      - uses: actions/download-artifact@v4
-        with:
-          {
-            name: pilllauncher-linux,
-            path: engine/pill_launcher/target/release,
-          }
       - name: clippy lint
         run: bash devops/tests/run_basic_tests.sh code_linting_check
 
@@ -66,7 +52,6 @@ jobs:
   build_native_cube_example:
     runs-on: ubuntu-latest
     container: ghcr.io/mattszymonski/pill-ci:latest
-    needs: build_launcher
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -74,12 +59,6 @@ jobs:
           workspaces: |
             engine -> target
             examples/cube -> target
-      - uses: actions/download-artifact@v4
-        with:
-          {
-            name: pilllauncher-linux,
-            path: engine/pill_launcher/target/release,
-          }
       - name: Build cube example
         run: bash devops/tests/run_basic_tests.sh build_native_cube_example
 
@@ -89,19 +68,12 @@ jobs:
   build_wasm_cube_example:
     runs-on: ubuntu-latest
     container: ghcr.io/mattszymonski/pill-ci:latest
-    needs: build_launcher
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             examples/cube/build/wasm/.build/pill_web -> target
-      - uses: actions/download-artifact@v4
-        with:
-          {
-            name: pilllauncher-linux,
-            path: engine/pill_launcher/target/release,
-          }
       - name: WASM build
         run: bash devops/tests/run_basic_tests.sh build_wasm_cube_example
 
@@ -111,7 +83,6 @@ jobs:
   benchmark_performance:
     runs-on: ubuntu-latest
     container: ghcr.io/mattszymonski/pill-ci:latest
-    needs: build_launcher
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -119,11 +90,5 @@ jobs:
           workspaces: |
             engine -> target
             examples/city -> target
-      - uses: actions/download-artifact@v4
-        with:
-          {
-            name: pilllauncher-linux,
-            path: engine/pill_launcher/target/release,
-          }
       - name: City performance benchmark (headless, 3 runs)
         run: bash devops/tests/run_basic_tests.sh benchmark_native_performance
