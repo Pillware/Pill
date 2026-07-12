@@ -54,6 +54,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN rustup component add rustfmt clippy
 RUN rustup target add wasm32-unknown-unknown
 
+# -- Git safe.directory ------------------------------------------------------
+# GitHub Actions runs containers as root on a mounted workspace. Git 2.35+
+# refuses to operate in repos owned by a different user unless the directory
+# is explicitly marked safe.
+RUN git config --global --add safe.directory '*'
+
 # -- wasm-pack ---------------------------------------------------------------
 RUN curl -L https://github.com/rustwasm/wasm-pack/releases/download/v0.13.1/wasm-pack-v0.13.1-x86_64-unknown-linux-musl.tar.gz \
     | tar xz -C /usr/local/bin --strip-components=1
@@ -67,6 +73,8 @@ RUN curl -L "https://github.com/shader-slang/slang/releases/download/v${SLANG_VE
     && cp /tmp/slang/bin/slangc /usr/local/bin/slangc \
     && cp /tmp/slang/bin/slangd /usr/local/bin/slangd \
     && chmod +x /usr/local/bin/slangc /usr/local/bin/slangd \
+    && cp /tmp/slang/lib/*.so* /usr/local/lib/ \
+    && ldconfig \
     && rm -rf /tmp/slang /tmp/slang.zip
 
 RUN slangc --version 2>/dev/null || echo "slangc installed (runtime check)"
@@ -76,17 +84,22 @@ COPY --from=builder /tmp/pill-launcher-build/release/PillLauncher /usr/local/bin
 ENV PILL_LAUNCHER_BIN=/usr/local/bin/PillLauncher
 
 # -- Entrypoint --------------------------------------------------------------
-# Only does runtime fixups on the mounted source volume (no launcher build).
+# Runtime fixups on the mounted source volume. Works both with local Docker
+# (mount at /src) and GitHub Actions (mount at GITHUB_WORKSPACE).
 RUN echo '#!/bin/bash'                   > /usr/local/bin/entrypoint.sh \
  && echo 'set -euo pipefail'            >> /usr/local/bin/entrypoint.sh \
  && echo ''                             >> /usr/local/bin/entrypoint.sh \
- && echo '# Touch WGSL shaders so build.rs skips HLSL→WGSL conversion' >> /usr/local/bin/entrypoint.sh \
- && echo 'for wgsl in /src/engine/pill_engine/res/shaders/*.wgsl; do' >> /usr/local/bin/entrypoint.sh \
+ && echo '# Resolve the source root: use /src if mounted, else GITHUB_WORKSPACE, else PWD' >> /usr/local/bin/entrypoint.sh \
+ && echo 'SRC_ROOT="${GITHUB_WORKSPACE:-/src}"' >> /usr/local/bin/entrypoint.sh \
+ && echo '[ -d "$SRC_ROOT" ] || SRC_ROOT="$PWD"' >> /usr/local/bin/entrypoint.sh \
+ && echo ''                             >> /usr/local/bin/entrypoint.sh \
+ && echo '# Rewrite absolute host paths to repo-relative in engine/Cargo.toml' >> /usr/local/bin/entrypoint.sh \
+ && echo 'sed -i "s|\"[^\"]*/examples/|\"examples/|" "$SRC_ROOT/engine/Cargo.toml" 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh \
+ && echo ''                             >> /usr/local/bin/entrypoint.sh \
+ && echo '# Touch WGSL shaders so build.rs skips HLSL->WGSL conversion' >> /usr/local/bin/entrypoint.sh \
+ && echo 'for wgsl in "$SRC_ROOT"/engine/pill_engine/res/shaders/*.wgsl; do' >> /usr/local/bin/entrypoint.sh \
  && echo '    [ -f "$wgsl" ] && touch "$wgsl"'                        >> /usr/local/bin/entrypoint.sh \
  && echo 'done'                                                        >> /usr/local/bin/entrypoint.sh \
- && echo ''                                                             >> /usr/local/bin/entrypoint.sh \
- && echo '# Rewrite absolute host paths to repo-relative in engine/Cargo.toml' >> /usr/local/bin/entrypoint.sh \
- && echo 'sed -i "s|\"[^\"]*/examples/|\"examples/|" /src/engine/Cargo.toml 2>/dev/null || true' >> /usr/local/bin/entrypoint.sh \
  && echo ''                                                             >> /usr/local/bin/entrypoint.sh \
  && echo 'exec "$@"'                                                   >> /usr/local/bin/entrypoint.sh \
  && chmod +x /usr/local/bin/entrypoint.sh

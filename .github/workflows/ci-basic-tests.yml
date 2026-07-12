@@ -9,6 +9,15 @@ name: CI Basic Tests
 
 on:
   push:
+    paths-ignore:
+      # Avoid racing ci-build-image.yml — when the Dockerfile changes,
+      # this workflow is triggered by workflow_run instead, after the
+      # new image is built and pushed.
+      - "devops/tests/Dockerfile"
+      - ".github/workflows/ci-build-image.yml"
+  workflow_run:
+    workflows: [CI Build Docker Image]
+    types: [completed]
 
 concurrency:
   group: ci-${{ github.ref }}
