@@ -1,10 +1,8 @@
 # Hardware Ray Tracing Feature Implementation Plan
 
-Status: design proposal; implementation has not started.
+Status: design proposal; implementation has not started. The raster renderer's `wgpu` 30 migration described as a precondition below is complete.
 
-Immediate executable baseline: Pill Engine native renderer, `wgpu` 27.0.1, hardware inline ray queries.
-
-Evaluated upgrade target: `wgpu` 30.0.x, adopted at Phase 0 only after the renderer/debug-UI dependency gate in Section 2.4 passes.
+Baseline: Pill Engine native renderer, `wgpu` 30.0.0, hardware inline ray queries via `Features::EXPERIMENTAL_RAY_QUERY`.
 
 Last reviewed: 2026-07-17.
 
@@ -12,7 +10,7 @@ Last reviewed: 2026-07-17.
 
 Implement hardware ray tracing as an optional, renderer-owned **inline ray-query** capability with an unconditional raster fallback. The first production feature should be ray-traced hard shadows in the existing forward-lit path. It should not begin as a full path tracer.
 
-This wording matters: both `wgpu` 27 and 30 expose BLAS/TLAS acceleration structures and ray queries callable from ordinary compute or fragment shaders. Neither exposes a usable safe high-level ray-generation/miss/closest-hit pipeline, shader binding table, or ray-tracing pass. Pill should name the Cargo feature `hardware_ray_tracing`, but its public capability should say `hardware_ray_query` so the API does not promise functionality that the selected `wgpu` version cannot provide.
+This wording matters: `wgpu` 30 exposes BLAS/TLAS acceleration structures and ray queries callable from ordinary compute or fragment shaders. It does not yet expose a usable safe high-level ray-generation/miss/closest-hit pipeline, shader binding table, or ray-tracing pass — `EXPERIMENTAL_RAY_TRACING_PIPELINES` and the v30 addition of `spirv-out` ray-tracing-pipeline codegen are Naga/backend progress, not a public `wgpu` pipeline API (Section 2.4). Pill should name the Cargo feature `hardware_ray_tracing`, but its public capability should say `hardware_ray_query` so the API does not promise functionality that `wgpu` 30 cannot provide.
 
 The implementation must satisfy these decisions:
 
@@ -28,21 +26,25 @@ The implementation must satisfy these decisions:
 - Batch pending BLAS builds before the TLAS build in the existing per-frame command encoder.
 - Start with opaque indexed triangles. Defer alpha-tested traversal, procedural geometry, skinned/deforming meshes, and BLAS refit.
 - Isolate all version-sensitive WGSL and experimental API usage so a later `wgpu` upgrade has a small blast radius.
-- Re-evaluate the objective `wgpu` 30 adoption gate immediately before Phase 0. If it passes, migrate directly from 25 to 30 rather than implementing RT on 27 and immediately migrating again.
 - Never request `EXPERIMENTAL_RAY_TRACING_PIPELINES` for this feature. Its presence in wgpu 30 is not a safe public pipeline API.
 
 ## 2. What the supplied sources establish
 
-### 2.1 `wgpu` 27 release
+### 2.1 `wgpu` 30 release
 
-The [`wgpu` 27 release notes](https://github.com/gfx-rs/wgpu/releases/tag/v27.0.0) make two integration changes relevant to Pill:
+The [`wgpu` 30.0.0 release notes](https://github.com/gfx-rs/wgpu/releases/tag/v30.0.0) establish the baseline this plan targets:
 
-1. The old acceleration-structure feature was merged into `Features::EXPERIMENTAL_RAY_QUERY`. Request that one feature; do not look for `EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE`.
-2. Experimental features require an explicit unsafe acknowledgement through `DeviceDescriptor::experimental_features`.
+1. `Features::EXPERIMENTAL_RAY_QUERY` (the old acceleration-structure feature merged into this one flag back in wgpu 27) remains the feature to request for inline ray queries; do not look for `EXPERIMENTAL_RAY_TRACING_ACCELERATION_STRUCTURE`.
+2. Experimental features still require an explicit unsafe acknowledgement through `DeviceDescriptor::experimental_features` (`wgpu::ExperimentalFeatures`). Pill's raster device request already passes `ExperimentalFeatures::default()` (disabled); the RT device request must instead pass the unsafe `ExperimentalFeatures::enabled()`.
+3. BLAS support for procedural AABB geometry (`BlasGeometrySizeDescriptors::AABBs`, `BlasAabbGeometry`) is new in v30. V1 still declines it (Section 4.2); a later phase can revisit it now that the descriptors exist.
+4. `Limits::max_buffers_and_acceleration_structures_per_shader_stage` is a new limit and must be validated alongside the other acceleration-structure limits (Section 8.2).
+5. `Tlas::lowest_unmodified()` is exposed for custom backends performing partial TLAS updates; the standard safe backends Pill targets still perform full TLAS builds, so this does not change the V1 rebuild model.
+6. Naga gained `spirv-out` ray-tracing-pipeline codegen work and Metal ray-query correctness fixes. Both are backend/codegen progress, not a public `wgpu` ray-pipeline creation API — do not treat either as unlocking `EXPERIMENTAL_RAY_TRACING_PIPELINES` for production use.
+7. `wgpu` 30 declares MSRV 1.87 ([`Cargo.toml`](https://docs.rs/crate/wgpu/30.0.0)); the compatible debug-UI stack's effective MSRV is higher (Section 2.4).
 
 The unsafe call does not make the rest of Pill unsafe Rust. It acknowledges that the upstream feature may have validation gaps, major bugs, and breaking changes. Put it in one reviewed device-creation helper and document why its preconditions are considered satisfied.
 
-`wgpu` 27's acceleration-structure limits default to zero. The RT-enabled device request must start from:
+`wgpu` 30's acceleration-structure limits still default to zero. The RT-enabled device request must start from:
 
 ```rust
 wgpu::Limits::default()
@@ -53,27 +55,28 @@ Then validate the selected adapter's actual limits and Pill's configured scene c
 
 ### 2.2 Ray-tracing API specification
 
-The [tagged v27 specification](https://github.com/gfx-rs/wgpu/blob/v27.0.0/docs/api-specs/ray_tracing.md) is the implementation contract for the immediate lane. If the v30 gate passes, replace it with the [version-pinned v30.0.0 specification](https://github.com/gfx-rs/wgpu/blob/v30.0.0/docs/api-specs/ray_tracing.md) as the sole contract for that implementation. The [trunk specification](https://github.com/gfx-rs/wgpu/blob/trunk/docs/api-specs/ray_tracing.md) is useful for lifecycle and future direction, but is a living document and is not a release source of truth.
+The [version-pinned v30.0.0 specification](https://github.com/gfx-rs/wgpu/blob/v30.0.0/docs/api-specs/ray_tracing.md) is the sole implementation contract for this plan. The [trunk specification](https://github.com/gfx-rs/wgpu/blob/trunk/docs/api-specs/ray_tracing.md) is useful for lifecycle and future direction, but is a living document and is not a release source of truth; where trunk and the v30.0.0 tag disagree, the tag wins.
 
-The reusable rules are:
+The confirmed rules (cross-checked against the `wgpu`/`wgpu-types` 30.0.0 source actually vendored in this workspace, not just the prose spec) are:
 
 - A BLAS must be built in the same acceleration-structure build call as a TLAS that first references it, or in an earlier build call.
-- If a referenced BLAS is rebuilt or replaced, every dependent TLAS becomes dirty and must be rebuilt.
-- `TlasInstance::custom_data` has only 24 usable bits.
-- The instance visibility mask has 8 bits.
-- TLAS transforms are row-major affine 3x4 arrays.
+- Before shader use, a TLAS must have been built, and every BLAS it was last built with must have last been built in that same build call or an earlier one. If a referenced BLAS is rebuilt or replaced, every dependent TLAS becomes dirty and must be rebuilt.
+- `TlasInstance::custom_data: u32` has only the lower 24 bits usable; any bit outside that range makes the instance invalid and produces a build-time validation error (`wgpu::api::blas::TlasInstance`).
+- `TlasInstance::mask: u8` is the 8-bit instance visibility mask; a hit is reported only when `shader_cull_mask & tlas_instance.mask != 0`.
+- `TlasInstance::transform: [f32; 12]` is documented directly on the type as "Affine transform matrix 3x4 (rows x columns, row major order)".
 - Acceleration-structure creation capacity constrains later builds; TLAS growth requires recreation.
-- Static BLAS compaction is asynchronous and replacement-based. A compacted BLAS cannot itself be rebuilt or compacted again.
-- Correct ray-query state transitions matter. Accessing candidate or committed data in the wrong traversal state can be undefined behavior.
-- Ray-tracing pipelines are described as future work; Naga's usable v27 path is inline ray queries.
+- Static BLAS compaction is asynchronous and replacement-based: `Blas::prepare_compaction_async()` waits for in-flight builds, `Blas::ready_for_compaction()`/the completion callback report readiness, and `Queue::compact_blas()` returns a new, independent BLAS. Submitting a rebuild of a BLAS cancels any pending `prepare_compaction_async`. A compacted BLAS can be neither rebuilt nor compacted again.
+- Ray-query traversal has two states: a **candidate** intersection (returned when `rayQueryProceed()` returns `true`) can be confirmed, generated (for procedural geometry), or terminated; a **committed** intersection is final once `rayQueryProceed()` returns `false`. Accessing candidate or committed data in the wrong traversal state is undefined behavior.
+- Ray-tracing pipelines (`@ray_generation`/`@any_hit`/`@closest_hit`/`@miss` shader stages, `traceRay()`) are specified as future work. Naga's currently usable path is inline ray queries only.
+- The optional vertex-return feature (`Features::EXPERIMENTAL_RAY_HIT_VERTEX_RETURN`, Vulkan-only, native-only) requires the BLAS to be built with `AccelerationStructureFlags::ALLOW_RAY_HIT_VERTEX_RETURN`, the binding to be declared with `BindingType::AccelerationStructure { vertex_return: true }`, and the shader to add `enable wgpu_ray_query_vertex_return;` before calling `getCommittedHitVertexPositions()`/`getCandidateHitVertexPositions()`. V1 does not request it (Section 4.2, Section 14).
 
-Version-sensitive shader syntax must be pinned. The official [v27 sample shader](https://github.com/gfx-rs/wgpu/blob/v27.0.0/examples/features/src/ray_traced_triangle/shader.wgsl) does **not** use `enable wgpu_ray_query;`. That directive became mandatory in wgpu/Naga 28 and is present in the trunk documentation. A shader compiled against v27 must omit it. Add a shader canary test so a future dependency update fails clearly instead of producing a runtime surprise.
+Shader syntax is pinned to wgpu 30/Naga's rules: `enable wgpu_ray_query;` is **mandatory** at the top of any WGSL module that performs a ray query (it became mandatory in wgpu/Naga 28, so both the trunk and v30.0.0-tagged specifications require it — there is no legacy directive-free variant to support). Add a shader canary test so a future Naga upgrade that changes required-extension syntax fails clearly instead of producing a runtime surprise.
 
-Even the tagged prose can lag Naga's exact v27 call syntax. Candidate mutation calls in v27 take the ray-query pointer, for example `rayQueryConfirmIntersection(&rq)`, `rayQueryGenerateIntersection(&rq, t)`, and `rayQueryTerminate(&rq)`. Treat the tagged official sample plus a compiled canary as stronger evidence than copying pseudocode from trunk.
+Even the tagged prose can lag Naga's exact call syntax. Candidate mutation calls take the ray-query pointer, for example `rayQueryConfirmIntersection(&rq)`, `rayQueryGenerateIntersection(&rq, t)`, and `rayQueryTerminate(&rq)`. Treat a compiled canary against the pinned `wgpu` 30.0.0 dependency as stronger evidence than copying pseudocode from trunk.
 
 ### 2.3 Practical Zenn guide
 
-The [Zenn hardware ray-tracing guide](https://zenn.dev/kokutoupan/articles/eefc517ac4210d?locale=en) and its [v0.1 source](https://github.com/kokutoupan/fast-raytracing-wgpu/tree/v0.1) are useful implementation references, but target `wgpu` 28, between the two evaluated Pill baselines. Re-derive every Rust descriptor from the selected version's tagged API.
+The [Zenn hardware ray-tracing guide](https://zenn.dev/kokutoupan/articles/eefc517ac4210d?locale=en) and its [v0.1 source](https://github.com/kokutoupan/fast-raytracing-wgpu/tree/v0.1) are useful implementation references, but target `wgpu` 28, two majors behind Pill's wgpu 30 baseline. Re-derive every Rust descriptor from the pinned v30.0.0 API rather than copying its shapes verbatim, even where the ray-query WGSL enable directive now happens to match.
 
 Adopt these ideas:
 
@@ -96,52 +99,46 @@ Do not copy these assumptions:
 - Fixed scene capacity with no add/remove/growth policy.
 - A single `rayQueryProceed` pattern generalized to non-opaque geometry.
 - Path-tracing accumulation reset only on camera movement.
-- Wgpu 28 Rust descriptor shapes copied into either selected baseline. Its ray-query enable directive is valid only for the v30 lane, not v27.
+- Wgpu 28 Rust descriptor shapes copied verbatim into Pill's wgpu 30 code instead of re-derived from the pinned v30.0.0 API.
 - Vulkan availability inferred without feature and limit checks.
 
-### 2.4 `wgpu` 30 investigation and baseline decision
+### 2.4 `wgpu` 30 baseline resolution
 
-[`wgpu` 30.0.0](https://github.com/gfx-rs/wgpu/releases/tag/v30.0.0) was released on 2026-07-01. It is a worthwhile direct target when Pill's full renderer dependency stack can use it, but it does **not** justify expanding the V1 feature into a path tracer or adding more supported backends.
+[`wgpu` 30.0.0](https://github.com/gfx-rs/wgpu/releases/tag/v30.0.0) was released on 2026-07-01 and is Pill's resolved renderer baseline. It does **not** justify expanding the V1 RT feature into a path tracer or adding more supported backends.
 
-The version-pinned [`wgpu` 30.0.0 ray-tracing specification](https://github.com/gfx-rs/wgpu/blob/v30.0.0/docs/api-specs/ray_tracing.md) and [30.0.0 feature documentation](https://docs.rs/wgpu/30.0.0/wgpu/struct.Features.html) establish the following:
+The version-pinned [`wgpu` 30.0.0 ray-tracing specification](https://github.com/gfx-rs/wgpu/blob/v30.0.0/docs/api-specs/ray_tracing.md) and [30.0.0 feature documentation](https://docs.rs/wgpu/30.0.0/wgpu/struct.Features.html) establish the following, cross-checked against the vendored `wgpu`/`wgpu-types` 30.0.0 source:
 
 | Area | `wgpu` 30 finding | Consequence for Pill |
 | --- | --- | --- |
 | Public query support | `EXPERIMENTAL_RAY_QUERY` is still experimental, native-only, and officially supported on Vulkan | Keep Vulkan as the V1 certified backend and preserve raster fallback on DX12, Metal, GLES, web, and headless |
 | Full RT pipelines | `EXPERIMENTAL_RAY_TRACING_PIPELINES` exists and Naga gained SPIR-V output work, but safe `wgpu` exposes no ray-pipeline descriptor/creation method, SBT, trace pass, or dispatch API | Do not request the feature or use `as_hal`; keep inline queries in fragment/compute shaders |
-| WGSL | `enable wgpu_ray_query;` is mandatory from wgpu 28 onward | A v30 shader must contain the directive; a v27 shader must omit it; compile a canary for the selected baseline |
-| Geometry | V30 adds procedural AABB BLAS creation/build descriptors, making the already-defined AABB candidate/generated-intersection query path usable | Keep opaque triangles in V1; add AABBs only with a separately designed intersection contract and tests |
-| Hit vertex return | The optional feature and WGSL extension remain Vulkan-only | Do not require them for hard shadows; gate any later use independently |
+| WGSL | `enable wgpu_ray_query;` is mandatory (required since wgpu/Naga 28, unconditionally for the pinned v30.0.0 dialect) | Every ray-query WGSL module must contain the directive; compile a canary against the pinned dependency |
+| Geometry | V30 adds procedural AABB BLAS creation/build descriptors (`BlasGeometrySizeDescriptors::AABBs`, `BlasAabbGeometry`), making the already-defined AABB candidate/generated-intersection query path usable | Keep opaque triangles in V1; add AABBs only with a separately designed intersection contract and tests |
+| Hit vertex return | The optional feature and WGSL extension (`enable wgpu_ray_query_vertex_return;`) remain Vulkan-only | Do not require them for hard shadows; gate any later use independently |
 | Updates | Standard safe backends still perform full builds; `Tlas::lowest_unmodified` is for custom backends | Keep the existing dirty graph and full TLAS rebuild model; do not promise refit performance |
-| Limits and validation | V30 adds `max_buffers_and_acceleration_structures_per_shader_stage` and an acceleration-structure build error for offsets limited to 4 GiB | Validate combined binding pressure and keep geometry build offsets below 4 GiB or split future arenas |
+| Limits and validation | V30 adds `max_buffers_and_acceleration_structures_per_shader_stage` and a `BuildAccelerationStructureError::OffsetLimitedTo4GB` acceleration-structure build error | Validate combined binding pressure and keep geometry build offsets below 4 GiB or split future arenas |
 | Instance policy | `STRICT_WEBGPU_COMPLIANCE` excludes native experimental extensions | Never enable that instance flag on a native RT candidate; web remains a separate raster-only path |
 | Backend work | Naga/Metal gained ray-query correctness work | Treat this as implementation progress, not public Metal support; advertised features plus Pill's certified matrix remain authoritative |
 
-The blocking ecosystem fact is [`egui-wgpu` 0.35.0](https://docs.rs/crate/egui-wgpu/0.35.0), the newest released integration at this review, depends on `wgpu` 29 rather than 30. Pill's `pill_runtime` always enables `pill_renderer/debug_ui`, and `EguiDrawer` passes the renderer's `wgpu::Device`, `Queue`, texture views, and render pass directly to `egui-wgpu`. Cargo can resolve two wgpu majors, but their GPU types are nominally incompatible, so that is not a working integration.
+The blocking ecosystem fact at the time this plan was first drafted was that [`egui-wgpu` 0.35.0](https://docs.rs/crate/egui-wgpu/0.35.0), the newest released integration, depends on `wgpu` 29 rather than 30. Pill's `pill_runtime` always enables `pill_renderer/debug_ui`, and `EguiDrawer` passes the renderer's `wgpu::Device`, `Queue`, texture views, and render pass directly to `egui-wgpu`. Cargo can resolve two wgpu majors, but their GPU types are nominally incompatible, so that was not a working integration.
 
-The baseline decision is therefore conditional but objective:
+**This is now resolved, and not through an official release.** Pill vendors a temporarily patched copy of `egui-wgpu` 0.35.0 at `third_party/egui-wgpu/`, documented in `third_party/egui-wgpu/PATCH_NOTES.md`, whose only changes are: upgrading its `wgpu` dependency from 29 to 30; supplying wgpu 30's adapter limit-bucket option and new adapter-diagnostics fields; wrapping the renderer's vertex-buffer layout in `Some`; handling mapped-buffer access as a `Result` in screenshot capture; and presenting surface textures through `Queue::present`. `engine/pill_renderer/Cargo.toml` depends on it via a `path` override with the comment "Temporary local wgpu 30 bridge. Remove the path once upstream egui-wgpu supports wgpu 30." `engine/Cargo.lock` was additionally hand-repointed so `gpu-allocator`'s transitive `windows` dependency resolves to the same `0.62.2` that `wgpu-hal` requires directly, instead of the `0.54.0` Cargo's resolver picked by default — without that edge, `wgpu-hal`'s and `gpu-allocator`'s DX12 code disagree on the `ID3D12Device`/`ID3D12Heap` types and the native build fails outright.
 
-1. **Keep 27.0.1 as the immediately executable baseline** with the [compatible egui 0.33.3 stack](https://raw.githubusercontent.com/emilk/egui/0.33.3/Cargo.toml) while the v30 UI gate is closed.
-2. **Prefer a direct 25-to-30 migration before RT-specific implementation** if, at Phase 0 start, an official `egui-wgpu` release uses the same wgpu 30 major and the complete raster matrix passes.
-3. Do not close the gap by silently disabling debug UI, running two devices, or accepting two incompatible wgpu type universes. A temporary egui fork requires an explicit maintenance decision outside this feature plan.
-4. Do not select wgpu 29 merely as an intermediate stepping stone. It is a valid ecosystem-aligned alternative, but it adds another experimental-API migration without resolving the requested v30 target.
+This is precisely the "explicit maintenance decision outside this feature plan" the original v30 gate anticipated for a fork. It should be tracked as standing raster-dependency debt, not folded into this RT plan's scope:
 
-The v30 gate passes only when all of these are true:
+- Do not deepen the fork with RT-specific changes; if `egui-wgpu` itself ever needs RT-aware changes, that is a separate, explicitly scoped decision.
+- Re-check for an official `wgpu` 30-compatible `egui-wgpu` release opportunistically (e.g., whenever `egui`/`egui-wgpu`/`egui-winit` next need a bump); when one exists, delete `third_party/egui-wgpu/` and restore the ordinary registry dependency in one raster-only change, per the fork's own removal note.
+- The effective MSRV of the complete dependency set is still higher than `wgpu` 30 alone: `wgpu` 30 records MSRV 1.87 ([`Cargo.toml`](https://docs.rs/crate/wgpu/30.0.0)), while both the upstream [`egui` 0.35 workspace manifest](https://raw.githubusercontent.com/emilk/egui/0.35.0/Cargo.toml) and the vendored fork's normalized `Cargo.toml` declare `rust-version = "1.92"`. Declare and test 1.92 as Pill's effective MSRV for any RT-touching change, not 1.87.
+- `cargo check -p egui-wgpu --all-features` against the fork, and the full native/debug-UI `pill_renderer` build, are the two checks that must stay green; re-run both after any further dependency bump.
 
-- An official released `egui-wgpu` uses wgpu 30, and `egui`, `egui-wgpu`, and `egui-winit` can be upgraded as one compatible set.
-- Cargo resolves one wgpu API generation for `pill_renderer` and its debug UI.
-- The chosen v30 patch release passes Pill's native, web, debug-UI, hot-reload, headless, and example raster matrix in an RT-free migration change.
-- A minimal query/BLAS/TLAS probe passes validation on every certified Vulkan vendor/driver target.
-- The effective MSRV of the complete dependency set is declared and tested. [`wgpu` 30 itself records MSRV 1.87](https://docs.rs/crate/wgpu/30.0.0), while the [egui 0.35 workspace manifest](https://raw.githubusercontent.com/emilk/egui/0.35.0/Cargo.toml) declares Rust 1.92, so wgpu's MSRV alone is not sufficient evidence.
-
-Once selected, pin all specifications, examples, shader syntax, and canaries to that one baseline. Do not combine v27 Rust calls with trunk/v30 shader snippets.
+Pin all specifications, examples, and shader syntax to this one baseline (`wgpu` 30.0.0). Do not mix earlier-`wgpu`-generation Rust call shapes with the v30.0.0 API, and do not introduce a second `wgpu` type universe anywhere in `pill_renderer` or its shader-facing code.
 
 ## 3. Current Pill Engine constraints
 
 The plan is intentionally shaped around the repository as it exists:
 
-- `engine/pill_renderer/Cargo.toml` uses `wgpu = "25.0.0"` for native and web and `egui-wgpu = "0.32.1"`.
-- `State::new` in `engine/pill_renderer/src/renderer.rs` requests one surface-compatible adapter, silently intersects optional profiling/depth features, and requests `Limits::default()`.
+- `engine/pill_renderer/Cargo.toml` uses `wgpu = "30.0.0"` for native and web, and `egui-wgpu = "0.35.0"` sourced from the local `path` override at `third_party/egui-wgpu` (Section 2.4) rather than the registry.
+- `State::new` in `engine/pill_renderer/src/renderer.rs` requests one surface-compatible adapter, silently intersects optional profiling/depth features, and requests `Limits::default()`. Its `InstanceDescriptor`, `RequestAdapterOptions`, `DeviceDescriptor`, and `SurfaceConfiguration` already set wgpu 30's new required fields (`display: None`, `memory_budget_thresholds`, `apply_limit_buckets: false`, `experimental_features: ExperimentalFeatures::default()`, `color_space: SurfaceColorSpace::default()`) at their current defaults; the RT device request (Section 8.2) is what will need `apply_limit_buckets: false` kept explicit and `experimental_features` switched to the unsafe `enabled()` token.
 - `PillRenderer` in `engine/pill_engine/src/graphics/renderer.rs` is renderer-neutral, but `render` receives a raster sort queue plus full camera/transform component storages rather than an explicit frame description.
 - `RenderQueueItem` contains only a packed sort key and entity index. `MeshDrawer` reconstructs renderer handles from bitfields in that key.
 - `RendererMesh` creates vertex and index buffers with only `VERTEX` and `INDEX` usage. It stores no BLAS state or geometry capacity metadata.
@@ -181,7 +178,7 @@ The v1 feature is complete when Pill can:
 - A production path tracer, multiple bounces, denoising, or temporal upscaling.
 - Procedural AABB geometry.
 - Skinned, morph-target, particle, or otherwise deforming BLAS geometry.
-- BLAS update/refit; the standard safe path performs full builds in both evaluated baselines even though update-related names exist.
+- BLAS update/refit; wgpu 30's standard safe path performs full builds even though update-related names exist.
 - Alpha-tested or transparent candidate-intersection traversal.
 - Hardware RT on WebGPU/WASM, Metal, or GLES.
 - Shipping support for a backend not documented as supported by the pinned `wgpu` release.
@@ -309,8 +306,7 @@ pub struct HardwareRayQueryCapabilities {
     pub max_blas_geometry_count: u32,
     pub max_tlas_instance_count: u32,
     pub max_acceleration_structures_per_shader_stage: u32,
-    // Present on the v30 lane; None on v27.
-    pub max_buffers_and_acceleration_structures_per_shader_stage: Option<u32>,
+    pub max_buffers_and_acceleration_structures_per_shader_stage: u32,
 }
 ```
 
@@ -349,45 +345,35 @@ The instance mask is copied unchanged. Each `RenderLight` supplies a `shadow_cul
 
 Until materials have a canonical alpha mode, custom/transparent materials resolve to excluded under `Auto` and require the explicit `ForceOpaque` contract; never guess and silently trace them as opaque.
 
-## 7. Dependency migration gate
+## 7. Dependency migration (complete)
 
-Upgrade and stabilize the raster renderer before adding RT code. At Phase 0 start, record the result of the Section 2.4 v30 gate and select exactly one lane:
+The raster renderer's `wgpu` 25-to-30 migration described by this section is done and is the precondition the rest of this plan builds on. `engine/pill_renderer/Cargo.toml` depends on `wgpu = "30.0.0"` natively and on WASM, and on `egui`/`egui-wgpu`/`egui-winit` 0.35.0 (the latter via the local `third_party/egui-wgpu` patch, Section 2.4). `engine/Cargo.lock` resolves one `wgpu` API generation for both the renderer and the debug UI (`cargo tree -p pill_renderer -i wgpu` shows a single `30.0.0` node) after the `gpu-allocator`→`windows` edge fix in Section 2.4. `cargo check --workspace --features pill_renderer/debug_ui` passes with zero errors from `engine/Cargo.toml`.
 
-| Lane | Coherent dependency set | Selection rule |
-| --- | --- | --- |
-| Immediate | `wgpu` 27.0.1 plus `egui`, `egui-wgpu`, and `egui-winit` 0.33.3 | Use while no official egui integration targets wgpu 30 |
-| Direct v30 | One chosen `wgpu` 30.0.x patch plus an official egui integration built against that same major | Prefer if the v30 gate passes before RT-specific work starts |
+Record why v30 was selected, for anyone revisiting this later: it is simply the current `wgpu` release, resolved by hand-patching the one incompatible transitive dependency (`egui-wgpu`) rather than waiting on an upstream release, because the alternative (staying on an older `wgpu` while designing new RT code against it) would have meant migrating twice.
 
-Then:
+### 7.1 Migration checklist status
 
-1. Change native and WASM `wgpu` dependencies from 25 to the selected version in the same migration change.
-2. Upgrade `egui`, `egui-wgpu`, and `egui-winit` together; do not use a different wgpu major transitively.
-3. Verify `cargo tree` resolves one compatible `wgpu` API generation across the renderer and debug UI.
-4. Declare the effective MSRV for the complete selected dependency graph and add an MSRV check. The v27 lane requires Rust 1.88; wgpu 30 itself requires 1.87, but the eventual compatible UI stack may require more.
-5. Pin the dependency set reproducibly. Because the repository currently ignores `*.lock`, either add a deliberate exception for the engine/launcher lockfile or use exact compatible crate versions and a documented update procedure.
-6. Fix all descriptor, pipeline, surface, and shader-language changes with no RT feature requested.
-7. Build native debug/release/hot-reload, WASM, headless, and every existing example before proceeding.
+This audits the cumulative v25-v30 changes actually needed, not just an RT-only bump. Status reflects what `cargo check --workspace --features pill_renderer/debug_ui` from `engine/Cargo.toml` can and cannot prove — a clean compile proves the Rust descriptor surface but not runtime shader validity, since WGSL source strings are only checked when `Device::create_shader_module` actually runs.
 
-This should be a standalone change/PR. It separates migration regressions from ray-tracing validation failures and gives a clean rollback point.
+Done and verified by the workspace compile (`engine/pill_renderer/src/renderer.rs`, `resources/renderer_shader.rs`, `resources/renderer_texture.rs`, `drawers/mesh_drawer.rs`):
 
-### 7.1 Additional direct 25-to-30 migration checklist
+- `Surface::get_current_texture()` is handled as `CurrentSurfaceTexture` rather than `Result<SurfaceTexture, SurfaceError>`. **Only the compile-level shape is fixed** — current code accepts `Success`/`Suboptimal` and maps `Lost` to `RendererError::SurfaceLost`, but collapses `Timeout`, `Occluded`, `Outdated`, and `Validation` into one generic `RendererError::SurfaceOther`. The differentiated per-variant policy this plan wants long-term (Section 17) is not yet implemented.
+- `SurfaceConfiguration::color_space` is set to `SurfaceColorSpace::default()`, which is `Auto` (confirmed against the vendored `wgpu-types` source — `Auto` carries the `#[default]` attribute), preserving current output as intended.
+- `multiview_mask` is set (to `None`) on the one render-pass descriptor that needed it (`mesh_drawer.rs`); `egui_drawer.rs`'s render pass and the `depth_slice` field on color attachments already matched the current API before this migration and needed no change.
+- `PipelineLayoutDescriptor::bind_group_layouts` is `&[Option<&BindGroupLayout>]` and `immediate_size` replaces `push_constant_ranges` (`renderer_shader.rs`); the fixed bind-group contract itself is not renumbered by this change — that refactor is still open (Section 13.1).
+- `VertexState::buffers` is wrapped in `Some` per entry.
+- `DepthStencilState::depth_write_enabled`/`depth_compare` are `Option`-wrapped; the depth-clip feature contract (`unclipped_depth` vs. `DEPTH_CLIP_CONTROL`) was not touched and remains the pre-existing inconsistency Section 8.2 must still repair.
+- `SamplerDescriptor::mipmap_filter` takes `wgpu::MipmapFilterMode`, not `wgpu::FilterMode`.
+- `Instance::new`, `RequestAdapterOptions`, and `DeviceDescriptor` take their new required fields (Section 3): `display: None`, `memory_budget_thresholds: MemoryBudgetThresholds::default()`, `apply_limit_buckets: false`, `experimental_features: ExperimentalFeatures::default()`.
+- `Queue::present(surface_texture)` was already in use before this migration; `SurfaceTexture::present()` was not present to remove.
 
-If the v30 lane is selected, audit the cumulative v28-v30 changes rather than treating the release as an RT-only bump. At minimum:
+Explicitly **not** done, still open work for a future change:
 
-- Adapt instance creation to the new descriptor constructors/display-handle flow, and await adapter enumeration.
-- Handle `Surface::get_current_texture()` as `CurrentSurfaceTexture`, including `Success`, `Suboptimal`, `Timeout`, `Occluded`, `Outdated`, `Lost`, and `Validation` according to the tagged contract instead of converting every result into a fatal error.
-- Add `SurfaceConfiguration::color_space`, initially `SurfaceColorSpace::Auto` to preserve current output.
-- Replace `surface_texture.present()` with `queue.present(surface_texture)`.
-- Add `multiview_mask` to render-pass descriptors and preserve `None` for the current renderer.
-- Add the required `depth_slice` field to render-pass color attachments and preserve `None` for ordinary 2D targets.
-- Update pipeline-layout optional bind-group slots and `immediate_size`; do not accidentally renumber the fixed bind-group contract.
-- Wrap vertex layouts in `Some` for `VertexState::buffers`.
-- Migrate depth/stencil optional fields and prove the existing depth-clip feature contract remains valid.
-- Use the separate mipmap filter mode in texture sampler descriptors.
-- Add explicit `@interpolate(flat)` to every integer inter-stage shader value.
-- Rename any compute dispatch calls to `dispatch_workgroups*` if a compute canary or later pass introduces them.
-- Handle mapped-range APIs as `Result` values in profiler/readback paths instead of relying on a panic.
-- Compile every cooked/default shader through the selected Naga version, not just the new ray-query shader.
+- Instance creation still does not retain the `wgpu::Instance` or an owned/`Arc` window/display-handle target (`display` is hard-coded `None`); Section 17's `Lost`-surface recreation path depends on this.
+- `pill_renderer/src/profiler.rs` is **not compiled** (`pub mod profiler;` is commented out in `pill_renderer/src/lib.rs`), so it was neither broken nor fixed by this migration. `Buffer::get_mapped_range`/`BufferSlice::get_mapped_range` return `Result<BufferView, MapRangeError>` in wgpu 30 (previously they returned `BufferView` directly), so `profiler.rs`'s `let data = slice.get_mapped_range();` calls will not compile unchanged if that module is ever re-enabled. Fix this before re-enabling profiling, not as part of the RT work.
+- No compute dispatch calls exist to rename to `dispatch_workgroups*` (Section 3: the asset rule has no compute stage yet); revisit this only once a compute stage is introduced.
+- No shader source was audited for `@interpolate(flat)` correctness or otherwise recompiled against the pinned Naga version as part of this migration, because `cargo check` never invokes `Device::create_shader_module`. Compiling every cooked/default shader through the selected Naga version — and specifically the ray-query canary once it exists — is real, unverified work for Phase 0/1 (Section 19), not something the completed Rust-level migration already covers.
+- The dependency set is not pinned via a committed lockfile exception; `engine/Cargo.lock` currently carries the hand-edited `gpu-allocator`→`windows 0.62.2` edge from Section 2.4 as an uncommitted local fix at the time of writing. Commit it (or document the exact `cargo update -p windows@<old> --precise 0.62.2` procedure) so a fresh clone does not silently regress to the broken resolution.
 
 Keep `RequestAdapterOptions::apply_limit_buckets` false for the RT selection path so diagnostics and capacity checks see the actual acceleration-structure limits. Do not add `InstanceFlags::STRICT_WEBGPU_COMPLIANCE` to the native `Prefer`/`Require` instance because it deliberately excludes non-WebGPU experimental features.
 
@@ -406,7 +392,7 @@ For every candidate adapter allowed by `WGPU_BACKENDS`:
 5. Rank valid RT candidates using the requested power preference and device type.
 6. If none qualify, execute the `Prefer`/`Require` policy instead of silently intersecting the feature away.
 
-The public feature documentation for both evaluated baselines lists ray queries as native-only and Vulkan-supported. Their implementations contain evolving backend work, so feature probing must remain authoritative at the API level, while Pill's tested support matrix remains deliberately narrower. Add other backends only after an integration test and CI/hardware run prove the pinned version.
+wgpu 30's public feature documentation lists ray queries as native-only and Vulkan-supported. Its implementation contains evolving backend work (e.g. ongoing Metal ray-query correctness fixes, Section 2.4), so feature probing must remain authoritative at the API level, while Pill's tested support matrix remains deliberately narrower. Add other backends only after an integration test and CI/hardware run prove the pinned version.
 
 Respect explicit backend restrictions. For example, `RAY_TRACING_MODE=require` plus `WGPU_BACKENDS=METAL` should fail with "policy requires hardware ray queries, but the requested backend set cannot provide them," not silently override the user's backend choice.
 
@@ -445,7 +431,7 @@ Validate and log these AS limits explicitly:
 - `max_tlas_instance_count`;
 - `max_acceleration_structures_per_shader_stage`.
 
-On the v30 lane, also validate `max_buffers_and_acceleration_structures_per_shader_stage` against the complete shader layout, not just the TLAS count. Requesting the RT feature must not push storage, uniform, vertex-buffer, and acceleration-structure bindings beyond their shared backend table. Leave adapter limit bucketing disabled so these checks use the reported hardware limits.
+Also validate `max_buffers_and_acceleration_structures_per_shader_stage` (new in wgpu 30, Section 2.4) against the complete shader layout, not just the TLAS count. Requesting the RT feature must not push storage, uniform, vertex-buffer, and acceleration-structure bindings beyond their shared backend table. Leave adapter limit bucketing disabled so these checks use the reported hardware limits.
 
 In `Prefer`, a device-request failure attributable to unsupported experimental capability may retry once with the raster descriptor. In `Require`, return the original structured error. Validation bugs, OOM, and device loss after initialization are not normal "unsupported" fallbacks and must not be silently swallowed.
 
@@ -576,9 +562,9 @@ Validate before creating the BLAS:
 - primitive and geometry counts fit the enabled device limits;
 - V1 geometry is indexed triangles and marked `OPAQUE`.
 
-Construct the size descriptor through the selected version's tagged API. On v30 this is explicitly `BlasGeometrySizeDescriptors::Triangles { descriptors }`; reject `AABBs` in V1 even though the API can create them. On that lane, validate the chosen position format against `device.features().allowed_vertex_formats_for_blas()` as well as enforcing the baseline `Float32x3` policy. Also validate every acceleration-structure input offset against the backend's 4 GiB build-offset constraint and diagnose the v30 `BuildAccelerationStructureError::OffsetLimitedTo4GB` condition with the mesh/arena range. Today's per-mesh buffers naturally begin near offset zero; a future global geometry arena must split/chunk allocations before this becomes a runtime build failure.
+Construct the size descriptor through wgpu 30's tagged API: `BlasGeometrySizeDescriptors::Triangles { descriptors }`; reject `AABBs` in V1 even though the API can create them. Validate the chosen position format against `device.features().allowed_vertex_formats_for_blas()` as well as enforcing the baseline `Float32x3` policy. Also validate every acceleration-structure input offset against the backend's 4 GiB build-offset constraint and diagnose the `BuildAccelerationStructureError::OffsetLimitedTo4GB` condition with the mesh/arena range. Today's per-mesh buffers naturally begin near offset zero; a future global geometry arena must split/chunk allocations before this becomes a runtime build failure.
 
-Use `PREFER_FAST_TRACE` for immutable Pill meshes. Do not add `ALLOW_UPDATE` in V1; the standard safe path in both evaluated versions performs full builds even though update-related names exist.
+Use `PREFER_FAST_TRACE` for immutable Pill meshes. Do not add `ALLOW_UPDATE` in V1; wgpu 30's standard safe path performs full builds even though update-related names exist.
 
 Represent ineligible geometry explicitly as `RasterOnly(reason)` instead of leaving a half-created BLAS. Under `Prefer`, the mesh may continue to rasterize and a ray-visible instance is omitted with a deduplicated diagnostic. Under `Require`, creation or first ray-visible use returns a precise error. This degradation must be observable because an omitted occluder produces incomplete shadows.
 
@@ -586,7 +572,7 @@ Represent ineligible geometry explicitly as `RasterOnly(reason)` instead of leav
 
 `create_mesh` should allocate buffers and a BLAS descriptor, then queue the mesh as `Pending`. Do not create a private command encoder and submit per mesh.
 
-On the v30 lane, keep creation and build geometry variants paired: a BLAS created from `BlasGeometrySizeDescriptors::Triangles` must be built with `BlasGeometries::TriangleGeometries`. The build call consumes iterators of references to `BlasBuildEntry` values and TLAS values; prepare stable per-frame entry storage rather than references to short-lived temporaries. Treat a size/build variant mismatch as a renderer bug before encoding.
+Keep creation and build geometry variants paired: a BLAS created from `BlasGeometrySizeDescriptors::Triangles` must be built with `BlasGeometries::TriangleGeometries`. The build call consumes iterators of references to `BlasBuildEntry` values and TLAS values; prepare stable per-frame entry storage rather than references to short-lived temporaries. Treat a size/build variant mismatch as a renderer bug before encoding.
 
 At frame start:
 
@@ -682,26 +668,19 @@ group 3: textures
 
 Use fixed compatible layouts/placeholders or a declarative pipeline-layout builder. RT and raster variants must agree on every shared group.
 
-On the v30 lane, express the fixed slots through `PipelineLayoutDescriptor`'s `&[Option<&BindGroupLayout>]` form and set `immediate_size` explicitly. Optional slots are not permission to compact the vector and shift later groups.
+Express the fixed slots through `PipelineLayoutDescriptor`'s `&[Option<&BindGroupLayout>]` form and set `immediate_size` explicitly. Optional slots are not permission to compact the vector and shift later groups.
 
 For V1, the RT-enabled group-0 layout adds a TLAS entry using `BindingType::AccelerationStructure { vertex_return: false }`, visible only to stages that execute the query. This avoids turning `max_bind_groups >= 5` into another RT hardware requirement. Recreate the group-0 bind group when TLAS capacity growth replaces the bound TLAS; recreate pipelines only if the layout itself changes.
 
 ### 13.2 Shader source policy
 
-Create the first query canary as renderer-internal, hand-authored WGSL pinned to the baseline chosen in Phase 0. This avoids pretending the current vertex/fragment-only HLSL cooking rule supports an experimental WGSL extension.
+Create the first query canary as renderer-internal, hand-authored WGSL pinned to `wgpu` 30.0.0. This avoids pretending the current vertex/fragment-only HLSL cooking rule supports an experimental WGSL extension.
 
 Add a targeted `.gitignore` exception for the renderer's authored shader directory. Compile the canary during a test or renderer initialization under an error scope.
 
-Before the production shadow variant, run a small spike through the existing Slang HLSL pipeline. If Slang can reliably emit ray-query WGSL for the selected baseline, extend the cooker with an explicit ray-query profile and golden output test. Otherwise keep RT variants as authored WGSL until the shader resource system supports renderer-internal modules cleanly.
+Before the production shadow variant, run a small spike through the existing Slang HLSL pipeline. If Slang can reliably emit ray-query WGSL for wgpu 30, extend the cooker with an explicit ray-query profile and golden output test. Otherwise keep RT variants as authored WGSL until the shader resource system supports renderer-internal modules cleanly.
 
-Pin the extension line explicitly:
-
-| Selected baseline | Required ray-query WGSL prologue |
-| --- | --- |
-| wgpu 27.0.1 | Omit `enable wgpu_ray_query;` |
-| wgpu 30.0.x | Include `enable wgpu_ray_query;` |
-
-Do not attempt one source string that happens to parse under both. The canary must fail if the dependency and shader dialect diverge.
+Pin the required prologue explicitly: every ray-query WGSL module must begin with `enable wgpu_ray_query;` (Section 2.2). The canary must fail to compile if that directive is missing — that failure mode is the one a future Naga upgrade changing the required syntax would actually need to surface, so do not special-case around it.
 
 ### 13.3 First consumer: hard shadows
 
@@ -783,7 +762,7 @@ Pill meshes are currently immutable, so V1 has no deforming path. When one is in
 
 - mark it explicitly, never infer from update frequency;
 - use `PREFER_FAST_BUILD`;
-- rebuild the BLAS, because refit/update is not implemented in the evaluated standard safe paths;
+- rebuild the BLAS, because refit/update is not implemented in wgpu 30's standard safe path;
 - dirty all referencing TLASes;
 - apply per-frame build and memory budgets;
 - fall back to raster when the budget or feature policy disallows it.
@@ -830,7 +809,7 @@ Policy rules:
 - Engine/runtime hot reload tears down and recreates the renderer. Drop TLAS before its BLAS references, drain/retire submitted work safely, then recreate RT state from engine resources as the normal renderer initialization path does.
 - Shader reload must recreate RT pipeline/bind groups as needed. A path-traced accumulator must reset; the shadow MVP has no temporal history.
 - Device loss requires full renderer/AS recreation. Surface loss alone follows the existing surface recovery path and should not rebuild acceleration structures.
-- On the v30 lane, classify every `CurrentSurfaceTexture` outcome deliberately: render/present `Success`; render or discard `Suboptimal` and schedule reconfiguration; skip `Timeout`/`Occluded`; reconfigure on `Outdated`; recreate then configure the surface on `Lost`; and surface `Validation` as an actionable renderer error. Present acquired frames through `Queue::present`. None of these surface outcomes dirties BLAS/TLAS unless device loss is reported separately.
+- Classify every `CurrentSurfaceTexture` outcome deliberately: render/present `Success`; render or discard `Suboptimal` and schedule reconfiguration; skip `Timeout`/`Occluded`; reconfigure on `Outdated`; recreate then configure the surface on `Lost`; and surface `Validation` as an actionable renderer error. Present acquired frames through `Queue::present`. None of these surface outcomes dirties BLAS/TLAS unless device loss is reported separately.
 - Current `State::new` discards the `wgpu::Instance` after creating the surface and does not store the window target. Phase 0 must either retain the instance plus an owned/`Arc` window target so `Lost` can recreate the surface in place, or return a structured signal that makes the host recreate the full renderer. Merely configuring the lost surface is not a valid recovery path.
 
 ## 18. File-level change map
@@ -864,15 +843,18 @@ Do not combine every row into one change. The phases below are intended to remai
 
 ## 19. Implementation phases and exit criteria
 
-### Phase 0 - baseline selection, wgpu migration, and prerequisites
+### Phase 0 - wgpu migration (done) and remaining prerequisites
 
-Work:
+Done (Section 7, Section 7.1): wgpu 30 plus the patched egui 0.35 stack are in place in one RT-free change, and `cargo check --workspace --features pill_renderer/debug_ui` from `engine/Cargo.toml` passes.
 
-- Record the Section 2.4 gate result, select one baseline, and upgrade wgpu plus the compatible egui stack in one RT-free change.
-- Restore native, WASM, debug UI, hot reload, and headless builds.
-- Fix fixed bind-group layout indexing.
-- Fix and test canonical transforms.
-- Add `EngineConfig` string/enum access.
+Still open before Phase 1 can rely on a clean base:
+
+- Restore/verify native release, hot-reload, WASM, and headless builds — Section 7.1 only confirms a native debug `cargo check`; release, WASM, hot-reload, and headless targets have not been separately built or run since the migration.
+- Declare and test the dependency set's effective MSRV as 1.92 (Section 2.4), not `wgpu`'s own 1.87.
+- Commit or otherwise reproducibly pin the `gpu-allocator`→`windows 0.62.2` `Cargo.lock` edge from Section 2.4 (currently an uncommitted local fix).
+- Fix fixed bind-group layout indexing (Section 13.1).
+- Fix and test canonical transforms (Section 10).
+- Add `EngineConfig` string/enum access (Section 6.1).
 
 Exit criteria:
 
@@ -881,7 +863,7 @@ Exit criteria:
 - Native release/hot-reload, WASM, and headless builds pass.
 - `cargo fmt` and clippy are clean through the launcher workflow.
 - Matrix tests cover all agreed transform cases.
-- The selected dependency graph contains one wgpu API generation, has a declared/tested effective MSRV, and records exact version pins.
+- The dependency graph contains one wgpu API generation (already true), has a declared/tested effective MSRV, and records exact version pins (both still open, above).
 
 ### Phase 1 - capability and policy layer
 
@@ -1002,7 +984,7 @@ On a pinned RT-capable adapter:
 - Verify overlapping and non-overlapping instance/light shadow masks.
 - Exercise zero/non-finite direction inputs, invalid intervals, and every fixed flag combination through the pre-query guard; no invalid query may reach traversal.
 - Validate all authored WGSL and RT/raster pipeline variants.
-- Validate the selected shader dialect explicitly: v30's enabled module succeeds and a missing `enable wgpu_ray_query;` module fails; v27's directive-free module succeeds and an accidental later-dialect prologue fails.
+- Validate the shader dialect explicitly: a module with `enable wgpu_ray_query;` compiles, and a module missing the directive fails to compile.
 - Run with error scopes and uncaptured-error capture; zero validation errors is required.
 - Later, compact a BLAS, replace references, and verify identical hits.
 
@@ -1086,9 +1068,9 @@ Do not invent a universal millisecond budget before measurements. Define per-tar
 | --- | --- | --- |
 | Experimental wgpu API changes or validation gaps | Breakage, driver crash, shader UB | Pin exact versions or deliberately track a lockfile; isolate module/unsafe token; shader canary; default `Off`; raster rollback |
 | Official backend support is narrow/evolving | Works on one developer GPU only | Product allowlist plus feature/limit probe; vendor matrix; `Prefer` fallback |
-| Selected wgpu/egui migration regresses raster behavior | Existing renderer breaks before RT work | Separate Phase 0 change and full native/web/debug-UI regression gate |
-| No released `egui-wgpu` for wgpu 30 | Incompatible `Device`/`Queue`/render-pass types or pressure to disable UI | Keep v27 as implement-now lane; adopt v30 only through the objective same-major dependency gate; no implicit local fork |
-| Fresh v30 release line has RT regressions | Validation errors or vendor-driver failures | Pin one exact release, run the vendor probe/matrix before selection, retain v27/raster rollback |
+| Completed wgpu 30/egui migration regresses raster behavior | Existing renderer breaks before RT work | Section 7.1's ledger tracks what is and is not yet verified (release/WASM/hot-reload/headless builds, MSRV, lockfile pin); close those gaps before Phase 1 |
+| The `third_party/egui-wgpu` fork is a local patch, not an official release | Diverges silently from upstream if egui-wgpu bumps again; nobody removes the fork | Re-check for an official wgpu-30-compatible `egui-wgpu` release whenever the UI stack next needs a bump; delete the fork and restore the registry dependency then (Section 2.4) |
+| `wgpu` 30 has RT regressions | Validation errors or vendor-driver failures | Pin the exact `30.0.0` patch already in use, run the vendor probe/matrix before enabling `Prefer`/`Require` by default, retain the raster fallback |
 | Raster/TLAS transform mismatch | Visually displaced hits and self-shadowing | One canonical matrix path and golden conversion tests |
 | Stale BLAS/TLAS references after deletion/reuse | Wrong hits or validation/device failure | Generation validation, explicit dirty graph, dependency-ordered rebuild, deferred retirement |
 | Excessive per-frame AS builds | Frame spikes | Static BLAS cache, TLAS-only rigid motion, dirty counters, performance gates |
@@ -1103,7 +1085,7 @@ Do not invent a universal millisecond budget before measurements. Define per-tar
 
 The feature is ready to advertise when all of the following are true:
 
-- The Phase 0-selected wgpu/egui migration is independently green, uses one wgpu API generation, and records why v27 or v30 was selected.
+- The Phase 0 wgpu 30/egui migration is independently green (Section 7.1's ledger fully closed, not just the native debug compile), and uses one wgpu API generation.
 - `Off`, `Prefer`, and `Require` semantics are documented and tested.
 - The renderer reports actual enabled capability and precise fallback reasons.
 - BLAS/TLAS creation, build ordering, transforms, add/remove, growth, destruction, and hot reload are validation-clean.
@@ -1118,7 +1100,7 @@ The feature is ready to advertise when all of the following are true:
 
 Use this review order:
 
-1. **Baseline decision plus coherent wgpu/egui migration** with raster parity only; choose v27 now or direct v30 after its gate, never both.
+1. **Close out the wgpu 30/egui migration** with raster parity only, per Section 7.1's open-items ledger — this is finishing verification of a decision already made, not a decision still to make.
 2. **Transform and frame-boundary cleanup** with no RT dependency in engine types.
 3. **Capability policy and diagnostic probe** with no visible RT effect.
 4. **BLAS/TLAS lifecycle plus readback/debug canary**.
@@ -1130,23 +1112,31 @@ Every change must keep the raster path buildable and revertible. Avoid a long-li
 
 ## 25. Primary references
 
-- [`wgpu` v27.0.0 release notes](https://github.com/gfx-rs/wgpu/releases/tag/v27.0.0)
-- [`wgpu` v27 ray-tracing specification](https://github.com/gfx-rs/wgpu/blob/v27.0.0/docs/api-specs/ray_tracing.md)
+Baseline (`wgpu` 30.0.0), pinned as the sole contract for this plan:
+
 - [`wgpu` v30.0.0 release notes](https://github.com/gfx-rs/wgpu/releases/tag/v30.0.0)
 - [`wgpu` v30.0.0 ray-tracing specification](https://github.com/gfx-rs/wgpu/blob/v30.0.0/docs/api-specs/ray_tracing.md)
-- [`wgpu` trunk ray-tracing specification](https://github.com/gfx-rs/wgpu/blob/trunk/docs/api-specs/ray_tracing.md)
-- [`wgpu` 27.0.1 `Features` documentation](https://docs.rs/wgpu/27.0.1/wgpu/struct.Features.html)
-- [`wgpu` 27.0.1 `Limits` documentation](https://docs.rs/wgpu/27.0.1/wgpu/struct.Limits.html)
-- [`wgpu` 30.0.0 `Features` documentation](https://docs.rs/wgpu/30.0.0/wgpu/struct.Features.html)
+- [`wgpu` trunk ray-tracing specification](https://github.com/gfx-rs/wgpu/blob/trunk/docs/api-specs/ray_tracing.md) — useful for future direction; the v30.0.0 tag above is authoritative where they disagree
+- [`wgpu` 30.0.0 `Features` documentation](https://docs.rs/wgpu/30.0.0/wgpu/struct.Features.html), including [`EXPERIMENTAL_RAY_HIT_VERTEX_RETURN`](https://docs.rs/wgpu/latest/wgpu/struct.Features.html#associatedconstant.EXPERIMENTAL_RAY_HIT_VERTEX_RETURN)
 - [`wgpu` 30.0.0 `Limits` documentation](https://docs.rs/wgpu/30.0.0/wgpu/struct.Limits.html)
 - [`wgpu` 30.0.0 `Device` documentation](https://docs.rs/wgpu/30.0.0/wgpu/struct.Device.html)
-- [Official v27 ray-traced triangle Rust example](https://github.com/gfx-rs/wgpu/blob/v27.0.0/examples/features/src/ray_traced_triangle/mod.rs)
-- [Official v27 ray-traced triangle WGSL](https://github.com/gfx-rs/wgpu/blob/v27.0.0/examples/features/src/ray_traced_triangle/shader.wgsl)
 - [Official wgpu v30.0.0 examples](https://github.com/gfx-rs/wgpu/tree/v30.0.0/examples)
-- [Zenn: hardware ray tracing with Rust and wgpu](https://zenn.dev/kokutoupan/articles/eefc517ac4210d?locale=en)
+- The vendored `wgpu`/`wgpu-types`/`wgpu-core` 30.0.0 source under the local Cargo registry cache — used throughout Section 2 to cross-check the prose specs against the actual shipped types (e.g. `TlasInstance`, `BindingType::AccelerationStructure`, `AccelerationStructureFlags`, the AS-related `Limits` fields, `BuildAccelerationStructureError::OffsetLimitedTo4GB`).
+
+Pill's local dependency resolution (Section 2.4, Section 7):
+
+- `third_party/egui-wgpu/PATCH_NOTES.md` — the local `egui-wgpu` 0.35.0-on-wgpu-30 patch this plan's UI-compatible baseline actually depends on; not an official release.
+- `engine/pill_renderer/Cargo.toml`, `engine/Cargo.lock` — current dependency and resolution state; the `gpu-allocator`→`windows 0.62.2` edge is a manual fix, not yet a committed/documented pin (Section 7.1).
+
+Implementation-pattern references (re-derive every descriptor from the v30.0.0 API above; do not copy these verbatim):
+
+- [Zenn: hardware ray tracing with Rust and wgpu](https://zenn.dev/kokutoupan/articles/eefc517ac4210d?locale=en) (targets wgpu 28)
 - [Zenn guide source, tag v0.1](https://github.com/kokutoupan/fast-raytracing-wgpu/tree/v0.1)
-- [`wgpu` v28 release note for the later WGSL `enable` directive](https://github.com/gfx-rs/wgpu/releases/tag/v28.0.0)
+- [`egui` 0.35.0 workspace manifest and MSRV](https://raw.githubusercontent.com/emilk/egui/0.35.0/Cargo.toml) — records the 1.92 MSRV that governs Pill's effective MSRV, not `wgpu`'s own 1.87
+
+Historical, superseded by the v30 baseline above (kept only for migration-history context; do not implement against these):
+
+- [`wgpu` v27.0.0 release notes](https://github.com/gfx-rs/wgpu/releases/tag/v27.0.0) and [v27 ray-tracing specification](https://github.com/gfx-rs/wgpu/blob/v27.0.0/docs/api-specs/ray_tracing.md) — the feature/API state this plan originally targeted before the v30 migration completed
+- [`wgpu` v28 release note for the WGSL `enable` directive becoming mandatory](https://github.com/gfx-rs/wgpu/releases/tag/v28.0.0)
 - [`wgpu` v29.0.0 cumulative migration notes](https://github.com/gfx-rs/wgpu/releases/tag/v29.0.0)
-- [`egui-wgpu` 0.35.0 crate metadata](https://docs.rs/crate/egui-wgpu/0.35.0)
-- [`egui` 0.33.3 workspace manifest (`wgpu` 27.0.1)](https://raw.githubusercontent.com/emilk/egui/0.33.3/Cargo.toml)
-- [`egui` 0.35.0 workspace manifest and MSRV](https://raw.githubusercontent.com/emilk/egui/0.35.0/Cargo.toml)
+- [`egui-wgpu` 0.35.0 crate metadata](https://docs.rs/crate/egui-wgpu/0.35.0) — records the unpatched crate's `wgpu` 29 dependency that motivated the local fork
