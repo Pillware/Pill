@@ -16,22 +16,22 @@ winit = "0.30"
 cgmath = "0.18"
 bytemuck = { version = "1", features = ["derive"] }
 # egui (optional — enabled by debug_ui feature)
-egui = { version = "0.32", optional = true }
-egui-wgpu = { version = "0.32", features = ["winit"], optional = true }
+egui = { version = "0.35.0", optional = true }
+# Temporary local wgpu 30 bridge. Remove the path once upstream egui-wgpu supports wgpu 30.
+egui-wgpu = { version = "0.35.0", path = "../../third_party/egui-wgpu", default-features = false, optional = true }
+
 
 # Native-only dependencies
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-wgpu = "25"
+wgpu = "30.0.0"
 pollster = "0.4"
-egui-winit = { version = "0.32", features = ["clipboard"], optional = true }
+egui-winit = { version = "0.35.0", features = ["clipboard"], optional = true }
+
 
 # WASM dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wgpu = { version = "25", default-features = false, features = [
-    "webgpu",
-    "wgsl",
-] }
-egui-winit = { version = "0.32", default-features = false, optional = true }
+wgpu = { version = "30.0.0", default-features = false, features = ["webgpu", "wgsl"] }
+egui-winit = { version = "0.35.0", default-features = false, optional = true }
 
 [features]
 debug_ui = [

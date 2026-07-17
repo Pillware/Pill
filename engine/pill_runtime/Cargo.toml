@@ -17,4 +17,5 @@ pill_engine = { path = "../pill_engine", features = ["internal"] }
 pill_renderer = { path = "../pill_renderer", features = ["debug_ui"] }
 
 libloading = "0.8.8"
-winit = "0.30.12"
+winit = "0.30.13"
+

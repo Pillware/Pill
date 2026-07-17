@@ -145,22 +145,22 @@ impl RendererShader {
             let mut bind_group_layouts = Vec::new();
 
             if pass_engine_parameters {
-                bind_group_layouts.push(engine_bind_group_layout);
+                bind_group_layouts.push(Some(engine_bind_group_layout));
             }
             if pass_camera_parameters {
-                bind_group_layouts.push(camera_bind_group_layout);
+                bind_group_layouts.push(Some(camera_bind_group_layout));
             }
             if let Some(ref layout) = parameters_bind_group_layout {
-                bind_group_layouts.push(layout);
+                bind_group_layouts.push(Some(layout));
             }
             if let Some(ref layout) = textures_bind_group_layout {
-                bind_group_layouts.push(layout);
+                bind_group_layouts.push(Some(layout));
             }
 
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some(&format!("{}_pipeline_layout", name)),
                 bind_group_layouts: &bind_group_layouts,
-                push_constant_ranges: &[],
+                immediate_size: 0,
             })
         };
 
@@ -174,13 +174,16 @@ impl RendererShader {
             write_mask: wgpu::ColorWrites::ALL,
         })];
 
+        let vertex_buffer_layouts: Vec<Option<wgpu::VertexBufferLayout>> =
+            vertex_layouts.iter().cloned().map(Some).collect();
+
         let render_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
             label: Some(&format!("{}_render_pipeline", name)),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &vertex_shader,
                 entry_point: Some("vs_main"),
-                buffers: vertex_layouts, // Specifies structure of vertices that will be passed to the vertex shader
+                buffers: &vertex_buffer_layouts, // Specifies structure of vertices that will be passed to the vertex shader
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -201,8 +204,8 @@ impl RendererShader {
             },
             depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
                 format,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less, // Specifies when to discard a new pixel. Using LESS means pixels will be drawn front to back
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less), // Specifies when to discard a new pixel. Using LESS means pixels will be drawn front to back
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -211,7 +214,7 @@ impl RendererShader {
                 mask: !0, // Specifies which samples should be active
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         };
 

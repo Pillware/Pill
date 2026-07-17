@@ -239,6 +239,7 @@ impl MeshDrawer {
                                        //     beginning_of_pass_write_index: Some(0),
                                        //     end_of_pass_write_index: Some(1),
                                        // }),
+            multiview_mask: None,
         });
 
         // let _pipeline_statistics_query_start = profiler.begin_pipeline_statistics_query(&mut render_pass);

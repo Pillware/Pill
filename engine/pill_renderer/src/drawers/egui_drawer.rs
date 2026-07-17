@@ -13,6 +13,11 @@ pub struct EguiDrawer {
     pub window: Arc<winit::window::Window>,
 }
 
+pub struct EguiDrawOutput {
+    pub command_buffers: Vec<wgpu::CommandBuffer>,
+    pub textures_to_free: Vec<egui::TextureId>,
+}
+
 impl EguiDrawer {
     pub fn new(
         device: &wgpu::Device,
@@ -37,9 +42,12 @@ impl EguiDrawer {
         let renderer = egui_wgpu::Renderer::new(
             device,
             output_color_format,
-            output_depth_format,
-            msaa_samples,
-            false,
+            egui_wgpu::RendererOptions {
+                depth_stencil_format: output_depth_format,
+                msaa_samples,
+                dithering: false,
+                ..Default::default()
+            },
         );
 
         EguiDrawer {
@@ -66,17 +74,15 @@ impl EguiDrawer {
         // run_ui: impl FnOnce(&egui::Context),
         mut run_ui: Box<dyn FnMut(&egui::Context)>,
         timer: &mut Timer,
-    ) -> Result<()> {
+    ) -> Result<EguiDrawOutput> {
         timer.record("Prepare window and input");
 
         let window = &self.window;
         let raw_input = self.state.take_egui_input(window);
 
-        // let full_output = self.context.run(raw_input, |ctx| {
-        //     (&mut run_ui)(ctx);
-        // });
-        let full_output = self.context.run(raw_input, |_| {
-            run_ui(&self.context);
+        let context = self.context.clone();
+        let full_output = self.context.run_ui(raw_input, |_| {
+            run_ui(&context);
         });
 
         timer.record("Handle platform output");
@@ -96,39 +102,44 @@ impl EguiDrawer {
 
         timer.record("Update buffers and record render pass");
 
-        self.renderer
-            .update_buffers(device, queue, encoder, &tris, &screen_descriptor);
+        let command_buffers =
+            self.renderer
+                .update_buffers(device, queue, encoder, &tris, &screen_descriptor);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: window_surface_view,
+                depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 },
-                //depth_slice: None,
             })],
             depth_stencil_attachment: None,
             label: Some("egui main render pass"),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         timer.record("Render");
 
-        let render_pass: &mut wgpu::RenderPass<'static> =
-            unsafe { std::mem::transmute(&mut render_pass) };
+        self.renderer.render(
+            &mut render_pass.forget_lifetime(),
+            &tris,
+            &screen_descriptor,
+        );
 
-        self.renderer
-            .render(&mut *render_pass, &tris, &screen_descriptor);
+        Ok(EguiDrawOutput {
+            command_buffers,
+            textures_to_free: full_output.textures_delta.free,
+        })
+    }
 
-        // let _ = drop(render_pass);
-
-        for texture_id in &full_output.textures_delta.free {
-            self.renderer.free_texture(texture_id)
+    pub fn free_textures(&mut self, texture_ids: &[egui::TextureId]) {
+        for texture_id in texture_ids {
+            self.renderer.free_texture(texture_id);
         }
-
-        Ok(())
     }
 }

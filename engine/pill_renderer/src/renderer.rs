@@ -342,9 +342,11 @@ impl State {
                 backends,
                 flags: wgpu::InstanceFlags::from_build_config().with_env(),
                 backend_options: wgpu::BackendOptions::default(),
+                memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
+                display: None,
             };
 
-            let instance = wgpu::Instance::new(&instance_descriptor);
+            let instance = wgpu::Instance::new(instance_descriptor);
             let surface = instance
                 .create_surface(window)
                 .context("Failed to create surface")?;
@@ -357,6 +359,7 @@ impl State {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             };
             instance
                 .request_adapter(&request_adapter_options)
@@ -383,6 +386,7 @@ impl State {
                 label: None,
                 required_features: features,
                 required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::default(),
                 memory_hints: wgpu::MemoryHints::default(),
                 trace: wgpu::Trace::default(),
             };
@@ -446,6 +450,7 @@ impl State {
                 present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![format],
+                color_space: wgpu::SurfaceColorSpace::default(),
             };
             surface.configure(&device, &surface_configuration);
             let color_format = surface_configuration.format;
@@ -561,16 +566,11 @@ impl State {
         // self.profiler.begin_frame();
 
         // Get frame or return mapped error if failed
-        let frame = self.surface.get_current_texture();
-        let frame = match frame {
-            std::result::Result::Ok(frame) => frame,
-            std::result::Result::Err(error) => match error {
-                wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
-                wgpu::SurfaceError::OutOfMemory => {
-                    return Err(RendererError::SurfaceOutOfMemory.into())
-                }
-                _ => return Err(RendererError::SurfaceOther.into()),
-            },
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Lost => return Err(RendererError::SurfaceLost.into()),
+            _ => return Err(RendererError::SurfaceOther.into()),
         };
 
         let view = frame
@@ -633,6 +633,9 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("render_encoder"),
             });
+        let mut additional_command_buffers = Vec::new();
+        #[cfg(feature = "debug_ui")]
+        let mut egui_textures_to_free = Vec::new();
 
         // let _timestamp_query_start = self.profiler.write_timestamp(&mut encoder, "Start Render Pass");
 
@@ -643,6 +646,7 @@ impl State {
             // Create color attachment
             let color_attachment = wgpu::RenderPassColorAttachment {
                 view: &view,          // Specifies what texture to save the colors to
+                depth_slice: None,
                 resolve_target: None, // Specifies what texture will receive the resolved output
                 ops: wgpu::Operations {
                     // Specifies what to do with the colors on the screen
@@ -654,7 +658,6 @@ impl State {
                     }), // Specifies how to handle colors stored from the previous frame
                     store: wgpu::StoreOp::Store,
                 },
-                //depth_slice: None,
             };
 
             // Create depth attachment
@@ -692,7 +695,7 @@ impl State {
             timer.begin_context("Egui Draw");
             debug!(LogContext::Frame => "Start recording egui draw commands");
 
-            self.egui_drawer.record_draw_commands(
+            let egui_draw_output = self.egui_drawer.record_draw_commands(
                 &self.device,
                 &self.queue,
                 &mut encoder,
@@ -707,6 +710,8 @@ impl State {
                 egui_ui,
                 timer,
             )?;
+            additional_command_buffers.extend(egui_draw_output.command_buffers);
+            egui_textures_to_free = egui_draw_output.textures_to_free;
 
             timer.end_context()?; // End Egui Draw context
         }
@@ -720,7 +725,14 @@ impl State {
         timer.record("Submit commands and present frame");
 
         // Submit the command buffer to the GPU
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(
+            additional_command_buffers
+                .into_iter()
+                .chain(std::iter::once(encoder.finish())),
+        );
+
+        #[cfg(feature = "debug_ui")]
+        self.egui_drawer.free_textures(&egui_textures_to_free);
 
         timer.record("Read profiling data");
 
@@ -730,7 +742,7 @@ impl State {
         //self.profiler.summarize_all_blocking(&self.device);
 
         // Present the frame
-        frame.present();
+        self.queue.present(frame);
 
         Ok(())
     }
