@@ -30,7 +30,10 @@ egui-winit = { version = "0.35.0", features = ["clipboard"], optional = true }
 
 # WASM dependencies
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wgpu = { version = "30.0.0", default-features = false, features = ["webgpu", "wgsl"] }
+wgpu = { version = "30.0.0", default-features = false, features = [
+    "webgpu",
+    "wgsl",
+] }
 egui-winit = { version = "0.35.0", default-features = false, optional = true }
 
 [features]
@@ -40,3 +43,4 @@ debug_ui = [
     "dep:egui-winit",
     "pill_engine/debug_ui",
 ]
+hardware_ray_tracing = []

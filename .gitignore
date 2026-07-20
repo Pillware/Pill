@@ -11,6 +11,7 @@ engine/target_*
 
 *.log
 *.wgsl
+!engine/pill_renderer/src/ray_tracing/shaders/*.wgsl
 *.cooked_mesh
 *.cooked_tex
 DamagedHelmet.glb

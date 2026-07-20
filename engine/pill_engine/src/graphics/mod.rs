@@ -10,8 +10,10 @@ mod renderer;
 // --- Use ---
 
 pub use renderer::{
-    PillRenderer, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
-    RendererShaderHandle, RendererTextureHandle,
+    HardwareRayQueryCapabilities, PillRenderer, RayOpacityMode, RayVisibility,
+    RenderCamera, RenderFrame, RenderInstance, RenderLight, RendererBackend,
+    RendererCameraHandle, RendererCapabilities, RendererMaterialHandle,
+    RendererMeshHandle, RendererShaderHandle, RendererTextureHandle,
 };
 // Renderer type alias (Box<dyn PillRenderer>) is unused —
 // callers use Box<dyn PillRenderer> directly.

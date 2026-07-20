@@ -20,17 +20,27 @@ pub struct RendererMesh {
 }
 
 impl RendererMesh {
-    pub fn new(device: &wgpu::Device, name: &str, mesh_data: &MeshData) -> Result<Self> {
+    pub fn new(device: &wgpu::Device, name: &str, mesh_data: &MeshData, ray_tracing_enabled: bool) -> Result<Self> {
+        let mut vertex_usage = wgpu::BufferUsages::VERTEX;
+        let mut index_usage = wgpu::BufferUsages::INDEX;
+
+        // When hardware ray tracing is enabled, mark buffers for BLAS input
+        // so they can be used as acceleration-structure geometry sources.
+        if ray_tracing_enabled {
+            vertex_usage |= wgpu::BufferUsages::BLAS_INPUT;
+            index_usage |= wgpu::BufferUsages::BLAS_INPUT;
+        }
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("{:?}_vertex_buffer", name)),
             contents: bytemuck::cast_slice(&mesh_data.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: vertex_usage,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("{:?}_index_buffer", name)),
             contents: bytemuck::cast_slice(&mesh_data.indices),
-            usage: wgpu::BufferUsages::INDEX,
+            usage: index_usage,
         });
 
         let renderer_mesh = Self {

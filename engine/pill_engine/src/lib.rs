@@ -102,7 +102,9 @@ pub mod project {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod internal_mod {
-    pub use crate::app_config::{BuildTarget, CompileMode, EngineConfig, EngineProcessInfo};
+    pub use crate::app_config::{
+        BuildTarget, CompileMode, EngineConfig, EngineProcessInfo, RayTracingMode,
+    };
     pub use crate::{
         config::*,
         ecs::{
@@ -116,9 +118,11 @@ mod internal_mod {
         },
         engine::{Engine, PillProject},
         graphics::{
-            decompose_render_queue_key, PillRenderer, RenderQueueItem, RenderQueueKey,
-            RenderQueueKeyFields, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
-            RendererShaderHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER,
+            decompose_render_queue_key, HardwareRayQueryCapabilities, PillRenderer, RayOpacityMode,
+            RayVisibility, RenderCamera, RenderFrame, RenderInstance, RenderLight, RenderQueueItem,
+            RenderQueueKey, RenderQueueKeyFields, RendererBackend, RendererCameraHandle,
+            RendererCapabilities, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle,
+            RendererTextureHandle, RENDER_QUEUE_KEY_ORDER,
         },
         resources::{
             get_renderer_texture_handle_from_material_texture, Material, MaterialHandle,
@@ -131,7 +135,9 @@ mod internal_mod {
 
 #[cfg(target_arch = "wasm32")]
 mod internal_mod {
-    pub use crate::app_config::{BuildTarget, CompileMode, EngineConfig, EngineProcessInfo};
+    pub use crate::app_config::{
+        BuildTarget, CompileMode, EngineConfig, EngineProcessInfo, RayTracingMode,
+    };
     pub use crate::{
         config::*,
         ecs::{
@@ -142,9 +148,11 @@ mod internal_mod {
         },
         engine::{Engine, PillProject},
         graphics::{
-            decompose_render_queue_key, PillRenderer, RenderQueueItem, RenderQueueKey,
-            RenderQueueKeyFields, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
-            RendererShaderHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER,
+            decompose_render_queue_key, HardwareRayQueryCapabilities, PillRenderer, RayOpacityMode,
+            RayVisibility, RenderCamera, RenderFrame, RenderInstance, RenderLight, RenderQueueItem,
+            RenderQueueKey, RenderQueueKeyFields, RendererBackend, RendererCameraHandle,
+            RendererCapabilities, RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle,
+            RendererTextureHandle, RENDER_QUEUE_KEY_ORDER,
         },
         resources::{
             get_renderer_texture_handle_from_material_texture, Material, MaterialHandle,

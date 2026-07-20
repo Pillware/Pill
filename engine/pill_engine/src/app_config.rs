@@ -111,6 +111,41 @@ impl EngineConfig {
     }
 }
 
+/// Hardware ray tracing device policy.
+///
+/// Controls whether the renderer requests experimental ray-query features
+/// from the GPU adapter. The resolved policy is immutable after device
+/// creation; changing it at runtime requires full renderer recreation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RayTracingMode {
+    /// Do not request experimental RT features. Raster-only path.
+    Off,
+    /// Request RT if a supported adapter is available; fall back to raster
+    /// with one structured warning otherwise.
+    Prefer,
+    /// Require RT support; fail with an actionable error before
+    /// renderer initialization completes if it cannot be enabled.
+    Require,
+}
+
+impl RayTracingMode {
+    pub fn from_config_string(value: &str) -> Self {
+        match value.to_lowercase().as_str() {
+            "prefer" => Self::Prefer,
+            "require" => Self::Require,
+            _ => Self::Off,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Prefer => "prefer",
+            Self::Require => "require",
+        }
+    }
+}
+
 impl EngineProcessInfo {
     pub fn new(mode: &str, target: BuildTarget) -> Self {
         let translated = CompileMode::from_env_value(mode).unwrap();

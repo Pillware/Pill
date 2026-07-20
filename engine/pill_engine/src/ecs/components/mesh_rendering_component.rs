@@ -5,7 +5,7 @@ use crate::{
         DeferredUpdateManagerPointer, EntityHandle, SceneHandle,
     },
     engine::Engine,
-    graphics::{compose_render_queue_key, RenderQueueKey},
+    graphics::{compose_render_queue_key, RayVisibility, RenderQueueKey},
     resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
 };
 
@@ -55,6 +55,12 @@ pub struct MeshRenderingComponent {
     pub material_handle: Option<MaterialHandle>,
     pub(crate) render_queue_key: Option<RenderQueueKey>,
 
+    /// Backend-neutral per-instance ray-tracing participation description.
+    /// V1 inserts an instance into the shadow TLAS only when it is
+    /// ray-visible, casts shadows, has a nonzero mask, resolves to opaque,
+    /// and has an eligible BLAS.
+    pub ray_visibility: RayVisibility,
+
     entity_handle: Option<EntityHandle>,
     scene_handle: Option<SceneHandle>,
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
@@ -76,6 +82,7 @@ impl MeshRenderingComponent {
             mesh_handle: None,
             material_handle: None,
             render_queue_key: None,
+            ray_visibility: RayVisibility::default(),
             entity_handle: None,
             scene_handle: None,
             deferred_update_manager: None,

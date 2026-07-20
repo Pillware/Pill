@@ -181,10 +181,20 @@ pub fn update_transform_matrices(transform_component: &mut TransformComponent) {
         transform_component.rotation,
         transform_component.scale,
     );
-    let normal = Matrix3f::from_euler_angles(transform_component.rotation);
+
+    // Normal matrix: inverse-transpose of the upper-left 3x3 of the model
+    // matrix. This correctly handles non-uniform scale, unlike the previous
+    // rotation-only approximation.
+    let model3 = Matrix3f::from_cols(
+        model.x_axis.truncate(),
+        model.y_axis.truncate(),
+        model.z_axis.truncate(),
+    );
+    let normal = model3.inverse().transpose();
 
     transform_component.model_matrix = model;
     transform_component.normal_matrix = normal.into();
+    transform_component.matrix_update_required = false;
 }
 
 pub fn get_model_matrix(transform_component: &TransformComponent) -> Matrix4f {

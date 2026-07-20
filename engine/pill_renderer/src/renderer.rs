@@ -11,20 +11,39 @@ use crate::{
 
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage,
-    EngineConfig, EntityHandle, MaterialParameter, MaterialTexture, MeshData, PillRenderer,
-    RenderQueueItem, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
+    EngineConfig, EntityHandle, MaterialParameter, MaterialTexture,
+    MeshData, PillRenderer, RayTracingMode, RenderQueueItem,
+    RendererCameraHandle, RendererCapabilities, RendererMaterialHandle, RendererMeshHandle,
     RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot,
     TextureType, TransformComponent,
 };
 
 use pill_core::{debug, info, LogContext, PillSlotMapKey, PillStyle, RendererError, Timer};
 
+#[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+use pill_core::warn;
+
 use std::{collections::HashMap, sync::Arc};
 
 use pill_core::{ErrorContext, Result};
 
+#[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+use crate::ray_tracing::{
+    capability::{
+        build_capabilities, check_compile_time_preconditions,
+        log_startup_diagnostic, resolve_ray_tracing_mode,
+        RayTracingDisabledReason, RayTracingPolicyResult,
+    },
+    pipeline::compile_ray_query_canary,
+    scene::RayTracingScene,
+};
+
+#[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+use pill_engine::internal::HardwareRayQueryCapabilities;
+
 pub struct Renderer {
     pub state: State,
+    capabilities: RendererCapabilities,
 }
 
 impl Renderer {
@@ -34,8 +53,8 @@ impl Renderer {
         config: EngineConfig,
     ) -> Result<Self> {
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
-        let state: State = State::new(window, config).await?;
-        Ok(Self { state })
+        let (state, capabilities) = State::new(window, config).await?;
+        Ok(Self { state, capabilities })
     }
 }
 
@@ -43,9 +62,9 @@ impl PillRenderer for Renderer {
     #[cfg(not(target_arch = "wasm32"))]
     fn new(window: Arc<winit::window::Window>, config: EngineConfig) -> Result<Self> {
         info!(LogContext::Rendering => "Initializing {}", "Renderer".module_object_style());
-        let state: State = pollster::block_on(State::new(window, config))?;
+        let (state, capabilities) = pollster::block_on(State::new(window, config))?;
 
-        Ok(Self { state })
+        Ok(Self { state, capabilities })
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -142,7 +161,7 @@ impl PillRenderer for Renderer {
     }
 
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
-        let mesh = RendererMesh::new(&self.state.device, name, mesh_data)?;
+        let mesh = RendererMesh::new(&self.state.device, name, mesh_data, self.state.ray_tracing_enabled())?;
         let handle = self.state.renderer_resource_storage.meshes.insert(mesh);
         Ok(handle)
     }
@@ -236,6 +255,10 @@ impl PillRenderer for Renderer {
 
     // --- Other ---
 
+    fn capabilities(&self) -> &RendererCapabilities {
+        &self.capabilities
+    }
+
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         info!(LogContext::Rendering => "Resizing {} resources", "Renderer".module_object_style());
         self.state.resize(new_window_size)
@@ -311,12 +334,58 @@ pub struct State {
     pending_egui_ui: Option<Box<dyn FnMut(&egui::Context)>>,
     // Other
     camera_bind_group_layout: wgpu::BindGroupLayout,
+    // Ray tracing (conditionally compiled)
+    #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+    ray_tracing_state: RayTracingStateWrapper,
     //profiler: Profiler,
 }
 
+/// Wraps the RT state so the field is always present (simpler cfg logic).
+#[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+#[allow(dead_code)]
+enum RayTracingStateWrapper {
+    Disabled(RayTracingDisabledReason),
+    Enabled(Box<RayTracingScene>),
+}
+
+#[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+impl RayTracingStateWrapper {
+    #[allow(dead_code)]
+    fn is_enabled(&self) -> bool {
+        matches!(self, Self::Enabled(_))
+    }
+
+    #[allow(dead_code)]
+    fn scene(&self) -> Option<&RayTracingScene> {
+        match self {
+            Self::Enabled(scene) => Some(scene),
+            Self::Disabled(_) => None,
+        }
+    }
+
+    fn scene_mut(&mut self) -> Option<&mut RayTracingScene> {
+        match self {
+            Self::Enabled(scene) => Some(scene),
+            Self::Disabled(_) => None,
+        }
+    }
+}
+
 impl State {
+    /// Returns `true` when hardware ray tracing is enabled on the device.
+    #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+    fn ray_tracing_enabled(&self) -> bool {
+        self.ray_tracing_state.is_enabled()
+    }
+
+    /// Always returns `false` when the feature is not compiled in.
+    #[cfg(not(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32"))))]
+    fn ray_tracing_enabled(&self) -> bool {
+        false
+    }
+
     // Creating some of the wgpu types requires async code
-    async fn new(window: Arc<winit::window::Window>, config: EngineConfig) -> Result<Self> {
+    async fn new(window: Arc<winit::window::Window>, config: EngineConfig) -> Result<(Self, RendererCapabilities)> {
         let window_width = config
             .get_int("WINDOW_WIDTH")
             .context("WINDOW_WIDTH is missing from config")? as u32;
@@ -326,6 +395,12 @@ impl State {
         let window_size = winit::dpi::PhysicalSize::new(window_width, window_height);
         #[cfg(feature = "debug_ui")]
         let window_ref = window.clone();
+
+        // Resolve RT policy early for diagnostics.
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        let rt_mode = resolve_ray_tracing_mode(&config);
+        #[cfg(not(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32"))))]
+        let _rt_mode = RayTracingMode::Off;
 
         // 1. Create instance and surface
         let (instance, surface) = {
@@ -353,7 +428,12 @@ impl State {
             (instance, surface)
         };
 
-        // 2. Adapter
+        // 2. Adapter selection with optional RT preference
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        let (adapter, rt_policy_result) = {
+            select_adapter_with_rt_policy(&instance, &surface, rt_mode).await?
+        };
+        #[cfg(not(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32"))))]
         let adapter = {
             let request_adapter_options = wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -371,12 +451,12 @@ impl State {
         info!(LogContext::Rendering => "Using GPU: {} ({:?})", info.name, info.backend);
 
         // 3. Device and queue
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
         let (device, queue) = {
-            // Ask only for features the adapter actually supports. On Metal
-            // (macOS) PIPELINE_STATISTICS_QUERY isn't available; on some
-            // WebGPU adapters TIMESTAMP_QUERY isn't either. Downstream code
-            // (profiler.rs) checks `device.features().contains(...)` before
-            // using them, so narrowing here is safe.
+            request_device_with_rt_policy(&adapter, &rt_policy_result).await?
+        };
+        #[cfg(not(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32"))))]
+        let (device, queue) = {
             let wanted = wgpu::Features::DEPTH_CLIP_CONTROL
                 | wgpu::Features::TIMESTAMP_QUERY
                 | wgpu::Features::PIPELINE_STATISTICS_QUERY;
@@ -400,13 +480,8 @@ impl State {
         // 4. Surface configuration
         let (surface_configuration, color_format, depth_format) = {
             let preferred_format = wgpu::TextureFormat::Rgba8UnormSrgb;
-
-            // Get supported present modes and choose the best one
             let surface_capabilities = surface.get_capabilities(&adapter);
 
-            // Present mode: on wasm, Mailbox/Immediate aren't universally
-            // supported — stick to Fifo. On native, prefer Mailbox → Immediate
-            // → Fifo based on what the surface advertises.
             #[cfg(target_arch = "wasm32")]
             let present_mode = wgpu::PresentMode::Fifo;
             #[cfg(not(target_arch = "wasm32"))]
@@ -424,7 +499,6 @@ impl State {
                 wgpu::PresentMode::Fifo
             };
 
-            // Choose the best supported format
             let format = if surface_capabilities.formats.contains(&preferred_format) {
                 preferred_format
             } else if surface_capabilities
@@ -438,7 +512,7 @@ impl State {
             {
                 wgpu::TextureFormat::Bgra8Unorm
             } else {
-                surface_capabilities.formats[0] // Use first available format
+                surface_capabilities.formats[0]
             };
 
             let surface_configuration = wgpu::SurfaceConfiguration {
@@ -459,21 +533,21 @@ impl State {
         };
 
         // 5. Depth texture
+        // 5. Depth texture
         let depth_texture =
             RendererTexture::new_depth_texture(&device, &surface_configuration, "depth_texture")
                 .context("Failed to create depth texture")?;
 
         // 6. Define camera bind group layout
-        // Each camera instance has the same bind group layout is we define it here once
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("camera_parameters_bind_group_layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0, // (set = X, binding = 0)
+                    binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false, // Specifies if this buffer will be changing size or not
+                        has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
@@ -494,19 +568,78 @@ impl State {
             window_ref,
         );
 
-        // 9. Profiler
-        // let profiler = {
-        //     Profiler::new(
-        //         &device,
-        //         &queue,
-        //         &adapter,
-        //         16, // up to 16 timestamp marks per frame
-        //         64, // up to 64 occlusion queries per frame
-        //         64, // up to 64 pipeline statistics queries per frame
-        //         wgpu::PipelineStatisticsTypes::VERTEX_SHADER_INVOCATIONS
-        //             | wgpu::PipelineStatisticsTypes::FRAGMENT_SHADER_INVOCATIONS,
-        //     )
-        // };
+        // 9. Ray tracing scene (conditionally compiled)
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        let ray_tracing_state = {
+            if rt_policy_result.is_enabled() {
+                // Compile the ray-query canary to verify WGSL dialect.
+                if let Err(e) = compile_ray_query_canary(&device) {
+                    warn!(LogContext::Rendering =>
+                        "Ray query canary compilation failed: {e}. RT disabled."
+                    );
+                    RayTracingStateWrapper::Disabled(
+                        RayTracingDisabledReason::DeviceRequestRejected {
+                            reason: format!("canary compilation: {e}"),
+                        },
+                    )
+                } else {
+                    let capabilities = rt_policy_result.capabilities()
+                        .cloned()
+                        .unwrap_or(HardwareRayQueryCapabilities {
+                            max_blas_primitive_count: device.limits().max_blas_primitive_count,
+                            max_blas_geometry_count: device.limits().max_blas_geometry_count,
+                            max_tlas_instance_count: device.limits().max_tlas_instance_count,
+                            max_acceleration_structures_per_shader_stage: device.limits().max_acceleration_structures_per_shader_stage,
+                            max_buffers_and_acceleration_structures_per_shader_stage: device.limits().max_buffers_and_acceleration_structures_per_shader_stage,
+                        });
+
+                    let max_instances = config.get_int("MAX_RT_INSTANCES")
+                        .unwrap_or(16384) as u32;
+
+                    let scene = RayTracingScene::new(
+                        &device,
+                        capabilities,
+                        max_instances,
+                    );
+                    RayTracingStateWrapper::Enabled(Box::new(scene))
+                }
+            } else {
+                let reason = match &rt_policy_result {
+                    RayTracingPolicyResult::Disabled { reason } => reason.clone(),
+                    _ => RayTracingDisabledReason::PolicyOff,
+                };
+                RayTracingStateWrapper::Disabled(reason)
+            }
+        };
+
+        // Log startup diagnostics
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        log_startup_diagnostic(rt_mode, &adapter, &rt_policy_result);
+
+        // Build capabilities report
+        let capabilities = {
+            #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+            {
+                build_capabilities(&adapter, &device, &rt_policy_result)
+            }
+            #[cfg(not(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32"))))]
+            {
+                use pill_engine::internal::RendererBackend;
+                let info = adapter.get_info();
+                RendererCapabilities {
+                    backend: match info.backend {
+                        wgpu::Backend::Vulkan => RendererBackend::Vulkan,
+                        wgpu::Backend::Dx12 => RendererBackend::Dx12,
+                        wgpu::Backend::Metal => RendererBackend::Metal,
+                        wgpu::Backend::Gl => RendererBackend::Gl,
+                        wgpu::Backend::BrowserWebGpu => RendererBackend::BrowserWebGpu,
+                        _ => RendererBackend::Unknown,
+                    },
+                    adapter_name: info.name,
+                    hardware_ray_query: None,
+                }
+            }
+        };
 
         // Create state
         let renderer = Self {
@@ -529,10 +662,13 @@ impl State {
             pending_egui_ui: None,
             // Other
             camera_bind_group_layout,
+            // Ray tracing
+            #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+            ray_tracing_state,
             // profiler
         };
 
-        Ok(renderer)
+        Ok((renderer, capabilities))
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
@@ -633,9 +769,36 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("render_encoder"),
             });
+        #[cfg_attr(not(feature = "debug_ui"), allow(unused_mut))]
         let mut additional_command_buffers = Vec::new();
         #[cfg(feature = "debug_ui")]
         let mut egui_textures_to_free = Vec::new();
+
+        // ── Acceleration-structure builds (before the render pass) ──────
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        if self.ray_tracing_state.is_enabled() {
+            if let Some(scene) = self.ray_tracing_state.scene_mut() {
+                scene.begin_frame();
+
+                // Queue pending BLAS builds for meshes that need them.
+                // In a full implementation, this would walk the render queue,
+                // check which meshes have pending BLASes, and queue their
+                // builds. For the MVP, pending BLASes are queued at mesh
+                // creation time.
+                //
+                // Queue TLAS instances from the render queue.
+                // In the current architecture, we would iterate through
+                // the render queue, look up transform and mesh data, and
+                // call scene.queue_tlas_instance() for each RT-eligible
+                // instance.
+                //
+                // For the V1 MVP, the scene integration is done through
+                // the frame-boundary types (RenderFrame/RenderInstance),
+                // which are built by the rendering_system.
+
+                scene.build_acceleration_structures(&mut encoder);
+            }
+        }
 
         // let _timestamp_query_start = self.profiler.write_timestamp(&mut encoder, "Start Render Pass");
 
@@ -731,6 +894,12 @@ impl State {
                 .chain(std::iter::once(encoder.finish())),
         );
 
+        // Advance RT submission tracking.
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        if let Some(scene) = self.ray_tracing_state.scene_mut() {
+            scene.on_submission();
+        }
+
         #[cfg(feature = "debug_ui")]
         self.egui_drawer.free_textures(&egui_textures_to_free);
 
@@ -746,4 +915,206 @@ impl State {
 
         Ok(())
     }
+}
+
+// ── Ray-tracing adapter and device negotiation ──────────────────────────
+
+#[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+async fn select_adapter_with_rt_policy(
+    instance: &wgpu::Instance,
+    surface: &wgpu::Surface<'static>,
+    rt_mode: RayTracingMode,
+) -> Result<(wgpu::Adapter, RayTracingPolicyResult)> {
+    use crate::ray_tracing::capability::{
+        is_certified_rt_backend, validate_as_limits, RayTracingDisabledReason,
+        RayTracingPolicyResult,
+    };
+
+    // Check compile-time preconditions.
+    if let Some(reason) = check_compile_time_preconditions() {
+        return match rt_mode {
+            RayTracingMode::Require => Err(format!(
+                "Ray tracing required but unavailable: {}",
+                reason.as_str()
+            )
+            .into()),
+            _ => {
+                let adapter = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::default(),
+                        compatible_surface: Some(surface),
+                        force_fallback_adapter: false,
+                        apply_limit_buckets: false,
+                    })
+                    .await
+                    .context("Failed to request adapter")?;
+                Ok((adapter, RayTracingPolicyResult::Disabled { reason }))
+            }
+        };
+    }
+
+    // Enumerate adapters and rank them for RT.
+    let adapters = instance.enumerate_adapters(wgpu::Backends::all()).await;
+    if adapters.is_empty() {
+        return Err("No GPU adapters found".into());
+    }
+
+    // First pass: find an RT-capable adapter.
+    let mut best_rt_adapter: Option<wgpu::Adapter> = None;
+    let mut best_raster_adapter: Option<wgpu::Adapter> = None;
+
+    for adapter in &adapters {
+        let info = adapter.get_info();
+        let features = adapter.features();
+
+        // Check presentation support.
+        if !surface.get_capabilities(adapter).formats.is_empty() {
+            best_raster_adapter = Some(adapter.clone());
+
+            // RT candidacy checks.
+            if features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY)
+                && is_certified_rt_backend(info.backend)
+            {
+                let limits = adapter.limits();
+                if validate_as_limits(&limits, 1024).is_none() {
+                    best_rt_adapter = Some(adapter.clone());
+                    break; // Take the first qualifying adapter.
+                }
+            }
+        }
+    }
+
+    match rt_mode {
+        RayTracingMode::Off => {
+            let adapter = best_raster_adapter
+                .or(best_rt_adapter)
+                .unwrap_or_else(|| adapters[0].clone());
+            Ok((
+                adapter,
+                RayTracingPolicyResult::Disabled {
+                    reason: RayTracingDisabledReason::PolicyOff,
+                },
+            ))
+        }
+        RayTracingMode::Prefer => {
+            if let Some(rt_adapter) = best_rt_adapter {
+                let limits = rt_adapter.limits();
+                let capabilities = HardwareRayQueryCapabilities {
+                    max_blas_primitive_count: limits.max_blas_primitive_count,
+                    max_blas_geometry_count: limits.max_blas_geometry_count,
+                    max_tlas_instance_count: limits.max_tlas_instance_count,
+                    max_acceleration_structures_per_shader_stage: limits.max_acceleration_structures_per_shader_stage,
+                    max_buffers_and_acceleration_structures_per_shader_stage: limits.max_buffers_and_acceleration_structures_per_shader_stage,
+                };
+                Ok((
+                    rt_adapter,
+                    RayTracingPolicyResult::Enabled { capabilities },
+                ))
+            } else {
+                let adapter = best_raster_adapter
+                    .unwrap_or_else(|| adapters[0].clone());
+                warn!(LogContext::Rendering =>
+                    "Prefer RT: no certified adapter with EXPERIMENTAL_RAY_QUERY found. Falling back to raster."
+                );
+                Ok((
+                    adapter,
+                    RayTracingPolicyResult::Disabled {
+                        reason: RayTracingDisabledReason::PreferFallback {
+                            reason: "no certified RT adapter".into(),
+                        },
+                    },
+                ))
+            }
+        }
+        RayTracingMode::Require => {
+            match best_rt_adapter {
+                Some(rt_adapter) => {
+                    let limits = rt_adapter.limits();
+                    let capabilities = HardwareRayQueryCapabilities {
+                        max_blas_primitive_count: limits.max_blas_primitive_count,
+                        max_blas_geometry_count: limits.max_blas_geometry_count,
+                        max_tlas_instance_count: limits.max_tlas_instance_count,
+                        max_acceleration_structures_per_shader_stage: limits.max_acceleration_structures_per_shader_stage,
+                        max_buffers_and_acceleration_structures_per_shader_stage: limits.max_buffers_and_acceleration_structures_per_shader_stage,
+                    };
+                    Ok((
+                        rt_adapter,
+                        RayTracingPolicyResult::Enabled { capabilities },
+                    ))
+                }
+                None => {
+                    // Provide a precise diagnostic.
+                    let reason = if let Some(adapter) = best_raster_adapter {
+                        let info = adapter.get_info();
+                        let features = adapter.features();
+                        if !features.contains(wgpu::Features::EXPERIMENTAL_RAY_QUERY) {
+                            RayTracingDisabledReason::FeatureBitAbsent
+                        } else if !is_certified_rt_backend(info.backend) {
+                            RayTracingDisabledReason::BackendNotSupported {
+                                backend: format!("{:?}", info.backend),
+                            }
+                        } else {
+                            RayTracingDisabledReason::RequiredLimitTooSmall {
+                                limit_name: "unknown".into(),
+                                required: 0,
+                                actual: 0,
+                            }
+                        }
+                    } else {
+                        RayTracingDisabledReason::NoSurfaceCompatibleAdapter
+                    };
+                    Err(format!(
+                        "Ray tracing required (RAY_TRACING_MODE=require) but cannot be enabled: {}",
+                        reason.as_str()
+                    )
+                    .into())
+                }
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+async fn request_device_with_rt_policy(
+    adapter: &wgpu::Adapter,
+    rt_policy: &RayTracingPolicyResult,
+) -> Result<(wgpu::Device, wgpu::Queue)> {
+    let baseline = wgpu::Features::DEPTH_CLIP_CONTROL
+        | wgpu::Features::TIMESTAMP_QUERY
+        | wgpu::Features::PIPELINE_STATISTICS_QUERY;
+
+    let (required_features, required_limits, experimental_features) = match rt_policy {
+        RayTracingPolicyResult::Enabled { .. } => {
+            let features = baseline | wgpu::Features::EXPERIMENTAL_RAY_QUERY;
+            let limits = wgpu::Limits::default()
+                .using_minimum_supported_acceleration_structure_values();
+            // SAFETY: isolated opt-in to the pinned experimental ray-query API.
+            // All AS descriptors, lifetimes, build ordering, and shader state
+            // are validated by RayTracingScene and covered by GPU validation tests.
+            let experimental = unsafe { wgpu::ExperimentalFeatures::enabled() };
+            (features, limits, experimental)
+        }
+        RayTracingPolicyResult::Disabled { .. } => {
+            let features = baseline & adapter.features();
+            let limits = wgpu::Limits::default();
+            let experimental = wgpu::ExperimentalFeatures::default();
+            (features, limits, experimental)
+        }
+    };
+
+    let device_descriptor = wgpu::DeviceDescriptor {
+        label: None,
+        required_features: required_features & adapter.features(),
+        required_limits,
+        experimental_features,
+        memory_hints: wgpu::MemoryHints::default(),
+        trace: wgpu::Trace::default(),
+    };
+
+    adapter
+        .request_device(&device_descriptor)
+        .await
+        .map_err(|e| -> pill_core::PillError {
+            format!("Failed to request device: {e}").into()
+        })
 }

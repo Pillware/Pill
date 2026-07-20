@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 headless = ["pill_engine/headless"]
 debug_ui = ["pill_renderer/debug_ui"]
+hardware_ray_tracing = ["pill_renderer/hardware_ray_tracing"]
 
 [dependencies]
 pill_abi = { path = "../pill_abi" }
@@ -18,4 +19,3 @@ pill_renderer = { path = "../pill_renderer", features = ["debug_ui"] }
 
 libloading = "0.8.8"
 winit = "0.30.13"
-

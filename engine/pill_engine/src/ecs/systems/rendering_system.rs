@@ -1,8 +1,8 @@
 use crate::{
     config::RENDERING_SYSTEM,
     ecs::{
-        CameraAspectRatio, CameraComponent, EntityHandle, MeshRenderingComponent,
-        TransformComponent,
+        update_transform_matrices, CameraAspectRatio, CameraComponent, EntityHandle,
+        MeshRenderingComponent, TransformComponent,
     },
     engine::Engine,
     graphics::RenderQueueItem,
@@ -59,12 +59,17 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let mut add_to_render_queue_duration: f32 = 0.0;
 
     // Iterate mesh rendering components
-    for (entity_handle, _transform_component, mesh_rendering_component) in engine
+    for (entity_handle, transform_component, mesh_rendering_component) in engine
         .scene_manager
         .get_two_component_iterator_mut::<TransformComponent, MeshRenderingComponent>(
         active_scene_handle,
     )? {
-        // Update transform matrices if required
+        // Update transform matrices if required (once per frame)
+        let matrix_start = Instant::now();
+        if transform_component.matrix_update_required {
+            update_transform_matrices(transform_component);
+        }
+        _matrix_calculation_duration += matrix_start.elapsed().as_secs_f32() * 1000.0;
 
         // Add valid mesh rendering components to render queue
         let add_to_render_queue_start_time = Instant::now();

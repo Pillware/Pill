@@ -2,8 +2,8 @@ use crate::{
     app_config::EngineConfig,
     ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
     graphics::{
-        PillRenderer, RenderQueueItem, RendererCameraHandle, RendererMaterialHandle,
-        RendererMeshHandle, RendererShaderHandle, RendererTextureHandle,
+        PillRenderer, RenderQueueItem, RendererBackend, RendererCameraHandle, RendererCapabilities,
+        RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle,
     },
     internal::{MaterialParameter, MaterialTexture},
     resources::{MeshData, ShaderParameterSlot, ShaderTextureSlot, TextureType},
@@ -14,11 +14,25 @@ use pill_core::Timer;
 use std::{collections::HashMap, sync::Arc};
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
-pub struct DummyRenderer;
+pub struct DummyRenderer {
+    capabilities: RendererCapabilities,
+}
+
+impl DummyRenderer {
+    fn dummy_capabilities() -> RendererCapabilities {
+        RendererCapabilities {
+            backend: RendererBackend::Headless,
+            adapter_name: "dummy".to_string(),
+            hardware_ray_query: None,
+        }
+    }
+}
 
 impl PillRenderer for DummyRenderer {
     fn new(_window: Arc<Window>, _config: EngineConfig) -> Result<Self> {
-        Ok(DummyRenderer)
+        Ok(DummyRenderer {
+            capabilities: Self::dummy_capabilities(),
+        })
     }
 
     // --- Create ---
@@ -109,6 +123,10 @@ impl PillRenderer for DummyRenderer {
     }
 
     // --- Other ---
+
+    fn capabilities(&self) -> &RendererCapabilities {
+        &self.capabilities
+    }
 
     fn resize(&mut self, _new_window_size: PhysicalSize<u32>) {
         // no-op for dummy
