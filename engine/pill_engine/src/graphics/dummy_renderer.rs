@@ -1,6 +1,8 @@
 use crate::{
     app_config::EngineConfig,
-    ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
+    ecs::{
+        CameraComponent, ComponentStorage, EntityHandle, MeshRenderingComponent, TransformComponent,
+    },
     graphics::{
         PillRenderer, RenderQueueItem, RendererBackend, RendererCameraHandle, RendererCapabilities,
         RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTextureHandle,
@@ -144,6 +146,7 @@ impl PillRenderer for DummyRenderer {
         _render_queue: &[RenderQueueItem],
         _camera_component_storage: &ComponentStorage<CameraComponent>,
         _transform_component_storage: &ComponentStorage<TransformComponent>,
+        _mesh_rendering_component_storage: &ComponentStorage<MeshRenderingComponent>,
         _egui_ui: Box<dyn FnMut(&egui::Context)>,
         _delta_time: f32,
         _timer: &mut Timer,
@@ -158,6 +161,7 @@ impl PillRenderer for DummyRenderer {
         _render_queue: &[RenderQueueItem],
         _camera_component_storage: &ComponentStorage<CameraComponent>,
         _transform_component_storage: &ComponentStorage<TransformComponent>,
+        _mesh_rendering_component_storage: &ComponentStorage<MeshRenderingComponent>,
         _delta_time: f32,
         _timer: &mut Timer,
     ) -> Result<()> {

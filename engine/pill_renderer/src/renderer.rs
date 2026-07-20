@@ -12,7 +12,7 @@ use crate::{
 use pill_engine::internal::{
     get_renderer_resource_handle_from_camera_component, CameraComponent, ComponentStorage,
     EngineConfig, EntityHandle, MaterialParameter, MaterialTexture,
-    MeshData, PillRenderer, RayTracingMode, RenderQueueItem,
+    MeshData, MeshRenderingComponent, PillRenderer, RayTracingMode, RenderQueueItem,
     RendererCameraHandle, RendererCapabilities, RendererMaterialHandle, RendererMeshHandle,
     RendererShaderHandle, RendererTextureHandle, ShaderParameterSlot, ShaderTextureSlot,
     TextureType, TransformComponent,
@@ -29,13 +29,14 @@ use pill_core::{ErrorContext, Result};
 
 #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
 use crate::ray_tracing::{
+    blas::{create_blas_size_descriptor, BlasBuildState, RayTracingMesh},
     capability::{
         build_capabilities, check_compile_time_preconditions,
         log_startup_diagnostic, resolve_ray_tracing_mode,
         RayTracingDisabledReason, RayTracingPolicyResult,
     },
     pipeline::compile_ray_query_canary,
-    scene::RayTracingScene,
+    scene::{PendingBlasEntry, RayTracingScene},
 };
 
 #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
@@ -163,6 +164,67 @@ impl PillRenderer for Renderer {
     fn create_mesh(&mut self, name: &str, mesh_data: &MeshData) -> Result<RendererMeshHandle> {
         let mesh = RendererMesh::new(&self.state.device, name, mesh_data, self.state.ray_tracing_enabled())?;
         let handle = self.state.renderer_resource_storage.meshes.insert(mesh);
+
+        // ── Create BLAS for this mesh when RT is enabled ──────────────
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        if let Some(scene) = self.state.ray_tracing_state.scene_mut() {
+            let mesh_ref = self.state.renderer_resource_storage.meshes.get(handle).unwrap();
+            let vertex_count = mesh_data.vertices.len() as u32;
+            let index_count = mesh_data.indices.len() as u32;
+
+            // Quick validation: skip empty or degenerate meshes.
+            if vertex_count > 0 && index_count > 0 && index_count % 3 == 0 {
+                let size_desc = create_blas_size_descriptor(
+                    vertex_count,
+                    index_count,
+                    wgpu::IndexFormat::Uint32,
+                );
+
+                let blas = self.state.device.create_blas(
+                    &wgpu::CreateBlasDescriptor {
+                        label: Some(&format!("{name}_blas")),
+                        flags: wgpu::AccelerationStructureFlags::PREFER_FAST_BUILD,
+                        update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+                    },
+                    wgpu::BlasGeometrySizeDescriptors::Triangles {
+                        descriptors: vec![size_desc.clone()],
+                    },
+                );
+
+                let rt_mesh = RayTracingMesh {
+                    blas: blas.clone(),
+                    size_descriptor: size_desc.clone(),
+                    build_state: BlasBuildState::Pending,
+                    primitive_count: index_count / 3,
+                    vertex_count,
+                    index_count,
+                };
+
+                scene.blas_cache.insert(handle, rt_mesh);
+
+                // Queue the BLAS for its first build.
+                scene.queue_blas_build(PendingBlasEntry {
+                    blas,
+                    size_descriptor: size_desc,
+                    vertex_buffer: mesh_ref.vertex_buffer.clone(), // buffer clones are cheap (Arc internally)
+                    index_buffer: mesh_ref.index_buffer.clone(),
+                    mesh_handle: handle,
+                    vertex_count,
+                    index_count,
+                });
+
+                debug!(LogContext::Rendering =>
+                    "RT: created BLAS for mesh '{}' ({} verts, {} indices, {} prims)",
+                    name, vertex_count, index_count, index_count / 3,
+                );
+            } else {
+                debug!(LogContext::Rendering =>
+                    "RT: mesh '{}' skipped for BLAS (degenerate: {} verts, {} indices)",
+                    name, vertex_count, index_count,
+                );
+            }
+        }
+
         Ok(handle)
     }
 
@@ -277,6 +339,7 @@ impl PillRenderer for Renderer {
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        mesh_rendering_component_storage: &ComponentStorage<MeshRenderingComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer,
@@ -287,6 +350,7 @@ impl PillRenderer for Renderer {
             render_queue,
             camera_component_storage,
             transform_component_storage,
+            mesh_rendering_component_storage,
             delta_time,
             timer,
         )
@@ -299,6 +363,7 @@ impl PillRenderer for Renderer {
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        mesh_rendering_component_storage: &ComponentStorage<MeshRenderingComponent>,
         delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()> {
@@ -307,6 +372,7 @@ impl PillRenderer for Renderer {
             render_queue,
             camera_component_storage,
             transform_component_storage,
+            mesh_rendering_component_storage,
             delta_time,
             timer,
         )
@@ -337,6 +403,11 @@ pub struct State {
     // Ray tracing (conditionally compiled)
     #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
     ray_tracing_state: RayTracingStateWrapper,
+    // RT pipeline variant for the default lit shader.
+    #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+    rt_lit_pipeline: Option<wgpu::RenderPipeline>,
+    #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+    rt_engine_bind_group: Option<wgpu::BindGroup>,
     //profiler: Profiler,
 }
 
@@ -642,7 +713,7 @@ impl State {
         };
 
         // Create state
-        let renderer = Self {
+        let mut renderer = Self {
             // Resources
             renderer_resource_storage,
             // Renderer variables
@@ -665,8 +736,163 @@ impl State {
             // Ray tracing
             #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
             ray_tracing_state,
+            #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+            rt_lit_pipeline: None,
+            #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+            rt_engine_bind_group: None,
             // profiler
         };
+
+        // ── Post-init: create RT pipeline variant ────────────────────
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        if let Some(scene) = renderer.ray_tracing_state.scene() {
+            let rt_bgl = renderer.device.create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: Some("rt_engine_bgl"),
+                    entries: &[
+                        // Binding 0: engine uniform buffer (fog + light)
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        // Binding 1: TLAS
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::AccelerationStructure {
+                                vertex_return: false,
+                            },
+                            count: None,
+                        },
+                    ],
+                },
+            );
+
+            let rt_bg = renderer.device.create_bind_group(
+                &wgpu::BindGroupDescriptor {
+                    label: Some("rt_engine_bg"),
+                    layout: &rt_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: renderer.renderer_resource_storage
+                                .engine_parameters
+                                .parameters_uniform_buffer
+                                .as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::AccelerationStructure(
+                                &scene.tlas.tlas,
+                            ),
+                        },
+                    ],
+                },
+            );
+
+            // RT fragment shader: basic diffuse lighting with shadow ray.
+            const RT_FRAGMENT_SHADER: &str = r#"
+enable wgpu_ray_query;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) world_position: vec3<f32>,
+    @location(1) world_normal: vec3<f32>,
+    @location(4) tex_coord: vec2<f32>,
+}
+
+struct EngineParams {
+    fog_color: vec3<f32>,
+    fog_density: f32,
+    light_position: vec3<f32>,
+    light_color: vec3<f32>,
+    light_intensity: f32,
+    shadow_cull_mask: u32,
+}
+
+@group(0) @binding(0)
+var<uniform> engine: EngineParams;
+
+@group(0) @binding(1)
+var tlas: acceleration_structure;
+
+@group(1) @binding(0)
+var<uniform> camera: mat4x4<f32>;
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let N = normalize(in.world_normal);
+    let L = normalize(engine.light_position - in.world_position);
+    let V = vec3<f32>(0.0, 0.0, 1.0); // view direction from camera
+
+    // Ambient
+    let ambient = vec3<f32>(0.05, 0.05, 0.05);
+
+    // Diffuse
+    let NdotL = max(dot(N, L), 0.0);
+    let diffuse = engine.light_color * NdotL * engine.light_intensity;
+
+    // Shadow ray
+    let bias = 0.05f;
+    let origin = in.world_position + N * bias;
+    let to_light = engine.light_position - origin;
+    let distance = length(to_light);
+    let direction = to_light / distance;
+    let t_max = distance - 0.01f;
+
+    var shadow: f32 = 1.0;
+    if (distance > 0.001 && t_max > 0.001) {
+        var rq: ray_query;
+        var ray_desc: RayDesc;
+        ray_desc.origin = origin;
+        ray_desc.dir = direction;
+        ray_desc.tmin = 0.001f;
+        ray_desc.tmax = t_max;
+        ray_desc.flags = 4u;   // SKIP_CULLING
+        ray_desc.cull_mask = 0xffu;
+        rayQueryInitialize(&rq, tlas, ray_desc);
+
+        loop {
+            if (rayQueryProceed(&rq)) {
+                rayQueryConfirmIntersection(&rq);
+                shadow = 0.0;
+                break;
+            } else {
+                break;
+            }
+        }
+    }
+
+    let lit = ambient + diffuse * shadow;
+    // Simple fog
+    let fog_factor = 1.0 / exp(engine.fog_density * in.world_position.z);
+    let color = mix(engine.fog_color, lit, vec3<f32>(fog_factor));
+
+    return vec4<f32>(color, 1.0);
+}
+"#;
+
+            let rt_sm = renderer.device.create_shader_module(
+                wgpu::ShaderModuleDescriptor {
+                    label: Some("rt_lit_fragment"),
+                    source: wgpu::ShaderSource::Wgsl(RT_FRAGMENT_SHADER.into()),
+                },
+            );
+
+            // Note: full pipeline creation requires a vertex shader module
+            // and vertex buffer layouts. These are available later when
+            // create_shader is called. For now, we store the fragment
+            // shader and bind group; the pipeline is created lazily.
+            renderer.rt_engine_bind_group = Some(rt_bg);
+            // rt_lit_pipeline will be created when the default lit shader
+            // vertex module is available (deferred to create_shader).
+        }
 
         Ok((renderer, capabilities))
     }
@@ -693,6 +919,7 @@ impl State {
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        #[allow(unused_variables)] mesh_rendering_component_storage: &ComponentStorage<MeshRenderingComponent>,
         _delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()> {
@@ -780,21 +1007,91 @@ impl State {
             if let Some(scene) = self.ray_tracing_state.scene_mut() {
                 scene.begin_frame();
 
-                // Queue pending BLAS builds for meshes that need them.
-                // In a full implementation, this would walk the render queue,
-                // check which meshes have pending BLASes, and queue their
-                // builds. For the MVP, pending BLASes are queued at mesh
-                // creation time.
-                //
-                // Queue TLAS instances from the render queue.
-                // In the current architecture, we would iterate through
-                // the render queue, look up transform and mesh data, and
-                // call scene.queue_tlas_instance() for each RT-eligible
-                // instance.
-                //
-                // For the V1 MVP, the scene integration is done through
-                // the frame-boundary types (RenderFrame/RenderInstance),
-                // which are built by the rendering_system.
+                // Walk the render queue to populate TLAS instances.
+                for item in render_queue {
+                    let entity_index = item.entity_index as usize;
+
+                    // Look up the MeshRenderingComponent to get the mesh
+                    // handle and ray-visibility policy.
+                    let mrc_slot = mesh_rendering_component_storage
+                        .data
+                        .get(entity_index)
+                        .and_then(|s| s.as_ref());
+                    let Some(mrc) = mrc_slot else { continue; };
+                    if mrc.mesh_handle.is_none() { continue; };
+
+                    // Map engine MeshHandle → renderer RendererMeshHandle.
+                    // The render queue key already contains the renderer
+                    // handle; we need the full handle to look up the BLAS.
+                    // Reconstruct from the render queue key fields.
+                    let key_fields = pill_engine::internal::decompose_render_queue_key(item.key);
+                    let renderer_mesh_handle = RendererMeshHandle::new(
+                        key_fields.mesh_index.into(),
+                        std::num::NonZeroU32::new(key_fields.mesh_version.into()).unwrap(),
+                    );
+
+                    // Check BLAS cache for this mesh and extract the BLAS handle.
+                    // We clone the Blas handle to end the immutable borrow
+                    // before the mutable scene.queue_tlas_instance call.
+                    let blas_handle = match scene.blas_cache.get(&renderer_mesh_handle) {
+                        Some(m) if m.build_state.is_ready() => m.blas.clone(),
+                        _ => continue,
+                    };
+
+                    // Check ray visibility.
+                    if !mrc.ray_visibility.ray_visible || !mrc.ray_visibility.casts_shadow {
+                        continue;
+                    }
+                    if mrc.ray_visibility.mask == 0 {
+                        continue;
+                    }
+
+                    // Get the transform and extract the model matrix.
+                    let transform_slot = transform_component_storage
+                        .data
+                        .get(entity_index)
+                        .and_then(|s| s.as_ref());
+                    let Some(transform) = transform_slot else { continue; };
+
+                    // Use the public accessor to get the cached model matrix.
+                    let model = pill_engine::internal::get_model_matrix(transform);
+
+                    // Convert to TLAS row-major 3x4 format.
+                    let tlas_transform = match crate::ray_tracing::transform::model_to_tlas_transform(&model) {
+                        Some(t) => t,
+                        None => continue,
+                    };
+
+                    // Allocate a ray-instance ID.
+                    let instance_id = match scene.instance_table.allocate() {
+                        Some(id) => id,
+                        None => continue,
+                    };
+
+                    // Build the TLAS instance.
+                    let tlas_instance = wgpu::TlasInstance::new(
+                        &blas_handle,
+                        tlas_transform,
+                        instance_id.index,
+                        mrc.ray_visibility.mask,
+                    );
+                    scene.pending_tlas_instances.push(tlas_instance);
+
+                    // Write GPU metadata.
+                    scene.instance_table.write_instance(
+                        &self.queue,
+                        instance_id,
+                        &crate::ray_tracing::instance_table::GpuRtInstance {
+                            mesh_metadata_index: 0,
+                            material_metadata_index: 0,
+                            entity_debug_id: entity_index as u32,
+                            flags: 0x1,
+                        },
+                    );
+
+                    // Track the entity → instance ID mapping.
+                    scene.entity_to_instance_id.insert(entity_index as u32, instance_id);
+                }
 
                 scene.build_acceleration_structures(&mut encoder);
             }

@@ -1,7 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 use crate::{
     app_config::EngineConfig,
-    ecs::{CameraComponent, ComponentStorage, EntityHandle, TransformComponent},
+    ecs::{
+        CameraComponent, ComponentStorage, EntityHandle, MeshRenderingComponent, TransformComponent,
+    },
     graphics::RenderQueueItem,
     internal::{MaterialParameter, MaterialTexture, MeshData},
     resources::{ShaderParameterSlot, ShaderTextureSlot, TextureType},
@@ -273,6 +275,7 @@ pub trait PillRenderer {
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        mesh_rendering_component_storage: &ComponentStorage<MeshRenderingComponent>,
         egui_ui: Box<dyn FnMut(&egui::Context)>,
         delta_time: f32,
         timer: &mut Timer,
@@ -285,6 +288,7 @@ pub trait PillRenderer {
         render_queue: &[RenderQueueItem],
         camera_component_storage: &ComponentStorage<CameraComponent>,
         transform_component_storage: &ComponentStorage<TransformComponent>,
+        mesh_rendering_component_storage: &ComponentStorage<MeshRenderingComponent>,
         delta_time: f32,
         timer: &mut Timer,
     ) -> Result<()>;

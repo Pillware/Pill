@@ -124,6 +124,15 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         ))
         .unwrap();
 
+    let mesh_rendering_component_storage = active_scene
+        .get_component_storage::<MeshRenderingComponent>()
+        .context(format!(
+            "{}: Cannot get {}",
+            "rendering_system".specific_object_style(),
+            "MeshRenderingComponents".specific_object_style()
+        ))
+        .unwrap();
+
     timer.begin_context("Render");
 
     // Render
@@ -135,6 +144,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         &engine.render_queue,
         camera_component_storage,
         transform_component_storage,
+        mesh_rendering_component_storage,
         egui_ui,
         delta_time,
         &mut timer,
@@ -145,6 +155,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         &engine.render_queue,
         camera_component_storage,
         transform_component_storage,
+        mesh_rendering_component_storage,
         delta_time,
         &mut timer,
     );
