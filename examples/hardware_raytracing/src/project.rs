@@ -118,11 +118,113 @@ impl PillProject for Project {
         // --- Rotating cubes system ───────────────────────────────────
         engine.add_system("rotate_cubes", rotate_cubes_system)?;
 
+        // --- Camera controller ──────────────────────────────────────
+        engine.add_system("camera_controller", camera_controller_system)?;
+
         Ok(())
     }
 }
 
 // ── Systems ─────────────────────────────────────────────────────────────
+
+/// WASD movement + arrow key rotation for the active camera.
+fn camera_controller_system(engine: &mut Engine) -> Result<()> {
+    let delta_time = engine.get_global_component::<TimeComponent>()?.delta_time;
+
+    // Collect input state first so the immutable borrow is released
+    // before we mutably borrow engine for the component iterator.
+    let key_w = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::KeyW);
+    let key_s = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::KeyS);
+    let key_a = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::KeyA);
+    let key_d = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::KeyD);
+    let key_q = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::KeyQ);
+    let key_e = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::KeyE);
+    let key_up = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::ArrowUp);
+    let key_down = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::ArrowDown);
+    let key_left = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::ArrowLeft);
+    let key_right = engine
+        .get_global_component::<InputComponent>()?
+        .get_key(KeyboardKey::ArrowRight);
+
+    let move_speed: f32 = 10.0;
+    let rotate_speed: f32 = 80.0;
+
+    for (_entity, transform, camera) in
+        engine.iterate_two_components_mut::<TransformComponent, CameraComponent>()?
+    {
+        if !camera.enabled {
+            continue;
+        }
+
+        let mut position = transform.position;
+        let mut rotation = transform.rotation;
+
+        // Forward / right from yaw (rotation.y), ignoring pitch for
+        // horizontal movement so WASD stays flat on the XZ plane.
+        let yaw_radians = rotation.y.to_radians();
+        let forward = Vector3f::new(yaw_radians.sin(), 0.0, yaw_radians.cos());
+        let right = Vector3f::new(yaw_radians.cos(), 0.0, -yaw_radians.sin());
+
+        // --- WASD movement -------------------------------------------
+        if key_w {
+            position += forward * move_speed * delta_time;
+        }
+        if key_s {
+            position -= forward * move_speed * delta_time;
+        }
+        if key_a {
+            position += right * move_speed * delta_time;
+        }
+        if key_d {
+            position -= right * move_speed * delta_time;
+        }
+        // Q / E for vertical movement
+        if key_q {
+            position.y -= move_speed * delta_time;
+        }
+        if key_e {
+            position.y += move_speed * delta_time;
+        }
+
+        // --- Arrow key rotation -------------------------------------
+        if key_up {
+            rotation.x -= rotate_speed * delta_time;
+        }
+        if key_down {
+            rotation.x += rotate_speed * delta_time;
+        }
+        if key_left {
+            rotation.y += rotate_speed * delta_time;
+        }
+        if key_right {
+            rotation.y -= rotate_speed * delta_time;
+        }
+
+        transform.set_position(position);
+        transform.set_rotation(rotation);
+        break; // Only control the first enabled camera
+    }
+
+    Ok(())
+}
 
 /// Slowly rotate all cubes around their own axes.
 fn rotate_cubes_system(engine: &mut Engine) -> Result<()> {
