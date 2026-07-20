@@ -106,7 +106,7 @@ impl EguiDrawer {
             self.renderer
                 .update_buffers(device, queue, encoder, &tris, &screen_descriptor);
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: window_surface_view,
                 depth_slice: None,

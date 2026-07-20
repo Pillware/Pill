@@ -814,6 +814,7 @@ impl State {
         };
 
         // Create state
+        #[allow(unused_mut)]
         let mut renderer = Self {
             // Resources
             renderer_resource_storage,
@@ -899,24 +900,61 @@ impl State {
                 },
             );
 
-            // RT fragment shader: basic diffuse lighting with shadow ray.
+            // Bootstrap the TLAS with a one-shot build so it is
+            // valid for binding on the very first frame (even when
+            // no BLAS entries are ready yet).
+            {
+                let mut bootstrap_encoder = renderer.device.create_command_encoder(
+                    &wgpu::CommandEncoderDescriptor {
+                        label: Some("tlas_bootstrap_encoder"),
+                    },
+                );
+                let tlas_slice = std::slice::from_ref(&scene.tlas.tlas);
+                bootstrap_encoder.build_acceleration_structures(
+                    &[],
+                    tlas_slice,
+                );
+                renderer.queue.submit(std::iter::once(bootstrap_encoder.finish()));
+            }
+
+            // RT fragment shader: diffuse + shadow-ray lighting.
+            // Binds material tint at group 2 so coloured cubes stay coloured.
+            //
+            // IMPORTANT: VertexOutput locations MUST match the default
+            // vertex shader (pill_engine/res/shaders/default_vertex.wgsl):
+            //   @location(5) = world_position_0 : vec3<f32>
+            //   @location(4) = TBN_normal_0    : vec3<f32>  (world-space normal)
+            //   @location(1) = vertex_texture_coords_0 : vec2<f32>
             const RT_FRAGMENT_SHADER: &str = r#"
 enable wgpu_ray_query;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    @location(0) world_position: vec3<f32>,
-    @location(1) world_normal: vec3<f32>,
-    @location(4) tex_coord: vec2<f32>,
+    @location(5) world_position: vec3<f32>,
+    @location(4) world_normal: vec3<f32>,
+    @location(1) tex_coord: vec2<f32>,
 }
 
 struct EngineParams {
     fog_color: vec3<f32>,
+    _pad0: f32,
     fog_density: f32,
+    _pad1a: f32,
+    _pad1b: f32,
+    _pad1c: f32,
     light_position: vec3<f32>,
+    _pad2: f32,
     light_color: vec3<f32>,
+    _pad3: f32,
     light_intensity: f32,
     shadow_cull_mask: u32,
+    _pad4a: f32,
+    _pad4b: f32,
+}
+
+struct MaterialParams {
+    tint: vec3<f32>,
+    specularity: f32,
 }
 
 @group(0) @binding(0)
@@ -928,18 +966,17 @@ var tlas: acceleration_structure;
 @group(1) @binding(0)
 var<uniform> camera: mat4x4<f32>;
 
+@group(2) @binding(0)
+var<uniform> material: MaterialParams;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let N = normalize(in.world_normal);
     let L = normalize(engine.light_position - in.world_position);
-    let V = vec3<f32>(0.0, 0.0, 1.0); // view direction from camera
 
-    // Ambient
-    let ambient = vec3<f32>(0.05, 0.05, 0.05);
-
-    // Diffuse
+    let ambient = vec3<f32>(0.08, 0.08, 0.08);
     let NdotL = max(dot(N, L), 0.0);
-    let diffuse = engine.light_color * NdotL * engine.light_intensity;
+    let diffuse = material.tint * engine.light_color * NdotL * engine.light_intensity;
 
     // Shadow ray
     let bias = 0.05f;
@@ -957,8 +994,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         ray_desc.dir = direction;
         ray_desc.tmin = 0.001f;
         ray_desc.tmax = t_max;
-        ray_desc.flags = 4u;   // SKIP_CULLING
-        ray_desc.cull_mask = 0xffu;
+        ray_desc.flags = 4u;
+        ray_desc.cull_mask = engine.shadow_cull_mask;
         rayQueryInitialize(&rq, tlas, ray_desc);
 
         loop {
@@ -973,8 +1010,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let lit = ambient + diffuse * shadow;
-    // Simple fog
-    let fog_factor = 1.0 / exp(engine.fog_density * in.world_position.z);
+    let fog_factor = 1.0 / exp(engine.fog_density * length(in.world_position - vec3<f32>(0.0, 4.0, -10.0)));
     let color = mix(engine.fog_color, lit, vec3<f32>(fog_factor));
 
     return vec4<f32>(color, 1.0);

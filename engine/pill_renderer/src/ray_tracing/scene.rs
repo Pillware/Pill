@@ -11,9 +11,7 @@ use crate::ray_tracing::{
     transform::model_to_tlas_transform,
 };
 use pill_core::{debug, info, warn, LogContext, PillSlotMapKey};
-use pill_engine::internal::{
-    HardwareRayQueryCapabilities, RenderInstance, RendererMeshHandle,
-};
+use pill_engine::internal::{HardwareRayQueryCapabilities, RenderInstance, RendererMeshHandle};
 use std::collections::HashMap;
 
 /// The renderer-owned ray-tracing scene, managing all acceleration-structure
@@ -60,7 +58,9 @@ impl RayTracingScene {
         capabilities: HardwareRayQueryCapabilities,
         max_instances: u32,
     ) -> Self {
-        let initial_capacity = 16u32.min(max_instances).min(capabilities.max_tlas_instance_count);
+        let initial_capacity = 16u32
+            .min(max_instances)
+            .min(capabilities.max_tlas_instance_count);
         let tlas = RayTracingTlas::new(device, initial_capacity, "active_scene_tlas");
         let instance_table = RtInstanceTable::new(device, max_instances);
 
@@ -78,10 +78,11 @@ impl RayTracingScene {
         }
     }
 
-    /// Begin a new frame. Advances the epoch and clears pending build lists.
+    /// Begin a new frame. Advances the epoch and clears per-frame state.
+    /// NOTE: pending_blas_entries persists across frames — BLAS builds are
+    /// queued once at mesh-creation time and must survive until built.
     pub fn begin_frame(&mut self) {
         self.frame_epoch = self.frame_epoch.wrapping_add(1);
-        self.pending_blas_entries.clear();
         self.pending_tlas_instances.clear();
     }
 
@@ -99,24 +100,26 @@ impl RayTracingScene {
         mesh: &RayTracingMesh,
     ) -> bool {
         // Resolve the instance ID (allocate or reuse).
-        let instance_id = match self.entity_to_instance_id.get(&instance.entity.data().index) {
+        let instance_id = match self
+            .entity_to_instance_id
+            .get(&instance.entity.data().index)
+        {
             Some(&existing) => existing,
-            None => {
-                match self.instance_table.allocate() {
-                    Some(id) => {
-                        self.entity_to_instance_id.insert(instance.entity.data().index, id);
-                        id
-                    }
-                    None => {
-                        warn!(LogContext::Rendering =>
-                            "RT instance table full ({} slots); entity {} excluded from TLAS",
-                            self.instance_table.capacity(),
-                            instance.entity.data().index,
-                        );
-                        return false;
-                    }
+            None => match self.instance_table.allocate() {
+                Some(id) => {
+                    self.entity_to_instance_id
+                        .insert(instance.entity.data().index, id);
+                    id
                 }
-            }
+                None => {
+                    warn!(LogContext::Rendering =>
+                        "RT instance table full ({} slots); entity {} excluded from TLAS",
+                        self.instance_table.capacity(),
+                        instance.entity.data().index,
+                    );
+                    return false;
+                }
+            },
         };
 
         // Convert the model matrix to TLAS row-major 3x4 format.
@@ -146,7 +149,7 @@ impl RayTracingScene {
             queue,
             instance_id,
             &GpuRtInstance {
-                mesh_metadata_index: 0, // Reserved for Phase 5
+                mesh_metadata_index: 0,     // Reserved for Phase 5
                 material_metadata_index: 0, // Reserved for Phase 5
                 entity_debug_id: instance.entity.data().index,
                 flags: 0x1, // bit 0 = opaque (V1)
@@ -158,28 +161,28 @@ impl RayTracingScene {
 
     /// Build all pending BLASes and TLAS in one call.
     /// Must be called within an active command encoder.
-    pub fn build_acceleration_structures(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-    ) {
+    pub fn build_acceleration_structures(&mut self, encoder: &mut wgpu::CommandEncoder) {
+        // Take ownership of pending BLAS entries to avoid borrow conflicts.
+        let pending_blas = std::mem::take(&mut self.pending_blas_entries);
+
         // Prepare BLAS build entries.
-        let blas_entries: Vec<wgpu::BlasBuildEntry> = self
-            .pending_blas_entries
+        let blas_entries: Vec<wgpu::BlasBuildEntry> = pending_blas
             .iter()
             .map(|entry| wgpu::BlasBuildEntry {
                 blas: &entry.blas,
-                geometry: wgpu::BlasGeometries::TriangleGeometries(
-                    vec![wgpu::BlasTriangleGeometry {
+                geometry: wgpu::BlasGeometries::TriangleGeometries(vec![
+                    wgpu::BlasTriangleGeometry {
                         size: &entry.size_descriptor,
                         vertex_buffer: &entry.vertex_buffer,
                         first_vertex: 0,
-                        vertex_stride: std::mem::size_of::<pill_engine::internal::MeshVertex>() as u64,
+                        vertex_stride: std::mem::size_of::<pill_engine::internal::MeshVertex>()
+                            as u64,
                         index_buffer: Some(&entry.index_buffer),
                         first_index: Some(0),
                         transform_buffer: None,
                         transform_buffer_offset: None,
-                    }],
-                ),
+                    },
+                ]),
             })
             .collect();
 
@@ -190,7 +193,7 @@ impl RayTracingScene {
             encoder.build_acceleration_structures(&blas_entries, tlas_slice);
 
             // Advance BLAS states.
-            for entry in &self.pending_blas_entries {
+            for entry in &pending_blas {
                 if let Some(mesh) = self.blas_cache.get_mut(&entry.mesh_handle) {
                     mesh.build_state = BlasBuildState::Encoded {
                         frame_epoch: self.frame_epoch,
@@ -270,11 +273,7 @@ impl RayTracingScene {
     }
 
     /// Grow TLAS capacity if needed. Returns `true` when growth occurred.
-    pub fn ensure_tlas_capacity(
-        &mut self,
-        device: &wgpu::Device,
-        needed: u32,
-    ) -> bool {
+    pub fn ensure_tlas_capacity(&mut self, device: &wgpu::Device, needed: u32) -> bool {
         if needed <= self.tlas.capacity {
             return false;
         }

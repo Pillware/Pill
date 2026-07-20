@@ -9,6 +9,7 @@ members = [
     "pill_native",
     "pill_web",
     "pill_runtime",
+    "D:/Programming/Pill-Engine-RayTracing/Pill-Engine/examples/hardware_raytracing", # pill-launcher-managed-workspace-member
 ]
 
 # The per-game wasm cdylib (pill_web_app) lives as a template at

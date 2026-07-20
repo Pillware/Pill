@@ -39,11 +39,11 @@ impl EngineParametersData {
             _pad0: 0.0,
             fog_density: 0.0,
             _pad1: [0.0; 3],
-            light_position: [0.0, 5.0, 0.0], // default: above origin
+            light_position: [0.0, 10.0, 15.0], // default: behind objects, shining toward camera
             _pad2: 0.0,
             light_color: [1.0, 1.0, 1.0],
             _pad3: 0.0,
-            light_intensity: 1.0,
+            light_intensity: 5.0,
             shadow_cull_mask: 0xff,
             _pad4: [0.0; 2],
         }
