@@ -91,6 +91,7 @@ impl DrawingContext {
         shader_handle: RendererShaderHandle,
         render_pass: &mut wgpu::RenderPass,
         camera: &RendererCamera,
+        rt_engine_bind_group: Option<&wgpu::BindGroup>,
     ) {
         self.shader_handle = Some(shader_handle);
         let shader: &RendererShader = renderer_resource_storage
@@ -101,15 +102,22 @@ impl DrawingContext {
 
         debug!(LogContext::Frame => "Changing shader to: {}", self.shader_name.name_style());
 
-        render_pass.set_pipeline(&shader.render_pipeline);
+        // Use the RT pipeline variant if available.
+        if let (Some(rt_pipeline), Some(rt_bg)) = (&shader.rt_pipeline, rt_engine_bind_group) {
+            render_pass.set_pipeline(rt_pipeline);
+            render_pass.set_bind_group(ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX, rt_bg, &[]);
+            debug!(LogContext::Frame => "RT pipeline + RT engine bind group bound");
+        } else {
+            render_pass.set_pipeline(&shader.render_pipeline);
 
-        if shader.pass_engine_parameters {
-            render_pass.set_bind_group(
-                ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX,
-                &renderer_resource_storage.engine_parameters.bind_group,
-                &[],
-            );
-            debug!(LogContext::Frame => "Engine parameters bound");
+            if shader.pass_engine_parameters {
+                render_pass.set_bind_group(
+                    ENGINE_PARAMETERS_BIND_GROUP_LAYOUT_INDEX,
+                    &renderer_resource_storage.engine_parameters.bind_group,
+                    &[],
+                );
+                debug!(LogContext::Frame => "Engine parameters bound");
+            }
         }
 
         if shader.pass_camera_parameters {
@@ -219,6 +227,8 @@ impl MeshDrawer {
         render_queue: &[RenderQueueItem],
         transform_component_storage: &ComponentStorage<TransformComponent>,
         timer: &mut Timer,
+        // RT (optional)
+        rt_engine_bind_group: Option<&wgpu::BindGroup>,
         // profiler: &mut Profiler,
     ) -> Result<()> {
         timer.record("Prepare render pass");
@@ -232,13 +242,13 @@ impl MeshDrawer {
             depth_stencil_attachment: Some(depth_stencil_attachment.clone()),
             timestamp_writes: None,
             occlusion_query_set: None, // profiler.get_occlusion_query_set(), // immut borrow ends after this stmt
-                                       //timestamp_writes: None,
-                                       // occlusion_query_set: profiler.get_occlusion_query_set(), // immut borrow ends after this stmt
-                                       // timestamp_writes: Some(wgpu::RenderPassTimestampWrites {
-                                       //     query_set: profiler.get_timestamp_query_set().unwrap(),
-                                       //     beginning_of_pass_write_index: Some(0),
-                                       //     end_of_pass_write_index: Some(1),
-                                       // }),
+            //timestamp_writes: None,
+            // occlusion_query_set: profiler.get_occlusion_query_set(), // immut borrow ends after this stmt
+            // timestamp_writes: Some(wgpu::RenderPassTimestampWrites {
+            //     query_set: profiler.get_timestamp_query_set().unwrap(),
+            //     beginning_of_pass_write_index: Some(0),
+            //     end_of_pass_write_index: Some(1),
+            // }),
             multiview_mask: None,
         });
 
@@ -331,6 +341,7 @@ impl MeshDrawer {
                         renderer_shader_handle,
                         &mut render_pass,
                         camera,
+                        rt_engine_bind_group,
                     );
                 }
 

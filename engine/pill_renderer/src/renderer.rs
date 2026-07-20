@@ -109,6 +109,105 @@ impl PillRenderer for Renderer {
         )?;
         let handle = self.state.renderer_resource_storage.shaders.insert(shader);
 
+        // ── Create RT pipeline variant ───────────────────────────────
+        #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+        if pass_engine_parameters {
+            if let (Some(rt_bgl), Some(rt_frag_module)) = (
+                self.state.rt_bind_group_layout.as_ref(),
+                self.state.rt_fragment_module.as_ref(),
+            ) {
+                let shader_ref = self.state.renderer_resource_storage.shaders.get_mut(handle).unwrap();
+
+                // Compile the vertex shader module for the RT pipeline.
+                let rt_vertex_module = self.state.device.create_shader_module(
+                    wgpu::ShaderModuleDescriptor {
+                        label: Some(&format!("{name}_rt_vertex")),
+                        source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+                    },
+                );
+
+                // Build pipeline layout for RT variant:
+                // group 0: RT bind group (uniform + TLAS)
+                // group 1: camera (same as raster)
+                // group 2: material params (if any)
+                // group 3: material textures (if any)
+                let mut rt_bind_group_layouts: Vec<Option<&wgpu::BindGroupLayout>> = Vec::new();
+                rt_bind_group_layouts.push(Some(rt_bgl));
+                if pass_camera_parameters {
+                    rt_bind_group_layouts.push(Some(&self.state.camera_bind_group_layout));
+                }
+                if let Some(ref mat_bgl) = shader_ref.parameters_bind_group_layout {
+                    rt_bind_group_layouts.push(Some(mat_bgl));
+                }
+                if let Some(ref tex_bgl) = shader_ref.textures_bind_group_layout {
+                    rt_bind_group_layouts.push(Some(tex_bgl));
+                }
+
+                let rt_pipeline_layout = self.state.device.create_pipeline_layout(
+                    &wgpu::PipelineLayoutDescriptor {
+                        label: Some(&format!("{name}_rt_pipeline_layout")),
+                        bind_group_layouts: &rt_bind_group_layouts,
+                        immediate_size: 0,
+                    },
+                );
+
+                let vertex_buffer_layouts: Vec<Option<wgpu::VertexBufferLayout>> = vec![
+                    Some(RendererMesh::data_layout_descriptor()),
+                    Some(Instance::data_layout_descriptor()),
+                ];
+
+                let rt_pipeline = self.state.device.create_render_pipeline(
+                    &wgpu::RenderPipelineDescriptor {
+                        label: Some(&format!("{name}_rt_pipeline")),
+                        layout: Some(&rt_pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &rt_vertex_module,
+                            entry_point: Some("vs_main"),
+                            buffers: &vertex_buffer_layouts,
+                            compilation_options: Default::default(),
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: rt_frag_module,
+                            entry_point: Some("fs_main"),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: self.state.color_format,
+                                blend: Some(wgpu::BlendState {
+                                    alpha: wgpu::BlendComponent::REPLACE,
+                                    color: wgpu::BlendComponent::REPLACE,
+                                }),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                            compilation_options: Default::default(),
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleList,
+                            strip_index_format: None,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: Some(wgpu::Face::Back),
+                            unclipped_depth: false,
+                            polygon_mode: wgpu::PolygonMode::Fill,
+                            conservative: false,
+                        },
+                        depth_stencil: Some(wgpu::DepthStencilState {
+                            format: self.state.depth_format,
+                            depth_write_enabled: Some(true),
+                            depth_compare: Some(wgpu::CompareFunction::Less),
+                            stencil: wgpu::StencilState::default(),
+                            bias: wgpu::DepthBiasState::default(),
+                        }),
+                        multisample: wgpu::MultisampleState::default(),
+                        multiview_mask: None,
+                        cache: None,
+                    },
+                );
+
+                shader_ref.rt_pipeline = Some(rt_pipeline);
+                debug!(LogContext::Rendering =>
+                    "RT: created RT pipeline variant for shader '{}'", name,
+                );
+            }
+        }
+
         Ok(handle)
     }
 
@@ -403,11 +502,13 @@ pub struct State {
     // Ray tracing (conditionally compiled)
     #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
     ray_tracing_state: RayTracingStateWrapper,
-    // RT pipeline variant for the default lit shader.
-    #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
-    rt_lit_pipeline: Option<wgpu::RenderPipeline>,
+    // RT resources shared across all RT shader variants.
     #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
     rt_engine_bind_group: Option<wgpu::BindGroup>,
+    #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+    rt_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+    rt_fragment_module: Option<wgpu::ShaderModule>,
     //profiler: Profiler,
 }
 
@@ -737,9 +838,11 @@ impl State {
             #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
             ray_tracing_state,
             #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
-            rt_lit_pipeline: None,
-            #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
             rt_engine_bind_group: None,
+            #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+            rt_bind_group_layout: None,
+            #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+            rt_fragment_module: None,
             // profiler
         };
 
@@ -885,13 +988,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 },
             );
 
-            // Note: full pipeline creation requires a vertex shader module
-            // and vertex buffer layouts. These are available later when
-            // create_shader is called. For now, we store the fragment
-            // shader and bind group; the pipeline is created lazily.
             renderer.rt_engine_bind_group = Some(rt_bg);
-            // rt_lit_pipeline will be created when the default lit shader
-            // vertex module is available (deferred to create_shader).
+            renderer.rt_bind_group_layout = Some(rt_bgl);
+            renderer.rt_fragment_module = Some(rt_sm);
         }
 
         Ok((renderer, capabilities))
@@ -1143,6 +1242,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
                 render_queue,
                 transform_component_storage,
                 timer,
+                #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
+                self.rt_engine_bind_group.as_ref(),
+                #[cfg(not(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32"))))]
+                None::<&wgpu::BindGroup>,
                 //&mut self.profiler
             )?;
 

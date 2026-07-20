@@ -7,6 +7,11 @@ pub struct RendererShader {
     pub name: String,
     pub render_pipeline: wgpu::RenderPipeline,
 
+    /// Optional hardware-ray-tracing variant of this shader's render
+    /// pipeline. Created when RT is enabled and this is the default lit
+    /// shader (or any shader passing engine parameters at group 0).
+    pub rt_pipeline: Option<wgpu::RenderPipeline>,
+
     pub parameter_slots: Vec<(String, ShaderParameterSlot)>,
     pub parameters_bind_group_layout: Option<wgpu::BindGroupLayout>,
 
@@ -223,6 +228,7 @@ impl RendererShader {
         let pipeline = Self {
             name: name.to_string(),
             render_pipeline,
+            rt_pipeline: None,
             parameter_slots: parameter_slots.to_vec(),
             textures_bind_group_layout,
             texture_slots: texture_slots.clone(),
