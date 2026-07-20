@@ -1,0 +1,12 @@
+[package]
+name = "project"
+version = "0.1.0"
+edition = "2021"
+workspace = "D:/Programming/Pill-Engine-RayTracing/Pill-Engine/engine"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/project.rs"
+
+[dependencies]
+pill_engine = { path = "../../engine/pill_engine", features = ["project"] }
