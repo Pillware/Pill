@@ -27,6 +27,8 @@ impl PillProject for Project {
 
         // --- Create meshes ---
         let cube_mesh = engine.add_resource(Mesh::cube("cube", 1.0))?;
+        // Reuse the cube mesh for a large thin floor plane.
+        let floor_mesh = engine.add_resource(Mesh::cube("floor", 1.0))?;
 
         // --- Create materials ---
         let materials: Vec<MaterialHandle> = CUBE_COLORS
@@ -41,6 +43,13 @@ impl PillProject for Project {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
+
+        let floor_material = engine.add_resource(
+            Material::builder("floor_material")
+                .color_parameter("tint", Color::new(0.35, 0.33, 0.30))?
+                .scalar_parameter("specularity", 0.1)?
+                .build(),
+        )?;
 
         // --- Camera ---
         // +Z = backward (into screen). look_to_rh looks toward +Z.
@@ -58,6 +67,23 @@ impl PillProject for Project {
                     .enabled(true)
                     .fov(70.0)
                     .clear_color(Color::new(0.08, 0.09, 0.12))
+                    .build(),
+            )
+            .build();
+
+        // --- Floor: a wide thin plane at y = -0.1 ────────────────────
+        engine
+            .build_entity(active_scene)
+            .with_component(
+                TransformComponent::builder()
+                    .position(Vector3f::new(0.0, -0.1, 4.0))
+                    .scale(Vector3f::new(30.0, 0.1, 30.0))
+                    .build(),
+            )
+            .with_component(
+                MeshRenderingComponent::builder()
+                    .mesh(&floor_mesh)
+                    .material(&floor_material)
                     .build(),
             )
             .build();
@@ -113,6 +139,54 @@ impl PillProject for Project {
                         .build(),
                 )
                 .build();
+        }
+
+        // --- Walls: four walls around the scene (z=-2 to z=10, x=-5 to x=5) -------
+        let wall_material_index = 5; // orange
+
+        // Helper: place a cube at a grid position for the walls
+        let mut place_wall_cube = |x: f32, y: f32, z: f32| -> Result<()> {
+            engine
+                .build_entity(active_scene)
+                .with_component(
+                    TransformComponent::builder()
+                        .position(Vector3f::new(x, y, z))
+                        .scale(Vector3f::new(1.0, 1.0, 1.0))
+                        .build(),
+                )
+                .with_component(
+                    MeshRenderingComponent::builder()
+                        .mesh(&cube_mesh)
+                        .material(&materials[wall_material_index])
+                        .build(),
+                )
+                .build();
+            Ok(())
+        };
+
+        // Front wall (z = -2)
+        for xi in -5..=5 {
+            for yi in 0..5 {
+                place_wall_cube(xi as f32, yi as f32 + 0.5, -2.0)?;
+            }
+        }
+        // Back wall (z = 10)
+        for xi in -5..=5 {
+            for yi in 0..5 {
+                place_wall_cube(xi as f32, yi as f32 + 0.5, 10.0)?;
+            }
+        }
+        // Left wall (x = -5)
+        for zi in -1..=9 {
+            for yi in 0..5 {
+                place_wall_cube(-5.0, yi as f32 + 0.5, zi as f32)?;
+            }
+        }
+        // Right wall (x = 5)
+        for zi in -1..=9 {
+            for yi in 0..5 {
+                place_wall_cube(5.0, yi as f32 + 0.5, zi as f32)?;
+            }
         }
 
         // --- Rotating cubes system ───────────────────────────────────

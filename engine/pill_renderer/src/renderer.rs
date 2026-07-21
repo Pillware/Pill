@@ -36,7 +36,7 @@ use crate::ray_tracing::{
         RayTracingDisabledReason, RayTracingPolicyResult,
     },
     pipeline::compile_ray_query_canary,
-    scene::{PendingBlasEntry, RayTracingScene},
+    scene::RayTracingScene,
 };
 
 #[cfg(all(feature = "hardware_ray_tracing", not(target_arch = "wasm32")))]
@@ -301,16 +301,43 @@ impl PillRenderer for Renderer {
 
                 scene.blas_cache.insert(handle, rt_mesh);
 
-                // Queue the BLAS for its first build.
-                scene.queue_blas_build(PendingBlasEntry {
-                    blas,
-                    size_descriptor: size_desc,
-                    vertex_buffer: mesh_ref.vertex_buffer.clone(), // buffer clones are cheap (Arc internally)
-                    index_buffer: mesh_ref.index_buffer.clone(),
-                    mesh_handle: handle,
-                    vertex_count,
-                    index_count,
-                });
+                // Build the BLAS immediately instead of deferring to the
+                // render loop.  A one-shot encoder + submit guarantees the
+                // BLAS is ready before the first frame touches the TLAS.
+                {
+                    let mut blas_encoder = self.state.device.create_command_encoder(
+                        &wgpu::CommandEncoderDescriptor {
+                            label: Some(&format!("{name}_blas_init")),
+                        },
+                    );
+                    let blas_entry = wgpu::BlasBuildEntry {
+                        blas: &blas,
+                        geometry: wgpu::BlasGeometries::TriangleGeometries(
+                            vec![wgpu::BlasTriangleGeometry {
+                                size: &size_desc,
+                                vertex_buffer: &mesh_ref.vertex_buffer,
+                                first_vertex: 0,
+                                vertex_stride: std::mem::size_of::<pill_engine::internal::MeshVertex>() as u64,
+                                index_buffer: Some(&mesh_ref.index_buffer),
+                                first_index: Some(0),
+                                transform_buffer: None,
+                                transform_buffer_offset: None,
+                            }],
+                        ),
+                    };
+                    blas_encoder.build_acceleration_structures(
+                        &[blas_entry],
+                        &[],
+                    );
+                    self.state.queue.submit(std::iter::once(blas_encoder.finish()));
+
+                    // Mark as submitted so the TLAS can reference it.
+                    if let Some(mesh) = scene.blas_cache.get_mut(&handle) {
+                        mesh.build_state = BlasBuildState::Submitted {
+                            submission: scene.submission.next(),
+                        };
+                    }
+                }
 
                 debug!(LogContext::Rendering =>
                     "RT: created BLAS for mesh '{}' ({} verts, {} indices, {} prims)",
