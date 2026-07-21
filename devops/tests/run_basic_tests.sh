@@ -55,19 +55,14 @@ code_formatting_check() {
     echo ""
     echo -e "${BOLD}${CYAN}===============================================================================${NC}"
     echo -e "${BOLD}${CYAN}(1/5) Code formatting check${NC}"
-    echo "Running cargo fmt"
-    CARGO_TERM_COLOR=always cargo fmt --all --manifest-path engine/Cargo.toml
+    echo "Running cargo fmt --check"
+    local fmt_output exit_code
+    fmt_output=$(CARGO_TERM_COLOR=always cargo fmt --all --manifest-path engine/Cargo.toml -- --check 2>&1) && exit_code=$? || exit_code=$?
 
-    # Exclude Cargo.toml files - the launcher rewrites workspace paths
-    # (NO_PATH → absolute), which are not formatting issues.
-    # Use ':!' (short exclude) for compatibility with older git versions.
-    if git diff --color=always --exit-code -- . \
-        ':!engine/Cargo.toml' \
-        ':!examples/*/Cargo.toml' \
-        ':!examples/*/*/Cargo.toml'; then
+    if [ "$exit_code" -eq 0 ]; then
         report_pass "code formatting"
     else
-        report_fail "code formatting" "rustfmt produced changes - run 'cargo fmt'"
+        report_fail "code formatting" "$(echo "$fmt_output" | tail -c 500)"
     fi
 }
 
