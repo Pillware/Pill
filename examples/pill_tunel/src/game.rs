@@ -1,11 +1,13 @@
 use pill_engine::{define_component, game::*};
+use std::{cell::Cell, env::current_exe};
+use wasm_bindgen::prelude::*;
 
 // --- Scene constants ---------------------------------------------------------
 
 // Camera
 const CAMERA_POSITION_Z: f32 = 0.0;
 const CAMERA_FOV: f32 = 60.0;
-const CLEAR_COLOR: (f32, f32, f32) = (0.3, 0.12, 0.20);
+const CLEAR_COLOR: (f32, f32, f32) = (1.0, 0.27, 0.27);
 // exp(-density²·distance²). Half-blend at d=20 → visible haze pulls in close
 // and the back half of the tunnel vanishes into bg:
 //   d=10 (hero) → 16%, d=20 → 50%, d=40 → 94%, d=80 (far) → 100%.
@@ -117,6 +119,29 @@ fn tinted_pill_material(
     )
 }
 
+struct DemoValues {
+    fps: Cell<f32>,
+    desired_pill_count: Cell<u32>,
+    current_pill_count: Cell<u32>,
+}
+
+thread_local!(static DEMO_VALUES: DemoValues = const { DemoValues{
+    fps: Cell::new(60.0),
+    desired_pill_count: Cell::new(PILL_COUNT as u32),
+    current_pill_count: Cell::new(PILL_COUNT as u32),
+}});
+
+// --- API ---
+#[wasm_bindgen]
+pub fn set_num_pills(value: u32) {
+    DEMO_VALUES.with(|v| v.desired_pill_count.set(value));
+}
+
+#[wasm_bindgen]
+pub fn get_fps() -> f32 {
+    DEMO_VALUES.with(|v| v.fps.get())
+}
+
 // --- Components --------------------------------------------------------------
 
 define_component!(PillParticleComponent {
@@ -134,6 +159,7 @@ pub struct WebGame {}
 fn pill_particle_system(engine: &mut Engine) -> Result<()> {
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
     let tunnel_length = TUNNEL_FAR_Z - TUNNEL_NEAR_Z;
+    let mut count = 0;
 
     for (_entity, transform, pill) in
         engine.iterate_two_components_mut::<TransformComponent, PillParticleComponent>()?
@@ -155,7 +181,11 @@ fn pill_particle_system(engine: &mut Engine) -> Result<()> {
             (PILL_SPIN.0 * m, PILL_SPIN.1 * m, PILL_SPIN.2 * m),
             dt,
         );
+        count += 1;
     }
+
+    DEMO_VALUES.with(|v| v.current_pill_count.set(count));
+
     Ok(())
 }
 
@@ -181,6 +211,26 @@ fn camera_drift_system(engine: &mut Engine) -> Result<()> {
         let y = (time * CAMERA_DRIFT_SPEED.1).cos() * CAMERA_DRIFT_AMPLITUDE.1;
         transform.set_position(Vector3f::new(x, y, CAMERA_POSITION_Z));
     }
+    Ok(())
+}
+
+fn demo_update_system(engine: &mut Engine) -> Result<()> {
+    let fps = engine.get_fps();
+
+    DEMO_VALUES.with(|v| v.fps.set(fps));
+
+    let requested_count = DEMO_VALUES.with(|v| v.desired_pill_count.get());
+
+    let current_count = DEMO_VALUES.with(|v| v.current_pill_count.get());
+
+    // TODO: add spawning more pills/ controlling number of spawned pills
+    let diff = requested_count - current_count;
+    if diff > 0 {
+        // spawn
+    } else {
+        // despawn
+    }
+
     Ok(())
 }
 
@@ -314,6 +364,7 @@ impl PillGame for WebGame {
         engine.add_system("pill_particle", pill_particle_system)?;
         engine.add_system("hero_pill", hero_pill_system)?;
         engine.add_system("camera_drift", camera_drift_system)?;
+        engine.add_system("demo_update", demo_update_system)?;
         Ok(())
     }
 }

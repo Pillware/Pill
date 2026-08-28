@@ -569,6 +569,10 @@ impl Engine {
     pub fn get_input_queue(&self) -> &VecDeque<InputEvent> {
         &self.input_queue
     }
+
+    pub fn get_fps(&self) -> f32 {
+        1000.0 / self.frame_delta_time
+    }
 }
 
 // --- API ------------------------------------------------------------------
