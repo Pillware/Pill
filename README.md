@@ -1,82 +1,32 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="media/logo/pill_logo_white.png">
-    <img src="media/logo/pill_logo_black.png"  width="300">
+    <img src="media/logo/pill_logo_black.png"  width="350">
   </picture>
 </p>
 
 Modern, free and blazingly fast game engine.
-
-Built for developers who refuse to compromise, Pill that delivers the raw speed and creative freedom needed to bring even the wildest ideas to life.
-
-Designed from the ground up to empower both teams and solo creators, it simplifies the complex while unlocking performance far beyond traditional engines.
-
-
-**For more info please visit: [PillEngine.org](https://pillengine.org)**
+Built for developers who refuse to compromise, delivering creative freedom needed to bring even the wildest ideas to life.
+Designed from the ground up to be performance-first and unlocking raw speed far beyond traditional engines.
 
 ## Design Goals
-- Clean and simple
-- Blazing fast
-- Highly extensible
+- Modular, clean and simple
+- Blazing fast at the core
+- Supporting C# and Rust scripting languages 
+- Enabling hot reloading time below 1 sec
+- Building projects below 0.5 mb
+- Zero crashes thanks to sandboxed scripting
 
-## Features
-- Archetype-based Entity Component System
-- 3D graphics (Blinn-Phong shading model, instancing)
-- Scenes
-- Input handling (keyboard, mouse, gamepad)
-- Sound playing (mono, spatial)
-- Resource system (mesh, texture, shader, material, sound)
-- Material system and custom shader loading
-- Custom systems, components and resources support
-- Error chaining
-- Launcher tool
-- Game project hot-reloading
-- Engine code hot-reloading
-- Scene state de/serialization 🚧
-- Shader code hot-reloading 🚧
-- Lights 🚧
-- Skybox 🚧
-- Post-processing 🚧
-- Networking 🚧
-- Physics 🚧
-- Configurable logging 🚧
-- Editor 🚧
+## Links
+**Discover Pill at [PillEngine.org](https://pillengine.org)**
 
-## Getting Started
-1. Install Rust
-https://www.rust-lang.org/tools/install
-2. Download and unpack this repository
-3. Build Pill Launcher
-`cargo build --release --manifest-path <ENGINE_PATH>\Pill-Engine\engine\pill_launcher\Cargo.toml`
-4. Add Pill Launcher to PATH (optional)
-On Windows: follow [these steps](https://superuser.com/questions/1861276/how-to-set-a-folder-to-the-path-environment-variable-in-windows-11) add `<ENGINE_PATH>\Pill-Engine\engine\pill_launcher\target\release`
-On Linux: `echo 'export PATH="$PATH:<ENGINE_PATH>/Pill-Engine/engine/pill_launcher/target/release"' >> ~/.bashrc && source ~/.bashrc`
-and restart terminal
-5. Create new game project
-`PillLauncher.exe -a create -n Hello-Pill`
-6. Run it!
-`PillLauncher.exe -a run -p ./Hello-Pill`
+**Quick start with [Pill Guide](https://docs.pillengine.org/guide)**
 
-Check [demo](examples/Floating-Pills "demo")!
-
-### Quicker iteration times (hot-reloading)
-1. When running the game example add `-c hot-reload` to the PillLauncher flags
-2. Run the example
-`PillLauncher.exe -c hot-reload -a run -p ./Hello-Pill`
-3. Change the code in your Editor
-4. Observe the game briefly pausing and resuming with changed world state
-
-## Documentation
-[Repository](https://github.com/MattSzymonski/Pill-Engine-Docs "Repository")
-For detailed instructions visit Pill Guide's [getting started page](https://pillengine.org/guide).
-
-- For game developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/game_dev/doc/pill_engine/game/index.html "Docs")
-- For engine developers - [Docs](https://raw.githack.com/MattSzymonski/Pill-Engine-Docs/main/docs/engine_dev/doc/pill_engine/index.html "Docs")
+**Check demos at [Pill Demos](https://pillengine.org/demos)**
 
 ## Showcase
+
 <p align="center">
-  <img src="https://github.com/MattSzymonski/Pill-Engine/blob/circus_demo/examples/circus_demo/media/ancient_pills.gif" img width=100%>
+  <img src="https://github.com/Pillware/Pill/blob/circus_demo/examples/circus_demo/media/ancient_pills.gif" img width=100%>
 </p>
-<p align="center">
-  <img src="examples/italian_brainrot/media/italian_brainrot_1.gif" img width=100%>
-</p>
+
