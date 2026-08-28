@@ -97,7 +97,11 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
     let mut config = pill_engine::internal::EngineConfig::from_ini(config_ini);
     config.set("WINDOW_WIDTH", window_size.width as i64);
     config.set("WINDOW_HEIGHT", window_size.height as i64);
-    let compile_mode = std::env::var("PILL_COMPILE_MODE").unwrap_or_else(|_| "unknown".to_string());
+    let compile_mode = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
     let process = pill_engine::internal::EngineProcessInfo::new(
         &compile_mode,
         pill_engine::internal::BuildTarget::Web,
