@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="media/logo/pill_logo_white.png">
-    <img src="media/logo/pill_logo_black.png"  width="350">
+    <source media="(prefers-color-scheme: dark)" srcset="https://pillengine.org/logos/pill_logo_white.svg">
+    <img src="https://pillengine.org/logos/pill_logo_black.svg" width="350">
   </picture>
 </p>
 
@@ -28,5 +28,12 @@ Designed from the ground up to be performance-first and unlocking raw speed far 
 
 <p align="center">
   <img src="https://github.com/Pillware/Pill/blob/circus_demo/examples/circus_demo/media/ancient_pills.gif" img width=100%>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://pillengine.org/logos/pill_pile_white.png">
+    <img src="https://pillengine.org/logos/pill_pile_black.png" width="100%">
+  </picture>
 </p>
 
