@@ -37,7 +37,7 @@ Designed from the ground up to be performance-first and unlocking raw speed far 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://pillengine.org/logos/pill_pile_white.png">
-    <img src="https://pillengine.org/logos/pill_pile_black.png" width="450">
+    <img src="https://pillengine.org/logos/pill_pile_black.png" width="650">
   </picture>
 </p>
 
