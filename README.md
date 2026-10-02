@@ -30,10 +30,14 @@ Designed from the ground up to be performance-first and unlocking raw speed far 
   <img src="https://github.com/Pillware/Pill/blob/circus_demo/examples/circus_demo/media/ancient_pills.gif" img width=100%>
 </p>
 
+
+<br/>
+<br/>
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://pillengine.org/logos/pill_pile_white.png">
-    <img src="https://pillengine.org/logos/pill_pile_black.png" width="100%">
+    <img src="https://pillengine.org/logos/pill_pile_black.png" width="450">
   </picture>
 </p>
 
