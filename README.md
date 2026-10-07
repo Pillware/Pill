@@ -21,7 +21,7 @@ Designed from the ground up around performance, modularity and a frictionless de
 - **Anti-bloat, modular architecture**
 - **Next-level error logs**
 - **JSON asset format**
-- **Game and scene view in the editor**
+- **Live game + scene editing workflow**
 - **Tiny build sizes**
 - **Absolute streaming beast**
 - **Blazing startup times**
