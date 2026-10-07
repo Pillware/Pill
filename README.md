@@ -6,31 +6,41 @@
 </p>
 
 Modern, free and blazingly fast game engine.
-Built for developers who refuse to compromise, delivering creative freedom needed to bring even the wildest ideas to life.
-Designed from the ground up to be performance-first and unlocking raw speed far beyond traditional engines.
+Built for developers who refuse to compromise. Designed from the ground up around performance, modularity and a frictionless developer experience, it gives creators the freedom to build anything from tiny experimental projects to massive, complex worlds - without unnecessary bloat getting in the way.
 
-## Design Goals
-- Modular, clean and simple
-- Blazing fast at the core
-- Supporting C# and Rust scripting languages 
-- Enabling hot reloading time below 1 sec
-- Building projects below 0.5 mb
-- Zero crashes thanks to sandboxed scripting
+## Flagship Feature Goals
+- **100% free and open source**
+- **C# and Rust scripting languages**
+- **Hot reloading pushed to the max**
+- **Crash-resistant with full project sandboxing**
+- **Hybrid Entity Component System architecture**
+- **Proven performance**
+- **Anti-bloat, modular architecture**
+- **Next-level error logs**
+- **JSON asset format**
+- **Game and scene view in the editor**
+- **Tiny build sizes**
+- **Absolute streaming beast**
+- **Blazing startup times**
+- **Embedded device support**
 
 ## Links
 **Discover Pill at [PillEngine.org](https://pillengine.org)**
+
+**Join Community here [Discord Server](https://discord.gg/VUKNQrctms)**
 
 **Quick start with [Pill Guide](https://docs.pillengine.org/guide)**
 
 **Check demos at [Pill Demos](https://pillengine.org/demos)**
 
-## Showcase
+---
 
 <p align="center">
   <img src="https://github.com/Pillware/Pill/blob/circus_demo/examples/circus_demo/media/ancient_pills.gif" img width=100%>
 </p>
 
-
+<br/>
+<br/>
 <br/>
 <br/>
 
