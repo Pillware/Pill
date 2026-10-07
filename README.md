@@ -6,10 +6,9 @@
 </p>
 
 <br/>
-<br/>
 
-Modern, free and blazingly fast game engine.  
-Built for developers who refuse to compromise.  
+Modern, free and blazingly fast game engine. Built for developers who refuse to compromise.  
+
 Designed from the ground up around performance, modularity and a frictionless developer experience, it gives creators the freedom to build anything from tiny experimental projects to massive, complex worlds - without unnecessary bloat getting in the way.
 
 ## Flagship Feature Goals
