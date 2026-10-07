@@ -5,8 +5,12 @@
   </picture>
 </p>
 
-Modern, free and blazingly fast game engine.
-Built for developers who refuse to compromise. Designed from the ground up around performance, modularity and a frictionless developer experience, it gives creators the freedom to build anything from tiny experimental projects to massive, complex worlds - without unnecessary bloat getting in the way.
+<br/>
+<br/>
+
+Modern, free and blazingly fast game engine.  
+Built for developers who refuse to compromise.  
+Designed from the ground up around performance, modularity and a frictionless developer experience, it gives creators the freedom to build anything from tiny experimental projects to massive, complex worlds - without unnecessary bloat getting in the way.
 
 ## Flagship Feature Goals
 - **100% free and open source**
@@ -27,7 +31,7 @@ Built for developers who refuse to compromise. Designed from the ground up aroun
 ## Links
 **Discover Pill at [PillEngine.org](https://pillengine.org)**
 
-**Join Community here [Discord Server](https://discord.gg/VUKNQrctms)**
+**Join the community on [Discord Server](https://discord.gg/VUKNQrctms)**
 
 **Quick start with [Pill Guide](https://docs.pillengine.org/guide)**
 
