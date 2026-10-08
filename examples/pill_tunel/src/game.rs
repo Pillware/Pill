@@ -1,4 +1,4 @@
-use pill_engine::{define_component, game::*};
+use pill_engine::{define_component, define_global_component, game::*};
 use std::{cell::Cell, env::current_exe};
 use wasm_bindgen::prelude::*;
 
@@ -31,6 +31,9 @@ const PILL_SCALE: f32 = 0.5;
 const PILL_SCALE_JITTER: f32 = 0.25; // ± fraction per particle
 const PILL_SPIN: (f32, f32, f32) = (0.4, 0.8, 1.2);
 const PILL_SPIN_VARIANCE: f32 = 0.4; // ± fraction per particle
+                                     // Emit PILL_COUNT particles from the donut (uniform in θ, radius, z).
+const RADIUS_SPAN: f32 = EMITTER_RADIUS_MAX - EMITTER_RADIUS_MIN;
+const TUNNEL_LENGTH: f32 = TUNNEL_FAR_Z - TUNNEL_NEAR_Z;
 
 // Parallax: per-particle forward speed scales with 1/radius → inner pills
 // streak past, outer pills drift. Big depth cue for nearly free.
@@ -119,27 +122,86 @@ fn tinted_pill_material(
     )
 }
 
+define_global_component!(GameState {
+    tunnel_materials: Vec<MaterialHandle>,
+    pill_mesh: MeshHandle,
+});
+
 struct DemoValues {
     fps: Cell<f32>,
+    frame_time_ms: Cell<f64>,
     desired_pill_count: Cell<u32>,
     current_pill_count: Cell<u32>,
+    spawn_increment: Cell<u32>,
+}
+
+fn calculate_next_desired_pill_count(current_count: u32) -> u32 {
+    const STEPS: [u32; 5] = [500, 1_000, 2_000, 5_000, 10_000];
+    let pill_count_u32: u32 = PILL_COUNT as u32;
+    if current_count < pill_count_u32 * 2 {
+        return STEPS[0];
+    } else if current_count < pill_count_u32 * 5 {
+        return STEPS[1];
+    } else if current_count < pill_count_u32 * 10 {
+        return STEPS[2];
+    } else if current_count < pill_count_u32 * 20 {
+        return STEPS[3];
+    }
+    STEPS[4]
+}
+
+fn calculate_desired_spawn(current_count: u32) -> u32 {
+    const STEPS: [(u32, u32); 5] = [
+        (1_500, 10),
+        (3_000, 20),
+        (8_000, 30),
+        (16_000, 40),
+        (32_000, 50),
+    ];
+    for i in 0..5 {
+        if current_count < STEPS[i].0 {
+            return STEPS[i].1;
+        }
+    }
+    STEPS[0].1
 }
 
 thread_local!(static DEMO_VALUES: DemoValues = const { DemoValues{
     fps: Cell::new(60.0),
+    frame_time_ms: Cell::new(0.0),
     desired_pill_count: Cell::new(PILL_COUNT as u32),
     current_pill_count: Cell::new(PILL_COUNT as u32),
+    spawn_increment: Cell::new(0 as u32),
 }});
 
 // --- API ---
 #[wasm_bindgen]
-pub fn set_num_pills(value: u32) {
-    DEMO_VALUES.with(|v| v.desired_pill_count.set(value));
+pub fn spawn_more_pills() {
+    // TODO: add some kind of cooldown to prevent spamming
+    let current_count = DEMO_VALUES.with(|v| v.current_pill_count.get());
+    let spawn_increment = calculate_next_desired_pill_count(current_count);
+    DEMO_VALUES.with(|v| v.spawn_increment.set(spawn_increment));
+    DEMO_VALUES.with(|v| v.desired_pill_count.set(spawn_increment * 10));
+}
+
+#[wasm_bindgen]
+pub fn reset_pills() {
+    DEMO_VALUES.with(|v| v.desired_pill_count.set(0))
 }
 
 #[wasm_bindgen]
 pub fn get_fps() -> f32 {
     DEMO_VALUES.with(|v| v.fps.get())
+}
+
+#[wasm_bindgen]
+pub fn get_frame_time_ms() -> f64 {
+    DEMO_VALUES.with(|v| v.frame_time_ms.get())
+}
+
+#[wasm_bindgen]
+pub fn get_num_pills() -> u32 {
+    DEMO_VALUES.with(|v| v.current_pill_count.get())
 }
 
 // --- Components --------------------------------------------------------------
@@ -153,6 +215,54 @@ define_component!(PillParticleComponent {
 define_component!(HeroPillComponent {});
 
 pub struct WebGame {}
+
+fn SpawnPill(
+    engine: &mut Engine,
+    active_scene: SceneHandle,
+    tunnel_materials: &Vec<MaterialHandle>,
+    pill_mesh: MeshHandle,
+    i: usize,
+) -> Result<()> {
+    let theta = hash_f32(i, SEED_ANGLE) * std::f32::consts::TAU;
+    let radius = EMITTER_RADIUS_MIN + hash_f32(i, SEED_RADIUS) * RADIUS_SPAN;
+    let z = TUNNEL_NEAR_Z + hash_f32(i, SEED_Z) * TUNNEL_LENGTH;
+    let base_x = theta.cos() * radius;
+    let base_y = theta.sin() * radius;
+    let scale = PILL_SCALE * (1.0 + PILL_SCALE_JITTER * hash_signed(i, SEED_SCALE));
+    let spin_multiplier = 1.0 + PILL_SPIN_VARIANCE * hash_signed(i, SEED_SPIN);
+    let forward_speed = PILL_FORWARD_SPEED * PILL_PARALLAX_REF_RADIUS / radius;
+    let wobble_phase = hash_f32(i, SEED_WOBBLE) * std::f32::consts::TAU;
+    let rotation = Vector3f::new(
+        hash_f32(i, SEED_ROT_X) * std::f32::consts::TAU,
+        hash_f32(i, SEED_ROT_Y) * std::f32::consts::TAU,
+        hash_f32(i, SEED_ROT_Z) * std::f32::consts::TAU,
+    );
+    let material = tunnel_materials[hash_usize(i, SEED_MATERIAL, tunnel_materials.len())];
+
+    engine
+        .build_entity(active_scene)
+        .with_component(
+            TransformComponent::builder()
+                .position(Vector3f::new(base_x, base_y, z))
+                .rotation(rotation)
+                .scale(Vector3f::new(scale, scale, scale))
+                .build(),
+        )
+        .with_component(
+            MeshRenderingComponent::builder()
+                .mesh(&pill_mesh)
+                .material(&material)
+                .build(),
+        )
+        .with_component(PillParticleComponent {
+            spin_multiplier,
+            forward_speed,
+            base_y,
+            wobble_phase,
+        })
+        .build();
+    Ok(())
+}
 
 // --- Systems -----------------------------------------------------------------
 
@@ -216,19 +326,47 @@ fn camera_drift_system(engine: &mut Engine) -> Result<()> {
 
 fn demo_update_system(engine: &mut Engine) -> Result<()> {
     let fps = engine.get_fps();
+    let active_scene = engine.get_active_scene_handle()?;
+    let (tunnel_materials, pill_mesh) = {
+        let state = engine.get_global_component::<GameState>()?;
+        (state.tunnel_materials.clone(), state.pill_mesh)
+    };
 
     DEMO_VALUES.with(|v| v.fps.set(fps));
 
     let requested_count = DEMO_VALUES.with(|v| v.desired_pill_count.get());
+    let mut current_count = DEMO_VALUES.with(|v| v.current_pill_count.get());
 
-    let current_count = DEMO_VALUES.with(|v| v.current_pill_count.get());
+    if requested_count == 0 {
+        // despawn all except hero
+        let mut entities: Vec<EntityHandle> = vec![];
+        for (entity, _) in engine.iterate_one_component_mut::<PillParticleComponent>()? {
+            entities.push(entity);
+        }
+        for entity in entities {
+            engine.remove_entity_default_scene(entity)?;
+        }
+        return Ok(());
+    }
 
     // TODO: add spawning more pills/ controlling number of spawned pills
     let diff = requested_count - current_count;
     if diff > 0 {
-        // spawn
+        // spawn N depending on current treshold
+        let to_spawn = calculate_desired_spawn(current_count);
+        for i in 0..to_spawn {
+            SpawnPill(
+                engine,
+                active_scene,
+                &tunnel_materials,
+                pill_mesh,
+                i as usize,
+            )?;
+        }
+        current_count += to_spawn;
+        DEMO_VALUES.with(|v| v.current_pill_count.set(current_count));
     } else {
-        // despawn
+        // TODO: despawn
     }
 
     Ok(())
@@ -278,6 +416,14 @@ impl PillGame for WebGame {
             .collect::<Result<_>>()?;
         let hero_material =
             tinted_pill_material(engine, "hero_material", HERO_TINT, color_tex, normal_tex)?;
+        engine.add_global_component(GameState {
+            tunnel_materials: tunnel_materials,
+            pill_mesh: pill_mesh,
+        })?;
+        let tunnel_materials = engine
+            .get_global_component::<GameState>()?
+            .tunnel_materials
+            .clone();
 
         // Camera
         engine
@@ -317,48 +463,8 @@ impl PillGame for WebGame {
             .with_component(HeroPillComponent {})
             .build();
 
-        // Emit PILL_COUNT particles from the donut (uniform in θ, radius, z).
-        let radius_span = EMITTER_RADIUS_MAX - EMITTER_RADIUS_MIN;
-        let tunnel_length = TUNNEL_FAR_Z - TUNNEL_NEAR_Z;
         for i in 0..PILL_COUNT {
-            let theta = hash_f32(i, SEED_ANGLE) * std::f32::consts::TAU;
-            let radius = EMITTER_RADIUS_MIN + hash_f32(i, SEED_RADIUS) * radius_span;
-            let z = TUNNEL_NEAR_Z + hash_f32(i, SEED_Z) * tunnel_length;
-            let base_x = theta.cos() * radius;
-            let base_y = theta.sin() * radius;
-            let scale = PILL_SCALE * (1.0 + PILL_SCALE_JITTER * hash_signed(i, SEED_SCALE));
-            let spin_multiplier = 1.0 + PILL_SPIN_VARIANCE * hash_signed(i, SEED_SPIN);
-            let forward_speed = PILL_FORWARD_SPEED * PILL_PARALLAX_REF_RADIUS / radius;
-            let wobble_phase = hash_f32(i, SEED_WOBBLE) * std::f32::consts::TAU;
-            let rotation = Vector3f::new(
-                hash_f32(i, SEED_ROT_X) * std::f32::consts::TAU,
-                hash_f32(i, SEED_ROT_Y) * std::f32::consts::TAU,
-                hash_f32(i, SEED_ROT_Z) * std::f32::consts::TAU,
-            );
-            let material = tunnel_materials[hash_usize(i, SEED_MATERIAL, tunnel_materials.len())];
-
-            engine
-                .build_entity(active_scene)
-                .with_component(
-                    TransformComponent::builder()
-                        .position(Vector3f::new(base_x, base_y, z))
-                        .rotation(rotation)
-                        .scale(Vector3f::new(scale, scale, scale))
-                        .build(),
-                )
-                .with_component(
-                    MeshRenderingComponent::builder()
-                        .mesh(&pill_mesh)
-                        .material(&material)
-                        .build(),
-                )
-                .with_component(PillParticleComponent {
-                    spin_multiplier,
-                    forward_speed,
-                    base_y,
-                    wobble_phase,
-                })
-                .build();
+            SpawnPill(engine, active_scene, &tunnel_materials, pill_mesh, i)?;
         }
 
         engine.add_system("pill_particle", pill_particle_system)?;
