@@ -133,6 +133,7 @@ struct DemoValues {
     desired_pill_count: Cell<u32>,
     current_pill_count: Cell<u32>,
     spawn_increment: Cell<u32>,
+    next_pill_id: Cell<u32>,
 }
 
 fn calculate_next_desired_pill_count(current_count: u32) -> u32 {
@@ -172,6 +173,7 @@ thread_local!(static DEMO_VALUES: DemoValues = const { DemoValues{
     desired_pill_count: Cell::new(PILL_COUNT as u32),
     current_pill_count: Cell::new(PILL_COUNT as u32),
     spawn_increment: Cell::new(0 as u32),
+    next_pill_id: Cell::new(PILL_COUNT as u32),
 }});
 
 // --- API ---
@@ -346,25 +348,31 @@ fn demo_update_system(engine: &mut Engine) -> Result<()> {
         for entity in entities {
             engine.remove_entity_default_scene(entity)?;
         }
+        DEMO_VALUES.with(|v| v.current_pill_count.set(0));
         return Ok(());
     }
 
     // TODO: add spawning more pills/ controlling number of spawned pills
-    let diff = requested_count - current_count;
-    if diff > 0 {
-        // spawn N depending on current treshold
-        let to_spawn = calculate_desired_spawn(current_count);
-        for i in 0..to_spawn {
+    if requested_count > current_count {
+        let remaining = requested_count - current_count;
+        let to_spawn = calculate_desired_spawn(current_count).min(remaining);
+
+        let next_id = DEMO_VALUES.with(|v| v.next_pill_id.get());
+
+        for offset in 0..to_spawn {
             SpawnPill(
                 engine,
                 active_scene,
                 &tunnel_materials,
                 pill_mesh,
-                i as usize,
+                (next_id + offset) as usize,
             )?;
         }
-        current_count += to_spawn;
-        DEMO_VALUES.with(|v| v.current_pill_count.set(current_count));
+
+        DEMO_VALUES.with(|v| {
+            v.next_pill_id.set(next_id + to_spawn);
+            v.current_pill_count.set(current_count + to_spawn);
+        });
     } else {
         // TODO: despawn
     }
