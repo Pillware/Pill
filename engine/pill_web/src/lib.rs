@@ -34,6 +34,15 @@ macro_rules! must {
     };
 }
 
+thread_local!(
+    static ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+);
+
+#[wasm_bindgen]
+pub fn set_active(active: bool) {
+    ACTIVE.with(|v| v.set(active));
+}
+
 /// Boots the game on a WebGPU canvas. Call from a `#[wasm_bindgen(start)]`
 /// shim in the per-game crate, after constructing the game's `PillGame` impl.
 ///
@@ -75,7 +84,10 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
 
         let attrs = WindowAttributes::default()
             .with_canvas(Some(canvas))
-            .with_inner_size(PhysicalSize::new(width, height));
+            .with_inner_size(PhysicalSize::new(width, height))
+            // TODO: I am not sure if this is correct for non-embedded window cases
+            .with_focusable(false)
+            .with_prevent_default(false);
 
         #[allow(deprecated)]
         let window = must!(event_loop.create_window(attrs));
@@ -146,7 +158,9 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
     #[allow(deprecated)]
     let _ = event_loop.run(move |event, elwt| match event {
         Event::AboutToWait => {
-            window_clone.request_redraw();
+            if ACTIVE.with(|active| active.get()) {
+                window_clone.request_redraw();
+            }
         }
 
         Event::DeviceEvent { ref event, .. } => {
@@ -163,6 +177,10 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
 
             match event {
                 WindowEvent::RedrawRequested => {
+                    if !ACTIVE.with(|active| active.get()) {
+                        return;
+                    }
+
                     let now = web_sys::window()
                         .and_then(|w| w.performance())
                         .map(|p| p.now())
