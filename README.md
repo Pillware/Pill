@@ -35,7 +35,7 @@ Designed from the ground up around performance, modularity and a frictionless de
 
 **Join the community on [Discord Server](https://discord.gg/VUKNQrctms)**
 
-**Quick start with [Pill Guide](https://docs.pillengine.org/guide)**
+<!-- **Quick start with [Pill Guide](https://docs.pillengine.org/guide)** -->
 
 **Check demos at [Pill Demos](https://pillengine.org/demos)**
 
