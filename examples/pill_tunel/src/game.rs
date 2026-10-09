@@ -1,5 +1,10 @@
 use pill_engine::{define_component, define_global_component, game::*};
-use std::{cell::Cell, env::current_exe};
+use std::{
+    cell::Cell,
+    collections::VecDeque,
+    env::current_exe,
+    ops::{Div, Sub},
+};
 use wasm_bindgen::prelude::*;
 
 // --- Scene constants ---------------------------------------------------------
@@ -125,7 +130,42 @@ fn tinted_pill_material(
 define_global_component!(GameState {
     tunnel_materials: Vec<MaterialHandle>,
     pill_mesh: MeshHandle,
+    averaged_fps: SmoothingFilter,
 });
+
+struct SmoothingFilter {
+    data: VecDeque<f32>,
+    average: f64,
+}
+
+impl SmoothingFilter {
+    pub fn new(size: usize) -> Self {
+        SmoothingFilter {
+            data: VecDeque::with_capacity(size),
+            average: 0.0,
+        }
+    }
+
+    pub fn add_sample(&mut self, sample: f32) {
+        if self.data.len() < self.data.capacity() {
+            self.data.push_back(sample);
+            self.average += (sample as usize / self.data.capacity()) as f64;
+            return;
+        }
+
+        let diff: f32 = sample - self.data.pop_front().unwrap();
+        self.average += (diff as usize / self.data.capacity()) as f64;
+        self.data.push_back(sample);
+    }
+
+    pub fn get_average(&self) -> f64 {
+        self.average
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.data.len() == self.data.capacity()
+    }
+}
 
 struct DemoValues {
     fps: Cell<f32>,
@@ -327,17 +367,24 @@ fn camera_drift_system(engine: &mut Engine) -> Result<()> {
 }
 
 fn demo_update_system(engine: &mut Engine) -> Result<()> {
-    let fps = engine.get_fps();
     let active_scene = engine.get_active_scene_handle()?;
     let (tunnel_materials, pill_mesh) = {
         let state = engine.get_global_component::<GameState>()?;
         (state.tunnel_materials.clone(), state.pill_mesh)
     };
 
-    DEMO_VALUES.with(|v| v.fps.set(fps));
+    let fps = engine.get_fps();
+    {
+        let average_fps = &mut engine.get_global_component_mut::<GameState>()?.averaged_fps;
+        average_fps.add_sample(fps);
+        if average_fps.is_ready() {
+            DEMO_VALUES.with(|v| v.fps.set(fps));
+            DEMO_VALUES.with(|v| v.frame_time_ms.set(fps as f64 / 1000.0));
+        }
+    }
 
     let requested_count = DEMO_VALUES.with(|v| v.desired_pill_count.get());
-    let mut current_count = DEMO_VALUES.with(|v| v.current_pill_count.get());
+    let current_count = DEMO_VALUES.with(|v| v.current_pill_count.get());
 
     if requested_count == 0 {
         // despawn all except hero
@@ -425,8 +472,9 @@ impl PillGame for WebGame {
         let hero_material =
             tinted_pill_material(engine, "hero_material", HERO_TINT, color_tex, normal_tex)?;
         engine.add_global_component(GameState {
-            tunnel_materials: tunnel_materials,
-            pill_mesh: pill_mesh,
+            tunnel_materials,
+            pill_mesh,
+            averaged_fps: SmoothingFilter::new(100),
         })?;
         let tunnel_materials = engine
             .get_global_component::<GameState>()?
