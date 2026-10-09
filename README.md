@@ -11,7 +11,7 @@ Modern, free and blazingly fast game engine. Built for developers who refuse to 
 
 Designed from the ground up around performance, modularity and a frictionless developer experience, it gives creators the freedom to build anything from tiny experimental projects to massive, complex worlds - without unnecessary bloat getting in the way.
 
-> **NOTE: Pill is currently under heavy architecture rework in order to deliver all flagship features.**
+> **NOTE: Pill is currently under heavy architecture rework in order to deliver all flagship features.**  
 > **💊 v1.0 ETA - Q1/2027**  
 
 ## Flagship Feature Goals
