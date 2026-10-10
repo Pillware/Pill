@@ -1,10 +1,5 @@
 use pill_engine::{define_component, define_global_component, game::*};
-use std::{
-    cell::Cell,
-    collections::VecDeque,
-    env::current_exe,
-    ops::{Div, Sub},
-};
+use std::{cell::Cell, collections::VecDeque};
 use wasm_bindgen::prelude::*;
 
 // --- Scene constants ---------------------------------------------------------
@@ -81,6 +76,9 @@ const SEED_ROT_X: u32 = 0xa5a5_f00d;
 const SEED_ROT_Y: u32 = 0x5a5a_feed;
 const SEED_ROT_Z: u32 = 0x3c3c_b16b;
 
+// --- Smoothing Filter constants ----
+const FILTER_SIZE: usize = 100;
+
 fn hash_u32(mut n: u32) -> u32 {
     n = (n ^ 61) ^ (n >> 16);
     n = n.wrapping_mul(9);
@@ -130,9 +128,11 @@ fn tinted_pill_material(
 define_global_component!(GameState {
     tunnel_materials: Vec<MaterialHandle>,
     pill_mesh: MeshHandle,
-    averaged_fps: SmoothingFilter,
+    smoothed_fps: SmoothingFilter,
 });
 
+// TODO: improvement - this could be an EMA filter instead, and calculate time samples instead of
+// FPS
 struct SmoothingFilter {
     data: VecDeque<f32>,
     average: f64,
@@ -149,12 +149,12 @@ impl SmoothingFilter {
     pub fn add_sample(&mut self, sample: f32) {
         if self.data.len() < self.data.capacity() {
             self.data.push_back(sample);
-            self.average += (sample as usize / self.data.capacity()) as f64;
+            self.average += (sample / self.data.capacity() as f32) as f64;
             return;
         }
 
         let diff: f32 = sample - self.data.pop_front().unwrap();
-        self.average += (diff as usize / self.data.capacity()) as f64;
+        self.average += (diff / self.data.capacity() as f32) as f64;
         self.data.push_back(sample);
     }
 
@@ -176,19 +176,20 @@ struct DemoValues {
     next_pill_id: Cell<u32>,
 }
 
-fn calculate_next_desired_pill_count(current_count: u32) -> u32 {
-    const STEPS: [u32; 5] = [500, 1_000, 2_000, 5_000, 10_000];
-    let pill_count_u32: u32 = PILL_COUNT as u32;
-    if current_count < pill_count_u32 * 2 {
-        return STEPS[0];
-    } else if current_count < pill_count_u32 * 5 {
-        return STEPS[1];
-    } else if current_count < pill_count_u32 * 10 {
-        return STEPS[2];
-    } else if current_count < pill_count_u32 * 20 {
-        return STEPS[3];
+fn calculate_pill_spawn_increment(current_count: u32) -> u32 {
+    const STEPS: [(u32, u32); 5] = [
+        (PILL_COUNT as u32 * 2, 500),
+        (PILL_COUNT as u32 * 5, 1_000),
+        (PILL_COUNT as u32 * 10, 2_000),
+        (PILL_COUNT as u32 * 20, 5_000),
+        (PILL_COUNT as u32 * 50, 10_000),
+    ];
+    for (pill_count, increment) in STEPS {
+        if current_count < pill_count {
+            return increment;
+        }
     }
-    STEPS[4]
+    STEPS[4].0
 }
 
 fn calculate_desired_spawn(current_count: u32) -> u32 {
@@ -199,9 +200,9 @@ fn calculate_desired_spawn(current_count: u32) -> u32 {
         (16_000, 40),
         (32_000, 50),
     ];
-    for i in 0..5 {
-        if current_count < STEPS[i].0 {
-            return STEPS[i].1;
+    for (pill_count, spawn) in STEPS {
+        if current_count < pill_count {
+            return spawn;
         }
     }
     STEPS[0].1
@@ -212,7 +213,7 @@ thread_local!(static DEMO_VALUES: DemoValues = const { DemoValues{
     frame_time_ms: Cell::new(0.0),
     desired_pill_count: Cell::new(PILL_COUNT as u32),
     current_pill_count: Cell::new(PILL_COUNT as u32),
-    spawn_increment: Cell::new(0 as u32),
+    spawn_increment: Cell::new(0),
     next_pill_id: Cell::new(PILL_COUNT as u32),
 }});
 
@@ -221,7 +222,7 @@ thread_local!(static DEMO_VALUES: DemoValues = const { DemoValues{
 pub fn spawn_more_pills() {
     // TODO: add some kind of cooldown to prevent spamming
     let current_count = DEMO_VALUES.with(|v| v.current_pill_count.get());
-    let spawn_increment = calculate_next_desired_pill_count(current_count);
+    let spawn_increment = calculate_pill_spawn_increment(current_count);
     DEMO_VALUES.with(|v| v.spawn_increment.set(spawn_increment));
     DEMO_VALUES.with(|v| v.desired_pill_count.set(spawn_increment * 10));
 }
@@ -258,10 +259,10 @@ define_component!(HeroPillComponent {});
 
 pub struct WebGame {}
 
-fn SpawnPill(
+fn spawn_pill(
     engine: &mut Engine,
     active_scene: SceneHandle,
-    tunnel_materials: &Vec<MaterialHandle>,
+    tunnel_materials: &[MaterialHandle],
     pill_mesh: MeshHandle,
     i: usize,
 ) -> Result<()> {
@@ -374,12 +375,12 @@ fn demo_update_system(engine: &mut Engine) -> Result<()> {
     };
 
     let fps = engine.get_fps();
-    {
-        let average_fps = &mut engine.get_global_component_mut::<GameState>()?.averaged_fps;
-        average_fps.add_sample(fps);
-        if average_fps.is_ready() {
-            DEMO_VALUES.with(|v| v.fps.set(fps));
-            DEMO_VALUES.with(|v| v.frame_time_ms.set(fps as f64 / 1000.0));
+    if fps.is_finite() && fps > 0.0 {
+        let smoothing_filter = &mut engine.get_global_component_mut::<GameState>()?.smoothed_fps;
+        smoothing_filter.add_sample(fps);
+        if smoothing_filter.is_ready() {
+            DEMO_VALUES.with(|v| v.fps.set(smoothing_filter.get_average() as f32));
+            DEMO_VALUES.with(|v| v.frame_time_ms.set(1000.0 / smoothing_filter.get_average()));
         }
     }
 
@@ -399,7 +400,6 @@ fn demo_update_system(engine: &mut Engine) -> Result<()> {
         return Ok(());
     }
 
-    // TODO: add spawning more pills/ controlling number of spawned pills
     if requested_count > current_count {
         let remaining = requested_count - current_count;
         let to_spawn = calculate_desired_spawn(current_count).min(remaining);
@@ -407,7 +407,7 @@ fn demo_update_system(engine: &mut Engine) -> Result<()> {
         let next_id = DEMO_VALUES.with(|v| v.next_pill_id.get());
 
         for offset in 0..to_spawn {
-            SpawnPill(
+            spawn_pill(
                 engine,
                 active_scene,
                 &tunnel_materials,
@@ -474,7 +474,7 @@ impl PillGame for WebGame {
         engine.add_global_component(GameState {
             tunnel_materials,
             pill_mesh,
-            averaged_fps: SmoothingFilter::new(100),
+            smoothed_fps: SmoothingFilter::new(FILTER_SIZE),
         })?;
         let tunnel_materials = engine
             .get_global_component::<GameState>()?
@@ -520,7 +520,7 @@ impl PillGame for WebGame {
             .build();
 
         for i in 0..PILL_COUNT {
-            SpawnPill(engine, active_scene, &tunnel_materials, pill_mesh, i)?;
+            spawn_pill(engine, active_scene, &tunnel_materials, pill_mesh, i)?;
         }
 
         engine.add_system("pill_particle", pill_particle_system)?;
