@@ -68,7 +68,7 @@ pub mod game {
             TransformComponent, UpdatePhase,
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
-        graphics::RendererTextureHandle,
+        graphics::PassTextureHandle,
         resources::{
             Material, MaterialHandle, Mesh, MeshHandle, Resource, ResourceLoader, ResourceStorage,
             Texture, TextureHandle, TextureType,
@@ -132,9 +132,9 @@ mod internal_mod {
         },
         engine::{Engine, PillGame},
         graphics::{
-            decompose_render_queue_key, BufferDesc, Pass, PillRenderer, Pipeline, PipelineDesc,
-            RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle, RendererMeshHandle,
-            RendererTargetDesc, RendererTextureHandle, ShaderDesc, WorldQuery,
+            decompose_render_queue_key, BufferDesc, Pass, PassTextureHandle, PillRenderer,
+            Pipeline, PipelineDesc, RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle,
+            RendererMeshHandle, RendererTargetDesc, RendererTextureHandle, ShaderDesc, WorldQuery,
         },
         resources::{
             Material, MaterialHandle, Mesh, MeshData, MeshHandle, MeshVertex, ResourceLoader,
@@ -158,9 +158,9 @@ mod internal_mod {
         },
         engine::{Engine, PillGame},
         graphics::{
-            decompose_render_queue_key, BufferDesc, Pass, PillRenderer, Pipeline, PipelineDesc,
-            RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle, RendererMeshHandle,
-            RendererTargetDesc, RendererTextureHandle, ShaderDesc, WorldQuery,
+            decompose_render_queue_key, BufferDesc, Pass, PassTextureHandle, PillRenderer,
+            Pipeline, PipelineDesc, RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle,
+            RendererMeshHandle, RendererTargetDesc, RendererTextureHandle, ShaderDesc, WorldQuery,
         },
         resources::{
             Material, MaterialHandle, Mesh, MeshData, MeshHandle, MeshVertex, ResourceLoader,

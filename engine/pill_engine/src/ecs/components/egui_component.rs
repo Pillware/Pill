@@ -103,18 +103,18 @@ impl EguiComponent {
             .collect()
     }
 
-    pub fn get_ui(engine: &mut Engine) -> Box<dyn Fn(&egui::Context) + Send> {
+    pub fn get_ui(engine: &mut Engine) -> Result<Box<dyn Fn(&egui::Context) + Send>> {
         let game_overlay = engine
             .get_global_component::<EguiComponent>()
             .ok()
             .and_then(|c| c.game_overlay.clone());
 
+        // No active scene yet (e.g. while loading): show 0 instead of failing the UI
         let entity_count = engine
             .scene_manager
             .get_active_scene()
-            .unwrap()
-            .entities
-            .len();
+            .map(|scene| scene.entities.len())
+            .unwrap_or(0);
         let system_count = engine
             .system_manager
             .update_phases
@@ -130,15 +130,15 @@ impl EguiComponent {
                 let system_timers = systems
                     .iter()
                     .map(|(_, system)| {
-                        (
+                        Ok((
                             system.name.clone(),
-                            system.timer.clone().context(system.name.clone()).unwrap(),
-                        )
+                            system.timer.clone().context(system.name.clone())?,
+                        ))
                     })
-                    .collect();
-                (update_phase.clone(), system_timers)
+                    .collect::<Result<Vec<_>>>()?;
+                Ok((update_phase.clone(), system_timers))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
 
         let total_systems_delta_time = system_timers
             .iter()
@@ -154,13 +154,11 @@ impl EguiComponent {
         let build_mode = engine.process.mode.as_str();
         let build_target = engine.process.target.as_str();
         let build_status = engine
-            .get_global_component::<BuildStatusIndicatorComponent>()
-            .unwrap()
+            .get_global_component::<BuildStatusIndicatorComponent>()?
             .last_build_status;
 
         let registered_ui = engine
-            .get_global_component::<EguiComponent>()
-            .unwrap()
+            .get_global_component::<EguiComponent>()?
             .snapshot_registered_ui();
 
         let ui: Box<dyn Fn(&egui::Context) + Send> = Box::new(move |ui: &egui::Context| {
@@ -259,7 +257,7 @@ impl EguiComponent {
             }
         });
 
-        ui
+        Ok(ui)
     }
 
     pub fn render_timer_tree_with_state(

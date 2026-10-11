@@ -51,6 +51,7 @@ VertexOutput vs_main(VertexInput input, uint instance_id : SV_InstanceID) {
     output.sv_position         = mul(camera.view_projection, world_position_homogeneous);
     output.texture_coordinates = input.texture_coordinates;
     output.world_position      = world_position;
-    output.world_normal        = normalize(mul(rotation, input.normal));
+    // Inverse-transpose of R*S is R*S^-1: divide by scale so non-uniform scale keeps normals perpendicular
+    output.world_normal        = normalize(mul(rotation, input.normal / per_draw.scale.xyz));
     return output;
 }

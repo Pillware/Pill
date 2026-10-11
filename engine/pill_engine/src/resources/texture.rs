@@ -45,15 +45,77 @@ impl Texture {
     }
 }
 
-fn decode_cooked_tex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
+/// Decoded `.cooked_tex` (RTEX) image. Header: b"RTEX" | u32 version | u32 width | u32 height,
+/// all little-endian. Versions (written by pill_assets `util/rtex.rs`):
+/// - 1: RGBA8 texels
+/// - 2: Rgba32Float texels (linear HDR)
+/// - 4: u32 mip_count, then the Rgba32Float texels of each mip level
+pub(crate) struct CookedTexture<'a> {
+    pub(crate) version: u32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) format: wgpu::TextureFormat,
+    pub(crate) mips: Vec<&'a [u8]>,
+}
+
+pub(crate) fn parse_cooked_tex(bytes: &[u8]) -> Result<CookedTexture<'_>> {
+    let invalid = |reason: &str| -> pill_core::PillError {
+        format!("not a valid .cooked_tex file: {reason}").into()
+    };
     if bytes.len() < 16 || &bytes[0..4] != b"RTEX" {
-        return Err(pill_core::PillError::from(
-            "not a valid .cooked_tex file (bad magic or truncated header)",
-        ));
+        return Err(invalid("bad magic or truncated header"));
     }
-    let width = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
-    let height = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
-    Ok((bytes[16..].to_vec(), width, height))
+    let read_u32 =
+        |offset: usize| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+    let version = read_u32(4);
+    let width = read_u32(8);
+    let height = read_u32(12);
+
+    let (format, mip_count, data_offset) = match version {
+        1 => (wgpu::TextureFormat::Rgba8Unorm, 1, 16),
+        2 => (wgpu::TextureFormat::Rgba32Float, 1, 16),
+        4 => {
+            if bytes.len() < 20 {
+                return Err(invalid("truncated v4 header"));
+            }
+            (wgpu::TextureFormat::Rgba32Float, read_u32(16), 20)
+        }
+        other => return Err(invalid(&format!("unsupported version {other}"))),
+    };
+    let bytes_per_texel = format.block_copy_size(None).unwrap() as usize;
+
+    let mut mips = Vec::with_capacity(mip_count as usize);
+    let mut offset = data_offset;
+    for mip in 0..mip_count {
+        let mip_bytes =
+            (width >> mip).max(1) as usize * (height >> mip).max(1) as usize * bytes_per_texel;
+        let mip_data = bytes
+            .get(offset..offset + mip_bytes)
+            .ok_or_else(|| invalid("pixel data shorter than header declares"))?;
+        mips.push(mip_data);
+        offset += mip_bytes;
+    }
+
+    Ok(CookedTexture {
+        version,
+        width,
+        height,
+        format,
+        mips,
+    })
+}
+
+/// Material textures are RGBA8; float RTEX files are environment/IBL maps for
+/// `Engine::load_cooked_texture`.
+fn decode_cooked_tex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
+    let cooked = parse_cooked_tex(bytes)?;
+    if cooked.version != 1 {
+        return Err(pill_core::PillError::from(format!(
+            "RTEX v{} is a float texture; load it with Engine::load_cooked_texture into RenderStateComponent",
+            cooked.version
+        )));
+    }
+    Ok((cooked.mips[0].to_vec(), cooked.width, cooked.height))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

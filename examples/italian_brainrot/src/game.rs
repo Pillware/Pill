@@ -13,6 +13,9 @@ impl PillGame for Game {
         // Create scene
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;
+        engine
+            .get_global_component_mut::<RenderStateComponent>()?
+            .background_color = [0.5, 0.5, 0.5];
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;
@@ -77,7 +80,6 @@ impl PillGame for Game {
                 CameraComponent::builder()
                     .enabled(true)
                     .fov(60.0)
-                    .clear_color(Color::new(0.5, 0.5, 0.5))
                     .build(),
             )
             .build();

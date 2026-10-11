@@ -22,6 +22,7 @@ pub use sound::{Sound, SoundHandle};
 
 pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};
 
+pub(crate) use texture::parse_cooked_tex;
 pub use texture::{Texture, TextureHandle, TextureType};
 
 pub use material::{Material, MaterialHandle};

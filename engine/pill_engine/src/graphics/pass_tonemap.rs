@@ -1,13 +1,13 @@
 use crate::config::{TONEMAP_FRAGMENT_SHADER, TONEMAP_VERTEX_SHADER};
 use crate::graphics::{
-    FrameTarget, Pass, PillRenderer, Pipeline, PipelineDesc, RendererTextureHandle, ShaderDesc,
+    FrameTarget, Pass, PassTextureHandle, PillRenderer, Pipeline, PipelineDesc, ShaderDesc,
     WorldQuery,
 };
 
 use pill_core::Result;
 
 pub struct PassTonemap {
-    hdr_source: RendererTextureHandle,
+    hdr_source: PassTextureHandle,
     state: Option<TonemapState>,
 }
 
@@ -17,7 +17,7 @@ struct TonemapState {
 }
 
 impl PassTonemap {
-    pub fn new(hdr_source: RendererTextureHandle) -> Self {
+    pub fn new(hdr_source: PassTextureHandle) -> Self {
         Self {
             hdr_source,
             state: None,

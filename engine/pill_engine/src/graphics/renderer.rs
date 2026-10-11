@@ -30,6 +30,13 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
 }
 
+// Textures owned by the renderer itself (render targets, depth, environment and IBL maps).
+// A separate key type from RendererTextureHandle (material textures in the ResourceManager), so
+// handles of the two stores cannot be mixed up.
+pill_core::define_new_pill_slotmap_key! {
+    pub struct PassTextureHandle;
+}
+
 // --- Pass API types ---
 
 /// Read-only view of the world handed to each pass. A pass calls `query::<T>()` for whatever
@@ -210,7 +217,7 @@ pub trait PillRenderer {
 
     // --- Other ---
 
-    /// Reconfigures the swap chain and depth texture after a window resize.
+    /// Reconfigures the swap chain and rebuilds surface-sized render targets (handles stay valid).
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
     /// Returns the OS window the renderer is bound to.
@@ -251,24 +258,24 @@ pub trait PillRenderer {
     fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<Pipeline>;
 
     /// Creates an off-screen render target texture and returns its handle.
-    fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<RendererTextureHandle>;
+    fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<PassTextureHandle>;
 
     /// Creates a depth texture sized to the current surface and returns its handle.
-    fn create_depth_texture(&mut self, label: &str) -> Result<RendererTextureHandle>;
+    fn create_depth_texture(&mut self, label: &str) -> Result<PassTextureHandle>;
 
     /// Returns the texture view for a previously created render target, or `None` if not found.
-    fn get_render_target_view(&self, handle: RendererTextureHandle) -> Option<&wgpu::TextureView>;
+    fn get_render_target_view(&self, handle: PassTextureHandle) -> Option<&wgpu::TextureView>;
 
     /// Uploads pixel data as a GPU texture and returns a handle stored in the renderer.
     fn create_texture_from_pixels(
         &mut self,
         name: &str,
         data: TextureData,
-    ) -> Result<RendererTextureHandle>;
+    ) -> Result<PassTextureHandle>;
 
     /// Creates a new `TextureView` for a previously registered texture handle.
     /// Returns `None` if the handle is not found.
-    fn get_texture_view(&self, handle: RendererTextureHandle) -> Option<wgpu::TextureView>;
+    fn get_texture_view(&self, handle: PassTextureHandle) -> Option<wgpu::TextureView>;
 }
 
 pub type Renderer = Box<dyn PillRenderer>;

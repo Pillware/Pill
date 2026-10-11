@@ -1,7 +1,5 @@
 use pill_engine::{define_component, game::*};
 
-use crate::bake;
-
 define_component!(OrbitCamera {
     yaw: f32,
     pitch: f32,
@@ -12,23 +10,26 @@ pub struct Game {}
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
-        let (equirect, equirect_width, equirect_height) = bake::generate();
-        let (diffuse, specular_mips, brdf_lut) =
-            bake::bake_all(&equirect, equirect_width, equirect_height);
-
-        let background_handle = engine.create_gpu_texture_f32(
+        // Environment and IBL maps cooked by pill_assets from res/studio.procedural_equirect
+        let background_handle = engine.load_cooked_texture(
             "equirect",
-            &equirect,
-            equirect_width,
-            equirect_height,
+            include_bytes!("../res/studio_equirect.cooked_tex"),
         )?;
-        let diffuse_handle = engine.create_gpu_texture_f32("diffuse_ibl", &diffuse, 32, 16)?;
-        let specular_handle =
-            engine.create_gpu_mipped_texture_f32("specular_ibl", &specular_mips, 128, 64)?;
-        let brdf_lut_handle = engine.create_gpu_texture_f32("brdf_lut", &brdf_lut, 256, 256)?;
+        let diffuse_handle = engine.load_cooked_texture(
+            "diffuse_ibl",
+            include_bytes!("../res/studio_diffuse_ibl.cooked_tex"),
+        )?;
+        let specular_handle = engine.load_cooked_texture(
+            "specular_ibl",
+            include_bytes!("../res/studio_specular_ibl.cooked_tex"),
+        )?;
+        let brdf_lut_handle = engine.load_cooked_texture(
+            "brdf_lut",
+            include_bytes!("../res/brdf_lut.cooked_tex"),
+        )?;
 
         let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
-        render_state.background = background_handle;
+        render_state.background = Some(background_handle);
         render_state.ibl_diffuse = diffuse_handle;
         render_state.ibl_specular = specular_handle;
         render_state.ibl_brdf_lut = brdf_lut_handle;
@@ -90,7 +91,6 @@ impl PillGame for Game {
                 CameraComponent::builder()
                     .enabled(true)
                     .fov(60.0)
-                    .clear_color(Color::new(0.0, 0.0, 0.0))
                     .build(),
             )
             .with_component(OrbitCamera {

@@ -208,7 +208,9 @@ impl PillGame for WebGame {
             engine.create_gpu_texture_f32("zero_ibl", &[0.0_f32, 0.0, 0.0, 0.0], 1, 1)?;
         {
             let rs = engine.get_global_component_mut::<RenderStateComponent>()?;
-            rs.bg_color = [CLEAR_COLOR.0, CLEAR_COLOR.1, CLEAR_COLOR.2];
+            rs.background_color = [CLEAR_COLOR.0, CLEAR_COLOR.1, CLEAR_COLOR.2];
+            // Fog fades into the background
+            rs.fog_color = rs.background_color;
             rs.fog_density = FOG_DENSITY;
             rs.ibl_diffuse = zero_ibl;
             rs.ibl_specular = zero_ibl;

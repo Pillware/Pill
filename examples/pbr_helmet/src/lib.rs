@@ -1,4 +1,3 @@
-mod bake;
 mod game;
 
 use pill_engine::game::create_game;

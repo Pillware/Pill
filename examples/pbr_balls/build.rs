@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
-use pill_assets::{GlbToCookedMesh, Rule};
+use pill_assets::{default_rules, Pipeline};
 
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let models = manifest.join("res/models");
+    let res = manifest.join("res");
+    let models = res.join("models");
     std::fs::create_dir_all(&models).unwrap();
 
     let glb = models.join("MetalRoughSpheres.glb");
@@ -17,10 +18,15 @@ fn main() {
         std::io::copy(&mut resp.into_reader(), &mut f).unwrap();
     }
 
-    let cooked_mesh = models.join("MetalRoughSpheres.cooked_mesh");
-    if !cooked_mesh.exists() {
-        GlbToCookedMesh
-            .build(&glb, &cooked_mesh)
-            .expect("cook MetalRoughSpheres.glb");
+    // Cook here (the launcher's cook step runs before this script downloads the GLB):
+    // GLB → mesh + textures, studio.procedural_equirect → equirect → IBL maps
+    let stats = Pipeline {
+        root: res,
+        rules: default_rules(),
+    }
+    .run()
+    .expect("asset pipeline failed");
+    for input in &stats.discovered {
+        println!("cargo:rerun-if-changed={}", input.display());
     }
 }

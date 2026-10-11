@@ -143,10 +143,9 @@ impl RendererTexture {
         format: wgpu::TextureFormat,
     ) -> Result<Self> {
         let mip_count = mip_pixels.len() as u32;
-        let bytes_per_texel: u32 = match format {
-            wgpu::TextureFormat::Rgba32Float => 16,
-            _ => 4,
-        };
+        let bytes_per_texel = format
+            .block_copy_size(None)
+            .expect("new_from_pixels: format must be a color format");
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(name),

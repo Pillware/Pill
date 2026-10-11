@@ -2,8 +2,8 @@ use crate::{
     app_config::EngineConfig,
     ecs::{EntityHandle, Scene},
     graphics::{
-        BufferDesc, Pass, PillRenderer, Pipeline, PipelineDesc, RendererTargetDesc,
-        RendererTextureHandle, TextureData, WorldQuery,
+        BufferDesc, Pass, PassTextureHandle, PillRenderer, Pipeline, PipelineDesc,
+        RendererTargetDesc, TextureData, WorldQuery,
     },
     resources::ResourceManager,
 };
@@ -69,15 +69,15 @@ impl PillRenderer for DummyRenderer {
         unimplemented!("DummyRenderer has no wgpu Device")
     }
 
-    fn create_render_target(&mut self, _desc: RendererTargetDesc) -> Result<RendererTextureHandle> {
-        Ok(RendererTextureHandle::default())
+    fn create_render_target(&mut self, _desc: RendererTargetDesc) -> Result<PassTextureHandle> {
+        Ok(PassTextureHandle::default())
     }
 
-    fn create_depth_texture(&mut self, _label: &str) -> Result<RendererTextureHandle> {
-        Ok(RendererTextureHandle::default())
+    fn create_depth_texture(&mut self, _label: &str) -> Result<PassTextureHandle> {
+        Ok(PassTextureHandle::default())
     }
 
-    fn get_render_target_view(&self, _handle: RendererTextureHandle) -> Option<&wgpu::TextureView> {
+    fn get_render_target_view(&self, _handle: PassTextureHandle) -> Option<&wgpu::TextureView> {
         None
     }
 
@@ -85,11 +85,11 @@ impl PillRenderer for DummyRenderer {
         &mut self,
         _name: &str,
         _data: TextureData,
-    ) -> Result<RendererTextureHandle> {
-        Ok(RendererTextureHandle::default())
+    ) -> Result<PassTextureHandle> {
+        Ok(PassTextureHandle::default())
     }
 
-    fn get_texture_view(&self, _handle: RendererTextureHandle) -> Option<wgpu::TextureView> {
+    fn get_texture_view(&self, _handle: PassTextureHandle) -> Option<wgpu::TextureView> {
         None
     }
 }

@@ -12,9 +12,9 @@ mod renderer;
 // --- Use ---
 
 pub use renderer::{
-    camera_forward, camera_view_projection, BufferDesc, FrameTarget, Pass, PillRenderer, Pipeline,
-    PipelineDesc, Renderer, RendererMaterialHandle, RendererMeshHandle, RendererTargetDesc,
-    RendererTextureHandle, ShaderDesc, TextureData, WorldQuery,
+    camera_forward, camera_view_projection, BufferDesc, FrameTarget, Pass, PassTextureHandle,
+    PillRenderer, Pipeline, PipelineDesc, Renderer, RendererMaterialHandle, RendererMeshHandle,
+    RendererTargetDesc, RendererTextureHandle, ShaderDesc, TextureData, WorldQuery,
 };
 
 #[cfg(feature = "headless")]

@@ -3,8 +3,8 @@ use crate::{
     app_config::EngineConfig,
     ecs::{EntityHandle, Scene},
     graphics::{
-        BufferDesc, FrameTarget, Pass, PassPBROpaque, PillRenderer, Pipeline, PipelineDesc,
-        RendererTargetDesc, RendererTextureHandle, TextureData, WorldQuery,
+        BufferDesc, FrameTarget, Pass, PassPBROpaque, PassTextureHandle, PillRenderer, Pipeline,
+        PipelineDesc, RendererTargetDesc, TextureData, WorldQuery,
     },
     renderer::resources::{RendererMesh, RendererTexture, Vertex},
     resources::ResourceManager,
@@ -12,7 +12,8 @@ use crate::{
 
 use pill_core::Result;
 use pill_core::{
-    debug, info, LogContext, PillError, PillSlotMap, PillStyle, PillTypeMap, RendererError, Timer,
+    debug, error, info, LogContext, PillError, PillSlotMap, PillStyle, PillTypeMap, RendererError,
+    Timer,
 };
 use std::sync::Arc;
 
@@ -108,12 +109,15 @@ impl PillRenderer for Renderer {
 
         timer.begin_context("Scene Passes");
 
+        // Passes are taken out so they can borrow the renderer; put them back before
+        // propagating a draw error, otherwise one failed frame would stop rendering for good
         let mut passes = std::mem::take(&mut self.state.passes);
-        for pass in &mut passes {
+        let draw_result = passes.iter_mut().try_for_each(|pass| {
             timer.record(pass.get_label());
-            pass.draw(&mut encoder, self, &frame_target, &world)?;
-        }
+            pass.draw(&mut encoder, self, &frame_target, &world)
+        });
         self.state.passes = passes;
+        draw_result?;
 
         timer.end_context()?;
 
@@ -290,7 +294,7 @@ impl PillRenderer for Renderer {
         })
     }
 
-    fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<RendererTextureHandle> {
+    fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<PassTextureHandle> {
         let texture = RendererTexture::new_render_target(
             &self.state.device,
             &desc.name,
@@ -299,20 +303,41 @@ impl PillRenderer for Renderer {
             desc.format,
         )?;
         let handle = self.state.pass_textures.insert(texture);
+        // Targets created at the surface size follow it on resize
+        if (desc.width, desc.height)
+            == (
+                self.state.surface_configuration.width,
+                self.state.surface_configuration.height,
+            )
+        {
+            self.state.surface_targets.push((
+                handle,
+                SurfaceTarget::Color {
+                    name: desc.name,
+                    format: desc.format,
+                },
+            ));
+        }
         Ok(handle)
     }
 
-    fn create_depth_texture(&mut self, label: &str) -> Result<RendererTextureHandle> {
+    fn create_depth_texture(&mut self, label: &str) -> Result<PassTextureHandle> {
         let texture = RendererTexture::new_depth_texture(
             &self.state.device,
             &self.state.surface_configuration,
             label,
         )?;
         let handle = self.state.pass_textures.insert(texture);
+        self.state.surface_targets.push((
+            handle,
+            SurfaceTarget::Depth {
+                name: label.to_string(),
+            },
+        ));
         Ok(handle)
     }
 
-    fn get_render_target_view(&self, handle: RendererTextureHandle) -> Option<&wgpu::TextureView> {
+    fn get_render_target_view(&self, handle: PassTextureHandle) -> Option<&wgpu::TextureView> {
         self.state
             .pass_textures
             .get(handle)
@@ -323,20 +348,38 @@ impl PillRenderer for Renderer {
         &mut self,
         name: &str,
         data: TextureData,
-    ) -> Result<RendererTextureHandle> {
+    ) -> Result<PassTextureHandle> {
+        // Rgba32Float is only filterable with FLOAT32_FILTERABLE (often missing on WebGPU and
+        // mobile); all engine samplers filter, so fall back to Rgba16Float, which always is
+        let half_mips: Vec<Vec<u8>>;
+        let half_mip_slices: Vec<&[u8]>;
+        let (mips, format) = if data.format == wgpu::TextureFormat::Rgba32Float
+            && !self
+                .state
+                .device
+                .features()
+                .contains(wgpu::Features::FLOAT32_FILTERABLE)
+        {
+            half_mips = data.mips.iter().map(|mip| f32_to_f16_bytes(mip)).collect();
+            half_mip_slices = half_mips.iter().map(Vec::as_slice).collect();
+            (half_mip_slices.as_slice(), wgpu::TextureFormat::Rgba16Float)
+        } else {
+            (data.mips, data.format)
+        };
+
         let texture = RendererTexture::new_from_pixels(
             &self.state.device,
             &self.state.queue,
             name,
-            data.mips,
+            mips,
             data.width,
             data.height,
-            data.format,
+            format,
         )?;
         Ok(self.state.pass_textures.insert(texture))
     }
 
-    fn get_texture_view(&self, handle: RendererTextureHandle) -> Option<wgpu::TextureView> {
+    fn get_texture_view(&self, handle: PassTextureHandle) -> Option<wgpu::TextureView> {
         self.state.pass_textures.get(handle).map(|t| {
             t.texture
                 .create_view(&wgpu::TextureViewDescriptor::default())
@@ -344,8 +387,20 @@ impl PillRenderer for Renderer {
     }
 }
 
+/// Surface-sized pass texture, rebuilt in place (same handle) when the surface is resized.
+enum SurfaceTarget {
+    Color {
+        name: String,
+        format: wgpu::TextureFormat,
+    },
+    Depth {
+        name: String,
+    },
+}
+
 pub struct State {
-    pass_textures: PillSlotMap<RendererTextureHandle, RendererTexture>,
+    pass_textures: PillSlotMap<PassTextureHandle, RendererTexture>,
+    surface_targets: Vec<(PassTextureHandle, SurfaceTarget)>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -405,11 +460,18 @@ impl State {
         info!(LogContext::Rendering => "Using GPU: {} ({:?})", info.name, info.backend);
 
         let (device, queue) = {
-            let wanted = wgpu::Features::DEPTH_CLIP_CONTROL
+            let mut wanted = wgpu::Features::DEPTH_CLIP_CONTROL
                 | wgpu::Features::TIMESTAMP_QUERY
                 | wgpu::Features::PIPELINE_STATISTICS_QUERY
                 | wgpu::Features::FLOAT32_FILTERABLE;
+            // Debug switch to exercise the Rgba16Float fallback on hardware that has the feature
+            if cfg!(debug_assertions) && std::env::var("PILL_FORCE_NO_F32_FILTER").is_ok() {
+                wanted.remove(wgpu::Features::FLOAT32_FILTERABLE);
+            }
             let features = wanted & adapter.features();
+            if !features.contains(wgpu::Features::FLOAT32_FILTERABLE) {
+                info!(LogContext::Rendering => "FLOAT32_FILTERABLE unavailable: float textures use Rgba16Float");
+            }
 
             adapter
                 .request_device(&wgpu::DeviceDescriptor {
@@ -425,10 +487,32 @@ impl State {
                 })?
         };
 
+        let mut screenshot = std::env::var("PILL_SCREENSHOT").ok().map(|s| {
+            let frame = std::env::var("PILL_SCREENSHOT_FRAME")
+                .ok()
+                .and_then(|f| f.parse::<u32>().ok())
+                .unwrap_or(10);
+            (frame, s)
+        });
+
         // Configure swap chain format and present mode
         let (surface_configuration, color_format) = {
             let preferred_format = wgpu::TextureFormat::Rgba8UnormSrgb;
             let surface_capabilities = surface.get_capabilities(&adapter);
+
+            // Screenshots copy the swapchain image, which needs COPY_SRC; request it only then
+            let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+            if screenshot.is_some() {
+                if surface_capabilities
+                    .usages
+                    .contains(wgpu::TextureUsages::COPY_SRC)
+                {
+                    usage |= wgpu::TextureUsages::COPY_SRC;
+                } else {
+                    info!(LogContext::Rendering => "PILL_SCREENSHOT ignored: surface does not support COPY_SRC");
+                    screenshot = None;
+                }
+            }
 
             #[cfg(target_arch = "wasm32")]
             let present_mode = wgpu::PresentMode::Fifo;
@@ -464,7 +548,7 @@ impl State {
             };
 
             let surface_configuration = wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                usage,
                 format,
                 width: window_size.width,
                 height: window_size.height,
@@ -484,16 +568,9 @@ impl State {
 
         let pass_textures = PillSlotMap::with_capacity_and_key(10);
 
-        let screenshot = std::env::var("PILL_SCREENSHOT").ok().map(|s| {
-            let frame = std::env::var("PILL_SCREENSHOT_FRAME")
-                .ok()
-                .and_then(|f| f.parse::<u32>().ok())
-                .unwrap_or(10);
-            (frame, s)
-        });
-
         Ok(Self {
             pass_textures,
+            surface_targets: Vec::new(),
             surface,
             device,
             queue,
@@ -512,8 +589,44 @@ impl State {
             self.surface_configuration.height = new_window_size.height;
             self.surface
                 .configure(&self.device, &self.surface_configuration);
+
+            // Passes look target views up every frame, so replacing the textures in place is enough
+            for (handle, target) in &self.surface_targets {
+                let texture = match target {
+                    SurfaceTarget::Color { name, format } => RendererTexture::new_render_target(
+                        &self.device,
+                        name,
+                        new_window_size.width,
+                        new_window_size.height,
+                        *format,
+                    ),
+                    SurfaceTarget::Depth { name } => RendererTexture::new_depth_texture(
+                        &self.device,
+                        &self.surface_configuration,
+                        name,
+                    ),
+                };
+                match (texture, self.pass_textures.get_mut(*handle)) {
+                    (Ok(texture), Some(slot)) => *slot = texture,
+                    (Err(error), _) => {
+                        error!(LogContext::Rendering => "Failed to resize render target: {}", error)
+                    }
+                    (Ok(_), None) => {}
+                }
+            }
         }
     }
+}
+
+/// Converts little-endian f32 texels to little-endian f16 (Rgba32Float → Rgba16Float data).
+fn f32_to_f16_bytes(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .chunks_exact(4)
+        .flat_map(|value| {
+            let value = f32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+            half::f16::from_f32(value).to_le_bytes()
+        })
+        .collect()
 }
 
 #[cfg(not(target_arch = "wasm32"))]

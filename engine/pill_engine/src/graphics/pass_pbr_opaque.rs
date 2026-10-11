@@ -10,8 +10,8 @@ use crate::{
     },
     graphics::{
         camera_forward, camera_view_projection, decompose_render_queue_key, BufferDesc,
-        FrameTarget, Pass, PillRenderer, Pipeline, PipelineDesc, RendererMaterialHandle,
-        RendererMeshHandle, RendererTextureHandle, ShaderDesc, TextureData, WorldQuery,
+        FrameTarget, Pass, PassTextureHandle, PillRenderer, Pipeline, PipelineDesc,
+        RendererMaterialHandle, RendererMeshHandle, ShaderDesc, TextureData, WorldQuery,
     },
     renderer::resources::{
         material_params_layout_entries, material_textures_layout_entries, RendererMaterial,
@@ -71,7 +71,6 @@ pub(crate) struct PerDrawStd140 {
 // Storage buffer (StructuredBuffer / var<storage,read>) indexed by SV_InstanceID replaces
 // dynamic-offset UBO: eliminates Metal's 256-B alignment tax and 120k per-instance API calls.
 // [Lottes @NOTimothyLottes 2025-01-23; Aaltonen "Modern Mobile Rendering at HypeHype" GDC 2023]
-const MAX_EXPECTED_PER_DRAW_INSTANCES: usize = 100_000;
 const PER_DRAW_STRIDE_BYTES: usize = std::mem::size_of::<PerDrawStd140>();
 
 pub const MATERIAL_BIND_GROUP_GLOBALS: usize = 0;
@@ -114,7 +113,9 @@ struct BgSubState {
     bind_group: wgpu::BindGroup,
     sampler: wgpu::Sampler,
     // Equirect handle the current bind_group was built from; rebuild only when it changes.
-    cached_bg: RendererTextureHandle,
+    cached_bg: PassTextureHandle,
+    // White 1×1 equirect drawn (tinted by background_color) when no environment image is set
+    fallback_bg: PassTextureHandle,
 }
 
 /// GPU-side pass state initialized in `Pass::init`, read every `Pass::draw`.
@@ -129,7 +130,7 @@ struct PassPBROpaqueState {
     per_draw_bind_group: wgpu::BindGroup,
     bg: BgSubState,
     // IBL handles the current globals_bind_group was built from; rebuild only when these change.
-    cached_ibl: [RendererTextureHandle; 3],
+    cached_ibl: [PassTextureHandle; 3],
 }
 
 /// Builds the globals bind group (camera UBO + IBL irradiance/prefilter/BRDF-LUT views).
@@ -213,8 +214,11 @@ fn build_bg_bind_group(
 /// Per-frame state (IBL handles, background equirect, bg_color, fog) is read from
 /// RenderStateComponent each frame via WorldQuery::get_global — nothing is baked at construction.
 pub struct PassPBROpaque {
-    color_target: RendererTextureHandle,
-    depth_target: RendererTextureHandle,
+    color_target: PassTextureHandle,
+    depth_target: PassTextureHandle,
+    // Per-draw storage capacity; at most one instance per entity
+    max_instances: usize,
+    capacity_warned: bool,
     groups_buffer: Vec<GroupCmd>,
     staging_buffer: Vec<u8>,
     state: Option<PassPBROpaqueState>,
@@ -222,14 +226,20 @@ pub struct PassPBROpaque {
 
 impl PassPBROpaque {
     /// Creates the pass; `Pass::init` must run before the first frame.
-    pub fn new(color_target: RendererTextureHandle, depth_target: RendererTextureHandle) -> Self {
+    /// `max_instances` sizes the per-draw buffer (the engine passes its entity limit).
+    pub fn new(
+        color_target: PassTextureHandle,
+        depth_target: PassTextureHandle,
+        max_instances: usize,
+    ) -> Self {
+        let max_instances = max_instances.max(1);
         Self {
             color_target,
             depth_target,
-            groups_buffer: Vec::with_capacity(2000),
-            staging_buffer: Vec::with_capacity(
-                MAX_EXPECTED_PER_DRAW_INSTANCES * PER_DRAW_STRIDE_BYTES,
-            ),
+            max_instances,
+            capacity_warned: false,
+            groups_buffer: Vec::new(),
+            staging_buffer: Vec::with_capacity(max_instances * PER_DRAW_STRIDE_BYTES),
             state: None,
         }
     }
@@ -378,7 +388,7 @@ impl Pass for PassPBROpaque {
 
         let per_draw_buffer = renderer.create_buffer(BufferDesc {
             label: Some("pass_pbr_opaque_per_draw"),
-            byte_size: (PER_DRAW_STRIDE_BYTES * MAX_EXPECTED_PER_DRAW_INSTANCES) as u64,
+            byte_size: (PER_DRAW_STRIDE_BYTES * self.max_instances) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         })?;
         let per_draw_bind_group = {
@@ -587,6 +597,7 @@ impl Pass for PassPBROpaque {
                 bind_group: bg_bind_group,
                 sampler: bg_sampler,
                 cached_bg: equirect_fallback_h,
+                fallback_bg: equirect_fallback_h,
             }
         };
 
@@ -653,7 +664,9 @@ impl Pass for PassPBROpaque {
 
         // Rebuild the background bind group only when the component's equirect handle changes.
         {
-            let bg_h = render_state.background;
+            let bg_h = render_state
+                .background
+                .unwrap_or(get_state(self).bg.fallback_bg);
             if get_state(self).bg.cached_bg != bg_h {
                 let equirect_view = renderer
                     .get_texture_view(bg_h)
@@ -675,8 +688,7 @@ impl Pass for PassPBROpaque {
 
         // Update camera uniform and write to GPU buffer. MVP = viewProjection·model is computed
         // in the vertex shader, so the CPU never multiplies per-entity matrices.
-        // Fog fades to the background color (no separate fog_color); read from the component.
-        let fog_color = render_state.bg_color;
+        let fog_color = render_state.fog_color;
         let fog_density = render_state.fog_density;
         {
             let state = get_state(self);
@@ -704,6 +716,7 @@ impl Pass for PassPBROpaque {
         }
         let transforms = &transform_components.data;
         let mesh_renderings = &mesh_rendering_components.data;
+        let mut instance_count = 0usize;
         for (slot_transform, slot_mesh_rendering) in transforms.iter().zip(mesh_renderings.iter()) {
             let Some(transform) = slot_transform else {
                 continue;
@@ -714,6 +727,17 @@ impl Pass for PassPBROpaque {
             let Some(key) = mesh_rendering.render_queue_key else {
                 continue;
             };
+            if instance_count == self.max_instances {
+                if !self.capacity_warned {
+                    log::error!(
+                        "PassPBROpaque: per-draw capacity {} reached; extra meshes are not drawn",
+                        self.max_instances
+                    );
+                    self.capacity_warned = true;
+                }
+                break;
+            }
+            instance_count += 1;
             let key_fields = decompose_render_queue_key(key);
             let mesh_handle = RendererMeshHandle::new(
                 key_fields.mesh_index.into(),
@@ -768,6 +792,13 @@ impl Pass for PassPBROpaque {
             }
         }
 
+        // Drop batches and groups that got no instances this frame, so meshes and materials removed
+        // since the last frame are never looked up again
+        for group in self.groups_buffer.iter_mut() {
+            group.batches.retain(|batch| !batch.instances.is_empty());
+        }
+        self.groups_buffer.retain(|group| !group.batches.is_empty());
+
         // Concatenate per-batch instances into the storage buffer (sequential — cache-friendly) and
         // assign each batch its first-instance offset. Single upload per pass. [Aaltonen GDC 2023]
         self.staging_buffer.clear();
@@ -781,13 +812,6 @@ impl Pass for PassPBROpaque {
                     next_instance = next_instance.wrapping_add(1);
                 }
             }
-        }
-        if next_instance as usize > MAX_EXPECTED_PER_DRAW_INSTANCES {
-            log::error!(
-                "PassPBROpaque: per-draw capacity exceeded (needed={}, capacity={})",
-                next_instance,
-                MAX_EXPECTED_PER_DRAW_INSTANCES
-            );
         }
         {
             let state_ref = self
@@ -847,10 +871,14 @@ impl Pass for PassPBROpaque {
                 &[],
             );
 
-            let mat = world
+            // A material destroyed this frame can still be referenced until its components'
+            // deferred updates run; skip it instead of failing the frame
+            let Ok(mat) = world
                 .resources
                 .get_resource::<RendererMaterial>(&group.material_handle)
-                .expect("PassPBROpaque: RendererMaterial missing for draw group");
+            else {
+                continue;
+            };
 
             render_pass.set_bind_group(
                 MATERIAL_BIND_GROUP_TEXTURES as u32,
@@ -864,18 +892,17 @@ impl Pass for PassPBROpaque {
             );
 
             for batch in &group.batches {
-                let mesh = world
+                let Ok(mesh) = world
                     .resources
                     .get_resource::<RendererMesh>(&batch.mesh_handle)
-                    .expect("PassPBROpaque: RendererMesh missing for batch");
+                else {
+                    continue;
+                };
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 let first = batch.base_offset_u32;
                 let count = batch.instances.len() as u32;
-                if count == 0 {
-                    continue; // material/mesh with no instances this frame
-                }
                 // One instanced draw per batch: instance_index in [first, first+count) selects per-draw data.
                 render_pass.draw_indexed(0..mesh.index_count, 0, first..(first + count));
             }
@@ -895,7 +922,11 @@ impl Pass for PassPBROpaque {
                 aspect: active_camera_component.aspect.get_value(),
                 fwd: fwd.to_array(),
                 _pad: 0.0,
-                bg_color: render_state.bg_color,
+                // Environment images are drawn as-is; the white fallback is tinted to the solid color
+                bg_color: match render_state.background {
+                    Some(_) => [1.0, 1.0, 1.0],
+                    None => render_state.background_color,
+                },
                 _pad2: 0.0,
             };
             renderer

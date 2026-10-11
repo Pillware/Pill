@@ -24,6 +24,9 @@ impl PillGame for WebGame {
     fn start(&self, engine: &mut Engine) -> Result<()> {
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;
+        engine
+            .get_global_component_mut::<RenderStateComponent>()?
+            .background_color = [0.10, 0.10, 0.11];
 
         engine.register_component::<TransformComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
@@ -40,13 +43,7 @@ impl PillGame for WebGame {
                     .position(Vector3f::new(0.0, 0.0, -5.0))
                     .build(),
             )
-            .with_component(
-                CameraComponent::builder()
-                    .enabled(true)
-                    .fov(60.0)
-                    .clear_color(Color::new(0.10, 0.10, 0.11))
-                    .build(),
-            )
+            .with_component(CameraComponent::builder().enabled(true).fov(60.0).build())
             .build();
 
         engine

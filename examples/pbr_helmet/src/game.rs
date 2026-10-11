@@ -1,7 +1,5 @@
 use pill_engine::{define_component, game::*};
 
-use crate::bake;
-
 define_component!(OrbitCamera {
     yaw: f32,
     pitch: f32,
@@ -40,18 +38,27 @@ fn orbit_camera_system(engine: &mut Engine) -> Result<()> {
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
-        let (eq, eq_w, eq_h) = bake::load_equirect();
-        let (diffuse, specular_mips, brdf_lut) = bake::bake_all(&eq, eq_w, eq_h);
-
-        let bg_h = engine.create_gpu_texture_f32("equirect", &eq, eq_w, eq_h)?;
-        let diff_h = engine.create_gpu_texture_f32("diffuse_ibl", &diffuse, 32, 16)?;
-        let spec_h =
-            engine.create_gpu_mipped_texture_f32("specular_ibl", &specular_mips, 128, 64)?;
-        let lut_h = engine.create_gpu_texture_f32("brdf_lut", &brdf_lut, 256, 256)?;
+        // Environment and IBL maps cooked by pill_assets from res/models/studio_small_08.hdr
+        let bg_h = engine.load_cooked_texture(
+            "equirect",
+            include_bytes!("../res/models/studio_small_08_equirect.cooked_tex"),
+        )?;
+        let diff_h = engine.load_cooked_texture(
+            "diffuse_ibl",
+            include_bytes!("../res/models/studio_small_08_diffuse_ibl.cooked_tex"),
+        )?;
+        let spec_h = engine.load_cooked_texture(
+            "specular_ibl",
+            include_bytes!("../res/models/studio_small_08_specular_ibl.cooked_tex"),
+        )?;
+        let lut_h = engine.load_cooked_texture(
+            "brdf_lut",
+            include_bytes!("../res/models/brdf_lut.cooked_tex"),
+        )?;
 
         {
             let rs = engine.get_global_component_mut::<RenderStateComponent>()?;
-            rs.background = bg_h;
+            rs.background = Some(bg_h);
             rs.ibl_diffuse = diff_h;
             rs.ibl_specular = spec_h;
             rs.ibl_brdf_lut = lut_h;
@@ -131,7 +138,6 @@ impl PillGame for Game {
                 CameraComponent::builder()
                     .enabled(true)
                     .fov(60.0)
-                    .clear_color(Color::new(0.05, 0.05, 0.06))
                     .build(),
             )
             .with_component(OrbitCamera {

@@ -4,7 +4,7 @@ use crate::{ecs::EguiComponent, engine::Engine};
 use pill_core::Result;
 
 pub fn egui_system(engine: &mut Engine) -> Result<()> {
-    let ui = EguiComponent::get_ui(engine);
+    let ui = EguiComponent::get_ui(engine)?;
     let client = engine
         .get_global_component::<EguiComponent>()?
         .egui_client

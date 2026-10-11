@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use crate::util::{
-    color::{linear_to_srgb, srgb_to_linear},
-    rtex::{write_rtex, write_rtex_hdr_mip},
+    color::srgb_to_linear,
+    rtex::{write_rtex, write_rtex_hdr, write_rtex_hdr_mip},
     vec_math::{cross3, dot3, normalize3},
 };
 use crate::Rule;
@@ -34,9 +34,10 @@ impl Rule for EquirectToIBL {
         let stem = input.file_stem().unwrap().to_str().unwrap();
         let base = stem.strip_suffix("_equirect").unwrap_or(stem);
 
-        // 1. Diffuse irradiance (32×16 sRGB) — anchor output
+        // 1. Diffuse irradiance (32×16, RTEX v2 Rgba32Float) — anchor output. Kept in float:
+        // irradiance from bright light sources exceeds 1.0
         let irradiance = compute_irradiance(&equirect, 32, 16);
-        write_rtex(output, 32, 16, &irradiance)?;
+        write_rtex_hdr(output, 32, 16, &irradiance)?;
 
         // 2. Specular prefilter HDR mip chain (RTEX v4, Rgba32Float).
         // 5 mip levels; mip i roughness = i/4, matching shader roughness * MAX_REFLECTION_LOD(4).
@@ -190,7 +191,7 @@ fn importance_sample_ggx(sample_point: (f32, f32), roughness: f32, normal: [f32;
 
 // --- Diffuse irradiance: cosine-weighted Riemann sum ---
 
-fn compute_irradiance(equirect: &Equirect, output_width: u32, output_height: u32) -> Vec<u8> {
+fn compute_irradiance(equirect: &Equirect, output_width: u32, output_height: u32) -> Vec<f32> {
     const PHI_SAMPLE_COUNT: u32 = 64;
     const THETA_SAMPLE_COUNT: u32 = 32;
     let delta_phi = 2.0 * PI / PHI_SAMPLE_COUNT as f32;
@@ -224,10 +225,10 @@ fn compute_irradiance(equirect: &Equirect, output_width: u32, output_height: u32
             }
 
             let normalization = PI / total_weight;
-            output.push(linear_to_srgb(irradiance[0] * normalization));
-            output.push(linear_to_srgb(irradiance[1] * normalization));
-            output.push(linear_to_srgb(irradiance[2] * normalization));
-            output.push(255u8);
+            output.push(irradiance[0] * normalization);
+            output.push(irradiance[1] * normalization);
+            output.push(irradiance[2] * normalization);
+            output.push(1.0);
         }
     }
     output

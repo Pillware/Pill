@@ -132,16 +132,7 @@ impl Engine {
             self.register_resource_type::<RendererTexture>(max_texture_count)?;
             self.register_resource_type::<RendererMesh>(max_mesh_count)?;
 
-            // Upload neutral 1×1 fallback textures for the env slots; game may override before first frame.
-            let bg_h = self.renderer.create_texture_from_pixels(
-                "pill_engine_default_equirect",
-                TextureData {
-                    mips: &[DEFAULT_EQUIRECT_FALLBACK_PIXEL],
-                    width: 1,
-                    height: 1,
-                    format: wgpu::TextureFormat::Rgba32Float,
-                },
-            )?;
+            // Upload neutral 1×1 fallback textures for the IBL slots; game may override before first frame.
             let diff_h = self.renderer.create_texture_from_pixels(
                 "pill_engine_default_ibl_diffuse",
                 TextureData {
@@ -170,7 +161,6 @@ impl Engine {
                 },
             )?;
             let rs = self.get_global_component_mut::<RenderStateComponent>()?;
-            rs.background = bg_h;
             rs.ibl_diffuse = diff_h;
             rs.ibl_specular = spec_h;
             rs.ibl_brdf_lut = lut_h;
@@ -563,7 +553,7 @@ impl Engine {
         pixels: &[f32],
         width: u32,
         height: u32,
-    ) -> Result<RendererTextureHandle> {
+    ) -> Result<PassTextureHandle> {
         let bytes: &[u8] = bytemuck::cast_slice(pixels);
         self.renderer.create_texture_from_pixels(
             name,
@@ -585,7 +575,7 @@ impl Engine {
         mips: &[Vec<f32>],
         base_width: u32,
         base_height: u32,
-    ) -> Result<RendererTextureHandle> {
+    ) -> Result<PassTextureHandle> {
         let slices: Vec<&[u8]> = mips
             .iter()
             .map(|m| bytemuck::cast_slice(m.as_slice()))
@@ -597,6 +587,24 @@ impl Engine {
                 width: base_width,
                 height: base_height,
                 format: wgpu::TextureFormat::Rgba32Float,
+            },
+        )
+    }
+
+    /// Uploads a `.cooked_tex` file produced by pill_assets (environment equirect, IBL maps, BRDF LUT)
+    /// as a GPU texture. RTEX v1 becomes Rgba8Unorm (linear), v2 Rgba32Float, v4 a Rgba32Float mip chain.
+    /// Returns a handle for assignment to `RenderStateComponent`.
+    /// Must be called before the first rendered frame (i.e. from `start()`).
+    pub fn load_cooked_texture(&mut self, name: &str, bytes: &[u8]) -> Result<PassTextureHandle> {
+        let cooked = crate::resources::parse_cooked_tex(bytes)
+            .context(format!("Loading cooked texture {}", name.name_style()))?;
+        self.renderer.create_texture_from_pixels(
+            name,
+            TextureData {
+                mips: &cooked.mips,
+                width: cooked.width,
+                height: cooked.height,
+                format: cooked.format,
             },
         )
     }

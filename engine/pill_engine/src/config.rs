@@ -132,8 +132,16 @@ pub fn default_pass_chain(engine: &mut Engine) -> Result<Vec<Box<dyn Pass>>> {
     render_state.hdr_target = hdr_target;
     render_state.depth_target = depth_target;
 
-    let mut passes: Vec<Box<dyn Pass>> =
-        vec![Box::new(PassPBROpaque::new(hdr_target, depth_target))];
+    // At most one mesh instance per entity
+    let max_instances = engine
+        .config
+        .get_int("MAX_ENTITIES")
+        .unwrap_or(MAX_ENTITIES as i64) as usize;
+    let mut passes: Vec<Box<dyn Pass>> = vec![Box::new(PassPBROpaque::new(
+        hdr_target,
+        depth_target,
+        max_instances,
+    ))];
     passes.append(&mut engine.custom_render_passes);
     passes.push(Box::new(PassTonemap::new(hdr_target)));
 
@@ -176,16 +184,17 @@ pub const DEFAULT_NORMAL_TEXTURE_BYTES: [u8; 20] = [
     b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 128, 128, 255,
     255, // flat normal (0,0,1)
 ];
-// Neutral metallic_roughness: G=255 (max roughness → scalar passes through), B=0 (metallic=0)
+// Neutral metallic_roughness (glTF): G=255 roughness, B=255 metallic, so the material's
+// roughness and metallic factors pass through unchanged when no texture is set
 pub const DEFAULT_METALLIC_ROUGHNESS_TEXTURE_BYTES: [u8; 20] = [
-    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 255, 0, 255,
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 255, 255, 255,
 ];
 // White emissive: emission = texture × Material.emissive (glTF), so the factor alone drives it
 pub const DEFAULT_EMISSIVE_TEXTURE_BYTES: [u8; 20] = [
     b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 255, 255, 255, 255,
 ];
 
-// 1×1 Rgba32Float white — background equirect fallback (PassPBROpaque); bg_color tints it to the desired solid color
+// 1×1 Rgba32Float white — background equirect fallback (PassPBROpaque); tinted by RenderStateComponent::background_color
 // 1.0f32 LE = 00 00 80 3F
 pub const DEFAULT_EQUIRECT_FALLBACK_PIXEL: &[u8] = &[
     0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F,
