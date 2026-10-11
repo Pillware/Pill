@@ -54,16 +54,12 @@ impl CameraUniform {
             transform_component.position.y,
             transform_component.position.z,
         );
-        let view = if let Some(t) = camera_component.look_at {
-            Mat4::look_at_rh(eye, Vec3::new(t.x, t.y, t.z), Vec3::Y)
-        } else {
-            let roll_matrix = Mat3::from_rotation_z(transform_component.rotation.z.to_radians());
-            let yaw_matrix = Mat3::from_rotation_y(transform_component.rotation.y.to_radians());
-            let pitch_matrix = Mat3::from_rotation_x(transform_component.rotation.x.to_radians());
-            let rotation_matrix = yaw_matrix * pitch_matrix * roll_matrix;
-            let direction = rotation_matrix * Vec3::Z;
-            Mat4::look_to_rh(eye, direction, Vec3::Y)
-        };
+        let roll_matrix = Mat3::from_rotation_z(transform_component.rotation.z.to_radians());
+        let yaw_matrix = Mat3::from_rotation_y(transform_component.rotation.y.to_radians());
+        let pitch_matrix = Mat3::from_rotation_x(transform_component.rotation.x.to_radians());
+        let rotation_matrix = yaw_matrix * pitch_matrix * roll_matrix;
+        let direction = rotation_matrix * Vec3::Z;
+        let view = Mat4::look_to_rh(eye, direction, Vec3::Y);
 
         let proj = Mat4::perspective_rh(
             camera_component.fov.to_radians(),
@@ -992,19 +988,10 @@ impl Pass for PassPBROpaque {
         // LessEqual depth test + write_enabled=false: fills only pixels where depth == 1.0 (far plane = no geometry).
         {
             let bg = &state_ref.bg;
-            let eye = Vec3::new(
-                active_camera_transform.position.x,
-                active_camera_transform.position.y,
-                active_camera_transform.position.z,
-            );
-            let fwd = if let Some(t) = active_camera_component.look_at {
-                (Vec3::new(t.x, t.y, t.z) - eye).normalize()
-            } else {
-                let roll = Mat3::from_rotation_z(active_camera_transform.rotation.z.to_radians());
-                let yaw = Mat3::from_rotation_y(active_camera_transform.rotation.y.to_radians());
-                let pitch = Mat3::from_rotation_x(active_camera_transform.rotation.x.to_radians());
-                (yaw * pitch * roll) * Vec3::Z
-            };
+            let roll = Mat3::from_rotation_z(active_camera_transform.rotation.z.to_radians());
+            let yaw = Mat3::from_rotation_y(active_camera_transform.rotation.y.to_radians());
+            let pitch = Mat3::from_rotation_x(active_camera_transform.rotation.x.to_radians());
+            let fwd = (yaw * pitch * roll) * Vec3::Z;
             let right = fwd.cross(Vec3::Y).normalize();
             let up = right.cross(fwd);
             let ubo = BgCameraUbo {

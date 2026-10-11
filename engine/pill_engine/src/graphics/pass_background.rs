@@ -222,19 +222,10 @@ impl Pass for PassBackground {
             .as_ref()
             .unwrap();
 
-        let eye = Vec3::new(
-            transform.position.x,
-            transform.position.y,
-            transform.position.z,
-        );
-        let forward = if let Some(target) = camera.look_at {
-            (Vec3::new(target.x, target.y, target.z) - eye).normalize()
-        } else {
-            let roll = Mat3::from_rotation_z(transform.rotation.z.to_radians());
-            let yaw = Mat3::from_rotation_y(transform.rotation.y.to_radians());
-            let pitch = Mat3::from_rotation_x(transform.rotation.x.to_radians());
-            (yaw * pitch * roll) * Vec3::Z
-        };
+        let roll = Mat3::from_rotation_z(transform.rotation.z.to_radians());
+        let yaw = Mat3::from_rotation_y(transform.rotation.y.to_radians());
+        let pitch = Mat3::from_rotation_x(transform.rotation.x.to_radians());
+        let forward = (yaw * pitch * roll) * Vec3::Z;
         let right = forward.cross(Vec3::Y).normalize();
         let up = right.cross(forward);
 

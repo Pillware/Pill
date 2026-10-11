@@ -72,11 +72,6 @@ impl CameraComponentBuilder {
         self
     }
 
-    pub fn look_at(mut self, target: Option<Vector3f>) -> Self {
-        self.component.look_at = target;
-        self
-    }
-
     pub fn build(self) -> CameraComponent {
         self.component
     }
@@ -89,7 +84,6 @@ pub struct CameraComponent {
     pub fov: f32,
     pub range: Range<f32>,
     pub clear_color: Vector3f,
-    pub look_at: Option<Vector3f>,
     // Exponential-squared fog: final_color is mixed toward fog_color by
     // 1 - exp(-density² · distance²). density = 0.0 disables fog (default).
     pub fog_density: f32,
@@ -117,7 +111,6 @@ impl CameraComponent {
             clear_color: Vector3f::new(0.15, 0.15, 0.15),
             fog_density: 0.0,
             fog_color: Vector3f::new(0.0, 0.0, 0.0),
-            look_at: None,
             renderer_resource_handle: None,
             enabled: false,
         }

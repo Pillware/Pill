@@ -2,7 +2,7 @@
 name = "pill_game"
 version = "0.1.0"
 edition = "2021"
-workspace = "NO_PATH"
+workspace = "/Users/mk/dev/demo/Pill-Engine/engine"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
