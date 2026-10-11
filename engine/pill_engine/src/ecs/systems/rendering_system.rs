@@ -1,8 +1,7 @@
 use crate::{
-    config::RENDERING_SYSTEM,
+    config::{default_pass_chain, RENDERING_SYSTEM},
     ecs::{CameraAspectRatio, CameraComponent, EntityHandle, RenderStateComponent},
     engine::Engine,
-    graphics::{PassPBROpaque, PassTonemap, RendererTargetDesc},
 };
 
 use pill_core::{EngineError, RendererError, Timer};
@@ -19,30 +18,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         .boot_done;
 
     if !boot_done {
-        // Bootstrap wires only GPU resources (render targets). Per-frame state (bg/IBL/fog) is read
-        // from RenderStateComponent each frame inside the passes via WorldQuery::get_global.
-        let (w, h) = engine.renderer.get_surface_size();
-        let hdr = engine.renderer.create_render_target(RendererTargetDesc {
-            name: "hdr_target".to_string(),
-            format: wgpu::TextureFormat::Rgba16Float,
-            width: w,
-            height: h,
-        })?;
-        #[cfg_attr(not(feature = "ui"), allow(unused_mut))]
-        let mut passes: Vec<Box<dyn crate::graphics::Pass>> = vec![
-            Box::new(PassPBROpaque::new(Some(hdr))),
-            Box::new(PassTonemap::new(hdr)),
-        ];
-        #[cfg(feature = "ui")]
-        {
-            use crate::{ecs::EguiComponent, graphics::PassEgui};
-            let client = engine
-                .get_global_component::<EguiComponent>()?
-                .egui_client
-                .clone();
-            let window = engine.renderer.get_window();
-            passes.push(Box::new(PassEgui::new(window, client)));
-        }
+        let passes = default_pass_chain(engine)?;
         engine.renderer.set_passes(passes)?;
         engine
             .get_global_component_mut::<RenderStateComponent>()?

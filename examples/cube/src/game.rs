@@ -6,13 +6,14 @@ fn rotate_cubes_system(engine: &mut Engine) -> Result<()> {
     let dt = engine.get_global_component::<TimeComponent>()?.delta_time;
 
     for (_entity, transform, _mesh) in
-        engine.iterate_two_components_mut::<TransformComponent, PbrRenderableComponent>()?
+        engine.iterate_two_components_mut::<TransformComponent, MeshRenderingComponent>()?
     {
+        // Rotation is in degrees: 2.0 / 3.5 / 1.0 rad/s
         let rot = transform.rotation;
         transform.set_rotation(Vector3f::new(
-            rot.x + 2.0 * dt,
-            rot.y + 3.5 * dt,
-            rot.z + 1.0 * dt,
+            rot.x + (2.0 * dt).to_degrees(),
+            rot.y + (3.5 * dt).to_degrees(),
+            rot.z + (1.0 * dt).to_degrees(),
         ));
     }
 
@@ -26,11 +27,11 @@ impl PillGame for WebGame {
 
         engine.register_component::<TransformComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
-        engine.register_component::<PbrRenderableComponent>(active_scene)?;
+        engine.register_component::<MeshRenderingComponent>(active_scene)?;
 
         let cube_mesh_handle = engine.add_resource(Mesh::cube("cube", 2.0))?;
         let material_handle = engine
-            .add_resource(PBRMaterial::new("cube_material").albedo(Color::new(0.80, 0.80, 0.82)))?;
+            .add_resource(Material::new("cube_material").albedo(Color::new(0.80, 0.80, 0.82)))?;
 
         engine
             .build_entity(active_scene)
@@ -52,9 +53,9 @@ impl PillGame for WebGame {
             .build_entity(active_scene)
             .with_component(TransformComponent::new())
             .with_component(
-                PbrRenderableComponent::builder()
+                MeshRenderingComponent::builder()
                     .mesh(&cube_mesh_handle)
-                    .pbr_material(&material_handle)
+                    .material(&material_handle)
                     .build(),
             )
             .build();

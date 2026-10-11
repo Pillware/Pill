@@ -1,25 +1,20 @@
 #![allow(clippy::too_many_arguments)]
 use crate::{
     app_config::EngineConfig,
+    ecs::{EntityHandle, Scene},
     graphics::{
-        BufferDesc, Pass, PassPBROpaque, PillRenderer, PipelineV2, PipelineV2Desc,
-        RendererCameraHandle, RendererTargetDesc, RendererTextureHandle, WorldQuery,
+        BufferDesc, FrameTarget, Pass, PassPBROpaque, PillRenderer, Pipeline, PipelineDesc,
+        RendererTargetDesc, RendererTextureHandle, TextureData, WorldQuery,
     },
-    internal::{get_renderer_resource_handle_from_camera_component, EntityHandle},
-    renderer::{
-        instance::Instance,
-        resources::{
-            EngineParameters, RendererCamera, RendererMesh, RendererShader, RendererTexture, Vertex,
-        },
-    },
+    renderer::resources::{RendererMesh, RendererTexture, Vertex},
     resources::ResourceManager,
 };
 
 use pill_core::Result;
 use pill_core::{
-    debug, info, LogContext, PillSlotMap, PillSlotMapKey, PillStyle, RendererError, Timer,
+    debug, info, LogContext, PillError, PillSlotMap, PillStyle, PillTypeMap, RendererError, Timer,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 pub struct Renderer {
     pub state: State,
@@ -50,54 +45,6 @@ impl PillRenderer for Renderer {
         panic!("Use Renderer::new_async on WASM")
     }
 
-    // --- Create ---
-
-    fn create_shader_struct(
-        &mut self,
-        name: &str,
-        vertex_wgsl: &str,
-        fragment_wgsl: &str,
-        texture_slots: &HashMap<String, crate::resources::ShaderTextureSlot>,
-        parameter_slots: &[(String, crate::resources::ShaderParameterSlot)],
-        pass_engine_parameters: bool,
-        pass_camera_parameters: bool,
-    ) -> Result<RendererShader> {
-        RendererShader::new(
-            name,
-            &self.state.device,
-            self.state.color_format,
-            Some(self.state.depth_format),
-            &[
-                RendererMesh::data_layout_descriptor(),
-                Instance::data_layout_descriptor(),
-            ],
-            vertex_wgsl,
-            fragment_wgsl,
-            parameter_slots,
-            texture_slots,
-            &self.state.engine_parameters.bind_group_layout,
-            &self.state.camera_bind_group_layout,
-            pass_engine_parameters,
-            pass_camera_parameters,
-        )
-    }
-
-    fn create_camera(&mut self) -> Result<RendererCameraHandle> {
-        let camera = RendererCamera::new(
-            &self.state.device,
-            self.state.camera_bind_group_layout.clone(),
-        )?;
-        let handle = self.state.cameras.insert(camera);
-        Ok(handle)
-    }
-
-    // --- Destroy ---
-
-    fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()> {
-        self.state.cameras.remove(renderer_camera_handle).unwrap();
-        Ok(())
-    }
-
     // --- Other ---
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
@@ -112,8 +59,8 @@ impl PillRenderer for Renderer {
     fn render(
         &mut self,
         active_camera_entity_handle: EntityHandle,
-        scene: &crate::ecs::Scene,
-        globals: &pill_core::PillTypeMap,
+        scene: &Scene,
+        globals: &PillTypeMap,
         delta_time: f32,
         timer: &mut Timer,
         resource_manager: &ResourceManager,
@@ -124,8 +71,8 @@ impl PillRenderer for Renderer {
 
         let frame = self.state.surface.get_current_texture();
         let frame = match frame {
-            std::result::Result::Ok(frame) => frame,
-            std::result::Result::Err(error) => match error {
+            Ok(frame) => frame,
+            Err(error) => match error {
                 wgpu::SurfaceError::Lost => return Err(RendererError::SurfaceLost.into()),
                 wgpu::SurfaceError::OutOfMemory => {
                     return Err(RendererError::SurfaceOutOfMemory.into())
@@ -134,9 +81,15 @@ impl PillRenderer for Renderer {
             },
         };
 
-        let swapchain_view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let frame_target = FrameTarget {
+            view: frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default()),
+            srgb_view: frame.texture.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.state.color_format.add_srgb_suffix()),
+                ..Default::default()
+            }),
+        };
 
         let mut encoder =
             self.state
@@ -158,7 +111,7 @@ impl PillRenderer for Renderer {
         let mut passes = std::mem::take(&mut self.state.passes);
         for pass in &mut passes {
             timer.record(pass.get_label());
-            pass.draw(&mut encoder, self, &frame, &swapchain_view, &world)?;
+            pass.draw(&mut encoder, self, &frame_target, &world)?;
         }
         self.state.passes = passes;
 
@@ -255,14 +208,6 @@ impl PillRenderer for Renderer {
         self.state.color_format
     }
 
-    fn get_engine_parameters(&self) -> &crate::renderer::resources::EngineParameters {
-        &self.state.engine_parameters
-    }
-
-    fn get_camera_bind_group_layout(&self) -> wgpu::BindGroupLayout {
-        self.state.camera_bind_group_layout.clone()
-    }
-
     fn create_buffer(&mut self, desc: BufferDesc) -> Result<wgpu::Buffer> {
         let buffer = self.state.device.create_buffer(&wgpu::BufferDescriptor {
             label: desc.label,
@@ -273,7 +218,7 @@ impl PillRenderer for Renderer {
         Ok(buffer)
     }
 
-    fn create_pipeline_v2(&mut self, desc: PipelineV2Desc) -> Result<PipelineV2> {
+    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<Pipeline> {
         let bind_group_layouts: Vec<wgpu::BindGroupLayout> = desc
             .bind_groups
             .iter()
@@ -339,7 +284,7 @@ impl PillRenderer for Renderer {
                 cache: None,
             });
 
-        Ok(PipelineV2 {
+        Ok(Pipeline {
             pipeline,
             bind_group_layouts,
         })
@@ -377,22 +322,18 @@ impl PillRenderer for Renderer {
     fn create_texture_from_pixels(
         &mut self,
         name: &str,
-        mip_pixels: &[&[u8]],
-        base_width: u32,
-        base_height: u32,
-        format: wgpu::TextureFormat,
-    ) -> RendererTextureHandle {
+        data: TextureData,
+    ) -> Result<RendererTextureHandle> {
         let texture = RendererTexture::new_from_pixels(
             &self.state.device,
             &self.state.queue,
             name,
-            mip_pixels,
-            base_width,
-            base_height,
-            format,
-        )
-        .expect("create_texture_from_pixels failed");
-        self.state.pass_textures.insert(texture)
+            data.mips,
+            data.width,
+            data.height,
+            data.format,
+        )?;
+        Ok(self.state.pass_textures.insert(texture))
     }
 
     fn get_texture_view(&self, handle: RendererTextureHandle) -> Option<wgpu::TextureView> {
@@ -404,18 +345,13 @@ impl PillRenderer for Renderer {
 }
 
 pub struct State {
-    pub(crate) cameras: PillSlotMap<RendererCameraHandle, RendererCamera>,
-    pub(crate) engine_parameters: EngineParameters,
     pass_textures: PillSlotMap<RendererTextureHandle, RendererTexture>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_configuration: wgpu::SurfaceConfiguration,
     color_format: wgpu::TextureFormat,
-    depth_format: wgpu::TextureFormat,
-    depth_texture: RendererTexture,
     passes: Vec<Box<dyn Pass>>,
-    camera_bind_group_layout: wgpu::BindGroupLayout,
     window: Arc<winit::window::Window>,
     // Optional frame capture: (target_frame, output_path). Set via PILL_SCREENSHOT env var.
     screenshot: Option<(u32, String)>,
@@ -431,11 +367,11 @@ impl State {
         // Create wgpu instance and window surface
         let (instance, surface) = {
             let backends = match std::env::var("WGPU_BACKENDS").as_deref() {
-                std::result::Result::Ok("VULKAN") => wgpu::Backends::VULKAN,
-                std::result::Result::Ok("DX12") => wgpu::Backends::DX12,
-                std::result::Result::Ok("METAL") => wgpu::Backends::METAL,
-                std::result::Result::Ok("GL") => wgpu::Backends::GL,
-                std::result::Result::Ok("BROWSER_WEBGPU") => wgpu::Backends::BROWSER_WEBGPU,
+                Ok("VULKAN") => wgpu::Backends::VULKAN,
+                Ok("DX12") => wgpu::Backends::DX12,
+                Ok("METAL") => wgpu::Backends::METAL,
+                Ok("GL") => wgpu::Backends::GL,
+                Ok("BROWSER_WEBGPU") => wgpu::Backends::BROWSER_WEBGPU,
                 _ => wgpu::Backends::all(),
             };
 
@@ -444,11 +380,12 @@ impl State {
                 flags: wgpu::InstanceFlags::from_build_config().with_env(),
                 backend_options: wgpu::BackendOptions::default(),
             });
-            let surface = instance.create_surface(window.clone()).map_err(
-                |error| -> pill_core::PillError {
-                    pill_core::PillError::from(format!("Failed to create surface: {}", error))
-                },
-            )?;
+            let surface =
+                instance
+                    .create_surface(window.clone())
+                    .map_err(|error| -> PillError {
+                        PillError::from(format!("Failed to create surface: {}", error))
+                    })?;
             (instance, surface)
         };
 
@@ -460,8 +397,8 @@ impl State {
                 force_fallback_adapter: false,
             })
             .await
-            .map_err(|error| -> pill_core::PillError {
-                pill_core::PillError::from(format!("Failed to request adapter: {}", error))
+            .map_err(|error| -> PillError {
+                PillError::from(format!("Failed to request adapter: {}", error))
             })?;
 
         let info = adapter.get_info();
@@ -483,13 +420,13 @@ impl State {
                     trace: wgpu::Trace::default(),
                 })
                 .await
-                .map_err(|error| -> pill_core::PillError {
-                    pill_core::PillError::from(format!("Failed to request device: {}", error))
+                .map_err(|error| -> PillError {
+                    PillError::from(format!("Failed to request device: {}", error))
                 })?
         };
 
-        // Configure swap chain format, present mode, and depth texture
-        let (surface_configuration, color_format, depth_format) = {
+        // Configure swap chain format and present mode
+        let (surface_configuration, color_format) = {
             let preferred_format = wgpu::TextureFormat::Rgba8UnormSrgb;
             let surface_capabilities = surface.get_capabilities(&adapter);
 
@@ -542,33 +479,9 @@ impl State {
             };
             surface.configure(&device, &surface_configuration);
             let color_format = surface_configuration.format;
-            let depth_format = wgpu::TextureFormat::Depth32Float;
-            (surface_configuration, color_format, depth_format)
+            (surface_configuration, color_format)
         };
 
-        let depth_texture =
-            RendererTexture::new_depth_texture(&device, &surface_configuration, "depth_texture")
-                .map_err(|error| -> pill_core::PillError {
-                    pill_core::PillError::from(format!("Failed to create depth texture: {}", error))
-                })?;
-
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("camera_parameters_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let engine_parameters = EngineParameters::new(&device)?;
-        let cameras = PillSlotMap::with_capacity_and_key(10);
         let pass_textures = PillSlotMap::with_capacity_and_key(10);
 
         let screenshot = std::env::var("PILL_SCREENSHOT").ok().map(|s| {
@@ -580,18 +493,13 @@ impl State {
         });
 
         Ok(Self {
-            cameras,
-            engine_parameters,
             pass_textures,
             surface,
             device,
             queue,
             surface_configuration,
             color_format,
-            depth_format,
-            depth_texture,
             passes: Vec::new(),
-            camera_bind_group_layout,
             window,
             screenshot,
             frame_counter: 0,
@@ -604,12 +512,6 @@ impl State {
             self.surface_configuration.height = new_window_size.height;
             self.surface
                 .configure(&self.device, &self.surface_configuration);
-            self.depth_texture = RendererTexture::new_depth_texture(
-                &self.device,
-                &self.surface_configuration,
-                "depth_texture",
-            )
-            .unwrap();
         }
     }
 }

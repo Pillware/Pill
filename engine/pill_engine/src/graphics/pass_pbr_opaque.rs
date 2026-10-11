@@ -1,19 +1,24 @@
 use crate::config::{
-    DEFAULT_BRDF_LUT_FALLBACK_PIXEL, DEFAULT_EQUIRECT_FALLBACK_PIXEL, DEFAULT_IBL_FALLBACK_PIXEL,
+    BACKGROUND_FRAGMENT_SHADER, BACKGROUND_VERTEX_SHADER, DEFAULT_BRDF_LUT_FALLBACK_PIXEL,
+    DEFAULT_EQUIRECT_FALLBACK_PIXEL, DEFAULT_IBL_FALLBACK_PIXEL, DEPTH_TARGET_FORMAT,
+    HDR_TARGET_FORMAT, PBR_OPAQUE_FRAGMENT_SHADER, PBR_OPAQUE_VERTEX_SHADER,
 };
 use crate::{
     ecs::{
-        CameraComponent, ComponentStorage, PbrRenderableComponent, RenderStateComponent,
+        CameraComponent, ComponentStorage, MeshRenderingComponent, RenderStateComponent,
         TransformComponent,
     },
     graphics::{
-        decompose_render_queue_key, BufferDesc, Pass, PillRenderer, PipelineV2, PipelineV2Desc,
-        RendererMaterialHandle, RendererMeshHandle, RendererTextureHandle, ShaderDesc, WorldQuery,
+        camera_forward, camera_view_projection, decompose_render_queue_key, BufferDesc,
+        FrameTarget, Pass, PillRenderer, Pipeline, PipelineDesc, RendererMaterialHandle,
+        RendererMeshHandle, RendererTextureHandle, ShaderDesc, TextureData, WorldQuery,
     },
-    renderer::resources::{RendererMaterial, RendererMesh},
+    renderer::resources::{
+        material_params_layout_entries, material_textures_layout_entries, RendererMaterial,
+        RendererMesh, Vertex,
+    },
 };
-use glam::{Mat3, Mat4, Vec3};
-use pill_core::{PillSlotMapKey, Result};
+use pill_core::{Matrix4f, PillSlotMapKey, Result, Vector3f};
 use std::num::NonZeroU32;
 
 /// Camera uniform layout: position (vec4) + view-projection matrix (mat4x4) + fog.
@@ -30,7 +35,7 @@ impl CameraUniform {
     fn new() -> Self {
         Self {
             position: [0.0; 4],
-            view_projection_matrix: Mat4::IDENTITY.to_cols_array_2d(),
+            view_projection_matrix: Matrix4f::IDENTITY.to_cols_array_2d(),
             fog_color: [1.0; 3],
             fog_density: 0.0,
         }
@@ -49,26 +54,8 @@ impl CameraUniform {
             0.0,
         ];
 
-        let eye = Vec3::new(
-            transform_component.position.x,
-            transform_component.position.y,
-            transform_component.position.z,
-        );
-        let roll_matrix = Mat3::from_rotation_z(transform_component.rotation.z.to_radians());
-        let yaw_matrix = Mat3::from_rotation_y(transform_component.rotation.y.to_radians());
-        let pitch_matrix = Mat3::from_rotation_x(transform_component.rotation.x.to_radians());
-        let rotation_matrix = yaw_matrix * pitch_matrix * roll_matrix;
-        let direction = rotation_matrix * Vec3::Z;
-        let view = Mat4::look_to_rh(eye, direction, Vec3::Y);
-
-        let proj = Mat4::perspective_rh(
-            camera_component.fov.to_radians(),
-            camera_component.aspect.get_value(),
-            camera_component.range.start,
-            camera_component.range.end,
-        );
-
-        self.view_projection_matrix = (proj * view).to_cols_array_2d();
+        self.view_projection_matrix =
+            camera_view_projection(camera_component, transform_component).to_cols_array_2d();
     }
 }
 
@@ -122,7 +109,7 @@ struct BgCameraUbo {
 
 /// GPU-side state for the background sub-draw within the PBR render pass.
 struct BgSubState {
-    pipeline: PipelineV2,
+    pipeline: Pipeline,
     camera_buf: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     sampler: wgpu::Sampler,
@@ -135,7 +122,7 @@ struct PassPBROpaqueState {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
-    pipeline: PipelineV2,
+    pipeline: Pipeline,
     ibl_sampler: wgpu::Sampler,
     prefilter_sampler: wgpu::Sampler,
     per_draw_buffer: wgpu::Buffer,
@@ -226,8 +213,8 @@ fn build_bg_bind_group(
 /// Per-frame state (IBL handles, background equirect, bg_color, fog) is read from
 /// RenderStateComponent each frame via WorldQuery::get_global — nothing is baked at construction.
 pub struct PassPBROpaque {
-    color_target: Option<RendererTextureHandle>,
-    depth_texture: Option<RendererTextureHandle>,
+    color_target: RendererTextureHandle,
+    depth_target: RendererTextureHandle,
     groups_buffer: Vec<GroupCmd>,
     staging_buffer: Vec<u8>,
     state: Option<PassPBROpaqueState>,
@@ -235,10 +222,10 @@ pub struct PassPBROpaque {
 
 impl PassPBROpaque {
     /// Creates the pass; `Pass::init` must run before the first frame.
-    pub fn new(color_target: Option<RendererTextureHandle>) -> Self {
+    pub fn new(color_target: RendererTextureHandle, depth_target: RendererTextureHandle) -> Self {
         Self {
             color_target,
-            depth_texture: None,
+            depth_target,
             groups_buffer: Vec::with_capacity(2000),
             staging_buffer: Vec::with_capacity(
                 MAX_EXPECTED_PER_DRAW_INSTANCES * PER_DRAW_STRIDE_BYTES,
@@ -262,10 +249,6 @@ impl Pass for PassPBROpaque {
     }
 
     fn init(&mut self, renderer: &mut dyn PillRenderer) -> Result<()> {
-        let vertex_wgsl = include_str!("../../res/shaders/pbr_opaque_vertex.wgsl");
-
-        let fragment_wgsl = include_str!("../../res/shaders/pbr_opaque_fragment.wgsl");
-
         let bind_groups: Vec<Vec<wgpu::BindGroupLayoutEntry>> = vec![
             // 0: globals (camera + IBL irradiance + prefilter + BRDF LUT)
             vec![
@@ -329,83 +312,9 @@ impl Pass for PassPBROpaque {
                 },
             ],
             // 1: material textures (base_color, normal, metallic_roughness, emissive)
-            vec![
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 7,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
+            material_textures_layout_entries(),
             // 2: material params
-            vec![wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
+            material_params_layout_entries(),
             // 3: per-draw storage array — no dynamic offset, no 256-B Metal alignment (Apple Metal Spec §4.1.1).
             vec![wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -419,27 +328,25 @@ impl Pass for PassPBROpaque {
             }],
         ];
 
-        let desc = PipelineV2Desc {
+        let desc = PipelineDesc {
             label: Some("pass_pbr_opaque_pipeline"),
             vs: ShaderDesc {
-                source: vertex_wgsl,
+                source: PBR_OPAQUE_VERTEX_SHADER,
                 entry_func: "vs_main",
             },
             ps: ShaderDesc {
-                source: fragment_wgsl,
+                source: PBR_OPAQUE_FRAGMENT_SHADER,
                 entry_func: "fs_main",
             },
-            vertex_buffers: &[
-                <crate::renderer::resources::RendererMesh as crate::renderer::resources::Vertex>::data_layout_descriptor(),
-            ],
+            vertex_buffers: &[RendererMesh::data_layout_descriptor()],
             bind_groups,
             targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba16Float,
+                format: HDR_TARGET_FORMAT,
                 blend: Some(wgpu::BlendState::REPLACE),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
+                format: DEPTH_TARGET_FORMAT,
                 depth_write_enabled: true,
                 depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
@@ -457,7 +364,7 @@ impl Pass for PassPBROpaque {
             },
         };
 
-        let pipeline = renderer.create_pipeline_v2(desc)?;
+        let pipeline = renderer.create_pipeline(desc)?;
 
         let camera_buffer = {
             let device = renderer.get_device();
@@ -506,25 +413,31 @@ impl Pass for PassPBROpaque {
         // RenderStateComponent's IBL handles the first frame (and whenever they change).
         let irr_h = renderer.create_texture_from_pixels(
             "diffuse_ibl_fallback",
-            &[DEFAULT_IBL_FALLBACK_PIXEL],
-            1,
-            1,
-            wgpu::TextureFormat::Rgba8Unorm,
-        );
+            TextureData {
+                mips: &[DEFAULT_IBL_FALLBACK_PIXEL],
+                width: 1,
+                height: 1,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+            },
+        )?;
         let pre_h = renderer.create_texture_from_pixels(
             "specular_ibl_fallback",
-            &[DEFAULT_IBL_FALLBACK_PIXEL],
-            1,
-            1,
-            wgpu::TextureFormat::Rgba8Unorm,
-        );
+            TextureData {
+                mips: &[DEFAULT_IBL_FALLBACK_PIXEL],
+                width: 1,
+                height: 1,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+            },
+        )?;
         let lut_h = renderer.create_texture_from_pixels(
             "brdf_lut_fallback",
-            &[DEFAULT_BRDF_LUT_FALLBACK_PIXEL],
-            1,
-            1,
-            wgpu::TextureFormat::Rgba8Unorm,
-        );
+            TextureData {
+                mips: &[DEFAULT_BRDF_LUT_FALLBACK_PIXEL],
+                width: 1,
+                height: 1,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+            },
+        )?;
         let irradiance_view = renderer
             .get_texture_view(irr_h)
             .expect("ibl_diffuse fallback invalid");
@@ -562,14 +475,10 @@ impl Pass for PassPBROpaque {
         );
         let cached_ibl = [irr_h, pre_h, lut_h];
 
-        self.depth_texture = Some(renderer.create_depth_texture("pass_pbr_opaque_depth")?);
-
         // Background sub-draw is always created; its equirect comes from RenderStateComponent.background
         // each frame (draw() rebuilds the bind group when the handle changes). Initial bind group uses
         // a 1px fallback equirect.
         let bg = {
-            let bg_vs = include_str!("../../res/shaders/background_vertex.wgsl");
-            let bg_fs = include_str!("../../res/shaders/background_fragment.wgsl");
             let bg_bind_groups = vec![vec![
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -598,26 +507,26 @@ impl Pass for PassPBROpaque {
                     count: None,
                 },
             ]];
-            let bg_pipeline = renderer.create_pipeline_v2(PipelineV2Desc {
+            let bg_pipeline = renderer.create_pipeline(PipelineDesc {
                 label: Some("pass_pbr_opaque_bg_pipeline"),
                 vs: ShaderDesc {
-                    source: bg_vs,
+                    source: BACKGROUND_VERTEX_SHADER,
                     entry_func: "vs_main",
                 },
                 ps: ShaderDesc {
-                    source: bg_fs,
+                    source: BACKGROUND_FRAGMENT_SHADER,
                     entry_func: "fs_main",
                 },
                 vertex_buffers: &[],
                 bind_groups: bg_bind_groups,
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba16Float,
+                    format: HDR_TARGET_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 // LessEqual + write disabled: fills only pixels where depth == 1.0 (far plane).
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
+                    format: DEPTH_TARGET_FORMAT,
                     depth_write_enabled: false,
                     depth_compare: wgpu::CompareFunction::LessEqual,
                     stencil: wgpu::StencilState::default(),
@@ -636,11 +545,13 @@ impl Pass for PassPBROpaque {
             })?;
             let equirect_fallback_h = renderer.create_texture_from_pixels(
                 "bg_equirect_fallback",
-                &[DEFAULT_EQUIRECT_FALLBACK_PIXEL],
-                1,
-                1,
-                wgpu::TextureFormat::Rgba32Float,
-            );
+                TextureData {
+                    mips: &[DEFAULT_EQUIRECT_FALLBACK_PIXEL],
+                    width: 1,
+                    height: 1,
+                    format: wgpu::TextureFormat::Rgba32Float,
+                },
+            )?;
             let equirect_view = renderer
                 .get_texture_view(equirect_fallback_h)
                 .expect("bg equirect fallback invalid");
@@ -699,14 +610,12 @@ impl Pass for PassPBROpaque {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         renderer: &mut dyn PillRenderer,
-        _frame: &wgpu::SurfaceTexture,
-        view: &wgpu::TextureView,
+        _frame_target: &FrameTarget,
         world: &WorldQuery<'_>,
     ) -> Result<()> {
         // Query per-entity storages + the global render state (bg/IBL/fog) this pass needs.
-        let camera_components = world.query::<CameraComponent>()?;
         let transform_components = world.query::<TransformComponent>()?;
-        let pbr_renderable_components = world.query::<PbrRenderableComponent>()?;
+        let mesh_rendering_components = world.query::<MeshRenderingComponent>()?;
         let render_state = world.get_global::<RenderStateComponent>()?;
 
         // Rebuild the IBL globals bind group only when the component's handles change (steady state: 0).
@@ -762,20 +671,7 @@ impl Pass for PassPBROpaque {
             }
         }
 
-        // Read active camera and transform.
-        let active_camera_index = world.active_camera.data().index as usize;
-        let active_camera_component = camera_components
-            .data
-            .get(active_camera_index)
-            .unwrap()
-            .as_ref()
-            .unwrap();
-        let active_camera_transform = transform_components
-            .data
-            .get(active_camera_index)
-            .unwrap()
-            .as_ref()
-            .unwrap();
+        let (active_camera_component, active_camera_transform) = world.active_camera()?;
 
         // Update camera uniform and write to GPU buffer. MVP = viewProjection·model is computed
         // in the vertex shader, so the CPU never multiplies per-entity matrices.
@@ -797,7 +693,7 @@ impl Pass for PassPBROpaque {
         }
 
         // Data-driven: this pass builds its OWN opaque draw list by querying the world. Iterate the
-        // contiguous transform + pbr_renderable arrays, group by material+mesh (find-or-create, since
+        // contiguous transform + mesh_rendering arrays, group by material+mesh (find-or-create, since
         // ECS order is unsorted) to minimize bind-group/vertex-buffer switches — the grouping exists
         // to cut GPU state changes, not for visual order. Group order is irrelevant (opaque, depth-
         // tested). [Aaltonen "HypeHype" GDC 2023]
@@ -807,15 +703,15 @@ impl Pass for PassPBROpaque {
             }
         }
         let transforms = &transform_components.data;
-        let pbrs = &pbr_renderable_components.data;
-        for (slot_transform, slot_pbr) in transforms.iter().zip(pbrs.iter()) {
+        let mesh_renderings = &mesh_rendering_components.data;
+        for (slot_transform, slot_mesh_rendering) in transforms.iter().zip(mesh_renderings.iter()) {
             let Some(transform) = slot_transform else {
                 continue;
             };
-            let Some(pbr) = slot_pbr else {
+            let Some(mesh_rendering) = slot_mesh_rendering else {
                 continue;
             };
-            let Some(key) = pbr.render_queue_key else {
+            let Some(key) = mesh_rendering.render_queue_key else {
                 continue;
             };
             let key_fields = decompose_render_queue_key(key);
@@ -834,10 +730,11 @@ impl Pass for PassPBROpaque {
                     transform.position.z,
                     0.0,
                 ],
+                // TransformComponent stores degrees; the vertex shader expects radians
                 rotation: [
-                    transform.rotation.x,
-                    transform.rotation.y,
-                    transform.rotation.z,
+                    transform.rotation.x.to_radians(),
+                    transform.rotation.y.to_radians(),
+                    transform.rotation.z.to_radians(),
                     0.0,
                 ],
                 scale: [transform.scale.x, transform.scale.y, transform.scale.z, 0.0],
@@ -903,12 +800,11 @@ impl Pass for PassPBROpaque {
         }
 
         let depth_view = renderer
-            .get_render_target_view(self.depth_texture.unwrap())
-            .unwrap();
-        let color_view = self
-            .color_target
-            .and_then(|h| renderer.get_render_target_view(h))
-            .unwrap_or(view);
+            .get_render_target_view(self.depth_target)
+            .expect("PassPBROpaque: depth target missing");
+        let color_view = renderer
+            .get_render_target_view(self.color_target)
+            .expect("PassPBROpaque: color target missing");
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("pass_pbr_opaque_render_pass"),
@@ -956,15 +852,16 @@ impl Pass for PassPBROpaque {
                 .get_resource::<RendererMaterial>(&group.material_handle)
                 .expect("PassPBROpaque: RendererMaterial missing for draw group");
 
-            // Skip materials that don't have PBR-compatible bind groups.
-            let (Some(textures_bg), Some(params_bg)) = (
-                mat.textures_bind_group.as_ref(),
-                mat.parameters_bind_group.as_ref(),
-            ) else {
-                continue;
-            };
-            render_pass.set_bind_group(MATERIAL_BIND_GROUP_TEXTURES as u32, textures_bg, &[]);
-            render_pass.set_bind_group(MATERIAL_BIND_GROUP_PARAMS as u32, params_bg, &[]);
+            render_pass.set_bind_group(
+                MATERIAL_BIND_GROUP_TEXTURES as u32,
+                &mat.textures_bind_group,
+                &[],
+            );
+            render_pass.set_bind_group(
+                MATERIAL_BIND_GROUP_PARAMS as u32,
+                &mat.parameters_bind_group,
+                &[],
+            );
 
             for batch in &group.batches {
                 let mesh = world
@@ -988,11 +885,8 @@ impl Pass for PassPBROpaque {
         // LessEqual depth test + write_enabled=false: fills only pixels where depth == 1.0 (far plane = no geometry).
         {
             let bg = &state_ref.bg;
-            let roll = Mat3::from_rotation_z(active_camera_transform.rotation.z.to_radians());
-            let yaw = Mat3::from_rotation_y(active_camera_transform.rotation.y.to_radians());
-            let pitch = Mat3::from_rotation_x(active_camera_transform.rotation.x.to_radians());
-            let fwd = (yaw * pitch * roll) * Vec3::Z;
-            let right = fwd.cross(Vec3::Y).normalize();
+            let fwd = camera_forward(active_camera_transform);
+            let right = fwd.cross(Vector3f::Y).normalize();
             let up = right.cross(fwd);
             let ubo = BgCameraUbo {
                 right: right.to_array(),

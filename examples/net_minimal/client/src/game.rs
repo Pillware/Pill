@@ -48,7 +48,7 @@ impl PillGame for Game {
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;
-        engine.register_component::<PbrRenderableComponent>(active_scene)?;
+        engine.register_component::<MeshRenderingComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
@@ -79,12 +79,10 @@ impl PillGame for Game {
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
-        let pill_material = Material::builder("pill")
-            .texture("color", pill_color_texture_handle)?
-            .texture("normal", pill_normal_texture_handle)?
-            .color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
-            .scalar_parameter("specularity", 0.5)?
-            .build();
+        let pill_material = Material::new("pill")
+            .albedo_texture(pill_color_texture_handle)
+            .normal_texture(pill_normal_texture_handle)
+            .roughness(0.5);
         let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
 
         // Create camera entity
@@ -108,7 +106,7 @@ impl PillGame for Game {
             .rotation(Vector3f::new(-210.0, 0.0, 0.0))
             .build();
         engine.add_component_to_entity(active_scene, pill, transform_component.clone())?;
-        let mesh_rendering_component = PbrRenderableComponent::builder()
+        let mesh_rendering_component = MeshRenderingComponent::builder()
             .mesh(&pill_mesh_handle)
             .material(&pill_material_handle)
             .build();
@@ -286,10 +284,9 @@ fn spawn_player(
         let mat = match engine.get_resource_handle::<Material>("pill_other") {
             Ok(h) => h,
             Err(_) => engine.add_resource::<Material>(
-                Material::builder("pill_other")
-                    .color_parameter("tint", Color::new(r, g, b))?
-                    .scalar_parameter("specularity", 0.5)?
-                    .build(),
+                Material::new("pill_other")
+                    .albedo(Color::new(r, g, b))
+                    .roughness(0.5),
             )?,
         };
 
@@ -310,7 +307,7 @@ fn spawn_player(
     engine.add_component_to_entity(
         scene,
         ent,
-        PbrRenderableComponent::builder()
+        MeshRenderingComponent::builder()
             .mesh(&mesh)
             .material(&mat)
             .build(),

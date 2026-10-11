@@ -16,9 +16,7 @@ pub use components::{
     ConcreteComponentDestroyer, GlobalComponent, GlobalComponentStorage,
 };
 
-pub use components::camera_component::{
-    get_renderer_resource_handle_from_camera_component, CameraAspectRatio, CameraComponent,
-};
+pub use components::camera_component::{CameraAspectRatio, CameraComponent};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use components::audio_manager_component::{AudioManagerComponent, SoundType};
@@ -52,12 +50,9 @@ pub use components::input_component::{
     KeyboardEvent, MouseEvent, PlayerId,
 };
 
-pub use components::transform_component::{
-    get_model_matrix, get_normal_matrix, update_transform_matrices, TransformComponent,
-};
+pub use components::transform_component::TransformComponent;
 
-pub use components::mesh_component::MeshComponent;
-pub use components::pbr_renderable_component::PbrRenderableComponent;
+pub use components::mesh_rendering_component::MeshRenderingComponent;
 
 pub use components::time_component::TimeComponent;
 

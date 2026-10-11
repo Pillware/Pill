@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
+use crate::util::rtex::write_rtex;
 use crate::Rule;
 
 /// PNG → cooked_tex pre-decoded texture.
@@ -49,14 +50,6 @@ impl Rule for PngToCookedTex {
             _ => bail!("unsupported PNG color type: {:?}", info.color_type),
         };
 
-        let mut out = Vec::with_capacity(16 + rgba.len());
-        out.extend_from_slice(b"RTEX");
-        out.extend_from_slice(&1u32.to_le_bytes());
-        out.extend_from_slice(&width.to_le_bytes());
-        out.extend_from_slice(&height.to_le_bytes());
-        out.extend_from_slice(&rgba);
-
-        std::fs::write(output, &out).with_context(|| format!("write {output:?}"))?;
-        Ok(())
+        write_rtex(output, width, height, &rgba)
     }
 }

@@ -4,15 +4,17 @@ use crate::ecs::EguiClient;
 use crate::{
     app_config::EngineConfig,
     ecs::{
-        Component, ComponentStorage, EntityHandle, GlobalComponent, GlobalComponentStorage, Scene,
+        CameraComponent, Component, ComponentStorage, EntityHandle, GlobalComponent,
+        GlobalComponentStorage, Scene, TransformComponent,
     },
-    resources::{ResourceManager, ShaderParameterSlot, ShaderTextureSlot, TextureType},
+    renderer::resources::{RendererMesh, RendererTexture},
+    resources::{Mesh, MeshHandle, ResourceManager, Texture, TextureHandle, TextureType},
 };
 
-use pill_core::{PillTypeMap, Timer};
+use pill_core::{EngineError, Matrix3f, Matrix4f, PillSlotMapKey, PillTypeMap, Timer, Vector3f};
 
 use pill_core::Result;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 // --- Renderer resource handles ---
 
@@ -25,15 +27,7 @@ pill_core::define_new_pill_slotmap_key! {
 }
 
 pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererCameraHandle;
-}
-
-pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
-}
-
-pill_core::define_new_pill_slotmap_key! {
-    pub struct RendererShaderHandle;
 }
 
 // --- Pass API types ---
@@ -74,6 +68,31 @@ impl<'a> WorldQuery<'a> {
         self.scene.get_component_storage::<T>()
     }
 
+    /// Camera and transform components of the active camera entity.
+    pub fn active_camera(&self) -> Result<(&'a CameraComponent, &'a TransformComponent)> {
+        let index = self.active_camera.data().index as usize;
+        let camera = self.query::<CameraComponent>()?.data.get(index);
+        let transform = self.query::<TransformComponent>()?.data.get(index);
+        match (camera, transform) {
+            (Some(Some(camera)), Some(Some(transform))) => Ok((camera, transform)),
+            _ => Err(EngineError::NoActiveCamera.into()),
+        }
+    }
+
+    /// GPU buffers of a mesh resource.
+    pub fn renderer_mesh(&self, mesh_handle: &MeshHandle) -> Result<&'a RendererMesh> {
+        let mesh_name = &self.resources.get_resource::<Mesh>(mesh_handle)?.name;
+        self.resources
+            .get_resource_by_name::<RendererMesh>(mesh_name)
+    }
+
+    /// GPU texture (view + sampler) of a texture resource.
+    pub fn renderer_texture(&self, texture_handle: &TextureHandle) -> Result<&'a RendererTexture> {
+        let texture_name = &self.resources.get_resource::<Texture>(texture_handle)?.name;
+        self.resources
+            .get_resource_by_name::<RendererTexture>(texture_name)
+    }
+
     /// Borrow a global component `T` (e.g. RenderStateComponent) from the world.
     pub fn get_global<T>(&self) -> Result<&'a T>
     where
@@ -81,6 +100,29 @@ impl<'a> WorldQuery<'a> {
     {
         crate::ecs::get_global_component_from::<T>(self.globals)
     }
+}
+
+/// Direction the camera looks at; rotation is in degrees (roll, then pitch, then yaw).
+pub fn camera_forward(transform: &TransformComponent) -> Vector3f {
+    let roll = Matrix3f::from_rotation_z(transform.rotation.z.to_radians());
+    let yaw = Matrix3f::from_rotation_y(transform.rotation.y.to_radians());
+    let pitch = Matrix3f::from_rotation_x(transform.rotation.x.to_radians());
+    (yaw * pitch * roll) * Vector3f::Z
+}
+
+/// Right-handed perspective view-projection of a camera entity.
+pub fn camera_view_projection(
+    camera: &CameraComponent,
+    transform: &TransformComponent,
+) -> Matrix4f {
+    let view = Matrix4f::look_to_rh(transform.position, camera_forward(transform), Vector3f::Y);
+    let projection = Matrix4f::perspective_rh(
+        camera.fov.to_radians(),
+        camera.aspect.get_value(),
+        camera.range.start,
+        camera.range.end,
+    );
+    projection * view
 }
 
 #[derive(Clone, Copy)]
@@ -97,7 +139,7 @@ pub struct ShaderDesc<'a> {
 }
 
 #[derive(Clone, Debug)]
-pub struct PipelineV2Desc<'a> {
+pub struct PipelineDesc<'a> {
     pub label: Option<&'a str>,
     pub vs: ShaderDesc<'a>,
     pub ps: ShaderDesc<'a>,
@@ -109,6 +151,16 @@ pub struct PipelineV2Desc<'a> {
     pub primitive: wgpu::PrimitiveState,
 }
 
+/// Pixel data of a texture to upload; `mips[i]` holds the raw bytes of mip level `i`
+/// (`mips[0]` is `width` × `height`, each next level halves both, min 1).
+#[derive(Clone, Copy)]
+pub struct TextureData<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub format: wgpu::TextureFormat,
+    pub mips: &'a [&'a [u8]],
+}
+
 pub struct RendererTargetDesc {
     pub name: String,
     pub format: wgpu::TextureFormat,
@@ -116,13 +168,23 @@ pub struct RendererTargetDesc {
     pub height: u32,
 }
 
-pub struct PipelineV2 {
+pub struct Pipeline {
     pub pipeline: wgpu::RenderPipeline,
     pub bind_group_layouts: Vec<wgpu::BindGroupLayout>,
 }
 
+/// Swapchain image of the current frame, as two views of the same texture.
+pub struct FrameTarget {
+    /// View in the surface format (what egui and other UI passes expect).
+    pub view: wgpu::TextureView,
+    /// sRGB view; the hardware encodes linear shader output (used by the tonemap pass).
+    pub srgb_view: wgpu::TextureView,
+}
+
 // --- Pass trait ---
 
+/// One step of the frame. Scene passes render into the HDR and depth targets held in
+/// `RenderStateComponent`; the last scene pass (tonemap) resolves into the `FrameTarget`.
 pub trait Pass {
     /// Returns a short human-readable identifier used in profiling labels.
     fn get_label(&self) -> &str;
@@ -133,8 +195,7 @@ pub trait Pass {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         renderer: &mut dyn PillRenderer,
-        frame: &wgpu::SurfaceTexture,
-        view: &wgpu::TextureView,
+        frame_target: &FrameTarget,
         world: &WorldQuery<'_>,
     ) -> Result<()>;
 }
@@ -147,35 +208,13 @@ pub trait PillRenderer {
     where
         Self: Sized;
 
-    // --- Create ---
-
-    /// Compiles vertex and fragment WGSL into a `RendererShader` with slot and bind-group metadata.
-    fn create_shader_struct(
-        &mut self,
-        name: &str,
-        vertex_wgsl: &str,
-        fragment_wgsl: &str,
-        texture_slots: &HashMap<String, ShaderTextureSlot>,
-        parameter_slots: &[(String, ShaderParameterSlot)],
-        pass_engine_parameters: bool,
-        pass_camera_parameters: bool,
-    ) -> Result<crate::renderer::resources::RendererShader>;
-
-    /// Allocates a GPU camera uniform buffer and returns a handle to it.
-    fn create_camera(&mut self) -> Result<RendererCameraHandle>;
-
-    // --- Destroy ---
-
-    /// Releases the GPU resources associated with the given camera handle.
-    fn destroy_camera(&mut self, renderer_camera_handle: RendererCameraHandle) -> Result<()>;
-
     // --- Other ---
 
     /// Reconfigures the swap chain and depth texture after a window resize.
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>);
 
     /// Returns the OS window the renderer is bound to.
-    fn get_window(&self) -> std::sync::Arc<winit::window::Window>;
+    fn get_window(&self) -> Arc<winit::window::Window>;
 
     /// Drives the full frame: acquires the surface, runs all passes, and presents.
     fn render(
@@ -205,17 +244,11 @@ pub trait PillRenderer {
     /// Returns the surface texture format; used when creating pass render pipelines.
     fn get_surface_format(&self) -> wgpu::TextureFormat;
 
-    /// Returns the shared engine-parameters UBO; required by passes that use legacy RendererShader pipelines.
-    fn get_engine_parameters(&self) -> &crate::renderer::resources::EngineParameters;
-
-    /// Returns a clone of the camera bind-group layout; required to create a RendererCamera in pass init.
-    fn get_camera_bind_group_layout(&self) -> wgpu::BindGroupLayout;
-
     /// Allocates a GPU buffer with the given descriptor.
     fn create_buffer(&mut self, desc: BufferDesc) -> Result<wgpu::Buffer>;
 
     /// Compiles a render pipeline from WGSL sources and bind group layout descriptors.
-    fn create_pipeline_v2(&mut self, desc: PipelineV2Desc) -> Result<PipelineV2>;
+    fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<Pipeline>;
 
     /// Creates an off-screen render target texture and returns its handle.
     fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<RendererTextureHandle>;
@@ -227,15 +260,11 @@ pub trait PillRenderer {
     fn get_render_target_view(&self, handle: RendererTextureHandle) -> Option<&wgpu::TextureView>;
 
     /// Uploads pixel data as a GPU texture and returns a handle stored in the renderer.
-    /// `mip_pixels[i]` is the raw byte slice for mip level `i`.
     fn create_texture_from_pixels(
         &mut self,
         name: &str,
-        mip_pixels: &[&[u8]],
-        base_width: u32,
-        base_height: u32,
-        format: wgpu::TextureFormat,
-    ) -> RendererTextureHandle;
+        data: TextureData,
+    ) -> Result<RendererTextureHandle>;
 
     /// Creates a new `TextureView` for a previously registered texture handle.
     /// Returns `None` if the handle is not found.

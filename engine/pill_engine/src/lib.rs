@@ -64,17 +64,28 @@ pub mod game {
         ecs::{
             CameraAspectRatio, CameraComponent, Component, ComponentStorage, EntityHandle,
             GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage, InputComponent,
-            MeshComponent, PbrRenderableComponent, PlayerId, RenderStateComponent, SceneHandle,
-            TimeComponent, TransformComponent, UpdatePhase,
+            MeshRenderingComponent, PlayerId, RenderStateComponent, SceneHandle, TimeComponent,
+            TransformComponent, UpdatePhase,
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
         graphics::RendererTextureHandle,
         resources::{
-            Material, MaterialHandle, Mesh, MeshHandle, PBRMaterial, PBRMaterialHandle, Resource,
-            ResourceLoader, ResourceStorage, Shader, ShaderParameterSlot, ShaderParameterType,
-            ShaderTextureSlot, Texture, TextureHandle, TextureType,
+            Material, MaterialHandle, Mesh, MeshHandle, Resource, ResourceLoader, ResourceStorage,
+            Texture, TextureHandle, TextureType,
         },
     };
+
+    // Game-defined render passes (Engine::add_render_pass)
+    pub use crate::{
+        config::{DEPTH_TARGET_FORMAT, HDR_TARGET_FORMAT},
+        graphics::{
+            camera_forward, camera_view_projection, BufferDesc, FrameTarget, Pass, PillRenderer,
+            Pipeline, PipelineDesc, ShaderDesc, WorldQuery,
+        },
+        renderer::resources::{RendererMesh, RendererTexture, Vertex},
+    };
+    pub use bytemuck;
+    pub use wgpu;
 
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::{
@@ -112,27 +123,22 @@ mod internal_mod {
     pub use crate::{
         config::*,
         ecs::{
-            client_go_offline, get_model_matrix, get_normal_matrix,
-            get_renderer_resource_handle_from_camera_component, networking_system_client,
-            networking_system_server, update_transform_matrices, AudioListenerComponent,
-            AudioManagerComponent, AudioSourceComponent, CameraAspectRatio, CameraComponent,
-            ComponentStorage, EntityHandle, EntityUpdate, InputComponent, MeshComponent,
-            NetworkEntityAction, NetworkEntityState, NetworkManagerComponent, NetworkSide,
-            NetworkStateComponent, NetworkUpdatePayload, PbrRenderableComponent,
+            client_go_offline, networking_system_client, networking_system_server,
+            AudioListenerComponent, AudioManagerComponent, AudioSourceComponent, CameraAspectRatio,
+            CameraComponent, ComponentStorage, EntityHandle, EntityUpdate, InputComponent,
+            MeshRenderingComponent, NetworkEntityAction, NetworkEntityState,
+            NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkUpdatePayload,
             RenderStateComponent, Scene, TimeComponent, TransformComponent,
         },
         engine::{Engine, PillGame},
         graphics::{
-            decompose_render_queue_key, BufferDesc, Pass, PillRenderer, PipelineV2, PipelineV2Desc,
-            RenderQueueItem, RenderQueueKey, RenderQueueKeyFields, RendererCameraHandle,
-            RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTargetDesc,
-            RendererTextureHandle, ShaderDesc, WorldQuery, RENDER_QUEUE_KEY_ORDER,
+            decompose_render_queue_key, BufferDesc, Pass, PillRenderer, Pipeline, PipelineDesc,
+            RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle, RendererMeshHandle,
+            RendererTargetDesc, RendererTextureHandle, ShaderDesc, WorldQuery,
         },
         resources::{
-            Material, MaterialHandle, MaterialParameter, MaterialTexture, Mesh, MeshData,
-            MeshHandle, MeshVertex, PBRMaterial, PBRMaterialHandle, ResourceLoader,
-            ResourceManager, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot, Texture,
-            TextureHandle, TextureType,
+            Material, MaterialHandle, Mesh, MeshData, MeshHandle, MeshVertex, ResourceLoader,
+            ResourceManager, Texture, TextureHandle, TextureType,
         },
     };
 }
@@ -147,24 +153,18 @@ mod internal_mod {
     pub use crate::{
         config::*,
         ecs::{
-            get_model_matrix, get_normal_matrix,
-            get_renderer_resource_handle_from_camera_component, update_transform_matrices,
             CameraAspectRatio, CameraComponent, ComponentStorage, EntityHandle, InputComponent,
-            MeshComponent, PbrRenderableComponent, RenderStateComponent, Scene, TimeComponent,
-            TransformComponent,
+            MeshRenderingComponent, RenderStateComponent, Scene, TimeComponent, TransformComponent,
         },
         engine::{Engine, PillGame},
         graphics::{
-            decompose_render_queue_key, BufferDesc, Pass, PillRenderer, PipelineV2, PipelineV2Desc,
-            RenderQueueItem, RenderQueueKey, RenderQueueKeyFields, RendererCameraHandle,
-            RendererMaterialHandle, RendererMeshHandle, RendererShaderHandle, RendererTargetDesc,
-            RendererTextureHandle, ShaderDesc, WorldQuery, RENDER_QUEUE_KEY_ORDER,
+            decompose_render_queue_key, BufferDesc, Pass, PillRenderer, Pipeline, PipelineDesc,
+            RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle, RendererMeshHandle,
+            RendererTargetDesc, RendererTextureHandle, ShaderDesc, WorldQuery,
         },
         resources::{
-            Material, MaterialHandle, MaterialParameter, MaterialTexture, Mesh, MeshData,
-            MeshHandle, MeshVertex, PBRMaterial, PBRMaterialHandle, ResourceLoader,
-            ResourceManager, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot, Texture,
-            TextureHandle, TextureType,
+            Material, MaterialHandle, Mesh, MeshData, MeshHandle, MeshVertex, ResourceLoader,
+            ResourceManager, Texture, TextureHandle, TextureType,
         },
     };
 }

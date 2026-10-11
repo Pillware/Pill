@@ -1,5 +1,5 @@
 use crate::ecs::{Component, ComponentStorage};
-use pill_core::{Direction, Matrix3f, Matrix3fA, Matrix4f, PillTypeMapKey, Vector3f};
+use pill_core::{Direction, Matrix3f, Matrix4f, PillTypeMapKey, Vector3f};
 use serde::{Deserialize, Serialize};
 
 // Coordinate system:
@@ -157,18 +157,6 @@ impl TransformComponent {
     pub fn set_scale(&mut self, scale: Vector3f) {
         self.scale = scale;
     }
-}
-
-// Kept for backward compatibility — no longer needed since the renderer
-// computes matrices on the GPU from pos/rot/scale instance data.
-pub fn update_transform_matrices(_transform_component: &mut TransformComponent) {}
-
-pub fn get_model_matrix(_transform_component: &TransformComponent) -> Matrix4f {
-    Matrix4f::IDENTITY
-}
-
-pub fn get_normal_matrix(_transform_component: &TransformComponent) -> Matrix3fA {
-    Matrix3fA::IDENTITY
 }
 
 impl PillTypeMapKey for TransformComponent {

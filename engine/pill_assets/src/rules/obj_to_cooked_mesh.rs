@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use bytemuck::{Pod, Zeroable};
 
+use crate::util::vec_math::{add3, normalize3, scale3, sub2, sub3};
 use crate::Rule;
 
 /// Must stay bit-for-bit identical to `pill_engine::resources::MeshVertex`.
@@ -152,35 +153,5 @@ impl Rule for ObjToCookedMesh {
 
         std::fs::write(output, &out).with_context(|| format!("write {output:?}"))?;
         Ok(())
-    }
-}
-
-/// Component-wise subtraction on [f32; 3].
-fn sub3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-/// Component-wise subtraction on [f32; 2].
-fn sub2(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
-    [a[0] - b[0], a[1] - b[1]]
-}
-
-/// Scalar multiplication on [f32; 3].
-fn scale3(a: [f32; 3], s: f32) -> [f32; 3] {
-    [a[0] * s, a[1] * s, a[2] * s]
-}
-
-/// Component-wise addition on [f32; 3].
-fn add3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-/// Normalize [f32; 3] to unit length; returns the input unchanged if near-zero.
-fn normalize3(a: [f32; 3]) -> [f32; 3] {
-    let len = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
-    if len < 1e-10 {
-        a
-    } else {
-        [a[0] / len, a[1] / len, a[2] / len]
     }
 }

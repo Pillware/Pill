@@ -7,6 +7,10 @@ use pill_core::PillTypeMapKey;
 
 pub struct RenderStateComponent {
     pub boot_done: bool,
+    /// Scene color target (HDR_TARGET_FORMAT) shared by scene passes; resolved by the tonemap pass.
+    pub hdr_target: RendererTextureHandle,
+    /// Scene depth target (DEPTH_TARGET_FORMAT) shared by scene passes.
+    pub depth_target: RendererTextureHandle,
     pub background: RendererTextureHandle,
     pub ibl_diffuse: RendererTextureHandle,
     pub ibl_specular: RendererTextureHandle,
@@ -20,6 +24,8 @@ impl RenderStateComponent {
     pub fn new() -> Self {
         Self {
             boot_done: false,
+            hdr_target: RendererTextureHandle::default(),
+            depth_target: RendererTextureHandle::default(),
             background: RendererTextureHandle::default(),
             ibl_diffuse: RendererTextureHandle::default(),
             ibl_specular: RendererTextureHandle::default(),

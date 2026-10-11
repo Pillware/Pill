@@ -18,6 +18,7 @@ use std::time::SystemTime;
 use anyhow::{Context, Result};
 
 pub mod rules;
+mod util;
 
 pub use rules::{
     default_rules, EquirectToIBL, GlbToCookedMesh, HlslToWgsl, ObjToCookedMesh, PngToCookedTex,

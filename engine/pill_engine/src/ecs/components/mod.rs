@@ -17,17 +17,16 @@ pub(crate) mod deferred_update_component;
 #[cfg(feature = "ui")]
 pub(crate) mod egui_component;
 pub(crate) mod input_component;
-pub(crate) mod mesh_component;
+pub(crate) mod mesh_rendering_component;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod network_manager_component;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod network_state_component;
 #[cfg(feature = "physics")]
 pub(crate) mod physics_world_component;
+pub(crate) mod render_state_component;
 #[cfg(feature = "physics")]
 pub(crate) mod rigid_body_component;
-pub(crate) mod pbr_renderable_component;
-pub(crate) mod render_state_component;
 pub(crate) mod time_component;
 pub(crate) mod transform_component;
 

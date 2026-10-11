@@ -17,8 +17,25 @@ use std::marker::PhantomData;
 /// [`PillTypeMap`]: struct.PillTypeMap.html
 pub trait PillTypeMapKey: Any {
     /// Defines the value type that corresponds to this `PillTypeMapKey`.
-    type Storage; //: Send + Sync;
+    type Storage: MaybeSend;
 }
+
+// Storages are Send on native. On wasm32 wgpu resources (buffers, bind groups, pipelines) are
+// !Send (wgpu built without `fragile-send-sync-non-atomic-wasm`), and wasm runs single-threaded,
+// so the bound is dropped there.
+#[cfg(not(target_arch = "wasm32"))]
+pub trait MaybeSend: Send {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send> MaybeSend for T {}
+#[cfg(target_arch = "wasm32")]
+pub trait MaybeSend {}
+#[cfg(target_arch = "wasm32")]
+impl<T> MaybeSend for T {}
+
+#[cfg(not(target_arch = "wasm32"))]
+type AnyStorage = dyn Any + Send;
+#[cfg(target_arch = "wasm32")]
+type AnyStorage = dyn Any;
 
 /// PillTypeMap is a simple abstraction around the standard library's [`HashMap`]
 /// type, where types are its keys. This allows for statically-checked value
@@ -27,7 +44,7 @@ pub trait PillTypeMapKey: Any {
 /// [`HashMap`]: std::collections::HashMap
 //pub struct PillTypeMap(HashMap<TypeId, Box<(dyn Any + Send + Sync)>>);
 #[derive(Default)]
-pub struct PillTypeMap(HashMap<TypeId, Box<dyn Any>>);
+pub struct PillTypeMap(HashMap<TypeId, Box<AnyStorage>>);
 
 impl PillTypeMap {
     /// Creates a new instance of `PillTypeMap`.
@@ -268,7 +285,7 @@ where
     K: PillTypeMapKey,
 {
     //entry: HashMapOccupiedEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
-    entry: HashMapOccupiedEntry<'a, TypeId, Box<dyn Any>>,
+    entry: HashMapOccupiedEntry<'a, TypeId, Box<AnyStorage>>,
     _marker: PhantomData<&'a K::Storage>,
 }
 
@@ -307,7 +324,7 @@ where
     K: PillTypeMapKey,
 {
     //entry: HashMapVacantEntry<'a, TypeId, Box<(dyn Any + Send + Sync)>>,
-    entry: HashMapVacantEntry<'a, TypeId, Box<dyn Any>>,
+    entry: HashMapVacantEntry<'a, TypeId, Box<AnyStorage>>,
     _marker: PhantomData<&'a K::Storage>,
 }
 

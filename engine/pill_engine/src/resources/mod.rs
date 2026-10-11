@@ -5,7 +5,6 @@ mod mesh;
 mod resource;
 mod resource_manager;
 mod resource_storage;
-mod shader;
 #[cfg(not(target_arch = "wasm32"))]
 mod sound;
 mod texture;
@@ -25,10 +24,4 @@ pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};
 
 pub use texture::{Texture, TextureHandle, TextureType};
 
-pub use material::{
-    Material, MaterialHandle, MaterialParameter, MaterialTexture, PBRMaterial, PBRMaterialHandle,
-};
-
-pub use shader::{
-    Shader, ShaderHandle, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot,
-};
+pub use material::{Material, MaterialHandle};

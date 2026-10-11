@@ -16,9 +16,9 @@ fn get_rotation_matrix(angles: Vector3f) -> Result<Matrix3f> {
     let angle_z = angles.z.to_radians();
 
     // Prepare rotation matrices
-    let rot_z = Matrix3f::from_rotation_z(angle_x);
+    let rot_z = Matrix3f::from_rotation_z(angle_z);
     let rot_y = Matrix3f::from_rotation_y(angle_y);
-    let rot_x = Matrix3f::from_rotation_x(angle_z);
+    let rot_x = Matrix3f::from_rotation_x(angle_x);
 
     // Return rotation matrix
     Ok(rot_z * rot_y * rot_x)

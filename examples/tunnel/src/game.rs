@@ -92,12 +92,13 @@ fn hash_signed(i: usize, seed: u32) -> f32 {
 
 // --- Helpers -----------------------------------------------------------------
 
+// `rate` is in radians/s; TransformComponent rotation is in degrees
 fn apply_spin(transform: &mut TransformComponent, rate: (f32, f32, f32), dt: f32) {
     let r = transform.rotation;
     transform.set_rotation(Vector3f::new(
-        r.x + rate.0 * dt,
-        r.y + rate.1 * dt,
-        r.z + rate.2 * dt,
+        r.x + (rate.0 * dt).to_degrees(),
+        r.y + (rate.1 * dt).to_degrees(),
+        r.z + (rate.2 * dt).to_degrees(),
     ));
 }
 
@@ -107,9 +108,9 @@ fn tinted_pill_material(
     tint: (f32, f32, f32),
     color_tex: TextureHandle,
     normal_tex: TextureHandle,
-) -> Result<PBRMaterialHandle> {
+) -> Result<MaterialHandle> {
     engine.add_resource(
-        PBRMaterial::new(name)
+        Material::new(name)
             .albedo(Color::new(tint.0, tint.1, tint.2))
             .albedo_texture(color_tex)
             .normal_texture(normal_tex),
@@ -215,7 +216,7 @@ impl PillGame for WebGame {
 
         engine.register_component::<TransformComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
-        engine.register_component::<PbrRenderableComponent>(active_scene)?;
+        engine.register_component::<MeshRenderingComponent>(active_scene)?;
         engine.register_component::<PillParticleComponent>(active_scene)?;
         engine.register_component::<HeroPillComponent>(active_scene)?;
 
@@ -235,7 +236,7 @@ impl PillGame for WebGame {
             include_bytes!("../res/textures/pill_normal.cooked_tex"),
         ))?;
 
-        let tunnel_materials: Vec<PBRMaterialHandle> = PALETTE
+        let tunnel_materials: Vec<MaterialHandle> = PALETTE
             .iter()
             .enumerate()
             .map(|(i, tint)| {
@@ -248,7 +249,7 @@ impl PillGame for WebGame {
                 )
             })
             .collect::<Result<_>>()?;
-        let hero_material: PBRMaterialHandle =
+        let hero_material: MaterialHandle =
             tinted_pill_material(engine, "hero_material", HERO_TINT, color_tex, normal_tex)?;
 
         // Camera
@@ -277,9 +278,9 @@ impl PillGame for WebGame {
                     .build(),
             )
             .with_component(
-                PbrRenderableComponent::builder()
+                MeshRenderingComponent::builder()
                     .mesh(&pill_mesh)
-                    .pbr_material(&hero_material)
+                    .material(&hero_material)
                     .build(),
             )
             .with_component(HeroPillComponent {})
@@ -299,9 +300,9 @@ impl PillGame for WebGame {
             let forward_speed = PILL_FORWARD_SPEED * PILL_PARALLAX_REF_RADIUS / radius;
             let wobble_phase = hash_f32(i, SEED_WOBBLE) * std::f32::consts::TAU;
             let rotation = Vector3f::new(
-                hash_f32(i, SEED_ROT_X) * std::f32::consts::TAU,
-                hash_f32(i, SEED_ROT_Y) * std::f32::consts::TAU,
-                hash_f32(i, SEED_ROT_Z) * std::f32::consts::TAU,
+                hash_f32(i, SEED_ROT_X) * 360.0,
+                hash_f32(i, SEED_ROT_Y) * 360.0,
+                hash_f32(i, SEED_ROT_Z) * 360.0,
             );
             let material = tunnel_materials[hash_usize(i, SEED_MATERIAL, tunnel_materials.len())];
 
@@ -315,9 +316,9 @@ impl PillGame for WebGame {
                         .build(),
                 )
                 .with_component(
-                    PbrRenderableComponent::builder()
+                    MeshRenderingComponent::builder()
                         .mesh(&pill_mesh)
-                        .pbr_material(&material)
+                        .material(&material)
                         .build(),
                 )
                 .with_component(PillParticleComponent {

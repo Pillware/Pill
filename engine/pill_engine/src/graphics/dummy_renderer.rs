@@ -2,15 +2,13 @@ use crate::{
     app_config::EngineConfig,
     ecs::{EntityHandle, Scene},
     graphics::{
-        BufferDesc, Pass, PillRenderer, PipelineV2, PipelineV2Desc, RendererCameraHandle,
-        RendererTargetDesc, RendererTextureHandle, WorldQuery,
+        BufferDesc, Pass, PillRenderer, Pipeline, PipelineDesc, RendererTargetDesc,
+        RendererTextureHandle, TextureData, WorldQuery,
     },
-    resources::{ResourceManager, ShaderParameterSlot, ShaderTextureSlot},
+    resources::ResourceManager,
 };
 
-use pill_core::Result;
-use pill_core::Timer;
-use std::collections::HashMap;
+use pill_core::{PillTypeMap, Result, Timer};
 use std::sync::Arc;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -21,36 +19,11 @@ impl PillRenderer for DummyRenderer {
         Ok(DummyRenderer)
     }
 
-    // --- Create ---
-
-    fn create_shader_struct(
-        &mut self,
-        _name: &str,
-        _vertex_wgsl: &str,
-        _fragment_wgsl: &str,
-        _texture_slots: &HashMap<String, ShaderTextureSlot>,
-        _parameter_slots: &[(String, ShaderParameterSlot)],
-        _pass_engine_parameters: bool,
-        _pass_camera_parameters: bool,
-    ) -> Result<crate::renderer::resources::RendererShader> {
-        unimplemented!("DummyRenderer has no GPU shader creation")
-    }
-
-    fn create_camera(&mut self) -> Result<RendererCameraHandle> {
-        Ok(RendererCameraHandle::default())
-    }
-
-    // --- Destroy ---
-
-    fn destroy_camera(&mut self, _renderer_camera_handle: RendererCameraHandle) -> Result<()> {
-        Ok(())
-    }
-
     // --- Other ---
 
     fn resize(&mut self, _new_window_size: PhysicalSize<u32>) {}
 
-    fn get_window(&self) -> std::sync::Arc<winit::window::Window> {
+    fn get_window(&self) -> Arc<winit::window::Window> {
         unimplemented!("DummyRenderer has no window")
     }
 
@@ -58,7 +31,7 @@ impl PillRenderer for DummyRenderer {
         &mut self,
         _active_camera_entity_handle: EntityHandle,
         _scene: &Scene,
-        _globals: &pill_core::PillTypeMap,
+        _globals: &PillTypeMap,
         _delta_time: f32,
         _timer: &mut Timer,
         _resource_manager: &ResourceManager,
@@ -88,19 +61,11 @@ impl PillRenderer for DummyRenderer {
         wgpu::TextureFormat::Rgba8UnormSrgb
     }
 
-    fn get_engine_parameters(&self) -> &crate::renderer::resources::EngineParameters {
-        unimplemented!("DummyRenderer has no EngineParameters")
-    }
-
-    fn get_camera_bind_group_layout(&self) -> wgpu::BindGroupLayout {
-        unimplemented!("DummyRenderer has no wgpu Device")
-    }
-
     fn create_buffer(&mut self, _desc: BufferDesc) -> Result<wgpu::Buffer> {
         unimplemented!("DummyRenderer has no wgpu Device")
     }
 
-    fn create_pipeline_v2(&mut self, _desc: PipelineV2Desc) -> Result<PipelineV2> {
+    fn create_pipeline(&mut self, _desc: PipelineDesc) -> Result<Pipeline> {
         unimplemented!("DummyRenderer has no wgpu Device")
     }
 
@@ -119,12 +84,9 @@ impl PillRenderer for DummyRenderer {
     fn create_texture_from_pixels(
         &mut self,
         _name: &str,
-        _mip_pixels: &[&[u8]],
-        _base_width: u32,
-        _base_height: u32,
-        _format: wgpu::TextureFormat,
-    ) -> RendererTextureHandle {
-        RendererTextureHandle::default()
+        _data: TextureData,
+    ) -> Result<RendererTextureHandle> {
+        Ok(RendererTextureHandle::default())
     }
 
     fn get_texture_view(&self, _handle: RendererTextureHandle) -> Option<wgpu::TextureView> {

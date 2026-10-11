@@ -62,7 +62,7 @@ impl PillGame for Game {
 
         engine.register_component::<TransformComponent>(scene)?;
         engine.register_component::<CameraComponent>(scene)?;
-        engine.register_component::<PbrRenderableComponent>(scene)?;
+        engine.register_component::<MeshRenderingComponent>(scene)?;
         engine.register_component::<OrbitCamera>(scene)?;
 
         let mesh_handle = engine.add_resource(Mesh::from_cooked_mesh_bytes(
@@ -95,12 +95,13 @@ impl PillGame for Game {
         ))?;
 
         let material_handle = engine.add_resource(
-            PBRMaterial::new("helmet_material")
+            Material::new("helmet_material")
                 .albedo_texture(albedo_handle)
                 .normal_texture(normal_handle)
                 .metallic_roughness_texture(metallic_roughness_handle)
                 .metallic(1.0)
                 .roughness(1.0)
+                .emissive(Color::new(1.0, 1.0, 1.0))
                 .emissive_texture(emissive_handle),
         )?;
 
@@ -112,9 +113,9 @@ impl PillGame for Game {
                     .build(),
             )
             .with_component(
-                PbrRenderableComponent::builder()
+                MeshRenderingComponent::builder()
                     .mesh(&mesh_handle)
-                    .pbr_material(&material_handle)
+                    .material(&material_handle)
                     .build(),
             )
             .build();

@@ -1,13 +1,7 @@
-use crate::{
-    ecs::{Component, ComponentStorage, EntityHandle, SceneHandle},
-    engine::Engine,
-    graphics::RendererCameraHandle,
-};
+use crate::ecs::{Component, ComponentStorage};
 
-use pill_core::{get_type_name, PillStyle, Vector3f};
+use pill_core::{PillTypeMapKey, Vector3f};
 
-use pill_core::PillTypeMapKey;
-use pill_core::{ErrorContext, Result};
 use std::ops::Range;
 
 pub enum CameraAspectRatio {
@@ -89,7 +83,6 @@ pub struct CameraComponent {
     pub fog_density: f32,
     pub fog_color: Vector3f,
     pub enabled: bool,
-    pub(crate) renderer_resource_handle: Option<RendererCameraHandle>,
 }
 
 impl Default for CameraComponent {
@@ -111,51 +104,13 @@ impl CameraComponent {
             clear_color: Vector3f::new(0.15, 0.15, 0.15),
             fog_density: 0.0,
             fog_color: Vector3f::new(0.0, 0.0, 0.0),
-            renderer_resource_handle: None,
             enabled: false,
         }
     }
-}
-
-// This needed so that renderer can get renderer camera handle from camera component while it is still hidden in game API
-pub fn get_renderer_resource_handle_from_camera_component(
-    camera_component: &CameraComponent,
-) -> RendererCameraHandle {
-    camera_component
-        .renderer_resource_handle
-        .expect("Critical: No renderer resource handle")
 }
 
 impl PillTypeMapKey for CameraComponent {
     type Storage = ComponentStorage<CameraComponent>;
 }
 
-impl Component for CameraComponent {
-    fn initialize(&mut self, engine: &mut Engine) -> Result<()> {
-        let error_message = format!(
-            "Initializing {} {} failed",
-            "Component".general_object_style(),
-            get_type_name::<Self>().specific_object_style()
-        );
-
-        // Create new renderer camera resource
-        let renderer_resource_handle = engine.renderer.create_camera().context(error_message)?;
-        self.renderer_resource_handle = Some(renderer_resource_handle);
-
-        Ok(())
-    }
-
-    fn destroy(
-        &mut self,
-        engine: &mut Engine,
-        _self_scene_handle: SceneHandle,
-        _self_entity_handle: EntityHandle,
-    ) -> Result<()> {
-        // Destroy renderer resource
-        if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_camera(v).unwrap();
-        }
-
-        Ok(())
-    }
-}
+impl Component for CameraComponent {}

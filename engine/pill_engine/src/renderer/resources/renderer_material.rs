@@ -1,215 +1,202 @@
-#![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
-
-use crate::graphics::RendererShaderHandle;
-use crate::graphics::RendererTextureHandle;
 use crate::{
     config::{
         DEFAULT_COLOR_TEXTURE_NAME, DEFAULT_EMISSIVE_TEXTURE_NAME,
         DEFAULT_METALLIC_ROUGHNESS_TEXTURE_NAME, DEFAULT_NORMAL_TEXTURE_NAME,
     },
-    graphics::RendererMaterialHandle,
-    renderer::resources::{RendererShader, RendererTexture},
-    resources::{
-        MaterialParameter, Resource, ResourceManager, ResourceStorage, ShaderParameterSlot,
-        ShaderParameterType, ShaderTextureSlot,
-    },
+    graphics::{RendererMaterialHandle, RendererTextureHandle},
+    renderer::resources::RendererTexture,
+    resources::{Resource, ResourceManager, ResourceStorage},
 };
-use pill_core::{debug, LogContext, PillStyle, PillTypeMapKey, RendererError, Result};
+use pill_core::{debug, LogContext, PillError, PillStyle, PillTypeMapKey, RendererError, Result};
 
-use std::collections::HashMap;
+/// Material parameter uniform (bind group 2). Mirrors `MaterialParams` in pbr_opaque_fragment.hlsl:
+/// two fully packed 16-byte std140 rows.
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct MaterialParams {
+    pub(crate) base_color: [f32; 3],
+    pub(crate) roughness: f32,
+    pub(crate) emissive: [f32; 3],
+    pub(crate) metallic: f32,
+}
+
+/// Renderer textures of a material; `None` falls back to the engine default texture of that slot.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct MaterialTextures {
+    pub(crate) base_color: Option<RendererTextureHandle>,
+    pub(crate) normal: Option<RendererTextureHandle>,
+    pub(crate) metallic_roughness: Option<RendererTextureHandle>,
+    pub(crate) emissive: Option<RendererTextureHandle>,
+}
+
+fn texture_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            multisampled: false,
+            view_dimension: wgpu::TextureViewDimension::D2,
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+        },
+        count: None,
+    }
+}
+
+fn sampler_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+        count: None,
+    }
+}
+
+/// Bind group 1 layout: (texture, sampler) pairs at bindings 0-7 for
+/// base_color, normal, metallic_roughness, emissive. Shared by RendererMaterial and PassPBROpaque.
+pub(crate) fn material_textures_layout_entries() -> Vec<wgpu::BindGroupLayoutEntry> {
+    (0..4)
+        .flat_map(|slot| [texture_entry(slot * 2), sampler_entry(slot * 2 + 1)])
+        .collect()
+}
+
+/// Bind group 2 layout: one MaterialParams uniform buffer.
+pub(crate) fn material_params_layout_entries() -> Vec<wgpu::BindGroupLayoutEntry> {
+    vec![wgpu::BindGroupLayoutEntry {
+        binding: 0,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }]
+}
 
 pub struct RendererMaterial {
     pub name: String,
-    pub shader_handle: RendererShaderHandle,
-    pub parameters_bind_group: Option<wgpu::BindGroup>,
-    pub textures_bind_group: Option<wgpu::BindGroup>,
-    pub(crate) parameters_uniform_buffer: Option<wgpu::Buffer>,
+    pub parameters_bind_group: wgpu::BindGroup,
+    pub textures_bind_group: wgpu::BindGroup,
+    parameters_uniform_buffer: wgpu::Buffer,
 }
 
 impl RendererMaterial {
-    /// Creates GPU buffers and bind groups for a material's parameters and textures.
-    pub fn new(
+    /// Creates the parameter uniform buffer and both bind groups of a material.
+    pub(crate) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         resource_manager: &ResourceManager,
         name: &str,
-        shader_handle: RendererShaderHandle,
-        resolved_textures: &HashMap<String, RendererTextureHandle>,
-        parameters: &HashMap<String, MaterialParameter>,
+        parameters: &MaterialParams,
+        textures: &MaterialTextures,
     ) -> Result<Self> {
         debug!(LogContext::Rendering => "Creating material {}", name.name_style());
 
-        let shader = resource_manager
-            .get_resource::<RendererShader>(&shader_handle)
-            .map_err(|_| -> pill_core::PillError {
-                pill_core::PillError::from(RendererError::RendererResourceNotFound)
-            })?;
+        let parameters_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("{}_material_parameters_buffer", name)),
+            size: std::mem::size_of::<MaterialParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(
+            &parameters_uniform_buffer,
+            0,
+            bytemuck::bytes_of(parameters),
+        );
 
-        let parameter_slots = &shader.parameter_slots;
-        let texture_slots = &shader.texture_slots;
+        // wgpu deduplicates structurally identical layouts, so these are compatible with the
+        // layouts PassPBROpaque builds its pipeline from.
+        let parameters_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("material_parameters_bind_group_layout"),
+                entries: &material_params_layout_entries(),
+            });
+        let parameters_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("{}_material_parameters_bind_group", name)),
+            layout: &parameters_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: parameters_uniform_buffer.as_entire_binding(),
+            }],
+        });
 
-        let (parameters_bind_group, parameters_uniform_buffer) = {
-            if !parameter_slots.is_empty() {
-                let parameters_uniform_buffer_size = Self::calculate_uniform_size(parameter_slots);
-
-                let parameters_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some(&format!("{}_material_parameters_buffer", name)),
-                    size: parameters_uniform_buffer_size as u64,
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                });
-
-                Self::write_parameters_to_buffer(
-                    queue,
-                    &parameters_uniform_buffer,
-                    parameter_slots,
-                    parameters,
-                )?;
-
-                let parameters_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some(&format!("{}_material_parameters_bind_group", name)),
-                    layout: shader.parameters_bind_group_layout.as_ref().unwrap(),
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: parameters_uniform_buffer.as_entire_binding(),
-                    }],
-                });
-
-                (Some(parameters_bind_group), Some(parameters_uniform_buffer))
-            } else {
-                (None, None)
-            }
-        };
-
-        let textures_bind_group = if !texture_slots.is_empty() {
-            Some(Self::create_textures_bind_group(
-                device,
-                resource_manager,
-                shader.textures_bind_group_layout.as_ref().unwrap(),
-                &format!("{}_textures", name),
-                texture_slots,
-                resolved_textures,
-            )?)
-        } else {
-            None
-        };
+        let textures_bind_group =
+            Self::create_textures_bind_group(device, resource_manager, name, textures)?;
 
         Ok(Self {
             name: name.to_string(),
-            shader_handle,
             parameters_bind_group,
             textures_bind_group,
             parameters_uniform_buffer,
         })
     }
 
-    fn calculate_uniform_size(parameter_slots: &[(String, ShaderParameterSlot)]) -> usize {
-        const STD140_SLOT_BYTES: usize = 16; // each slot is padded to 16 bytes per std140 alignment rules
-        parameter_slots.len() * STD140_SLOT_BYTES
+    /// Uploads new parameter values; bind groups stay valid.
+    pub(crate) fn write_parameters(&self, queue: &wgpu::Queue, parameters: &MaterialParams) {
+        queue.write_buffer(
+            &self.parameters_uniform_buffer,
+            0,
+            bytemuck::bytes_of(parameters),
+        );
     }
 
-    /// Packs parameter values into a std140-aligned byte buffer and uploads it to the GPU.
-    pub(crate) fn write_parameters_to_buffer(
-        queue: &wgpu::Queue,
-        buffer: &wgpu::Buffer,
-        parameter_slots: &[(String, ShaderParameterSlot)],
-        parameters: &HashMap<String, MaterialParameter>,
-    ) -> Result<()> {
-        let mut data = Vec::new();
-
-        for (slot_name, slot) in parameter_slots {
-            match slot.parameter_type {
-                ShaderParameterType::Color => {
-                    if let Some(MaterialParameter::Color(value)) = parameters.get(slot_name) {
-                        data.extend_from_slice(&value.x.to_le_bytes());
-                        data.extend_from_slice(&value.y.to_le_bytes());
-                        data.extend_from_slice(&value.z.to_le_bytes());
-                        data.extend_from_slice(&0.0f32.to_le_bytes());
-                    } else {
-                        data.extend_from_slice(&[0u8; 16]);
-                    }
-                }
-                ShaderParameterType::Scalar => {
-                    if let Some(MaterialParameter::Scalar(value)) = parameters.get(slot_name) {
-                        data.extend_from_slice(&value.to_le_bytes());
-                        data.extend_from_slice(&[0u8; 12]);
-                    } else {
-                        data.extend_from_slice(&[0u8; 16]);
-                    }
-                }
-                ShaderParameterType::Bool => {
-                    if let Some(MaterialParameter::Bool(value)) = parameters.get(slot_name) {
-                        let value: u32 = if *value { 1 } else { 0 };
-                        data.extend_from_slice(&value.to_le_bytes());
-                        data.extend_from_slice(&[0u8; 12]);
-                    } else {
-                        data.extend_from_slice(&[0u8; 16]);
-                    }
-                }
-            }
-        }
-
-        if !data.is_empty() {
-            queue.write_buffer(buffer, 0, &data);
-        }
-
-        Ok(())
-    }
-
-    /// Builds a wgpu bind group mapping each texture slot to its resolved renderer texture handle.
+    /// Builds the texture bind group, substituting the engine default texture for empty slots.
     pub(crate) fn create_textures_bind_group(
         device: &wgpu::Device,
         resource_manager: &ResourceManager,
-        texture_bind_group_layout: &wgpu::BindGroupLayout,
         name: &str,
-        texture_slots: &HashMap<String, ShaderTextureSlot>,
-        resolved_textures: &HashMap<String, RendererTextureHandle>,
+        textures: &MaterialTextures,
     ) -> Result<wgpu::BindGroup> {
-        // Collect handles as owned values first so their borrows outlive the entries vec.
-        let mut slot_handles: Vec<(u32, u32, RendererTextureHandle)> = Vec::new();
-        for (slot_name, slot) in texture_slots {
-            let handle = match resolved_textures.get(slot_name) {
-                Some(h) => *h,
-                None => {
-                    let default_name = match slot.texture_type {
-                        crate::resources::TextureType::Color => DEFAULT_COLOR_TEXTURE_NAME,
-                        crate::resources::TextureType::Normal => DEFAULT_NORMAL_TEXTURE_NAME,
-                        crate::resources::TextureType::MetallicRoughness => {
-                            DEFAULT_METALLIC_ROUGHNESS_TEXTURE_NAME
-                        }
-                        crate::resources::TextureType::Emissive => DEFAULT_EMISSIVE_TEXTURE_NAME,
-                    };
-                    resource_manager
-                        .get_resource_handle::<RendererTexture>(default_name)
-                        .map_err(|_| -> pill_core::PillError {
-                            pill_core::PillError::from(RendererError::RendererResourceNotFound)
-                        })?
-                }
-            };
-            slot_handles.push((slot.texture_binding, slot.sampler_binding, handle));
+        let slots = [
+            (textures.base_color, DEFAULT_COLOR_TEXTURE_NAME),
+            (textures.normal, DEFAULT_NORMAL_TEXTURE_NAME),
+            (
+                textures.metallic_roughness,
+                DEFAULT_METALLIC_ROUGHNESS_TEXTURE_NAME,
+            ),
+            (textures.emissive, DEFAULT_EMISSIVE_TEXTURE_NAME),
+        ];
+
+        // Resolve handles first so their borrows outlive the texture references below
+        let mut handles = Vec::with_capacity(slots.len());
+        for (handle, default_name) in slots {
+            handles.push(match handle {
+                Some(handle) => handle,
+                None => resource_manager
+                    .get_resource_handle::<RendererTexture>(default_name)
+                    .map_err(|_| PillError::from(RendererError::RendererResourceNotFound))?,
+            });
         }
 
-        let mut entries = Vec::new();
-        for (texture_binding, sampler_binding, handle) in &slot_handles {
-            let texture = resource_manager
-                .get_resource::<RendererTexture>(handle)
-                .map_err(|_| -> pill_core::PillError {
-                    pill_core::PillError::from(RendererError::RendererResourceNotFound)
-                })?;
+        let mut renderer_textures = Vec::with_capacity(handles.len());
+        for handle in &handles {
+            renderer_textures.push(
+                resource_manager
+                    .get_resource::<RendererTexture>(handle)
+                    .map_err(|_| PillError::from(RendererError::RendererResourceNotFound))?,
+            );
+        }
+
+        let mut entries = Vec::with_capacity(renderer_textures.len() * 2);
+        for (slot, texture) in renderer_textures.iter().enumerate() {
             entries.push(wgpu::BindGroupEntry {
-                binding: *texture_binding,
+                binding: slot as u32 * 2,
                 resource: wgpu::BindingResource::TextureView(&texture.texture_view),
             });
             entries.push(wgpu::BindGroupEntry {
-                binding: *sampler_binding,
+                binding: slot as u32 * 2 + 1,
                 resource: wgpu::BindingResource::Sampler(&texture.sampler),
             });
         }
 
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("material_textures_bind_group_layout"),
+            entries: &material_textures_layout_entries(),
+        });
         Ok(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: texture_bind_group_layout,
+            label: Some(&format!("{}_textures", name)),
+            layout: &layout,
             entries: &entries,
-            label: Some(name),
         }))
     }
 }

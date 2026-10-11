@@ -1,8 +1,9 @@
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
+use crate::util::{rtex::write_rtex_hdr, vec_math::lerp3};
 use crate::Rule;
 
 // Gradient (linear, inverse-Reinhard compensated: c/(1+c) → target on screen).
@@ -89,81 +90,4 @@ fn generate_equirect(width: u32, height: u32) -> Vec<f32> {
         }
     }
     pixels
-}
-
-// --- shared utilities ---
-
-// RTEX v2: Rgba32Float (4 bytes per channel, f32 LE), linear HDR.
-pub(crate) fn write_rtex_hdr(path: &Path, width: u32, height: u32, rgba_f32: &[f32]) -> Result<()> {
-    let mut output = Vec::with_capacity(16 + rgba_f32.len() * 4);
-    output.extend_from_slice(b"RTEX");
-    output.extend_from_slice(&2u32.to_le_bytes()); // version 2 = Rgba32Float HDR
-    output.extend_from_slice(&width.to_le_bytes());
-    output.extend_from_slice(&height.to_le_bytes());
-    for &value in rgba_f32 {
-        output.extend_from_slice(&value.to_le_bytes());
-    }
-    std::fs::write(path, &output).with_context(|| format!("write_rtex_hdr {path:?}"))?;
-    Ok(())
-}
-
-// RTEX v4: Rgba32Float mip chain for HDR specular prefilter.
-// Header: RTEX | 4 | w | h | mip_count | mip0_f32_pixels | mip1_f32_pixels | ...
-pub(crate) fn write_rtex_hdr_mip(
-    path: &Path,
-    width: u32,
-    height: u32,
-    mips: &[Vec<f32>],
-) -> Result<()> {
-    let mut output = Vec::new();
-    output.extend_from_slice(b"RTEX");
-    output.extend_from_slice(&4u32.to_le_bytes());
-    output.extend_from_slice(&width.to_le_bytes());
-    output.extend_from_slice(&height.to_le_bytes());
-    output.extend_from_slice(&(mips.len() as u32).to_le_bytes());
-    for mip in mips {
-        for &value in mip {
-            output.extend_from_slice(&value.to_le_bytes());
-        }
-    }
-    std::fs::write(path, &output).with_context(|| format!("write_rtex_hdr_mip {path:?}"))?;
-    Ok(())
-}
-
-// RTEX v1: Rgba8UnormSrgb (legacy LDR IBL outputs).
-pub(crate) fn write_rtex(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<()> {
-    let mut output = Vec::with_capacity(16 + rgba.len());
-    output.extend_from_slice(b"RTEX");
-    output.extend_from_slice(&1u32.to_le_bytes());
-    output.extend_from_slice(&width.to_le_bytes());
-    output.extend_from_slice(&height.to_le_bytes());
-    output.extend_from_slice(rgba);
-    std::fs::write(path, &output).with_context(|| format!("write_rtex {path:?}"))?;
-    Ok(())
-}
-
-pub(crate) fn linear_to_srgb(linear: f32) -> u8 {
-    let clamped = linear.clamp(0.0, 1.0);
-    let srgb = if clamped <= 0.003_130_8 {
-        clamped * 12.92
-    } else {
-        1.055 * clamped.powf(1.0 / 2.4) - 0.055
-    };
-    (srgb * 255.0 + 0.5) as u8
-}
-
-pub(crate) fn srgb_to_linear(srgb: f32) -> f32 {
-    if srgb <= 0.040_45 {
-        srgb / 12.92
-    } else {
-        ((srgb + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-pub(crate) fn lerp3(start: [f32; 3], end: [f32; 3], factor: f32) -> [f32; 3] {
-    [
-        start[0] + (end[0] - start[0]) * factor,
-        start[1] + (end[1] - start[1]) * factor,
-        start[2] + (end[2] - start[2]) * factor,
-    ]
 }

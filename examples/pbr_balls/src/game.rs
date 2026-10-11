@@ -38,7 +38,7 @@ impl PillGame for Game {
 
         engine.register_component::<TransformComponent>(scene)?;
         engine.register_component::<CameraComponent>(scene)?;
-        engine.register_component::<PbrRenderableComponent>(scene)?;
+        engine.register_component::<MeshRenderingComponent>(scene)?;
         engine.register_component::<OrbitCamera>(scene)?;
 
         engine.add_system("orbit_camera", orbit_camera_system)?;
@@ -61,7 +61,7 @@ impl PillGame for Game {
         ))?;
 
         let material_handle = engine.add_resource(
-            PBRMaterial::new("spheres_mat")
+            Material::new("spheres_mat")
                 .albedo_texture(albedo_handle)
                 .metallic_roughness_texture(metallic_roughness_handle)
                 .metallic(1.0)
@@ -72,9 +72,9 @@ impl PillGame for Game {
             .build_entity(scene)
             .with_component(TransformComponent::builder().build())
             .with_component(
-                PbrRenderableComponent::builder()
+                MeshRenderingComponent::builder()
                     .mesh(&mesh_handle)
-                    .pbr_material(&material_handle)
+                    .material(&material_handle)
                     .build(),
             )
             .build();

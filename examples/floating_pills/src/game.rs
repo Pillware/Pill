@@ -72,7 +72,7 @@ impl PillGame for Game {
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;
-        engine.register_component::<PbrRenderableComponent>(active_scene)?;
+        engine.register_component::<MeshRenderingComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
@@ -148,43 +148,36 @@ impl PillGame for Game {
 
         // Add materials
         let fabric_material_handle = engine.add_resource::<Material>(
-            Material::builder("fabric")
-                .texture("color", fabric_color_texture_handle)?
-                .texture("normal", fabric_normal_texture_handle)?
-                .color_parameter("tint", Color::new(1.0, 0.1, 0.1))?
-                .build(),
+            Material::new("fabric")
+                .albedo_texture(fabric_color_texture_handle)
+                .normal_texture(fabric_normal_texture_handle)
+                .albedo(Color::new(1.0, 0.1, 0.1)),
         )?;
 
         let stones_material_handle = engine.add_resource::<Material>(
-            Material::builder("stones")
-                .texture("color", stones_color_texture_handle)?
-                .texture("normal", stones_normal_texture_handle)?
-                .build(),
+            Material::new("stones")
+                .albedo_texture(stones_color_texture_handle)
+                .normal_texture(stones_normal_texture_handle),
         )?;
 
+        // Legacy specularity 3.0 (roughness = 1 - specularity) clamps to fully smooth
         let organic_material_handle = engine.add_resource::<Material>(
-            Material::builder("organic")
-                .texture("color", organic_color_texture_handle)?
-                .texture("normal", organic_normal_texture_handle)?
-                .color_parameter("tint", Color::new(0.26, 0.87, 0.9))?
-                .scalar_parameter("specularity", 3.0)?
-                .build(),
+            Material::new("organic")
+                .albedo_texture(organic_color_texture_handle)
+                .normal_texture(organic_normal_texture_handle)
+                .albedo(Color::new(0.26, 0.87, 0.9))
+                .roughness(0.0),
         )?;
 
         let yellow_material_handle = engine.add_resource::<Material>(
-            Material::builder("yellow")
-                .color_parameter("tint", Color::new(1.0, 0.88, 0.0))?
-                .build(),
+            Material::new("yellow").albedo(Color::new(1.0, 0.88, 0.0)),
         )?;
 
         let blue_material_handle = engine.add_resource::<Material>(
-            Material::builder("blue")
-                .color_parameter("tint", Color::new(0.26, 0.87, 0.9))?
-                .build(),
+            Material::new("blue").albedo(Color::new(0.26, 0.87, 0.9)),
         )?;
 
-        let white_material_handle =
-            engine.add_resource::<Material>(Material::builder("white").build())?;
+        let white_material_handle = engine.add_resource::<Material>(Material::new("white"))?;
 
         // --- Create entities ---
 
@@ -386,7 +379,7 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
             .get(demo_state.current_mesh)
             .unwrap();
         for (_, mesh_rendering_component) in
-            engine.iterate_one_component_mut::<PbrRenderableComponent>()?
+            engine.iterate_one_component_mut::<MeshRenderingComponent>()?
         {
             mesh_rendering_component.set_mesh(&mesh_handle);
         }
@@ -403,7 +396,7 @@ fn object_appearance_changing_system(engine: &mut Engine) -> Result<()> {
         };
 
         for (_, mesh_rendering_component) in
-            engine.iterate_one_component_mut::<PbrRenderableComponent>()?
+            engine.iterate_one_component_mut::<MeshRenderingComponent>()?
         {
             let material_handle = current_material_set[rng.gen_range(0..=2)];
             mesh_rendering_component.set_material(&material_handle);
@@ -614,7 +607,7 @@ fn spawn_floating_objects(engine: &mut Engine, object_count: usize) -> Result<()
             })
             .with_component(TransformComponent::new())
             .with_component(
-                PbrRenderableComponent::builder()
+                MeshRenderingComponent::builder()
                     .material(&material_handle)
                     .mesh(&mesh_handle)
                     .build(),

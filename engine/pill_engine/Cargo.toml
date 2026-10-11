@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 pill_core = {path = "../pill_core"}
-glam = { version = "0.30.8", features = ["serde", "bytemuck"] }
 
 # Errors
 thiserror = "1.0.30"

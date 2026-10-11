@@ -1,8 +1,8 @@
 use crate::{
     ecs::EguiClient,
-    graphics::{Pass, PillRenderer, WorldQuery},
+    graphics::{FrameTarget, Pass, PillRenderer, WorldQuery},
 };
-use pill_core::{RendererError, Result, Timer};
+use pill_core::{PillError, RendererError, Result, Timer};
 use std::sync::Arc;
 use winit::event::WindowEvent;
 
@@ -165,14 +165,13 @@ impl Pass for PassEgui {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         renderer: &mut dyn PillRenderer,
-        _frame: &wgpu::SurfaceTexture,
-        view: &wgpu::TextureView,
+        frame_target: &FrameTarget,
         _world: &WorldQuery<'_>,
     ) -> Result<()> {
         let drawer = self
             .drawer
             .as_mut()
-            .ok_or_else(|| -> pill_core::PillError { RendererError::Other.into() })?;
+            .ok_or_else(|| -> PillError { RendererError::Other.into() })?;
 
         for ev in self.client.take_events() {
             drawer.handle_input(&ev);
@@ -196,7 +195,7 @@ impl Pass for PassEgui {
             renderer.get_device(),
             renderer.get_queue(),
             encoder,
-            view,
+            &frame_target.view,
             screen_desc,
             run_ui,
             &mut Timer::new(),

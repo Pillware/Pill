@@ -145,10 +145,9 @@ impl PillGame for Game {
         )?)?;
 
         let ball_material_handle = engine.add_resource::<Material>(
-            Material::builder("Ball")
-                .color_parameter("tint", Color::new(0.97, 0.72, 0.09))?
-                .scalar_parameter("specularity", 0.5)?
-                .build(),
+            Material::new("Ball")
+                .albedo(Color::new(0.97, 0.72, 0.09))
+                .roughness(0.5),
         )?;
 
         // Backplate mesh and material
@@ -158,18 +157,16 @@ impl PillGame for Game {
         )?)?;
 
         let backplate_material_handle = engine.add_resource::<Material>(
-            Material::builder("Backplate")
-                .color_parameter("tint", Color::new(1.0, 0.0, 0.0))?
-                .scalar_parameter("specularity", 0.5)?
-                .build(),
+            Material::new("Backplate")
+                .albedo(Color::new(1.0, 0.0, 0.0))
+                .roughness(0.5),
         )?;
 
         // Compartment material
         let compartment_material_handle = engine.add_resource::<Material>(
-            Material::builder("Compratment")
-                .color_parameter("tint", Color::new(0.0, 1.0, 0.0))?
-                .scalar_parameter("specularity", 0.5)?
-                .build(),
+            Material::new("Compratment")
+                .albedo(Color::new(0.0, 1.0, 0.0))
+                .roughness(0.5),
         )?;
 
         // Pegs meshes and materials
@@ -179,10 +176,9 @@ impl PillGame for Game {
         )?)?;
 
         let peg_material_handle = engine.add_resource::<Material>(
-            Material::builder("Peg")
-                .color_parameter("tint", Color::new(0.0, 0.0, 1.0))?
-                .scalar_parameter("specularity", 0.5)?
-                .build(),
+            Material::new("Peg")
+                .albedo(Color::new(0.0, 0.0, 1.0))
+                .roughness(0.5),
         )?;
 
         // Side triangles meshes and materials
@@ -192,10 +188,9 @@ impl PillGame for Game {
         )?)?;
 
         let triangle_material_handle = engine.add_resource::<Material>(
-            Material::builder("Triangle")
-                .color_parameter("tint", Color::new(0.5, 0.5, 0.5))?
-                .scalar_parameter("specularity", 0.5)?
-                .build(),
+            Material::new("Triangle")
+                .albedo(Color::new(0.5, 0.5, 0.5))
+                .roughness(0.5),
         )?;
 
         // Create camera entity
@@ -300,7 +295,8 @@ fn spawn_plinko_board(engine: &mut Engine, scene: SceneHandle, plinko: &PlinkoBo
     const SIDE_TRIANGLE_CORNER_RADIUS: f32 = 0.06;
     const SIDE_TRIANGLE_WALL_OVERLAP_X: f32 = 0.12;
 
-    let board_rotation = Vector3f::new(90.0, 0.0, 0.0);
+    // Plane normal +Y → -Z (towards the camera); cuboid colliders are symmetric under the sign
+    let board_rotation = Vector3f::new(-90.0, 0.0, 0.0);
     let bottom_y = BOARD_CENTER_Y - BOARD_HALF_HEIGHT;
 
     // ---------------------------------------------------------------------

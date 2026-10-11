@@ -32,7 +32,6 @@ struct WindowInit {
 struct FileWatchers {
     engine_core_source_files_watcher: FileWatcher,
     engine_engine_source_files_watcher: FileWatcher,
-    engine_renderer_source_files_watcher: FileWatcher,
     dynamic_libraries_files_watcher: FileWatcher,
     game_project_source_files_watcher: FileWatcher,
     game_project_resources_files_watcher: FileWatcher,
@@ -782,13 +781,6 @@ fn check_and_reload(
         info!(LogContext::HotReload => "Engine pill_engine source file change detected: {:?}", paths);
         engine_source_changed.extend(paths);
     }
-    if let Some(paths) = file_watchers
-        .engine_renderer_source_files_watcher
-        .get_changes()
-    {
-        info!(LogContext::HotReload => "Engine pill_renderer source file change detected: {:?}", paths);
-        engine_source_changed.extend(paths);
-    }
 
     if let Some(paths) = file_watchers
         .game_project_resources_files_watcher
@@ -927,10 +919,6 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     let engine_engine_source_files_watcher =
         FileWatcher::new(engine_source_path).set_recursive(true);
 
-    let renderer_source_path = engine_workspace_directory_path.join("pill_engine/src/renderer");
-    let engine_renderer_source_files_watcher =
-        FileWatcher::new(renderer_source_path).set_recursive(true);
-
     let dynamic_libraries_files_watcher =
         FileWatcher::new(project_paths.build_data_directory_path.clone());
     let game_project_source_files_watcher =
@@ -941,7 +929,6 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     FileWatchers {
         engine_core_source_files_watcher,
         engine_engine_source_files_watcher,
-        engine_renderer_source_files_watcher,
         dynamic_libraries_files_watcher,
         game_project_source_files_watcher,
         game_project_resources_files_watcher,

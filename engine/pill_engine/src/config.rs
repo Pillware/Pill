@@ -1,11 +1,16 @@
 use crate::{
     ecs::{
         deferred_update_system, input_system, rendering_system, time_system,
-        DeferredUpdateComponent, InputComponent, PlayerId, SystemFunction, TimeComponent,
-        UpdatePhase,
+        DeferredUpdateComponent, InputComponent, PlayerId, RenderStateComponent, SystemFunction,
+        TimeComponent, UpdatePhase,
     },
-    graphics::{RendererMaterialHandle, RendererShaderHandle, RendererTextureHandle},
-    resources::{MaterialHandle, ShaderHandle, TextureHandle, TextureType},
+    engine::Engine,
+    graphics::{
+        Pass, PassPBROpaque, PassTonemap, RendererMaterialHandle, RendererTargetDesc,
+        RendererTextureHandle,
+    },
+    renderer::resources::RendererTexture,
+    resources::{MaterialHandle, TextureHandle, TextureType},
 };
 
 #[cfg(feature = "ui")]
@@ -18,6 +23,8 @@ use crate::ecs::{audio_system, haptics_system, AudioManagerComponent};
 use crate::ecs::physics_system;
 
 use pill_core::PillSlotMapKeyData;
+
+use pill_core::Result;
 
 use lazy_static::lazy_static;
 use std::any::TypeId;
@@ -92,11 +99,62 @@ pub const EGUI_SYSTEM: SystemConfig = SystemConfig {
     update_phase: UpdatePhase::PostGame,
 };
 
+// --- Rendering ---
+
+pub const HDR_TARGET_NAME: &str = "hdr_target";
+pub const HDR_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+pub const DEPTH_TARGET_NAME: &str = "depth_target";
+pub const DEPTH_TARGET_FORMAT: wgpu::TextureFormat = RendererTexture::DEPTH_FORMAT;
+
+// WGSL is generated from res/shaders/*.hlsl by pill_assets (build.rs)
+pub const PBR_OPAQUE_VERTEX_SHADER: &str = include_str!("../res/shaders/pbr_opaque_vertex.wgsl");
+pub const PBR_OPAQUE_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/pbr_opaque_fragment.wgsl");
+pub const BACKGROUND_VERTEX_SHADER: &str = include_str!("../res/shaders/background_vertex.wgsl");
+pub const BACKGROUND_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/background_fragment.wgsl");
+pub const TONEMAP_VERTEX_SHADER: &str = include_str!("../res/shaders/tonemap_vertex.wgsl");
+pub const TONEMAP_FRAGMENT_SHADER: &str = include_str!("../res/shaders/tonemap_fragment.wgsl");
+
+/// Frame composition: opaque PBR → game-defined passes (`Engine::add_render_pass`) → tonemap → UI.
+/// Creates the shared HDR and depth targets and records them in `RenderStateComponent`.
+pub fn default_pass_chain(engine: &mut Engine) -> Result<Vec<Box<dyn Pass>>> {
+    let (width, height) = engine.renderer.get_surface_size();
+    let hdr_target = engine.renderer.create_render_target(RendererTargetDesc {
+        name: HDR_TARGET_NAME.to_string(),
+        format: HDR_TARGET_FORMAT,
+        width,
+        height,
+    })?;
+    let depth_target = engine.renderer.create_depth_texture(DEPTH_TARGET_NAME)?;
+
+    let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
+    render_state.hdr_target = hdr_target;
+    render_state.depth_target = depth_target;
+
+    let mut passes: Vec<Box<dyn Pass>> =
+        vec![Box::new(PassPBROpaque::new(hdr_target, depth_target))];
+    passes.append(&mut engine.custom_render_passes);
+    passes.push(Box::new(PassTonemap::new(hdr_target)));
+
+    #[cfg(feature = "ui")]
+    {
+        use crate::{ecs::EguiComponent, graphics::PassEgui};
+        let client = engine
+            .get_global_component::<EguiComponent>()?
+            .egui_client
+            .clone();
+        let window = engine.renderer.get_window();
+        passes.push(Box::new(PassEgui::new(window, client)));
+    }
+
+    Ok(passes)
+}
+
 // --- Resources ---
 
 pub const RESOURCE_VERSION_LIMIT: usize = 255;
 
-pub const MAX_SHADERS: usize = 10;
 pub const MAX_MATERIALS: usize = 10;
 pub const MAX_TEXTURES: usize = 10;
 pub const MAX_MESHES: usize = 10;
@@ -122,12 +180,12 @@ pub const DEFAULT_NORMAL_TEXTURE_BYTES: [u8; 20] = [
 pub const DEFAULT_METALLIC_ROUGHNESS_TEXTURE_BYTES: [u8; 20] = [
     b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 255, 0, 255,
 ];
-// Black emissive: no emission by default
+// White emissive: emission = texture × Material.emissive (glTF), so the factor alone drives it
 pub const DEFAULT_EMISSIVE_TEXTURE_BYTES: [u8; 20] = [
-    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 255,
+    b'R', b'T', b'E', b'X', 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 255, 255, 255, 255,
 ];
 
-// 1×1 Rgba32Float white — PassBackground equirect fallback; bg_color tints it to the desired solid color
+// 1×1 Rgba32Float white — background equirect fallback (PassPBROpaque); bg_color tints it to the desired solid color
 // 1.0f32 LE = 00 00 80 3F
 pub const DEFAULT_EQUIRECT_FALLBACK_PIXEL: &[u8] = &[
     0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F, 0x00, 0x00, 0x80, 0x3F,
@@ -137,34 +195,22 @@ pub const DEFAULT_IBL_FALLBACK_PIXEL: &[u8] = &[77, 77, 77, 255];
 // 1×1 Rgba8Unorm — BRDF LUT fallback: R=F0_scale=0.5, G=F0_bias=0.5
 pub const DEFAULT_BRDF_LUT_FALLBACK_PIXEL: &[u8] = &[128, 128, 0, 255];
 
-// Default lit shader
-pub const DEFAULT_LIT_SHADER_NAME: &str = "pill_engine_default_lit_shader";
-pub const DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_NAME: &str = "color";
-pub const DEFAULT_LIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS: (u32, u32) = (0, 1);
-pub const DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_NAME: &str = "normal";
-pub const DEFAULT_LIT_SHADER_NORMAL_TEXTURE_SLOT_BINDINGS: (u32, u32) = (2, 3);
-pub const DEFAULT_LIT_SHADER_METALLIC_ROUGHNESS_TEXTURE_SLOT_NAME: &str = "metallic_roughness";
-pub const DEFAULT_LIT_SHADER_METALLIC_ROUGHNESS_TEXTURE_SLOT_BINDINGS: (u32, u32) = (4, 5);
-pub const DEFAULT_LIT_SHADER_EMISSIVE_TEXTURE_SLOT_NAME: &str = "emissive";
-pub const DEFAULT_LIT_SHADER_EMISSIVE_TEXTURE_SLOT_BINDINGS: (u32, u32) = (6, 7);
-pub const DEFAULT_LIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
-pub const DEFAULT_LIT_SHADER_SPECULARITY_PARAMETER_SLOT_NAME: &str = "specularity";
-pub const DEFAULT_LIT_SHADER_METALLIC_FACTOR_PARAMETER_SLOT_NAME: &str = "metallic_factor";
-pub const DEFAULT_LIT_MATERIAL_NAME: &str = "pill_engine_default_lit_material";
-
-pub const DEFAULT_UNLIT_SHADER_NAME: &str = "pill_engine_default_unlit_shader";
-pub const DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_NAME: &str = "color";
-pub const DEFAULT_UNLIT_SHADER_COLOR_TEXTURE_SLOT_BINDINGS: (u32, u32) = (0, 1);
-pub const DEFAULT_UNLIT_SHADER_TINT_PARAMETER_SLOT_NAME: &str = "tint";
-pub const DEFAULT_UNLIT_MATERIAL_NAME: &str = "pill_engine_default_unlit_material";
+pub const DEFAULT_MATERIAL_NAME: &str = "pill_engine_default_material";
 
 // Render queue key
 pub type RenderQueueKeyType = u64;
 
-// 64-bit render sort key layout (MSB → LSB):
-// bit: 63        59 58       51 50       43 42       35 34       27 26       19 18       11 10        0
-//      [  order   ] [shader_idx] [shader_ver] [ mat_idx ] [ mat_ver ] [mesh_idx ] [mesh_ver ] [  unused  ]
-//      [  5 bits  ] [  8 bits  ] [  8 bits  ] [  8 bits  ] [  8 bits  ] [  8 bits  ] [  8 bits  ] [ 11 bits ]
+// 64-bit render sort key layout (field masks in graphics/render_queue.rs):
+// +--------+------------------+----------------------------------------------+
+// | Bits   | Field            | Description                                  |
+// +--------+------------------+----------------------------------------------+
+// | 56..63 | Material Index   |  8 bits: renderer material slot (max 256)    |
+// | 48..55 | Material Version |  8 bits: renderer material version (max 256) |
+// | 40..47 | Mesh Index       |  8 bits: renderer mesh slot (max 256)        |
+// | 32..39 | Mesh Version     |  8 bits: renderer mesh version (max 256)     |
+// |  0..31 | Free             | 32 bits: free for future use                 |
+// +--------+------------------+----------------------------------------------+
+// Sorting by key groups draws by material first (fewest bind group switches), then by mesh.
 
 // Default resource handle - Color texture
 pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData {
@@ -232,25 +278,6 @@ pub fn get_default_texture_handles(
             DEFAULT_RENDERER_EMISSIVE_TEXTURE_HANDLE,
         ),
     }
-}
-
-// Default resource handle - Shader
-pub const DEFAULT_LIT_SHADER_HANDLE: ShaderHandle = ShaderHandle(PillSlotMapKeyData {
-    index: 1,
-    version: std::num::NonZeroU32::new(1).unwrap(),
-});
-
-pub const DEFAULT_LIT_RENDERER_SHADER_HANDLE: RendererShaderHandle =
-    RendererShaderHandle(PillSlotMapKeyData {
-        index: 1,
-        version: std::num::NonZeroU32::new(1).unwrap(),
-    });
-
-pub fn get_default_lit_shader_handles() -> (ShaderHandle, RendererShaderHandle) {
-    (
-        DEFAULT_LIT_SHADER_HANDLE,
-        DEFAULT_LIT_RENDERER_SHADER_HANDLE,
-    )
 }
 
 // Default resource handle - Material

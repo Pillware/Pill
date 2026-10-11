@@ -17,7 +17,7 @@ struct Camera {
 [[vk::binding(5, 0)]] Texture2D    brdf_lut_texture;
 [[vk::binding(6, 0)]] SamplerState brdf_lut_sampler;
 
-// PBR material textures (set 1) — bindings match DEFAULT_LIT_SHADER layout (0-7).
+// PBR material textures (set 1) — bindings match RendererMaterial texture layout (0-7).
 [[vk::binding(0, 1)]] Texture2D    base_color_texture;
 [[vk::binding(1, 1)]] SamplerState base_color_sampler;
 [[vk::binding(2, 1)]] Texture2D    normal_texture;
@@ -27,17 +27,13 @@ struct Camera {
 [[vk::binding(6, 1)]] Texture2D    emissive_texture;
 [[vk::binding(7, 1)]] SamplerState emissive_sampler;
 
-// PBR params UBO (set 2) — 48 bytes: 3 × 16-byte slots.
-// Each scalar slot uses float+float+float2 padding to stay 16 bytes without float3 alignment gaps.
+// PBR params UBO (set 2) — 32 bytes, mirrors MaterialParams in renderer_material.rs.
+// Each float3 is followed by a float so both 16-byte rows are fully packed (std140).
 struct MaterialParams {
     float3 base_color_factor;
-    float  _padding_0;
     float  roughness_factor;
-    float  _padding_1;
-    float2 _padding_2;
+    float3 emissive_factor;
     float  metallic_factor;
-    float  _padding_3;
-    float2 _padding_4;
 };
 [[vk::binding(0, 2)]] ConstantBuffer<MaterialParams> material;
 
@@ -112,7 +108,7 @@ float4 fs_main(
     float3 albedo             = base_color_texture.Sample(base_color_sampler, texture_coordinates).rgb * material.base_color_factor;
     float2 metallic_roughness = metallic_roughness_texture.Sample(metallic_roughness_sampler, texture_coordinates).gb;
     // metallic_roughness.x = G channel (roughness 0=smooth, 1=rough); metallic_roughness.y = B channel (metallic 0=dielectric, 1=metal)
-    float  roughness = clamp(metallic_roughness.x * (1.0 - material.roughness_factor), 0.045, 0.99);
+    float  roughness = clamp(metallic_roughness.x * material.roughness_factor, 0.045, 0.99);
     float  metallic  = metallic_roughness.y * material.metallic_factor;
     // TODO: Support normal mapping (tangent space) and AO texture.
     float3 normal            = normalize(input_normal);
@@ -133,7 +129,7 @@ float4 fs_main(
     float2 environment_brdf  = brdf_lut_texture.Sample(brdf_lut_sampler, float2(max(dot(normal, view_direction), 0.0), roughness)).rg;
     float3 fresnel           = fresnel_schlick_roughness(max(dot(normal, view_direction), 0.0), base_reflectivity, roughness);
     float3 specular_ibl      = prefiltered_color * (fresnel * environment_brdf.x + environment_brdf.y);
-    float3 emissive = emissive_texture.Sample(emissive_sampler, texture_coordinates).rgb;
+    float3 emissive = emissive_texture.Sample(emissive_sampler, texture_coordinates).rgb * material.emissive_factor;
     float3 color = outgoing_radiance + ambient_diffuse + specular_ibl + emissive;
     float  distance = length(camera.position.xyz - world_position);
     float  fog      = 1.0 - exp(-camera.fog_density * camera.fog_density * distance * distance);

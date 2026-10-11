@@ -3,6 +3,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use bytemuck::{Pod, Zeroable};
 
+use crate::util::{
+    rtex::write_rtex,
+    vec_math::{add3, normalize3, scale3, sub2, sub3},
+};
 use crate::Rule;
 
 /// Must stay bit-for-bit identical to `pill_engine::resources::MeshVertex`.
@@ -250,7 +254,7 @@ fn write_cooked_tex(
         format => bail!("{input:?}: {label}: unsupported GLB image format: {format:?}"),
     };
     // glTF UV origin (0,0) is top-left, matching wgpu/Vulkan — no row flip needed.
-    super::procedural_equirect::write_rtex(&path, image.width, image.height, &rgba)
+    write_rtex(&path, image.width, image.height, &rgba)
         .with_context(|| format!("{input:?}: {label}"))
 }
 
@@ -310,27 +314,6 @@ fn compute_tangents(vertices: &mut [Vertex], indices: &[u32]) {
             vertices[index].bitangent =
                 normalize3(scale3(vertices[index].bitangent, inverse_count));
         }
-    }
-}
-
-fn sub3(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
-    [left[0] - right[0], left[1] - right[1], left[2] - right[2]]
-}
-fn sub2(left: [f32; 2], right: [f32; 2]) -> [f32; 2] {
-    [left[0] - right[0], left[1] - right[1]]
-}
-fn scale3(vector: [f32; 3], scalar: f32) -> [f32; 3] {
-    [vector[0] * scalar, vector[1] * scalar, vector[2] * scalar]
-}
-fn add3(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
-    [left[0] + right[0], left[1] + right[1], left[2] + right[2]]
-}
-fn normalize3(vector: [f32; 3]) -> [f32; 3] {
-    let length = (vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]).sqrt();
-    if length < 1e-10 {
-        vector
-    } else {
-        [vector[0] / length, vector[1] / length, vector[2] / length]
     }
 }
 

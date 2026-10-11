@@ -159,7 +159,7 @@ jobs:
       matrix:
         example:
           - examples/cube
-          - examples/pill_tunel
+          - examples/tunnel
           - examples/pbr_helmet
           - examples/pbr_balls
     steps:
@@ -177,7 +177,7 @@ jobs:
         with:
           workspaces: |
             examples/cube/build/wasm/.build/pill_web -> target
-            examples/pill_tunel/build/wasm/.build/pill_web -> target
+            examples/tunnel/build/wasm/.build/pill_web -> target
             examples/pbr_helmet/build/wasm/.build/pill_web -> target
             examples/pbr_balls/build/wasm/.build/pill_web -> target
 

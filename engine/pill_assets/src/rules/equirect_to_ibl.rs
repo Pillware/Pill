@@ -3,7 +3,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-use super::procedural_equirect::{linear_to_srgb, srgb_to_linear, write_rtex, write_rtex_hdr_mip};
+use crate::util::{
+    color::{linear_to_srgb, srgb_to_linear},
+    rtex::{write_rtex, write_rtex_hdr_mip},
+    vec_math::{cross3, dot3, normalize3},
+};
 use crate::Rule;
 
 pub struct EquirectToIBL;
@@ -122,7 +126,7 @@ fn equirect_uv_to_dir(u_coordinate: f32, v_coordinate: f32) -> [f32; 3] {
 }
 
 fn dir_to_equirect_uv(direction: [f32; 3]) -> (f32, f32) {
-    let [x, y, z] = normalize(direction);
+    let [x, y, z] = normalize3(direction);
     let azimuth = z.atan2(x);
     let elevation = y.clamp(-1.0, 1.0).asin();
     let u_coordinate = (0.5 + azimuth / (2.0 * PI)).rem_euclid(1.0);
@@ -132,25 +136,6 @@ fn dir_to_equirect_uv(direction: [f32; 3]) -> (f32, f32) {
 
 // --- Vector math ---
 
-fn normalize(vector: [f32; 3]) -> [f32; 3] {
-    let length = (vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2])
-        .sqrt()
-        .max(1e-8);
-    [vector[0] / length, vector[1] / length, vector[2] / length]
-}
-
-fn dot(left: [f32; 3], right: [f32; 3]) -> f32 {
-    left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
-}
-
-fn cross(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
-    [
-        left[1] * right[2] - left[2] * right[1],
-        left[2] * right[0] - left[0] * right[2],
-        left[0] * right[1] - left[1] * right[0],
-    ]
-}
-
 // Build an orthonormal tangent frame (tangent, bitangent) from normal.
 fn tangent_frame(normal: [f32; 3]) -> ([f32; 3], [f32; 3]) {
     let up = if normal[1].abs() < 0.9 {
@@ -158,15 +143,15 @@ fn tangent_frame(normal: [f32; 3]) -> ([f32; 3], [f32; 3]) {
     } else {
         [1.0f32, 0.0, 0.0]
     };
-    let tangent = normalize(cross(up, normal));
-    let bitangent = cross(normal, tangent);
+    let tangent = normalize3(cross3(up, normal));
+    let bitangent = cross3(normal, tangent);
     (tangent, bitangent)
 }
 
 // Transform vector from tangent space (where normal=[0,0,1]) to world space.
 fn tangent_to_world(vector: [f32; 3], normal: [f32; 3]) -> [f32; 3] {
     let (tangent, bitangent) = tangent_frame(normal);
-    normalize([
+    normalize3([
         tangent[0] * vector[0] + bitangent[0] * vector[1] + normal[0] * vector[2],
         tangent[1] * vector[0] + bitangent[1] * vector[1] + normal[1] * vector[2],
         tangent[2] * vector[0] + bitangent[2] * vector[1] + normal[2] * vector[2],
@@ -271,13 +256,13 @@ fn compute_specular_prefilter(
             for sample_index in 0..SAMPLE_COUNT {
                 let sample_point = hammersley(sample_index, SAMPLE_COUNT);
                 let half_vector = importance_sample_ggx(sample_point, roughness, normal);
-                let normal_dot_half = dot(normal, half_vector).max(0.0);
-                let light_direction = normalize([
+                let normal_dot_half = dot3(normal, half_vector).max(0.0);
+                let light_direction = normalize3([
                     2.0 * normal_dot_half * half_vector[0] - normal[0],
                     2.0 * normal_dot_half * half_vector[1] - normal[1],
                     2.0 * normal_dot_half * half_vector[2] - normal[2],
                 ]);
-                let normal_dot_light = dot(normal, light_direction).max(0.0);
+                let normal_dot_light = dot3(normal, light_direction).max(0.0);
                 if normal_dot_light > 0.0 {
                     let sampled = equirect.sample(light_direction);
                     color[0] += sampled[0] * normal_dot_light;
@@ -335,8 +320,8 @@ fn compute_brdf_lut(width: u32, height: u32) -> Vec<u8> {
             for sample_index in 0..SAMPLE_COUNT {
                 let sample_point = hammersley(sample_index, SAMPLE_COUNT);
                 let half_vector = importance_sample_ggx(sample_point, roughness, normal);
-                let view_dot_half = dot(view_direction, half_vector).max(0.0);
-                let light_direction = normalize([
+                let view_dot_half = dot3(view_direction, half_vector).max(0.0);
+                let light_direction = normalize3([
                     2.0 * view_dot_half * half_vector[0] - view_direction[0],
                     2.0 * view_dot_half * half_vector[1] - view_direction[1],
                     2.0 * view_dot_half * half_vector[2] - view_direction[2],
