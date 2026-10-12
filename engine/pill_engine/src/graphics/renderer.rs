@@ -30,18 +30,16 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct RendererTextureHandle;
 }
 
-// Textures owned by the renderer itself (render targets, depth, environment and IBL maps).
-// A separate key type from RendererTextureHandle (material textures in the ResourceManager), so
-// handles of the two stores cannot be mixed up.
+// Renderer-owned textures (targets, environment, IBL); a separate key type from
+// RendererTextureHandle (material textures) so the two cannot be mixed up.
 pill_core::define_new_pill_slotmap_key! {
     pub struct PassTextureHandle;
 }
 
 // --- Pass API types ---
 
-/// Read-only view of the world handed to each pass. A pass calls `query::<T>()` for whatever
-/// component types it needs and builds its OWN draw list (opaque, translucent, shadow, …).
-/// The renderer stays domain-agnostic — it never names concrete component types.
+/// Read-only world view handed to each pass; passes query the components they need and build
+/// their own draw lists.
 pub struct WorldQuery<'a> {
     pub active_camera: EntityHandle,
     pub delta_time: f32,

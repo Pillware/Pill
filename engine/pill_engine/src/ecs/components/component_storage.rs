@@ -33,9 +33,8 @@ impl<T> GlobalComponentStorage<T> {
     }
 }
 
-/// Borrows global component `T` out of a `PillTypeMap`, erroring if absent.
-/// Single source of truth for `Engine::get_global_component` and `WorldQuery::get_global` —
-/// lives here because it depends on `GlobalComponentStorage`'s `data` layout.
+/// Borrows global component `T` out of a `PillTypeMap`, erroring if absent; shared by
+/// `Engine::get_global_component` and `WorldQuery::get_global`.
 pub fn get_global_component_from<T>(globals: &PillTypeMap) -> Result<&T>
 where
     T: GlobalComponent<Storage = GlobalComponentStorage<T>> + PillTypeMapKey,

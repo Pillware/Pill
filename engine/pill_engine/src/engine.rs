@@ -563,9 +563,8 @@ impl Engine {
         }
     }
 
-    /// Creates a single-mip Rgba32Float GPU texture from f32 pixels.
-    /// Returns a handle for assignment to `RenderStateComponent`.
-    /// Must be called before the first rendered frame (i.e. from `start()`).
+    /// Creates a single-mip Rgba32Float texture from f32 pixels for `RenderStateComponent`.
+    /// Call before the first frame (from `start()`).
     pub fn create_gpu_texture_f32(
         &mut self,
         name: &str,
@@ -585,9 +584,8 @@ impl Engine {
         )
     }
 
-    /// Creates a mipped Rgba32Float GPU texture from f32 pixels; `mips[0]` is the base level.
-    /// Returns a handle for assignment to `RenderStateComponent`.
-    /// Must be called before the first rendered frame (i.e. from `start()`).
+    /// Creates a mipped Rgba32Float texture (`mips[0]` = base) for `RenderStateComponent`.
+    /// Call before the first frame (from `start()`).
     pub fn create_gpu_mipped_texture_f32(
         &mut self,
         name: &str,
@@ -610,10 +608,8 @@ impl Engine {
         )
     }
 
-    /// Uploads a `.cooked_tex` file produced by pill_assets (environment equirect, IBL maps, BRDF LUT)
-    /// as a GPU texture. RTEX v1 becomes Rgba8UnormSrgb, v2 Rgba32Float, v4 a Rgba32Float mip chain.
-    /// Returns a handle for assignment to `RenderStateComponent`.
-    /// Must be called before the first rendered frame (i.e. from `start()`).
+    /// Uploads a pill_assets `.cooked_tex` (RTEX v1 → Rgba8UnormSrgb, v2 → Rgba32Float, v4 → mipped
+    /// Rgba32Float) for `RenderStateComponent`. Call before the first frame (from `start()`).
     pub fn load_cooked_texture(&mut self, name: &str, bytes: &[u8]) -> Result<PassTextureHandle> {
         let cooked = crate::resources::parse_cooked_tex(bytes)
             .context(format!("Loading cooked texture {}", name.name_style()))?;

@@ -50,8 +50,7 @@ impl Rule for GlbToCookedMesh {
             gltf::import_slice(&bytes).with_context(|| format!("parse GLB {input:?}"))?;
 
         // --- Mesh ---
-        // Node world transforms are baked into the vertices, so game code needs no compensating
-        // transform on the mesh entity.
+        // Node world transforms are baked into the vertices.
 
         let mut all_vertices: Vec<Vertex> = Vec::new();
         let mut all_indices: Vec<u32> = Vec::new();
@@ -174,8 +173,7 @@ impl Rule for GlbToCookedMesh {
         }
 
         // --- Textures (side outputs) ---
-        // Written before the mesh: the mesh is the rule's mtime anchor, so if a texture fails the
-        // whole rule reruns next time instead of being skipped as up to date.
+        // Before the mesh (mtime anchor), so a failed texture makes the rule rerun.
 
         let stem = input
             .file_stem()

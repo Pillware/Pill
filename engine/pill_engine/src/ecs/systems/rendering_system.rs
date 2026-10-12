@@ -56,9 +56,7 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
 
     timer.begin_context("Render");
 
-    // Stateless: the engine hands the active scene + globals to the renderer; each pass queries the
-    // per-entity components (WorldQuery::query::<T>()) and globals (WorldQuery::get_global::<T>())
-    // it needs, and builds its own draw list.
+    // Hands the active scene and globals to the renderer; each pass queries what it needs.
     let active_scene = engine.scene_manager.get_active_scene()?;
     let globals = &engine.global_components;
     let delta_time = engine.frame_delta_time;

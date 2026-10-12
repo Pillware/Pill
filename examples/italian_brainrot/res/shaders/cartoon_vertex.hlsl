@@ -1,6 +1,5 @@
-// Cartoon vertex shader for the game-defined CartoonPass. Edit here — `pill_assets` regenerates the .wgsl.
-// Same transform convention as the engine PBR pass: per-draw position / rotation (radians) / scale,
-// model = T * (Rx*Ry*Rz) * S built on the GPU.
+// Vertex shader for CartoonPass (pill_assets generates the .wgsl). Same per-draw convention as
+// the PBR pass: model = T * (Rx*Ry*Rz) * S built on the GPU.
 
 struct Camera {
     column_major float4x4 view_projection;

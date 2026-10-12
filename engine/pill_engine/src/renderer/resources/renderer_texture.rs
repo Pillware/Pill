@@ -130,9 +130,8 @@ impl RendererTexture {
         })
     }
 
-    /// Upload pre-computed pixel data as a 2D texture with an optional mip chain.
-    /// `mip_pixels[i]` is the raw byte slice for mip level `i`; all slices must be
-    /// sized consistently with `(base_width >> i) * (base_height >> i) * bytes_per_texel(format)`.
+    /// Uploads a 2D texture; `mip_pixels[i]` holds mip `i`, sized
+    /// `(base_width >> i) * (base_height >> i) * bytes_per_texel(format)`.
     pub fn new_from_pixels(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

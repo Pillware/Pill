@@ -1,9 +1,5 @@
-# Fixed minimum CPU level per platform, so shipped builds run on any CPU of that level
-# (x86-64-v3 = AVX2/FMA/BMI2, Haswell 2013+ / Zen 1+; apple-m1 = all Apple Silicon Macs).
-# Without this the compiler defaults to the SSE2 baseline on x86_64.
-# To build hyper-optimized for one machine, change the value to "native" (binary then only
-# runs on CPUs with the same features).
-# wasm32 intentionally absent — target-cpu flags break WASM builds.
+# Fixed CPU baseline per platform: x86-64-v3 (AVX2, Haswell+/Zen+), apple-m1 (all Apple Silicon).
+# Use "native" for a single-machine build; wasm32 has none (target-cpu breaks wasm).
 
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "target-cpu=x86-64-v3"]

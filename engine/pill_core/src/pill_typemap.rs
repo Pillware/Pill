@@ -20,9 +20,7 @@ pub trait PillTypeMapKey: Any {
     type Storage: MaybeSend;
 }
 
-// Storages are Send on native. On wasm32 wgpu resources (buffers, bind groups, pipelines) are
-// !Send (wgpu built without `fragile-send-sync-non-atomic-wasm`), and wasm runs single-threaded,
-// so the bound is dropped there.
+// Send on native only: wgpu resources are !Send on wasm32, which is single-threaded.
 #[cfg(not(target_arch = "wasm32"))]
 pub trait MaybeSend: Send {}
 #[cfg(not(target_arch = "wasm32"))]

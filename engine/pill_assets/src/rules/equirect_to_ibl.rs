@@ -55,9 +55,8 @@ impl Rule for EquirectToIBL {
     }
 }
 
-/// Split-sum BRDF LUT (RTEX v2): `{stem}.brdf_lut` marker → `{stem}.cooked_tex`.
-/// Environment-independent, so the engine bakes one and uses it for every scene. 32×32 (16 KB, it is
-/// embedded in every build incl. wasm): the LUT is smooth and sampled bilinearly.
+/// Split-sum BRDF LUT (RTEX v2) from a `{stem}.brdf_lut` marker; environment-independent, baked
+/// once by the engine at 32×32 (16 KB, embedded in every build) since it is smooth and filtered.
 pub struct BrdfLut;
 
 const BRDF_LUT_SIZE: u32 = 32;

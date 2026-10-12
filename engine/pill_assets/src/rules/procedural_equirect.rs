@@ -23,11 +23,8 @@ const RIM_V: f32 = 0.25;
 const RIM_INTENSITY: [f32; 3] = [1.5, 2.5, 5.0]; // Reinhard → [0.60, 0.71, 0.83] cool blue
 const RIM_SIGMA: f32 = 0.100;
 
-/// Procedurally generates a studio-lit equirectangular HDR panorama.
-///
-/// The `.procedural_equirect` input is a 0-byte trigger marker — its contents are
-/// ignored; the panorama (gradient sky + two Gaussian softbox lights) is generated
-/// entirely in code. Output: `{stem}_equirect.cooked_tex` (RTEX v2, Rgba32Float HDR).
+/// Studio equirect (gradient sky + two softboxes) generated in code from a 0-byte
+/// `.procedural_equirect` marker → `{stem}_equirect.cooked_tex` (RTEX v2).
 pub struct ProceduralEquirect;
 
 impl Rule for ProceduralEquirect {

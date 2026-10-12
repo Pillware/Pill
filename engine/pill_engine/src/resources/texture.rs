@@ -47,11 +47,8 @@ impl Texture {
     }
 }
 
-/// Decoded `.cooked_tex` (RTEX) image. Header: b"RTEX" | u32 version | u32 width | u32 height,
-/// all little-endian. Versions (written by pill_assets `util/rtex.rs`):
-/// - 1: RGBA8 texels, sRGB-encoded color
-/// - 2: Rgba32Float texels (linear HDR)
-/// - 4: u32 mip_count, then the Rgba32Float texels of each mip level
+/// Decoded `.cooked_tex`: b"RTEX" | u32 version | u32 width | u32 height (LE); v1 sRGB RGBA8,
+/// v2 Rgba32Float, v4 u32 mip_count + Rgba32Float mips (see pill_assets `util/rtex.rs`).
 pub(crate) struct CookedTexture<'a> {
     pub(crate) version: u32,
     pub(crate) width: u32,

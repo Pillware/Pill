@@ -239,9 +239,8 @@ pub struct PassPBROpaque {
 }
 
 impl PassPBROpaque {
-    /// Creates the pass; `Pass::init` must run before the first frame.
-    /// `max_instances` sizes the per-draw buffer (the engine passes its entity limit);
-    /// `initial_ibl` is [diffuse, specular, brdf_lut]: the engine defaults, also used as the fallback for invalid game handles.
+    /// `max_instances` sizes the per-draw buffer; `initial_ibl` ([diffuse, specular, brdf_lut]) are
+    /// the engine defaults, also the fallback for invalid game handles. Call `Pass::init` before drawing.
     pub fn new(
         color_target: PassTextureHandle,
         depth_target: PassTextureHandle,

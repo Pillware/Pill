@@ -169,16 +169,8 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
         }
     })?;
 
-    // Append three things the committed template omits:
-    //  - pill_game dep (injected per-game, not in the template)
-    //  - [workspace] + resolver = "2" so cargo doesn't walk up into the game's
-    //    parent workspace; resolver matches engine/Cargo.toml (wgpu feature
-    //    unification is sensitive to resolver version)
-    //  - [profile.release] + wasm-pack's wasm-opt flags for Tier 1 size opt.
-    //    `strip = true` drops the function-names subsection from the pre-opt
-    //    wasm too (~4 KB off the final binary), so the size report's per-crate
-    //    attribution reads 0 B — accepted: shipping under the size budget beats
-    //    the dev-only breakdown. The final binary is also wasm-opt --strip-debug'd.
+    // Append what the template omits: the pill_game dep, [workspace] (stops cargo walking up;
+    // resolver matches engine), and the size-optimized release profile.
     let mut f = OpenOptions::new()
         .append(true)
         .open(&manifest)
