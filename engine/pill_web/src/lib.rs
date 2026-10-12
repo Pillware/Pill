@@ -142,6 +142,7 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
         .unwrap_or(0.0);
 
     let window_clone = Arc::clone(&window);
+    let mut ready_sent = false;
 
     #[allow(deprecated)]
     let _ = event_loop.run(move |event, elwt| match event {
@@ -172,6 +173,16 @@ async fn run_async(game: Box<dyn PillGame>, config_ini: &'static str) {
                     let dt = std::time::Duration::from_secs_f64(dt_ms / 1000.0);
 
                     engine.update(dt);
+
+                    if !ready_sent {
+                        ready_sent = true;
+                        // The page's loading overlay waits for this; `init()` resolves before the renderer exists.
+                        if let (Some(win), Ok(event)) =
+                            (web_sys::window(), web_sys::Event::new("pill-ready"))
+                        {
+                            let _ = win.dispatch_event(&event);
+                        }
+                    }
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     engine.pass_keyboard_key_input(event);
