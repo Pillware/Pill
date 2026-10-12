@@ -149,7 +149,6 @@ fn embed_game_config(game_dir: &Path, scratch_pill_web_app_dir: &Path) -> Result
 fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) -> Result<()> {
     let engine = get_path(Location::EngineCrates);
     let pill_engine = cargo_path(&engine.join("pill_engine"));
-    let pill_renderer = cargo_path(&engine.join("pill_renderer"));
     let pill_core = cargo_path(&engine.join("pill_core"));
     let pill_web = cargo_path(&engine.join("pill_web"));
     let pill_game = cargo_path(game_dir);
@@ -161,8 +160,6 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
             format!(
                 "pill_engine = {{ path = \"{pill_engine}\", features = [\"game\", \"internal\"] }}"
             )
-        } else if t.starts_with("pill_renderer ") || t.starts_with("pill_renderer=") {
-            format!("pill_renderer = {{ path = \"{pill_renderer}\" }}")
         } else if t.starts_with("pill_core ") || t.starts_with("pill_core=") {
             format!("pill_core = {{ path = \"{pill_core}\" }}")
         } else if t.starts_with("pill_web ") || t.starts_with("pill_web=") {

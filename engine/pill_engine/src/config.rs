@@ -129,11 +129,8 @@ pub fn default_pass_chain(engine: &mut Engine) -> Result<Vec<Box<dyn Pass>>> {
     let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
     render_state.hdr_target = hdr_target;
     render_state.depth_target = depth_target;
-    let initial_ibl = [
-        render_state.ibl_diffuse,
-        render_state.ibl_specular,
-        render_state.ibl_brdf_lut,
-    ];
+    // Engine defaults, not the game's handles: the pass falls back to these if the game's are invalid
+    let initial_ibl = render_state.default_ibl;
 
     // At most one mesh instance per entity
     let max_instances = engine
@@ -205,8 +202,6 @@ pub const DEFAULT_EQUIRECT_FALLBACK_PIXEL: &[u8] = &[
 ];
 // 1×1 Rgba8Unorm neutral-gray — IBL diffuse/specular fallback: RGBA = [77, 77, 77, 255] ≈ 0.3 linear
 pub const DEFAULT_IBL_FALLBACK_PIXEL: &[u8] = &[77, 77, 77, 255];
-// 1×1 Rgba8Unorm — BRDF LUT fallback: scale 1, bias 0, so specular IBL = prefiltered · F0
-pub const DEFAULT_BRDF_LUT_FALLBACK_PIXEL: &[u8] = &[255, 0, 0, 255];
 
 pub const DEFAULT_MATERIAL_NAME: &str = "pill_engine_default_material";
 
@@ -224,74 +219,6 @@ pub type RenderQueueKeyType = u64;
 // |  0..31 | Free             | 32 bits: free for future use                 |
 // +--------+------------------+----------------------------------------------+
 // Sorting by key groups draws by material first (fewest bind group switches), then by mesh.
-
-// Default resource handle - Color texture
-pub const DEFAULT_COLOR_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData {
-    index: 1,
-    version: std::num::NonZeroU32::new(1).unwrap(),
-});
-pub const DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE: RendererTextureHandle =
-    RendererTextureHandle(PillSlotMapKeyData {
-        index: 1,
-        version: std::num::NonZeroU32::new(1).unwrap(),
-    });
-
-// Default resource handle - Normal texture
-pub const DEFAULT_NORMAL_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData {
-    index: 2,
-    version: std::num::NonZeroU32::new(1).unwrap(),
-});
-pub const DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE: RendererTextureHandle =
-    RendererTextureHandle(PillSlotMapKeyData {
-        index: 2,
-        version: std::num::NonZeroU32::new(1).unwrap(),
-    });
-
-// Default resource handle - MetallicRoughness texture
-pub const DEFAULT_METALLIC_ROUGHNESS_TEXTURE_HANDLE: TextureHandle =
-    TextureHandle(PillSlotMapKeyData {
-        index: 3,
-        version: std::num::NonZeroU32::new(1).unwrap(),
-    });
-pub const DEFAULT_RENDERER_METALLIC_ROUGHNESS_TEXTURE_HANDLE: RendererTextureHandle =
-    RendererTextureHandle(PillSlotMapKeyData {
-        index: 3,
-        version: std::num::NonZeroU32::new(1).unwrap(),
-    });
-
-// Default resource handle - Emissive texture
-pub const DEFAULT_EMISSIVE_TEXTURE_HANDLE: TextureHandle = TextureHandle(PillSlotMapKeyData {
-    index: 4,
-    version: std::num::NonZeroU32::new(1).unwrap(),
-});
-pub const DEFAULT_RENDERER_EMISSIVE_TEXTURE_HANDLE: RendererTextureHandle =
-    RendererTextureHandle(PillSlotMapKeyData {
-        index: 4,
-        version: std::num::NonZeroU32::new(1).unwrap(),
-    });
-
-pub fn get_default_texture_handles(
-    texture_type: TextureType,
-) -> (TextureHandle, RendererTextureHandle) {
-    match texture_type {
-        TextureType::Color => (
-            DEFAULT_COLOR_TEXTURE_HANDLE,
-            DEFAULT_RENDERER_COLOR_TEXTURE_HANDLE,
-        ),
-        TextureType::Normal => (
-            DEFAULT_NORMAL_TEXTURE_HANDLE,
-            DEFAULT_RENDERER_NORMAL_TEXTURE_HANDLE,
-        ),
-        TextureType::MetallicRoughness => (
-            DEFAULT_METALLIC_ROUGHNESS_TEXTURE_HANDLE,
-            DEFAULT_RENDERER_METALLIC_ROUGHNESS_TEXTURE_HANDLE,
-        ),
-        TextureType::Emissive => (
-            DEFAULT_EMISSIVE_TEXTURE_HANDLE,
-            DEFAULT_RENDERER_EMISSIVE_TEXTURE_HANDLE,
-        ),
-    }
-}
 
 // Default resource handle - Material
 pub const DEFAULT_MATERIAL_HANDLE: MaterialHandle = MaterialHandle(PillSlotMapKeyData {
@@ -315,6 +242,7 @@ lazy_static! {
             TypeId::of::<InputComponent>(),
             TypeId::of::<TimeComponent>(),
             TypeId::of::<DeferredUpdateComponent>(),
+            TypeId::of::<RenderStateComponent>(),
         ];
         #[cfg(not(target_arch = "wasm32"))]
         component_types.push(TypeId::of::<AudioManagerComponent>());

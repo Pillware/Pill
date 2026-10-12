@@ -6,7 +6,7 @@ use anyhow::{bail, Context, Result};
 use crate::util::{
     color::srgb_to_linear,
     rtex::{write_rtex_hdr, write_rtex_hdr_mip},
-    vec_math::{cross3, dot3, normalize3},
+    vec_math::{dot3, normalize3, tangent_frame},
 };
 use crate::Rule;
 
@@ -34,12 +34,7 @@ impl Rule for EquirectToIBL {
         let stem = input.file_stem().unwrap().to_str().unwrap();
         let base = stem.strip_suffix("_equirect").unwrap_or(stem);
 
-        // 1. Diffuse irradiance (32×16, RTEX v2 Rgba32Float) — anchor output. Kept in float:
-        // irradiance from bright light sources exceeds 1.0
-        let irradiance = compute_irradiance(&equirect, 32, 16);
-        write_rtex_hdr(output, 32, 16, &irradiance)?;
-
-        // 2. Specular prefilter HDR mip chain (RTEX v4, Rgba32Float).
+        // 1. Specular prefilter HDR mip chain (RTEX v4, Rgba32Float).
         // 5 mip levels; mip i roughness = i/4, matching shader roughness * MAX_REFLECTION_LOD(4).
         const MIP_ROUGHNESS: [f32; 5] = [0.04, 0.25, 0.5, 0.75, 1.0];
         let specular_path = directory.join(format!("{base}_specular_ibl.cooked_tex"));
@@ -53,12 +48,40 @@ impl Rule for EquirectToIBL {
         }
         write_rtex_hdr_mip(&specular_path, 128, 64, &specular_mips)?;
 
-        // 3. BRDF LUT (256×256, RTEX v2 since it is linear data, not sRGB color)
-        let brdf_lut = compute_brdf_lut(256, 256);
-        let brdf_lut_path = directory.join("brdf_lut.cooked_tex");
-        write_rtex_hdr(&brdf_lut_path, 256, 256, &brdf_lut)?;
+        // 2. Diffuse irradiance (32×16, RTEX v2, float since bright sources exceed 1.0). Written
+        // last: it is the mtime anchor, so a failure above reruns the rule next time.
+        let irradiance = compute_irradiance(&equirect, 32, 16);
+        write_rtex_hdr(output, 32, 16, &irradiance)
+    }
+}
 
-        Ok(())
+/// Split-sum BRDF LUT (RTEX v2): `{stem}.brdf_lut` marker → `{stem}.cooked_tex`.
+/// Environment-independent, so the engine bakes one and uses it for every scene. 32×32 (16 KB, it is
+/// embedded in every build incl. wasm): the LUT is smooth and sampled bilinearly.
+pub struct BrdfLut;
+
+const BRDF_LUT_SIZE: u32 = 32;
+
+impl Rule for BrdfLut {
+    fn name(&self) -> &'static str {
+        "brdf_lut"
+    }
+
+    fn input_glob(&self) -> &'static str {
+        "**/*.brdf_lut"
+    }
+
+    fn output_for(&self, input: &Path) -> PathBuf {
+        input.with_extension("cooked_tex")
+    }
+
+    fn build(&self, _input: &Path, output: &Path) -> Result<()> {
+        write_rtex_hdr(
+            output,
+            BRDF_LUT_SIZE,
+            BRDF_LUT_SIZE,
+            &compute_brdf_lut(BRDF_LUT_SIZE, BRDF_LUT_SIZE),
+        )
     }
 }
 
@@ -137,18 +160,6 @@ fn dir_to_equirect_uv(direction: [f32; 3]) -> (f32, f32) {
 }
 
 // --- Vector math ---
-
-// Build an orthonormal tangent frame (tangent, bitangent) from normal.
-fn tangent_frame(normal: [f32; 3]) -> ([f32; 3], [f32; 3]) {
-    let up = if normal[1].abs() < 0.9 {
-        [0.0f32, 1.0, 0.0]
-    } else {
-        [1.0f32, 0.0, 0.0]
-    };
-    let tangent = normalize3(cross3(up, normal));
-    let bitangent = cross3(normal, tangent);
-    (tangent, bitangent)
-}
 
 // Transform vector from tangent space (where normal=[0,0,1]) to world space.
 fn tangent_to_world(vector: [f32; 3], normal: [f32; 3]) -> [f32; 3] {

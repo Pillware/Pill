@@ -267,23 +267,6 @@ impl Material {
         check(&mut self.emissive_texture, EMISSIVE_SLOT);
     }
 
-    /// Rebuilds the GPU texture bind group from the current texture slots.
-    #[cfg(not(feature = "headless"))]
-    fn rebuild_renderer_textures(&self, engine: &mut Engine) -> Result<()> {
-        let textures = self.renderer_textures(&engine.resource_manager)?;
-        let bind_group = RendererMaterial::create_textures_bind_group(
-            engine.renderer.get_device(),
-            &engine.resource_manager,
-            &self.name,
-            &textures,
-        )?;
-        engine
-            .resource_manager
-            .get_resource_by_name_mut::<RendererMaterial>(&self.name)?
-            .textures_bind_group = bind_group;
-        Ok(())
-    }
-
     // Only posts once the material is initialized (deferred_update_manager set by initialize)
     fn post_deferred_update_request(&mut self, request_variant: usize) {
         if let Some(manager) = self.deferred_update_manager.as_mut() {
@@ -294,6 +277,26 @@ impl Material {
             manager.post_update_request(request);
         }
     }
+}
+
+/// Rebuilds material `name`'s GPU texture bind group from `textures`.
+#[cfg(not(feature = "headless"))]
+pub(crate) fn set_renderer_textures(
+    engine: &mut Engine,
+    name: &str,
+    textures: &MaterialTextures,
+) -> Result<()> {
+    let bind_group = RendererMaterial::create_textures_bind_group(
+        engine.renderer.get_device(),
+        &engine.resource_manager,
+        name,
+        textures,
+    )?;
+    engine
+        .resource_manager
+        .get_resource_by_name_mut::<RendererMaterial>(name)?
+        .textures_bind_group = bind_group;
+    Ok(())
 }
 
 impl PillTypeMapKey for Material {
@@ -351,7 +354,8 @@ impl Resource for Material {
                 #[cfg(not(feature = "headless"))]
                 {
                     self.clear_invalid_texture_slots(&engine.resource_manager);
-                    self.rebuild_renderer_textures(engine)?;
+                    let textures = self.renderer_textures(&engine.resource_manager)?;
+                    set_renderer_textures(engine, &self.name, &textures)?;
                 }
             }
             _ => {

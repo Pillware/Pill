@@ -5,7 +5,8 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::util::{
     rtex::write_rtex,
-    vec_math::{add3, normalize3, scale3, sub2, sub3},
+    vec_math::{add3, cross3, normalize3, scale3, sub2, sub3},
+    write_atomic,
 };
 use crate::Rule;
 
@@ -93,7 +94,16 @@ impl Rule for GlbToCookedMesh {
         let meshes: Vec<gltf::Mesh> = document.meshes().collect();
         for (mesh_index, world_transform) in mesh_instances {
             let mesh = &meshes[mesh_index];
+            // A mirrored node (negative scale) flips triangle winding; swap it back for back-face culling
+            let mirrored = determinant3(world_transform) < 0.0;
             for primitive in mesh.primitives() {
+                if primitive.mode() != gltf::mesh::Mode::Triangles {
+                    eprintln!(
+                        "warning: {input:?}: skipping {:?} primitive (only triangle lists are supported)",
+                        primitive.mode()
+                    );
+                    continue;
+                }
                 let reader = primitive.reader(|buffer| Some(&*buffers[buffer.index()]));
                 let vertex_offset = all_vertices.len() as u32;
 
@@ -101,24 +111,29 @@ impl Rule for GlbToCookedMesh {
                     .read_positions()
                     .with_context(|| format!("{input:?}: missing positions"))?
                     .collect();
-                let normals: Vec<[f32; 3]> = reader
-                    .read_normals()
-                    .with_context(|| format!("{input:?}: missing normals"))?
-                    .collect();
+                // Optional attributes: sequential indices, zero UVs, smooth normals from faces
+                let mut primitive_indices: Vec<u32> = match reader.read_indices() {
+                    Some(indices) => indices.into_u32().collect(),
+                    None => (0..positions.len() as u32).collect(),
+                };
+                primitive_indices.truncate(primitive_indices.len() / 3 * 3);
+                if mirrored {
+                    for triangle in primitive_indices.chunks_mut(3) {
+                        triangle.swap(1, 2);
+                    }
+                }
+                let normals: Vec<[f32; 3]> = match reader.read_normals() {
+                    Some(normals) => normals.collect(),
+                    None => face_normals(&positions, &primitive_indices),
+                };
                 let texture_coordinates: Vec<[f32; 2]> = reader
                     .read_tex_coords(0)
-                    .with_context(|| format!("{input:?}: missing UV set 0"))?
-                    .into_f32()
-                    .collect();
+                    .map(|coordinates| coordinates.into_f32().collect())
+                    .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
                 let glb_tangents: Vec<[f32; 4]> = reader
                     .read_tangents()
                     .map(|tangents_iter| tangents_iter.collect())
                     .unwrap_or_default();
-                let primitive_indices: Vec<u32> = reader
-                    .read_indices()
-                    .with_context(|| format!("{input:?}: missing indices"))?
-                    .into_u32()
-                    .collect();
 
                 let mut vertices: Vec<Vertex> = (0..positions.len())
                     .map(|vertex_index| {
@@ -154,18 +169,13 @@ impl Rule for GlbToCookedMesh {
             }
         }
 
-        let vertex_bytes: &[u8] = bytemuck::cast_slice(&all_vertices);
-        let index_bytes: &[u8] = bytemuck::cast_slice(&all_indices);
-        let mut output_bytes = Vec::with_capacity(16 + vertex_bytes.len() + index_bytes.len());
-        output_bytes.extend_from_slice(b"RMSH");
-        output_bytes.extend_from_slice(&1u32.to_le_bytes());
-        output_bytes.extend_from_slice(&(all_vertices.len() as u32).to_le_bytes());
-        output_bytes.extend_from_slice(&(all_indices.len() as u32).to_le_bytes());
-        output_bytes.extend_from_slice(vertex_bytes);
-        output_bytes.extend_from_slice(index_bytes);
-        std::fs::write(output, &output_bytes).with_context(|| format!("write {output:?}"))?;
+        if all_indices.is_empty() {
+            anyhow::bail!("{input:?}: no triangle primitives in GLB");
+        }
 
         // --- Textures (side outputs) ---
+        // Written before the mesh: the mesh is the rule's mtime anchor, so if a texture fails the
+        // whole rule reruns next time instead of being skipped as up to date.
 
         let stem = input
             .file_stem()
@@ -224,8 +234,41 @@ impl Rule for GlbToCookedMesh {
             }
         }
 
-        Ok(())
+        // --- Mesh (anchor output, last) ---
+        let vertex_bytes: &[u8] = bytemuck::cast_slice(&all_vertices);
+        let index_bytes: &[u8] = bytemuck::cast_slice(&all_indices);
+        let mut output_bytes = Vec::with_capacity(16 + vertex_bytes.len() + index_bytes.len());
+        output_bytes.extend_from_slice(b"RMSH");
+        output_bytes.extend_from_slice(&1u32.to_le_bytes());
+        output_bytes.extend_from_slice(&(all_vertices.len() as u32).to_le_bytes());
+        output_bytes.extend_from_slice(&(all_indices.len() as u32).to_le_bytes());
+        output_bytes.extend_from_slice(vertex_bytes);
+        output_bytes.extend_from_slice(index_bytes);
+        write_atomic(output, &output_bytes)
     }
+}
+
+/// Determinant of the upper-left 3x3 (sign tells whether the transform mirrors).
+fn determinant3(m: [[f32; 4]; 4]) -> f32 {
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+}
+
+/// Smooth per-vertex normals from area-weighted face normals, for primitives without NORMAL.
+fn face_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
+    let mut normals = vec![[0.0f32; 3]; positions.len()];
+    for triangle in indices.chunks(3) {
+        let [a, b, c] = [triangle[0], triangle[1], triangle[2]].map(|index| index as usize);
+        let face = cross3(
+            sub3(positions[b], positions[a]),
+            sub3(positions[c], positions[a]),
+        );
+        for index in [a, b, c] {
+            normals[index] = add3(normals[index], face);
+        }
+    }
+    normals.into_iter().map(normalize3).collect()
 }
 
 fn write_cooked_tex(

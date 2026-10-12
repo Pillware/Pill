@@ -114,7 +114,11 @@ float4 fs_main(
     float  metallic  = metallic_roughness.y * material.metallic_factor;
     // Tangent-space normal map; the default texel (0.5, 0.5, 1) keeps the vertex normal
     float3 tangent_normal    = normal_texture.Sample(normal_sampler, texture_coordinates).xyz * 2.0 - 1.0;
-    float3 normal            = normalize(tangent_normal.x * input_tangent + tangent_normal.y * input_bitangent + tangent_normal.z * input_normal);
+    // Meshes without a usable tangent frame (degenerate UVs) keep the vertex normal
+    bool   has_tangent_frame = dot(input_tangent, input_tangent) > 1e-6;
+    float3 normal            = has_tangent_frame
+        ? normalize(tangent_normal.x * input_tangent + tangent_normal.y * input_bitangent + tangent_normal.z * input_normal)
+        : normalize(input_normal);
     float3 view_direction    = normalize(camera.position.xyz - world_position);
     float3 base_reflectivity = lerp(float3(0.04, 0.04, 0.04), albedo, float3(metallic, metallic, metallic));
     float3 outgoing_radiance = float3(0.0, 0.0, 0.0);

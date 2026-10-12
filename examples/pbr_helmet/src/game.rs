@@ -51,17 +51,12 @@ impl PillGame for Game {
             "specular_ibl",
             include_bytes!("../res/models/studio_small_08_specular_ibl.cooked_tex"),
         )?;
-        let lut_h = engine.load_cooked_texture(
-            "brdf_lut",
-            include_bytes!("../res/models/brdf_lut.cooked_tex"),
-        )?;
 
         {
             let rs = engine.get_global_component_mut::<RenderStateComponent>()?;
             rs.background = Some(bg_h);
             rs.ibl_diffuse = diff_h;
             rs.ibl_specular = spec_h;
-            rs.ibl_brdf_lut = lut_h;
         }
 
         let scene = engine.create_scene("helmet")?;

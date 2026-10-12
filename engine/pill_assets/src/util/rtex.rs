@@ -3,7 +3,9 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+
+use super::write_atomic;
 
 // RTEX v2: Rgba32Float (4 bytes per channel, f32 LE), linear HDR.
 pub(crate) fn write_rtex_hdr(path: &Path, width: u32, height: u32, rgba_f32: &[f32]) -> Result<()> {
@@ -15,8 +17,7 @@ pub(crate) fn write_rtex_hdr(path: &Path, width: u32, height: u32, rgba_f32: &[f
     for &value in rgba_f32 {
         output.extend_from_slice(&value.to_le_bytes());
     }
-    std::fs::write(path, &output).with_context(|| format!("write_rtex_hdr {path:?}"))?;
-    Ok(())
+    write_atomic(path, &output)
 }
 
 // RTEX v4: Rgba32Float mip chain for HDR specular prefilter.
@@ -38,8 +39,7 @@ pub(crate) fn write_rtex_hdr_mip(
             output.extend_from_slice(&value.to_le_bytes());
         }
     }
-    std::fs::write(path, &output).with_context(|| format!("write_rtex_hdr_mip {path:?}"))?;
-    Ok(())
+    write_atomic(path, &output)
 }
 
 // RTEX v1: RGBA8 texels, sRGB-encoded color (linear data such as LUTs uses v2).
@@ -50,6 +50,5 @@ pub(crate) fn write_rtex(path: &Path, width: u32, height: u32, rgba: &[u8]) -> R
     output.extend_from_slice(&width.to_le_bytes());
     output.extend_from_slice(&height.to_le_bytes());
     output.extend_from_slice(rgba);
-    std::fs::write(path, &output).with_context(|| format!("write_rtex {path:?}"))?;
-    Ok(())
+    write_atomic(path, &output)
 }

@@ -591,7 +591,6 @@ fn configure_logging(config: &Config) {
     //     .filter_module("pill_core", log_level)
     //     .filter_module("pill_native", log_level)
     //     .filter_module("pill_engine", log_level)
-    //     .filter_module("pill_renderer", log_level)
     //     .filter_module("pill_game",       log_level)
     //     .init();
 }

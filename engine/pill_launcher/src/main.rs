@@ -457,7 +457,10 @@ fn delete_cooked_files_recursive(dir: &Path) -> Result<()> {
 /// Deletes the game's cooked files so the next `cook_assets` rebuilds all of them.
 fn delete_cooked_assets(game_project_directory_path: &Path) -> Result<()> {
     let res_dir = game_project_directory_path.join("res");
-    println!("Force-rebuild: deleting cooked files under {}...", res_dir.display());
+    println!(
+        "Force-rebuild: deleting cooked files under {}...",
+        res_dir.display()
+    );
     delete_cooked_files_recursive(&res_dir)
 }
 

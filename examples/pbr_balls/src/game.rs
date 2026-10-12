@@ -23,14 +23,11 @@ impl PillGame for Game {
             "specular_ibl",
             include_bytes!("../res/studio_specular_ibl.cooked_tex"),
         )?;
-        let brdf_lut_handle =
-            engine.load_cooked_texture("brdf_lut", include_bytes!("../res/brdf_lut.cooked_tex"))?;
 
         let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
         render_state.background = Some(background_handle);
         render_state.ibl_diffuse = diffuse_handle;
         render_state.ibl_specular = specular_handle;
-        render_state.ibl_brdf_lut = brdf_lut_handle;
 
         let scene = engine.create_scene("pbr_balls")?;
         engine.set_active_scene(scene)?;

@@ -165,6 +165,41 @@ pub struct TextureData<'a> {
     pub mips: &'a [&'a [u8]],
 }
 
+impl TextureData<'_> {
+    /// Checks dimensions, mip count and each mip's byte length before anything reaches wgpu.
+    pub fn validate(&self) -> Result<()> {
+        if self.width == 0 || self.height == 0 {
+            return Err("Texture data has zero width or height".into());
+        }
+        let max_mip_count = 32 - self.width.max(self.height).leading_zeros();
+        let mip_count = self.mips.len() as u32;
+        if mip_count == 0 || mip_count > max_mip_count {
+            return Err(format!(
+                "Texture data has {mip_count} mips; {}x{} allows 1..={max_mip_count}",
+                self.width, self.height
+            )
+            .into());
+        }
+        let bytes_per_texel = self
+            .format
+            .block_copy_size(None)
+            .ok_or("Texture data format has no texel size")? as usize;
+        for (mip, data) in self.mips.iter().enumerate() {
+            let expected = (self.width >> mip).max(1) as usize
+                * (self.height >> mip).max(1) as usize
+                * bytes_per_texel;
+            if data.len() != expected {
+                return Err(format!(
+                    "Texture data mip {mip} is {} bytes, expected {expected}",
+                    data.len()
+                )
+                .into());
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct RendererTargetDesc {
     pub name: String,
     pub format: wgpu::TextureFormat,
@@ -285,3 +320,42 @@ pub trait PillRenderer {
 }
 
 pub type Renderer = Box<dyn PillRenderer>;
+
+#[cfg(test)]
+mod tests {
+    use super::TextureData;
+
+    fn data<'a>(width: u32, height: u32, mips: &'a [&'a [u8]]) -> TextureData<'a> {
+        TextureData {
+            width,
+            height,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            mips,
+        }
+    }
+
+    #[test]
+    fn texture_data_2x2_with_2_mips_is_valid() {
+        assert!(data(2, 2, &[&[0; 16], &[0; 4]]).validate().is_ok());
+    }
+
+    #[test]
+    fn texture_data_without_mips_is_rejected() {
+        assert!(data(2, 2, &[]).validate().is_err());
+    }
+
+    #[test]
+    fn texture_data_with_too_many_mips_is_rejected() {
+        assert!(data(1, 1, &[&[0; 4], &[0; 4]]).validate().is_err());
+    }
+
+    #[test]
+    fn texture_data_with_short_mip_is_rejected() {
+        assert!(data(2, 2, &[&[0; 15]]).validate().is_err());
+    }
+
+    #[test]
+    fn texture_data_with_zero_width_is_rejected() {
+        assert!(data(0, 2, &[&[]]).validate().is_err());
+    }
+}

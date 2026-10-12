@@ -1,6 +1,8 @@
+#[cfg(not(feature = "headless"))]
+use crate::resources::material::set_renderer_textures;
 use crate::{
     engine::Engine,
-    renderer::resources::{RendererMaterial, RendererTexture},
+    renderer::resources::RendererTexture,
     resources::{Material, Resource, ResourceLoader, ResourceStorage},
 };
 
@@ -274,22 +276,11 @@ impl Resource for Texture {
 
         #[cfg(not(feature = "headless"))]
         for material_name in &affected_material_names {
-            let bind_group = {
-                let material = engine
-                    .resource_manager
-                    .get_resource_by_name::<Material>(material_name)?;
-                let textures = material.renderer_textures(&engine.resource_manager)?;
-                RendererMaterial::create_textures_bind_group(
-                    engine.renderer.get_device(),
-                    &engine.resource_manager,
-                    material_name,
-                    &textures,
-                )?
-            };
-            engine
+            let textures = engine
                 .resource_manager
-                .get_resource_by_name_mut::<RendererMaterial>(material_name)?
-                .textures_bind_group = bind_group;
+                .get_resource_by_name::<Material>(material_name)?
+                .renderer_textures(&engine.resource_manager)?;
+            set_renderer_textures(engine, material_name, &textures)?;
         }
 
         Ok(())

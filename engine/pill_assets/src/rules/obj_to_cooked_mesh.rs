@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use bytemuck::{Pod, Zeroable};
 
-use crate::util::vec_math::{add3, normalize3, scale3, sub2, sub3};
+use crate::util::vec_math::{add3, normalize3, scale3, sub2, sub3, tangent_frame};
 use crate::Rule;
 
 /// Must stay bit-for-bit identical to `pill_engine::resources::MeshVertex`.
@@ -137,6 +137,9 @@ impl Rule for ObjToCookedMesh {
                 let inverse_count = 1.0 / triangle_count as f32;
                 vertices[i].tangent = normalize3(scale3(vertices[i].tangent, inverse_count));
                 vertices[i].bitangent = normalize3(scale3(vertices[i].bitangent, inverse_count));
+            } else {
+                // Only in degenerate-UV triangles: any frame around the normal keeps shading valid
+                (vertices[i].tangent, vertices[i].bitangent) = tangent_frame(vertices[i].normal);
             }
         }
 
@@ -151,7 +154,7 @@ impl Rule for ObjToCookedMesh {
         out.extend_from_slice(vertex_bytes);
         out.extend_from_slice(index_bytes);
 
-        std::fs::write(output, &out).with_context(|| format!("write {output:?}"))?;
+        crate::util::write_atomic(output, &out)?;
         Ok(())
     }
 }

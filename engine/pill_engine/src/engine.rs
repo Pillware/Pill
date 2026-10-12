@@ -100,7 +100,7 @@ impl Engine {
             input_queue: VecDeque::new(),
             window_size: winit::dpi::PhysicalSize::<u32>::default(),
             game_resources_directory_path: std::path::PathBuf::new(),
-            frame_delta_time: 0.0.into(),
+            frame_delta_time: 0.0,
             custom_render_passes: Vec::new(),
         }
     }
@@ -156,19 +156,16 @@ impl Engine {
                     format: wgpu::TextureFormat::Rgba8Unorm,
                 },
             )?;
-            let lut_h = self.renderer.create_texture_from_pixels(
+            // Split-sum BRDF LUT baked by build.rs from res/textures/brdf_lut.brdf_lut
+            let lut_h = self.load_cooked_texture(
                 "pill_engine_default_brdf_lut",
-                TextureData {
-                    mips: &[DEFAULT_BRDF_LUT_FALLBACK_PIXEL],
-                    width: 1,
-                    height: 1,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                },
+                include_bytes!("../res/textures/brdf_lut.cooked_tex"),
             )?;
             let rs = self.get_global_component_mut::<RenderStateComponent>()?;
             rs.ibl_diffuse = diff_h;
             rs.ibl_specular = spec_h;
             rs.ibl_brdf_lut = lut_h;
+            rs.default_ibl = [diff_h, spec_h, lut_h];
         }
 
         self.register_resource_type::<Material>(max_material_count)?;

@@ -22,7 +22,6 @@ pub struct Timer {
     pub records: Vec<TimerRecord>,
     current_label: Option<String>,
     current_label_start: Option<Instant>,
-    counters: Vec<(String, u64)>,
 }
 
 impl Default for Timer {
@@ -32,14 +31,13 @@ impl Default for Timer {
 }
 
 impl Timer {
-    /// Creates an empty timer with no records, contexts, or counters.
+    /// Creates an empty timer with no records or contexts.
     pub fn new() -> Self {
         Self {
             stack: Vec::new(),
             records: Vec::new(),
             current_label: None,
             current_label_start: None,
-            counters: Vec::new(),
         }
     }
 
@@ -107,29 +105,6 @@ impl Timer {
     /// Returns the sum of all top-level record durations in milliseconds.
     pub fn total_duration(&self) -> f32 {
         self.records.iter().map(|record| record.duration).sum()
-    }
-
-    /// Sets the named counter to `value`, inserting it if it does not exist yet.
-    pub fn set_counter(&mut self, label: impl Into<String>, value: u64) {
-        let label = label.into();
-        if let Some(entry) = self.counters.iter_mut().find(|(key, _)| key == &label) {
-            entry.1 = value;
-        } else {
-            self.counters.push((label, value));
-        }
-    }
-
-    /// Returns the current value of the named counter, or `None` if it has not been set.
-    pub fn get_counter(&self, label: &str) -> Option<u64> {
-        self.counters
-            .iter()
-            .find(|(key, _)| key == label)
-            .map(|(_, value)| *value)
-    }
-
-    /// Returns all counters as a slice of (label, value) pairs.
-    pub fn counters(&self) -> &[(String, u64)] {
-        &self.counters
     }
 
     /// Prints all records to stdout at the given indentation level.

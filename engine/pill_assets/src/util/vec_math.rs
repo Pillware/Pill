@@ -41,3 +41,15 @@ pub(crate) fn normalize3(vector: [f32; 3]) -> [f32; 3] {
 pub(crate) fn lerp3(start: [f32; 3], end: [f32; 3], factor: f32) -> [f32; 3] {
     add3(start, scale3(sub3(end, start), factor))
 }
+
+/// Orthonormal (tangent, bitangent) for `normal`, for when no UV-derived frame exists.
+pub(crate) fn tangent_frame(normal: [f32; 3]) -> ([f32; 3], [f32; 3]) {
+    let up = if normal[1].abs() < 0.9 {
+        [0.0f32, 1.0, 0.0]
+    } else {
+        [1.0f32, 0.0, 0.0]
+    };
+    let tangent = normalize3(cross3(up, normal));
+    let bitangent = cross3(normal, tangent);
+    (tangent, bitangent)
+}

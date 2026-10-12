@@ -18,6 +18,13 @@ exclude = [
     "pill_launcher",
 ]
 
+# Build scripts and proc macros optimized: pill_engine's build.rs bakes the BRDF LUT (pill_assets)
+[profile.dev.build-override]
+opt-level = 3
+
+[profile.release.build-override]
+opt-level = 3
+
 [profile.hot-reload]
 inherits = "dev"
 opt-level = 0

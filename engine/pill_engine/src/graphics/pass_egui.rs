@@ -12,7 +12,6 @@ struct EguiDrawer {
     context: egui::Context,
     state: egui_winit::State,
     renderer: egui_wgpu::Renderer,
-    window_scale_factor: f32,
     window: Arc<winit::window::Window>,
 }
 
@@ -24,7 +23,6 @@ impl EguiDrawer {
         msaa_samples: u32,
         window: Arc<winit::window::Window>,
     ) -> EguiDrawer {
-        let window_scale_factor = window.scale_factor() as f32;
         let context = egui::Context::default();
         let id = context.viewport_id();
 
@@ -49,7 +47,6 @@ impl EguiDrawer {
             context,
             state,
             renderer,
-            window_scale_factor,
             window,
         }
     }
@@ -65,7 +62,7 @@ impl EguiDrawer {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         window_surface_view: &wgpu::TextureView,
-        screen_descriptor: egui_wgpu::ScreenDescriptor,
+        size_in_pixels: [u32; 2],
         mut run_ui: Box<dyn FnMut(&egui::Context)>,
         timer: &mut Timer,
     ) -> Result<()> {
@@ -85,6 +82,12 @@ impl EguiDrawer {
 
         timer.record("Tesselate and update textures");
 
+        // Same pixels-per-point for tessellation and the screen descriptor; it follows
+        // ScaleFactorChanged and egui zoom
+        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+            size_in_pixels,
+            pixels_per_point: full_output.pixels_per_point,
+        };
         let tris = self
             .context
             .tessellate(full_output.shapes, full_output.pixels_per_point);
@@ -180,10 +183,6 @@ impl Pass for PassEgui {
         // Swapchain size, not window size: they differ until a resize is handled, and egui clamps
         // scissor rects to this
         let (width, height) = renderer.get_surface_size();
-        let screen_desc = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [width, height],
-            pixels_per_point: drawer.window_scale_factor,
-        };
 
         let ui_fn = self.client.take_ui();
         let run_ui: Box<dyn FnMut(&egui::Context)> = match ui_fn {
@@ -198,7 +197,7 @@ impl Pass for PassEgui {
             renderer.get_queue(),
             encoder,
             &frame_target.view,
-            screen_desc,
+            [width, height],
             run_ui,
             &mut Timer::new(),
         )

@@ -9,7 +9,7 @@ use crate::{
     },
     graphics::{
         camera_forward, camera_view_projection, decompose_render_queue_key, BufferDesc,
-        FrameTarget, Pass, PassTextureHandle, PillRenderer, Pipeline, PipelineDesc,
+        FrameTarget, Pass, PassTextureHandle, PillRenderer, Pipeline, PipelineDesc, RenderQueueKey,
         RendererMaterialHandle, RendererMeshHandle, ShaderDesc, TextureData, WorldQuery,
     },
     renderer::resources::{
@@ -17,7 +17,7 @@ use crate::{
         RendererMesh, Vertex,
     },
 };
-use pill_core::{Matrix4f, PillSlotMapKey, Result, Vector3f};
+use pill_core::{error, LogContext, Matrix4f, PillSlotMapKey, Result, Vector3f};
 use std::num::NonZeroU32;
 
 /// Camera uniform layout: position (vec4) + view-projection matrix (mat4x4) + fog.
@@ -75,18 +75,13 @@ pub const MATERIAL_BIND_GROUP_TEXTURES: usize = 1;
 pub const MATERIAL_BIND_GROUP_PARAMS: usize = 2;
 pub const MATERIAL_BIND_GROUP_PERDRAW: usize = 3;
 
-/// Mesh batch within a material group: same mesh, its per-instance transforms accumulated this
-/// frame; `base_offset_u32` is its first index in the concatenated storage buffer.
-pub(crate) struct MeshBatch {
-    pub(crate) mesh_handle: RendererMeshHandle,
-    pub(crate) instances: Vec<PerDrawStd140>,
-    pub(crate) base_offset_u32: u32,
-}
-
-/// Draw group: one pipeline + one material, containing one or more mesh batches.
-pub(crate) struct GroupCmd {
-    pub(crate) material_handle: RendererMaterialHandle,
-    pub(crate) batches: Vec<MeshBatch>,
+/// One instanced draw: a run of equal render keys (same material and mesh) in the sorted
+/// per-draw array; instances `first..first + count` of the storage buffer.
+struct DrawBatch {
+    material_handle: RendererMaterialHandle,
+    mesh_handle: RendererMeshHandle,
+    first: u32,
+    count: u32,
 }
 
 /// Camera uniform for the background sub-draw (view direction basis + fov).
@@ -129,6 +124,23 @@ struct PassPBROpaqueState {
     bg: BgSubState,
     // IBL handles the current globals_bind_group was built from; rebuild only when these change.
     cached_ibl: [PassTextureHandle; 3],
+}
+
+/// View of a game-set RenderStateComponent texture; an invalid handle logs and uses `fallback`.
+/// Callers cache by handle, so the error is logged once per handle value.
+fn view_or_fallback(
+    renderer: &dyn PillRenderer,
+    handle: PassTextureHandle,
+    fallback: PassTextureHandle,
+    label: &str,
+) -> Result<wgpu::TextureView> {
+    if let Some(view) = renderer.get_texture_view(handle) {
+        return Ok(view);
+    }
+    error!(LogContext::Rendering => "RenderStateComponent.{} is not a valid texture; using the default", label);
+    renderer
+        .get_texture_view(fallback)
+        .ok_or_else(|| format!("PassPBROpaque: default {label} texture missing").into())
 }
 
 /// Builds the globals bind group (camera UBO + IBL irradiance/prefilter/BRDF-LUT views).
@@ -219,7 +231,9 @@ pub struct PassPBROpaque {
     // [diffuse, specular, brdf_lut] for the first frame's bind group
     initial_ibl: [PassTextureHandle; 3],
     capacity_warned: bool,
-    groups_buffer: Vec<GroupCmd>,
+    // Per-frame scratch, capacity reused across frames
+    draws: Vec<(RenderQueueKey, PerDrawStd140)>,
+    batches: Vec<DrawBatch>,
     staging_buffer: Vec<u8>,
     state: Option<PassPBROpaqueState>,
 }
@@ -227,7 +241,7 @@ pub struct PassPBROpaque {
 impl PassPBROpaque {
     /// Creates the pass; `Pass::init` must run before the first frame.
     /// `max_instances` sizes the per-draw buffer (the engine passes its entity limit);
-    /// `initial_ibl` is [diffuse, specular, brdf_lut], normally RenderStateComponent's handles.
+    /// `initial_ibl` is [diffuse, specular, brdf_lut]: the engine defaults, also used as the fallback for invalid game handles.
     pub fn new(
         color_target: PassTextureHandle,
         depth_target: PassTextureHandle,
@@ -241,7 +255,8 @@ impl PassPBROpaque {
             max_instances,
             initial_ibl,
             capacity_warned: false,
-            groups_buffer: Vec::new(),
+            draws: Vec::with_capacity(max_instances),
+            batches: Vec::new(),
             staging_buffer: Vec::with_capacity(max_instances * PER_DRAW_STRIDE_BYTES),
             state: None,
         }
@@ -423,15 +438,14 @@ impl Pass for PassPBROpaque {
         // Initial IBL bind group from the handles given at construction; draw() rebuilds it when
         // RenderStateComponent's handles change.
         let [irr_h, pre_h, lut_h] = self.initial_ibl;
-        let irradiance_view = renderer
-            .get_texture_view(irr_h)
-            .expect("ibl_diffuse fallback invalid");
-        let prefilter_view = renderer
-            .get_texture_view(pre_h)
-            .expect("ibl_specular fallback invalid");
-        let brdf_lut_view = renderer
-            .get_texture_view(lut_h)
-            .expect("ibl_brdf_lut fallback invalid");
+        let view = |handle, label: &str| -> Result<wgpu::TextureView> {
+            renderer
+                .get_texture_view(handle)
+                .ok_or_else(|| format!("PassPBROpaque: initial {label} texture missing").into())
+        };
+        let irradiance_view = view(irr_h, "ibl_diffuse")?;
+        let prefilter_view = view(pre_h, "ibl_specular")?;
+        let brdf_lut_view = view(lut_h, "ibl_brdf_lut")?;
 
         let prefilter_sampler = {
             let device = renderer.get_device();
@@ -552,7 +566,7 @@ impl Pass for PassPBROpaque {
             )?;
             let equirect_view = renderer
                 .get_texture_view(equirect_fallback_h)
-                .expect("bg equirect fallback invalid");
+                .ok_or("PassPBROpaque: background fallback texture missing")?;
             let bg_sampler = renderer
                 .get_device()
                 .create_sampler(&wgpu::SamplerDescriptor {
@@ -626,15 +640,13 @@ impl Pass for PassPBROpaque {
                 render_state.ibl_brdf_lut,
             ];
             if get_state(self).cached_ibl != ibl {
-                let irradiance_view = renderer
-                    .get_texture_view(ibl[0])
-                    .expect("ibl_diffuse handle invalid");
-                let prefilter_view = renderer
-                    .get_texture_view(ibl[1])
-                    .expect("ibl_specular handle invalid");
-                let brdf_lut_view = renderer
-                    .get_texture_view(ibl[2])
-                    .expect("ibl_brdf_lut handle invalid");
+                let fallback = self.initial_ibl;
+                let irradiance_view =
+                    view_or_fallback(renderer, ibl[0], fallback[0], "ibl_diffuse")?;
+                let prefilter_view =
+                    view_or_fallback(renderer, ibl[1], fallback[1], "ibl_specular")?;
+                let brdf_lut_view =
+                    view_or_fallback(renderer, ibl[2], fallback[2], "ibl_brdf_lut")?;
                 let device = renderer.get_device();
                 let state = get_state(self);
                 state.globals_bind_group = build_globals_bind_group(
@@ -658,9 +670,8 @@ impl Pass for PassPBROpaque {
                 .background
                 .unwrap_or(get_state(self).bg.fallback_bg);
             if get_state(self).bg.cached_bg != bg_h {
-                let equirect_view = renderer
-                    .get_texture_view(bg_h)
-                    .expect("background handle invalid");
+                let fallback = get_state(self).bg.fallback_bg;
+                let equirect_view = view_or_fallback(renderer, bg_h, fallback, "background")?;
                 let device = renderer.get_device();
                 let state = get_state(self);
                 state.bg.bind_group = build_bg_bind_group(
@@ -694,16 +705,11 @@ impl Pass for PassPBROpaque {
             );
         }
 
-        // Group instances by material, then mesh, to minimize bind group and vertex buffer switches
-        // (opaque + depth-tested, so draw order doesn't matter).
-        for group in self.groups_buffer.iter_mut() {
-            for batch in group.batches.iter_mut() {
-                batch.instances.clear(); // reuse capacity across frames
-            }
-        }
+        // Collect (render key, per-draw) pairs; sorting by key groups them by material, then mesh
+        // (opaque + depth-tested, so draw order doesn't matter)
+        self.draws.clear();
         let transforms = &transform_components.data;
         let mesh_renderings = &mesh_rendering_components.data;
-        let mut instance_count = 0usize;
         for (slot_transform, slot_mesh_rendering) in transforms.iter().zip(mesh_renderings.iter()) {
             let Some(transform) = slot_transform else {
                 continue;
@@ -714,7 +720,7 @@ impl Pass for PassPBROpaque {
             let Some(key) = mesh_rendering.render_queue_key else {
                 continue;
             };
-            if instance_count == self.max_instances {
+            if self.draws.len() == self.max_instances {
                 if !self.capacity_warned {
                     log::error!(
                         "PassPBROpaque: per-draw capacity {} reached; extra meshes are not drawn",
@@ -724,16 +730,6 @@ impl Pass for PassPBROpaque {
                 }
                 break;
             }
-            instance_count += 1;
-            let key_fields = decompose_render_queue_key(key);
-            let mesh_handle = RendererMeshHandle::new(
-                key_fields.mesh_index.into(),
-                NonZeroU32::new(key_fields.mesh_version.into()).unwrap(),
-            );
-            let material_handle = RendererMaterialHandle::new(
-                key_fields.material_index.into(),
-                NonZeroU32::new(key_fields.material_version.into()).unwrap(),
-            );
             let per_draw = PerDrawStd140 {
                 position: [
                     transform.position.x,
@@ -750,54 +746,35 @@ impl Pass for PassPBROpaque {
                 ],
                 scale: [transform.scale.x, transform.scale.y, transform.scale.z, 0.0],
             };
-            let group_index = match self
-                .groups_buffer
-                .iter()
-                .position(|group| group.material_handle == material_handle)
-            {
-                Some(index) => index,
-                None => {
-                    self.groups_buffer.push(GroupCmd {
-                        material_handle,
-                        batches: Vec::new(),
-                    });
-                    self.groups_buffer.len() - 1
-                }
-            };
-            let group = &mut self.groups_buffer[group_index];
-            match group
-                .batches
-                .iter_mut()
-                .find(|batch| batch.mesh_handle == mesh_handle)
-            {
-                Some(batch) => batch.instances.push(per_draw),
-                None => group.batches.push(MeshBatch {
-                    mesh_handle,
-                    instances: vec![per_draw],
-                    base_offset_u32: 0,
-                }),
-            }
+            self.draws.push((key, per_draw));
         }
+        self.draws.sort_unstable_by_key(|(key, _)| *key);
 
-        // Drop batches and groups that got no instances this frame, so meshes and materials removed
-        // since the last frame are never looked up again
-        for group in self.groups_buffer.iter_mut() {
-            group.batches.retain(|batch| !batch.instances.is_empty());
-        }
-        self.groups_buffer.retain(|group| !group.batches.is_empty());
-
-        // Concatenate batches into one upload; each batch records its first-instance offset.
+        // One batch per run of equal keys; the key is decoded once per batch
+        self.batches.clear();
         self.staging_buffer.clear();
-        let mut next_instance: u32 = 0;
-        for group in self.groups_buffer.iter_mut() {
-            for batch in group.batches.iter_mut() {
-                batch.base_offset_u32 = next_instance;
-                for per_draw in &batch.instances {
-                    self.staging_buffer
-                        .extend_from_slice(bytemuck::bytes_of(per_draw));
-                    next_instance = next_instance.wrapping_add(1);
+        for (index, (key, per_draw)) in self.draws.iter().enumerate() {
+            self.staging_buffer
+                .extend_from_slice(bytemuck::bytes_of(per_draw));
+            if index > 0 && self.draws[index - 1].0 == *key {
+                if let Some(batch) = self.batches.last_mut() {
+                    batch.count += 1;
                 }
+                continue;
             }
+            let key_fields = decompose_render_queue_key(*key);
+            self.batches.push(DrawBatch {
+                material_handle: RendererMaterialHandle::new(
+                    key_fields.material_index.into(),
+                    NonZeroU32::new(key_fields.material_version.into()).unwrap(),
+                ),
+                mesh_handle: RendererMeshHandle::new(
+                    key_fields.mesh_index.into(),
+                    NonZeroU32::new(key_fields.mesh_version.into()).unwrap(),
+                ),
+                first: index as u32,
+                count: 1,
+            });
         }
         {
             let state_ref = self
@@ -849,48 +826,50 @@ impl Pass for PassPBROpaque {
             &state_ref.per_draw_bind_group,
             &[],
         );
-        for group in &self.groups_buffer {
-            render_pass.set_bind_group(
-                MATERIAL_BIND_GROUP_GLOBALS as u32,
-                &state_ref.globals_bind_group,
-                &[],
-            );
-
-            // A material destroyed this frame can still be referenced until its components'
-            // deferred updates run; skip it instead of failing the frame
-            let Ok(mat) = world
-                .resources
-                .get_resource::<RendererMaterial>(&group.material_handle)
-            else {
-                continue;
-            };
-
-            render_pass.set_bind_group(
-                MATERIAL_BIND_GROUP_TEXTURES as u32,
-                &mat.textures_bind_group,
-                &[],
-            );
-            render_pass.set_bind_group(
-                MATERIAL_BIND_GROUP_PARAMS as u32,
-                &mat.parameters_bind_group,
-                &[],
-            );
-
-            for batch in &group.batches {
-                let Ok(mesh) = world
+        render_pass.set_bind_group(
+            MATERIAL_BIND_GROUP_GLOBALS as u32,
+            &state_ref.globals_bind_group,
+            &[],
+        );
+        // Batches are sorted by material, so each material is bound once
+        let mut bound_material: Option<RendererMaterialHandle> = None;
+        for batch in &self.batches {
+            if bound_material != Some(batch.material_handle) {
+                // A material destroyed this frame can still be referenced until its components'
+                // deferred updates run; skip it instead of failing the frame
+                let Ok(mat) = world
                     .resources
-                    .get_resource::<RendererMesh>(&batch.mesh_handle)
+                    .get_resource::<RendererMaterial>(&batch.material_handle)
                 else {
                     continue;
                 };
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                render_pass
-                    .set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                let first = batch.base_offset_u32;
-                let count = batch.instances.len() as u32;
-                // One instanced draw per batch: instance_index in [first, first+count) selects per-draw data.
-                render_pass.draw_indexed(0..mesh.index_count, 0, first..(first + count));
+                render_pass.set_bind_group(
+                    MATERIAL_BIND_GROUP_TEXTURES as u32,
+                    &mat.textures_bind_group,
+                    &[],
+                );
+                render_pass.set_bind_group(
+                    MATERIAL_BIND_GROUP_PARAMS as u32,
+                    &mat.parameters_bind_group,
+                    &[],
+                );
+                bound_material = Some(batch.material_handle);
             }
+
+            let Ok(mesh) = world
+                .resources
+                .get_resource::<RendererMesh>(&batch.mesh_handle)
+            else {
+                continue;
+            };
+            render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            // One instanced draw per batch: instance_index in [first, first+count) selects per-draw data.
+            render_pass.draw_indexed(
+                0..mesh.index_count,
+                0,
+                batch.first..(batch.first + batch.count),
+            );
         }
 
         // Background sub-draw: within the same render pass, after opaque geometry.

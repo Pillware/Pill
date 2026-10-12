@@ -242,6 +242,13 @@ impl PillRenderer for Renderer {
     }
 
     fn create_pipeline(&mut self, desc: PipelineDesc) -> Result<Pipeline> {
+        // Capture validation errors (bad WGSL, layout mismatch) as Err instead of wgpu's
+        // panicking default handler. Native only: wasm can't block on the error scope.
+        #[cfg(not(target_arch = "wasm32"))]
+        self.state
+            .device
+            .push_error_scope(wgpu::ErrorFilter::Validation);
+
         let bind_group_layouts: Vec<wgpu::BindGroupLayout> = desc
             .bind_groups
             .iter()
@@ -307,6 +314,16 @@ impl PillRenderer for Renderer {
                 cache: None,
             });
 
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(error) = pollster::block_on(self.state.device.pop_error_scope()) {
+            return Err(format!(
+                "Failed to create pipeline {}: {}",
+                desc.label.unwrap_or("<unnamed>"),
+                error
+            )
+            .into());
+        }
+
         Ok(Pipeline {
             pipeline,
             bind_group_layouts,
@@ -369,6 +386,7 @@ impl PillRenderer for Renderer {
         name: &str,
         data: TextureData,
     ) -> Result<PassTextureHandle> {
+        data.validate()?;
         // Rgba32Float is only filterable with FLOAT32_FILTERABLE (often missing on WebGPU and
         // mobile); all engine samplers filter, so fall back to Rgba16Float, which always is
         let half_mips: Vec<Vec<u8>>;
@@ -480,10 +498,8 @@ impl State {
         info!(LogContext::Rendering => "Using GPU: {} ({:?})", info.name, info.backend);
 
         let (device, queue) = {
-            let mut wanted = wgpu::Features::DEPTH_CLIP_CONTROL
-                | wgpu::Features::TIMESTAMP_QUERY
-                | wgpu::Features::PIPELINE_STATISTICS_QUERY
-                | wgpu::Features::FLOAT32_FILTERABLE;
+            let mut wanted =
+                wgpu::Features::DEPTH_CLIP_CONTROL | wgpu::Features::FLOAT32_FILTERABLE;
             // Debug switch to exercise the Rgba16Float fallback on hardware that has the feature
             if cfg!(debug_assertions) && std::env::var("PILL_FORCE_NO_F32_FILTER").is_ok() {
                 wanted.remove(wgpu::Features::FLOAT32_FILTERABLE);

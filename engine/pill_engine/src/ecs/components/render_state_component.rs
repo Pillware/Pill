@@ -14,12 +14,16 @@ pub enum Tonemap {
     Reinhard { white_point: f32 },
 }
 
+/// Engine-owned (always present, cannot be removed or constructed by games); games set the
+/// public environment, IBL, fog and tonemap fields.
 pub struct RenderStateComponent {
-    pub boot_done: bool,
+    pub(crate) boot_done: bool,
     /// Scene color target (HDR_TARGET_FORMAT) shared by scene passes; resolved by the tonemap pass.
-    pub hdr_target: PassTextureHandle,
+    pub(crate) hdr_target: PassTextureHandle,
     /// Scene depth target (DEPTH_TARGET_FORMAT) shared by scene passes.
-    pub depth_target: PassTextureHandle,
+    pub(crate) depth_target: PassTextureHandle,
+    /// Engine default IBL maps (diffuse, specular, BRDF LUT): used when a game-set handle is invalid.
+    pub(crate) default_ibl: [PassTextureHandle; 3],
     /// Environment (equirect) image drawn behind the scene; `None` draws `background_color`.
     pub background: Option<PassTextureHandle>,
     /// Solid background color used when `background` is `None` (linear RGB).
@@ -36,11 +40,12 @@ pub struct RenderStateComponent {
 
 impl RenderStateComponent {
     /// Creates the component in its pre-boot state; handles are replaced by `create_default_resources`.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             boot_done: false,
             hdr_target: PassTextureHandle::default(),
             depth_target: PassTextureHandle::default(),
+            default_ibl: [PassTextureHandle::default(); 3],
             background: None,
             background_color: [0.15, 0.15, 0.15],
             ibl_diffuse: PassTextureHandle::default(),
@@ -55,9 +60,15 @@ impl RenderStateComponent {
     }
 }
 
-impl Default for RenderStateComponent {
-    fn default() -> Self {
-        Self::new()
+impl RenderStateComponent {
+    /// Scene color target (HDR_TARGET_FORMAT) for game-defined passes.
+    pub fn hdr_target(&self) -> PassTextureHandle {
+        self.hdr_target
+    }
+
+    /// Scene depth target (DEPTH_TARGET_FORMAT) for game-defined passes.
+    pub fn depth_target(&self) -> PassTextureHandle {
+        self.depth_target
     }
 }
 

@@ -256,10 +256,10 @@ impl Pass for CartoonPass {
         // Draw on top of the PBR pass output (load, not clear)
         let render_state = world.get_global::<RenderStateComponent>()?;
         let color_view = renderer
-            .get_render_target_view(render_state.hdr_target)
+            .get_render_target_view(render_state.hdr_target())
             .expect("CartoonPass: HDR target missing");
         let depth_view = renderer
-            .get_render_target_view(render_state.depth_target)
+            .get_render_target_view(render_state.depth_target())
             .expect("CartoonPass: depth target missing");
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("cartoon_pass_render_pass"),

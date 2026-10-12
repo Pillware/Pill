@@ -53,7 +53,6 @@ fn format_timers(system_timers: &[(UpdatePhase, Vec<(String, Timer)>)]) -> Strin
 
 pub struct EguiComponent {
     pub egui_client: Arc<EguiClient>,
-    collapsing_state: HashMap<String, bool>,
     game_overlay: Option<DebugUiCallback>,
     registered_ui: Vec<RegisteredUi>,
 }
@@ -68,7 +67,6 @@ impl EguiComponent {
     pub fn new() -> Self {
         Self {
             egui_client: EguiClient::new(),
-            collapsing_state: HashMap::new(),
             game_overlay: None,
             registered_ui: Vec::new(),
         }

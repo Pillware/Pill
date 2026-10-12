@@ -38,6 +38,12 @@ float3x3 rot_x(float angle) { float cosine = cos(angle), sine = sin(angle); retu
 float3x3 rot_y(float angle) { float cosine = cos(angle), sine = sin(angle); return float3x3(cosine, 0, sine,  0, 1, 0,  -sine, 0, cosine); }
 float3x3 rot_z(float angle) { float cosine = cos(angle), sine = sin(angle); return float3x3(cosine, -sine, 0,  sine, cosine, 0,  0, 0, 1); }
 
+// Zero for (near) zero-length input, so degenerate tangents don't turn into NaN
+float3 safe_normalize(float3 value) {
+    float length_squared = dot(value, value);
+    return length_squared > 1e-12 ? value * rsqrt(length_squared) : float3(0.0, 0.0, 0.0);
+}
+
 [shader("vertex")]
 VertexOutput vs_main(VertexInput input, uint instance_id : SV_InstanceID) {
     PerDraw per_draw = per_draw_array[instance_id];
@@ -55,7 +61,7 @@ VertexOutput vs_main(VertexInput input, uint instance_id : SV_InstanceID) {
     // Inverse-transpose of R*S is R*S^-1: divide by scale so non-uniform scale keeps normals perpendicular
     output.world_normal        = normalize(mul(rotation, input.normal / per_draw.scale.xyz));
     // Tangents lie in the surface, so they transform like positions (R*S)
-    output.world_tangent       = normalize(mul(rotation, input.tangent * per_draw.scale.xyz));
-    output.world_bitangent     = normalize(mul(rotation, input.bitangent * per_draw.scale.xyz));
+    output.world_tangent       = safe_normalize(mul(rotation, input.tangent * per_draw.scale.xyz));
+    output.world_bitangent     = safe_normalize(mul(rotation, input.bitangent * per_draw.scale.xyz));
     return output;
 }
