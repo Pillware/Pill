@@ -49,10 +49,8 @@ impl Rule for GlbToCookedMesh {
             gltf::import_slice(&bytes).with_context(|| format!("parse GLB {input:?}"))?;
 
         // --- Mesh ---
-        // Walk the scene node hierarchy. For each node that references a mesh, apply the
-        // node's world transform to vertex positions and normals before cooked output.
-        // This bakes the root-node transform (scale, rotation, etc.) into the geometry so
-        // game code needs no compensating transform on the mesh entity.
+        // Node world transforms are baked into the vertices, so game code needs no compensating
+        // transform on the mesh entity.
 
         let mut all_vertices: Vec<Vertex> = Vec::new();
         let mut all_indices: Vec<u32> = Vec::new();
@@ -259,6 +257,9 @@ fn write_cooked_tex(
 }
 
 fn compute_tangents(vertices: &mut [Vertex], indices: &[u32]) {
+    // Accumulate from zero; vertices not in any valid triangle keep their default tangent
+    let mut tangent_sums = vec![[0.0f32; 3]; vertices.len()];
+    let mut bitangent_sums = vec![[0.0f32; 3]; vertices.len()];
     let mut triangle_counts = vec![0usize; vertices.len()];
 
     for triangle in indices.chunks(3) {
@@ -301,8 +302,8 @@ fn compute_tangents(vertices: &mut [Vertex], indices: &[u32]) {
         );
 
         for &index in &[index_0, index_1, index_2] {
-            vertices[index].tangent = add3(vertices[index].tangent, tangent);
-            vertices[index].bitangent = add3(vertices[index].bitangent, bitangent);
+            tangent_sums[index] = add3(tangent_sums[index], tangent);
+            bitangent_sums[index] = add3(bitangent_sums[index], bitangent);
             triangle_counts[index] += 1;
         }
     }
@@ -310,9 +311,8 @@ fn compute_tangents(vertices: &mut [Vertex], indices: &[u32]) {
     for (index, &count) in triangle_counts.iter().enumerate() {
         if count > 0 {
             let inverse_count = 1.0 / count as f32;
-            vertices[index].tangent = normalize3(scale3(vertices[index].tangent, inverse_count));
-            vertices[index].bitangent =
-                normalize3(scale3(vertices[index].bitangent, inverse_count));
+            vertices[index].tangent = normalize3(scale3(tangent_sums[index], inverse_count));
+            vertices[index].bitangent = normalize3(scale3(bitangent_sums[index], inverse_count));
         }
     }
 }

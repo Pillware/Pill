@@ -177,9 +177,11 @@ impl Pass for PassEgui {
             drawer.handle_input(&ev);
         }
 
-        let size = self.window.inner_size();
+        // Swapchain size, not window size: they differ until a resize is handled, and egui clamps
+        // scissor rects to this
+        let (width, height) = renderer.get_surface_size();
         let screen_desc = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [size.width, size.height],
+            size_in_pixels: [width, height],
             pixels_per_point: drawer.window_scale_factor,
         };
 

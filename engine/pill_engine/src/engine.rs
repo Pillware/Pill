@@ -592,7 +592,7 @@ impl Engine {
     }
 
     /// Uploads a `.cooked_tex` file produced by pill_assets (environment equirect, IBL maps, BRDF LUT)
-    /// as a GPU texture. RTEX v1 becomes Rgba8Unorm (linear), v2 Rgba32Float, v4 a Rgba32Float mip chain.
+    /// as a GPU texture. RTEX v1 becomes Rgba8UnormSrgb, v2 Rgba32Float, v4 a Rgba32Float mip chain.
     /// Returns a handle for assignment to `RenderStateComponent`.
     /// Must be called before the first rendered frame (i.e. from `start()`).
     pub fn load_cooked_texture(&mut self, name: &str, bytes: &[u8]) -> Result<PassTextureHandle> {

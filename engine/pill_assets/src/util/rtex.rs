@@ -42,8 +42,7 @@ pub(crate) fn write_rtex_hdr_mip(
     Ok(())
 }
 
-// RTEX v1: RGBA8 texels. Color space is up to the consumer: material color textures are
-// sampled as sRGB, the BRDF LUT is linear data.
+// RTEX v1: RGBA8 texels, sRGB-encoded color (linear data such as LUTs uses v2).
 pub(crate) fn write_rtex(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<()> {
     let mut output = Vec::with_capacity(16 + rgba.len());
     output.extend_from_slice(b"RTEX");

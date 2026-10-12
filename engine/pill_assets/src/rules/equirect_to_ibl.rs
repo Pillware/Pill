@@ -5,7 +5,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::util::{
     color::srgb_to_linear,
-    rtex::{write_rtex, write_rtex_hdr, write_rtex_hdr_mip},
+    rtex::{write_rtex_hdr, write_rtex_hdr_mip},
     vec_math::{cross3, dot3, normalize3},
 };
 use crate::Rule;
@@ -53,10 +53,10 @@ impl Rule for EquirectToIBL {
         }
         write_rtex_hdr_mip(&specular_path, 128, 64, &specular_mips)?;
 
-        // 3. BRDF LUT (256×256 linear) — split-sum preintegration, environment-independent
+        // 3. BRDF LUT (256×256, RTEX v2 since it is linear data, not sRGB color)
         let brdf_lut = compute_brdf_lut(256, 256);
         let brdf_lut_path = directory.join("brdf_lut.cooked_tex");
-        write_rtex(&brdf_lut_path, 256, 256, &brdf_lut)?;
+        write_rtex_hdr(&brdf_lut_path, 256, 256, &brdf_lut)?;
 
         Ok(())
     }
@@ -224,7 +224,8 @@ fn compute_irradiance(equirect: &Equirect, output_width: u32, output_height: u32
                 }
             }
 
-            let normalization = PI / total_weight;
+            // Cosine-weighted average radiance = E/π, so the shader's irradiance * albedo is Lambert
+            let normalization = 1.0 / total_weight;
             output.push(irradiance[0] * normalization);
             output.push(irradiance[1] * normalization);
             output.push(irradiance[2] * normalization);
@@ -296,7 +297,7 @@ fn geometry_smith_ibl(normal_dot_view: f32, normal_dot_light: f32, roughness: f3
         * geometry_schlick_ggx_ibl(normal_dot_light, roughness)
 }
 
-fn compute_brdf_lut(width: u32, height: u32) -> Vec<u8> {
+fn compute_brdf_lut(width: u32, height: u32) -> Vec<f32> {
     const SAMPLE_COUNT: u32 = 1024;
 
     let mut output = Vec::with_capacity((width * height * 4) as usize);
@@ -344,11 +345,10 @@ fn compute_brdf_lut(width: u32, height: u32) -> Vec<u8> {
             scale = (scale / SAMPLE_COUNT as f32).clamp(0.0, 1.0);
             bias = (bias / SAMPLE_COUNT as f32).clamp(0.0, 1.0);
 
-            // Linear bytes (not sRGB — BRDF coefficients are in linear space)
-            output.push((scale * 255.0 + 0.5) as u8);
-            output.push((bias * 255.0 + 0.5) as u8);
-            output.push(0u8);
-            output.push(255u8);
+            output.push(scale);
+            output.push(bias);
+            output.push(0.0);
+            output.push(1.0);
         }
     }
     output

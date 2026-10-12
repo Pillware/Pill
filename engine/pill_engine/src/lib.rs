@@ -65,7 +65,7 @@ pub mod game {
             CameraAspectRatio, CameraComponent, Component, ComponentStorage, EntityHandle,
             GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage, InputComponent,
             MeshRenderingComponent, PlayerId, RenderStateComponent, SceneHandle, TimeComponent,
-            TransformComponent, UpdatePhase,
+            Tonemap, TransformComponent, UpdatePhase,
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
         graphics::PassTextureHandle,

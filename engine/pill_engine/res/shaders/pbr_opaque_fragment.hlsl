@@ -103,15 +103,18 @@ float3 accumulate_directional_light(
 float4 fs_main(
     [[vk::location(0)]] float2 texture_coordinates : TEXCOORD0,
     [[vk::location(1)]] float3 world_position      : TEXCOORD1,
-    [[vk::location(2)]] float3 input_normal        : TEXCOORD2
+    [[vk::location(2)]] float3 input_normal        : TEXCOORD2,
+    [[vk::location(3)]] float3 input_tangent       : TEXCOORD3,
+    [[vk::location(4)]] float3 input_bitangent     : TEXCOORD4
 ) : SV_TARGET {
     float3 albedo             = base_color_texture.Sample(base_color_sampler, texture_coordinates).rgb * material.base_color_factor;
     float2 metallic_roughness = metallic_roughness_texture.Sample(metallic_roughness_sampler, texture_coordinates).gb;
     // metallic_roughness.x = G channel (roughness 0=smooth, 1=rough); metallic_roughness.y = B channel (metallic 0=dielectric, 1=metal)
     float  roughness = clamp(metallic_roughness.x * material.roughness_factor, 0.045, 0.99);
     float  metallic  = metallic_roughness.y * material.metallic_factor;
-    // TODO: Support normal mapping (tangent space) and AO texture.
-    float3 normal            = normalize(input_normal);
+    // Tangent-space normal map; the default texel (0.5, 0.5, 1) keeps the vertex normal
+    float3 tangent_normal    = normal_texture.Sample(normal_sampler, texture_coordinates).xyz * 2.0 - 1.0;
+    float3 normal            = normalize(tangent_normal.x * input_tangent + tangent_normal.y * input_bitangent + tangent_normal.z * input_normal);
     float3 view_direction    = normalize(camera.position.xyz - world_position);
     float3 base_reflectivity = lerp(float3(0.04, 0.04, 0.04), albedo, float3(metallic, metallic, metallic));
     float3 outgoing_radiance = float3(0.0, 0.0, 0.0);

@@ -145,7 +145,15 @@ impl Resource for Mesh {
                     std::fs::read(&cooked_mesh_path).map_err(|e| -> pill_core::PillError {
                         format!("Failed to read mesh {cooked_mesh_path:?}: {e}").into()
                     })?;
-                self.mesh_data = Some(load_cooked_mesh(&bytes).context(error_message.clone())?);
+                let mut mesh_data = load_cooked_mesh(&bytes).context(error_message.clone())?;
+                // Cooked OBJ meshes store 1 - v; with_uv_flip asks for the raw v (same as the OBJ path)
+                if self.flip_uv_y {
+                    for vertex in &mut mesh_data.vertices {
+                        vertex.texture_coordinates[1] = 1.0 - vertex.texture_coordinates[1];
+                        vertex.bitangent = vertex.bitangent.map(|value| -value);
+                    }
+                }
+                self.mesh_data = Some(mesh_data);
             } else {
                 #[cfg(feature = "obj_loading")]
                 {

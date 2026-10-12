@@ -30,7 +30,7 @@ pub use components::audio_source_component::AudioSourceComponent;
 #[cfg(feature = "ui")]
 pub use components::egui_component::EguiComponent;
 
-pub use components::render_state_component::RenderStateComponent;
+pub use components::render_state_component::{RenderStateComponent, Tonemap};
 
 #[cfg(feature = "ui")]
 pub use egui_client::EguiClient;

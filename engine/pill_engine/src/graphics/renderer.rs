@@ -11,7 +11,7 @@ use crate::{
     resources::{Mesh, MeshHandle, ResourceManager, Texture, TextureHandle, TextureType},
 };
 
-use pill_core::{EngineError, Matrix3f, Matrix4f, PillSlotMapKey, PillTypeMap, Timer, Vector3f};
+use pill_core::{EngineError, Matrix4f, PillSlotMapKey, PillTypeMap, Timer, Vector3f};
 
 use pill_core::Result;
 use std::sync::Arc;
@@ -109,12 +109,9 @@ impl<'a> WorldQuery<'a> {
     }
 }
 
-/// Direction the camera looks at; rotation is in degrees (roll, then pitch, then yaw).
+/// Direction the camera looks at: +Z rotated by the transform (degrees, XYZ order).
 pub fn camera_forward(transform: &TransformComponent) -> Vector3f {
-    let roll = Matrix3f::from_rotation_z(transform.rotation.z.to_radians());
-    let yaw = Matrix3f::from_rotation_y(transform.rotation.y.to_radians());
-    let pitch = Matrix3f::from_rotation_x(transform.rotation.x.to_radians());
-    (yaw * pitch * roll) * Vector3f::Z
+    transform.rotation_matrix() * Vector3f::Z
 }
 
 /// Right-handed perspective view-projection of a camera entity.

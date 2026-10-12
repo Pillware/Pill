@@ -185,11 +185,18 @@ impl PillRenderer for Renderer {
 
     // --- Pass API ---
 
-    fn set_passes(&mut self, mut passes: Vec<Box<dyn Pass>>) -> Result<()> {
-        for pass in &mut passes {
-            pass.init(self)?;
+    fn set_passes(&mut self, passes: Vec<Box<dyn Pass>>) -> Result<()> {
+        // A pass that fails to init is dropped so the rest of the chain still renders
+        let mut ready = Vec::with_capacity(passes.len());
+        for mut pass in passes {
+            match pass.init(self) {
+                Ok(()) => ready.push(pass),
+                Err(error) => {
+                    error!(LogContext::Rendering => "Pass {} failed to initialize and is skipped: {}", pass.get_label(), error)
+                }
+            }
         }
-        self.state.passes = passes;
+        self.state.passes = ready;
         Ok(())
     }
 

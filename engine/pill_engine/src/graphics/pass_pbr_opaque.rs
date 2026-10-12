@@ -68,9 +68,7 @@ pub(crate) struct PerDrawStd140 {
     scale: [f32; 4],    // xyz
 }
 
-// Storage buffer (StructuredBuffer / var<storage,read>) indexed by SV_InstanceID replaces
-// dynamic-offset UBO: eliminates Metal's 256-B alignment tax and 120k per-instance API calls.
-// [Lottes @NOTimothyLottes 2025-01-23; Aaltonen "Modern Mobile Rendering at HypeHype" GDC 2023]
+// Per-draw data lives in one storage buffer indexed by instance id (no per-draw dynamic offsets).
 const PER_DRAW_STRIDE_BYTES: usize = std::mem::size_of::<PerDrawStd140>();
 
 pub const MATERIAL_BIND_GROUP_GLOBALS: usize = 0;
@@ -210,9 +208,8 @@ fn build_bg_bind_group(
     })
 }
 
-/// Default PBR pass: GGX shading with IBL, one instanced draw per material/mesh batch.
-/// Per-frame state (IBL handles, background equirect, bg_color, fog) is read from
-/// RenderStateComponent each frame via WorldQuery::get_global — nothing is baked at construction.
+/// Default PBR pass: GGX + IBL, one instanced draw per material/mesh batch.
+/// Background, IBL and fog are read from RenderStateComponent every frame.
 pub struct PassPBROpaque {
     color_target: PassTextureHandle,
     depth_target: PassTextureHandle,
@@ -417,10 +414,8 @@ impl Pass for PassPBROpaque {
             })
         };
 
-        // Register 1px neutral-gray fallbacks for any missing IBL handle,
-        // then get owned views (texture lifetime managed by renderer's pass_textures).
-        // Initial bind group is built from neutral fallbacks; draw() rebuilds it from
-        // RenderStateComponent's IBL handles the first frame (and whenever they change).
+        // 1px neutral fallbacks for the initial IBL bind group; draw() rebuilds it from
+        // RenderStateComponent's handles whenever they change.
         let irr_h = renderer.create_texture_from_pixels(
             "diffuse_ibl_fallback",
             TextureData {
@@ -485,9 +480,8 @@ impl Pass for PassPBROpaque {
         );
         let cached_ibl = [irr_h, pre_h, lut_h];
 
-        // Background sub-draw is always created; its equirect comes from RenderStateComponent.background
-        // each frame (draw() rebuilds the bind group when the handle changes). Initial bind group uses
-        // a 1px fallback equirect.
+        // Background sub-draw; draw() rebinds its equirect when RenderStateComponent.background
+        // changes, starting from a 1px fallback.
         let bg = {
             let bg_bind_groups = vec![vec![
                 wgpu::BindGroupLayoutEntry {
@@ -704,11 +698,8 @@ impl Pass for PassPBROpaque {
             );
         }
 
-        // Data-driven: this pass builds its OWN opaque draw list by querying the world. Iterate the
-        // contiguous transform + mesh_rendering arrays, group by material+mesh (find-or-create, since
-        // ECS order is unsorted) to minimize bind-group/vertex-buffer switches — the grouping exists
-        // to cut GPU state changes, not for visual order. Group order is irrelevant (opaque, depth-
-        // tested). [Aaltonen "HypeHype" GDC 2023]
+        // Group instances by material, then mesh, to minimize bind group and vertex buffer switches
+        // (opaque + depth-tested, so draw order doesn't matter).
         for group in self.groups_buffer.iter_mut() {
             for batch in group.batches.iter_mut() {
                 batch.instances.clear(); // reuse capacity across frames
@@ -799,8 +790,7 @@ impl Pass for PassPBROpaque {
         }
         self.groups_buffer.retain(|group| !group.batches.is_empty());
 
-        // Concatenate per-batch instances into the storage buffer (sequential — cache-friendly) and
-        // assign each batch its first-instance offset. Single upload per pass. [Aaltonen GDC 2023]
+        // Concatenate batches into one upload; each batch records its first-instance offset.
         self.staging_buffer.clear();
         let mut next_instance: u32 = 0;
         for group in self.groups_buffer.iter_mut() {
@@ -857,8 +847,7 @@ impl Pass for PassPBROpaque {
             .as_ref()
             .expect("PassPBROpaque: state not initialized — call init() before draw()");
         render_pass.set_pipeline(&state_ref.pipeline.pipeline);
-        // Per-draw array bound once; instance_index selects per-entity data — 5 draws instead of 60k.
-        // [Lottes @NOTimothyLottes 2025-01-23; WebGPU W3C 2024 §drawIndexed firstInstance]
+        // Per-draw array bound once; each batch's instance range selects its entries.
         render_pass.set_bind_group(
             MATERIAL_BIND_GROUP_PERDRAW as u32,
             &state_ref.per_draw_bind_group,

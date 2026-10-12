@@ -19,8 +19,14 @@ impl EguiClient {
     }
 
     /// Enqueues a window event for delivery to the egui input handler on the next frame.
+    /// Bounded: frames without the egui pass (e.g. no active camera) don't drain it.
     pub fn handle_input(&self, event: winit::event::WindowEvent) {
-        self.events.lock().unwrap().push(event);
+        const MAX_PENDING_EVENTS: usize = 256;
+        let mut events = self.events.lock().unwrap();
+        if events.len() == MAX_PENDING_EVENTS {
+            events.remove(0);
+        }
+        events.push(event);
     }
 
     /// Drains and returns all queued window events, leaving the queue empty.

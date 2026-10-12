@@ -6,9 +6,7 @@ use pill_engine::{define_component, game::*};
 const CAMERA_POSITION_Z: f32 = 0.0;
 const CAMERA_FOV: f32 = 60.0;
 const CLEAR_COLOR: (f32, f32, f32) = (0.3, 0.12, 0.20);
-// exp(-density²·distance²). Half-blend at d=20 → visible haze pulls in close
-// and the back half of the tunnel vanishes into bg:
-//   d=10 (hero) → 16%, d=20 → 50%, d=40 → 94%, d=80 (far) → 100%.
+// Fog blend exp(-density²·distance²): 50% at d=20, fully faded by d=80 (far end of the tunnel).
 const FOG_DENSITY: f32 = 0.0416;
 
 // Subtle sine-wave drift on camera position — breathes life into an otherwise
@@ -16,9 +14,8 @@ const FOG_DENSITY: f32 = 0.0416;
 const CAMERA_DRIFT_SPEED: (f32, f32) = (0.30, 0.22);
 const CAMERA_DRIFT_AMPLITUDE: (f32, f32) = (0.35, 0.25);
 
-// Particle tunnel — N pills streaming forward through a donut-shaped emitter.
-// Camera looks down +Z; pills start spread uniformly along Z so steady-state
-// density is reached on frame 1. Each pill wraps back to far when it crosses near.
+// Pills stream toward the +Z-looking camera through a donut emitter, spread along Z from frame 1
+// and wrapped back to the far end when they pass the camera.
 const PILL_COUNT: usize = 1440;
 const EMITTER_RADIUS_MIN: f32 = 6.0;
 const EMITTER_RADIUS_MAX: f32 = 13.0;
@@ -57,8 +54,7 @@ const PALETTE: &[(f32, f32, f32)] = &[
 const HERO_TINT: (f32, f32, f32) = (1.00, 0.55, 0.65);
 
 // --- Deterministic hash RNG --------------------------------------------------
-// Wang-style integer hash + seed table → independent streams per particle.
-// No `rand` dep, reproducible across runs.
+// Integer hash with per-purpose seeds: reproducible per-particle streams without `rand`.
 
 const SEED_ANGLE: u32 = 0x9e37_79b9;
 const SEED_RADIUS: u32 = 0x85eb_ca6b;
@@ -131,10 +127,7 @@ pub struct WebGame {}
 
 // --- Systems -----------------------------------------------------------------
 
-/// Fast sine approximation (~0.1% error) — replaces std `sin` in the 60k-pill hot loop, where the
-/// transcendental dominated per-pill cost. Parabola fit + one refinement pass; range-reduced to
-/// [-π, π]. [Nick, "A Fast, Compact Approximation of the Sine Function", devmaster.net 2006;
-/// cf. Bhāskara I's sine approximation, 7th c.]
+/// Fast sine (~0.1% error): parabola fit plus one refinement pass, used in the per-pill update loop.
 fn fast_sin(mut x: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
     x -= TAU * (x * (1.0 / TAU)).round(); // range-reduce to [-π, π]

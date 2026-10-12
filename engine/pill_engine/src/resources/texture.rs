@@ -47,7 +47,7 @@ impl Texture {
 
 /// Decoded `.cooked_tex` (RTEX) image. Header: b"RTEX" | u32 version | u32 width | u32 height,
 /// all little-endian. Versions (written by pill_assets `util/rtex.rs`):
-/// - 1: RGBA8 texels
+/// - 1: RGBA8 texels, sRGB-encoded color
 /// - 2: Rgba32Float texels (linear HDR)
 /// - 4: u32 mip_count, then the Rgba32Float texels of each mip level
 pub(crate) struct CookedTexture<'a> {
@@ -72,7 +72,7 @@ pub(crate) fn parse_cooked_tex(bytes: &[u8]) -> Result<CookedTexture<'_>> {
     let height = read_u32(12);
 
     let (format, mip_count, data_offset) = match version {
-        1 => (wgpu::TextureFormat::Rgba8Unorm, 1, 16),
+        1 => (wgpu::TextureFormat::Rgba8UnormSrgb, 1, 16),
         2 => (wgpu::TextureFormat::Rgba32Float, 1, 16),
         4 => {
             if bytes.len() < 20 {

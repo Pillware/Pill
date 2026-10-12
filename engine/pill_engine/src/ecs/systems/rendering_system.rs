@@ -18,11 +18,12 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
         .boot_done;
 
     if !boot_done {
-        let passes = default_pass_chain(engine)?;
-        engine.renderer.set_passes(passes)?;
+        // Marked first so a failing boot is not retried (each try allocates new targets)
         engine
             .get_global_component_mut::<RenderStateComponent>()?
             .boot_done = true;
+        let passes = default_pass_chain(engine)?;
+        engine.renderer.set_passes(passes)?;
         return Ok(());
     }
 

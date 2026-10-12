@@ -13,9 +13,12 @@ impl PillGame for Game {
         // Create scene
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;
-        engine
-            .get_global_component_mut::<RenderStateComponent>()?
-            .background_color = [0.5, 0.5, 0.5];
+        {
+            let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
+            render_state.background_color = [0.5, 0.5, 0.5];
+            // Unlit and cartoon content is authored in display range; no HDR compression
+            render_state.tonemap = Tonemap::None;
+        }
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;

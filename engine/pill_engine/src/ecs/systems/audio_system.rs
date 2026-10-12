@@ -5,24 +5,9 @@ use crate::{
     },
     engine::Engine,
 };
-use pill_core::{Matrix3f, Vector3f};
+use pill_core::Vector3f;
 
 use pill_core::Result;
-
-fn get_rotation_matrix(angles: Vector3f) -> Result<Matrix3f> {
-    // Get the angles from the vector and convert them to radians
-    let angle_x = angles.x.to_radians();
-    let angle_y = angles.y.to_radians();
-    let angle_z = angles.z.to_radians();
-
-    // Prepare rotation matrices
-    let rot_z = Matrix3f::from_rotation_z(angle_z);
-    let rot_y = Matrix3f::from_rotation_y(angle_y);
-    let rot_x = Matrix3f::from_rotation_x(angle_x);
-
-    // Return rotation matrix
-    Ok(rot_z * rot_y * rot_x)
-}
 
 pub fn audio_system(engine: &mut Engine) -> Result<()> {
     // Skip if no audio manager (headless or no audio device).
@@ -42,13 +27,10 @@ pub fn audio_system(engine: &mut Engine) -> Result<()> {
     {
         for (_entity_handle, audio_listener_component, transform_component) in iter {
             if audio_listener_component.enabled {
-                // Get the retotation matrix
-                let left_rotation_matrix = get_rotation_matrix(transform_component.rotation)?;
-                let right_rotation_matrix = get_rotation_matrix(-transform_component.rotation)?;
-
-                // Get two points for left and right ear relative to the origin multiplied to rotation matrix
-                left_ear_position = left_rotation_matrix * left_ear_position;
-                right_ear_position = right_rotation_matrix * right_ear_position;
+                // Both ears rotate with the listener (same order as rendering and physics)
+                let rotation_matrix = transform_component.rotation_matrix();
+                left_ear_position = rotation_matrix * left_ear_position;
+                right_ear_position = rotation_matrix * right_ear_position;
 
                 // Add the original position
                 left_ear_position += transform_component.position;

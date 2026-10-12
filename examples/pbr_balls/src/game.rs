@@ -126,7 +126,7 @@ fn orbit_camera_system(engine: &mut Engine) -> Result<()> {
             orbit.radius * pitch_radians.sin(),
             orbit.radius * pitch_radians.cos() * yaw_radians.cos(),
         ));
-        transform.set_rotation(Vector3f::new(orbit.pitch, orbit.yaw + 180.0, 0.0));
+        transform.look_at(Vector3f::ZERO);
     }
     Ok(())
 }

@@ -37,7 +37,15 @@ impl Rule for HdrToEquirect {
         );
         let pixels: Vec<f32> = resized
             .pixels()
-            .flat_map(|pixel| [pixel.0[0], pixel.0[1], pixel.0[2], 1.0])
+            // Lanczos rings below zero next to very bright texels; radiance can't be negative
+            .flat_map(|pixel| {
+                [
+                    pixel.0[0].max(0.0),
+                    pixel.0[1].max(0.0),
+                    pixel.0[2].max(0.0),
+                    1.0,
+                ]
+            })
             .collect();
         write_rtex_hdr(output, OUTPUT_WIDTH, OUTPUT_HEIGHT, &pixels)
     }

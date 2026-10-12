@@ -5,6 +5,15 @@ use crate::{
 
 use pill_core::PillTypeMapKey;
 
+/// HDR → display mapping applied by the tonemap pass.
+#[derive(Clone, Copy, Debug)]
+pub enum Tonemap {
+    /// Linear pass-through; values above 1 clip.
+    None,
+    /// Extended Reinhard c·(1 + c/W²)/(1 + c): `white_point` W maps to 1.0; INFINITY = plain c/(1 + c).
+    Reinhard { white_point: f32 },
+}
+
 pub struct RenderStateComponent {
     pub boot_done: bool,
     /// Scene color target (HDR_TARGET_FORMAT) shared by scene passes; resolved by the tonemap pass.
@@ -22,6 +31,7 @@ pub struct RenderStateComponent {
     /// density 0 disables fog.
     pub fog_color: [f32; 3],
     pub fog_density: f32,
+    pub tonemap: Tonemap,
 }
 
 impl RenderStateComponent {
@@ -38,6 +48,9 @@ impl RenderStateComponent {
             ibl_brdf_lut: PassTextureHandle::default(),
             fog_color: [0.0, 0.0, 0.0],
             fog_density: 0.0,
+            tonemap: Tonemap::Reinhard {
+                white_point: f32::INFINITY,
+            },
         }
     }
 }

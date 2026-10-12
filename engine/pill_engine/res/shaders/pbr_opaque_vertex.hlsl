@@ -1,8 +1,5 @@
-// PBR static vertex shader. Edit here — pill_assets regenerates the .wgsl.
-// Per-draw storage holds raw position/rotation(radians)/scale; the GPU builds the
-// model matrix here (hardware sin/cos), so the CPU does ZERO per-entity trig and
-// uploads 48 B instead of a 64 B matrix. MVP = viewProjection·model, also on GPU.
-// [Aaltonen "HypeHype" GDC 2023; Lottes @NOTimothyLottes 2025-01-23]
+// PBR vertex shader (pill_assets regenerates the .wgsl). The model matrix is built here from
+// per-draw position / rotation (radians) / scale, so the CPU uploads raw transforms.
 
 struct Camera {
     float4                position;
@@ -23,6 +20,8 @@ struct VertexOutput {
     [[vk::location(0)]] float2 texture_coordinates : TEXCOORD0;
     [[vk::location(1)]] float3 world_position      : TEXCOORD1;
     [[vk::location(2)]] float3 world_normal        : TEXCOORD2;
+    [[vk::location(3)]] float3 world_tangent       : TEXCOORD3;
+    [[vk::location(4)]] float3 world_bitangent     : TEXCOORD4;
                         float4 sv_position         : SV_POSITION;
 };
 
@@ -30,6 +29,8 @@ struct VertexInput {
     [[vk::location(0)]] float3 position;
     [[vk::location(4)]] float2 texture_coordinates;
     [[vk::location(5)]] float3 normal;
+    [[vk::location(6)]] float3 tangent;
+    [[vk::location(7)]] float3 bitangent;
 };
 
 // Row-major float3x3 constructors; mul(R, v) applies standard right-handed rotation.
@@ -53,5 +54,8 @@ VertexOutput vs_main(VertexInput input, uint instance_id : SV_InstanceID) {
     output.world_position      = world_position;
     // Inverse-transpose of R*S is R*S^-1: divide by scale so non-uniform scale keeps normals perpendicular
     output.world_normal        = normalize(mul(rotation, input.normal / per_draw.scale.xyz));
+    // Tangents lie in the surface, so they transform like positions (R*S)
+    output.world_tangent       = normalize(mul(rotation, input.tangent * per_draw.scale.xyz));
+    output.world_bitangent     = normalize(mul(rotation, input.bitangent * per_draw.scale.xyz));
     return output;
 }

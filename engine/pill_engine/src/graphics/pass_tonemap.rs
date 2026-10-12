@@ -1,7 +1,8 @@
 use crate::config::{TONEMAP_FRAGMENT_SHADER, TONEMAP_VERTEX_SHADER};
+use crate::ecs::{RenderStateComponent, Tonemap};
 use crate::graphics::{
-    FrameTarget, Pass, PassTextureHandle, PillRenderer, Pipeline, PipelineDesc, ShaderDesc,
-    WorldQuery,
+    BufferDesc, FrameTarget, Pass, PassTextureHandle, PillRenderer, Pipeline, PipelineDesc,
+    ShaderDesc, WorldQuery,
 };
 
 use pill_core::Result;
@@ -14,6 +15,30 @@ pub struct PassTonemap {
 struct TonemapState {
     pipeline: Pipeline,
     sampler: wgpu::Sampler,
+    params_buffer: wgpu::Buffer,
+}
+
+/// Mirrors `TonemapParams` in tonemap_fragment.hlsl.
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct TonemapParams {
+    reinhard: f32,              // 1 = Reinhard, 0 = pass-through
+    inverse_white_squared: f32, // 1/W², 0 for an infinite white point
+    _padding: [f32; 2],
+}
+
+impl TonemapParams {
+    fn from(tonemap: Tonemap) -> Self {
+        let (reinhard, inverse_white_squared) = match tonemap {
+            Tonemap::None => (0.0, 0.0),
+            Tonemap::Reinhard { white_point } => (1.0, 1.0 / (white_point * white_point)),
+        };
+        Self {
+            reinhard,
+            inverse_white_squared,
+            _padding: [0.0; 2],
+        }
+    }
 }
 
 impl PassTonemap {
@@ -50,6 +75,16 @@ impl Pass for PassTonemap {
                 binding: 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
                 count: None,
             },
         ]];
@@ -96,7 +131,17 @@ impl Pass for PassTonemap {
                 ..Default::default()
             });
 
-        self.state = Some(TonemapState { pipeline, sampler });
+        let params_buffer = renderer.create_buffer(BufferDesc {
+            label: Some("pass_tonemap_params"),
+            byte_size: std::mem::size_of::<TonemapParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        })?;
+
+        self.state = Some(TonemapState {
+            pipeline,
+            sampler,
+            params_buffer,
+        });
         Ok(())
     }
 
@@ -105,12 +150,18 @@ impl Pass for PassTonemap {
         encoder: &mut wgpu::CommandEncoder,
         renderer: &mut dyn PillRenderer,
         frame_target: &FrameTarget,
-        _world: &WorldQuery<'_>,
+        world: &WorldQuery<'_>,
     ) -> Result<()> {
         let state = self
             .state
             .as_ref()
             .expect("PassTonemap: state not initialized — call init() before draw()");
+        let tonemap = world.get_global::<RenderStateComponent>()?.tonemap;
+        renderer.get_queue().write_buffer(
+            &state.params_buffer,
+            0,
+            bytemuck::bytes_of(&TonemapParams::from(tonemap)),
+        );
         let hdr_view = renderer
             .get_render_target_view(self.hdr_source)
             .expect("PassTonemap: HDR render target missing");
@@ -130,6 +181,10 @@ impl Pass for PassTonemap {
                         wgpu::BindGroupEntry {
                             binding: 1,
                             resource: wgpu::BindingResource::Sampler(&state.sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: state.params_buffer.as_entire_binding(),
                         },
                     ],
                 })
