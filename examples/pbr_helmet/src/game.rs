@@ -134,12 +134,7 @@ impl PillGame for Game {
                     .position(Vector3f::new(0.0, 0.0, 2.0))
                     .build(),
             )
-            .with_component(
-                CameraComponent::builder()
-                    .enabled(true)
-                    .fov(60.0)
-                    .build(),
-            )
+            .with_component(CameraComponent::builder().enabled(true).fov(60.0).build())
             .with_component(OrbitCamera {
                 yaw: 0.0,
                 pitch: 0.0,

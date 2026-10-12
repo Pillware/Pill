@@ -1,5 +1,4 @@
 #![allow(unused_imports, dead_code)]
-#![macro_use]
 
 mod bitmask_utils;
 mod color;

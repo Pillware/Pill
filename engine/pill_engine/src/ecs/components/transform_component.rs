@@ -145,15 +145,15 @@ impl TransformComponent {
         self.rotation = rotation;
     }
 
-    /// Rotates (without roll) so that +Z, the camera view direction, points at `target`.
+    /// Rotates (without roll) so that forward (−Z, the camera view direction) points at `target`.
     pub fn look_at(&mut self, target: Vector3f) {
         let direction = (target - self.position).normalize_or_zero();
         if direction == Vector3f::ZERO {
             return;
         }
-        // Rx(a)·Ry(b)·Z = (sin b, -sin a·cos b, cos a·cos b)
-        let yaw = direction.x.clamp(-1.0, 1.0).asin();
-        let pitch = (-direction.y).atan2(direction.z);
+        // Rx(a)·Ry(b)·(−Z) = (−sin b, sin a·cos b, −cos a·cos b)
+        let yaw = (-direction.x).clamp(-1.0, 1.0).asin();
+        let pitch = direction.y.atan2(-direction.z);
         self.rotation = Vector3f::new(pitch.to_degrees(), yaw.to_degrees(), 0.0);
     }
 

@@ -172,13 +172,11 @@ impl PillGame for Game {
                 .roughness(0.0),
         )?;
 
-        let yellow_material_handle = engine.add_resource::<Material>(
-            Material::new("yellow").albedo(Color::new(1.0, 0.88, 0.0)),
-        )?;
+        let yellow_material_handle = engine
+            .add_resource::<Material>(Material::new("yellow").albedo(Color::new(1.0, 0.88, 0.0)))?;
 
-        let blue_material_handle = engine.add_resource::<Material>(
-            Material::new("blue").albedo(Color::new(0.26, 0.87, 0.9)),
-        )?;
+        let blue_material_handle = engine
+            .add_resource::<Material>(Material::new("blue").albedo(Color::new(0.26, 0.87, 0.9)))?;
 
         let white_material_handle = engine.add_resource::<Material>(Material::new("white"))?;
 
@@ -203,15 +201,10 @@ impl PillGame for Game {
             .with_component(
                 TransformComponent::builder()
                     .position(Vector3f::new(0.0, 0.0, -30.0))
-                    .rotation(Vector3f::new(0.0, 0.0, 0.0))
+                    .rotation(Vector3f::new(0.0, 180.0, 0.0))
                     .build(),
             )
-            .with_component(
-                CameraComponent::builder()
-                    .enabled(true)
-                    .fov(60.0)
-                    .build(),
-            )
+            .with_component(CameraComponent::builder().enabled(true).fov(60.0).build())
             .with_component(CameraMovementComponent {
                 orbit_speed: 60.0,
                 zoom_speed: 5.0,
@@ -487,7 +480,8 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         transform_transform.set_position(Vector3f::new(x_position, delta_y, z_position + delta_z));
 
         // Set rotation
-        transform_transform.set_rotation(Vector3f::new(0.0, -angle - 90.0, 0.0));
+        // Cameras look down −Z, hence 90 rather than −90
+        transform_transform.set_rotation(Vector3f::new(0.0, 90.0 - angle, 0.0));
     }
 
     Ok(())

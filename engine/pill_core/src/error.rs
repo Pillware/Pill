@@ -101,6 +101,10 @@ pub enum EngineError<'a> {
     #[error("Cannot add {} {}. Maximum number of resources reached. \n\nSource: ", "Resource".general_object_style(), .0.specific_object_style())]
     ResourceLimitReached(String),
 
+    // Material textures
+    #[error("Cannot set {} of type {} to slot {} of type {}", "Texture".specific_object_style(), .0.name_style(), .1.name_style(), .2.name_style())]
+    WrongTextureType(String, String, String),
+
     // Timer
     #[error("Timer context {} is invalid", .0.name_style())]
     InvalidTimerContext(String),

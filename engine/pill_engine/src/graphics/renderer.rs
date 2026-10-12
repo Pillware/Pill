@@ -109,9 +109,9 @@ impl<'a> WorldQuery<'a> {
     }
 }
 
-/// Direction the camera looks at: +Z rotated by the transform (degrees, XYZ order).
+/// Direction the camera looks at: the transform's forward (−Z), same as get_forward_direction.
 pub fn camera_forward(transform: &TransformComponent) -> Vector3f {
-    transform.rotation_matrix() * Vector3f::Z
+    transform.get_forward_direction()
 }
 
 /// Right-handed perspective view-projection of a camera entity.
@@ -168,8 +168,14 @@ pub struct TextureData<'a> {
 pub struct RendererTargetDesc {
     pub name: String,
     pub format: wgpu::TextureFormat,
-    pub width: u32,
-    pub height: u32,
+    pub size: TargetSize,
+}
+
+pub enum TargetSize {
+    /// Matches the surface and is rebuilt (same handle) when the window is resized.
+    Surface,
+    /// Fixed width and height.
+    Fixed(u32, u32),
 }
 
 pub struct Pipeline {
@@ -235,6 +241,9 @@ pub trait PillRenderer {
 
     /// Replaces the current pass chain; calls `Pass::init` on each new pass before storing it.
     fn set_passes(&mut self, passes: Vec<Box<dyn Pass>>) -> Result<()>;
+
+    /// Initializes `pass` and inserts it into the running chain before the tonemap pass.
+    fn insert_pass(&mut self, pass: Box<dyn Pass>) -> Result<()>;
 
     /// Returns the current surface dimensions `(width, height)` in pixels.
     fn get_surface_size(&self) -> (u32, u32);

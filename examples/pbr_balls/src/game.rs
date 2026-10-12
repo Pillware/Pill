@@ -23,10 +23,8 @@ impl PillGame for Game {
             "specular_ibl",
             include_bytes!("../res/studio_specular_ibl.cooked_tex"),
         )?;
-        let brdf_lut_handle = engine.load_cooked_texture(
-            "brdf_lut",
-            include_bytes!("../res/brdf_lut.cooked_tex"),
-        )?;
+        let brdf_lut_handle =
+            engine.load_cooked_texture("brdf_lut", include_bytes!("../res/brdf_lut.cooked_tex"))?;
 
         let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
         render_state.background = Some(background_handle);
@@ -87,12 +85,7 @@ impl PillGame for Game {
                     .position(Vector3f::new(0.0, 0.0, 10.0))
                     .build(),
             )
-            .with_component(
-                CameraComponent::builder()
-                    .enabled(true)
-                    .fov(60.0)
-                    .build(),
-            )
+            .with_component(CameraComponent::builder().enabled(true).fov(60.0).build())
             .with_component(OrbitCamera {
                 yaw: 0.0,
                 pitch: 0.0,

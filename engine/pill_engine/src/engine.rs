@@ -108,18 +108,23 @@ impl Engine {
     fn create_default_resources(&mut self) -> Result<()> {
         // Register resources and their limits
 
-        let max_material_count = self
-            .config
-            .get_int("MAX_MATERIALS")
-            .unwrap_or(MAX_MATERIALS as i64) as usize;
+        // Renderer handles are packed into 8-bit render queue key fields
+        let max_material_count = limit_to_render_key(
+            "MAX_MATERIALS",
+            self.config
+                .get_int("MAX_MATERIALS")
+                .unwrap_or(MAX_MATERIALS as i64) as usize,
+        );
         let max_texture_count = self
             .config
             .get_int("MAX_TEXTURES")
             .unwrap_or(MAX_TEXTURES as i64) as usize;
-        let max_mesh_count = self
-            .config
-            .get_int("MAX_MESHES")
-            .unwrap_or(MAX_MESHES as i64) as usize;
+        let max_mesh_count = limit_to_render_key(
+            "MAX_MESHES",
+            self.config
+                .get_int("MAX_MESHES")
+                .unwrap_or(MAX_MESHES as i64) as usize,
+        );
         #[cfg(not(target_arch = "wasm32"))]
         let max_sound_count = self
             .config
@@ -533,15 +538,32 @@ impl Engine {
 
 // --- API ------------------------------------------------------------------
 
+/// Caps a resource count to what the render queue key's 8-bit index fields can address.
+fn limit_to_render_key(name: &str, count: usize) -> usize {
+    let limit = RENDER_QUEUE_KEY_MESH_INDEX.max as usize;
+    if count > limit {
+        error!(LogContext::Engine => "{} = {} exceeds the render queue key limit; using {}", name, count, limit);
+    }
+    count.min(limit)
+}
+
 /// Pill Engine game API
 impl Engine {
     // --- Renderer API ---
 
     /// Adds a game-defined scene pass, run after the engine's opaque PBR pass and before tonemapping.
     /// It renders into `RenderStateComponent::hdr_target` / `depth_target`.
-    /// Must be called before the first rendered frame (i.e. from `start()`).
-    pub fn add_render_pass(&mut self, pass: Box<dyn Pass>) {
-        self.custom_render_passes.push(pass);
+    pub fn add_render_pass(&mut self, pass: Box<dyn Pass>) -> Result<()> {
+        if self
+            .get_global_component::<RenderStateComponent>()?
+            .boot_done
+        {
+            self.renderer.insert_pass(pass)
+        } else {
+            // Picked up by default_pass_chain on the first frame
+            self.custom_render_passes.push(pass);
+            Ok(())
+        }
     }
 
     /// Creates a single-mip Rgba32Float GPU texture from f32 pixels.

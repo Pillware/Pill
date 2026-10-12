@@ -80,7 +80,7 @@ pub mod game {
         config::{DEPTH_TARGET_FORMAT, HDR_TARGET_FORMAT},
         graphics::{
             camera_forward, camera_view_projection, BufferDesc, FrameTarget, Pass, PillRenderer,
-            Pipeline, PipelineDesc, ShaderDesc, WorldQuery,
+            Pipeline, PipelineDesc, RendererTargetDesc, ShaderDesc, TargetSize, WorldQuery,
         },
         renderer::resources::{RendererMesh, RendererTexture, Vertex},
     };
@@ -134,7 +134,8 @@ mod internal_mod {
         graphics::{
             decompose_render_queue_key, BufferDesc, Pass, PassTextureHandle, PillRenderer,
             Pipeline, PipelineDesc, RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle,
-            RendererMeshHandle, RendererTargetDesc, RendererTextureHandle, ShaderDesc, WorldQuery,
+            RendererMeshHandle, RendererTargetDesc, RendererTextureHandle, ShaderDesc, TargetSize,
+            WorldQuery,
         },
         resources::{
             Material, MaterialHandle, Mesh, MeshData, MeshHandle, MeshVertex, ResourceLoader,
@@ -160,7 +161,8 @@ mod internal_mod {
         graphics::{
             decompose_render_queue_key, BufferDesc, Pass, PassTextureHandle, PillRenderer,
             Pipeline, PipelineDesc, RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle,
-            RendererMeshHandle, RendererTargetDesc, RendererTextureHandle, ShaderDesc, WorldQuery,
+            RendererMeshHandle, RendererTargetDesc, RendererTextureHandle, ShaderDesc, TargetSize,
+            WorldQuery,
         },
         resources::{
             Material, MaterialHandle, Mesh, MeshData, MeshHandle, MeshVertex, ResourceLoader,

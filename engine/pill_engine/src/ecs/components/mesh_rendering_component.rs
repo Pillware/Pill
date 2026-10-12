@@ -106,6 +106,10 @@ impl MeshRenderingComponent {
         self.mesh_handle = mesh_handle;
     }
 
+    pub(crate) fn set_material_handle(&mut self, material_handle: Option<MaterialHandle>) {
+        self.material_handle = material_handle;
+    }
+
     pub(crate) fn update_render_queue_key(
         &mut self,
         resource_manager: &ResourceManager,

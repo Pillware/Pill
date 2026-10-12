@@ -41,6 +41,8 @@ impl PillGame for WebGame {
             .with_component(
                 TransformComponent::builder()
                     .position(Vector3f::new(0.0, 0.0, -5.0))
+                    // Cameras look down −Z; turn around to face the cube at the origin
+                    .rotation(Vector3f::new(0.0, 180.0, 0.0))
                     .build(),
             )
             .with_component(CameraComponent::builder().enabled(true).fov(60.0).build())

@@ -138,22 +138,23 @@ impl Pass for CartoonPass {
             byte_size: (std::mem::size_of::<PerDraw>() * MAX_CARTOON_ENTITIES) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         })?;
-        let frame_bind_group = renderer
-            .get_device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("cartoon_pass_frame_bind_group"),
-                layout: &pipeline.bind_group_layouts[BIND_GROUP_FRAME],
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: camera_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: per_draw_buffer.as_entire_binding(),
-                    },
-                ],
-            });
+        let frame_bind_group =
+            renderer
+                .get_device()
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("cartoon_pass_frame_bind_group"),
+                    layout: &pipeline.bind_group_layouts[BIND_GROUP_FRAME],
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: camera_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: per_draw_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
 
         self.state = Some(CartoonPassState {
             pipeline,
@@ -210,7 +211,11 @@ impl Pass for CartoonPass {
         let (camera, camera_transform) = world.active_camera()?;
         let view_projection = camera_view_projection(camera, camera_transform).to_cols_array_2d();
         let queue = renderer.get_queue();
-        queue.write_buffer(&state.camera_buffer, 0, bytemuck::bytes_of(&view_projection));
+        queue.write_buffer(
+            &state.camera_buffer,
+            0,
+            bytemuck::bytes_of(&view_projection),
+        );
         queue.write_buffer(
             &state.per_draw_buffer,
             0,

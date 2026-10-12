@@ -33,7 +33,7 @@ impl PillGame for Game {
         engine.add_system("rotation_system", rotation_system)?;
 
         // Add render passes
-        engine.add_render_pass(Box::new(CartoonPass::new()));
+        engine.add_render_pass(Box::new(CartoonPass::new()))?;
 
         // --- Create resources ---
 
@@ -77,14 +77,11 @@ impl PillGame for Game {
             .with_component(
                 TransformComponent::builder()
                     .position(Vector3f::new(0.0, 0.0, -3.0))
+                    // Cameras look down −Z; turn around to face the scene at the origin
+                    .rotation(Vector3f::new(0.0, 180.0, 0.0))
                     .build(),
             )
-            .with_component(
-                CameraComponent::builder()
-                    .enabled(true)
-                    .fov(60.0)
-                    .build(),
-            )
+            .with_component(CameraComponent::builder().enabled(true).fov(60.0).build())
             .build();
 
         // // Create chimpanzini bananini entity

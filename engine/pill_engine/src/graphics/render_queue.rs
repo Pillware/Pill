@@ -57,15 +57,30 @@ pub fn compose_render_queue_key(
         let renderer_mesh_handle =
             resource_manager.get_resource_handle::<RendererMesh>(&mesh.name)?;
 
-        Ok(((renderer_material_handle.data().index as RenderQueueKey)
-            << RENDER_QUEUE_KEY_MATERIAL_INDEX.mask_shift)
-            | ((renderer_material_handle.data().version.get() as RenderQueueKey)
-                << RENDER_QUEUE_KEY_MATERIAL_VERSION.mask_shift)
-            | ((renderer_mesh_handle.data().index as RenderQueueKey)
-                << RENDER_QUEUE_KEY_MESH_INDEX.mask_shift)
-            | ((renderer_mesh_handle.data().version.get() as RenderQueueKey)
-                << RENDER_QUEUE_KEY_MESH_VERSION.mask_shift))
+        let material = renderer_material_handle.data();
+        let mesh = renderer_mesh_handle.data();
+        Ok(
+            pack_field(&RENDER_QUEUE_KEY_MATERIAL_INDEX, material.index.into())?
+                | pack_field(
+                    &RENDER_QUEUE_KEY_MATERIAL_VERSION,
+                    material.version.get().into(),
+                )?
+                | pack_field(&RENDER_QUEUE_KEY_MESH_INDEX, mesh.index.into())?
+                | pack_field(&RENDER_QUEUE_KEY_MESH_VERSION, mesh.version.get().into())?,
+        )
     }
+}
+
+/// Shifts `value` into its field; values above the field's max would corrupt neighbouring fields.
+fn pack_field(field: &RenderQueueFieldDesc, value: RenderQueueKey) -> Result<RenderQueueKey> {
+    if value > field.max {
+        return Err(format!(
+            "Render queue key field overflow: {value} > {} (lower MAX_MATERIALS / MAX_MESHES)",
+            field.max
+        )
+        .into());
+    }
+    Ok(value << field.mask_shift)
 }
 
 // --- Decompose ---

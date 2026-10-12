@@ -7,7 +7,7 @@ use crate::{
     engine::Engine,
     graphics::{
         Pass, PassPBROpaque, PassTonemap, RendererMaterialHandle, RendererTargetDesc,
-        RendererTextureHandle,
+        RendererTextureHandle, TargetSize,
     },
     renderer::resources::RendererTexture,
     resources::{MaterialHandle, TextureHandle, TextureType},
@@ -119,18 +119,21 @@ pub const TONEMAP_FRAGMENT_SHADER: &str = include_str!("../res/shaders/tonemap_f
 /// Frame composition: opaque PBR → game-defined passes (`Engine::add_render_pass`) → tonemap → UI.
 /// Creates the shared HDR and depth targets and records them in `RenderStateComponent`.
 pub fn default_pass_chain(engine: &mut Engine) -> Result<Vec<Box<dyn Pass>>> {
-    let (width, height) = engine.renderer.get_surface_size();
     let hdr_target = engine.renderer.create_render_target(RendererTargetDesc {
         name: HDR_TARGET_NAME.to_string(),
         format: HDR_TARGET_FORMAT,
-        width,
-        height,
+        size: TargetSize::Surface,
     })?;
     let depth_target = engine.renderer.create_depth_texture(DEPTH_TARGET_NAME)?;
 
     let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
     render_state.hdr_target = hdr_target;
     render_state.depth_target = depth_target;
+    let initial_ibl = [
+        render_state.ibl_diffuse,
+        render_state.ibl_specular,
+        render_state.ibl_brdf_lut,
+    ];
 
     // At most one mesh instance per entity
     let max_instances = engine
@@ -141,6 +144,7 @@ pub fn default_pass_chain(engine: &mut Engine) -> Result<Vec<Box<dyn Pass>>> {
         hdr_target,
         depth_target,
         max_instances,
+        initial_ibl,
     ))];
     passes.append(&mut engine.custom_render_passes);
     passes.push(Box::new(PassTonemap::new(hdr_target)));
@@ -201,8 +205,8 @@ pub const DEFAULT_EQUIRECT_FALLBACK_PIXEL: &[u8] = &[
 ];
 // 1×1 Rgba8Unorm neutral-gray — IBL diffuse/specular fallback: RGBA = [77, 77, 77, 255] ≈ 0.3 linear
 pub const DEFAULT_IBL_FALLBACK_PIXEL: &[u8] = &[77, 77, 77, 255];
-// 1×1 Rgba8Unorm — BRDF LUT fallback: R=F0_scale=0.5, G=F0_bias=0.5
-pub const DEFAULT_BRDF_LUT_FALLBACK_PIXEL: &[u8] = &[128, 128, 0, 255];
+// 1×1 Rgba8Unorm — BRDF LUT fallback: scale 1, bias 0, so specular IBL = prefiltered · F0
+pub const DEFAULT_BRDF_LUT_FALLBACK_PIXEL: &[u8] = &[255, 0, 0, 255];
 
 pub const DEFAULT_MATERIAL_NAME: &str = "pill_engine_default_material";
 

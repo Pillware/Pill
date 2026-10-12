@@ -245,8 +245,10 @@ fn write_cooked_tex(
         Format::R8G8B8 => Cow::Owned(
             image
                 .pixels
-                .chunks_exact(3)
-                .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255u8])
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .flat_map(|&[red, green, blue]| [red, green, blue, 255u8])
                 .collect(),
         ),
         format => bail!("{input:?}: {label}: unsupported GLB image format: {format:?}"),
@@ -312,7 +314,8 @@ fn compute_tangents(vertices: &mut [Vertex], indices: &[u32]) {
         if count > 0 {
             let inverse_count = 1.0 / count as f32;
             vertices[index].tangent = normalize3(scale3(tangent_sums[index], inverse_count));
-            vertices[index].bitangent = normalize3(scale3(bitangent_sums[index], inverse_count));
+            // glTF's V axis points down the image; negate so the bitangent matches cross(N, T)·w
+            vertices[index].bitangent = normalize3(scale3(bitangent_sums[index], -inverse_count));
         }
     }
 }

@@ -58,7 +58,8 @@ impl PillGame for Game {
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
             .position(Vector3f::new(0.0, 0.0, -8.0))
-            .rotation(Vector3f::new(0.0, 0.0, -20.0))
+            // Cameras look down −Z: turned around, which also mirrors the roll
+            .rotation(Vector3f::new(0.0, 180.0, 20.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
         let camera_component = CameraComponent::builder().enabled(true).build();

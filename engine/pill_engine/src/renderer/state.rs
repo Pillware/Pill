@@ -4,7 +4,7 @@ use crate::{
     ecs::{EntityHandle, Scene},
     graphics::{
         BufferDesc, FrameTarget, Pass, PassPBROpaque, PassTextureHandle, PillRenderer, Pipeline,
-        PipelineDesc, RendererTargetDesc, TextureData, WorldQuery,
+        PipelineDesc, RendererTargetDesc, TargetSize, TextureData, WorldQuery,
     },
     renderer::resources::{RendererMesh, RendererTexture, Vertex},
     resources::ResourceManager,
@@ -200,6 +200,18 @@ impl PillRenderer for Renderer {
         Ok(())
     }
 
+    fn insert_pass(&mut self, mut pass: Box<dyn Pass>) -> Result<()> {
+        pass.init(self)?;
+        let index = self
+            .state
+            .passes
+            .iter()
+            .position(|existing| existing.get_label() == "pass_tonemap")
+            .unwrap_or(self.state.passes.len());
+        self.state.passes.insert(index, pass);
+        Ok(())
+    }
+
     fn get_surface_size(&self) -> (u32, u32) {
         (
             self.state.surface_configuration.width,
@@ -302,21 +314,22 @@ impl PillRenderer for Renderer {
     }
 
     fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<PassTextureHandle> {
+        let (width, height) = match desc.size {
+            TargetSize::Surface => (
+                self.state.surface_configuration.width,
+                self.state.surface_configuration.height,
+            ),
+            TargetSize::Fixed(width, height) => (width, height),
+        };
         let texture = RendererTexture::new_render_target(
             &self.state.device,
             &desc.name,
-            desc.width,
-            desc.height,
+            width,
+            height,
             desc.format,
         )?;
         let handle = self.state.pass_textures.insert(texture);
-        // Targets created at the surface size follow it on resize
-        if (desc.width, desc.height)
-            == (
-                self.state.surface_configuration.width,
-                self.state.surface_configuration.height,
-            )
-        {
+        if let TargetSize::Surface = desc.size {
             self.state.surface_targets.push((
                 handle,
                 SurfaceTarget::Color {
@@ -628,11 +641,10 @@ impl State {
 /// Converts little-endian f32 texels to little-endian f16 (Rgba32Float → Rgba16Float data).
 fn f32_to_f16_bytes(bytes: &[u8]) -> Vec<u8> {
     bytes
-        .chunks_exact(4)
-        .flat_map(|value| {
-            let value = f32::from_le_bytes([value[0], value[1], value[2], value[3]]);
-            half::f16::from_f32(value).to_le_bytes()
-        })
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|&value| half::f16::from_f32(f32::from_le_bytes(value)).to_le_bytes())
         .collect()
 }
 

@@ -1,19 +1,59 @@
 use crate::{
-    ecs::{DeferredUpdateComponent, DeferredUpdateManagerPointer, DeferredUpdateResourceRequest},
+    ecs::{
+        DeferredUpdateComponent, DeferredUpdateManagerPointer, DeferredUpdateResourceRequest,
+        MeshRenderingComponent,
+    },
     engine::Engine,
-    resources::{Resource, ResourceStorage, TextureHandle},
+    resources::{Resource, ResourceStorage, TextureHandle, TextureType},
 };
 
 #[cfg(not(feature = "headless"))]
 use crate::{
+    graphics::RendererTextureHandle,
     renderer::resources::{MaterialParams, MaterialTextures, RendererMaterial, RendererTexture},
     resources::{ResourceManager, Texture},
 };
 
-use pill_core::{get_type_name, Color, PillSlotMapKey, PillStyle, PillTypeMapKey, Result};
+use pill_core::{
+    error, get_type_name, Color, EngineError, LogContext, PillSlotMapKey, PillStyle,
+    PillTypeMapKey, Result,
+};
 
 const DEFERRED_REQUEST_VARIANT_PARAMETERS: usize = 0;
 const DEFERRED_REQUEST_VARIANT_TEXTURES: usize = 1;
+
+// Texture slots: (name, texture type). Color and Emissive are both sRGB color and interchangeable;
+// Normal and MetallicRoughness are linear data and must match exactly.
+const ALBEDO_SLOT: (&str, TextureType) = ("albedo", TextureType::Color);
+const NORMAL_SLOT: (&str, TextureType) = ("normal", TextureType::Normal);
+const METALLIC_ROUGHNESS_SLOT: (&str, TextureType) =
+    ("metallic_roughness", TextureType::MetallicRoughness);
+const EMISSIVE_SLOT: (&str, TextureType) = ("emissive", TextureType::Emissive);
+
+fn is_color(texture_type: TextureType) -> bool {
+    matches!(texture_type, TextureType::Color | TextureType::Emissive)
+}
+
+/// Renderer texture for a slot, checking the texture exists and has the slot's type.
+#[cfg(not(feature = "headless"))]
+fn resolve_texture(
+    resource_manager: &ResourceManager,
+    handle: TextureHandle,
+    (slot_name, slot_type): (&str, TextureType),
+) -> Result<RendererTextureHandle> {
+    let texture = resource_manager.get_resource::<Texture>(&handle)?;
+    let compatible = texture.texture_type == slot_type
+        || (is_color(texture.texture_type) && is_color(slot_type));
+    if !compatible {
+        return Err(EngineError::WrongTextureType(
+            format!("{:?}", texture.texture_type),
+            slot_name.to_string(),
+            format!("{slot_type:?}"),
+        )
+        .into());
+    }
+    resource_manager.get_resource_handle::<RendererTexture>(&texture.name)
+}
 
 // --- Material ---
 
@@ -182,23 +222,49 @@ impl Material {
         &self,
         resource_manager: &ResourceManager,
     ) -> Result<MaterialTextures> {
-        let resolve = |handle: Option<TextureHandle>| -> Result<_> {
-            match handle {
-                Some(handle) => {
-                    let texture_name = &resource_manager.get_resource::<Texture>(&handle)?.name;
-                    Ok(Some(
-                        resource_manager.get_resource_handle::<RendererTexture>(texture_name)?,
-                    ))
+        let [base_color, normal, metallic_roughness, emissive] =
+            self.texture_slots().map(|(handle, slot_type)| {
+                handle
+                    .map(|handle| resolve_texture(resource_manager, handle, slot_type))
+                    .transpose()
+            });
+        Ok(MaterialTextures {
+            base_color: base_color?,
+            normal: normal?,
+            metallic_roughness: metallic_roughness?,
+            emissive: emissive?,
+        })
+    }
+
+    fn texture_slots(&self) -> [(Option<TextureHandle>, (&'static str, TextureType)); 4] {
+        [
+            (self.albedo_texture, ALBEDO_SLOT),
+            (self.normal_texture, NORMAL_SLOT),
+            (self.metallic_roughness_texture, METALLIC_ROUGHNESS_SLOT),
+            (self.emissive_texture, EMISSIVE_SLOT),
+        ]
+    }
+
+    /// Empties slots whose texture is missing or of the wrong type, so one bad `set_*_texture`
+    /// call doesn't block later texture updates.
+    #[cfg(not(feature = "headless"))]
+    fn clear_invalid_texture_slots(&mut self, resource_manager: &ResourceManager) {
+        let material_name = self.name.clone();
+        let check = |slot: &mut Option<TextureHandle>, slot_info: (&str, TextureType)| {
+            if let Some(handle) = *slot {
+                if let Err(error) = resolve_texture(resource_manager, handle, slot_info) {
+                    error!(LogContext::Engine => "Material {} {} texture cleared: {}", material_name, slot_info.0, error);
+                    *slot = None;
                 }
-                None => Ok(None),
             }
         };
-        Ok(MaterialTextures {
-            base_color: resolve(self.albedo_texture)?,
-            normal: resolve(self.normal_texture)?,
-            metallic_roughness: resolve(self.metallic_roughness_texture)?,
-            emissive: resolve(self.emissive_texture)?,
-        })
+        check(&mut self.albedo_texture, ALBEDO_SLOT);
+        check(&mut self.normal_texture, NORMAL_SLOT);
+        check(
+            &mut self.metallic_roughness_texture,
+            METALLIC_ROUGHNESS_SLOT,
+        );
+        check(&mut self.emissive_texture, EMISSIVE_SLOT);
     }
 
     /// Rebuilds the GPU texture bind group from the current texture slots.
@@ -283,7 +349,10 @@ impl Resource for Material {
             }
             DEFERRED_REQUEST_VARIANT_TEXTURES => {
                 #[cfg(not(feature = "headless"))]
-                self.rebuild_renderer_textures(engine)?;
+                {
+                    self.clear_invalid_texture_slots(&engine.resource_manager);
+                    self.rebuild_renderer_textures(engine)?;
+                }
             }
             _ => {
                 panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
@@ -294,12 +363,28 @@ impl Resource for Material {
     }
 
     #[cfg_attr(feature = "headless", allow(unused_variables))]
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) -> Result<()> {
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
         // Destroy renderer counterpart
         #[cfg(not(feature = "headless"))]
         engine
             .resource_manager
             .remove_resource_by_name::<RendererMaterial>(&self.name)?;
+
+        // Components using this material fall back to the default material
+        for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            if let Ok(iter) = scene.get_one_component_iterator_mut::<MeshRenderingComponent>() {
+                for (_entity_handle, mesh_rendering_component) in iter {
+                    let uses_material = mesh_rendering_component
+                        .material_handle
+                        .is_some_and(|handle| handle.data() == self_handle.data());
+                    if uses_material {
+                        mesh_rendering_component.set_material_handle(None);
+                        mesh_rendering_component
+                            .update_render_queue_key(&engine.resource_manager)?;
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }

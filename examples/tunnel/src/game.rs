@@ -253,6 +253,8 @@ impl PillGame for WebGame {
             .with_component(
                 TransformComponent::builder()
                     .position(Vector3f::new(0.0, 0.0, CAMERA_POSITION_Z))
+                    // Cameras look down −Z; turn around to look along +Z into the tunnel
+                    .rotation(Vector3f::new(0.0, 180.0, 0.0))
                     .build(),
             )
             .with_component(

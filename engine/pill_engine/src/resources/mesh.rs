@@ -110,13 +110,17 @@ fn load_cooked_mesh(bytes: &[u8]) -> Result<MeshData> {
     // include_bytes! data is only 1-byte aligned, so collect through Vec<u32>
     // (which allocates at 4-byte alignment) before casting to MeshVertex / u32.
     let vertex_u32s: Vec<u32> = vertex_bytes
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&bytes| u32::from_le_bytes(bytes))
         .collect();
     let vertices: Vec<MeshVertex> = bytemuck::cast_slice(&vertex_u32s).to_vec();
     let indices: Vec<u32> = index_bytes
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&bytes| u32::from_le_bytes(bytes))
         .collect();
     Ok(MeshData { vertices, indices })
 }

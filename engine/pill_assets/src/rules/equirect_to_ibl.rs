@@ -81,9 +81,10 @@ impl Equirect {
         let height = u32::from_le_bytes(data[12..16].try_into().unwrap());
         let pixels = if version == 2 {
             // v2: Rgba32Float (4 bytes per channel, f32 LE)
-            data[16..]
-                .chunks_exact(4)
-                .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+            let (texels, _) = data[16..].as_chunks::<4>();
+            texels
+                .iter()
+                .map(|&bytes| f32::from_le_bytes(bytes))
                 .collect()
         } else {
             // v1: Rgba8UnormSrgb — decode to linear f32 at load time

@@ -9,7 +9,7 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextureType {
     Color,
     Normal,
@@ -82,18 +82,29 @@ pub(crate) fn parse_cooked_tex(bytes: &[u8]) -> Result<CookedTexture<'_>> {
         }
         other => return Err(invalid(&format!("unsupported version {other}"))),
     };
+    // Validate the header before sizing anything from it (files can be truncated or corrupt)
+    if width == 0 || height == 0 {
+        return Err(invalid("zero width or height"));
+    }
+    let max_mip_count = 32 - width.max(height).leading_zeros();
+    if mip_count == 0 || mip_count > max_mip_count {
+        return Err(invalid(&format!(
+            "invalid mip count {mip_count} for {width}x{height}"
+        )));
+    }
     let bytes_per_texel = format.block_copy_size(None).unwrap() as usize;
 
     let mut mips = Vec::with_capacity(mip_count as usize);
-    let mut offset = data_offset;
+    let mut offset: usize = data_offset;
     for mip in 0..mip_count {
-        let mip_bytes =
-            (width >> mip).max(1) as usize * (height >> mip).max(1) as usize * bytes_per_texel;
-        let mip_data = bytes
-            .get(offset..offset + mip_bytes)
+        let mip_data = ((width >> mip).max(1) as usize)
+            .checked_mul((height >> mip).max(1) as usize)
+            .and_then(|texels| texels.checked_mul(bytes_per_texel))
+            .and_then(|mip_bytes| offset.checked_add(mip_bytes))
+            .and_then(|end| bytes.get(offset..end))
             .ok_or_else(|| invalid("pixel data shorter than header declares"))?;
+        offset += mip_data.len();
         mips.push(mip_data);
-        offset += mip_bytes;
     }
 
     Ok(CookedTexture {
@@ -282,5 +293,42 @@ impl Resource for Texture {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_cooked_tex;
+
+    fn rtex_v4(width: u32, height: u32, mip_count: u32, payload_bytes: usize) -> Vec<u8> {
+        let mut bytes = b"RTEX".to_vec();
+        for value in [4, width, height, mip_count] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.resize(bytes.len() + payload_bytes, 0);
+        bytes
+    }
+
+    #[test]
+    fn v4_mip_count_0_is_rejected() {
+        assert!(parse_cooked_tex(&rtex_v4(4, 4, 0, 256)).is_err());
+    }
+
+    #[test]
+    fn v4_mip_count_u32_max_is_rejected() {
+        assert!(parse_cooked_tex(&rtex_v4(4, 4, u32::MAX, 256)).is_err());
+    }
+
+    #[test]
+    fn v4_4x4_with_3_mips_parses_all_levels() {
+        // 4x4 + 2x2 + 1x1 Rgba32Float texels
+        let bytes = rtex_v4(4, 4, 3, (16 + 4 + 1) * 16);
+        let cooked = parse_cooked_tex(&bytes).unwrap();
+        assert_eq!(cooked.mips.len(), 3);
+    }
+
+    #[test]
+    fn v4_truncated_payload_is_rejected() {
+        assert!(parse_cooked_tex(&rtex_v4(4, 4, 3, 16 * 16)).is_err());
     }
 }

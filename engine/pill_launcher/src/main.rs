@@ -454,24 +454,11 @@ fn delete_cooked_files_recursive(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn run_asset_pipeline(res_dir: &Path, force_rebuild: bool) -> Result<()> {
-    if force_rebuild {
-        println!("Force-rebuild: deleting cooked files under {}...", res_dir.display());
-        delete_cooked_files_recursive(res_dir)?;
-    }
-    let pipeline = pill_assets::Pipeline {
-        root: res_dir.to_path_buf(),
-        rules: pill_assets::default_rules(),
-    };
-    let stats = pipeline.run().context("Asset pipeline failed")?;
-    println!(
-        "Assets: discovered={} rebuilt={} skipped={} (root: {})",
-        stats.discovered.len(),
-        stats.rebuilt.len(),
-        stats.skipped.len(),
-        res_dir.display()
-    );
-    Ok(())
+/// Deletes the game's cooked files so the next `cook_assets` rebuilds all of them.
+fn delete_cooked_assets(game_project_directory_path: &Path) -> Result<()> {
+    let res_dir = game_project_directory_path.join("res");
+    println!("Force-rebuild: deleting cooked files under {}...", res_dir.display());
+    delete_cooked_files_recursive(&res_dir)
 }
 
 // Render all *.puml under <crate>/docs/uml into <crate>/docs/uml_out as SVGs
@@ -1324,9 +1311,9 @@ fn run_app() -> Result<()> {
                 .absolutize().context("Failed to absolutize game project directory path")?
                 .to_path_buf();
 
+            // The build cooks the assets again
             if force_rebuild {
-                run_asset_pipeline(&game_project_directory_path.join("res"), true)
-                    .context("Asset rebuild failed")?;
+                delete_cooked_assets(&game_project_directory_path)?;
             }
 
             match target {
@@ -1357,9 +1344,9 @@ fn run_app() -> Result<()> {
                 .absolutize().context("Failed to absolutize game project directory path")?
                 .to_path_buf();
 
+            // The build cooks the assets again
             if force_rebuild {
-                run_asset_pipeline(&game_project_directory_path.join("res"), true)
-                    .context("Asset rebuild failed")?;
+                delete_cooked_assets(&game_project_directory_path)?;
             }
 
             match target {
@@ -1423,8 +1410,10 @@ fn run_app() -> Result<()> {
             .context("Failed to absolutize project directory path")?
             .to_path_buf();
 
-            run_asset_pipeline(&project_dir.join("res"), force_rebuild)
-                .context("Asset pipeline failed")?;
+            if force_rebuild {
+                delete_cooked_assets(&project_dir)?;
+            }
+            cook_assets(&project_dir)?;
         }
         _ => {
             println!("Undefined action");

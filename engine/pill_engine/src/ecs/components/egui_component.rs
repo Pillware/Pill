@@ -17,6 +17,7 @@ use pill_core::{PillTypeMapKey, Timer, TimerRecord};
 use pill_core::{ErrorContext, Result};
 
 type DebugUiCallback = Arc<dyn Fn(&egui::Context) + Send + Sync + 'static>;
+type UiFunction = Box<dyn Fn(&egui::Context) + Send>;
 
 struct RegisteredUi {
     id: String,
@@ -53,7 +54,7 @@ fn format_timers(system_timers: &[(UpdatePhase, Vec<(String, Timer)>)]) -> Strin
 pub struct EguiComponent {
     pub egui_client: Arc<EguiClient>,
     collapsing_state: HashMap<String, bool>,
-    game_overlay: Option<Arc<dyn Fn(&egui::Context) + Send + Sync>>,
+    game_overlay: Option<DebugUiCallback>,
     registered_ui: Vec<RegisteredUi>,
 }
 
@@ -103,7 +104,7 @@ impl EguiComponent {
             .collect()
     }
 
-    pub fn get_ui(engine: &mut Engine) -> Result<Box<dyn Fn(&egui::Context) + Send>> {
+    pub fn get_ui(engine: &mut Engine) -> Result<UiFunction> {
         let game_overlay = engine
             .get_global_component::<EguiComponent>()
             .ok()
@@ -161,7 +162,7 @@ impl EguiComponent {
             .get_global_component::<EguiComponent>()?
             .snapshot_registered_ui();
 
-        let ui: Box<dyn Fn(&egui::Context) + Send> = Box::new(move |ui: &egui::Context| {
+        let ui: UiFunction = Box::new(move |ui: &egui::Context| {
             if let Some(ref overlay) = game_overlay {
                 overlay(ui);
             }

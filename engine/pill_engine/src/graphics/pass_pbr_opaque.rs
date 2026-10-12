@@ -1,7 +1,6 @@
 use crate::config::{
-    BACKGROUND_FRAGMENT_SHADER, BACKGROUND_VERTEX_SHADER, DEFAULT_BRDF_LUT_FALLBACK_PIXEL,
-    DEFAULT_EQUIRECT_FALLBACK_PIXEL, DEFAULT_IBL_FALLBACK_PIXEL, DEPTH_TARGET_FORMAT,
-    HDR_TARGET_FORMAT, PBR_OPAQUE_FRAGMENT_SHADER, PBR_OPAQUE_VERTEX_SHADER,
+    BACKGROUND_FRAGMENT_SHADER, BACKGROUND_VERTEX_SHADER, DEFAULT_EQUIRECT_FALLBACK_PIXEL,
+    DEPTH_TARGET_FORMAT, HDR_TARGET_FORMAT, PBR_OPAQUE_FRAGMENT_SHADER, PBR_OPAQUE_VERTEX_SHADER,
 };
 use crate::{
     ecs::{
@@ -124,6 +123,7 @@ struct PassPBROpaqueState {
     pipeline: Pipeline,
     ibl_sampler: wgpu::Sampler,
     prefilter_sampler: wgpu::Sampler,
+    brdf_lut_sampler: wgpu::Sampler,
     per_draw_buffer: wgpu::Buffer,
     per_draw_bind_group: wgpu::BindGroup,
     bg: BgSubState,
@@ -143,6 +143,7 @@ fn build_globals_bind_group(
     brdf_lut_view: &wgpu::TextureView,
     ibl_sampler: &wgpu::Sampler,
     prefilter_sampler: &wgpu::Sampler,
+    brdf_lut_sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("pass_pbr_opaque_globals_bind_group"),
@@ -174,7 +175,7 @@ fn build_globals_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 6,
-                resource: wgpu::BindingResource::Sampler(ibl_sampler),
+                resource: wgpu::BindingResource::Sampler(brdf_lut_sampler),
             },
         ],
     })
@@ -215,6 +216,8 @@ pub struct PassPBROpaque {
     depth_target: PassTextureHandle,
     // Per-draw storage capacity; at most one instance per entity
     max_instances: usize,
+    // [diffuse, specular, brdf_lut] for the first frame's bind group
+    initial_ibl: [PassTextureHandle; 3],
     capacity_warned: bool,
     groups_buffer: Vec<GroupCmd>,
     staging_buffer: Vec<u8>,
@@ -223,17 +226,20 @@ pub struct PassPBROpaque {
 
 impl PassPBROpaque {
     /// Creates the pass; `Pass::init` must run before the first frame.
-    /// `max_instances` sizes the per-draw buffer (the engine passes its entity limit).
+    /// `max_instances` sizes the per-draw buffer (the engine passes its entity limit);
+    /// `initial_ibl` is [diffuse, specular, brdf_lut], normally RenderStateComponent's handles.
     pub fn new(
         color_target: PassTextureHandle,
         depth_target: PassTextureHandle,
         max_instances: usize,
+        initial_ibl: [PassTextureHandle; 3],
     ) -> Self {
         let max_instances = max_instances.max(1);
         Self {
             color_target,
             depth_target,
             max_instances,
+            initial_ibl,
             capacity_warned: false,
             groups_buffer: Vec::new(),
             staging_buffer: Vec::with_capacity(max_instances * PER_DRAW_STRIDE_BYTES),
@@ -414,35 +420,9 @@ impl Pass for PassPBROpaque {
             })
         };
 
-        // 1px neutral fallbacks for the initial IBL bind group; draw() rebuilds it from
-        // RenderStateComponent's handles whenever they change.
-        let irr_h = renderer.create_texture_from_pixels(
-            "diffuse_ibl_fallback",
-            TextureData {
-                mips: &[DEFAULT_IBL_FALLBACK_PIXEL],
-                width: 1,
-                height: 1,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-            },
-        )?;
-        let pre_h = renderer.create_texture_from_pixels(
-            "specular_ibl_fallback",
-            TextureData {
-                mips: &[DEFAULT_IBL_FALLBACK_PIXEL],
-                width: 1,
-                height: 1,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-            },
-        )?;
-        let lut_h = renderer.create_texture_from_pixels(
-            "brdf_lut_fallback",
-            TextureData {
-                mips: &[DEFAULT_BRDF_LUT_FALLBACK_PIXEL],
-                width: 1,
-                height: 1,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-            },
-        )?;
+        // Initial IBL bind group from the handles given at construction; draw() rebuilds it when
+        // RenderStateComponent's handles change.
+        let [irr_h, pre_h, lut_h] = self.initial_ibl;
         let irradiance_view = renderer
             .get_texture_view(irr_h)
             .expect("ibl_diffuse fallback invalid");
@@ -468,6 +448,19 @@ impl Pass for PassPBROpaque {
             })
         };
 
+        // The LUT's U axis is NdotV, not an angle: clamp instead of wrapping
+        let brdf_lut_sampler = renderer
+            .get_device()
+            .create_sampler(&wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                ..Default::default()
+            });
+
         let globals_bind_group = build_globals_bind_group(
             renderer.get_device(),
             &pipeline.bind_group_layouts[MATERIAL_BIND_GROUP_GLOBALS],
@@ -477,6 +470,7 @@ impl Pass for PassPBROpaque {
             &brdf_lut_view,
             &ibl_sampler,
             &prefilter_sampler,
+            &brdf_lut_sampler,
         );
         let cached_ibl = [irr_h, pre_h, lut_h];
 
@@ -602,6 +596,7 @@ impl Pass for PassPBROpaque {
             pipeline,
             ibl_sampler,
             prefilter_sampler,
+            brdf_lut_sampler,
             per_draw_buffer,
             per_draw_bind_group,
             bg,
@@ -651,6 +646,7 @@ impl Pass for PassPBROpaque {
                     &brdf_lut_view,
                     &state.ibl_sampler,
                     &state.prefilter_sampler,
+                    &state.brdf_lut_sampler,
                 );
                 state.cached_ibl = ibl;
             }
