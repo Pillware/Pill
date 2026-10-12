@@ -1,0 +1,18 @@
+# Fixed CPU baseline per platform: x86-64-v3 (AVX2, Haswell+/Zen+), apple-m1 (all Apple Silicon).
+# Use "native" for a single-machine build; wasm32 has none (target-cpu breaks wasm).
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "target-cpu=apple-m1"]
+
+# ARMv8-A baseline (NEON is always available on aarch64); covers Raspberry Pi 4+ and servers
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=generic"]

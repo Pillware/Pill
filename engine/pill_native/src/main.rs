@@ -32,7 +32,6 @@ struct WindowInit {
 struct FileWatchers {
     engine_core_source_files_watcher: FileWatcher,
     engine_engine_source_files_watcher: FileWatcher,
-    engine_renderer_source_files_watcher: FileWatcher,
     dynamic_libraries_files_watcher: FileWatcher,
     game_project_source_files_watcher: FileWatcher,
     game_project_resources_files_watcher: FileWatcher,
@@ -140,9 +139,7 @@ fn workspace_includes_game(
 }
 
 fn looks_like_engine_workspace(path: &Path) -> bool {
-    path.join("pill_core").exists()
-        && path.join("pill_engine").exists()
-        && path.join("pill_renderer").exists()
+    path.join("pill_core").exists() && path.join("pill_engine").exists()
 }
 
 fn engine_workspace_from_game_manifest(game_project_directory_path: &Path) -> Option<PathBuf> {
@@ -594,7 +591,6 @@ fn configure_logging(config: &Config) {
     //     .filter_module("pill_core", log_level)
     //     .filter_module("pill_native", log_level)
     //     .filter_module("pill_engine", log_level)
-    //     .filter_module("pill_renderer", log_level)
     //     .filter_module("pill_game",       log_level)
     //     .init();
 }
@@ -784,13 +780,6 @@ fn check_and_reload(
         info!(LogContext::HotReload => "Engine pill_engine source file change detected: {:?}", paths);
         engine_source_changed.extend(paths);
     }
-    if let Some(paths) = file_watchers
-        .engine_renderer_source_files_watcher
-        .get_changes()
-    {
-        info!(LogContext::HotReload => "Engine pill_renderer source file change detected: {:?}", paths);
-        engine_source_changed.extend(paths);
-    }
 
     if let Some(paths) = file_watchers
         .game_project_resources_files_watcher
@@ -929,10 +918,6 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     let engine_engine_source_files_watcher =
         FileWatcher::new(engine_source_path).set_recursive(true);
 
-    let renderer_source_path = engine_workspace_directory_path.join("pill_renderer/src");
-    let engine_renderer_source_files_watcher =
-        FileWatcher::new(renderer_source_path).set_recursive(true);
-
     let dynamic_libraries_files_watcher =
         FileWatcher::new(project_paths.build_data_directory_path.clone());
     let game_project_source_files_watcher =
@@ -943,7 +928,6 @@ fn create_file_watchers(project_paths: &ProjectPaths) -> FileWatchers {
     FileWatchers {
         engine_core_source_files_watcher,
         engine_engine_source_files_watcher,
-        engine_renderer_source_files_watcher,
         dynamic_libraries_files_watcher,
         game_project_source_files_watcher,
         game_project_resources_files_watcher,
@@ -1399,10 +1383,8 @@ mod tests {
         let engine_b = root.join("Pill-Engine-Upstream").join("engine");
         fs::create_dir_all(engine_a.join("pill_core")).unwrap();
         fs::create_dir_all(engine_a.join("pill_engine")).unwrap();
-        fs::create_dir_all(engine_a.join("pill_renderer")).unwrap();
         fs::create_dir_all(engine_b.join("pill_core")).unwrap();
         fs::create_dir_all(engine_b.join("pill_engine")).unwrap();
-        fs::create_dir_all(engine_b.join("pill_renderer")).unwrap();
 
         fs::write(
             engine_a.join("Cargo.toml"),

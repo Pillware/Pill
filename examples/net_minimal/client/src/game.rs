@@ -79,19 +79,18 @@ impl PillGame for Game {
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
-        let pill_material = Material::builder("pill")
-            .texture("color", pill_color_texture_handle)?
-            .texture("normal", pill_normal_texture_handle)?
-            .color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
-            .scalar_parameter("specularity", 0.5)?
-            .build();
+        let pill_material = Material::new("pill")
+            .albedo_texture(pill_color_texture_handle)
+            .normal_texture(pill_normal_texture_handle)
+            .roughness(0.5);
         let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
 
         // Create camera entity
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
             .position(Vector3f::new(0.0, 0.0, -8.0))
-            .rotation(Vector3f::new(0.0, 0.0, -20.0))
+            // Cameras look down −Z: turned around, which also mirrors the roll
+            .rotation(Vector3f::new(0.0, 180.0, 20.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
         let camera_component = CameraComponent::builder().enabled(true).build();
@@ -286,10 +285,9 @@ fn spawn_player(
         let mat = match engine.get_resource_handle::<Material>("pill_other") {
             Ok(h) => h,
             Err(_) => engine.add_resource::<Material>(
-                Material::builder("pill_other")
-                    .color_parameter("tint", Color::new(r, g, b))?
-                    .scalar_parameter("specularity", 0.5)?
-                    .build(),
+                Material::new("pill_other")
+                    .albedo(Color::new(r, g, b))
+                    .roughness(0.5),
             )?,
         };
 

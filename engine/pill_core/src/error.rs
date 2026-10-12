@@ -101,17 +101,9 @@ pub enum EngineError<'a> {
     #[error("Cannot add {} {}. Maximum number of resources reached. \n\nSource: ", "Resource".general_object_style(), .0.specific_object_style())]
     ResourceLimitReached(String),
 
-    // Material textures and parameters
-    #[error("Cannot set {} to {}. Accepted range is {}", "RenderingOrder".specific_object_style(), .0.name_style(), .1.name_style())]
-    WrongRenderingOrder(String, String),
+    // Material textures
     #[error("Cannot set {} of type {} to slot {} of type {}", "Texture".specific_object_style(), .0.name_style(), .1.name_style(), .2.name_style())]
     WrongTextureType(String, String, String),
-    #[error("{} slot {} of type {} does not exist in {} {}", "MaterialParameter".specific_object_style(), .0.name_style(), .1.specific_object_style(), "Material".specific_object_style(), .2.name_style())]
-    MaterialParameterSlotNotFound(String, String, String),
-    #[error("{} slot {} does not exist", "MaterialTexture".specific_object_style(), .0.name_style())]
-    MaterialTextureSlotNotFound(String),
-    #[error("Invalid {} for {} in slot {}", "Handle".specific_object_style(), "Texture".specific_object_style(), .0.name_style())]
-    InvalidTextureHandleForSlot(String),
 
     // Timer
     #[error("Timer context {} is invalid", .0.name_style())]

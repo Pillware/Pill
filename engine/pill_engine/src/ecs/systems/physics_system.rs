@@ -213,8 +213,6 @@ fn sync_physics_to_transforms(engine: &mut Engine, scene_handle: SceneHandle) ->
                     rotation.1.to_degrees(),
                     rotation.2.to_degrees(),
                 ));
-
-                transform.matrix_update_required = true;
             }
         }
     }

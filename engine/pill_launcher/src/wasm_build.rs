@@ -149,7 +149,6 @@ fn embed_game_config(game_dir: &Path, scratch_pill_web_app_dir: &Path) -> Result
 fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) -> Result<()> {
     let engine = get_path(Location::EngineCrates);
     let pill_engine = cargo_path(&engine.join("pill_engine"));
-    let pill_renderer = cargo_path(&engine.join("pill_renderer"));
     let pill_core = cargo_path(&engine.join("pill_core"));
     let pill_web = cargo_path(&engine.join("pill_web"));
     let pill_game = cargo_path(game_dir);
@@ -161,8 +160,6 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
             format!(
                 "pill_engine = {{ path = \"{pill_engine}\", features = [\"game\", \"internal\"] }}"
             )
-        } else if t.starts_with("pill_renderer ") || t.starts_with("pill_renderer=") {
-            format!("pill_renderer = {{ path = \"{pill_renderer}\" }}")
         } else if t.starts_with("pill_core ") || t.starts_with("pill_core=") {
             format!("pill_core = {{ path = \"{pill_core}\" }}")
         } else if t.starts_with("pill_web ") || t.starts_with("pill_web=") {
@@ -172,15 +169,8 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
         }
     })?;
 
-    // Append three things the committed template omits:
-    //  - pill_game dep (injected per-game, not in the template)
-    //  - [workspace] + resolver = "2" so cargo doesn't walk up into the game's
-    //    parent workspace; resolver matches engine/Cargo.toml (wgpu feature
-    //    unification is sensitive to resolver version)
-    //  - [profile.release] + wasm-pack's wasm-opt flags for Tier 1 size opt.
-    //    `strip` is NOT set here: the size report analyzes the pre-opt wasm
-    //    and needs the function-names subsection. wasm-opt strips the shipped
-    //    binary via --strip-debug --strip-producers.
+    // Append what the template omits: the pill_game dep, [workspace] (stops cargo walking up;
+    // resolver matches engine), and the size-optimized release profile.
     let mut f = OpenOptions::new()
         .append(true)
         .open(&manifest)
@@ -195,8 +185,11 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
             "lto = \"fat\"\n",
             "codegen-units = 1\n",
             "panic = \"abort\"\n",
+            "strip = true\n",
             "\n[package.metadata.wasm-pack.profile.release]\n",
             "wasm-opt = [\"-Oz\", \"--strip-debug\", \"--strip-producers\", \"--enable-nontrapping-float-to-int\", \"--enable-bulk-memory\", \"--enable-sign-ext\", \"--enable-mutable-globals\", \"--enable-reference-types\"]\n",
+            "\n[target.'cfg(target_arch = \"wasm32\")'.dependencies]\n",
+            "lol_alloc = \"0.4\"\n",
         ),
         pill_game = pill_game,
     )

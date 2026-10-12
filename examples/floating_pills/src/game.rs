@@ -69,6 +69,9 @@ impl PillGame for Game {
         // Create scene
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;
+        engine
+            .get_global_component_mut::<RenderStateComponent>()?
+            .background_color = [0.35, 0.40, 0.50];
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;
@@ -148,43 +151,34 @@ impl PillGame for Game {
 
         // Add materials
         let fabric_material_handle = engine.add_resource::<Material>(
-            Material::builder("fabric")
-                .texture("color", fabric_color_texture_handle)?
-                .texture("normal", fabric_normal_texture_handle)?
-                .color_parameter("tint", Color::new(1.0, 0.1, 0.1))?
-                .build(),
+            Material::new("fabric")
+                .albedo_texture(fabric_color_texture_handle)
+                .normal_texture(fabric_normal_texture_handle)
+                .albedo(Color::new(1.0, 0.1, 0.1)),
         )?;
 
         let stones_material_handle = engine.add_resource::<Material>(
-            Material::builder("stones")
-                .texture("color", stones_color_texture_handle)?
-                .texture("normal", stones_normal_texture_handle)?
-                .build(),
+            Material::new("stones")
+                .albedo_texture(stones_color_texture_handle)
+                .normal_texture(stones_normal_texture_handle),
         )?;
 
+        // Legacy specularity 3.0 (roughness = 1 - specularity) clamps to fully smooth
         let organic_material_handle = engine.add_resource::<Material>(
-            Material::builder("organic")
-                .texture("color", organic_color_texture_handle)?
-                .texture("normal", organic_normal_texture_handle)?
-                .color_parameter("tint", Color::new(0.26, 0.87, 0.9))?
-                .scalar_parameter("specularity", 3.0)?
-                .build(),
+            Material::new("organic")
+                .albedo_texture(organic_color_texture_handle)
+                .normal_texture(organic_normal_texture_handle)
+                .albedo(Color::new(0.26, 0.87, 0.9))
+                .roughness(0.0),
         )?;
 
-        let yellow_material_handle = engine.add_resource::<Material>(
-            Material::builder("yellow")
-                .color_parameter("tint", Color::new(1.0, 0.88, 0.0))?
-                .build(),
-        )?;
+        let yellow_material_handle = engine
+            .add_resource::<Material>(Material::new("yellow").albedo(Color::new(1.0, 0.88, 0.0)))?;
 
-        let blue_material_handle = engine.add_resource::<Material>(
-            Material::builder("blue")
-                .color_parameter("tint", Color::new(0.26, 0.87, 0.9))?
-                .build(),
-        )?;
+        let blue_material_handle = engine
+            .add_resource::<Material>(Material::new("blue").albedo(Color::new(0.26, 0.87, 0.9)))?;
 
-        let white_material_handle =
-            engine.add_resource::<Material>(Material::builder("white").build())?;
+        let white_material_handle = engine.add_resource::<Material>(Material::new("white"))?;
 
         // --- Create entities ---
 
@@ -207,16 +201,10 @@ impl PillGame for Game {
             .with_component(
                 TransformComponent::builder()
                     .position(Vector3f::new(0.0, 0.0, -30.0))
-                    .rotation(Vector3f::new(0.0, 0.0, 0.0))
+                    .rotation(Vector3f::new(0.0, 180.0, 0.0))
                     .build(),
             )
-            .with_component(
-                CameraComponent::builder()
-                    .enabled(true)
-                    .fov(60.0)
-                    .clear_color(Color::new(0.35, 0.40, 0.50))
-                    .build(),
-            )
+            .with_component(CameraComponent::builder().enabled(true).fov(60.0).build())
             .with_component(CameraMovementComponent {
                 orbit_speed: 60.0,
                 zoom_speed: 5.0,
@@ -492,7 +480,8 @@ fn camera_movement_system(engine: &mut Engine) -> Result<()> {
         transform_transform.set_position(Vector3f::new(x_position, delta_y, z_position + delta_z));
 
         // Set rotation
-        transform_transform.set_rotation(Vector3f::new(0.0, -angle - 90.0, 0.0));
+        // Cameras look down −Z, hence 90 rather than −90
+        transform_transform.set_rotation(Vector3f::new(0.0, 90.0 - angle, 0.0));
     }
 
     Ok(())

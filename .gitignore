@@ -3,6 +3,7 @@ target/
 build/
 .vscode/
 *.lock
+.claude
 
 docs/*
 engine/pill_engine/docs/uml_out/*
@@ -10,5 +11,9 @@ engine/target_*
 
 *.log
 *.wgsl
+
 *.cooked_mesh
 *.cooked_tex
+*.glb
+*.hdr
+asset_dag.svg

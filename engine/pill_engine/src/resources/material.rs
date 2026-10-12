@@ -1,117 +1,58 @@
 use crate::{
-    config::*,
     ecs::{
         DeferredUpdateComponent, DeferredUpdateManagerPointer, DeferredUpdateResourceRequest,
         MeshRenderingComponent,
     },
     engine::Engine,
-    graphics::{RendererMaterialHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER},
-    resources::{Resource, ResourceStorage, Shader, ShaderHandle, Texture, TextureHandle},
+    resources::{Resource, ResourceStorage, TextureHandle, TextureType},
+};
+
+#[cfg(not(feature = "headless"))]
+use crate::{
+    graphics::RendererTextureHandle,
+    renderer::resources::{MaterialParams, MaterialTextures, RendererMaterial, RendererTexture},
+    resources::{ResourceManager, Texture},
 };
 
 use pill_core::{
-    enum_variant_eq, get_enum_variant_type_name, get_type_name, Color, EngineError, PillSlotMapKey,
-    PillStyle, PillTypeMapKey,
+    error, get_type_name, Color, EngineError, LogContext, PillSlotMapKey, PillStyle,
+    PillTypeMapKey, Result,
 };
 
-use pill_core::{ErrorContext, Result};
-use std::collections::HashMap;
+const DEFERRED_REQUEST_VARIANT_PARAMETERS: usize = 0;
+const DEFERRED_REQUEST_VARIANT_TEXTURES: usize = 1;
 
-const DEFERRED_REQUEST_VARIANT_RENDERING_ORDER: usize = 0;
-const DEFERRED_REQUEST_VARIANT_PARAMETER: usize = 1;
+// Texture slots: (name, texture type). Color and Emissive are both sRGB color and interchangeable;
+// Normal and MetallicRoughness are linear data and must match exactly.
+const ALBEDO_SLOT: (&str, TextureType) = ("albedo", TextureType::Color);
+const NORMAL_SLOT: (&str, TextureType) = ("normal", TextureType::Normal);
+const METALLIC_ROUGHNESS_SLOT: (&str, TextureType) =
+    ("metallic_roughness", TextureType::MetallicRoughness);
+const EMISSIVE_SLOT: (&str, TextureType) = ("emissive", TextureType::Emissive);
 
-const DEFERRED_REQUEST_VARIANT_TEXTURE_START: usize = 2;
-const DEFERRED_REQUEST_VARIANT_TEXTURE_END: usize = 10;
-
-// --- Material parameters ---
-
-#[derive(Debug)]
-pub enum MaterialParameter {
-    Scalar(f32),
-    Bool(bool),
-    Color(Color),
+fn is_color(texture_type: TextureType) -> bool {
+    matches!(texture_type, TextureType::Color | TextureType::Emissive)
 }
 
-// --- Material textures ---
-
-#[derive(Clone)]
-pub struct MaterialTexture {
-    //pub texture_type: TextureType,
-    pub texture_handle: TextureHandle,
-    pub(crate) renderer_resource_handle: Option<RendererTextureHandle>,
-}
-
-impl MaterialTexture {
-    pub fn new(texture_handle: TextureHandle) -> Self {
-        Self {
-            //texture_type,
-            texture_handle,
-            renderer_resource_handle: None,
-        }
+/// Renderer texture for a slot, checking the texture exists and has the slot's type.
+#[cfg(not(feature = "headless"))]
+fn resolve_texture(
+    resource_manager: &ResourceManager,
+    handle: TextureHandle,
+    (slot_name, slot_type): (&str, TextureType),
+) -> Result<RendererTextureHandle> {
+    let texture = resource_manager.get_resource::<Texture>(&handle)?;
+    let compatible = texture.texture_type == slot_type
+        || (is_color(texture.texture_type) && is_color(slot_type));
+    if !compatible {
+        return Err(EngineError::WrongTextureType(
+            format!("{:?}", texture.texture_type),
+            slot_name.to_string(),
+            format!("{slot_type:?}"),
+        )
+        .into());
     }
-}
-
-// This needed so that renderer can get renderer texture handle from material texture while it is still hidden in game API
-pub fn get_renderer_texture_handle_from_material_texture(
-    material_texture: &MaterialTexture,
-) -> &Option<RendererTextureHandle> {
-    &material_texture.renderer_resource_handle
-}
-
-// --- Builder ---
-
-pub struct MaterialBuilder {
-    material: Material,
-}
-
-impl MaterialBuilder {
-    pub fn new(name: &str) -> Self {
-        Self {
-            material: Material::new(name),
-        }
-    }
-
-    pub fn shader(mut self, shader_handle: ShaderHandle) -> Result<Self> {
-        self.material.shader_handle = shader_handle;
-        Ok(self)
-    }
-
-    pub fn texture(mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<Self> {
-        self.material
-            .textures
-            .push((slot_name.to_string(), MaterialTexture::new(texture_handle)));
-        Ok(self)
-    }
-
-    pub fn scalar_parameter(mut self, slot_name: &str, value: f32) -> Result<Self> {
-        self.material
-            .parameters
-            .insert(slot_name.to_string(), MaterialParameter::Scalar(value));
-        Ok(self)
-    }
-
-    pub fn bool_parameter(mut self, slot_name: &str, value: bool) -> Result<Self> {
-        self.material
-            .parameters
-            .insert(slot_name.to_string(), MaterialParameter::Bool(value));
-        Ok(self)
-    }
-
-    pub fn color_parameter(mut self, slot_name: &str, value: Color) -> Result<Self> {
-        self.material
-            .parameters
-            .insert(slot_name.to_string(), MaterialParameter::Color(value));
-        Ok(self)
-    }
-
-    pub fn rendering_order(mut self, order: u8) -> Result<Self> {
-        self.material.rendering_order = order;
-        Ok(self)
-    }
-
-    pub fn build(self) -> Material {
-        self.material
-    }
+    resource_manager.get_resource_handle::<RendererTexture>(&texture.name)
 }
 
 // --- Material ---
@@ -120,277 +61,242 @@ pill_core::define_new_pill_slotmap_key! {
     pub struct MaterialHandle;
 }
 
+/// Physically based (metallic-roughness) material. Built by value before `add_resource`;
+/// after that, use the `set_*` methods so changes reach the GPU.
 #[readonly::make]
 pub struct Material {
     #[readonly]
     pub name: String,
     #[readonly]
-    pub shader_handle: ShaderHandle,
-    pub(crate) textures: Vec<(String, MaterialTexture)>,
-    //pub(crate) textures_mapping: Vec<String>,  // Maps index to slot name, required for deferred update requests
+    pub albedo: Color,
     #[readonly]
-    pub(crate) parameters: HashMap<String, MaterialParameter>,
+    pub metallic: f32,
     #[readonly]
-    pub rendering_order: u8,
-
-    pub(crate) renderer_resource_handle: Option<RendererMaterialHandle>,
-    shader_name: Option<String>,
+    pub roughness: f32,
+    #[readonly]
+    pub emissive: Color,
+    #[readonly]
+    pub albedo_texture: Option<TextureHandle>,
+    #[readonly]
+    pub normal_texture: Option<TextureHandle>,
+    #[readonly]
+    pub metallic_roughness_texture: Option<TextureHandle>,
+    #[readonly]
+    pub emissive_texture: Option<TextureHandle>,
     handle: Option<MaterialHandle>,
     deferred_update_manager: Option<DeferredUpdateManagerPointer>,
 }
 
 impl Material {
-    pub fn builder(name: &str) -> MaterialBuilder {
-        MaterialBuilder::new(name)
-    }
-
-    // Creates default lit material with default shader and textures
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            shader_handle: get_default_lit_shader_handles().0,
-            textures: Vec::new(),
-            //textures_mapping: Vec::new(),
-            parameters: HashMap::new(),
-            rendering_order: RENDER_QUEUE_KEY_ORDER.max as u8,
-            renderer_resource_handle: None,
-            shader_name: None,
+            albedo: Color::new(1.0, 1.0, 1.0),
+            metallic: 0.0,
+            roughness: 0.5,
+            emissive: Color::new(0.0, 0.0, 0.0),
+            albedo_texture: None,
+            normal_texture: None,
+            metallic_roughness_texture: None,
+            emissive_texture: None,
             handle: None,
             deferred_update_manager: None,
         }
     }
 
-    pub fn set_texture(&mut self, slot_name: &str, texture_handle: TextureHandle) -> Result<()> {
-        // Get or insert new
-        let slot_index = if let Some(pos) = self.textures.iter().position(|(k, _)| k == slot_name) {
-            self.textures[pos].1.texture_handle = texture_handle;
-            pos
-        } else {
-            self.textures
-                .push((slot_name.to_string(), MaterialTexture::new(texture_handle)));
-            self.textures.len() - 1
-        };
+    // --- Builder (before add_resource) ---
 
-        // Get texture slot
-        //let texture_slot = self.textures.get_mut(slot_name)
-        //    .ok_or( EngineError::MaterialTextureSlotNotFound(slot_name.to_string(), self.name.to_string()).into())?;
-
-        // Get texture slot index
-        //let texture_slot_index = self.textures_mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping");
-
-        // Set new handle but not renderer resource handle (it will be set by deferred update system)
-        //  l//et _ = texture_slot.texture_handle = texture_handle;
-
-        // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
-        if self.renderer_resource_handle.is_some() {
-            self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_TEXTURE_START + slot_index);
-            // texture_slot_index);
-        }
-
-        Ok(())
+    pub fn albedo(mut self, color: Color) -> Self {
+        self.albedo = color;
+        self
     }
 
-    // pub fn remove_texture(&mut self, slot_name: &str) -> Result<()> {
-    //     // Get texture slot
-    //     let texture_slot = self.textures.data.get_mut(slot_name)
-    //         .ok_or( EngineError::MaterialTextureSlotNotFound(slot_name.to_string(), self.name.to_string()).into())?;
+    pub fn roughness(mut self, roughness: f32) -> Self {
+        self.roughness = roughness.clamp(0.0, 1.0);
+        self
+    }
 
-    //     // Get texture slot index
-    //     let texture_slot_index = self.textures.mapping.iter().position(|v| v == slot_name).expect("Critical: No mapping");
+    pub fn metallic(mut self, metallic: f32) -> Self {
+        self.metallic = metallic.clamp(0.0, 1.0);
+        self
+    }
 
-    //     // Set new handle and renderer resource handle
-    //     texture_slot.texture_handle = None;
-    //     texture_slot.renderer_texture_handle = None;
+    /// Emitted radiance, added after lighting. Multiplied by the emissive texture (white by default),
+    /// so a black albedo plus an emissive color gives an unlit look.
+    pub fn emissive(mut self, color: Color) -> Self {
+        self.emissive = color;
+        self
+    }
 
-    //     // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
-    //     if self.renderer_resource_handle.is_some() {
-    //         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_TEXTURE_START + texture_slot_index);
-    //     }
+    pub fn albedo_texture(mut self, handle: TextureHandle) -> Self {
+        self.albedo_texture = Some(handle);
+        self
+    }
 
-    //     Ok(())
-    // }
+    pub fn normal_texture(mut self, handle: TextureHandle) -> Self {
+        self.normal_texture = Some(handle);
+        self
+    }
 
-    pub fn set_rendering_order(&mut self, order: u8) -> Result<()> {
-        let error = EngineError::WrongRenderingOrder(
-            order.to_string(),
-            format!("{}-{}", 0, RENDER_QUEUE_KEY_ORDER.max),
-        );
-        if order < RENDER_QUEUE_KEY_ORDER.max as u8 {
-            self.rendering_order = order;
-            // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
-            if self.renderer_resource_handle.is_some() {
-                self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_RENDERING_ORDER);
+    pub fn metallic_roughness_texture(mut self, handle: TextureHandle) -> Self {
+        self.metallic_roughness_texture = Some(handle);
+        self
+    }
+
+    pub fn emissive_texture(mut self, handle: TextureHandle) -> Self {
+        self.emissive_texture = Some(handle);
+        self
+    }
+
+    // --- Setters (after add_resource) ---
+
+    pub fn set_albedo(&mut self, color: Color) {
+        self.albedo = color;
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETERS);
+    }
+
+    pub fn set_roughness(&mut self, roughness: f32) {
+        self.roughness = roughness.clamp(0.0, 1.0);
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETERS);
+    }
+
+    pub fn set_metallic(&mut self, metallic: f32) {
+        self.metallic = metallic.clamp(0.0, 1.0);
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETERS);
+    }
+
+    pub fn set_emissive(&mut self, color: Color) {
+        self.emissive = color;
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETERS);
+    }
+
+    pub fn set_albedo_texture(&mut self, handle: Option<TextureHandle>) {
+        self.albedo_texture = handle;
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_TEXTURES);
+    }
+
+    pub fn set_normal_texture(&mut self, handle: Option<TextureHandle>) {
+        self.normal_texture = handle;
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_TEXTURES);
+    }
+
+    pub fn set_metallic_roughness_texture(&mut self, handle: Option<TextureHandle>) {
+        self.metallic_roughness_texture = handle;
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_TEXTURES);
+    }
+
+    pub fn set_emissive_texture(&mut self, handle: Option<TextureHandle>) {
+        self.emissive_texture = handle;
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_TEXTURES);
+    }
+
+    /// Clears every texture slot referencing `texture_handle`; returns true if any slot changed.
+    pub(crate) fn remove_texture(&mut self, texture_handle: &TextureHandle) -> bool {
+        let mut changed = false;
+        for slot in [
+            &mut self.albedo_texture,
+            &mut self.normal_texture,
+            &mut self.metallic_roughness_texture,
+            &mut self.emissive_texture,
+        ] {
+            if slot.is_some_and(|handle| handle.data() == texture_handle.data()) {
+                *slot = None;
+                changed = true;
             }
-        } else {
-            return Err(error.into());
         }
-
-        Ok(())
+        changed
     }
 
-    pub fn get_scalar_parameter(&self, parameter_name: &str) -> Result<f32> {
-        let error = EngineError::MaterialParameterSlotNotFound(
-            parameter_name.to_string(),
-            "Scalar".to_string(),
-            self.name.to_string(),
-        );
-        let parameter = self.parameters.get(parameter_name).context(error.clone())?;
-        match parameter {
-            MaterialParameter::Scalar(value) => Ok(*value),
-            _ => Err(error.into()),
+    #[cfg(not(feature = "headless"))]
+    fn renderer_parameters(&self) -> MaterialParams {
+        MaterialParams {
+            base_color: [self.albedo.x, self.albedo.y, self.albedo.z],
+            roughness: self.roughness,
+            emissive: [self.emissive.x, self.emissive.y, self.emissive.z],
+            metallic: self.metallic,
         }
     }
 
-    pub fn get_bool_parameter(&self, parameter_name: &str) -> Result<bool> {
-        let error = EngineError::MaterialParameterSlotNotFound(
-            parameter_name.to_string(),
-            "Bool".to_string(),
-            self.name.to_string(),
-        );
-        let parameter = self.parameters.get(parameter_name).context(error.clone())?;
-        match parameter {
-            MaterialParameter::Bool(value) => Ok(*value),
-            _ => Err(error.into()),
-        }
-    }
-
-    pub fn get_color_parameter(&self, parameter_name: &str) -> Result<Color> {
-        let error = EngineError::MaterialParameterSlotNotFound(
-            parameter_name.to_string(),
-            "Color".to_string(),
-            self.name.to_string(),
-        );
-        let parameter = self.parameters.get(parameter_name).context(error.clone())?;
-        match parameter {
-            MaterialParameter::Color(value) => Ok(*value),
-            _ => Err(error.into()),
-        }
-    }
-
-    pub fn set_scalar_parameter(&mut self, parameter_name: &str, value: f32) -> Result<()> {
-        let error = EngineError::MaterialParameterSlotNotFound(
-            parameter_name.to_string(),
-            "Scalar".to_string(),
-            self.name.to_string(),
-        );
-        let parameter = self
-            .parameters
-            .get_mut(parameter_name)
-            .context(error.clone())?;
-        match parameter {
-            MaterialParameter::Scalar(v) => {
-                if *v != value {
-                    *v = value;
-                    // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
-                    if self.renderer_resource_handle.is_some() {
-                        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETER);
-                    }
-                }
-                Ok(())
-            }
-            _ => Err(error.into()),
-        }
-    }
-
-    pub fn set_bool_parameter(&mut self, parameter_name: &str, value: bool) -> Result<()> {
-        let error = EngineError::MaterialParameterSlotNotFound(
-            parameter_name.to_string(),
-            "Bool".to_string(),
-            self.name.to_string(),
-        );
-        let parameter = self
-            .parameters
-            .get_mut(parameter_name)
-            .context(error.clone())?;
-        match parameter {
-            MaterialParameter::Bool(v) => {
-                if *v != value {
-                    *v = value;
-                    // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
-                    if self.renderer_resource_handle.is_some() {
-                        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETER);
-                    }
-                }
-                Ok(())
-            }
-            _ => Err(error.into()),
-        }
-    }
-
-    pub fn set_color_parameter(&mut self, parameter_name: &str, value: Color) -> Result<()> {
-        let error = EngineError::MaterialParameterSlotNotFound(
-            parameter_name.to_string(),
-            "Color".to_string(),
-            self.name.to_string(),
-        );
-        let parameter = self
-            .parameters
-            .get_mut(parameter_name)
-            .context(error.clone())?;
-        match parameter {
-            MaterialParameter::Color(v) => {
-                // Clamp color channel values between 0.0 and 1.0
-                let valid_color = Color::new(
-                    value.x.clamp(0.0, 1.0),
-                    value.y.clamp(0.0, 1.0),
-                    value.z.clamp(0.0, 1.0),
-                );
-                if *v != valid_color {
-                    *v = valid_color;
-                    // Post deferred update request (only if renderer resource handle is set (it means that material is initialized))
-                    if self.renderer_resource_handle.is_some() {
-                        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETER);
-                    }
-                }
-                Ok(())
-            }
-            _ => Err(error.into()),
-        }
-    }
-
-    fn validate_texture(
+    #[cfg(not(feature = "headless"))]
+    pub(crate) fn renderer_textures(
         &self,
-        engine: &mut Engine,
-        texture_slot_name: &str,
-        texture_slot: &MaterialTexture,
-    ) -> Result<()> {
-        let shader = engine.get_resource::<Shader>(&self.shader_handle)?;
-
-        // Get texture to be set
-        let texture = engine
-            .get_resource::<Texture>(&texture_slot.texture_handle)
-            .context(EngineError::InvalidTextureHandleForSlot(
-                texture_slot_name.to_string(),
-            ))?;
-
-        // Get texture slot from shader
-        let shader_texture_slot = shader.texture_slots.get(texture_slot_name).context(
-            EngineError::MaterialTextureSlotNotFound(texture_slot_name.to_string()),
-        )?;
-
-        // Check if slots are of the same type
-        if !enum_variant_eq(&texture.texture_type, &shader_texture_slot.texture_type) {
-            return Err(EngineError::WrongTextureType(
-                get_enum_variant_type_name(&texture.texture_type),
-                texture_slot_name.to_string(),
-                get_enum_variant_type_name(&shader_texture_slot.texture_type),
-            )
-            .into());
-        }
-
-        Ok(())
+        resource_manager: &ResourceManager,
+    ) -> Result<MaterialTextures> {
+        let [base_color, normal, metallic_roughness, emissive] =
+            self.texture_slots().map(|(handle, slot_type)| {
+                handle
+                    .map(|handle| resolve_texture(resource_manager, handle, slot_type))
+                    .transpose()
+            });
+        Ok(MaterialTextures {
+            base_color: base_color?,
+            normal: normal?,
+            metallic_roughness: metallic_roughness?,
+            emissive: emissive?,
+        })
     }
 
+    fn texture_slots(&self) -> [(Option<TextureHandle>, (&'static str, TextureType)); 4] {
+        [
+            (self.albedo_texture, ALBEDO_SLOT),
+            (self.normal_texture, NORMAL_SLOT),
+            (self.metallic_roughness_texture, METALLIC_ROUGHNESS_SLOT),
+            (self.emissive_texture, EMISSIVE_SLOT),
+        ]
+    }
+
+    /// Empties slots whose texture is missing or of the wrong type, so one bad `set_*_texture`
+    /// call doesn't block later texture updates.
+    #[cfg(not(feature = "headless"))]
+    fn clear_invalid_texture_slots(&mut self, resource_manager: &ResourceManager) {
+        let material_name = self.name.clone();
+        let check = |slot: &mut Option<TextureHandle>, slot_info: (&str, TextureType)| {
+            if let Some(handle) = *slot {
+                if let Err(error) = resolve_texture(resource_manager, handle, slot_info) {
+                    error!(LogContext::Engine => "Material {} {} texture cleared: {}", material_name, slot_info.0, error);
+                    *slot = None;
+                }
+            }
+        };
+        check(&mut self.albedo_texture, ALBEDO_SLOT);
+        check(&mut self.normal_texture, NORMAL_SLOT);
+        check(
+            &mut self.metallic_roughness_texture,
+            METALLIC_ROUGHNESS_SLOT,
+        );
+        check(&mut self.emissive_texture, EMISSIVE_SLOT);
+    }
+
+    // Only posts once the material is initialized (deferred_update_manager set by initialize)
     fn post_deferred_update_request(&mut self, request_variant: usize) {
-        let handle = self
-            .handle
-            .expect("Critical: Cannot post deferred update request. No Handle set in Resource");
-        let request = DeferredUpdateResourceRequest::<Material>::new(handle, request_variant);
-        self.deferred_update_manager
-            .as_mut()
-            .expect("Critical: No DeferredUpdateManager")
-            .post_update_request(request);
+        if let Some(manager) = self.deferred_update_manager.as_mut() {
+            let handle = self
+                .handle
+                .expect("Critical: Cannot post deferred update request. No Handle set in Resource");
+            let request = DeferredUpdateResourceRequest::<Material>::new(handle, request_variant);
+            manager.post_update_request(request);
+        }
     }
+}
+
+/// Rebuilds material `name`'s GPU texture bind group from `textures`.
+#[cfg(not(feature = "headless"))]
+pub(crate) fn set_renderer_textures(
+    engine: &mut Engine,
+    name: &str,
+    textures: &MaterialTextures,
+) -> Result<()> {
+    let bind_group = RendererMaterial::create_textures_bind_group(
+        engine.renderer.get_device(),
+        &engine.resource_manager,
+        name,
+        textures,
+    )?;
+    engine
+        .resource_manager
+        .get_resource_by_name_mut::<RendererMaterial>(name)?
+        .textures_bind_group = bind_group;
+    Ok(())
 }
 
 impl PillTypeMapKey for Material {
@@ -412,32 +318,20 @@ impl Resource for Material {
         self.deferred_update_manager =
             Some(deferred_update_component.borrow_deferred_update_manager());
 
-        // Check if assigned textures are of correct type declared in shader
-        for (texture_slot_name, texture_slot) in self.textures.iter() {
-            self.validate_texture(engine, texture_slot_name, texture_slot)?;
+        // Create renderer counterpart
+        #[cfg(not(feature = "headless"))]
+        {
+            let textures = self.renderer_textures(&engine.resource_manager)?;
+            let renderer_material = RendererMaterial::new(
+                engine.renderer.get_device(),
+                engine.renderer.get_queue(),
+                &engine.resource_manager,
+                &self.name,
+                &self.renderer_parameters(),
+                &textures,
+            )?;
+            engine.resource_manager.add_resource(renderer_material)?;
         }
-
-        // Assign renderer resource handle to texture slot
-        for (texture_slot_name, texture_slot) in self.textures.iter_mut() {
-            let texture = engine
-                .get_resource::<Texture>(&texture_slot.texture_handle)
-                .context(EngineError::InvalidTextureHandleForSlot(
-                    texture_slot_name.to_string(),
-                ))?;
-            texture_slot.renderer_resource_handle = Some(texture.renderer_resource_handle.unwrap());
-        }
-
-        // Create new renderer material resource
-        let shader = engine.get_resource::<Shader>(&self.shader_handle)?;
-        self.shader_name = Some(shader.get_name());
-        let shader_renderer_resource_handle = shader.renderer_resource_handle.unwrap();
-        let renderer_resource_handle = engine.renderer.create_material(
-            &self.name,
-            shader_renderer_resource_handle,
-            &self.textures,
-            &self.parameters,
-        )?;
-        self.renderer_resource_handle = Some(renderer_resource_handle);
 
         Ok(())
     }
@@ -446,53 +340,23 @@ impl Resource for Material {
         self.handle = Some(MaterialHandle::from(self_handle.data()));
     }
 
+    #[cfg_attr(feature = "headless", allow(unused_variables))]
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> {
         match request {
-            DEFERRED_REQUEST_VARIANT_RENDERING_ORDER => {
-                // Find mesh rendering components that use this material and update them
-                for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
-                    for (_entity_handle, mesh_rendering_component) in
-                        scene.get_one_component_iterator_mut::<MeshRenderingComponent>()?
-                    {
-                        if let Some(material_handle) = mesh_rendering_component.material_handle {
-                            // If mesh rendering component has handle to this material
-                            if material_handle.data() == self.handle.unwrap().data() {
-                                mesh_rendering_component
-                                    .update_render_queue_key(&engine.resource_manager)
-                                    .unwrap();
-                            }
-                        }
-                    }
+            DEFERRED_REQUEST_VARIANT_PARAMETERS => {
+                #[cfg(not(feature = "headless"))]
+                engine
+                    .resource_manager
+                    .get_resource_by_name::<RendererMaterial>(&self.name)?
+                    .write_parameters(engine.renderer.get_queue(), &self.renderer_parameters());
+            }
+            DEFERRED_REQUEST_VARIANT_TEXTURES => {
+                #[cfg(not(feature = "headless"))]
+                {
+                    self.clear_invalid_texture_slots(&engine.resource_manager);
+                    let textures = self.renderer_textures(&engine.resource_manager)?;
+                    set_renderer_textures(engine, &self.name, &textures)?;
                 }
-            }
-            DEFERRED_REQUEST_VARIANT_PARAMETER => {
-                // Update renderer counterpart
-                engine.renderer.update_material_parameters(
-                    self.renderer_resource_handle.unwrap(),
-                    &self.parameters,
-                )?;
-            }
-            DEFERRED_REQUEST_VARIANT_TEXTURE_START..=DEFERRED_REQUEST_VARIANT_TEXTURE_END => {
-                // Check if assigned texture is of correct type
-                let idx = request - DEFERRED_REQUEST_VARIANT_TEXTURE_START;
-                let (texture_slot_name, texture_slot) = &self.textures[idx];
-                self.validate_texture(engine, texture_slot_name, texture_slot)?;
-
-                // Assign renderer resource handle to texture slot
-                let (texture_slot_name, texture_slot) = &mut self.textures[idx];
-                let texture = engine
-                    .get_resource::<Texture>(&texture_slot.texture_handle)
-                    .context(EngineError::InvalidTextureHandleForSlot(
-                        texture_slot_name.to_string(),
-                    ))?;
-                texture_slot.renderer_resource_handle =
-                    Some(texture.renderer_resource_handle.unwrap());
-
-                // Update renderer counterpart
-                engine.renderer.update_material_textures(
-                    self.renderer_resource_handle.unwrap(),
-                    &self.textures,
-                )?;
             }
             _ => {
                 panic!("Critical: Processing deferred update request with value {} in {} failed. Handling is not implemented", request, get_type_name::<Self>().specific_object_style());
@@ -502,28 +366,29 @@ impl Resource for Material {
         Ok(())
     }
 
-    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, _self_handle: H) -> Result<()> {
-        // Destroy renderer resource
-        if let Some(v) = self.renderer_resource_handle {
-            engine.renderer.destroy_material(v).unwrap();
+    #[cfg_attr(feature = "headless", allow(unused_variables))]
+    fn destroy<H: PillSlotMapKey>(&mut self, engine: &mut Engine, self_handle: H) -> Result<()> {
+        // Destroy renderer counterpart
+        #[cfg(not(feature = "headless"))]
+        engine
+            .resource_manager
+            .remove_resource_by_name::<RendererMaterial>(&self.name)?;
+
+        // Components using this material fall back to the default material
+        for (_scene_handle, scene) in engine.scene_manager.scenes.iter_mut() {
+            if let Ok(iter) = scene.get_one_component_iterator_mut::<MeshRenderingComponent>() {
+                for (_entity_handle, mesh_rendering_component) in iter {
+                    let uses_material = mesh_rendering_component
+                        .material_handle
+                        .is_some_and(|handle| handle.data() == self_handle.data());
+                    if uses_material {
+                        mesh_rendering_component.set_material_handle(None);
+                        mesh_rendering_component
+                            .update_render_queue_key(&engine.resource_manager)?;
+                    }
+                }
+            }
         }
-
-        // Find mesh rendering components that use this material and update them
-
-        //for (_scene_handle, _scene) in engine.scene_manager.scenes.iter_mut() {
-        //    let x = &engine.resource_manager;
-
-        // for (entity_handle, mesh_rendering_component) in engine.iterate_one_component::<MeshRenderingComponent>()? {
-        //     if let Some(material_handle) = mesh_rendering_component.material_handle {
-        //         // If mesh rendering component has handle to this material
-        //         if material_handle.data() == self_handle.data() {
-        //             mesh_rendering_component.set_material_handle(Option::<MaterialHandle>::None);
-        //             mesh_rendering_component.update_render_queue_key(&engine.resource_manager).unwrap();
-        //         }
-        //     }
-        // }
-        //}
-
         Ok(())
     }
 }

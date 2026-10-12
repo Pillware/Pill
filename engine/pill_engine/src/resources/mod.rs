@@ -5,7 +5,6 @@ mod mesh;
 mod resource;
 mod resource_manager;
 mod resource_storage;
-mod shader;
 #[cfg(not(target_arch = "wasm32"))]
 mod sound;
 mod texture;
@@ -23,13 +22,7 @@ pub use sound::{Sound, SoundHandle};
 
 pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};
 
+pub(crate) use texture::parse_cooked_tex;
 pub use texture::{Texture, TextureHandle, TextureType};
 
-pub use material::{
-    get_renderer_texture_handle_from_material_texture, Material, MaterialHandle, MaterialParameter,
-    MaterialTexture,
-};
-
-pub use shader::{
-    Shader, ShaderHandle, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot,
-};
+pub use material::{Material, MaterialHandle};

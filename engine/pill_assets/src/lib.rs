@@ -18,8 +18,12 @@ use std::time::SystemTime;
 use anyhow::{Context, Result};
 
 pub mod rules;
+mod util;
 
-pub use rules::{default_rules, HlslToWgsl, ObjToCookedMesh, PngToCookedTex};
+pub use rules::{
+    default_rules, BrdfLut, EquirectToIBL, GlbToCookedMesh, HdrToEquirect, HlslToWgsl,
+    ObjToCookedMesh, PngToCookedTex, ProceduralEquirect,
+};
 
 pub trait Rule {
     /// Glob (relative to the pipeline root) selecting source inputs.

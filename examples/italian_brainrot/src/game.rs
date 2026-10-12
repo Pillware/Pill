@@ -1,4 +1,7 @@
 use pill_engine::{define_component, game::*};
+
+use crate::cartoon_pass::{CartoonComponent, CartoonPass};
+
 define_component!(TagAlphaComponent {});
 
 pub struct Game {}
@@ -10,10 +13,17 @@ impl PillGame for Game {
         // Create scene
         let active_scene = engine.create_scene("default")?;
         engine.set_active_scene(active_scene)?;
+        {
+            let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
+            render_state.background_color = [0.5, 0.5, 0.5];
+            // Unlit and cartoon content is authored in display range; no HDR compression
+            render_state.tonemap = Tonemap::None;
+        }
 
         // Register components
         engine.register_component::<TransformComponent>(active_scene)?;
         engine.register_component::<MeshRenderingComponent>(active_scene)?;
+        engine.register_component::<CartoonComponent>(active_scene)?;
         engine.register_component::<CameraComponent>(active_scene)?;
         engine.register_component::<AudioListenerComponent>(active_scene)?;
         engine.register_component::<AudioSourceComponent>(active_scene)?;
@@ -22,50 +32,10 @@ impl PillGame for Game {
         // Add systems
         engine.add_system("rotation_system", rotation_system)?;
 
+        // Add render passes
+        engine.add_render_pass(Box::new(CartoonPass::new()))?;
+
         // --- Create resources ---
-
-        // Add shaders
-        let cartoon_shader_handle = engine.add_resource(Shader::new(
-            "cartoon",
-            ResourceLoader::Path("shaders/default_vertex.wgsl".into()),
-            ResourceLoader::Path("shaders/cartoon_fragment.wgsl".into()),
-            vec![(
-                "posterize_level".to_string(),
-                ShaderParameterSlot::new(ShaderParameterType::Scalar),
-            )]
-            .into_iter()
-            .collect(),
-            vec![(
-                "color".to_string(),
-                ShaderTextureSlot::new(TextureType::Color, (0, 1)),
-            )]
-            .into_iter()
-            .collect(),
-            true,
-            true,
-        ))?;
-
-        // let force_field_shader_handle = engine.add_resource(
-        //     Shader::new(
-        //         "force_field",
-        //         ResourceLoader::Path("shaders/default_vertex.glsl".into()),
-        //         ResourceLoader::Path("shaders/force_field_fragment.glsl".into()),
-        //         vec![
-        //             (
-        //                 "posterize_level".to_string(),
-        //                 ShaderParameterSlot::newShaderParameterType::Scalar)
-        //             )
-        //         ].into_iter().collect(),
-        //         vec![
-        //             (
-        //             "color".to_string(),
-        //                 ShaderTextureSlot::new(TextureType::Color, (0, 1))
-        //             )
-        //         ].into_iter().collect(),
-        //         true,
-        //         true
-        //     )
-        // )?;
 
         // Add meshes
         let chimpanzini_bananini_mesh_handle = engine.add_resource(
@@ -84,32 +54,19 @@ impl PillGame for Game {
                 ResourceLoader::Path("textures/chimpanzini_bananini_color.png".into()),
             ))?;
 
-        println!("Added resources!!!!!!!!!!!!!!!");
         // Add materials
-        let chimpanzini_bananini_material_handle_cartoon = engine.add_resource::<Material>(
-            Material::builder("chimpanzini_bananini_cartoon")
-                .shader(cartoon_shader_handle)?
-                .texture("color", chimpanzini_bananini_color_texture_handle)?
-                .scalar_parameter("posterize_level", 3.0)?
-                .build(),
-        )?;
-
-        let default_unlit_shader_handle =
-            engine.get_resource_handle::<Shader>("pill_engine_default_unlit_shader")?;
+        // Unlit look: black albedo (no lighting response) + texture as emission
         let chimpanzini_bananini_material_handle_unlit = engine.add_resource::<Material>(
-            Material::builder("chimpanzini_bananini_unlit")
-                .shader(default_unlit_shader_handle)?
-                .texture("color", chimpanzini_bananini_color_texture_handle)?
-                .color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
-                .build(),
+            Material::new("chimpanzini_bananini_unlit")
+                .albedo(Color::new(0.0, 0.0, 0.0))
+                .emissive(Color::new(1.0, 1.0, 1.0))
+                .emissive_texture(chimpanzini_bananini_color_texture_handle),
         )?;
 
         let chimpanzini_bananini_material_handle_lit = engine.add_resource::<Material>(
-            Material::builder("chimpanzini_bananini_lit")
-                .texture("color", chimpanzini_bananini_color_texture_handle)?
-                .color_parameter("tint", Color::new(1.0, 1.0, 1.0))?
-                .scalar_parameter("specularity", 0.5)?
-                .build(),
+            Material::new("chimpanzini_bananini_lit")
+                .albedo_texture(chimpanzini_bananini_color_texture_handle)
+                .roughness(0.5),
         )?;
 
         // --- Create entities ---
@@ -120,15 +77,11 @@ impl PillGame for Game {
             .with_component(
                 TransformComponent::builder()
                     .position(Vector3f::new(0.0, 0.0, -3.0))
+                    // Cameras look down −Z; turn around to face the scene at the origin
+                    .rotation(Vector3f::new(0.0, 180.0, 0.0))
                     .build(),
             )
-            .with_component(
-                CameraComponent::builder()
-                    .enabled(true)
-                    .fov(60.0)
-                    .clear_color(Color::new(0.5, 0.5, 0.5))
-                    .build(),
-            )
+            .with_component(CameraComponent::builder().enabled(true).fov(60.0).build())
             .build();
 
         // // Create chimpanzini bananini entity
@@ -165,7 +118,7 @@ impl PillGame for Game {
             .with_component(TagAlphaComponent {})
             .build();
 
-        // Create chimpanzini bananini entity with the custom cartoon (posterize) shader
+        // Create chimpanzini bananini entity drawn by the game-defined CartoonPass (posterize)
         engine
             .build_entity(active_scene)
             .with_component(
@@ -173,12 +126,11 @@ impl PillGame for Game {
                     .position(Vector3f::new(0.0, 0.0, 1.5))
                     .build(),
             )
-            .with_component(
-                MeshRenderingComponent::builder()
-                    .material(&chimpanzini_bananini_material_handle_cartoon)
-                    .mesh(&chimpanzini_bananini_mesh_handle)
-                    .build(),
-            )
+            .with_component(CartoonComponent {
+                mesh: chimpanzini_bananini_mesh_handle,
+                texture: chimpanzini_bananini_color_texture_handle,
+                posterize_level: 3.0,
+            })
             .with_component(TagAlphaComponent {})
             .build();
 

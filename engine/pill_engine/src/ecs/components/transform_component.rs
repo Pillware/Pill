@@ -1,5 +1,5 @@
 use crate::ecs::{Component, ComponentStorage};
-use pill_core::{Direction, Matrix3f, Matrix3fA, Matrix4f, PillTypeMapKey, Vector3f};
+use pill_core::{Direction, Matrix3f, PillTypeMapKey, Vector3f};
 use serde::{Deserialize, Serialize};
 
 // Coordinate system:
@@ -48,7 +48,7 @@ impl TransformComponentBuilder {
 
 // --- Transform Component ---
 
-// NOTE: Setting position/rotation/scale directly is not possible since we need to update matrices after each change
+// Position, rotation (degrees) and scale only; the GPU builds the model matrix from these.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[readonly::make]
 pub struct TransformComponent {
@@ -58,14 +58,6 @@ pub struct TransformComponent {
     pub rotation: Vector3f,
     #[readonly]
     pub scale: Vector3f,
-
-    model_matrix: Matrix4f,
-    normal_matrix: Matrix3fA,
-
-    // There may me multiple updates of the position/rotation/scale in the single frame.
-    // Not to calculate matrices multiple times, we will update them only once per frame
-    // The update happens in the rendering system
-    pub matrix_update_required: bool,
 }
 
 impl TransformComponent {
@@ -78,9 +70,6 @@ impl TransformComponent {
             position: Vector3f::ZERO,
             rotation: Vector3f::ZERO,
             scale: Vector3f::new(1.0, 1.0, 1.0),
-            model_matrix: Matrix4f::IDENTITY,
-            normal_matrix: Matrix3fA::IDENTITY,
-            matrix_update_required: true,
         }
     }
 
@@ -88,7 +77,6 @@ impl TransformComponent {
 
     pub fn set_position(&mut self, position: Vector3f) {
         self.position = position;
-        self.matrix_update_required = true;
     }
 
     pub fn translate(&mut self, delta: f32, direction: Direction) {
@@ -106,93 +94,79 @@ impl TransformComponent {
             Direction::WorldUp => self.position.y += delta,
             Direction::WorldDown => self.position.y -= delta,
         }
-        self.matrix_update_required = true;
     }
 
     pub fn translate_world(&mut self, delta: Vector3f) {
         self.position += delta;
-        self.matrix_update_required = true;
     }
 
     pub fn translate_local(&mut self, delta: Vector3f) {
         self.position += self.get_forward_direction() * delta.z
             + self.get_right_direction() * delta.x
             + self.get_up_direction() * delta.y;
-        self.matrix_update_required = true;
     }
 
     // --- Directions ---
 
     pub fn get_forward_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(0.0, 0.0, -1.0)
+        self.rotation_matrix() * Vector3f::new(0.0, 0.0, -1.0)
     }
 
     pub fn get_backward_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(0.0, 0.0, 1.0)
+        self.rotation_matrix() * Vector3f::new(0.0, 0.0, 1.0)
     }
 
     pub fn get_right_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(1.0, 0.0, 0.0)
+        self.rotation_matrix() * Vector3f::new(1.0, 0.0, 0.0)
     }
 
     pub fn get_left_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(-1.0, 0.0, 0.0)
+        self.rotation_matrix() * Vector3f::new(-1.0, 0.0, 0.0)
     }
 
     pub fn get_up_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(0.0, 1.0, 0.0)
+        self.rotation_matrix() * Vector3f::new(0.0, 1.0, 0.0)
     }
 
     pub fn get_down_direction(&self) -> Vector3f {
-        self.get_rotation_matrix() * Vector3f::new(0.0, -1.0, 0.0)
+        self.rotation_matrix() * Vector3f::new(0.0, -1.0, 0.0)
     }
 
-    fn get_rotation_matrix(&self) -> Matrix3f {
-        let roll = Matrix3f::from_rotation_z(self.rotation.z.to_radians());
-        let yaw = Matrix3f::from_rotation_y(self.rotation.y.to_radians());
-        let pitch = Matrix3f::from_rotation_x(self.rotation.x.to_radians());
-        yaw * pitch * roll
+    /// Rx·Ry·Rz of `rotation` (degrees): the order used by the renderer and physics (glam EulerRot::XYZ).
+    pub fn rotation_matrix(&self) -> Matrix3f {
+        Matrix3f::from_rotation_x(self.rotation.x.to_radians())
+            * Matrix3f::from_rotation_y(self.rotation.y.to_radians())
+            * Matrix3f::from_rotation_z(self.rotation.z.to_radians())
     }
 
     // --- Rotation ---
 
     pub fn set_rotation(&mut self, rotation: Vector3f) {
         self.rotation = rotation;
-        self.matrix_update_required = true;
+    }
+
+    /// Rotates (without roll) so that forward (−Z, the camera view direction) points at `target`.
+    pub fn look_at(&mut self, target: Vector3f) {
+        let direction = (target - self.position).normalize_or_zero();
+        if direction == Vector3f::ZERO {
+            return;
+        }
+        // Rx(a)·Ry(b)·(−Z) = (−sin b, sin a·cos b, −cos a·cos b)
+        let yaw = (-direction.x).clamp(-1.0, 1.0).asin();
+        let pitch = direction.y.atan2(-direction.z);
+        self.rotation = Vector3f::new(pitch.to_degrees(), yaw.to_degrees(), 0.0);
     }
 
     // TODO: Implement quaternion rotation
     pub fn rotate_around_axis(&mut self, angle: f32, axis: Vector3f) {
         self.rotation += angle * axis;
-        self.matrix_update_required = true;
     }
 
     // --- Scale ---
 
     pub fn set_scale(&mut self, scale: Vector3f) {
         self.scale = scale;
-        self.matrix_update_required = true;
     }
-}
-
-pub fn update_transform_matrices(transform_component: &mut TransformComponent) {
-    let model = Matrix4f::model(
-        transform_component.position,
-        transform_component.rotation,
-        transform_component.scale,
-    );
-    let normal = Matrix3f::from_euler_angles(transform_component.rotation);
-
-    transform_component.model_matrix = model;
-    transform_component.normal_matrix = normal.into();
-}
-
-pub fn get_model_matrix(transform_component: &TransformComponent) -> Matrix4f {
-    transform_component.model_matrix
-}
-
-pub fn get_normal_matrix(transform_component: &TransformComponent) -> Matrix3fA {
-    transform_component.normal_matrix
 }
 
 impl PillTypeMapKey for TransformComponent {
@@ -204,46 +178,5 @@ impl Component for TransformComponent {}
 impl Default for TransformComponent {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-pub trait Matrix3fAngleExt {
-    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix3f;
-}
-
-pub trait Matrix4fModelExt {
-    fn model(position: Vector3f, rotation_deg: Vector3f, scale: Vector3f) -> Matrix4f;
-    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix4f;
-}
-
-impl Matrix3fAngleExt for Matrix3f {
-    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix3f {
-        let rz = Matrix3f::from_rotation_z(rotation_deg.z.to_radians());
-        let ry = Matrix3f::from_rotation_y(rotation_deg.y.to_radians());
-        let rx = Matrix3f::from_rotation_x(rotation_deg.x.to_radians());
-        rz * ry * rx
-    }
-}
-
-impl Matrix4fModelExt for Matrix4f {
-    fn model(position: Vector3f, rotation_deg: Vector3f, scale: Vector3f) -> Matrix4f {
-        let rz = Matrix3f::from_rotation_z(rotation_deg.z.to_radians());
-        let ry = Matrix3f::from_rotation_y(rotation_deg.y.to_radians());
-        let rx = Matrix3f::from_rotation_x(rotation_deg.x.to_radians());
-        let rot3 = rz * ry * rx;
-
-        let t = Matrix4f::from_translation(position);
-        let r = Matrix4f::from_mat3(rot3);
-        let s = Matrix4f::from_scale(scale);
-
-        t * r * s
-    }
-
-    fn from_euler_angles(rotation_deg: Vector3f) -> Matrix4f {
-        let rz = Matrix3f::from_rotation_z(rotation_deg.z.to_radians());
-        let ry = Matrix3f::from_rotation_y(rotation_deg.y.to_radians());
-        let rx = Matrix3f::from_rotation_x(rotation_deg.x.to_radians());
-        let rot3 = rz * ry * rx;
-        Matrix4f::from_mat3(rot3)
     }
 }

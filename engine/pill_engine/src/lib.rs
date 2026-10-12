@@ -7,6 +7,7 @@ mod config;
 mod ecs;
 mod engine;
 mod graphics;
+pub mod renderer;
 mod resources;
 
 // --- Macros ---
@@ -63,16 +64,28 @@ pub mod game {
         ecs::{
             CameraAspectRatio, CameraComponent, Component, ComponentStorage, EntityHandle,
             GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage, InputComponent,
-            MeshRenderingComponent, PlayerId, SceneHandle, TimeComponent, TransformComponent,
-            UpdatePhase,
+            MeshRenderingComponent, PlayerId, RenderStateComponent, SceneHandle, TimeComponent,
+            Tonemap, TransformComponent, UpdatePhase,
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
+        graphics::PassTextureHandle,
         resources::{
             Material, MaterialHandle, Mesh, MeshHandle, Resource, ResourceLoader, ResourceStorage,
-            Shader, ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot, Texture,
-            TextureHandle, TextureType,
+            Texture, TextureHandle, TextureType,
         },
     };
+
+    // Game-defined render passes (Engine::add_render_pass)
+    pub use crate::{
+        config::{DEPTH_TARGET_FORMAT, HDR_TARGET_FORMAT},
+        graphics::{
+            camera_forward, camera_view_projection, BufferDesc, FrameTarget, Pass, PillRenderer,
+            Pipeline, PipelineDesc, RendererTargetDesc, ShaderDesc, TargetSize, WorldQuery,
+        },
+        renderer::resources::{RendererMesh, RendererTexture, Vertex},
+    };
+    pub use bytemuck;
+    pub use wgpu;
 
     #[cfg(not(target_arch = "wasm32"))]
     pub use crate::{
@@ -86,9 +99,9 @@ pub mod game {
         SharedShape,
     };
 
-    #[cfg(feature = "debug_ui")]
-    pub use crate::ecs::EguiManagerComponent;
-    #[cfg(feature = "debug_ui")]
+    #[cfg(feature = "ui")]
+    pub use crate::ecs::EguiComponent;
+    #[cfg(feature = "ui")]
     pub use egui;
 
     extern crate pill_core;
@@ -103,28 +116,30 @@ pub mod game {
 #[cfg(not(target_arch = "wasm32"))]
 mod internal_mod {
     pub use crate::app_config::{BuildTarget, CompileMode, EngineConfig, EngineProcessInfo};
+    #[cfg(feature = "ui")]
+    pub use crate::ecs::EguiClient;
+    #[cfg(feature = "ui")]
+    pub use crate::ecs::EguiComponent;
     pub use crate::{
         config::*,
         ecs::{
-            client_go_offline, get_model_matrix, get_normal_matrix,
-            get_renderer_resource_handle_from_camera_component, networking_system_client,
-            networking_system_server, update_transform_matrices, AudioListenerComponent,
-            AudioManagerComponent, AudioSourceComponent, CameraAspectRatio, CameraComponent,
-            ComponentStorage, EntityHandle, EntityUpdate, InputComponent, MeshRenderingComponent,
-            NetworkEntityAction, NetworkEntityState, NetworkManagerComponent, NetworkSide,
-            NetworkStateComponent, NetworkUpdatePayload, Scene, TimeComponent, TransformComponent,
+            client_go_offline, networking_system_client, networking_system_server,
+            AudioListenerComponent, AudioManagerComponent, AudioSourceComponent, CameraAspectRatio,
+            CameraComponent, ComponentStorage, EntityHandle, EntityUpdate, InputComponent,
+            MeshRenderingComponent, NetworkEntityAction, NetworkEntityState,
+            NetworkManagerComponent, NetworkSide, NetworkStateComponent, NetworkUpdatePayload,
+            RenderStateComponent, Scene, TimeComponent, TransformComponent,
         },
         engine::{Engine, PillGame},
         graphics::{
-            decompose_render_queue_key, PillRenderer, RenderQueueItem, RenderQueueKey,
-            RenderQueueKeyFields, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
-            RendererShaderHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER,
+            decompose_render_queue_key, BufferDesc, Pass, PassTextureHandle, PillRenderer,
+            Pipeline, PipelineDesc, RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle,
+            RendererMeshHandle, RendererTargetDesc, RendererTextureHandle, ShaderDesc, TargetSize,
+            WorldQuery,
         },
         resources::{
-            get_renderer_texture_handle_from_material_texture, Material, MaterialHandle,
-            MaterialParameter, MaterialTexture, Mesh, MeshData, MeshHandle, MeshVertex,
-            ResourceLoader, ResourceManager, ShaderParameterSlot, ShaderParameterType,
-            ShaderTextureSlot, Texture, TextureHandle, TextureType,
+            Material, MaterialHandle, Mesh, MeshData, MeshHandle, MeshVertex, ResourceLoader,
+            ResourceManager, Texture, TextureHandle, TextureType,
         },
     };
 }
@@ -132,25 +147,26 @@ mod internal_mod {
 #[cfg(target_arch = "wasm32")]
 mod internal_mod {
     pub use crate::app_config::{BuildTarget, CompileMode, EngineConfig, EngineProcessInfo};
+    #[cfg(feature = "ui")]
+    pub use crate::ecs::EguiClient;
+    #[cfg(feature = "ui")]
+    pub use crate::ecs::EguiComponent;
     pub use crate::{
         config::*,
         ecs::{
-            get_model_matrix, get_normal_matrix,
-            get_renderer_resource_handle_from_camera_component, update_transform_matrices,
             CameraAspectRatio, CameraComponent, ComponentStorage, EntityHandle, InputComponent,
-            MeshRenderingComponent, Scene, TimeComponent, TransformComponent,
+            MeshRenderingComponent, RenderStateComponent, Scene, TimeComponent, TransformComponent,
         },
         engine::{Engine, PillGame},
         graphics::{
-            decompose_render_queue_key, PillRenderer, RenderQueueItem, RenderQueueKey,
-            RenderQueueKeyFields, RendererCameraHandle, RendererMaterialHandle, RendererMeshHandle,
-            RendererShaderHandle, RendererTextureHandle, RENDER_QUEUE_KEY_ORDER,
+            decompose_render_queue_key, BufferDesc, Pass, PassTextureHandle, PillRenderer,
+            Pipeline, PipelineDesc, RenderQueueKey, RenderQueueKeyFields, RendererMaterialHandle,
+            RendererMeshHandle, RendererTargetDesc, RendererTextureHandle, ShaderDesc, TargetSize,
+            WorldQuery,
         },
         resources::{
-            get_renderer_texture_handle_from_material_texture, Material, MaterialHandle,
-            MaterialParameter, MaterialTexture, Mesh, MeshData, MeshHandle, MeshVertex,
-            ResourceLoader, ResourceManager, ShaderParameterSlot, ShaderParameterType,
-            ShaderTextureSlot, Texture, TextureHandle, TextureType,
+            Material, MaterialHandle, Mesh, MeshData, MeshHandle, MeshVertex, ResourceLoader,
+            ResourceManager, Texture, TextureHandle, TextureType,
         },
     };
 }

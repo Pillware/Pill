@@ -9,7 +9,7 @@ use crate::{
     resources::{Material, MaterialHandle, Mesh, MeshHandle, ResourceManager},
 };
 
-use pill_core::{get_type_name, PillStyle, PillTypeMapKey};
+use pill_core::{error, get_type_name, LogContext, PillStyle, PillTypeMapKey};
 
 use pill_core::{ErrorContext, Result};
 
@@ -102,32 +102,30 @@ impl MeshRenderingComponent {
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE);
     }
 
-    pub(crate) fn set_material_handle(&mut self, material_handle: Option<MaterialHandle>) {
-        self.material_handle = material_handle;
-    }
-
     pub(crate) fn set_mesh_handle(&mut self, mesh_handle: Option<MeshHandle>) {
         self.mesh_handle = mesh_handle;
+    }
+
+    pub(crate) fn set_material_handle(&mut self, material_handle: Option<MaterialHandle>) {
+        self.material_handle = material_handle;
     }
 
     pub(crate) fn update_render_queue_key(
         &mut self,
         resource_manager: &ResourceManager,
     ) -> Result<()> {
-        if let Some(handle) = &self.mesh_handle {
+        if let Some(mesh_handle) = &self.mesh_handle {
             // Use default material if no material is set
-            let material_handle = match self.material_handle {
-                Some(v) => v,
-                None => DEFAULT_MATERIAL_HANDLE,
-            };
+            let material_handle = self.material_handle.unwrap_or(DEFAULT_MATERIAL_HANDLE);
+            let result = compose_render_queue_key(resource_manager, &material_handle, mesh_handle);
 
-            // Compose render queue key and set it
-            if let Ok(render_queue_key) =
-                compose_render_queue_key(resource_manager, &material_handle, handle)
-            {
-                self.render_queue_key = Some(render_queue_key);
-            } else {
-                self.render_queue_key = None;
+            match result {
+                Ok(render_queue_key) => self.render_queue_key = Some(render_queue_key),
+                Err(error) => {
+                    // Logged on change only; the entity is not drawn until the key is valid again
+                    error!(LogContext::Rendering => "Entity {:?} will not render: {}", self.entity_handle, error);
+                    self.render_queue_key = None;
+                }
             }
         } else {
             self.render_queue_key = None;
@@ -198,32 +196,31 @@ impl Component for MeshRenderingComponent {
 
     fn deferred_update(&mut self, engine: &mut Engine, request: usize) -> Result<()> {
         match request {
+            // The handle may have been cleared since the request was queued (resource removed
+            // in the same frame); then only the key is refreshed
             DEFERRED_REQUEST_VARIANT_SET_MATERIAL => {
-                // Check if material handle is valid
-                engine
-                    .get_resource::<Material>(&self.material_handle.unwrap())
-                    .context(format!(
-                        "Setting {} {} failed",
-                        "Resource".general_object_style(),
-                        "Material".specific_object_style()
-                    ))?;
-
+                if let Some(material_handle) = self.material_handle {
+                    engine
+                        .get_resource::<Material>(&material_handle)
+                        .context(format!(
+                            "Setting {} {} failed",
+                            "Resource".general_object_style(),
+                            "Material".specific_object_style()
+                        ))?;
+                }
                 self.update_render_queue_key(&engine.resource_manager)?;
             }
             DEFERRED_REQUEST_VARIANT_SET_MESH => {
-                // Check if mesh handle is valid
-                engine
-                    .get_resource::<Mesh>(&self.mesh_handle.unwrap())
-                    .context(format!(
+                if let Some(mesh_handle) = self.mesh_handle {
+                    engine.get_resource::<Mesh>(&mesh_handle).context(format!(
                         "Setting {} {} failed",
                         "Resource".general_object_style(),
                         "Mesh".specific_object_style()
                     ))?;
-
+                }
                 self.update_render_queue_key(&engine.resource_manager)?;
             }
             DEFERRED_REQUEST_VARIANT_UPDATE_RENDER_QUEUE => {
-                // Update mesh rendering queue
                 self.update_render_queue_key(&engine.resource_manager)?;
             }
             _ => {

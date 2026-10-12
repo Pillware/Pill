@@ -1,6 +1,7 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_variables))]
 
 mod components;
+mod egui_client;
 mod entity;
 mod scene;
 mod scene_manager;
@@ -11,13 +12,11 @@ mod systems;
 // - Components
 
 pub use components::{
-    Component, ComponentDestroyer, ComponentStorage, ConcreteComponentDestroyer, GlobalComponent,
-    GlobalComponentStorage,
+    get_global_component_from, Component, ComponentDestroyer, ComponentStorage,
+    ConcreteComponentDestroyer, GlobalComponent, GlobalComponentStorage,
 };
 
-pub use components::camera_component::{
-    get_renderer_resource_handle_from_camera_component, CameraAspectRatio, CameraComponent,
-};
+pub use components::camera_component::{CameraAspectRatio, CameraComponent};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use components::audio_manager_component::{AudioManagerComponent, SoundType};
@@ -28,10 +27,15 @@ pub use components::audio_listener_component::AudioListenerComponent;
 #[cfg(not(target_arch = "wasm32"))]
 pub use components::audio_source_component::AudioSourceComponent;
 
-#[cfg(feature = "debug_ui")]
-pub use components::egui_manager_component::EguiManagerComponent;
+#[cfg(feature = "ui")]
+pub use components::egui_component::EguiComponent;
 
-#[cfg(feature = "debug_ui")]
+pub use components::render_state_component::{RenderStateComponent, Tonemap};
+
+#[cfg(feature = "ui")]
+pub use egui_client::EguiClient;
+
+#[cfg(feature = "ui")]
 pub use components::build_status_indicator_component::{
     BuildStatus, BuildStatusIndicatorComponent,
 };
@@ -46,9 +50,7 @@ pub use components::input_component::{
     KeyboardEvent, MouseEvent, PlayerId,
 };
 
-pub use components::transform_component::{
-    get_model_matrix, get_normal_matrix, update_transform_matrices, TransformComponent,
-};
+pub use components::transform_component::TransformComponent;
 
 pub use components::mesh_rendering_component::MeshRenderingComponent;
 
@@ -80,6 +82,9 @@ pub use systems::{SystemFunction, SystemManager, UpdatePhase};
 
 pub use systems::rendering_system::rendering_system;
 
+#[cfg(feature = "ui")]
+pub use systems::egui_system::egui_system;
+
 pub use systems::deferred_update_system::deferred_update_system;
 
 pub use systems::input_system::input_system;
@@ -101,7 +106,7 @@ pub use systems::networking_system::{
     NetworkEntityAction, NetworkUpdatePayload,
 };
 
-#[cfg(feature = "debug_ui")]
+#[cfg(feature = "ui")]
 pub use systems::build_status_system::build_status_system;
 
 // - Other

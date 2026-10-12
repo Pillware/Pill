@@ -87,7 +87,7 @@ fn run_twiggy_analysis(wasm_path: &Path, total: u64) -> TwiggyResult {
     let mut groups: Vec<(String, u64)> = by_crate.clone().into_iter().collect();
     groups.sort_by(|a, b| b.1.cmp(&a.1));
 
-    const ENGINE_LIBS: &[&str] = &["pill_engine", "pill_renderer", "pill_core", "pill_web"];
+    const ENGINE_LIBS: &[&str] = &["pill_engine", "pill_core", "pill_web"];
     const GAME_LIBS: &[&str] = &["pill_game"];
     let excluded: Vec<&str> = ENGINE_LIBS
         .iter()

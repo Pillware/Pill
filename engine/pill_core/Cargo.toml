@@ -9,7 +9,7 @@ authors = [
 edition = "2021"
 
 [dependencies]
-glam = { version = "0.30.8", features = ["serde"] }
+glam = { version = "0.30.8", features = ["serde", "bytemuck"] }
 thiserror = "1.0.30"
 boolinator = "2.4.0"
 log = { version = "0.4", features = ["release_max_level_off"] }

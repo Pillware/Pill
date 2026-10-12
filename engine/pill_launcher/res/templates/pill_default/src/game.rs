@@ -37,29 +37,29 @@ impl PillGame for Game {
         let pill_color_texture = Texture::new(
             "PillColor",
             TextureType::Color,
-            ResourceLoadType::Path("textures/pill_color.png".into()),
+            ResourceLoader::Path("textures/pill_color.png".into()),
         );
         let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
         let pill_normal_texture = Texture::new(
             "PillNormal",
             TextureType::Normal,
-            ResourceLoadType::Path("textures/pill_normal.png".into()),
+            ResourceLoader::Path("textures/pill_normal.png".into()),
         );
         let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
 
         // Add materials
-        let mut pill_material = Material::new("Pill");
-        pill_material.set_texture("color", pill_color_texture_handle)?;
-        pill_material.set_texture("normal", pill_normal_texture_handle)?;
-        pill_material.set_color("tint", Color::new(1.0, 1.0, 1.0))?;
-        pill_material.set_scalar("specularity", 0.5)?;
+        let pill_material = Material::new("Pill")
+            .albedo_texture(pill_color_texture_handle)
+            .normal_texture(pill_normal_texture_handle)
+            .roughness(0.5);
         let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
 
         // Create camera entity
         let camera = engine.create_entity(active_scene)?;
         let transform_component = TransformComponent::builder()
             .position(Vector3f::new(0.0, 0.0, -8.0))
-            .rotation(Vector3f::new(0.0, 0.0, -20.0))
+            // Cameras look down −Z: turned around, which also mirrors the roll
+            .rotation(Vector3f::new(0.0, 180.0, 20.0))
             .build();
         engine.add_component_to_entity(active_scene, camera, transform_component)?;
         let camera_component = CameraComponent::builder().enabled(true).build();

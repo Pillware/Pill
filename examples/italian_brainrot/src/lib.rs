@@ -1,3 +1,4 @@
+mod cartoon_pass;
 mod game;
 use pill_engine::game::create_game;
 
