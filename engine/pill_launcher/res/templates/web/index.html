@@ -55,6 +55,18 @@
             height: 80vh;
         }
         #canvas:fullscreen { width: 100vw; height: 100vh; }
+        #overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 42px;
+            color: #666;
+            pointer-events: none;
+            user-select: none;
+        }
+        #overlay.hidden { display: none; }
         #error {
             color: #c0392b;
             font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -71,12 +83,15 @@
     </div>
     <button id="fullscreen-btn" type="button">⛶ Fullscreen</button>
     <canvas id="canvas"></canvas>
+    <div id="overlay">Loading...</div>
     <div id="error"></div>
 
     <script type="module">
         const errorDiv = document.getElementById('error');
         const canvas = document.getElementById('canvas');
         const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const overlay = document.getElementById('overlay');
+        window.addEventListener('pill-ready', () => overlay.classList.add('hidden'), { once: true });
 
         function resizeCanvas() {
             const dpr = window.devicePixelRatio || 1;
@@ -99,6 +114,7 @@
         }
 
         function showError(msg) {
+            overlay.classList.add('hidden');
             canvas.style.display = 'none';
             errorDiv.style.display = 'block';
             errorDiv.textContent = msg;
