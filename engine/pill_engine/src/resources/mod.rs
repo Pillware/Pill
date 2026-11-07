@@ -1,5 +1,7 @@
 #![cfg_attr(debug_assertions, allow(dead_code, unused_imports, unused_variables))]
 
+#[cfg(feature = "gltf_loading")]
+mod gltf_scene;
 mod material;
 mod mesh;
 mod resource;
@@ -23,6 +25,13 @@ pub use sound::{Sound, SoundHandle};
 pub use mesh::{Mesh, MeshData, MeshHandle, MeshVertex};
 
 pub(crate) use texture::parse_cooked_tex;
+
+#[cfg(feature = "gltf_loading")]
+pub use gltf_scene::{
+    gltf_resource_uris, parse_gltf_scene, GltfMaterialData, GltfMeshData, GltfResourceUris,
+    GltfSceneData, GltfTextureData,
+};
+
 pub use texture::{Texture, TextureHandle, TextureType};
 
 pub use material::{Material, MaterialHandle};

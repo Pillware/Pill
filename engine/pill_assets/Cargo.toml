@@ -8,9 +8,17 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0"
-glob = "0.3"
-png = "0.17"
-tobj = "3.0"
 bytemuck = { version = "1.4", features = ["derive"] }
-gltf = { version = "1", features = ["import"] }
-image = { version = "0.25", default-features = false, features = ["hdr"] }
+# Radiance HDR decoder for `ibl::equirect_from_hdr` (build-time and runtime; wasm-safe).
+zune-hdr = "0.4"
+
+# Build-time-only (filesystem Rules); not compiled into wasm runtime builds.
+glob = { version = "0.3", optional = true }
+png = { version = "0.17", optional = true }
+tobj = { version = "3.0", optional = true }
+gltf = { version = "1", default-features = false, features = ["utils", "names"], optional = true }
+
+[features]
+default = ["build"]
+# Filesystem asset pipeline (HLSL→WGSL, glb/obj/png/hdr/equirect cooking). Used by build.rs / launcher.
+build = ["dep:glob", "dep:png", "dep:tobj", "dep:gltf", "gltf/import"]

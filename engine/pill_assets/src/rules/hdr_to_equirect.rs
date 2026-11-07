@@ -2,15 +2,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::ibl::{equirect_from_hdr, EQUIRECT_SIZE};
 use crate::util::rtex::write_rtex_hdr;
 use crate::Rule;
 
-/// Equirect size used for backgrounds and as EquirectToIBL input; 2:1 panorama.
-const OUTPUT_WIDTH: u32 = 512;
-const OUTPUT_HEIGHT: u32 = 256;
-
-/// Radiance HDR panorama → `{stem}_equirect.cooked_tex` (RTEX v2, Rgba32Float, 512×256).
-/// EquirectToIBL then derives the IBL maps from it.
+/// Radiance HDR panorama → `{stem}_equirect.cooked_tex` (RTEX v2, Rgba32Float, `EQUIRECT_SIZE`),
+/// resampled like the runtime path; EquirectToIBL then derives the IBL maps from it.
 pub struct HdrToEquirect;
 
 impl Rule for HdrToEquirect {
@@ -28,25 +25,8 @@ impl Rule for HdrToEquirect {
     }
 
     fn build(&self, input: &Path, output: &Path) -> Result<()> {
-        let image = image::open(input).with_context(|| format!("decode {input:?}"))?;
-        let resized = image::imageops::resize(
-            &image.to_rgb32f(),
-            OUTPUT_WIDTH,
-            OUTPUT_HEIGHT,
-            image::imageops::FilterType::Lanczos3,
-        );
-        let pixels: Vec<f32> = resized
-            .pixels()
-            // Lanczos rings below zero next to very bright texels; radiance can't be negative
-            .flat_map(|pixel| {
-                [
-                    pixel.0[0].max(0.0),
-                    pixel.0[1].max(0.0),
-                    pixel.0[2].max(0.0),
-                    1.0,
-                ]
-            })
-            .collect();
-        write_rtex_hdr(output, OUTPUT_WIDTH, OUTPUT_HEIGHT, &pixels)
+        let bytes = std::fs::read(input).with_context(|| format!("read {input:?}"))?;
+        let equirect = equirect_from_hdr(&bytes).with_context(|| format!("decode {input:?}"))?;
+        write_rtex_hdr(output, EQUIRECT_SIZE.0, EQUIRECT_SIZE.1, &equirect.pixels)
     }
 }

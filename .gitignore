@@ -17,3 +17,6 @@ engine/target_*
 *.glb
 *.hdr
 asset_dag.svg
+
+# Workspace placeholder member (see engine/Cargo.toml); resolves cargo at rest
+/engine/NO_PATH/

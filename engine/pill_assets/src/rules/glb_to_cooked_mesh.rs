@@ -1,25 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
-use bytemuck::{Pod, Zeroable};
 
-use crate::util::{
-    rtex::write_rtex,
-    vec_math::{add3, cross3, normalize3, scale3, sub2, sub3},
-    write_atomic,
-};
+use crate::convert::{self, CookedVertex, Mat4, PrimitiveAttributes};
+use crate::util::{rtex::write_rtex, write_atomic};
 use crate::Rule;
-
-/// Must stay bit-for-bit identical to `pill_engine::resources::MeshVertex`.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    texture_coordinates: [f32; 2],
-    normal: [f32; 3],
-    tangent: [f32; 3],
-    bitangent: [f32; 3],
-}
 
 /// GLB → cooked_mesh + sidecar textures.
 ///
@@ -52,26 +37,22 @@ impl Rule for GlbToCookedMesh {
         // --- Mesh ---
         // Node world transforms are baked into the vertices.
 
-        let mut all_vertices: Vec<Vertex> = Vec::new();
+        let mut all_vertices: Vec<CookedVertex> = Vec::new();
         let mut all_indices: Vec<u32> = Vec::new();
 
         // Collect (mesh_index, world_transform_4x4) pairs by traversing the scene graph.
-        let mut mesh_instances: Vec<(usize, [[f32; 4]; 4])> = Vec::new();
-        let identity = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0f32],
-        ];
+        let mut mesh_instances: Vec<(usize, Mat4)> = Vec::new();
         let default_scene = document
             .default_scene()
             .or_else(|| document.scenes().next());
         if let Some(scene) = default_scene {
-            let mut stack: Vec<(gltf::Node, [[f32; 4]; 4])> =
-                scene.nodes().map(|node| (node, identity)).collect();
+            let mut stack: Vec<(gltf::Node, Mat4)> = scene
+                .nodes()
+                .map(|node| (node, convert::IDENTITY))
+                .collect();
             while let Some((node, parent_transform)) = stack.pop() {
-                let local_transform = node_transform(node.transform());
-                let world_transform = mat4_mul(parent_transform, local_transform);
+                let local_transform = convert::mat4_from_cols(node.transform().matrix());
+                let world_transform = convert::mat4_mul(parent_transform, local_transform);
                 if let Some(mesh) = node.mesh() {
                     mesh_instances.push((mesh.index(), world_transform));
                 }
@@ -82,7 +63,7 @@ impl Rule for GlbToCookedMesh {
         } else {
             // No scene: fall back to processing every mesh with identity transform.
             for (mesh_index, _) in document.meshes().enumerate() {
-                mesh_instances.push((mesh_index, identity));
+                mesh_instances.push((mesh_index, convert::IDENTITY));
             }
         }
 
@@ -93,8 +74,6 @@ impl Rule for GlbToCookedMesh {
         let meshes: Vec<gltf::Mesh> = document.meshes().collect();
         for (mesh_index, world_transform) in mesh_instances {
             let mesh = &meshes[mesh_index];
-            // A mirrored node (negative scale) flips triangle winding; swap it back for back-face culling
-            let mirrored = determinant3(world_transform) < 0.0;
             for primitive in mesh.primitives() {
                 if primitive.mode() != gltf::mesh::Mode::Triangles {
                     eprintln!(
@@ -110,58 +89,24 @@ impl Rule for GlbToCookedMesh {
                     .read_positions()
                     .with_context(|| format!("{input:?}: missing positions"))?
                     .collect();
-                // Optional attributes: sequential indices, zero UVs, smooth normals from faces
-                let mut primitive_indices: Vec<u32> = match reader.read_indices() {
-                    Some(indices) => indices.into_u32().collect(),
-                    None => (0..positions.len() as u32).collect(),
-                };
-                primitive_indices.truncate(primitive_indices.len() / 3 * 3);
-                if mirrored {
-                    for triangle in primitive_indices.chunks_mut(3) {
-                        triangle.swap(1, 2);
-                    }
-                }
-                let normals: Vec<[f32; 3]> = match reader.read_normals() {
-                    Some(normals) => normals.collect(),
-                    None => face_normals(&positions, &primitive_indices),
-                };
-                let texture_coordinates: Vec<[f32; 2]> = reader
-                    .read_tex_coords(0)
-                    .map(|coordinates| coordinates.into_f32().collect())
-                    .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
-                let glb_tangents: Vec<[f32; 4]> = reader
-                    .read_tangents()
-                    .map(|tangents_iter| tangents_iter.collect())
-                    .unwrap_or_default();
-
-                let mut vertices: Vec<Vertex> = (0..positions.len())
-                    .map(|vertex_index| {
-                        let normal = transform_normal(world_transform, normals[vertex_index]);
-                        let (tangent_x, tangent_y, tangent_z, sign) = glb_tangents
-                            .get(vertex_index)
-                            .map(|tangent| (tangent[0], tangent[1], tangent[2], tangent[3]))
-                            .unwrap_or((1.0, 0.0, 0.0, 1.0));
-                        let tangent_world =
-                            transform_normal(world_transform, [tangent_x, tangent_y, tangent_z]);
-                        let bitangent_x =
-                            (normal[1] * tangent_world[2] - normal[2] * tangent_world[1]) * sign;
-                        let bitangent_y =
-                            (normal[2] * tangent_world[0] - normal[0] * tangent_world[2]) * sign;
-                        let bitangent_z =
-                            (normal[0] * tangent_world[1] - normal[1] * tangent_world[0]) * sign;
-                        Vertex {
-                            position: transform_point(world_transform, positions[vertex_index]),
-                            texture_coordinates: texture_coordinates[vertex_index],
-                            normal,
-                            tangent: tangent_world,
-                            bitangent: [bitangent_x, bitangent_y, bitangent_z],
-                        }
-                    })
-                    .collect();
-
-                if glb_tangents.is_empty() {
-                    compute_tangents(&mut vertices, &primitive_indices);
-                }
+                let (vertices, primitive_indices) = convert::build_primitive(
+                    PrimitiveAttributes {
+                        positions,
+                        normals: reader.read_normals().map(|normals| normals.collect()),
+                        texture_coordinates: reader
+                            .read_tex_coords(0)
+                            .map(|coordinates| coordinates.into_f32().collect()),
+                        tangents: reader
+                            .read_tangents()
+                            .map(|tangents| tangents.collect())
+                            .unwrap_or_default(),
+                        indices: reader
+                            .read_indices()
+                            .map(|indices| indices.into_u32().collect()),
+                    },
+                    world_transform,
+                )
+                .with_context(|| format!("{input:?}: mesh {mesh_index}"))?;
 
                 all_indices.extend(primitive_indices.iter().map(|&index| index + vertex_offset));
                 all_vertices.extend(vertices);
@@ -233,40 +178,8 @@ impl Rule for GlbToCookedMesh {
         }
 
         // --- Mesh (anchor output, last) ---
-        let vertex_bytes: &[u8] = bytemuck::cast_slice(&all_vertices);
-        let index_bytes: &[u8] = bytemuck::cast_slice(&all_indices);
-        let mut output_bytes = Vec::with_capacity(16 + vertex_bytes.len() + index_bytes.len());
-        output_bytes.extend_from_slice(b"RMSH");
-        output_bytes.extend_from_slice(&1u32.to_le_bytes());
-        output_bytes.extend_from_slice(&(all_vertices.len() as u32).to_le_bytes());
-        output_bytes.extend_from_slice(&(all_indices.len() as u32).to_le_bytes());
-        output_bytes.extend_from_slice(vertex_bytes);
-        output_bytes.extend_from_slice(index_bytes);
-        write_atomic(output, &output_bytes)
+        write_atomic(output, &convert::rmsh_bytes(&all_vertices, &all_indices))
     }
-}
-
-/// Determinant of the upper-left 3x3 (sign tells whether the transform mirrors).
-fn determinant3(m: [[f32; 4]; 4]) -> f32 {
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
-}
-
-/// Smooth per-vertex normals from area-weighted face normals, for primitives without NORMAL.
-fn face_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
-    let mut normals = vec![[0.0f32; 3]; positions.len()];
-    for triangle in indices.chunks(3) {
-        let [a, b, c] = [triangle[0], triangle[1], triangle[2]].map(|index| index as usize);
-        let face = cross3(
-            sub3(positions[b], positions[a]),
-            sub3(positions[c], positions[a]),
-        );
-        for index in [a, b, c] {
-            normals[index] = add3(normals[index], face);
-        }
-    }
-    normals.into_iter().map(normalize3).collect()
 }
 
 fn write_cooked_tex(
@@ -297,108 +210,4 @@ fn write_cooked_tex(
     // glTF UV origin (0,0) is top-left, matching wgpu/Vulkan — no row flip needed.
     write_rtex(&path, image.width, image.height, &rgba)
         .with_context(|| format!("{input:?}: {label}"))
-}
-
-fn compute_tangents(vertices: &mut [Vertex], indices: &[u32]) {
-    // Accumulate from zero; vertices not in any valid triangle keep their default tangent
-    let mut tangent_sums = vec![[0.0f32; 3]; vertices.len()];
-    let mut bitangent_sums = vec![[0.0f32; 3]; vertices.len()];
-    let mut triangle_counts = vec![0usize; vertices.len()];
-
-    for triangle in indices.chunks(3) {
-        let (index_0, index_1, index_2) = (
-            triangle[0] as usize,
-            triangle[1] as usize,
-            triangle[2] as usize,
-        );
-        let position_0 = vertices[index_0].position;
-        let position_1 = vertices[index_1].position;
-        let position_2 = vertices[index_2].position;
-        let texture_coordinates_0 = vertices[index_0].texture_coordinates;
-        let texture_coordinates_1 = vertices[index_1].texture_coordinates;
-        let texture_coordinates_2 = vertices[index_2].texture_coordinates;
-
-        let delta_position_1 = sub3(position_1, position_0);
-        let delta_position_2 = sub3(position_2, position_0);
-        let delta_texture_coordinates_1 = sub2(texture_coordinates_1, texture_coordinates_0);
-        let delta_texture_coordinates_2 = sub2(texture_coordinates_2, texture_coordinates_0);
-
-        let determinant = delta_texture_coordinates_1[0] * delta_texture_coordinates_2[1]
-            - delta_texture_coordinates_1[1] * delta_texture_coordinates_2[0];
-        if determinant.abs() < 1e-8 {
-            continue;
-        }
-        let inverse_determinant = 1.0 / determinant;
-        let tangent = scale3(
-            sub3(
-                scale3(delta_position_1, delta_texture_coordinates_2[1]),
-                scale3(delta_position_2, delta_texture_coordinates_1[1]),
-            ),
-            inverse_determinant,
-        );
-        let bitangent = scale3(
-            sub3(
-                scale3(delta_position_2, delta_texture_coordinates_1[0]),
-                scale3(delta_position_1, delta_texture_coordinates_2[0]),
-            ),
-            inverse_determinant,
-        );
-
-        for &index in &[index_0, index_1, index_2] {
-            tangent_sums[index] = add3(tangent_sums[index], tangent);
-            bitangent_sums[index] = add3(bitangent_sums[index], bitangent);
-            triangle_counts[index] += 1;
-        }
-    }
-
-    for (index, &count) in triangle_counts.iter().enumerate() {
-        if count > 0 {
-            let inverse_count = 1.0 / count as f32;
-            vertices[index].tangent = normalize3(scale3(tangent_sums[index], inverse_count));
-            // glTF's V axis points down the image; negate so the bitangent matches cross(N, T)·w
-            vertices[index].bitangent = normalize3(scale3(bitangent_sums[index], -inverse_count));
-        }
-    }
-}
-
-fn mat4_mul(left: [[f32; 4]; 4], right: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
-    let mut result = [[0.0f32; 4]; 4];
-    for row in 0..4 {
-        for column in 0..4 {
-            result[row][column] = (0..4)
-                .map(|inner| left[row][inner] * right[inner][column])
-                .sum();
-        }
-    }
-    result
-}
-
-fn node_transform(transform: gltf::scene::Transform) -> [[f32; 4]; 4] {
-    let matrix = transform.matrix();
-    // gltf gives column-major; convert to row-major [[f32;4];4]
-    [
-        [matrix[0][0], matrix[1][0], matrix[2][0], matrix[3][0]],
-        [matrix[0][1], matrix[1][1], matrix[2][1], matrix[3][1]],
-        [matrix[0][2], matrix[1][2], matrix[2][2], matrix[3][2]],
-        [matrix[0][3], matrix[1][3], matrix[2][3], matrix[3][3]],
-    ]
-}
-
-fn transform_point(matrix: [[f32; 4]; 4], point: [f32; 3]) -> [f32; 3] {
-    [
-        matrix[0][0] * point[0] + matrix[0][1] * point[1] + matrix[0][2] * point[2] + matrix[0][3],
-        matrix[1][0] * point[0] + matrix[1][1] * point[1] + matrix[1][2] * point[2] + matrix[1][3],
-        matrix[2][0] * point[0] + matrix[2][1] * point[1] + matrix[2][2] * point[2] + matrix[2][3],
-    ]
-}
-
-fn transform_normal(matrix: [[f32; 4]; 4], normal: [f32; 3]) -> [f32; 3] {
-    // Normals transform by the inverse-transpose of the upper-left 3x3.
-    // For uniform or orthogonal scaling this equals the 3x3 itself (re-normalized).
-    let transformed = [
-        matrix[0][0] * normal[0] + matrix[0][1] * normal[1] + matrix[0][2] * normal[2],
-        matrix[1][0] * normal[0] + matrix[1][1] * normal[1] + matrix[1][2] * normal[2],
-        matrix[2][0] * normal[0] + matrix[2][1] * normal[1] + matrix[2][2] * normal[2],
-    ];
-    normalize3(transformed)
 }

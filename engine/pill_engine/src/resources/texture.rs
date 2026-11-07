@@ -6,12 +6,14 @@ use crate::{
     resources::{Material, Resource, ResourceLoader, ResourceStorage},
 };
 
+use std::borrow::Cow;
+
 use pill_core::{get_type_name, ErrorContext, PillSlotMapKey, PillStyle, PillTypeMapKey, Result};
 pill_core::define_new_pill_slotmap_key! {
     pub struct TextureHandle;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextureType {
     Color,
     Normal,
@@ -39,10 +41,15 @@ impl Texture {
     }
 
     pub fn from_bytes(name: &str, texture_type: TextureType, bytes: &[u8]) -> Self {
+        Self::from_bytes_owned(name, texture_type, bytes.to_vec())
+    }
+
+    /// Like `from_bytes`, taking ownership so large runtime-decoded textures aren't copied.
+    pub fn from_bytes_owned(name: &str, texture_type: TextureType, bytes: Vec<u8>) -> Self {
         Self::new(
             name,
             texture_type,
-            ResourceLoader::Bytes(bytes.to_vec().into_boxed_slice()),
+            ResourceLoader::Bytes(bytes.into_boxed_slice()),
         )
     }
 }
@@ -115,9 +122,13 @@ pub(crate) fn parse_cooked_tex(bytes: &[u8]) -> Result<CookedTexture<'_>> {
     })
 }
 
+fn owned((pixels, width, height): (Cow<'_, [u8]>, u32, u32)) -> (Cow<'static, [u8]>, u32, u32) {
+    (Cow::Owned(pixels.into_owned()), width, height)
+}
+
 /// Material textures are RGBA8; float RTEX files are environment/IBL maps for
 /// `Engine::load_cooked_texture`.
-fn decode_cooked_tex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
+fn decode_cooked_tex(bytes: &[u8]) -> Result<(Cow<'_, [u8]>, u32, u32)> {
     let cooked = parse_cooked_tex(bytes)?;
     if cooked.version != 1 {
         return Err(pill_core::PillError::from(format!(
@@ -125,11 +136,11 @@ fn decode_cooked_tex(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
             cooked.version
         )));
     }
-    Ok((cooked.mips[0].to_vec(), cooked.width, cooked.height))
+    Ok((Cow::Borrowed(cooked.mips[0]), cooked.width, cooked.height))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn decode_png(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
+fn decode_png(bytes: &[u8]) -> Result<(Cow<'static, [u8]>, u32, u32)> {
     let decoder = png::Decoder::new(bytes);
     let mut reader = decoder
         .read_info()
@@ -158,7 +169,7 @@ fn decode_png(bytes: &[u8]) -> Result<(Vec<u8>, u32, u32)> {
             return Err(e);
         }
     };
-    Ok((rgba, width, height))
+    Ok((Cow::Owned(rgba), width, height))
 }
 
 impl PillTypeMapKey for Texture {
@@ -189,7 +200,7 @@ impl Resource for Texture {
                         std::fs::read(&cooked_tex_path).map_err(|e| -> pill_core::PillError {
                             format!("Failed to read texture {cooked_tex_path:?}: {e}").into()
                         })?;
-                    decode_cooked_tex(&bytes)?
+                    owned(decode_cooked_tex(&bytes)?)
                 } else {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
@@ -199,7 +210,7 @@ impl Resource for Texture {
                             format!("Failed to read texture {base:?}: {e}").into()
                         })?;
                         if base.extension().map(|e| e == "cooked_tex").unwrap_or(false) {
-                            decode_cooked_tex(&bytes)?
+                            owned(decode_cooked_tex(&bytes)?)
                         } else {
                             decode_png(&bytes)?
                         }
@@ -245,6 +256,11 @@ impl Resource for Texture {
             )
             .context(error_message)?;
             engine.resource_manager.add_resource(renderer_texture)?;
+        }
+
+        // The pixels live on the GPU now; nothing reads the source bytes again
+        if let ResourceLoader::Bytes(bytes) = &mut self.resource_loader {
+            *bytes = Box::default();
         }
 
         Ok(())

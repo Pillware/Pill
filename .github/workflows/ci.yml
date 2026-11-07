@@ -3,6 +3,7 @@ name: CI
 
 on:
   push:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -162,6 +163,9 @@ jobs:
           - examples/tunnel
           - examples/pbr_helmet
           - examples/pbr_balls
+        include:
+          - example: examples/sponza
+            smoke: manual
     steps:
       - uses: actions/checkout@v4
 
@@ -191,7 +195,18 @@ jobs:
           name: pilllauncher-linux
           path: engine/pill_launcher/target/release
 
+      - name: Build wasm
+        if: matrix.smoke == 'manual' && github.event_name != 'workflow_dispatch'
+        shell: bash
+        env:
+          EXAMPLE: ${{ matrix.example }}
+        run: |
+          set -euo pipefail
+          chmod +x engine/pill_launcher/target/release/PillLauncher
+          ./engine/pill_launcher/target/release/PillLauncher -a build -t web -p "$EXAMPLE" -c release
+
       - name: Smoke test — build wasm and serve via dev server
+        if: matrix.smoke != 'manual' || github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           EXAMPLE: ${{ matrix.example }}
