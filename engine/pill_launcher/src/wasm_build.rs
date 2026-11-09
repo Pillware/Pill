@@ -36,11 +36,15 @@ pub fn build(
     // Cook assets before wasm-pack — cooked files are git-ignored and embedded
     // via include_bytes! at compile time, so they must exist for the game crate
     // to compile on a fresh checkout.
-    crate::cook_assets(game_project_directory_path)?;
+    let asset_stats = crate::cook_assets(game_project_directory_path)?;
 
     prepare_scratch_crate(&wasm_template_dir, &scratch_pill_web_app_dir)?;
     embed_game_config(game_project_directory_path, &scratch_pill_web_app_dir)?;
-    rewrite_scratch_manifest(&scratch_pill_web_app_dir, game_project_directory_path)?;
+    rewrite_scratch_manifest(
+        &scratch_pill_web_app_dir,
+        game_project_directory_path,
+        compile_mode,
+    )?;
     run_wasm_pack(compile_mode, &scratch_pill_web_app_dir, &scratch_pkg_dir)?;
     copy_build_outputs(
         &scratch_pkg_dir,
@@ -48,6 +52,12 @@ pub fn build(
         &game_project_directory_path.join("web"),
         &build_wasm_dir,
     )?;
+
+    // After the build so the wasm artifact size is current.
+    if let Err(error) = crate::write_game_asset_dag(game_project_directory_path, &asset_stats, None)
+    {
+        eprintln!("Warning: asset DAG not written ({error:#})");
+    }
     copy_game_assets(
         &game_project_directory_path.join("res"),
         &build_wasm_dir.join("res"),
@@ -146,7 +156,11 @@ fn embed_game_config(game_dir: &Path, scratch_pill_web_app_dir: &Path) -> Result
     Ok(())
 }
 
-fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) -> Result<()> {
+fn rewrite_scratch_manifest(
+    scratch_pill_web_app_dir: &Path,
+    game_dir: &Path,
+    compile_mode: &CompileMode,
+) -> Result<()> {
     let engine = get_path(Location::EngineCrates);
     let pill_engine = cargo_path(&engine.join("pill_engine"));
     let pill_core = cargo_path(&engine.join("pill_core"));
@@ -169,8 +183,9 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
         }
     })?;
 
-    // Append what the template omits: the pill_game dep, [workspace] (stops cargo walking up;
-    // resolver matches engine), and the size-optimized release profile.
+    // Append what the template omits: the pill_game dep (release drops the game's default
+    // features, e.g. editor/debug tooling), [workspace] (stops cargo walking up; resolver matches
+    // engine), the size-optimized release profile, and optimized build scripts (asset baking).
     let mut f = OpenOptions::new()
         .append(true)
         .open(&manifest)
@@ -178,7 +193,7 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
     write!(
         f,
         concat!(
-            "\npill_game = {{ path = \"{pill_game}\" }}\n",
+            "\npill_game = {{ path = \"{pill_game}\"{game_features} }}\n",
             "\n[workspace]\nresolver = \"2\"\n",
             "\n[profile.release]\n",
             "opt-level = \"z\"\n",
@@ -186,12 +201,19 @@ fn rewrite_scratch_manifest(scratch_pill_web_app_dir: &Path, game_dir: &Path) ->
             "codegen-units = 1\n",
             "panic = \"abort\"\n",
             "strip = true\n",
+            "\n[profile.release.build-override]\nopt-level = 3\n",
+            "\n[profile.dev.build-override]\nopt-level = 3\n",
             "\n[package.metadata.wasm-pack.profile.release]\n",
             "wasm-opt = [\"-Oz\", \"--strip-debug\", \"--strip-producers\", \"--enable-nontrapping-float-to-int\", \"--enable-bulk-memory\", \"--enable-sign-ext\", \"--enable-mutable-globals\", \"--enable-reference-types\"]\n",
             "\n[target.'cfg(target_arch = \"wasm32\")'.dependencies]\n",
             "lol_alloc = \"0.4\"\n",
         ),
         pill_game = pill_game,
+        game_features = if *compile_mode == CompileMode::Release {
+            ", default-features = false"
+        } else {
+            ""
+        },
     )
     .context("Failed to append to scratch Cargo.toml")?;
 
@@ -290,6 +312,11 @@ fn copy_game_assets(src_res: &Path, dst_res: &Path) -> Result<()> {
     fs::create_dir_all(dst_parent)?;
     fs_extra::dir::copy(src_res, dst_parent, &CopyOptions::new().overwrite(true))
         .with_context(|| format!("Failed to copy game res/ from {src_res:?} to {dst_res:?}"))?;
+    // Cook-time cache: build tooling, not a served asset.
+    let cook_cache = dst_res.join(pill_assets::COOK_TIMES_FILE);
+    if cook_cache.exists() {
+        fs::remove_file(&cook_cache).with_context(|| format!("Failed to remove {cook_cache:?}"))?;
+    }
     Ok(())
 }
 

@@ -144,11 +144,17 @@ impl Resource for Mesh {
             let base = engine.game_resources_directory_path.join(&self.path);
             let cooked_mesh_path = base.with_extension("cooked_mesh");
 
-            if cooked_mesh_path.exists() {
-                let bytes =
+            // The mounted asset pack wins over the cooked file on disk
+            let cooked = match engine.packed_asset(&self.path.with_extension("cooked_mesh")) {
+                Some(bytes) => Some(bytes),
+                None if cooked_mesh_path.exists() => Some(std::borrow::Cow::Owned(
                     std::fs::read(&cooked_mesh_path).map_err(|e| -> pill_core::PillError {
                         format!("Failed to read mesh {cooked_mesh_path:?}: {e}").into()
-                    })?;
+                    })?,
+                )),
+                None => None,
+            };
+            if let Some(bytes) = cooked {
                 let mut mesh_data = load_cooked_mesh(&bytes).context(error_message.clone())?;
                 // Cooked OBJ meshes store 1 - v; with_uv_flip asks for the raw v (same as the OBJ path)
                 if self.flip_uv_y {

@@ -6,8 +6,8 @@ use crate::{
     },
     engine::Engine,
     graphics::{
-        Pass, PassPBROpaque, PassTonemap, RendererMaterialHandle, RendererTargetDesc,
-        RendererTextureHandle, TargetSize,
+        Pass, PassPBROpaque, PassTextureHandle, PassTonemap, RendererMaterialHandle,
+        RendererTargetDesc, RendererTextureHandle, TargetSize,
     },
     renderer::resources::RendererTexture,
     resources::{MaterialHandle, TextureHandle, TextureType},
@@ -15,6 +15,11 @@ use crate::{
 
 #[cfg(feature = "ui")]
 use crate::ecs::egui_system;
+
+#[cfg(feature = "post_fx")]
+use crate::graphics::{
+    PassBloom, PassDepthOfField, PassFxaa, PassLens, PassMotionBlur, PassPBRTranslucent, PassSsao,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::ecs::{audio_system, haptics_system, AudioManagerComponent};
@@ -105,47 +110,206 @@ pub const HDR_TARGET_NAME: &str = "hdr_target";
 pub const HDR_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 pub const DEPTH_TARGET_NAME: &str = "depth_target";
 pub const DEPTH_TARGET_FORMAT: wgpu::TextureFormat = RendererTexture::DEPTH_FORMAT;
+/// Motion vectors (UV offset to last frame's position) written by the PBR passes.
+pub const VELOCITY_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg16Float;
+/// Indirect (IBL) lighting alone, written by the PBR opaque pass for SSAO.
+pub const AMBIENT_TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 // WGSL is generated from res/shaders/*.hlsl by pill_assets (build.rs)
+// The post_fx variants also write motion vectors and the ambient term
+#[cfg(not(feature = "post_fx"))]
 pub const PBR_OPAQUE_VERTEX_SHADER: &str = include_str!("../res/shaders/pbr_opaque_vertex.wgsl");
+#[cfg(feature = "post_fx")]
+pub const PBR_OPAQUE_VERTEX_SHADER: &str =
+    include_str!("../res/shaders/pbr_opaque_post_fx_vertex.wgsl");
+#[cfg(not(feature = "post_fx"))]
 pub const PBR_OPAQUE_FRAGMENT_SHADER: &str =
     include_str!("../res/shaders/pbr_opaque_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const PBR_OPAQUE_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/pbr_opaque_post_fx_fragment.wgsl");
 pub const BACKGROUND_VERTEX_SHADER: &str = include_str!("../res/shaders/background_vertex.wgsl");
+#[cfg(not(feature = "post_fx"))]
 pub const BACKGROUND_FRAGMENT_SHADER: &str =
     include_str!("../res/shaders/background_fragment.wgsl");
-pub const TONEMAP_VERTEX_SHADER: &str = include_str!("../res/shaders/tonemap_vertex.wgsl");
+#[cfg(feature = "post_fx")]
+pub const BACKGROUND_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/background_post_fx_fragment.wgsl");
+pub const FULLSCREEN_VERTEX_SHADER: &str = include_str!("../res/shaders/fullscreen_vertex.wgsl");
 pub const TONEMAP_FRAGMENT_SHADER: &str = include_str!("../res/shaders/tonemap_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const BLOOM_DOWNSAMPLE_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/bloom_downsample_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const BLOOM_UPSAMPLE_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/bloom_upsample_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const BLOOM_COMPOSITE_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/bloom_composite_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const LINEARIZE_DEPTH_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/linearize_depth_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const DOF_DOWNSAMPLE_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/dof_downsample_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const DOF_BOKEH_FRAGMENT_SHADER: &str = include_str!("../res/shaders/dof_bokeh_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const DOF_NEAR_PREFILTER_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/dof_near_prefilter_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const DOF_NEAR_BLUR_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/dof_near_blur_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const DOF_NEAR_COMPOSITE_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/dof_near_composite_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const SSAO_FRAGMENT_SHADER: &str = include_str!("../res/shaders/ssao_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const SSAO_BLUR_FRAGMENT_SHADER: &str = include_str!("../res/shaders/ssao_blur_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const SSAO_APPLY_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/ssao_apply_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const FXAA_FRAGMENT_SHADER: &str = include_str!("../res/shaders/fxaa_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const LENS_FRAGMENT_SHADER: &str = include_str!("../res/shaders/lens_fragment.wgsl");
+#[cfg(feature = "post_fx")]
+pub const MOTION_BLUR_FRAGMENT_SHADER: &str =
+    include_str!("../res/shaders/motion_blur_fragment.wgsl");
 
 /// Frame composition: opaque PBR → game-defined passes (`Engine::add_render_pass`) → tonemap → UI.
 /// Creates the shared HDR and depth targets and records them in `RenderStateComponent`.
 pub fn default_pass_chain(engine: &mut Engine) -> Result<Vec<Box<dyn Pass>>> {
-    let hdr_target = engine.renderer.create_render_target(RendererTargetDesc {
-        name: HDR_TARGET_NAME.to_string(),
-        format: HDR_TARGET_FORMAT,
-        size: TargetSize::Surface,
-    })?;
-    let depth_target = engine.renderer.create_depth_texture(DEPTH_TARGET_NAME)?;
+    let (hdr_target, depth_target) = create_scene_targets(engine)?;
+    let mut passes: Vec<Box<dyn Pass>> =
+        vec![Box::new(opaque_pass(engine, hdr_target, depth_target)?)];
+    passes.append(&mut engine.custom_render_passes);
+    passes.push(Box::new(PassTonemap::new(hdr_target)));
+    push_ui_pass(engine, &mut passes)?;
+    Ok(passes)
+}
 
+#[cfg(feature = "post_fx")]
+/// `PassChain::PostFx`: the default chain with post-processing between the scene passes and
+/// tonemapping; parameters live in `RenderStateComponent`:
+/// opaque PBR (+ motion vectors, ambient) → SSAO → translucent PBR → game passes → depth of
+/// field → motion blur (+ DoF composite) → bloom → tonemap → FXAA → lens → UI.
+pub fn post_fx_pass_chain(engine: &mut Engine) -> Result<Vec<Box<dyn Pass>>> {
+    // The opaque pass renders into `opaque_target`; SSAO writes the shared HDR target that the
+    // translucent and game passes then draw onto
+    let (hdr_target, depth_target) = create_scene_targets(engine)?;
+    let opaque_target = create_target(engine, "opaque_target", HDR_TARGET_FORMAT)?;
+    let ambient_target = create_target(engine, "ambient_target", AMBIENT_TARGET_FORMAT)?;
+    let velocity_target = create_target(engine, "velocity_target", VELOCITY_TARGET_FORMAT)?;
+    let depth_of_field_target = engine.renderer.create_render_target(RendererTargetDesc {
+        name: "depth_of_field_target".to_string(),
+        format: HDR_TARGET_FORMAT,
+        size: TargetSize::SurfaceDivisor(4),
+    })?;
+    let motion_blur_target = create_target(engine, "motion_blur_target", HDR_TARGET_FORMAT)?;
+    let bloom_target = create_target(engine, "bloom_target", HDR_TARGET_FORMAT)?;
+    // Tonemapped, still linear; the lens pass encodes sRGB into the swapchain
+    let ldr_target = create_target(engine, "ldr_target", HDR_TARGET_FORMAT)?;
+    // FXAA at the render size, before the upscale: its blend reaches less than a pixel, so it
+    // smooths 1-texel stair steps but not the 2-pixel steps of an upscaled image
+    let fxaa_target = create_target(engine, "fxaa_target", HDR_TARGET_FORMAT)?;
+
+    let opaque = opaque_pass(engine, opaque_target, depth_target)?;
+    let translucent = PassPBRTranslucent::new(
+        hdr_target,
+        depth_target,
+        opaque.max_instances(),
+        opaque.initial_ibl(),
+    )
+    .with_velocity_target(velocity_target);
+    let mut passes: Vec<Box<dyn Pass>> = vec![
+        Box::new(
+            opaque
+                .without_translucent()
+                .with_velocity_target(velocity_target)
+                .with_ambient_target(ambient_target),
+        ),
+        Box::new(PassSsao::new(
+            opaque_target,
+            ambient_target,
+            depth_target,
+            hdr_target,
+        )),
+        Box::new(translucent),
+    ];
+    passes.append(&mut engine.custom_render_passes);
+    passes.push(Box::new(PassDepthOfField::new(
+        hdr_target,
+        depth_target,
+        depth_of_field_target,
+    )));
+    passes.push(Box::new(
+        PassMotionBlur::new(
+            hdr_target,
+            velocity_target,
+            depth_target,
+            motion_blur_target,
+        )
+        .with_depth_of_field(depth_of_field_target),
+    ));
+    passes.push(Box::new(PassBloom::new(motion_blur_target, bloom_target)));
+    passes.push(Box::new(
+        PassTonemap::new(bloom_target).with_output(ldr_target),
+    ));
+    passes.push(Box::new(PassFxaa::new(ldr_target, fxaa_target)));
+    passes.push(Box::new(PassLens::new(fxaa_target)));
+    push_ui_pass(engine, &mut passes)?;
+    Ok(passes)
+}
+
+/// Surface-sized render target.
+fn create_target(
+    engine: &mut Engine,
+    name: &str,
+    format: wgpu::TextureFormat,
+) -> Result<PassTextureHandle> {
+    engine.renderer.create_render_target(RendererTargetDesc {
+        name: name.to_string(),
+        format,
+        size: TargetSize::Surface,
+    })
+}
+
+/// Shared HDR color and depth targets, recorded in `RenderStateComponent` for game passes.
+fn create_scene_targets(engine: &mut Engine) -> Result<(PassTextureHandle, PassTextureHandle)> {
+    let hdr_target = create_target(engine, HDR_TARGET_NAME, HDR_TARGET_FORMAT)?;
+    let depth_target = engine.renderer.create_depth_texture(DEPTH_TARGET_NAME)?;
     let render_state = engine.get_global_component_mut::<RenderStateComponent>()?;
     render_state.hdr_target = hdr_target;
     render_state.depth_target = depth_target;
-    // Engine defaults, not the game's handles: the pass falls back to these if the game's are invalid
-    let initial_ibl = render_state.default_ibl;
+    Ok((hdr_target, depth_target))
+}
 
+fn opaque_pass(
+    engine: &Engine,
+    hdr_target: PassTextureHandle,
+    depth_target: PassTextureHandle,
+) -> Result<PassPBROpaque> {
+    // Engine defaults, not the game's handles: the pass falls back to these if the game's are invalid
+    let initial_ibl = engine
+        .get_global_component::<RenderStateComponent>()?
+        .default_ibl;
     // At most one mesh instance per entity
     let max_instances = engine
         .config
         .get_int("MAX_ENTITIES")
         .unwrap_or(MAX_ENTITIES as i64) as usize;
-    let mut passes: Vec<Box<dyn Pass>> = vec![Box::new(PassPBROpaque::new(
+    Ok(PassPBROpaque::new(
         hdr_target,
         depth_target,
         max_instances,
         initial_ibl,
-    ))];
-    passes.append(&mut engine.custom_render_passes);
-    passes.push(Box::new(PassTonemap::new(hdr_target)));
+    ))
+}
 
+#[allow(unused_variables)]
+fn push_ui_pass(engine: &Engine, passes: &mut Vec<Box<dyn Pass>>) -> Result<()> {
     #[cfg(feature = "ui")]
     {
         use crate::{ecs::EguiComponent, graphics::PassEgui};
@@ -156,8 +320,7 @@ pub fn default_pass_chain(engine: &mut Engine) -> Result<Vec<Box<dyn Pass>>> {
         let window = engine.renderer.get_window();
         passes.push(Box::new(PassEgui::new(window, client)));
     }
-
-    Ok(passes)
+    Ok(())
 }
 
 // --- Resources ---

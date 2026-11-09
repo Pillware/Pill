@@ -40,10 +40,10 @@ impl Rule for HlslToWgsl {
                 entry,
                 "-stage",
                 stage,
-                // -O0 + -g preserve intermediate variable names so the emitted
-                // WGSL is debuggable in browser devtools.
+                // -O0 keeps the emitted WGSL close to the source; no -g: debug info only
+                // preserves local variable names and costs ~15% of the shader text that every
+                // game embeds (struct, binding and function names stay)
                 "-O0",
-                "-g",
                 "-o",
                 output.to_str().context("output path is not UTF-8")?,
             ])

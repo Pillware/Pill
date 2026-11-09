@@ -212,6 +212,10 @@ impl PillRenderer for Renderer {
         Ok(())
     }
 
+    fn get_render_size(&self) -> (u32, u32) {
+        self.state.render_size
+    }
+
     fn get_surface_size(&self) -> (u32, u32) {
         (
             self.state.surface_configuration.width,
@@ -331,12 +335,14 @@ impl PillRenderer for Renderer {
     }
 
     fn create_render_target(&mut self, desc: RendererTargetDesc) -> Result<PassTextureHandle> {
-        let (width, height) = match desc.size {
-            TargetSize::Surface => (
-                self.state.surface_configuration.width,
-                self.state.surface_configuration.height,
-            ),
-            TargetSize::Fixed(width, height) => (width, height),
+        let divisor = match desc.size {
+            TargetSize::Surface => Some(1),
+            TargetSize::SurfaceDivisor(divisor) => Some(divisor.max(1)),
+            TargetSize::Fixed(..) => None,
+        };
+        let (width, height) = match (desc.size, divisor) {
+            (TargetSize::Fixed(width, height), _) => (width, height),
+            (_, divisor) => divided_size(self.state.render_size, divisor.unwrap_or(1)),
         };
         let texture = RendererTexture::new_render_target(
             &self.state.device,
@@ -346,12 +352,13 @@ impl PillRenderer for Renderer {
             desc.format,
         )?;
         let handle = self.state.pass_textures.insert(texture);
-        if let TargetSize::Surface = desc.size {
+        if let Some(divisor) = divisor {
             self.state.surface_targets.push((
                 handle,
                 SurfaceTarget::Color {
                     name: desc.name,
                     format: desc.format,
+                    divisor,
                 },
             ));
         }
@@ -359,11 +366,8 @@ impl PillRenderer for Renderer {
     }
 
     fn create_depth_texture(&mut self, label: &str) -> Result<PassTextureHandle> {
-        let texture = RendererTexture::new_depth_texture(
-            &self.state.device,
-            &self.state.surface_configuration,
-            label,
-        )?;
+        let (width, height) = self.state.render_size;
+        let texture = RendererTexture::new_depth_texture(&self.state.device, width, height, label)?;
         let handle = self.state.pass_textures.insert(texture);
         self.state.surface_targets.push((
             handle,
@@ -417,6 +421,10 @@ impl PillRenderer for Renderer {
         Ok(self.state.pass_textures.insert(texture))
     }
 
+    fn target_generation(&self) -> u64 {
+        self.state.target_generation
+    }
+
     fn get_texture_view(&self, handle: PassTextureHandle) -> Option<wgpu::TextureView> {
         self.state.pass_textures.get(handle).map(|t| {
             t.texture
@@ -430,6 +438,7 @@ enum SurfaceTarget {
     Color {
         name: String,
         format: wgpu::TextureFormat,
+        divisor: u32,
     },
     Depth {
         name: String,
@@ -449,6 +458,11 @@ pub struct State {
     // Optional frame capture: (target_frame, output_path). Set via PILL_SCREENSHOT env var.
     screenshot: Option<(u32, String)>,
     frame_counter: u32,
+    // Bumped when resize rebuilds the surface-sized targets
+    target_generation: u64,
+    // Size of TargetSize::Surface targets: the surface in logical pixels (physical ÷ scale factor),
+    // so HiDPI displays don't render 4× the pixels; the swapchain pass upscales
+    render_size: (u32, u32),
 }
 
 impl State {
@@ -603,6 +617,11 @@ impl State {
         };
 
         let pass_textures = PillSlotMap::with_capacity_and_key(10);
+        let render_size = logical_size(
+            surface_configuration.width,
+            surface_configuration.height,
+            window.scale_factor(),
+        );
 
         Ok(Self {
             pass_textures,
@@ -616,29 +635,45 @@ impl State {
             window,
             screenshot,
             frame_counter: 0,
+            target_generation: 0,
+            render_size,
         })
     }
 
     fn resize(&mut self, new_window_size: winit::dpi::PhysicalSize<u32>) {
         if new_window_size.width > 0 && new_window_size.height > 0 {
+            self.target_generation += 1;
             self.surface_configuration.width = new_window_size.width;
             self.surface_configuration.height = new_window_size.height;
             self.surface
                 .configure(&self.device, &self.surface_configuration);
+            self.render_size = logical_size(
+                new_window_size.width,
+                new_window_size.height,
+                self.window.scale_factor(),
+            );
 
             // Passes look target views up every frame, so replacing the textures in place is enough
             for (handle, target) in &self.surface_targets {
                 let texture = match target {
-                    SurfaceTarget::Color { name, format } => RendererTexture::new_render_target(
-                        &self.device,
+                    SurfaceTarget::Color {
                         name,
-                        new_window_size.width,
-                        new_window_size.height,
-                        *format,
-                    ),
+                        format,
+                        divisor,
+                    } => {
+                        let (width, height) = divided_size(self.render_size, *divisor);
+                        RendererTexture::new_render_target(
+                            &self.device,
+                            name,
+                            width,
+                            height,
+                            *format,
+                        )
+                    }
                     SurfaceTarget::Depth { name } => RendererTexture::new_depth_texture(
                         &self.device,
-                        &self.surface_configuration,
+                        self.render_size.0,
+                        self.render_size.1,
                         name,
                     ),
                 };
@@ -652,6 +687,17 @@ impl State {
             }
         }
     }
+}
+
+/// `(width, height)` divided by `divisor`, at least 1×1.
+fn divided_size((width, height): (u32, u32), divisor: u32) -> (u32, u32) {
+    ((width / divisor).max(1), (height / divisor).max(1))
+}
+
+/// Physical size ÷ scale factor, at least 1×1.
+fn logical_size(width: u32, height: u32, scale_factor: f64) -> (u32, u32) {
+    let scale = |pixels: u32| ((pixels as f64 / scale_factor.max(1.0)).round() as u32).max(1);
+    (scale(width), scale(height))
 }
 
 /// Converts little-endian f32 texels to little-endian f16 (Rgba32Float → Rgba16Float data).

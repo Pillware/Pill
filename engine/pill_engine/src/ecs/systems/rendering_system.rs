@@ -1,6 +1,6 @@
 use crate::{
     config::{default_pass_chain, RENDERING_SYSTEM},
-    ecs::{CameraAspectRatio, CameraComponent, EntityHandle, RenderStateComponent},
+    ecs::{CameraAspectRatio, CameraComponent, EntityHandle, PassChain, RenderStateComponent},
     engine::Engine,
 };
 
@@ -12,17 +12,22 @@ pub fn rendering_system(engine: &mut Engine) -> Result<()> {
     let mut timer = Timer::new();
     timer.begin_context("rendering_system update");
 
-    // First-frame bootstrap: install default pass chain
-    let boot_done = engine
-        .get_global_component::<RenderStateComponent>()?
-        .boot_done;
+    // First-frame bootstrap: install the pass chain the game selected
+    let (boot_done, pass_chain) = {
+        let render_state = engine.get_global_component::<RenderStateComponent>()?;
+        (render_state.boot_done, render_state.pass_chain)
+    };
 
     if !boot_done {
         // Marked first so a failing boot is not retried (each try allocates new targets)
         engine
             .get_global_component_mut::<RenderStateComponent>()?
             .boot_done = true;
-        let passes = default_pass_chain(engine)?;
+        let passes = match pass_chain {
+            PassChain::Default => default_pass_chain(engine)?,
+            #[cfg(feature = "post_fx")]
+            PassChain::PostFx => crate::config::post_fx_pass_chain(engine)?,
+        };
         engine.renderer.set_passes(passes)?;
         return Ok(());
     }

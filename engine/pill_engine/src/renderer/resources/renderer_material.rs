@@ -10,7 +10,7 @@ use crate::{
 use pill_core::{debug, LogContext, PillError, PillStyle, PillTypeMapKey, RendererError, Result};
 
 /// Material parameter uniform (bind group 2). Mirrors `MaterialParams` in pbr_opaque_fragment.hlsl:
-/// two fully packed 16-byte std140 rows.
+/// three fully packed 16-byte std140 rows.
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct MaterialParams {
@@ -18,6 +18,10 @@ pub(crate) struct MaterialParams {
     pub(crate) roughness: f32,
     pub(crate) emissive: [f32; 3],
     pub(crate) metallic: f32,
+    pub(crate) clearcoat: f32,
+    pub(crate) clearcoat_roughness: f32,
+    pub(crate) opacity: f32,
+    pub(crate) _padding: f32,
 }
 
 /// Renderer textures of a material; `None` falls back to the engine default texture of that slot.
@@ -75,6 +79,8 @@ pub(crate) fn material_params_layout_entries() -> Vec<wgpu::BindGroupLayoutEntry
 
 pub struct RendererMaterial {
     pub name: String,
+    /// Opacity < 1: drawn by the translucent PBR pass (blended, back to front) instead of the opaque one.
+    pub translucent: bool,
     pub parameters_bind_group: wgpu::BindGroup,
     pub textures_bind_group: wgpu::BindGroup,
     parameters_uniform_buffer: wgpu::Buffer,
@@ -125,6 +131,7 @@ impl RendererMaterial {
 
         Ok(Self {
             name: name.to_string(),
+            translucent: parameters.opacity < 1.0,
             parameters_bind_group,
             textures_bind_group,
             parameters_uniform_buffer,
@@ -132,7 +139,8 @@ impl RendererMaterial {
     }
 
     /// Uploads new parameter values; bind groups stay valid.
-    pub(crate) fn write_parameters(&self, queue: &wgpu::Queue, parameters: &MaterialParams) {
+    pub(crate) fn write_parameters(&mut self, queue: &wgpu::Queue, parameters: &MaterialParams) {
+        self.translucent = parameters.opacity < 1.0;
         queue.write_buffer(
             &self.parameters_uniform_buffer,
             0,

@@ -75,6 +75,16 @@ pub struct Material {
     pub roughness: f32,
     #[readonly]
     pub emissive: Color,
+    /// Clear-coat layer strength (0 = none, 1 = full dielectric coat over the base).
+    #[readonly]
+    pub clearcoat: f32,
+    /// Perceptual roughness of the clear-coat layer.
+    #[readonly]
+    pub clearcoat_roughness: f32,
+    /// 1 = opaque; below 1 the material is alpha-blended (times the albedo texture's alpha) by the
+    /// translucent PBR pass of `PassChain::PostFx`.
+    #[readonly]
+    pub opacity: f32,
     #[readonly]
     pub albedo_texture: Option<TextureHandle>,
     #[readonly]
@@ -95,6 +105,9 @@ impl Material {
             metallic: 0.0,
             roughness: 0.5,
             emissive: Color::new(0.0, 0.0, 0.0),
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.1,
+            opacity: 1.0,
             albedo_texture: None,
             normal_texture: None,
             metallic_roughness_texture: None,
@@ -125,6 +138,18 @@ impl Material {
     /// so a black albedo plus an emissive color gives an unlit look.
     pub fn emissive(mut self, color: Color) -> Self {
         self.emissive = color;
+        self
+    }
+
+    /// Clear coat: a thin glossy dielectric layer on top (car paint, lacquer). `weight` 0 disables it.
+    pub fn clearcoat(mut self, weight: f32, roughness: f32) -> Self {
+        self.clearcoat = weight.clamp(0.0, 1.0);
+        self.clearcoat_roughness = roughness.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn opacity(mut self, opacity: f32) -> Self {
+        self.opacity = opacity.clamp(0.0, 1.0);
         self
     }
 
@@ -167,6 +192,17 @@ impl Material {
 
     pub fn set_emissive(&mut self, color: Color) {
         self.emissive = color;
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETERS);
+    }
+
+    pub fn set_clearcoat(&mut self, weight: f32, roughness: f32) {
+        self.clearcoat = weight.clamp(0.0, 1.0);
+        self.clearcoat_roughness = roughness.clamp(0.0, 1.0);
+        self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETERS);
+    }
+
+    pub fn set_opacity(&mut self, opacity: f32) {
+        self.opacity = opacity.clamp(0.0, 1.0);
         self.post_deferred_update_request(DEFERRED_REQUEST_VARIANT_PARAMETERS);
     }
 
@@ -214,6 +250,10 @@ impl Material {
             roughness: self.roughness,
             emissive: [self.emissive.x, self.emissive.y, self.emissive.z],
             metallic: self.metallic,
+            clearcoat: self.clearcoat,
+            clearcoat_roughness: self.clearcoat_roughness,
+            opacity: self.opacity,
+            _padding: 0.0,
         }
     }
 
@@ -347,7 +387,7 @@ impl Resource for Material {
                 #[cfg(not(feature = "headless"))]
                 engine
                     .resource_manager
-                    .get_resource_by_name::<RendererMaterial>(&self.name)?
+                    .get_resource_by_name_mut::<RendererMaterial>(&self.name)?
                     .write_parameters(engine.renderer.get_queue(), &self.renderer_parameters());
             }
             DEFERRED_REQUEST_VARIANT_TEXTURES => {

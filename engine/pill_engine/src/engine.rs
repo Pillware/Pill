@@ -45,6 +45,8 @@ pub struct Engine {
     pub(crate) frame_delta_time: f32, // In milliseconds
     // Game-defined scene passes, moved into the renderer's pass chain on the first frame
     pub(crate) custom_render_passes: Vec<Box<dyn Pass>>,
+    #[cfg(feature = "asset_pack")]
+    pub(crate) asset_pack: Option<pill_assets::Ppak<'static>>,
 }
 
 // ---- INTERNAL -----------------------------------------------------------------
@@ -78,6 +80,8 @@ impl Engine {
             game_resources_directory_path,
             frame_delta_time: 0.0,
             custom_render_passes: Vec::new(),
+            #[cfg(feature = "asset_pack")]
+            asset_pack: None,
         }
     }
 
@@ -102,6 +106,8 @@ impl Engine {
             game_resources_directory_path: std::path::PathBuf::new(),
             frame_delta_time: 0.0,
             custom_render_passes: Vec::new(),
+            #[cfg(feature = "asset_pack")]
+            asset_pack: None,
         }
     }
 
@@ -606,6 +612,56 @@ impl Engine {
                 format: wgpu::TextureFormat::Rgba32Float,
             },
         )
+    }
+
+    /// Mounts an embedded PPAK archive (`include_bytes!` of the `assets.pak` a game's build script
+    /// writes with `pill_assets::write_pack_for_build`). Path-based resources and `read_asset`
+    /// then resolve from the pack first.
+    #[cfg(feature = "asset_pack")]
+    pub fn mount_asset_pack(&mut self, bytes: &'static [u8]) -> Result<()> {
+        let pack = pill_assets::Ppak::parse(bytes)
+            .ok_or("asset pack: not a PPAK v4 archive (malformed, empty or wrong version)")?;
+        self.asset_pack = Some(pack);
+        Ok(())
+    }
+
+    /// Whether an asset pack is mounted (release/wasm builds).
+    pub fn has_asset_pack(&self) -> bool {
+        #[cfg(feature = "asset_pack")]
+        return self.asset_pack.is_some();
+        #[cfg(not(feature = "asset_pack"))]
+        false
+    }
+
+    /// Bytes of `relative_path` (relative to `res/`) from the mounted asset pack, if it has it.
+    #[cfg_attr(not(feature = "asset_pack"), allow(unused_variables))]
+    pub(crate) fn packed_asset(
+        &self,
+        relative_path: &std::path::Path,
+    ) -> Option<std::borrow::Cow<'static, [u8]>> {
+        #[cfg(feature = "asset_pack")]
+        return self
+            .asset_pack
+            .as_ref()?
+            .get(&relative_path.to_string_lossy().replace('\\', "/"));
+        #[cfg(not(feature = "asset_pack"))]
+        None
+    }
+
+    /// Reads an asset by `res/`-relative path: from the mounted asset pack when it has the entry,
+    /// otherwise from disk (native only).
+    pub fn read_asset(
+        &self,
+        relative_path: impl AsRef<std::path::Path>,
+    ) -> Result<std::borrow::Cow<'static, [u8]>> {
+        let relative_path = relative_path.as_ref();
+        if let Some(bytes) = self.packed_asset(relative_path) {
+            return Ok(bytes);
+        }
+        let path = self.game_resources_directory_path.join(relative_path);
+        std::fs::read(&path)
+            .map(std::borrow::Cow::Owned)
+            .map_err(|e| format!("Failed to read asset {path:?}: {e}").into())
     }
 
     /// Uploads a pill_assets `.cooked_tex` (RTEX v1 → Rgba8UnormSrgb, v2 → Rgba32Float, v4 → mipped

@@ -38,18 +38,26 @@ fn orbit_camera_system(engine: &mut Engine) -> Result<()> {
 
 impl PillGame for Game {
     fn start(&self, engine: &mut Engine) -> Result<()> {
+        // Release/wasm builds embed the cooked res/ as an asset pack (see build.rs); debug builds
+        // leave it empty and load from disk
+        let pack: &'static [u8] = include_bytes!(concat!(env!("OUT_DIR"), "/assets.pak"));
+        if !pack.is_empty() {
+            engine.mount_asset_pack(pack)?;
+        }
+
         // Environment and IBL maps cooked by pill_assets from res/models/studio_small_08.hdr
-        let bg_h = engine.load_cooked_texture(
-            "equirect",
-            include_bytes!("../res/models/studio_small_08_equirect.cooked_tex"),
-        )?;
-        let diff_h = engine.load_cooked_texture(
+        let mut load_environment = |name: &str, path: &str| -> Result<PassTextureHandle> {
+            let bytes = engine.read_asset(path)?;
+            engine.load_cooked_texture(name, &bytes)
+        };
+        let bg_h = load_environment("equirect", "models/studio_small_08_equirect.cooked_tex")?;
+        let diff_h = load_environment(
             "diffuse_ibl",
-            include_bytes!("../res/models/studio_small_08_diffuse_ibl.cooked_tex"),
+            "models/studio_small_08_diffuse_ibl.cooked_tex",
         )?;
-        let spec_h = engine.load_cooked_texture(
+        let spec_h = load_environment(
             "specular_ibl",
-            include_bytes!("../res/models/studio_small_08_specular_ibl.cooked_tex"),
+            "models/studio_small_08_specular_ibl.cooked_tex",
         )?;
 
         {
@@ -57,6 +65,10 @@ impl PillGame for Game {
             rs.background = Some(bg_h);
             rs.ibl_diffuse = diff_h;
             rs.ibl_specular = spec_h;
+            // Post chain for bloom on the emissive parts; its other effects stay off
+            rs.pass_chain = PassChain::PostFx;
+            rs.motion_blur = 0.0;
+            rs.ssao.strength = 0.0;
         }
 
         let scene = engine.create_scene("helmet")?;
@@ -67,34 +79,32 @@ impl PillGame for Game {
         engine.register_component::<MeshRenderingComponent>(scene)?;
         engine.register_component::<OrbitCamera>(scene)?;
 
-        let mesh_handle = engine.add_resource(Mesh::from_cooked_mesh_bytes(
-            "helmet_mesh",
-            include_bytes!("../res/models/DamagedHelmet.cooked_mesh"),
-        )?)?;
-
-        let albedo_handle = engine.add_resource(Texture::from_bytes(
+        // Path-based: resolved from the asset pack when mounted, else res/<path>.cooked_*
+        let mesh_handle =
+            engine.add_resource(Mesh::new("helmet_mesh", "models/DamagedHelmet".into()))?;
+        let mut add_texture = |name: &str, kind: TextureType, path: &str| {
+            engine.add_resource(Texture::new(name, kind, ResourceLoader::Path(path.into())))
+        };
+        let albedo_handle = add_texture(
             "helmet_albedo",
             TextureType::Color,
-            include_bytes!("../res/models/DamagedHelmet_albedo.cooked_tex"),
-        ))?;
-
-        let normal_handle = engine.add_resource(Texture::from_bytes(
+            "models/DamagedHelmet_albedo",
+        )?;
+        let normal_handle = add_texture(
             "helmet_normal",
             TextureType::Normal,
-            include_bytes!("../res/models/DamagedHelmet_normal.cooked_tex"),
-        ))?;
-
-        let metallic_roughness_handle = engine.add_resource(Texture::from_bytes(
+            "models/DamagedHelmet_normal",
+        )?;
+        let metallic_roughness_handle = add_texture(
             "helmet_metallic_roughness",
             TextureType::MetallicRoughness,
-            include_bytes!("../res/models/DamagedHelmet_metallic_roughness.cooked_tex"),
-        ))?;
-
-        let emissive_handle = engine.add_resource(Texture::from_bytes(
+            "models/DamagedHelmet_metallic_roughness",
+        )?;
+        let emissive_handle = add_texture(
             "helmet_emissive",
             TextureType::Emissive,
-            include_bytes!("../res/models/DamagedHelmet_emissive.cooked_tex"),
-        ))?;
+            "models/DamagedHelmet_emissive",
+        )?;
 
         let material_handle = engine.add_resource(
             Material::new("helmet_material")
@@ -103,7 +113,7 @@ impl PillGame for Game {
                 .metallic_roughness_texture(metallic_roughness_handle)
                 .metallic(1.0)
                 .roughness(1.0)
-                .emissive(Color::new(1.0, 1.0, 1.0))
+                .emissive(Color::new(100.0, 100.0, 100.0))
                 .emissive_texture(emissive_handle),
         )?;
 

@@ -1,3 +1,4 @@
+// Full-screen triangle: 3 vertices cover NDC [-1,1]² without a vertex buffer; uv (0,0) = top-left.
 struct VertexOutput {
     float4 sv_position         : SV_Position;
     float2 texture_coordinates : TEXCOORD0;

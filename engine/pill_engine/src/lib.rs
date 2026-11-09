@@ -62,10 +62,11 @@ macro_rules! define_global_component {
 pub mod game {
     pub use crate::{
         ecs::{
-            CameraAspectRatio, CameraComponent, Component, ComponentStorage, EntityHandle,
-            GamepadAxis, GamepadButton, GlobalComponent, GlobalComponentStorage, InputComponent,
-            MeshRenderingComponent, PlayerId, RenderStateComponent, SceneHandle, TimeComponent,
-            Tonemap, TransformComponent, UpdatePhase,
+            Bloom, CameraAspectRatio, CameraComponent, Component, ComponentStorage, DepthOfField,
+            DirectionalLight, EntityHandle, GamepadAxis, GamepadButton, GlobalComponent,
+            GlobalComponentStorage, InputComponent, Lens, MeshRenderingComponent, PassChain,
+            PlayerId, RenderStateComponent, SceneHandle, Ssao, TimeComponent, Tonemap,
+            TransformComponent, UpdatePhase,
         },
         engine::{Engine, KeyboardKey, MouseButton, PillGame},
         graphics::PassTextureHandle,
@@ -103,6 +104,15 @@ pub mod game {
     pub use crate::ecs::EguiComponent;
     #[cfg(feature = "ui")]
     pub use egui;
+
+    #[cfg(feature = "gltf_loading")]
+    pub use crate::resources::{
+        gltf_resource_uris, parse_gltf_scene, GltfMaterialData, GltfMeshData, GltfResourceUris,
+        GltfSceneData, GltfTextureData,
+    };
+    // IBL bake, shared with the build-time cooker (lives in pill_assets, surfaced here for games).
+    #[cfg(feature = "ibl_bake")]
+    pub use pill_assets::ibl;
 
     extern crate pill_core;
     pub use pill_core::{

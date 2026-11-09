@@ -49,8 +49,16 @@ impl PillRenderer for DummyRenderer {
         Ok(())
     }
 
+    fn get_render_size(&self) -> (u32, u32) {
+        (0, 0)
+    }
+
     fn get_surface_size(&self) -> (u32, u32) {
         (0, 0)
+    }
+
+    fn target_generation(&self) -> u64 {
+        0
     }
 
     fn get_device(&self) -> &wgpu::Device {

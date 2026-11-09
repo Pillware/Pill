@@ -73,6 +73,22 @@ impl<'a> WorldQuery<'a> {
         self.scene.get_component_storage::<T>()
     }
 
+    /// Entities having both `A` and `B`, with their (versioned) handles.
+    pub fn query_two<A, B>(
+        &self,
+    ) -> Result<impl Iterator<Item = (EntityHandle, &'a A, &'a B)> + use<'a, A, B>>
+    where
+        A: Component<Storage = ComponentStorage<A>>,
+        B: Component<Storage = ComponentStorage<B>>,
+    {
+        self.scene.get_two_component_iterator::<A, B>()
+    }
+
+    /// Identifies the active scene within a frame sequence (changes when another scene renders).
+    pub fn scene_id(&self) -> usize {
+        self.scene as *const Scene as usize
+    }
+
     /// Camera and transform components of the active camera entity.
     pub fn active_camera(&self) -> Result<(&'a CameraComponent, &'a TransformComponent)> {
         let index = self.active_camera.data().index as usize;
@@ -204,9 +220,12 @@ pub struct RendererTargetDesc {
     pub size: TargetSize,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum TargetSize {
-    /// Matches the surface and is rebuilt (same handle) when the window is resized.
+    /// The render size (surface ÷ display scale factor), rebuilt (same handle) on resize.
     Surface,
+    /// Render size divided by n (min 1 px), rebuilt with it; for half/quarter-res passes.
+    SurfaceDivisor(u32),
     /// Fixed width and height.
     Fixed(u32, u32),
 }
@@ -278,6 +297,10 @@ pub trait PillRenderer {
     /// Initializes `pass` and inserts it into the running chain before the tonemap pass.
     fn insert_pass(&mut self, pass: Box<dyn Pass>) -> Result<()>;
 
+    /// Size of `TargetSize::Surface` targets: the surface in logical pixels (physical ÷ scale
+    /// factor). Passes writing the swapchain upscale from it.
+    fn get_render_size(&self) -> (u32, u32);
+
     /// Returns the current surface dimensions `(width, height)` in pixels.
     fn get_surface_size(&self) -> (u32, u32);
 
@@ -301,6 +324,10 @@ pub trait PillRenderer {
 
     /// Creates a depth texture sized to the current surface and returns its handle.
     fn create_depth_texture(&mut self, label: &str) -> Result<PassTextureHandle>;
+
+    /// Bumped whenever surface-sized targets are rebuilt (resize); bind groups holding target views
+    /// built under an older value are stale.
+    fn target_generation(&self) -> u64;
 
     /// Returns the texture view for a previously created render target, or `None` if not found.
     fn get_render_target_view(&self, handle: PassTextureHandle) -> Option<&wgpu::TextureView>;

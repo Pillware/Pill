@@ -298,22 +298,25 @@ fn process_input_queue(engine: &mut Engine) -> Result<()> {
             }
 
             // Mouse scroll
+            // Deltas add up: several events can arrive within one frame (mice report at
+            // 125-1000 Hz), and keeping only the last drops motion at random
             InputEvent::Mouse(MouseEvent::Wheel { delta }) => match delta {
                 MouseScrollDelta::LineDelta(x, y) => {
-                    input_component.set_mouse_scroll_delta(Vector2f::new(x, y));
+                    let total = input_component.get_mouse_scroll_delta() + Vector2f::new(x, y);
+                    input_component.set_mouse_scroll_delta(total);
                 }
 
                 MouseScrollDelta::PixelDelta(delta) => {
-                    input_component.set_mouse_scroll_pixel_delta(Vector2f::new(
-                        delta.x as f32,
-                        delta.y as f32,
-                    ));
+                    let total = input_component.get_mouse_scroll_pixel_delta()
+                        + Vector2f::new(delta.x as f32, delta.y as f32);
+                    input_component.set_mouse_scroll_pixel_delta(total);
                 }
             },
 
             // Mouse delta
             InputEvent::Mouse(MouseEvent::Delta { delta }) => {
-                input_component.set_mouse_delta(delta);
+                let total = input_component.get_mouse_delta() + delta;
+                input_component.set_mouse_delta(total);
             }
 
             // Mouse position

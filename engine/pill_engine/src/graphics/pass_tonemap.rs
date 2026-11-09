@@ -1,14 +1,17 @@
-use crate::config::{TONEMAP_FRAGMENT_SHADER, TONEMAP_VERTEX_SHADER};
+use crate::config::{HDR_TARGET_FORMAT, TONEMAP_FRAGMENT_SHADER};
 use crate::ecs::{RenderStateComponent, Tonemap};
-use crate::graphics::{
-    BufferDesc, FrameTarget, Pass, PassTextureHandle, PillRenderer, Pipeline, PipelineDesc,
-    ShaderDesc, WorldQuery,
+use crate::graphics::fullscreen::{
+    create_fullscreen_pipeline, draw_fullscreen, linear_clamp_sampler, sampler_entry, target_view,
+    texture_entry, uniform_buffer, uniform_entry, Binding, CachedBindGroup,
 };
+use crate::graphics::{FrameTarget, Pass, PassTextureHandle, PillRenderer, Pipeline, WorldQuery};
 
 use pill_core::Result;
 
 pub struct PassTonemap {
     hdr_source: PassTextureHandle,
+    // None: the swapchain (sRGB view); Some: an HDR_TARGET_FORMAT target for later post passes
+    output: Option<PassTextureHandle>,
     state: Option<TonemapState>,
 }
 
@@ -16,28 +19,79 @@ struct TonemapState {
     pipeline: Pipeline,
     sampler: wgpu::Sampler,
     params_buffer: wgpu::Buffer,
+    bind_group: CachedBindGroup,
 }
 
 /// Mirrors `TonemapParams` in tonemap_fragment.hlsl.
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
 struct TonemapParams {
-    reinhard: f32,              // 1 = Reinhard, 0 = pass-through
-    inverse_white_squared: f32, // 1/W², 0 for an infinite white point
+    mode: u32,                  // 0 = pass-through, 1 = Reinhard, 2 = Lottes
+    inverse_white_squared: f32, // Reinhard: 1/W², 0 for an infinite white point
+    contrast: f32,              // Lottes a
+    shoulder: f32,              // Lottes d
+    b: f32,                     // Lottes b, c (solved from the art parameters)
+    c: f32,
     _padding: [f32; 2],
 }
 
 impl TonemapParams {
     fn from(tonemap: Tonemap) -> Self {
-        let (reinhard, inverse_white_squared) = match tonemap {
-            Tonemap::None => (0.0, 0.0),
-            Tonemap::Reinhard { white_point } => (1.0, 1.0 / (white_point * white_point)),
-        };
-        Self {
-            reinhard,
-            inverse_white_squared,
-            _padding: [0.0; 2],
+        match tonemap {
+            Tonemap::None => Self::default(),
+            Tonemap::Reinhard { white_point } => Self {
+                mode: 1,
+                inverse_white_squared: 1.0 / (white_point * white_point),
+                ..Self::default()
+            },
+            Tonemap::Lottes {
+                contrast,
+                shoulder,
+                hdr_max,
+                mid_in,
+                mid_out,
+            } => {
+                let (b, c) = lottes_bc(contrast, shoulder, hdr_max, mid_in, mid_out);
+                Self {
+                    mode: 2,
+                    contrast,
+                    shoulder,
+                    b,
+                    c,
+                    ..Self::default()
+                }
+            }
         }
+    }
+}
+
+/// b and c of Lottes' curve x^a / (x^(a·d)·b + c) such that `mid_in` → `mid_out` and `hdr_max` → 1.
+fn lottes_bc(a: f32, d: f32, hdr_max: f32, mid_in: f32, mid_out: f32) -> (f32, f32) {
+    let hdr_a = hdr_max.powf(a);
+    let mid_a = mid_in.powf(a);
+    let hdr_ad = hdr_a.powf(d);
+    let mid_ad = mid_a.powf(d);
+    let denominator = (hdr_ad - mid_ad) * mid_out;
+    let b = (hdr_a * mid_out - mid_a) / denominator;
+    let c = (hdr_ad * mid_a - hdr_a * mid_ad * mid_out) / denominator;
+    (b, c)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lottes_bc;
+
+    fn lottes(x: f32, a: f32, d: f32, b: f32, c: f32) -> f32 {
+        let xa = x.powf(a);
+        xa / (xa.powf(d) * b + c)
+    }
+
+    #[test]
+    fn lottes_bc_maps_mid_grey_and_white() {
+        let (a, d) = (1.6, 0.977);
+        let (b, c) = lottes_bc(a, d, 8.0, 0.18, 0.267);
+        assert!((lottes(0.18, a, d, b, c) - 0.267).abs() < 1e-4);
+        assert!((lottes(8.0, a, d, b, c) - 1.0).abs() < 1e-4);
     }
 }
 
@@ -45,8 +99,16 @@ impl PassTonemap {
     pub fn new(hdr_source: PassTextureHandle) -> Self {
         Self {
             hdr_source,
+            output: None,
             state: None,
         }
+    }
+
+    /// Writes the tonemapped (still linear) image to `target` instead of the swapchain.
+    #[cfg_attr(not(feature = "post_fx"), allow(dead_code))]
+    pub fn with_output(mut self, target: PassTextureHandle) -> Self {
+        self.output = Some(target);
+        self
     }
 }
 
@@ -56,91 +118,25 @@ impl Pass for PassTonemap {
     }
 
     fn init(&mut self, renderer: &mut dyn PillRenderer) -> Result<()> {
-        // Renders to FrameTarget::srgb_view — GPU applies the OETF on write even when the surface
-        // format is linear (e.g. WebGPU/wasm32).
-        let swapchain_view_format = renderer.get_surface_format().add_srgb_suffix();
-
-        let bind_groups = vec![vec![
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-        ]];
-
-        let pipeline = renderer.create_pipeline(PipelineDesc {
-            label: Some("pass_tonemap"),
-            vs: ShaderDesc {
-                source: TONEMAP_VERTEX_SHADER,
-                entry_func: "vs_main",
-            },
-            ps: ShaderDesc {
-                source: TONEMAP_FRAGMENT_SHADER,
-                entry_func: "fs_main",
-            },
-            vertex_buffers: &[],
-            bind_groups,
-            targets: &[Some(wgpu::ColorTargetState {
-                format: swapchain_view_format,
-                blend: Some(wgpu::BlendState::REPLACE),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-                unclipped_depth: false,
-            },
-        })?;
-
-        let sampler = renderer
-            .get_device()
-            .create_sampler(&wgpu::SamplerDescriptor {
-                address_mode_u: wgpu::AddressMode::ClampToEdge,
-                address_mode_v: wgpu::AddressMode::ClampToEdge,
-                address_mode_w: wgpu::AddressMode::ClampToEdge,
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::FilterMode::Nearest,
-                ..Default::default()
-            });
-
-        let params_buffer = renderer.create_buffer(BufferDesc {
-            label: Some("pass_tonemap_params"),
-            byte_size: std::mem::size_of::<TonemapParams>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        })?;
-
+        // To the swapchain: FrameTarget::srgb_view, so the GPU applies the OETF on write even when
+        // the surface format is linear (e.g. WebGPU/wasm32)
+        let output_format = match self.output {
+            Some(_) => HDR_TARGET_FORMAT,
+            None => renderer.get_surface_format().add_srgb_suffix(),
+        };
+        let pipeline = create_fullscreen_pipeline(
+            renderer,
+            "pass_tonemap",
+            TONEMAP_FRAGMENT_SHADER,
+            vec![texture_entry(0, true), sampler_entry(1), uniform_entry(2)],
+            output_format,
+            None,
+        )?;
         self.state = Some(TonemapState {
             pipeline,
-            sampler,
-            params_buffer,
+            sampler: linear_clamp_sampler(renderer),
+            params_buffer: uniform_buffer::<TonemapParams>(renderer, "pass_tonemap_params"),
+            bind_group: CachedBindGroup::default(),
         });
         Ok(())
     }
@@ -154,7 +150,7 @@ impl Pass for PassTonemap {
     ) -> Result<()> {
         let state = self
             .state
-            .as_ref()
+            .as_mut()
             .expect("PassTonemap: state not initialized — call init() before draw()");
         let tonemap = world.get_global::<RenderStateComponent>()?.tonemap;
         renderer.get_queue().write_buffer(
@@ -162,51 +158,22 @@ impl Pass for PassTonemap {
             0,
             bytemuck::bytes_of(&TonemapParams::from(tonemap)),
         );
-        let hdr_view = renderer
-            .get_render_target_view(self.hdr_source)
-            .expect("PassTonemap: HDR render target missing");
-
-        let bind_group = {
-            let layout = &state.pipeline.bind_group_layouts[0];
-            renderer
-                .get_device()
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("pass_tonemap_bind_group"),
-                    layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(hdr_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&state.sampler),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: state.params_buffer.as_entire_binding(),
-                        },
-                    ],
-                })
+        let output = match self.output {
+            Some(handle) => target_view(renderer, handle, "pass_tonemap")?,
+            None => &frame_target.srgb_view,
         };
-
-        let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("pass_tonemap_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &frame_target.srgb_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        rp.set_pipeline(&state.pipeline.pipeline);
-        rp.set_bind_group(0, &bind_group, &[]);
-        rp.draw(0..3, 0..1);
-        Ok(())
+        draw_fullscreen(
+            encoder,
+            renderer,
+            "pass_tonemap",
+            &state.pipeline,
+            &mut state.bind_group,
+            &[
+                Binding::Target(self.hdr_source),
+                Binding::Sampler(&state.sampler),
+                Binding::Buffer(&state.params_buffer),
+            ],
+            output,
+        )
     }
 }

@@ -35,10 +35,12 @@ impl RendererTexture {
             TextureType::Emissive => wgpu::TextureFormat::Rgba8UnormSrgb,
         };
 
+        let mip_count = mip_level_count(width, height);
+
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(name),
             size,
-            mip_level_count: 1,
+            mip_level_count: mip_count,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
@@ -46,34 +48,47 @@ impl RendererTexture {
             view_formats: &[],
         });
 
-        // Write data to texture
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
+        // Mip chain built on the CPU, each level from the previous one
+        let mut level = std::borrow::Cow::Borrowed(rgba);
+        let (mut level_width, mut level_height) = (width, height);
+        for mip in 0..mip_count {
+            if mip > 0 {
+                level = downsample(&level, level_width, level_height, texture_type).into();
+                (level_width, level_height) = ((level_width / 2).max(1), (level_height / 2).max(1));
+            }
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: mip,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &level,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * level_width),
+                    rows_per_image: Some(level_height),
+                },
+                wgpu::Extent3d {
+                    width: level_width,
+                    height: level_height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
 
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        // Trilinear
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
             lod_min_clamp: 0.0,
-            lod_max_clamp: 100.0,
+            lod_max_clamp: (mip_count - 1) as f32,
             ..Default::default()
         });
 
@@ -87,12 +102,13 @@ impl RendererTexture {
 
     pub fn new_depth_texture(
         device: &wgpu::Device,
-        surface_configuration: &wgpu::SurfaceConfiguration,
+        width: u32,
+        height: u32,
         label: &str,
     ) -> Result<Self> {
         let size = wgpu::Extent3d {
-            width: surface_configuration.width,
-            height: surface_configuration.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
 
@@ -251,6 +267,63 @@ impl RendererTexture {
             sampler,
         })
     }
+}
+
+/// Full chain down to 1×1.
+fn mip_level_count(width: u32, height: u32) -> u32 {
+    u32::BITS - width.max(height).max(1).leading_zeros()
+}
+
+/// Next mip level of RGBA8 pixels: 2×2 box filter (an odd last row/column repeats). Color textures
+/// are averaged in linear light (sRGB approximated as gamma 2); normal maps are renormalized.
+fn downsample(rgba: &[u8], width: u32, height: u32, texture_type: TextureType) -> Vec<u8> {
+    let (next_width, next_height) = ((width / 2).max(1), (height / 2).max(1));
+    let srgb = matches!(texture_type, TextureType::Color | TextureType::Emissive);
+    let texel = |x: u32, y: u32| {
+        let index = ((y.min(height - 1) * width + x.min(width - 1)) * 4) as usize;
+        &rgba[index..index + 4]
+    };
+    let mut output = Vec::with_capacity((next_width * next_height * 4) as usize);
+    for y in 0..next_height {
+        for x in 0..next_width {
+            let block = [
+                texel(2 * x, 2 * y),
+                texel(2 * x + 1, 2 * y),
+                texel(2 * x, 2 * y + 1),
+                texel(2 * x + 1, 2 * y + 1),
+            ];
+            let mut average = [0.0_f32; 4];
+            for (channel, value) in average.iter_mut().enumerate() {
+                let linear = |byte: u8| {
+                    let value = byte as f32 / 255.0;
+                    if srgb && channel < 3 {
+                        value * value
+                    } else {
+                        value
+                    }
+                };
+                *value = block
+                    .iter()
+                    .map(|texel| linear(texel[channel]))
+                    .sum::<f32>()
+                    / 4.0;
+                if srgb && channel < 3 {
+                    *value = value.sqrt();
+                }
+            }
+            if let TextureType::Normal = texture_type {
+                let normal = [0, 1, 2].map(|channel| average[channel] * 2.0 - 1.0);
+                let length = normal.iter().map(|value| value * value).sum::<f32>().sqrt();
+                if length > 1e-4 {
+                    for channel in 0..3 {
+                        average[channel] = normal[channel] / length * 0.5 + 0.5;
+                    }
+                }
+            }
+            output.extend(average.map(|value| (value * 255.0 + 0.5) as u8));
+        }
+    }
+    output
 }
 
 impl PillTypeMapKey for RendererTexture {
