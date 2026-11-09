@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use pill_assets::{default_rules, Pipeline};
+use pill_assets::{default_rules, write_pack_for_build, Pipeline};
 
 fn download_if_missing(path: &Path, url: &str) {
     if path.exists() {
@@ -34,9 +34,10 @@ fn main() {
     );
 
     // Cook here (the launcher's cook step runs before this script downloads the sources):
-    // GLB → mesh + textures, HDR → equirect → IBL maps, all include_bytes!'d by game.rs
+    // GLB → mesh + textures, HDR → equirect → IBL maps. Release and wasm builds embed them as an
+    // asset pack; debug builds load them from res/.
     let stats = Pipeline {
-        root: res,
+        root: res.clone(),
         rules: default_rules(),
     }
     .run()
@@ -44,4 +45,5 @@ fn main() {
     for input in &stats.discovered {
         println!("cargo:rerun-if-changed={}", input.display());
     }
+    write_pack_for_build(&res, &stats).expect("asset pack failed");
 }

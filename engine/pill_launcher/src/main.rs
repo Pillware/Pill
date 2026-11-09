@@ -10,6 +10,7 @@ use config::Config;
 use fs_extra::dir::CopyOptions;
 use path_absolutize::Absolutize;
 use std::{
+    collections::HashSet,
     env,
     ffi::OsStr,
     fs::{self, File},
@@ -247,6 +248,9 @@ fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<()> {
         .with_context(|| format!("Failed to read directory {}", source.display()))?
     {
         let entry = entry?;
+        if entry.file_name() == pill_assets::COOK_TIMES_FILE {
+            continue;
+        }
         let entry_path = entry.path();
         let destination_path = destination.join(entry.file_name());
 
@@ -818,11 +822,8 @@ fn run_game_project(
 // Cook source assets (HLSL→WGSL, OBJ→cooked_mesh, PNG→cooked_tex) into the game
 // project's res dir. Cooked outputs are git-ignored and `include_bytes!`'d at
 // compile time (esp. on wasm), so they must exist before the game crate builds.
-pub(crate) fn cook_assets(game_project_directory_path: &Path) -> Result<()> {
-    let pipeline = pill_assets::Pipeline {
-        root: game_project_directory_path.join("res"),
-        rules: pill_assets::default_rules(),
-    };
+pub(crate) fn cook_assets(game_project_directory_path: &Path) -> Result<pill_assets::Stats> {
+    let pipeline = pill_assets::Pipeline::new(game_project_directory_path.join("res"));
     let stats = pipeline.run().context("Asset pipeline failed")?;
     println!(
         "Assets: discovered={} rebuilt={} skipped={}",
@@ -830,7 +831,143 @@ pub(crate) fn cook_assets(game_project_directory_path: &Path) -> Result<()> {
         stats.rebuilt.len(),
         stats.skipped.len()
     );
-    Ok(())
+    Ok(stats)
+}
+
+// Planned, not cooked; the pack's contents come from `game_stats`, the cook this build used.
+pub(crate) fn write_game_asset_dag(
+    game_project_directory_path: &Path,
+    game_stats: &pill_assets::Stats,
+    native_exe: Option<&Path>,
+) -> Result<PathBuf> {
+    let engine_crate = get_path(Location::PillEngineCrate);
+    let engine_res = engine_crate.join("res");
+    let game_res = game_project_directory_path.join("res");
+
+    let engine = pill_assets::Pipeline::new(engine_res.clone())
+        .plan()
+        .context("plan engine assets")?;
+    let game = pill_assets::Pipeline::new(game_res.clone())
+        .plan()
+        .context("plan game assets")?;
+
+    let engine_usage =
+        pill_assets::scan_usage(&engine_crate, &engine_features(game_project_directory_path));
+    let game_usage = pill_assets::scan_usage(game_project_directory_path, &HashSet::new());
+
+    let game_packs = fs::read_to_string(game_project_directory_path.join("build.rs"))
+        .map(|text| text.contains("write_pack_for_build(") || text.contains("pack_sources("))
+        .unwrap_or(false);
+    let game_packed = if game_packs {
+        pill_assets::pack_list(&game_res, game_stats)
+            .context("list packed game assets")?
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let sections = vec![
+        pill_assets::DagSection {
+            cook_times: pill_assets::read_cook_times(&engine_res),
+            root: engine_res,
+            label: "engine".into(),
+            edges: engine.edges,
+            usage: engine_usage,
+            packed: Vec::new(),
+        },
+        pill_assets::DagSection {
+            cook_times: pill_assets::read_cook_times(&game_res),
+            root: game_res,
+            label: "game".into(),
+            edges: game.edges,
+            usage: game_usage,
+            packed: game_packed,
+        },
+    ];
+
+    let game_title = get_game_title(game_project_directory_path)?;
+    let native = native_exe.map(Path::to_path_buf).unwrap_or_else(|| {
+        game_project_directory_path
+            .join("build")
+            .join("release")
+            .join(format!("{game_title}{EXEC_SUFFIX}"))
+    });
+    let web = game_project_directory_path
+        .join("build")
+        .join("wasm")
+        .join("pill_web_app_bg.wasm");
+    let artifacts = pill_assets::DagArtifacts {
+        native: Some(native),
+        web: Some(web),
+        pak: newest_built_pak(game_project_directory_path, &game_title),
+    };
+
+    let out = game_project_directory_path.join("asset_dag.svg");
+    pill_assets::write_dag_svg(&sections, &artifacts, &out).context("Write asset DAG svg")?;
+    println!("Asset DAG: {}", out.display());
+    Ok(out)
+}
+
+// The most recently built `assets.pak` (build-script OUT_DIR) of the native release or wasm
+// build, so the DAG can show the pack's real (compressed) size.
+fn newest_built_pak(game_project_directory_path: &Path, game_title: &str) -> Option<PathBuf> {
+    let build_dirs = [
+        get_path(Location::EngineCrates)
+            .join("target_games")
+            .join(game_title)
+            .join("release")
+            .join("build"),
+        game_project_directory_path
+            .join("build/wasm/.build/pill_web_app/target/wasm32-unknown-unknown/release/build"),
+    ];
+    build_dirs
+        .iter()
+        .filter_map(|dir| fs::read_dir(dir).ok())
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("pill_game-")
+        })
+        .map(|entry| entry.path().join("out").join("assets.pak"))
+        .filter(|path| fs::metadata(path).is_ok_and(|meta| meta.len() > 0))
+        .max_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok())
+}
+
+// Cargo features pill_engine is compiled with for this game: the game's own
+// `pill_engine = { ..., features = [...] }` plus `game` + `internal`, which the
+// runtime/web host crates always enable.
+fn engine_features(game_project_directory_path: &Path) -> HashSet<String> {
+    let mut features: HashSet<String> = ["game", "internal"]
+        .iter()
+        .map(|feature| feature.to_string())
+        .collect();
+    let manifest =
+        fs::read_to_string(game_project_directory_path.join("Cargo.toml")).unwrap_or_default();
+    for line in manifest.lines() {
+        let line = line.trim();
+        if !line.starts_with("pill_engine") {
+            continue;
+        }
+        let Some(list) = line
+            .split_once("features")
+            .and_then(|(_, rest)| rest.split_once('['))
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(list, _)| list)
+        else {
+            continue;
+        };
+        features.extend(
+            list.split(',')
+                .map(|feature| feature.trim().trim_matches('"').to_string())
+                .filter(|feature| !feature.is_empty()),
+        );
+    }
+    features
 }
 
 fn build_game_project(
@@ -845,7 +982,7 @@ fn build_game_project(
 
     // Cook assets before compiling — cooked files are git-ignored and embedded
     // via include_bytes! at compile time.
-    cook_assets(game_project_directory_path)?;
+    let asset_stats = cook_assets(game_project_directory_path)?;
 
     let hot_reload_child = *compile_mode == CompileMode::HotReload
         && std::env::var("PILL_HOT_RELOAD_CHILD").ok().as_deref() == Some("1");
@@ -925,6 +1062,19 @@ fn build_game_project(
             let mut perms = fs::metadata(&destination_executable_path)?.permissions();
             perms.set_mode(0o755);
             fs::set_permissions(&destination_executable_path, perms)?;
+        }
+    }
+
+    // After the build so artifact sizes are current.
+    if *compile_mode != CompileMode::HotReload {
+        let release_exe = (*compile_mode == CompileMode::Release)
+            .then(|| output_directory_path.join(format!("{game_title}{EXEC_SUFFIX}")));
+        if let Err(error) = write_game_asset_dag(
+            game_project_directory_path,
+            &asset_stats,
+            release_exe.as_deref(),
+        ) {
+            eprintln!("Warning: asset DAG not written ({error:#})");
         }
     }
 
@@ -1416,7 +1566,10 @@ fn run_app() -> Result<()> {
             if force_rebuild {
                 delete_cooked_assets(&project_dir)?;
             }
-            cook_assets(&project_dir)?;
+            let stats = cook_assets(&project_dir)?;
+            if let Err(error) = write_game_asset_dag(&project_dir, &stats, None) {
+                eprintln!("Warning: asset DAG not written ({error:#})");
+            }
         }
         _ => {
             println!("Undefined action");

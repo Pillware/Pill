@@ -38,6 +38,7 @@ pub(crate) fn normalize3(vector: [f32; 3]) -> [f32; 3] {
     }
 }
 
+#[cfg(feature = "build")]
 pub(crate) fn lerp3(start: [f32; 3], end: [f32; 3], factor: f32) -> [f32; 3] {
     add3(start, scale3(sub3(end, start), factor))
 }

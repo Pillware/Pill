@@ -9,7 +9,8 @@ crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]
 ureq = "2"
-pill_assets = { path = "../../engine/pill_assets" }
+# `encode`: writes the release/wasm asset pack (`write_pack_for_build`)
+pill_assets = { path = "../../engine/pill_assets", features = ["encode"] }
 
 [dependencies]
-pill_engine = { path = "../../engine/pill_engine", features = ["game", "internal"] }
+pill_engine = { path = "../../engine/pill_engine", features = ["game", "internal", "asset_pack"] }

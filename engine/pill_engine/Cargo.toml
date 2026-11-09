@@ -14,6 +14,15 @@ log = { version = "0.4", features = ["release_max_level_off"] }
 
 # Loaders
 tobj = { version = "3.0", optional = true }
+# Runtime glTF loading (feature `gltf_loading`): parse glTF + decode embedded/fetched textures.
+# The shared vertex/format/bake math comes from pill_assets (default-features off → its pure,
+# wasm-safe `convert`/`ibl` modules only, no filesystem pipeline). Parsing uses goth-gltf
+# (nanoserde-based) not the gltf crate (serde_json) — that swap saved ~150 KB of wasm. Textures
+# decode with the lean `zune-*` codecs (vs the full `image` crate, another ~110 KB).
+goth-gltf = { version = "0.3", optional = true }
+zune-jpeg = { version = "0.4", default-features = false, optional = true }
+zune-png = { version = "0.4", default-features = false, optional = true }
+pill_assets = { path = "../pill_assets", default-features = false, optional = true }
 
 # Other
 readonly = "0.2"
@@ -58,4 +67,10 @@ networking = []
 physics = ["dep:rapier3d"]
 ui = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit"]
 obj_loading = ["dep:tobj"]
+# Runtime multi-file/embedded glTF loading into engine byte formats (RMSH meshes, RTEX textures).
+gltf_loading = ["dep:goth-gltf", "dep:zune-jpeg", "dep:zune-png", "dep:pill_assets"]
+# Runtime IBL bake (equirect → diffuse/specular), shared with the build-time cooker.
+ibl_bake = ["dep:pill_assets"]
+# Embedded PPAK asset pack (`Engine::mount_asset_pack`); path-based resources load from it first.
+asset_pack = ["dep:pill_assets"]
 all = ["game", "internal", "networking"]

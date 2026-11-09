@@ -44,11 +44,5 @@ pub(crate) fn write_rtex_hdr_mip(
 
 // RTEX v1: RGBA8 texels, sRGB-encoded color (linear data such as LUTs uses v2).
 pub(crate) fn write_rtex(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<()> {
-    let mut output = Vec::with_capacity(16 + rgba.len());
-    output.extend_from_slice(b"RTEX");
-    output.extend_from_slice(&1u32.to_le_bytes());
-    output.extend_from_slice(&width.to_le_bytes());
-    output.extend_from_slice(&height.to_le_bytes());
-    output.extend_from_slice(rgba);
-    write_atomic(path, &output)
+    write_atomic(path, &crate::convert::rtex_bytes(width, height, rgba))
 }

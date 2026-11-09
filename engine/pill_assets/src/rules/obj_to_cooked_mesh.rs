@@ -1,22 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
-use bytemuck::{Pod, Zeroable};
 
+use crate::convert::{rmsh_bytes, CookedVertex};
 use crate::util::vec_math::{add3, normalize3, scale3, sub2, sub3, tangent_frame};
+use crate::util::write_atomic;
 use crate::Rule;
-
-/// Must stay bit-for-bit identical to `pill_engine::resources::MeshVertex`.
-/// Both are `#[repr(C)]` with the same 14 floats in the same order.
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    texture_coordinates: [f32; 2],
-    normal: [f32; 3],
-    tangent: [f32; 3],
-    bitangent: [f32; 3],
-}
 
 /// OBJ → cooked_mesh pre-processed mesh.
 ///
@@ -61,11 +50,11 @@ impl Rule for ObjToCookedMesh {
         }
 
         let mesh = &models[0].mesh;
-        let mut vertices: Vec<Vertex> = Vec::with_capacity(mesh.positions.len() / 3);
+        let mut vertices: Vec<CookedVertex> = Vec::with_capacity(mesh.positions.len() / 3);
 
         for i in 0..mesh.positions.len() / 3 {
             let uv_v = *mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0);
-            vertices.push(Vertex {
+            vertices.push(CookedVertex {
                 position: [
                     mesh.positions[i * 3],
                     mesh.positions[i * 3 + 1],
@@ -143,18 +132,6 @@ impl Rule for ObjToCookedMesh {
             }
         }
 
-        let vertex_bytes: &[u8] = bytemuck::cast_slice(&vertices);
-        let index_bytes: &[u8] = bytemuck::cast_slice(indices);
-
-        let mut out = Vec::with_capacity(16 + vertex_bytes.len() + index_bytes.len());
-        out.extend_from_slice(b"RMSH");
-        out.extend_from_slice(&1u32.to_le_bytes());
-        out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
-        out.extend_from_slice(&(indices.len() as u32).to_le_bytes());
-        out.extend_from_slice(vertex_bytes);
-        out.extend_from_slice(index_bytes);
-
-        crate::util::write_atomic(output, &out)?;
-        Ok(())
+        write_atomic(output, &rmsh_bytes(&vertices, indices))
     }
 }

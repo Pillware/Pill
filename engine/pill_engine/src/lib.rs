@@ -104,6 +104,15 @@ pub mod game {
     #[cfg(feature = "ui")]
     pub use egui;
 
+    #[cfg(feature = "gltf_loading")]
+    pub use crate::resources::{
+        gltf_resource_uris, parse_gltf_scene, GltfMaterialData, GltfMeshData, GltfResourceUris,
+        GltfSceneData, GltfTextureData,
+    };
+    // IBL bake, shared with the build-time cooker (lives in pill_assets, surfaced here for games).
+    #[cfg(feature = "ibl_bake")]
+    pub use pill_assets::ibl;
+
     extern crate pill_core;
     pub use pill_core::{
         create_game, define_new_pill_slotmap_key, Color, PillTypeMapKey, Vector2f, Vector2i,
