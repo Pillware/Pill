@@ -5,7 +5,9 @@
 //! - Declares [`RigidBodyComponent`], the simulation inputs of one entity.
 //! - Declares [`ColliderComponent`], the shape and material of one entity.
 //! - Registers both with the world, field layout included, so the Inspector
-//!   draws real rows and a saved scene restores every value.
+//!   draws real rows and a saved scene restores every value. The two enums
+//!   are declared with `PillMirror`, which is what makes their fields
+//!   variant pickers instead of opaque bytes.
 //!
 //! # Design
 //!
@@ -17,7 +19,7 @@
 use serde::{Deserialize, Serialize};
 
 // Current crate
-use pill_engine::PillComponent;
+use pill_engine::{PillComponent, PillMirror};
 
 // =============================================================================
 // BodyKind
@@ -25,7 +27,7 @@ use pill_engine::PillComponent;
 
 /// How the simulation is allowed to move a body.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, PillMirror)]
 pub enum BodyKind {
     /// The simulation moves it: gravity, forces and contacts decide the pose.
     #[default]
@@ -45,7 +47,7 @@ pub enum BodyKind {
 
 /// The shape of a collider, which decides what its dimensions mean.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, PillMirror)]
 pub enum ColliderShape {
     /// A sphere. `dimensions[0]` is the radius.
     #[default]

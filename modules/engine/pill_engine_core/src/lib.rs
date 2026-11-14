@@ -247,7 +247,7 @@ pub use asset_standalone::{render_standalone, StandaloneAsset};
 pub use commands::{CommandError, Commands};
 pub use common_components::{register_transform_component, TransformComponent};
 pub use component::{Component, ComponentId, ComponentTicks, Tick};
-pub use component_field::{ComponentFieldError, FieldValue};
+pub use component_field::{parse_enum_tag, ComponentFieldError, EnumFieldTag, FieldValue};
 pub use debug_draw::{
     DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
     GizmoTriangle, LabelAnchor,

@@ -24,6 +24,7 @@ use super::codec::{decode_scalar, encode_scalar, is_scalar_tag, scalar_size};
 use super::*;
 use crate::component::{Component, ComponentId};
 use crate::component_registry::ComponentFieldDescriptor;
+use crate::entity::Entity;
 use crate::world::World;
 
 // =============================================================================
@@ -1351,4 +1352,180 @@ fn an_entity_field_refuses_a_scalar() {
         target,
         "nothing was written"
     );
+}
+
+// =============================================================================
+// Enum fields
+// =============================================================================
+
+/// A fieldless enum stored as a `u8`, the shape `#[derive(PillMirror)]`
+/// declares.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProbeShape {
+    Ball = 0,
+    Cuboid = 1,
+    Capsule = 5,
+}
+
+/// A component carrying a [`ProbeShape`] beside a scalar.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct ShapedProbe {
+    radius: f32,
+    shape: ProbeShape,
+}
+impl Component for ShapedProbe {}
+
+static SHAPED_PROBE_FIELDS: &[ComponentFieldDescriptor] = &[
+    ComponentFieldDescriptor {
+        name: "radius",
+        type_tag: "f32",
+        offset: 0,
+        size: 4,
+        align: 4,
+        element_count: 0,
+        decorators: std::borrow::Cow::Borrowed(&[]),
+    },
+    ComponentFieldDescriptor {
+        name: "shape",
+        type_tag: "struct:ProbeShape",
+        offset: 4,
+        size: 1,
+        align: 1,
+        element_count: 0,
+        decorators: std::borrow::Cow::Borrowed(&[]),
+    },
+];
+
+/// The enum declarations the probe DLL would offer: only `ProbeShape`.
+fn probe_enums(path: &str) -> Option<crate::component_registry::EnumLayout> {
+    (path == "ProbeShape").then(|| crate::component_registry::EnumLayout {
+        representation: "u8",
+        variants: vec![("Ball", 0), ("Cuboid", 1), ("Capsule", 5)],
+    })
+}
+
+/// A world with [`ShapedProbe`] registered, its enum resolver installed only
+/// for the registration, and one entity holding a `Cuboid`.
+fn shaped_world() -> (World, Entity, String) {
+    let mut world = World::new();
+    world.replace_enum_layout_resolver(Some(probe_enums));
+    world.register_component_with_layout::<ShapedProbe>(SHAPED_PROBE_FIELDS);
+    world.replace_enum_layout_resolver(None);
+    let entity = world
+        .create_entity()
+        .with(ShapedProbe {
+            radius: 0.5,
+            shape: ProbeShape::Cuboid,
+        })
+        .build()
+        .expect("entity builds");
+    let component_name = world
+        .entity_component_names(entity)
+        .and_then(|names| names.into_iter().find(|name| name.ends_with("ShapedProbe")))
+        .expect("the entity carries ShapedProbe");
+    (world, entity, component_name)
+}
+
+/// The tag a declared enum's field gets lists every variant, and reads back
+/// into the same declaration.
+#[test]
+fn an_enum_tag_round_trips_its_variants() {
+    let layout = probe_enums("ProbeShape").expect("declared");
+    let tag: &'static str = Box::leak(format_enum_tag("ProbeShape", &layout).into_boxed_str());
+    assert_eq!(tag, "enum:u8:ProbeShape{Ball=0,Cuboid=1,Capsule=5}");
+    let parsed = parse_enum_tag(tag).expect("the tag reads back");
+    assert_eq!(parsed.representation, "u8");
+    assert_eq!(parsed.type_name, "ProbeShape");
+    assert_eq!(parsed.variant_name(5), Some("Capsule"));
+    assert_eq!(parsed.discriminant_of("Ball"), Some(0));
+    assert_eq!(parsed.variant_name(2), None);
+    assert!(parse_enum_tag("struct:ProbeShape").is_none());
+}
+
+/// A field of a declared enum reads as an enum value naming its variant, and
+/// a write of another variant lands in the row.
+#[test]
+fn a_declared_enum_field_reads_and_writes_as_an_enum() {
+    let (mut world, entity, component_name) = shaped_world();
+    let read_value = world
+        .read_component_field(entity, &component_name, "shape")
+        .expect("the enum field reads");
+    let FieldValue::Enum {
+        type_tag,
+        discriminant,
+    } = read_value
+    else {
+        panic!("expected an enum value, got {read_value:?}");
+    };
+    assert_eq!(discriminant, 1);
+    assert_eq!(read_value.enum_variant_name(), Some("Cuboid"));
+
+    world
+        .write_component_field(
+            entity,
+            &component_name,
+            "shape",
+            FieldValue::Enum {
+                type_tag,
+                discriminant: 5,
+            },
+        )
+        .expect("a declared variant writes");
+    let stored = world
+        .get_component::<ShapedProbe>(entity)
+        .expect("the component is still there")
+        .shape;
+    assert_eq!(stored, ProbeShape::Capsule);
+}
+
+/// A discriminant no variant declares, or a value of another kind, is refused
+/// before anything is written: the row would otherwise hold bytes the enum
+/// cannot be.
+#[test]
+fn an_enum_field_refuses_undeclared_discriminants_and_other_kinds() {
+    let (mut world, entity, component_name) = shaped_world();
+    let FieldValue::Enum { type_tag, .. } = world
+        .read_component_field(entity, &component_name, "shape")
+        .expect("reads")
+    else {
+        panic!("expected an enum value");
+    };
+    let undeclared = world.write_component_field(
+        entity,
+        &component_name,
+        "shape",
+        FieldValue::Enum {
+            type_tag,
+            discriminant: 2,
+        },
+    );
+    assert!(matches!(
+        undeclared,
+        Err(ComponentFieldError::UnsupportedField { .. })
+    ));
+    let wrong_kind =
+        world.write_component_field(entity, &component_name, "shape", FieldValue::U8(5));
+    assert!(matches!(
+        wrong_kind,
+        Err(ComponentFieldError::TypeMismatch { .. })
+    ));
+    let stored = world
+        .get_component::<ShapedProbe>(entity)
+        .expect("the component is still there")
+        .shape;
+    assert_eq!(stored, ProbeShape::Cuboid, "nothing was written");
+}
+
+/// Without a declaration in reach the field stays opaque, exactly as before
+/// enums were understood.
+#[test]
+fn an_undeclared_enum_field_stays_opaque() {
+    let mut world = World::new();
+    world.register_component_with_layout::<ShapedProbe>(SHAPED_PROBE_FIELDS);
+    let layout = world
+        .component_field_layout(ComponentId::of::<ShapedProbe>())
+        .expect("registered with a layout");
+    assert_eq!(layout[1].type_tag, "struct:ProbeShape");
 }

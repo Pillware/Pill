@@ -397,16 +397,26 @@ pub fn register_all_components(world: &mut World) -> Result<(), WorldError> {
 /// leaves the world holding a function pointer into an image the host may have
 /// unmapped. [`ValueTypeLayoutScope`] owns both halves, and
 /// [`run_artifact_entry`] is the only code that needs them.
-fn install_value_type_layouts(world: &mut World) -> Option<ValueTypeLayoutResolver> {
-    world.replace_value_type_layout_resolver(Some(resolve_value_type_layout))
+fn install_value_type_layouts(world: &mut World) -> PreviousLayoutResolvers {
+    PreviousLayoutResolvers {
+        value_types: world.replace_value_type_layout_resolver(Some(resolve_value_type_layout)),
+        enums: world.replace_enum_layout_resolver(Some(resolve_enum_layout)),
+    }
 }
 
-/// Put back the resolver [`install_value_type_layouts`] replaced.
-fn restore_value_type_layouts(
-    world: &mut World,
-    previous_resolver: Option<ValueTypeLayoutResolver>,
-) {
-    world.replace_value_type_layout_resolver(previous_resolver);
+/// Put back the resolvers [`install_value_type_layouts`] replaced.
+fn restore_value_type_layouts(world: &mut World, previous_resolvers: PreviousLayoutResolvers) {
+    world.replace_value_type_layout_resolver(previous_resolvers.value_types);
+    world.replace_enum_layout_resolver(previous_resolvers.enums);
+}
+
+/// The layout resolvers a world held before this artifact installed its own.
+#[derive(Clone, Copy)]
+struct PreviousLayoutResolvers {
+    /// The value-type resolver installed before.
+    value_types: Option<ValueTypeLayoutResolver>,
+    /// The enum resolver installed before.
+    enums: Option<EnumLayoutResolver>,
 }
 
 /// Holds this artifact's value types installed as the world's layout resolver.
@@ -422,8 +432,8 @@ struct ValueTypeLayoutScope {
     /// construction and drop, so no reference to the world can be held for
     /// that whole span.
     world: *mut World,
-    /// Resolver the world held before this scope installed its own.
-    previous_resolver: Option<ValueTypeLayoutResolver>,
+    /// Resolvers the world held before this scope installed its own.
+    previous_resolver: PreviousLayoutResolvers,
 }
 
 impl ValueTypeLayoutScope {
@@ -602,6 +612,39 @@ pub fn resolve_value_type_layout(path: &str) -> Option<&'static [ComponentFieldD
         .into_iter()
         .find(|descriptor| descriptor.type_name == resolved_type_name)
         .map(|descriptor| descriptor.fields)
+}
+
+/// The declared shape of the enum a `struct:<path>` field tag names, among the
+/// fieldless enums this artifact declares with `#[derive(PillMirror)]`.
+///
+/// Uses the same name rule as [`resolve_value_type_layout`]. An enum whose
+/// mirror row does not read back (a discriminant that is not an integer) is
+/// treated as undeclared, which leaves the field opaque.
+pub fn resolve_enum_layout(path: &str) -> Option<EnumLayout> {
+    let enum_rows: Vec<&'static PillMethodDescriptor> = mirror_method_descriptors()
+        .into_iter()
+        .filter(|descriptor| {
+            descriptor.owner_kind == OWNER_KIND_ENUM && descriptor.name == MIRROR_TYPE_ROW
+        })
+        .collect();
+    let resolved_type_name = pill_engine_core::component_registry::resolve_unique_name(
+        path,
+        enum_rows.iter().map(|descriptor| descriptor.type_name),
+    )?;
+    let row = enum_rows
+        .into_iter()
+        .find(|descriptor| descriptor.type_name == resolved_type_name)?;
+    // An enum type row carries the representation as its return tag, the
+    // discriminants as its argument tags and the variant names as its argument
+    // names.
+    let mut variants = Vec::with_capacity(row.arg_names.len());
+    for (name, discriminant) in row.arg_names.iter().zip(row.arg_tags) {
+        variants.push((*name, discriminant.parse::<i64>().ok()?));
+    }
+    Some(EnumLayout {
+        representation: row.return_tag,
+        variants,
+    })
 }
 
 /// Fingerprint of the set of persistable components this artifact declares.

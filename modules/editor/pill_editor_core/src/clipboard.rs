@@ -173,8 +173,9 @@ type SuffixDigitsParser = fn(&str) -> Option<FieldValue>;
 /// Returns the token that stands for a field value, or `None` for a value the
 /// payload cannot carry.
 ///
-/// Arrays, lists, text, opaque payloads, and asset and entity references have
-/// no token. The last two hold a slot of the world that issued them, so a
+/// Arrays, lists, text, enums, opaque payloads, and asset and entity
+/// references have no token: an enum value only means something next to the
+/// field tag that names its variants, which a token does not carry. The last two hold a slot of the world that issued them, so a
 /// token would mean nothing in another process.
 pub fn format_value(value: &FieldValue) -> Option<String> {
     Some(match value {
@@ -196,6 +197,7 @@ pub fn format_value(value: &FieldValue) -> Option<String> {
         | FieldValue::Text(_)
         | FieldValue::Asset { .. }
         | FieldValue::Entity { .. }
+        | FieldValue::Enum { .. }
         | FieldValue::Opaque { .. } => return None,
     })
 }

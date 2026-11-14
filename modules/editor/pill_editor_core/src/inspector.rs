@@ -191,6 +191,9 @@ pub enum FieldWidget {
         /// Rows the box shows.
         lines: usize,
     },
+    /// A declared enum: a dropdown of its variants, which the value's own tag
+    /// lists ([`pill_engine::parse_enum_tag`]).
+    Enum,
 }
 
 /// The widget a field's current value asks for.
@@ -208,6 +211,7 @@ pub fn widget_for(value: &FieldValue) -> FieldWidget {
         | FieldValue::U64(_)
         | FieldValue::Usize(_)
         | FieldValue::Isize(_) => FieldWidget::Integer,
+        FieldValue::Enum { .. } => FieldWidget::Enum,
         FieldValue::Array(_)
         | FieldValue::List { .. }
         | FieldValue::Asset { .. }
@@ -797,6 +801,7 @@ fn hash_value_kind(value: &FieldValue, hasher: &mut DefaultHasher) {
         FieldValue::Asset { .. } => 17,
         FieldValue::Entity { .. } => 18,
         FieldValue::Opaque { .. } => 19,
+        FieldValue::Enum { .. } => 20,
     };
     kind.hash(hasher);
     match value {
@@ -808,6 +813,8 @@ fn hash_value_kind(value: &FieldValue, hasher: &mut DefaultHasher) {
         }
         FieldValue::List { element_count, .. } => element_count.hash(hasher),
         FieldValue::Asset { asset_type, .. } => asset_type.hash(hasher),
+        // The tag lists the variants the dropdown offers.
+        FieldValue::Enum { type_tag, .. } => type_tag.hash(hasher),
         _ => {}
     }
 }
@@ -1534,8 +1541,8 @@ pub fn selection_leaf_edit(
 /// # Errors
 ///
 /// A message saying the text is not a float, an integer, an unsigned number or
-/// a boolean, as the field's kind requires, or that the field's kind has no
-/// editor here.
+/// a boolean, or a variant of the enum, as the field's kind requires, or that
+/// the field's kind has no editor here.
 pub fn parse_field_value(text: &str, current: &FieldValue) -> Result<FieldValue, String> {
     let text = text.trim();
     let parsed = match current {
@@ -1553,6 +1560,31 @@ pub fn parse_field_value(text: &str, current: &FieldValue) -> Result<FieldValue,
         FieldValue::Isize(_) => FieldValue::Isize(text.parse().map_err(|_| "not an integer")?),
         FieldValue::Bool(_) => FieldValue::Bool(text.parse().map_err(|_| "not a boolean")?),
         FieldValue::Text(_) => FieldValue::Text(text.to_string()),
+        // An enum takes a variant's name; its discriminant is accepted too.
+        FieldValue::Enum { type_tag, .. } => {
+            let enum_tag = pill_engine::parse_enum_tag(type_tag)
+                .ok_or_else(|| format!("`{type_tag}` is not a readable enum tag"))?;
+            let discriminant = enum_tag
+                .discriminant_of(text)
+                .or_else(|| {
+                    text.parse::<i64>()
+                        .ok()
+                        .filter(|number| enum_tag.variant_name(*number).is_some())
+                })
+                .ok_or_else(|| {
+                    let names: Vec<&str> =
+                        enum_tag.variants.iter().map(|(name, _)| *name).collect();
+                    format!(
+                        "`{text}` is not a variant of `{}` ({})",
+                        enum_tag.type_name,
+                        names.join(", ")
+                    )
+                })?;
+            FieldValue::Enum {
+                type_tag,
+                discriminant,
+            }
+        }
         other => return Err(format!("`{other:?}` fields are not editable here")),
     };
     Ok(parsed)
@@ -1579,6 +1611,9 @@ pub fn value_text(value: &FieldValue) -> String {
         FieldValue::Text(value) => value.clone(),
         FieldValue::Array(elements) => format!("[{}]", elements.len()),
         FieldValue::List { element_count, .. } => format!("[{element_count}]"),
+        FieldValue::Enum { discriminant, .. } => value
+            .enum_variant_name()
+            .map_or_else(|| discriminant.to_string(), str::to_string),
         other => format!("{other:?}"),
     }
 }

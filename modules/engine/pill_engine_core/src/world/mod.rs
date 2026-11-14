@@ -512,6 +512,11 @@ pub struct World {
     /// into that DLL after it unloads.
     pub(crate) value_type_layout_resolver:
         Option<crate::component_registry::ValueTypeLayoutResolver>,
+    /// Looks up the declared shape of a `#[derive(PillMirror)]` enum while a
+    /// layout is being recorded, so a field of that type reads and writes as
+    /// an enum. Installed and removed together with the value-type resolver,
+    /// for the same reason.
+    pub(crate) enum_layout_resolver: Option<crate::component_registry::EnumLayoutResolver>,
     /// The first registration failure of the current init pass, if any.
     ///
     /// It is set when the 128-type ceiling is reached, when another registry
@@ -570,6 +575,7 @@ impl World {
             component_field_layouts: HashMap::new(),
             asset_field_types: HashMap::new(),
             value_type_layout_resolver: None,
+            enum_layout_resolver: None,
             registration_error: None,
         }
     }

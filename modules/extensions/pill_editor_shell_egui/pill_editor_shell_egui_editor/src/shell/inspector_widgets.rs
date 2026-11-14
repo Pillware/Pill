@@ -10,6 +10,7 @@
 //! - `axis_slot` and `fixed_width_field`: a vector component's axis letter and
 //!   its editor. Both use a fixed width, so a long value is cropped inside its
 //!   field instead of widening the row.
+//! - `enum_edit`: a declared enum's variant dropdown.
 //! - `scalar_edit`, `ascending` and `component_rows`: the plain editor, bounds
 //!   put in ascending order, and a component's fields as plain display rows.
 //! - The read-only row and the value formatters, which the inspector's rows
@@ -310,6 +311,10 @@ pub fn scalar_edit(ui: &mut egui::Ui, value: &FieldValue) -> Option<FieldValue> 
             .changed()
             .then_some(FieldValue::F64(edited))
         }
+        FieldValue::Enum {
+            type_tag,
+            discriminant,
+        } => enum_edit(ui, type_tag, *discriminant),
         // Every whole-number kind shares one drag value here. A kind without a
         // numeric editor answers `None`.
         other => {
@@ -320,6 +325,36 @@ pub fn scalar_edit(ui: &mut egui::Ui, value: &FieldValue) -> Option<FieldValue> 
                 .then(|| (number.rebuild)(edited))
         }
     }
+}
+
+/// Draws a declared enum's dropdown, listing the variants its field tag
+/// names. Returns the picked variant's value when it differs from the current
+/// one, and `None` when nothing changed or the tag cannot be read.
+///
+/// A row holding a discriminant no variant declares shows the number, so the
+/// stored value stays visible until a variant is picked.
+pub fn enum_edit(
+    ui: &mut egui::Ui,
+    type_tag: &'static str,
+    discriminant: i64,
+) -> Option<FieldValue> {
+    let enum_tag = pill_engine::parse_enum_tag(type_tag)?;
+    let selected_text = enum_tag
+        .variant_name(discriminant)
+        .map_or_else(|| discriminant.to_string(), str::to_string);
+    let mut picked = discriminant;
+    egui::ComboBox::from_id_salt(ui.next_auto_id())
+        .selected_text(selected_text)
+        .width(ui.available_width())
+        .show_ui(ui, |ui| {
+            for (variant_name, variant_discriminant) in &enum_tag.variants {
+                ui.selectable_value(&mut picked, *variant_discriminant, *variant_name);
+            }
+        });
+    (picked != discriminant).then_some(FieldValue::Enum {
+        type_tag,
+        discriminant: picked,
+    })
 }
 
 /// Draws one read-only (name, value) row: the shared label column, then the
@@ -352,6 +387,9 @@ pub fn format_field_value(value: &FieldValue) -> String {
         FieldValue::Usize(number) => format!("{number}"),
         FieldValue::Bool(current) => format!("{current}"),
         FieldValue::Text(text) => text.clone(),
+        FieldValue::Enum { discriminant, .. } => value
+            .enum_variant_name()
+            .map_or_else(|| discriminant.to_string(), str::to_string),
         other => format!("{other:?}"),
     }
 }

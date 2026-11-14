@@ -159,6 +159,19 @@ pub enum FieldValue {
         /// slot's previous occupant.
         generation: u32,
     },
+    /// A field of a declared fieldless enum: its discriminant, read as the
+    /// enum's integer representation.
+    ///
+    /// `type_tag` is the field's `enum:` tag, which carries every variant's
+    /// name and discriminant ([`parse_enum_tag`] reads them back). A write is
+    /// refused unless the tag is the field's own and the discriminant names
+    /// one of its variants, so no row ever holds a value the enum cannot be.
+    Enum {
+        /// The field's registered `enum:` tag.
+        type_tag: &'static str,
+        /// The discriminant the row holds.
+        discriminant: i64,
+    },
     /// A field the engine can locate but not interpret.
     ///
     /// It is never edited by value. The only write it accepts is its own
@@ -233,9 +246,110 @@ impl FieldValue {
             Self::Text(_) => "text",
             Self::Asset { .. } => "asset",
             Self::Entity { .. } => "entity",
+            Self::Enum { .. } => "enum",
             Self::Opaque { .. } => "opaque",
         }
     }
+
+    /// The name of the variant an enum value holds, or `None` for any other
+    /// value and for a discriminant no variant declares.
+    #[must_use]
+    pub fn enum_variant_name(&self) -> Option<&'static str> {
+        let Self::Enum {
+            type_tag,
+            discriminant,
+        } = self
+        else {
+            return None;
+        };
+        parse_enum_tag(type_tag)?.variant_name(*discriminant)
+    }
+}
+
+// =============================================================================
+// EnumFieldTag
+// =============================================================================
+
+/// The parsed form of an `enum:` field tag.
+///
+/// The tag is `enum:<representation>:<type>{<Variant>=<discriminant>,...}`.
+/// The world builds it once, when a component registers, from the enum's
+/// declaration in the registering DLL; carrying the variants in the tag keeps
+/// them readable after that DLL unloads, and lets a reader that holds only a
+/// value or a descriptor list the choices without asking the world.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumFieldTag {
+    /// The integer type the enum is stored as (`u8`, `i32`, ...).
+    pub representation: &'static str,
+    /// The enum's name as the component field spells it.
+    pub type_name: &'static str,
+    /// Every variant's name and discriminant, in declaration order.
+    pub variants: Vec<(&'static str, i64)>,
+}
+
+impl EnumFieldTag {
+    /// The name of the variant with `discriminant`, if one declares it.
+    #[must_use]
+    pub fn variant_name(&self, discriminant: i64) -> Option<&'static str> {
+        self.variants
+            .iter()
+            .find(|(_, value)| *value == discriminant)
+            .map(|(name, _)| *name)
+    }
+
+    /// The discriminant of the variant called `name`, if there is one.
+    #[must_use]
+    pub fn discriminant_of(&self, name: &str) -> Option<i64> {
+        self.variants
+            .iter()
+            .find(|(variant, _)| *variant == name)
+            .map(|(_, value)| *value)
+    }
+}
+
+/// Reads an `enum:` field tag back into its representation, type name and
+/// variants. Returns `None` for any other tag, or one that is malformed.
+#[must_use]
+pub fn parse_enum_tag(type_tag: &'static str) -> Option<EnumFieldTag> {
+    let body = type_tag.strip_prefix("enum:")?;
+    let (representation, rest) = body.split_once(':')?;
+    let (type_name, variant_list) = rest.split_once('{')?;
+    let variant_list = variant_list.strip_suffix('}')?;
+    let mut variants = Vec::new();
+    // An enum with no variants has an empty list; every other entry is
+    // `Name=discriminant`.
+    for entry in variant_list.split(',').filter(|entry| !entry.is_empty()) {
+        let (name, value) = entry.split_once('=')?;
+        variants.push((name, value.parse::<i64>().ok()?));
+    }
+    Some(EnumFieldTag {
+        representation,
+        type_name,
+        variants,
+    })
+}
+
+/// Builds the `enum:` tag for a field of the enum `type_name` laid out as
+/// `layout`, in the form [`parse_enum_tag`] reads.
+pub(crate) fn format_enum_tag(
+    type_name: &str,
+    layout: &crate::component_registry::EnumLayout,
+) -> String {
+    let variant_list = layout
+        .variants
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "enum:{}:{type_name}{{{variant_list}}}",
+        layout.representation
+    )
+}
+
+/// Whether a type tag is a declared enum field's.
+pub(crate) fn is_enum_tag(type_tag: &str) -> bool {
+    type_tag.starts_with("enum:")
 }
 
 /// Why a generic field read or write was refused.

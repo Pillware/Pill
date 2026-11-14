@@ -27,7 +27,10 @@ use std::sync::OnceLock;
 
 // Current crate
 use super::row::FieldWrite;
-use super::{is_container_tag, is_entity_tag, is_handle_tag, ComponentFieldError, FieldValue};
+use super::{
+    is_container_tag, is_entity_tag, is_enum_tag, is_handle_tag, parse_enum_tag,
+    ComponentFieldError, FieldValue,
+};
 use crate::component_registry::ComponentFieldDescriptor;
 use crate::entity::Entity;
 
@@ -233,6 +236,46 @@ pub(super) fn encode_scalar(
 /// the value does.
 pub(super) fn decode_scalar(bytes: &[u8], offset: usize, tag: &str) -> Option<FieldValue> {
     ScalarKind::from_tag(tag)?.decode(bytes, offset)
+}
+
+/// The scalar value of an enum's integer representation that holds
+/// `discriminant`, or `None` when the representation is not an integer scalar
+/// or the discriminant does not fit it.
+pub(super) fn enum_discriminant_value(
+    representation: &str,
+    discriminant: i64,
+) -> Option<FieldValue> {
+    Some(match ScalarKind::from_tag(representation)? {
+        ScalarKind::I8 => FieldValue::I8(i8::try_from(discriminant).ok()?),
+        ScalarKind::I16 => FieldValue::I16(i16::try_from(discriminant).ok()?),
+        ScalarKind::I32 => FieldValue::I32(i32::try_from(discriminant).ok()?),
+        ScalarKind::I64 => FieldValue::I64(discriminant),
+        ScalarKind::U8 => FieldValue::U8(u8::try_from(discriminant).ok()?),
+        ScalarKind::U16 => FieldValue::U16(u16::try_from(discriminant).ok()?),
+        ScalarKind::U32 => FieldValue::U32(u32::try_from(discriminant).ok()?),
+        ScalarKind::U64 => FieldValue::U64(u64::try_from(discriminant).ok()?),
+        ScalarKind::Isize => FieldValue::Isize(isize::try_from(discriminant).ok()?),
+        ScalarKind::Usize => FieldValue::Usize(usize::try_from(discriminant).ok()?),
+        ScalarKind::F32 | ScalarKind::F64 | ScalarKind::Bool => return None,
+    })
+}
+
+/// The discriminant an integer scalar holds, or `None` for a value that is not
+/// an integer or does not fit an `i64`.
+fn discriminant_of_scalar(value: &FieldValue) -> Option<i64> {
+    match *value {
+        FieldValue::I8(value) => Some(i64::from(value)),
+        FieldValue::I16(value) => Some(i64::from(value)),
+        FieldValue::I32(value) => Some(i64::from(value)),
+        FieldValue::I64(value) => Some(value),
+        FieldValue::U8(value) => Some(i64::from(value)),
+        FieldValue::U16(value) => Some(i64::from(value)),
+        FieldValue::U32(value) => Some(i64::from(value)),
+        FieldValue::U64(value) => i64::try_from(value).ok(),
+        FieldValue::Isize(value) => i64::try_from(value).ok(),
+        FieldValue::Usize(value) => i64::try_from(value).ok(),
+        _ => None,
+    }
 }
 
 /// The number of bytes one fixed-array element occupies, from the descriptor.
@@ -448,6 +491,22 @@ fn decode_tagged(
             return FieldValue::Entity { id, generation };
         }
     }
+    // An enum field is its representation's integer. The value is reported
+    // as read even when no variant declares it, so a reader can show what
+    // the row holds.
+    if let Some(enum_tag) = parse_enum_tag(type_tag) {
+        if scalar_size(enum_tag.representation) == Some(field_size) {
+            if let Some(discriminant) = decode_scalar(bytes, offset, enum_tag.representation)
+                .as_ref()
+                .and_then(discriminant_of_scalar)
+            {
+                return FieldValue::Enum {
+                    type_tag,
+                    discriminant,
+                };
+            }
+        }
+    }
     let mut raw_bytes = vec![0u8; field_size];
     if let Some(source) = bytes.get(offset..offset + field_size) {
         raw_bytes.copy_from_slice(source);
@@ -561,6 +620,51 @@ pub(super) fn encode_field_write(
         encoded_bytes.extend_from_slice(&id.to_ne_bytes());
         encoded_bytes.extend_from_slice(&generation.to_ne_bytes());
         encoded_bytes.resize(ENTITY_REFERENCE_SIZE, 0);
+        return Ok(FieldWrite {
+            row_offset: descriptor.offset,
+            bytes: encoded_bytes,
+        });
+    }
+    // An enum field takes an enum value carrying the field's own tag, and only
+    // a discriminant one of its variants declares: any other integer in a Rust
+    // enum's bytes is undefined behaviour for the code that reads it.
+    if is_enum_tag(type_tag) {
+        let type_mismatch = || ComponentFieldError::TypeMismatch {
+            field: field_name.to_string(),
+            expected: type_tag,
+            found: field_value.variant_tag(),
+        };
+        let FieldValue::Enum {
+            type_tag: value_tag,
+            discriminant,
+        } = field_value
+        else {
+            return Err(type_mismatch());
+        };
+        if *value_tag != type_tag {
+            return Err(type_mismatch());
+        }
+        let enum_tag = parse_enum_tag(type_tag).ok_or(ComponentFieldError::UnsupportedField {
+            field: field_name.to_string(),
+            reason: "the field's enum tag cannot be read",
+        })?;
+        if enum_tag.variant_name(*discriminant).is_none() {
+            return Err(ComponentFieldError::UnsupportedField {
+                field: field_name.to_string(),
+                reason: "the value is not one of the enum's variants",
+            });
+        }
+        let representation_value = enum_discriminant_value(enum_tag.representation, *discriminant)
+            .ok_or_else(type_mismatch)?;
+        let mut encoded_bytes = Vec::with_capacity(descriptor.size);
+        encode_scalar(
+            enum_tag.representation,
+            &representation_value,
+            &mut encoded_bytes,
+        );
+        if encoded_bytes.len() != descriptor.size {
+            return Err(type_mismatch());
+        }
         return Ok(FieldWrite {
             row_offset: descriptor.offset,
             bytes: encoded_bytes,

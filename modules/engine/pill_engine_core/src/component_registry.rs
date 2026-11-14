@@ -10,6 +10,8 @@
 //! - Declare the [`ComponentLayout`] trait the derives implement, and
 //!   [`ValueTypeLayoutResolver`], the function the world calls to find the
 //!   layout of a value type that a component field nests.
+//! - Declare [`EnumLayout`] and [`EnumLayoutResolver`], which let a field of a
+//!   declared enum type become an editable enum field.
 //!
 //! # Design
 //!
@@ -165,6 +167,34 @@ pub trait ComponentLayout {
 ///
 /// [`World::replace_value_type_layout_resolver`]: crate::World::replace_value_type_layout_resolver
 pub type ValueTypeLayoutResolver = fn(&str) -> Option<&'static [ComponentFieldDescriptor]>;
+
+// =============================================================================
+// EnumLayout
+// =============================================================================
+
+/// The shape of a fieldless enum with an integer representation, as a
+/// `#[derive(PillMirror)]` declares it.
+///
+/// The strings borrow the declaring DLL's static data, so a value is only read
+/// while that DLL registers its components: the world copies what it needs into
+/// the field's own tag before the registration ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumLayout {
+    /// The integer type the enum is stored as (`u8`, `i32`, ...).
+    pub representation: &'static str,
+    /// Every variant's name and discriminant, in declaration order.
+    pub variants: Vec<(&'static str, i64)>,
+}
+
+/// A function that finds the declared shape of an enum a `struct:<path>` field
+/// tag names, with the same name rule as [`ValueTypeLayoutResolver`].
+///
+/// Like the value-type resolver it lives in the registering DLL and is lent to
+/// the world only for the length of that DLL's registration loop
+/// ([`World::replace_enum_layout_resolver`]).
+///
+/// [`World::replace_enum_layout_resolver`]: crate::World::replace_enum_layout_resolver
+pub type EnumLayoutResolver = fn(&str) -> Option<EnumLayout>;
 
 // =============================================================================
 // Free Functions

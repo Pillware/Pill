@@ -52,7 +52,7 @@ use crate::asset_database::AssetDatabase;
 use crate::asset_import_registry::ImportRegistry;
 use crate::asset_standalone::StandaloneAsset;
 use crate::commands::{ByteComponentAdder, CommandError};
-use crate::component_field::{is_handle_tag, FieldValue};
+use crate::component_field::{is_handle_tag, parse_enum_tag, EnumFieldTag, FieldValue};
 use crate::engine::Engine;
 use crate::entity::{Entity, EntityId};
 use crate::saved_references::{
@@ -266,6 +266,13 @@ fn encode_field_value(
             }
             Some(serde_json::Value::Array(encoded_elements))
         }
+        // An enum is saved as its variant's name, so a document survives a
+        // reordering of the declaration. A discriminant no variant declares
+        // is kept as its number rather than lost.
+        FieldValue::Enum { discriminant, .. } => Some(match field_value.enum_variant_name() {
+            Some(variant_name) => serde_json::json!(variant_name),
+            None => serde_json::json!(discriminant),
+        }),
         FieldValue::Opaque { type_tag, bytes } => Some(serde_json::json!({
             "opaque": hex_of(bytes),
             "tag": type_tag,
@@ -641,6 +648,9 @@ fn decoded_field(
             .map(DecodedField::Entity)
             .ok_or_else(|| "does not read".to_owned());
     }
+    if let Some(enum_tag) = parse_enum_tag(tag) {
+        return decoded_enum_field(tag, &enum_tag, document_value).map(DecodedField::Plain);
+    }
     if let Some(element_tag) = tag.strip_prefix("array:") {
         // The element tag is the tail of the field's own `'static` tag, so the
         // same decoder works for every element. This branch builds a plain
@@ -759,6 +769,66 @@ fn decode_opaque_field(
     Some(FieldValue::Opaque {
         type_tag: tag,
         bytes: bytes_of(encoded_object.get("opaque")?.as_str()?)?,
+    })
+}
+
+/// Decodes an enum field's document value: a variant name, a discriminant, or
+/// the opaque payload a document saved before the enum was declared, whose
+/// bytes are the representation's integer.
+///
+/// # Errors
+///
+/// Returns the reason when the value has none of those shapes, or names a
+/// variant or a discriminant the enum does not declare.
+fn decoded_enum_field(
+    tag: &'static str,
+    enum_tag: &EnumFieldTag,
+    document_value: &serde_json::Value,
+) -> Result<FieldValue, String> {
+    let discriminant = if let Some(variant_name) = document_value.as_str() {
+        enum_tag.discriminant_of(variant_name).ok_or_else(|| {
+            format!(
+                "`{variant_name}` is not a variant of `{}`",
+                enum_tag.type_name
+            )
+        })?
+    } else if let Some(number) = document_value.as_i64() {
+        number
+    } else {
+        legacy_opaque_discriminant(enum_tag, document_value)
+            .ok_or_else(|| "does not read".to_owned())?
+    };
+    if enum_tag.variant_name(discriminant).is_none() {
+        return Err(format!(
+            "{discriminant} is not a variant of `{}`",
+            enum_tag.type_name
+        ));
+    }
+    Ok(FieldValue::Enum {
+        type_tag: tag,
+        discriminant,
+    })
+}
+
+/// The discriminant an opaque `{ "opaque": <hex>, "tag": ... }` payload holds
+/// when its length is the enum representation's size. Bytes are native-endian,
+/// as every row is.
+fn legacy_opaque_discriminant(
+    enum_tag: &EnumFieldTag,
+    document_value: &serde_json::Value,
+) -> Option<i64> {
+    let bytes = bytes_of(document_value.as_object()?.get("opaque")?.as_str()?)?;
+    let signed = enum_tag.representation.starts_with('i');
+    Some(match (bytes.len(), signed) {
+        (1, true) => i64::from(i8::from_ne_bytes(bytes.try_into().ok()?)),
+        (1, false) => i64::from(u8::from_ne_bytes(bytes.try_into().ok()?)),
+        (2, true) => i64::from(i16::from_ne_bytes(bytes.try_into().ok()?)),
+        (2, false) => i64::from(u16::from_ne_bytes(bytes.try_into().ok()?)),
+        (4, true) => i64::from(i32::from_ne_bytes(bytes.try_into().ok()?)),
+        (4, false) => i64::from(u32::from_ne_bytes(bytes.try_into().ok()?)),
+        (8, true) => i64::from_ne_bytes(bytes.try_into().ok()?),
+        (8, false) => i64::try_from(u64::from_ne_bytes(bytes.try_into().ok()?)).ok()?,
+        _ => return None,
     })
 }
 
@@ -1402,5 +1472,27 @@ mod tests {
         let damage = world.get_component::<Damage>(hero).expect("it attached");
         assert_eq!(damage.amount, 0, "300 did not wrap to 44");
         assert_eq!(damage.scale, 0.0, "1e40 did not become inf");
+    }
+
+    /// An enum field reads a variant name, a declared discriminant, and the
+    /// opaque payload a document saved before the enum was declared; a name or
+    /// number the enum does not declare is refused with a reason.
+    #[test]
+    fn an_enum_field_decodes_names_numbers_and_old_opaque_payloads() {
+        const TAG: &str = "enum:u8:Shape{Ball=0,Cuboid=1}";
+        let decoded = |document_value: serde_json::Value| match decoded_field(TAG, &document_value)
+        {
+            Ok(DecodedField::Plain(FieldValue::Enum { discriminant, .. })) => Ok(discriminant),
+            Ok(_) => Err("decoded to another kind".to_owned()),
+            Err(reason) => Err(reason),
+        };
+        assert_eq!(decoded(serde_json::json!("Cuboid")), Ok(1));
+        assert_eq!(decoded(serde_json::json!(0)), Ok(0));
+        assert_eq!(
+            decoded(serde_json::json!({ "opaque": "01", "tag": "struct:Shape" })),
+            Ok(1)
+        );
+        assert!(decoded(serde_json::json!("Pyramid")).is_err());
+        assert!(decoded(serde_json::json!(7)).is_err());
     }
 }

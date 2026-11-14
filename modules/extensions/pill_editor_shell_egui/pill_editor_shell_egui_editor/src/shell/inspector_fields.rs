@@ -1148,6 +1148,7 @@ pub fn field_widget_name(widget: &inspector::FieldWidget) -> &'static str {
         inspector::FieldWidget::FloatDrag { .. } => "float-drag",
         inspector::FieldWidget::IntegerDrag { .. } => "integer-drag",
         inspector::FieldWidget::MultilineText { .. } => "multiline",
+        inspector::FieldWidget::Enum => "enum",
     }
 }
 

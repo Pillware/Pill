@@ -7,6 +7,8 @@
 //!   composing offsets as it descends.
 //! - Keep the declared layout beside the flattened one, and own the resolver
 //!   that tells a later registration what a nested type looks like.
+//! - Retag a `struct:` field whose type is a declared enum as an `enum:`
+//!   field, carrying its variants, so it reads and writes as an enum.
 //!
 //! # Design
 //!
@@ -162,9 +164,18 @@ impl World {
                 } else {
                     leaf_decorators(inherited_decorators, field.decorators.as_ref())
                 };
+                // A field of a declared enum reads and writes as an enum
+                // instead of an opaque blob.
+                let type_tag = match self.resolve_enum_tag(field) {
+                    Some(enum_tag) => {
+                        *changed = true;
+                        enum_tag
+                    }
+                    None => field.type_tag,
+                };
                 expanded_fields.push(ComponentFieldDescriptor {
                     name,
-                    type_tag: field.type_tag,
+                    type_tag,
                     offset: base_offset + field.offset,
                     size: field.size,
                     align: field.align,
@@ -204,6 +215,48 @@ impl World {
         // That resolver applies the same name rule.
         let resolver = self.value_type_layout_resolver?;
         resolver(path).map(<[ComponentFieldDescriptor]>::to_vec)
+    }
+
+    /// The `enum:` tag a `struct:<path>` field gets when its type is an enum
+    /// the registering DLL declares, or `None` to leave the field as it is.
+    ///
+    /// The declaration is checked against the field itself: a representation
+    /// whose size is not the field's size, or a discriminant that does not fit
+    /// the representation, leaves the field opaque, because reading it as an
+    /// enum would read the wrong bytes. Handles are never enums.
+    fn resolve_enum_tag(&self, field: &ComponentFieldDescriptor) -> Option<&'static str> {
+        let path = field.type_tag.strip_prefix("struct:")?;
+        if super::is_handle_tag(field.type_tag) {
+            return None;
+        }
+        let resolver = self.enum_layout_resolver?;
+        let layout = resolver(path)?;
+        if super::codec::scalar_size(layout.representation) != Some(field.size) {
+            return None;
+        }
+        let discriminants_fit = layout.variants.iter().all(|(_, discriminant)| {
+            super::codec::enum_discriminant_value(layout.representation, *discriminant).is_some()
+        });
+        if !discriminants_fit {
+            return None;
+        }
+        Some(intern_nested_field_name(super::format_enum_tag(
+            path, &layout,
+        )))
+    }
+
+    /// Replaces the resolver used to find enum declarations while component
+    /// layouts are recorded. Returns the resolver installed before, so the
+    /// caller can put it back.
+    ///
+    /// Installed and removed by the facade together with the value-type
+    /// resolver. It is not meant for other callers.
+    #[doc(hidden)]
+    pub fn replace_enum_layout_resolver(
+        &mut self,
+        resolver: Option<crate::component_registry::EnumLayoutResolver>,
+    ) -> Option<crate::component_registry::EnumLayoutResolver> {
+        std::mem::replace(&mut self.enum_layout_resolver, resolver)
     }
 
     /// Replaces the resolver used to find value-type layouts while component
