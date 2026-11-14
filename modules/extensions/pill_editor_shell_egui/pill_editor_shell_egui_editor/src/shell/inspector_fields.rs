@@ -34,8 +34,23 @@ use pill_editor_shell_egui_editor::shell::*;
 // Constants
 // =============================================================================
 
-/// Width of the small clear button beside a reference row's button.
+/// Width of each small button beside a reference row's button (clear, pick).
 pub const ASSET_ROW_CLEAR_WIDTH: f32 = 24.0;
+
+/// The size every small button beside a reference row's button is drawn at,
+/// so the room the row keeps for it is exactly the room it takes.
+pub fn side_button_size() -> egui::Vec2 {
+    egui::vec2(ASSET_ROW_CLEAR_WIDTH, ROW_HEIGHT)
+}
+
+/// The width a reference row's main button takes: what is left after
+/// `side_buttons` small buttons and the gap before each, never less than
+/// [`CONTROL_MIN_WIDTH`].
+pub fn reference_button_width(ui: &egui::Ui, side_buttons: usize) -> f32 {
+    let spacing = ui.spacing().item_spacing.x;
+    (ui.available_width() - side_buttons as f32 * (ASSET_ROW_CLEAR_WIDTH + spacing))
+        .max(CONTROL_MIN_WIDTH)
+}
 
 /// Height an asset or entity picker's list scrolls within.
 pub const ASSET_PICKER_HEIGHT: f32 = 180.0;
@@ -551,7 +566,7 @@ pub fn inspector_asset_row(
         None => row_input.field.to_owned(),
     };
     inspector_row(ui, &row_label_text, row_input.tooltip, &mut |ui| {
-        let width = (ui.available_width() - ASSET_ROW_CLEAR_WIDTH).max(CONTROL_MIN_WIDTH);
+        let width = reference_button_width(ui, 1);
         let color = match label {
             AssetReferenceLabel::Named(_) => style::text(),
             _ => style::text_muted(),
@@ -598,10 +613,10 @@ pub fn inspector_asset_row(
         }
         button_rects = Some((response.rect, response.interact_rect));
         if ui
-            .add_enabled(
-                !matches!(label, AssetReferenceLabel::Unset),
-                egui::Button::new("x").small(),
-            )
+            .add_enabled_ui(!matches!(label, AssetReferenceLabel::Unset), |ui| {
+                ui.add_sized(side_button_size(), egui::Button::new("x").small())
+            })
+            .inner
             .on_hover_text("Clear the reference")
             .clicked()
         {
@@ -788,7 +803,7 @@ pub fn inspector_entity_row(
         None => row_input.field.to_owned(),
     };
     inspector_row(ui, &row_label_text, row_input.tooltip, &mut |ui| {
-        let width = (ui.available_width() - 2.0 * ASSET_ROW_CLEAR_WIDTH).max(CONTROL_MIN_WIDTH);
+        let width = reference_button_width(ui, 2);
         let color = match label {
             EntityReferenceLabel::Live(_) => style::text(),
             _ => style::text_muted(),
@@ -818,17 +833,17 @@ pub fn inspector_entity_row(
         }
         button_rects = Some((response.rect, response.interact_rect));
         if ui
-            .add(egui::Button::new("+").small())
+            .add_sized(side_button_size(), egui::Button::new("+").small())
             .on_hover_text("Pick the reference by clicking it in the scene")
             .clicked()
         {
             scene_pick_armed = true;
         }
         if ui
-            .add_enabled(
-                !matches!(label, EntityReferenceLabel::Unset),
-                egui::Button::new("x").small(),
-            )
+            .add_enabled_ui(!matches!(label, EntityReferenceLabel::Unset), |ui| {
+                ui.add_sized(side_button_size(), egui::Button::new("x").small())
+            })
+            .inner
             .on_hover_text("Clear the reference")
             .clicked()
         {

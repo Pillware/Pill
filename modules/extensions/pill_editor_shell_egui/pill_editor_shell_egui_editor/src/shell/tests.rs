@@ -1492,3 +1492,222 @@ fn a_narrow_panel_squashes_fields_and_keeps_labels() {
         );
     }
 }
+
+/// The Inspector drawn the way the dock draws a tab - a vertical-only scroll
+/// area and the body's margin, in a narrow tab - lays every row out inside the
+/// tab: nothing reaches past its right edge, where the dock would clip it.
+#[test]
+fn a_narrow_inspector_tab_lays_everything_out_inside_the_tab() {
+    use pill_editor_core::editor_state::{
+        AssetDetail, AssetKind, AssetListing, ComponentFieldView, ComponentView, EntityDetail,
+    };
+    const TAB_WIDTH: f32 = 215.0;
+    let mut engine = Engine::new();
+    let entity = engine
+        .world_mut()
+        .create_entity()
+        .build()
+        .expect("entity builds");
+    let field = |name: &str| ComponentFieldView {
+        name: name.to_string(),
+        decorators: Vec::new(),
+    };
+    let floats = |values: &[f32]| {
+        FieldValue::Array(values.iter().map(|value| FieldValue::F32(*value)).collect())
+    };
+    let detail = EntityDetail {
+        entity,
+        components: vec![
+            ComponentView {
+                asset_labels: Vec::new(),
+                entity_labels: Vec::new(),
+                type_name: "tests::TransformComponent".to_string(),
+                persistable: true,
+                editable: true,
+                fields: vec![field("translation"), field("rotation"), field("scale")],
+                values: vec![
+                    floats(&[0.0, 0.0, 0.0]),
+                    floats(&[0.4, 0.8, 0.2, 0.1]),
+                    floats(&[1.0, 1.0, 1.0]),
+                ],
+            },
+            ComponentView {
+                asset_labels: Vec::new(),
+                entity_labels: Vec::new(),
+                type_name: "tests::MeshRendererComponent".to_string(),
+                persistable: true,
+                editable: true,
+                fields: vec![field("mesh"), field("material")],
+                values: vec![FieldValue::unset_asset(), FieldValue::unset_asset()],
+            },
+        ],
+    };
+    let mut snapshot = EditorSnapshot::capture_engine_tiers(&engine, 0, &[], Vec::new());
+    snapshot.detail = Some(detail);
+    let mut selection = EditorSelection::default();
+    selection.select_only(entity);
+    selection.asset = Some("settings/pill_physics.physics_settings".to_string());
+    snapshot.asset_detail = Some(AssetDetail {
+        row: AssetListing {
+            root: String::new(),
+            path: "settings/pill_physics.physics_settings".to_string(),
+            read_only: false,
+            kind: AssetKind::Type("pill_physics::PhysicsSettingsAsset".to_string()),
+            standalone: true,
+            has_meta: false,
+            guid: None,
+        },
+        settings: Some(serde_json::json!({
+            "debug_draw": true,
+            "fixed_timestep": 0.016666668,
+            "gravity": [0.0, -9.81, 0.0],
+            "interpolate": false,
+            "max_substeps": 8,
+        })),
+        references: Vec::new(),
+        decorators: Vec::new(),
+    });
+    let mut pending = PendingEditorCommands::default();
+    let context = egui::Context::default();
+    style::apply(&context);
+    let mut regions = Vec::new();
+    let mut inspector_session = InspectorSession::default();
+    let mut tab_right = 0.0f32;
+    let mut content_right = 0.0f32;
+    // Two passes: egui settles a scroll area's size from the pass before.
+    for _ in 0..2 {
+        run_pass(&context, &mut |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                ui.allocate_ui(egui::vec2(TAB_WIDTH, 700.0), |ui| {
+                    tab_right = ui.max_rect().right();
+                    egui::ScrollArea::new([false, true]).show(ui, |ui| {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::same(4))
+                            .show(ui, |ui| {
+                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                                inspector_tab(
+                                    ui,
+                                    &snapshot,
+                                    &selection,
+                                    &mut pending,
+                                    &mut regions,
+                                    &mut inspector_session,
+                                );
+                                content_right = ui.min_rect().right();
+                            });
+                    });
+                });
+            });
+        });
+    }
+    assert!(
+        content_right <= tab_right + 0.5,
+        "the Inspector's content ends at {content_right}, past the tab's edge at {tab_right}"
+    );
+}
+
+/// Draws `draw_tab` the way the dock draws a tab body - a vertical-only scroll
+/// area and the body's margin, in a tab `tab_width` points wide - over two
+/// passes, and returns the content's right edge and the tab's.
+#[cfg(test)]
+fn narrow_tab_extent(
+    context: &egui::Context,
+    tab_width: f32,
+    draw_tab: &mut dyn FnMut(&mut egui::Ui),
+) -> (f32, f32) {
+    let mut tab_right = 0.0f32;
+    let mut content_right = 0.0f32;
+    for _ in 0..2 {
+        run_pass(context, &mut |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                ui.allocate_ui(egui::vec2(tab_width, 700.0), |ui| {
+                    tab_right = ui.max_rect().right();
+                    egui::ScrollArea::new([false, true]).show(ui, |ui| {
+                        egui::Frame::new()
+                            .inner_margin(egui::Margin::same(4))
+                            .show(ui, |ui| {
+                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                                draw_tab(ui);
+                                content_right = ui.min_rect().right();
+                            });
+                    });
+                });
+            });
+        });
+    }
+    (content_right, tab_right)
+}
+
+/// Every tab body drawn in a narrow tab stays inside it: the Entities,
+/// Systems, Assets and Preferences tabs squash or shorten what does not fit
+/// instead of reaching past the edge, where the dock would clip it.
+#[test]
+fn every_narrow_tab_body_stays_inside_the_tab() {
+    const TAB_WIDTH: f32 = 215.0;
+    let mut engine = Engine::new();
+    engine
+        .world_mut()
+        .create_entity()
+        .build()
+        .expect("entity builds");
+    engine.register_system("a_system_with_a_rather_long_name_for_its_row", || {});
+    let snapshot = EditorSnapshot::capture_engine_tiers(&engine, 0, &[], Vec::new());
+    let mut selection = EditorSelection::default();
+    let mut dialog: Option<AssetDialog> = None;
+    let mut pending = PendingEditorCommands::default();
+    let mut draft: Option<preferences::PreferencesDraft> = None;
+    let mut browser = ProjectBrowser::default();
+    let mut drag_out: Option<String> = None;
+    let mut regions = Vec::new();
+    let mut inspector_session = InspectorSession::default();
+    let mut previews = pill_editor_core::session::PreviewStates::default();
+    let context = egui::Context::default();
+    style::apply(&context);
+
+    let mut extents = Vec::new();
+    extents.push((
+        "entities",
+        narrow_tab_extent(&context, TAB_WIDTH, &mut |ui| {
+            entities_tab(
+                ui,
+                &snapshot,
+                &mut selection,
+                &mut pending,
+                &mut regions,
+                &mut inspector_session,
+            );
+        }),
+    ));
+    extents.push((
+        "systems",
+        narrow_tab_extent(&context, TAB_WIDTH, &mut |ui| {
+            systems_tab(ui, &snapshot, &mut pending);
+        }),
+    ));
+    extents.push((
+        "assets",
+        narrow_tab_extent(&context, TAB_WIDTH, &mut |ui| {
+            let mut writes = AssetTileWrites {
+                selection: &mut selection,
+                dialog: &mut dialog,
+                pending: &mut pending,
+                overlay_regions: &mut regions,
+                drag_out: &mut drag_out,
+                previews: &mut previews,
+            };
+            assets_tab(ui, &snapshot, &mut browser, &mut writes);
+        }),
+    ));
+    extents.push((
+        "preferences",
+        narrow_tab_extent(&context, TAB_WIDTH, &mut |ui| {
+            preferences_tab(ui, &snapshot, &mut draft, &mut pending);
+        }),
+    ));
+    for (tab, (content_right, tab_right)) in &extents {
+        assert!(
+            *content_right <= *tab_right + 0.5,
+            "the {tab} tab's content ends at {content_right}, past the tab's edge at {tab_right}"
+        );
+    }
+}

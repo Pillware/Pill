@@ -17,6 +17,8 @@
 //!   drawing such a row adds itself.
 //! - [`value_row`] and [`value_row_in`]: a read-only row whose control is the
 //!   value in monospace text.
+//! - [`control_column`]: the column a row's control is drawn in, which never
+//!   lets the control widen the row past the panel's edge.
 //!
 //! # Design
 //!
@@ -164,8 +166,33 @@ pub fn row_in(
     ui.horizontal(|ui| {
         label_cell_in(ui, label_column_width, label, tooltip);
         label_gap(ui);
-        draw_control(ui);
+        control_column(ui, draw_control);
     });
+}
+
+/// Draws a row's control in a column exactly as wide as the room left in the
+/// row, and claims exactly that width.
+///
+/// A control laid out wider than the column is cut at the column's edge, but
+/// it never widens the row: a row that grew would widen the whole panel, every
+/// row after it would be laid out to the wider width, and the panel's own edge
+/// would cut them all. The column is as tall as its control, and at least
+/// [`ROW_HEIGHT`].
+pub fn control_column(ui: &mut egui::Ui, draw_control: &mut dyn FnMut(&mut egui::Ui)) {
+    let width = ui.available_width().max(0.0);
+    let column_rect = egui::Rect::from_min_size(
+        ui.cursor().min,
+        egui::vec2(width, ui.available_height().max(ROW_HEIGHT)),
+    );
+    let mut control = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(column_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Min)),
+    );
+    control.set_clip_rect(column_rect.intersect(ui.clip_rect()));
+    draw_control(&mut control);
+    let height = control.min_rect().height().max(ROW_HEIGHT);
+    ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 }
 
 /// Draws one read-only row: the label, then `value` in monospace text.

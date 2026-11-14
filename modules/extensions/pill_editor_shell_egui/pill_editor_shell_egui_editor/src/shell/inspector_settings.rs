@@ -742,7 +742,9 @@ pub fn asset_settings_row(
                         &label,
                         Some(settings_row_tooltip(walk.decorators, &key)),
                         &mut |ui| {
-                            changed = ui.add(egui::DragValue::new(edited)).changed();
+                            changed = ui
+                                .add_sized(fill_size(ui), egui::DragValue::new(edited))
+                                .changed();
                         },
                     );
                     if changed {
@@ -764,7 +766,8 @@ pub fn asset_settings_row(
                         Some(settings_row_tooltip(walk.decorators, &key)),
                         &mut |ui| {
                             changed = ui
-                                .add(
+                                .add_sized(
+                                    fill_size(ui),
                                     egui::DragValue::new(&mut edited)
                                         .speed(0.05)
                                         .max_decimals(9),

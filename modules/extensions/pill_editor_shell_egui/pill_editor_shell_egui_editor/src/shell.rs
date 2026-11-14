@@ -167,6 +167,7 @@ pub use toolbox_panel::toolbox_overlay;
 /// with.
 pub mod rows;
 
+pub use rows::control_column;
 pub use rows::label_cell;
 pub use rows::label_cell_in;
 pub use rows::label_column_width;
@@ -232,8 +233,10 @@ pub use inspector_fields::inspector_entity_row;
 pub use inspector_fields::inspector_field_row;
 pub use inspector_fields::inspector_row;
 pub use inspector_fields::is_scalar_field;
+pub use inspector_fields::reference_button_width;
 pub use inspector_fields::remember_entity_row_rect;
 pub use inspector_fields::remember_entity_row_text;
+pub use inspector_fields::side_button_size;
 pub use inspector_fields::slot_width_within;
 pub use inspector_fields::vector_row;
 pub use inspector_fields::vector_slot_width;
