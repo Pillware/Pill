@@ -60,16 +60,15 @@ pub fn physics_debug_draw(
                 draw_box(&mut debug_draw, transform, [first, second, third], style);
             }
             ColliderShape::Capsule | ColliderShape::Cylinder => {
-                // Both stand on their y axis: the ends and the shaft between
-                // them show where the shape is without drawing every curve.
-                let half_height = first;
-                let radius = second;
-                let [x, y, z] = transform.translation;
-                let bottom = [x, y - half_height, z];
-                let top = [x, y + half_height, z];
-                debug_draw.line(bottom, top, style);
-                debug_draw.sphere(bottom, radius, style);
-                debug_draw.sphere(top, radius, style);
+                let rounded_ends = collider.shape == ColliderShape::Capsule;
+                draw_upright_shape(
+                    &mut debug_draw,
+                    transform,
+                    first,
+                    second,
+                    rounded_ends,
+                    style,
+                );
             }
         }
     }
@@ -122,6 +121,77 @@ pub fn draw_box(
             let other = index ^ bit;
             if other < index {
                 debug_draw.line(*corner, corners[other], style);
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Capsule and cylinder outlines
+// =============================================================================
+
+/// How many straight lines approximate one half circle of a capsule's cap.
+const CAP_ARC_SEGMENTS: usize = 12;
+
+/// Draws a capsule or a cylinder standing on the entity's own y axis: a ring
+/// at each end of the shaft and four lines joining them. With `rounded_ends`
+/// each end also gets two half-circle arcs, at right angles, that outline the
+/// capsule's hemispherical cap.
+pub fn draw_upright_shape(
+    debug_draw: &mut DebugDraw,
+    transform: &TransformComponent,
+    half_height: f32,
+    radius: f32,
+    rounded_ends: bool,
+    style: DebugStyle,
+) {
+    let rotation = rotation_of(transform);
+    let center = transform.translation;
+    // Step 1: The shape's own axes, turned into world space, give every point
+    // below as an offset from the entity's position.
+    let axis = |x: f32, y: f32, z: f32| {
+        let turned = rotation.mul_vec3(Vector::new(x, y, z));
+        [turned.x, turned.y, turned.z]
+    };
+    let up = axis(0.0, 1.0, 0.0);
+    let side_axes = [axis(1.0, 0.0, 0.0), axis(0.0, 0.0, 1.0)];
+    let point_at = |offsets: &[([f32; 3], f32)]| {
+        let mut point = center;
+        for (direction, distance) in offsets {
+            for component in 0..3 {
+                point[component] += direction[component] * distance;
+            }
+        }
+        point
+    };
+    // Step 2: A ring at each end of the shaft, and the four side lines.
+    for end_sign in [-1.0_f32, 1.0] {
+        debug_draw.circle(point_at(&[(up, end_sign * half_height)]), up, radius, style);
+    }
+    for side in side_axes {
+        for side_sign in [-1.0_f32, 1.0] {
+            let bottom = point_at(&[(up, -half_height), (side, side_sign * radius)]);
+            let top = point_at(&[(up, half_height), (side, side_sign * radius)]);
+            debug_draw.line(bottom, top, style);
+        }
+    }
+    if !rounded_ends {
+        return;
+    }
+    // Step 3: Each cap is a half circle in each of the two upright planes,
+    // running from one side of the ring over the pole to the other.
+    for end_sign in [-1.0_f32, 1.0] {
+        for side in side_axes {
+            let arc_point = |index: usize| {
+                let angle = index as f32 / CAP_ARC_SEGMENTS as f32 * std::f32::consts::PI;
+                let (sine, cosine) = angle.sin_cos();
+                point_at(&[
+                    (up, end_sign * (half_height + radius * sine)),
+                    (side, radius * cosine),
+                ])
+            };
+            for index in 0..CAP_ARC_SEGMENTS {
+                debug_draw.line(arc_point(index), arc_point(index + 1), style);
             }
         }
     }
