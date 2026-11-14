@@ -2,8 +2,9 @@
 //!
 //! # Responsibilities
 //!
-//! - Creates a body for every entity that carries both components, and drops
-//!   the body of an entity that no longer does.
+//! - Creates a body for every entity that carries both components, places a
+//!   static collider for every entity that carries a collider alone, and drops
+//!   whichever an entity no longer qualifies for.
 //! - Applies edits to either component to the live body, and moves a dynamic
 //!   body whose transform was moved from outside the simulation.
 //! - Copies a dynamic body's stepped pose and velocities back into the
@@ -15,7 +16,9 @@
 use std::collections::HashSet;
 
 // External crates
-use pill_engine::{system, Entity, Query, Res, ResMut, SystemError, Time, TransformComponent};
+use pill_engine::{
+    system, Entity, Query, Res, ResMut, SystemError, Time, TransformComponent, Without,
+};
 
 // Current crate
 use crate::components::{BodyKind, ColliderComponent, RigidBodyComponent};
@@ -29,10 +32,11 @@ use crate::manager::PhysicsManager;
 /// Advances the simulation by one frame and moves its results into the
 /// entities.
 ///
-/// An entity is simulated while it carries both a
-/// [`RigidBodyComponent`] and a [`ColliderComponent`]: a body with nothing to
-/// collide with has no contact to resolve, so it is not a body this module
-/// runs.
+/// An entity with both a [`RigidBodyComponent`] and a [`ColliderComponent`] is
+/// a body the simulation moves. An entity with a collider alone is static
+/// geometry - or a trigger zone, when the collider is a sensor - that bodies
+/// hit and that moves only with its transform. A rigid body alone has nothing
+/// to collide with and is not simulated.
 ///
 /// # Errors
 ///
@@ -50,6 +54,10 @@ pub fn physics_sync(
         &ColliderComponent,
         &mut TransformComponent,
     )>,
+    mut static_colliders: Query<
+        (Entity, &ColliderComponent, &TransformComponent),
+        Without<RigidBodyComponent>,
+    >,
 ) -> Result<(), SystemError> {
     let Some(mut manager) = manager.get_mut() else {
         return Err(SystemError::MissingResource {
@@ -64,9 +72,9 @@ pub fn physics_sync(
 
     // Step 1: bring the simulation's bodies in line with the entities that
     // carry a body and a collider this frame.
-    let mut live_entities = HashSet::new();
+    let mut live_bodies = HashSet::new();
     for (entity, body, collider, transform) in bodies.iter_mut() {
-        live_entities.insert(entity);
+        live_bodies.insert(entity);
         if !manager.has_body(entity) {
             manager.spawn_body(entity, &transform, &body, collider);
             continue;
@@ -84,7 +92,18 @@ pub fn physics_sync(
             manager.push_kinematic(entity, &transform);
         }
     }
-    manager.despawn_missing(&live_entities);
+    // A collider with no rigid body is static geometry (or a trigger zone):
+    // it never moves on its own, and follows its transform when that moves.
+    let mut live_static_colliders = HashSet::new();
+    for (entity, collider, transform) in static_colliders.iter_mut() {
+        live_static_colliders.insert(entity);
+        if manager.has_static_collider(entity) {
+            manager.update_static_collider(entity, transform, collider);
+        } else {
+            manager.spawn_static_collider(entity, transform, collider);
+        }
+    }
+    manager.despawn_missing(&live_bodies, &live_static_colliders);
 
     // Step 2: advance the simulation by this frame's time, then publish what
     // touched what. The collection is replaced rather than appended to, so a

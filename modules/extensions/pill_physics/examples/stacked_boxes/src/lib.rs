@@ -1,8 +1,9 @@
-//! The physics example: a stack of boxes falling onto a fixed ground plane.
+//! The physics example: a stack of boxes falling onto a static ground plane.
 //!
 //! # Responsibilities
 //!
-//! - Spawns one fixed ground plane and a stack of dynamic boxes above it.
+//! - Spawns one static ground plane - a collider with no rigid body - and a
+//!   stack of dynamic boxes above it.
 //! - Reports the moment the simulation is running, so a headless run can be
 //!   checked without a renderer.
 //! - Reports where the stack stands every few simulated seconds, which is what
@@ -11,9 +12,9 @@
 //! # Design
 //!
 //! `pill_physics` owns the simulation; a project only says what exists. An
-//! entity is simulated while it carries a [`RigidBodyComponent`] and a
-//! [`ColliderComponent`], and its pose lives in the [`TransformComponent`] every
-//! other system already reads.
+//! entity with a [`RigidBodyComponent`] and a [`ColliderComponent`] is a body
+//! the simulation moves; a collider alone is static geometry. Either way its
+//! pose lives in the [`TransformComponent`] every other system already reads.
 //!
 //! Every line this example writes starts with `[stacked_boxes]`, its folder
 //! name. That is the convention the extension-example suite reads: a run passes
@@ -83,8 +84,8 @@ pub fn register(_engine: &mut Engine) -> u32 {
 pub fn init(engine: &mut Engine) -> u32 {
     let world = engine.world_mut();
 
-    // Step 1: The ground. A fixed body never moves, which is what makes it
-    // level geometry rather than a falling slab.
+    // Step 1: The ground. A collider with no rigid body is static geometry:
+    // the boxes land on it, and it never moves on its own.
     let ground = ColliderComponent {
         shape: ColliderShape::Cuboid,
         dimensions: [10.0, BOX_HALF_EXTENT, 10.0],
@@ -95,10 +96,6 @@ pub fn init(engine: &mut Engine) -> u32 {
         .with(TransformComponent {
             translation: [0.0, -BOX_HALF_EXTENT, 0.0],
             ..TransformComponent::default()
-        })
-        .with(RigidBodyComponent {
-            body_kind: BodyKind::Fixed,
-            ..RigidBodyComponent::default()
         })
         .with(ground)
         .build()
@@ -133,7 +130,7 @@ pub fn init(engine: &mut Engine) -> u32 {
     }
 
     tracing::info!(
-        "[stacked_boxes] ready: {} boxes above a fixed ground plane",
+        "[stacked_boxes] ready: {} boxes above a static ground plane",
         BOX_COUNT
     );
     0

@@ -16,6 +16,8 @@
 //!   and carries it into the live body field by field instead of overwriting
 //!   it.
 //! - Writes a dynamic body's live velocities back into its component.
+//! - Places the collider of an entity that has no rigid body as a static
+//!   collider of its own, which bodies hit and which follows its transform.
 //! - Rebuilds the rapier world when a hot reload brings a new image of this
 //!   module, because the old world points into the old image.
 //!
@@ -88,6 +90,20 @@ pub struct PhysicsStatistics {
 }
 
 // =============================================================================
+// StaticColliderState
+// =============================================================================
+
+/// What a static collider was last placed from, so an edit or a move is
+/// noticed.
+#[derive(Debug, Clone, Copy)]
+struct StaticColliderState {
+    /// The component values the rapier collider holds.
+    applied: ColliderComponent,
+    /// The transform pose the rapier collider sits at.
+    pose: ([f32; 3], [f32; 4]),
+}
+
+// =============================================================================
 // PhysicsManager
 // =============================================================================
 
@@ -106,6 +122,9 @@ pub struct PhysicsManager {
     /// The component values each body was last built from, so an edit to
     /// either component is noticed and the body rebuilt from it.
     applied_components: HashMap<Entity, (RigidBodyComponent, ColliderComponent)>,
+    /// The colliders of entities that carry no rigid body. Their handles are
+    /// in `collider_handles` too, so contacts and ray casts name them.
+    static_colliders: HashMap<Entity, StaticColliderState>,
     /// The pose last written into each dynamic body's transform. A transform
     /// that no longer holds it was moved by someone else, and the body follows.
     written_poses: HashMap<Entity, ([f32; 3], [f32; 4])>,
@@ -148,6 +167,7 @@ impl PhysicsManager {
             collider_handles: HashMap::new(),
             collider_owners: HashMap::new(),
             applied_components: HashMap::new(),
+            static_colliders: HashMap::new(),
             written_poses: HashMap::new(),
             previous_poses: HashMap::new(),
             accumulator_seconds: 0.0,
@@ -321,6 +341,7 @@ impl PhysicsManager {
         collider: &ColliderComponent,
     ) {
         self.despawn_body(entity);
+        self.despawn_static_collider(entity);
         let rigid_body = build_rigid_body(transform, body);
         let rapier_collider = build_collider(collider);
         let (body_handle, collider_handle) = self.simulation.insert(rigid_body, rapier_collider);
@@ -393,31 +414,83 @@ impl PhysicsManager {
             .get(&entity)
             .and_then(|handle| self.simulation.colliders.get_mut(*handle))
         {
-            if applied_collider.shape != collider.shape
-                || applied_collider.dimensions != collider.dimensions
-            {
-                rapier_collider.set_shape(shape_of(collider));
-            }
-            if applied_collider.friction != collider.friction {
-                rapier_collider.set_friction(collider.friction);
-            }
-            if applied_collider.restitution != collider.restitution {
-                rapier_collider.set_restitution(collider.restitution);
-            }
-            if applied_collider.density != collider.density {
-                rapier_collider.set_density(collider.density);
-            }
-            if applied_collider.sensor != collider.sensor {
-                rapier_collider.set_sensor(collider.sensor);
-            }
-            if applied_collider.collision_group != collider.collision_group
-                || applied_collider.collision_mask != collider.collision_mask
-            {
-                rapier_collider.set_collision_groups(collision_groups_of(collider));
-            }
+            apply_collider_edits(rapier_collider, &applied_collider, collider);
         }
         self.applied_components.insert(entity, (*body, *collider));
         true
+    }
+
+    /// Whether an entity is simulated as a collider with no rigid body.
+    pub fn has_static_collider(&self, entity: Entity) -> bool {
+        self.static_colliders.contains_key(&entity)
+    }
+
+    /// Places an entity's collider in the world with no body behind it, at the
+    /// transform's pose: static geometry that bodies hit, or a trigger zone
+    /// when the collider is a sensor. An entity that had a body loses it.
+    pub fn spawn_static_collider(
+        &mut self,
+        entity: Entity,
+        transform: &TransformComponent,
+        collider: &ColliderComponent,
+    ) {
+        self.despawn_body(entity);
+        self.despawn_static_collider(entity);
+        let mut rapier_collider = build_collider(collider);
+        rapier_collider.set_position(pose_of(transform));
+        let collider_handle = self.simulation.insert_collider(rapier_collider, None);
+        self.collider_handles.insert(entity, collider_handle);
+        self.collider_owners.insert(collider_handle, entity);
+        self.static_colliders.insert(
+            entity,
+            StaticColliderState {
+                applied: *collider,
+                pose: (transform.translation, transform.rotation),
+            },
+        );
+    }
+
+    /// Carries a static collider's component edits and its transform's moves
+    /// into the rapier collider.
+    pub fn update_static_collider(
+        &mut self,
+        entity: Entity,
+        transform: &TransformComponent,
+        collider: &ColliderComponent,
+    ) {
+        let Some(state) = self.static_colliders.get_mut(&entity) else {
+            return;
+        };
+        let pose = (transform.translation, transform.rotation);
+        if state.applied == *collider && state.pose == pose {
+            return;
+        }
+        let Some(rapier_collider) = self
+            .collider_handles
+            .get(&entity)
+            .and_then(|handle| self.simulation.colliders.get_mut(*handle))
+        else {
+            return;
+        };
+        apply_collider_edits(rapier_collider, &state.applied, collider);
+        if state.pose != pose {
+            rapier_collider.set_position(pose_of(transform));
+        }
+        state.applied = *collider;
+        state.pose = pose;
+    }
+
+    /// Removes an entity's static collider. An entity without one is left
+    /// alone.
+    pub fn despawn_static_collider(&mut self, entity: Entity) {
+        if self.static_colliders.remove(&entity).is_none() {
+            return;
+        }
+        let Some(collider_handle) = self.collider_handles.remove(&entity) else {
+            return;
+        };
+        self.collider_owners.remove(&collider_handle);
+        let _ = self.simulation.remove_collider(collider_handle);
     }
 
     /// Copies a dynamic body's current velocities into its component, so the
@@ -523,17 +596,31 @@ impl PhysicsManager {
         self.statistics.dropped_bodies += 1;
     }
 
-    /// Drops the bodies of every entity that is not in the given set, which is
-    /// how a despawned or stripped entity leaves the simulation.
-    pub fn despawn_missing(&mut self, live_entities: &HashSet<Entity>) {
-        let stale: Vec<Entity> = self
+    /// Drops the bodies of every entity that is not in `live_bodies` and the
+    /// static colliders of every entity that is not in `live_static_colliders`,
+    /// which is how a despawned or stripped entity leaves the simulation.
+    pub fn despawn_missing(
+        &mut self,
+        live_bodies: &HashSet<Entity>,
+        live_static_colliders: &HashSet<Entity>,
+    ) {
+        let stale_bodies: Vec<Entity> = self
             .body_handles
             .keys()
             .copied()
-            .filter(|entity| !live_entities.contains(entity))
+            .filter(|entity| !live_bodies.contains(entity))
             .collect();
-        for entity in stale {
+        for entity in stale_bodies {
             self.despawn_body(entity);
+        }
+        let stale_static_colliders: Vec<Entity> = self
+            .static_colliders
+            .keys()
+            .copied()
+            .filter(|entity| !live_static_colliders.contains(entity))
+            .collect();
+        for entity in stale_static_colliders {
+            self.despawn_static_collider(entity);
         }
     }
 
@@ -706,6 +793,44 @@ pub fn shape_of(collider: &ColliderComponent) -> SharedShape {
         ColliderShape::Capsule => SharedShape::capsule_y(first, second),
         ColliderShape::Cylinder => SharedShape::cylinder(first, second),
     }
+}
+
+/// Carries every field of `collider` that differs from `applied` into a live
+/// rapier collider. rapier recomputes a parent body's mass from a changed
+/// shape or density on its next step.
+pub fn apply_collider_edits(
+    rapier_collider: &mut Collider,
+    applied: &ColliderComponent,
+    collider: &ColliderComponent,
+) {
+    if applied.shape != collider.shape || applied.dimensions != collider.dimensions {
+        rapier_collider.set_shape(shape_of(collider));
+    }
+    if applied.friction != collider.friction {
+        rapier_collider.set_friction(collider.friction);
+    }
+    if applied.restitution != collider.restitution {
+        rapier_collider.set_restitution(collider.restitution);
+    }
+    if applied.density != collider.density {
+        rapier_collider.set_density(collider.density);
+    }
+    if applied.sensor != collider.sensor {
+        rapier_collider.set_sensor(collider.sensor);
+    }
+    if applied.collision_group != collider.collision_group
+        || applied.collision_mask != collider.collision_mask
+    {
+        rapier_collider.set_collision_groups(collision_groups_of(collider));
+    }
+}
+
+/// The rapier pose an entity's transform holds.
+pub fn pose_of(transform: &TransformComponent) -> Pose {
+    Pose::from_parts(
+        vector_from_array(transform.translation),
+        rotation_from_array(transform.rotation),
+    )
 }
 
 /// The rapier interaction groups a collider component's group and mask name.
@@ -929,7 +1054,7 @@ mod tests {
         let (_floor, ball) = drop_a_ball(&mut manager, &mut world);
 
         let live: HashSet<Entity> = HashSet::new();
-        manager.despawn_missing(&live);
+        manager.despawn_missing(&live, &HashSet::new());
 
         assert_eq!(manager.body_count(), 0);
         assert!(!manager.has_body(ball));
@@ -1096,5 +1221,95 @@ mod tests {
             "the ball should start falling from 8, but it is at {}",
             transform.translation[1]
         );
+    }
+
+    /// A ball dropped onto a floor that is a collider alone - no rigid body -
+    /// lands on it, and a ray cast names the floor.
+    #[test]
+    fn a_ball_lands_on_a_floor_with_no_rigid_body() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        let floor = entity(&mut world);
+        manager.spawn_static_collider(floor, &transform_at(0.0), &floor_collider());
+        let ball = entity(&mut world);
+        manager.spawn_body(
+            ball,
+            &transform_at(3.0),
+            &RigidBodyComponent::default(),
+            &ball_collider(),
+        );
+
+        run_frames(&mut manager, 300);
+
+        let mut transform = transform_at(3.0);
+        manager.write_back(ball, &mut transform);
+        assert!(
+            (transform.translation[1] - RESTING_HEIGHT).abs() < LANDING_TOLERANCE,
+            "the ball should rest at {RESTING_HEIGHT}, but it is at {}",
+            transform.translation[1]
+        );
+        assert_eq!(manager.body_count(), 1, "the floor is not a body");
+        let hit = manager.cast_ray([3.0, 5.0, 3.0], [0.0, -1.0, 0.0], 10.0);
+        assert_eq!(hit.map(|hit| hit.entity), Some(floor));
+    }
+
+    /// A static collider follows its transform: a floor moved down lets the
+    /// resting ball fall again.
+    #[test]
+    fn a_moved_static_collider_follows_its_transform() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        let floor = entity(&mut world);
+        let floor_collider = floor_collider();
+        manager.spawn_static_collider(floor, &transform_at(0.0), &floor_collider);
+        let ball = entity(&mut world);
+        manager.spawn_body(
+            ball,
+            &transform_at(3.0),
+            &RigidBodyComponent::default(),
+            &ball_collider(),
+        );
+        run_frames(&mut manager, 300);
+
+        manager.update_static_collider(floor, &transform_at(-5.0), &floor_collider);
+        run_frames(&mut manager, 300);
+
+        let mut transform = transform_at(3.0);
+        manager.write_back(ball, &mut transform);
+        let expected = RESTING_HEIGHT - 5.0;
+        assert!(
+            (transform.translation[1] - expected).abs() < LANDING_TOLERANCE,
+            "the ball should follow the floor down to {expected}, but it is at {}",
+            transform.translation[1]
+        );
+    }
+
+    /// An entity that gains a rigid body loses its static collider, and one
+    /// that loses its rigid body becomes a static collider: never both.
+    #[test]
+    fn an_entity_is_a_body_or_a_static_collider_never_both() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        let crate_entity = entity(&mut world);
+        manager.spawn_static_collider(crate_entity, &transform_at(0.0), &ball_collider());
+        assert!(manager.has_static_collider(crate_entity));
+
+        manager.spawn_body(
+            crate_entity,
+            &transform_at(0.0),
+            &RigidBodyComponent::default(),
+            &ball_collider(),
+        );
+        assert!(!manager.has_static_collider(crate_entity));
+        assert!(manager.has_body(crate_entity));
+        assert_eq!(manager.collider_owners().count(), 1);
+
+        manager.spawn_static_collider(crate_entity, &transform_at(0.0), &ball_collider());
+        assert!(!manager.has_body(crate_entity));
+        assert_eq!(manager.collider_owners().count(), 1);
+
+        manager.despawn_missing(&HashSet::new(), &HashSet::new());
+        assert!(!manager.has_static_collider(crate_entity));
+        assert_eq!(manager.collider_owners().count(), 0);
     }
 }
