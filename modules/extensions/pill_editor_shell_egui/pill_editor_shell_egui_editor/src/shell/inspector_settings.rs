@@ -596,7 +596,7 @@ pub fn moved_entry(entries: &[JsonValue], from: usize, to: usize) -> Vec<JsonVal
 
 /// Returns the width a list row's picker takes: the row's width less its label
 /// column, the gap after it, its remove button and the spacing around them,
-/// and never less than 60 points.
+/// and never less than [`CONTROL_MIN_WIDTH`].
 ///
 /// The trailing spacing is egui's own. A row's extent includes the gap its
 /// last control leaves, so a row sized without it comes back one gap wider and
@@ -604,7 +604,7 @@ pub fn moved_entry(entries: &[JsonValue], from: usize, to: usize) -> Vec<JsonVal
 pub fn list_picker_width(ui: &egui::Ui, row_width: f32) -> f32 {
     let spacing = ui.spacing().item_spacing.x;
     (row_width - label_column_width(ui) - ROW_LABEL_GAP - LIST_REMOVE_WIDTH - 2.0 * spacing)
-        .max(60.0)
+        .max(CONTROL_MIN_WIDTH)
 }
 
 /// Remembers a list row's rectangle and logs it once per placement, keyed
@@ -986,7 +986,7 @@ pub fn reference_row(
         // own.
         let clear_width = inspector_fields::ASSET_ROW_CLEAR_WIDTH;
         let spacing = ui.spacing().item_spacing.x;
-        let button_width = (ui.available_width() - clear_width - spacing).max(60.0);
+        let button_width = (ui.available_width() - clear_width - spacing).max(CONTROL_MIN_WIDTH);
         let response = ui.add_sized(
             egui::vec2(button_width, ROW_HEIGHT),
             egui::Button::new(icons::rich(icons::Icon::Code, &text)).truncate(),

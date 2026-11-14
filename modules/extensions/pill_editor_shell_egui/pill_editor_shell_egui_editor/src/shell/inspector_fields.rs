@@ -236,7 +236,10 @@ pub fn inspector_field_row(
                                 ui.label(format_field_value(other));
                                 return;
                             }
-                            if let Some(edited) = scalar_edit_decorated(ui, other, widget) {
+                            // The control takes exactly the width left and
+                            // crops a long value inside it, so a narrow panel
+                            // squashes the field instead of the row growing.
+                            if let Some(edited) = fixed_width_field(ui, other, Some(widget)) {
                                 queue_field_edit(
                                     pending, targets, entity, type_name, field, edited,
                                 );
@@ -279,39 +282,25 @@ pub fn inspector_field_row(
                 field = field.as_str(),
                 tooltip = tooltip.as_deref().unwrap_or_default(),
             );
-            // The label, then the components side by side, sharing the control
-            // column equally like a scalar field's control fills it.
-            ui.horizontal(|ui| {
-                label_cell(ui, field, tooltip.as_deref());
-                label_gap(ui);
-                let slot_width = vector_slot_width(ui, *elements);
-                for (element_index, element) in values.iter().take(*elements).enumerate() {
-                    // Keep one axis letter with its field, so a wrap never
-                    // separates a label from its widget. Both the letter's
-                    // slot and the field's width are fixed, so a long value is
-                    // cropped inside its field instead of widening the row and
-                    // pushing its neighbours along.
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(slot_width, INSPECTOR_VECTOR_FIELD_HEIGHT),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            axis_slot(ui, element_index);
-                            if let Some(edited) = fixed_width_field(ui, element, None) {
-                                queue_element_edit(
-                                    pending,
-                                    targets,
-                                    entity,
-                                    type_name,
-                                    field,
-                                    element_index,
-                                    edited,
-                                );
-                            }
-                        },
-                    );
-                    ui.add_space(2.0);
-                }
-            });
+            vector_row(
+                ui,
+                field,
+                tooltip.as_deref(),
+                (*elements).min(values.len()),
+                &mut |ui, element_index| {
+                    if let Some(edited) = fixed_width_field(ui, &values[element_index], None) {
+                        queue_element_edit(
+                            pending,
+                            targets,
+                            entity,
+                            type_name,
+                            field,
+                            element_index,
+                            edited,
+                        );
+                    }
+                },
+            );
         }
         inspector::FieldRow::Color {
             leaves,
@@ -400,34 +389,21 @@ pub fn inspector_field_row(
             );
             // This draws the same row as a `[f32; 3]` field, but the three
             // values come from three scalar fields of their own.
-            ui.horizontal(|ui| {
-                label_cell(ui, field, tooltip.as_deref());
-                label_gap(ui);
-                let slot_width = vector_slot_width(ui, leaves.len());
-                for (axis_index, leaf) in leaves.iter().enumerate() {
+            vector_row(
+                ui,
+                field,
+                tooltip.as_deref(),
+                leaves.len(),
+                &mut |ui, axis_index| {
+                    let leaf = &leaves[axis_index];
                     let Some(value) = component.values.get(leaf.index) else {
-                        continue;
+                        return;
                     };
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(slot_width, INSPECTOR_VECTOR_FIELD_HEIGHT),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            axis_slot(ui, axis_index);
-                            if let Some(edited) = fixed_width_field(ui, value, Some(widget)) {
-                                queue_field_edit(
-                                    pending,
-                                    targets,
-                                    entity,
-                                    type_name,
-                                    &leaf.field,
-                                    edited,
-                                );
-                            }
-                        },
-                    );
-                    ui.add_space(2.0);
-                }
-            });
+                    if let Some(edited) = fixed_width_field(ui, value, Some(widget)) {
+                        queue_field_edit(pending, targets, entity, type_name, &leaf.field, edited);
+                    }
+                },
+            );
         }
         inspector::FieldRow::Asset {
             index,
@@ -575,7 +551,7 @@ pub fn inspector_asset_row(
         None => row_input.field.to_owned(),
     };
     inspector_row(ui, &row_label_text, row_input.tooltip, &mut |ui| {
-        let width = (ui.available_width() - ASSET_ROW_CLEAR_WIDTH).max(40.0);
+        let width = (ui.available_width() - ASSET_ROW_CLEAR_WIDTH).max(CONTROL_MIN_WIDTH);
         let color = match label {
             AssetReferenceLabel::Named(_) => style::text(),
             _ => style::text_muted(),
@@ -812,7 +788,7 @@ pub fn inspector_entity_row(
         None => row_input.field.to_owned(),
     };
     inspector_row(ui, &row_label_text, row_input.tooltip, &mut |ui| {
-        let width = (ui.available_width() - 2.0 * ASSET_ROW_CLEAR_WIDTH).max(40.0);
+        let width = (ui.available_width() - 2.0 * ASSET_ROW_CLEAR_WIDTH).max(CONTROL_MIN_WIDTH);
         let color = match label {
             EntityReferenceLabel::Live(_) => style::text(),
             _ => style::text_muted(),
@@ -1178,15 +1154,82 @@ pub fn has_field_editor(value: &FieldValue) -> bool {
 
 /// Returns the width of one component's slot in a vector row: the control
 /// column left after the label, shared equally by `components` slots and the
-/// gaps between them, and never narrower than
-/// [`INSPECTOR_VECTOR_FIELD_WIDTH`], so a narrow panel crops a value instead
-/// of hiding it.
+/// gaps between them. A narrow panel squashes every slot alike, down to the
+/// axis letter and [`CONTROL_MIN_WIDTH`] of field, and the value is cropped
+/// inside its field.
 pub fn vector_slot_width(ui: &egui::Ui, components: usize) -> f32 {
+    slot_width_within(
+        ui.available_width(),
+        components,
+        ui.spacing().item_spacing.x,
+    )
+    .max(INSPECTOR_VECTOR_LABEL_WIDTH + CONTROL_MIN_WIDTH)
+}
+
+/// Draws a vector row: the label, then one axis letter and field per
+/// component, the components sharing the control column equally.
+///
+/// When the control column is too narrow for every component to get
+/// [`VECTOR_SLOT_MIN_WIDTH`], the components move to their own line under the
+/// label and share the panel's whole width there, the way Unity lays out a
+/// vector in a narrow Inspector. Nothing runs past the panel's edge either way.
+/// `draw_component` draws component `index`'s field in the slot after its
+/// letter.
+pub fn vector_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    tooltip: Option<&str>,
+    components: usize,
+    draw_component: &mut dyn FnMut(&mut egui::Ui, usize),
+) {
+    let spacing = ui.spacing().item_spacing.x;
+    let control_width = ui.available_width() - label_column_width(ui) - ROW_LABEL_GAP - spacing;
+    let beside_label =
+        slot_width_within(control_width, components, spacing) >= VECTOR_SLOT_MIN_WIDTH;
+    if beside_label {
+        ui.horizontal(|ui| {
+            label_cell(ui, label, tooltip);
+            label_gap(ui);
+            vector_slots(ui, components, draw_component);
+        });
+        return;
+    }
+    ui.horizontal(|ui| {
+        label_cell(ui, label, tooltip);
+    });
+    ui.horizontal(|ui| {
+        ui.add_space(VECTOR_OWN_LINE_INDENT);
+        vector_slots(ui, components, draw_component);
+    });
+}
+
+/// Draws `components` slots across the width left in the row, each an axis
+/// letter and the field `draw_component` draws.
+pub fn vector_slots(
+    ui: &mut egui::Ui,
+    components: usize,
+    draw_component: &mut dyn FnMut(&mut egui::Ui, usize),
+) {
+    let slot_width = vector_slot_width(ui, components);
+    for component_index in 0..components {
+        ui.allocate_ui_with_layout(
+            egui::vec2(slot_width, INSPECTOR_VECTOR_FIELD_HEIGHT),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                axis_slot(ui, component_index);
+                draw_component(ui, component_index);
+            },
+        );
+        ui.add_space(VECTOR_SLOT_GAP);
+    }
+}
+
+/// The width each of `components` slots gets in `width` points, after the gap
+/// that follows every slot (the row's own [`VECTOR_SLOT_GAP`] plus egui's item
+/// `spacing`).
+pub fn slot_width_within(width: f32, components: usize, spacing: f32) -> f32 {
     let components = components.max(1) as f32;
-    // Each slot is followed by the 2 points the row adds and egui's own item
-    // spacing.
-    let gap = 2.0 + ui.spacing().item_spacing.x;
-    ((ui.available_width() - gap * components) / components).max(INSPECTOR_VECTOR_FIELD_WIDTH)
+    (width - (VECTOR_SLOT_GAP + spacing) * components) / components
 }
 
 /// Returns whether a value has a widget kind of its own.

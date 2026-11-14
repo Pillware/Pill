@@ -1426,8 +1426,8 @@ fn the_label_column_scales_with_the_panel_within_its_bounds() {
         });
     }
     assert_eq!(
-        widths[0], ROW_LABEL_WIDTH,
-        "a narrow panel keeps the narrowest column"
+        widths[0], LABEL_COLUMN_MIN_WIDTH,
+        "a narrow panel keeps the narrowest column; the fields take the squeeze"
     );
     assert!(
         (widths[1] - 360.0 * LABEL_COLUMN_FRACTION).abs() < 20.0,
@@ -1437,4 +1437,58 @@ fn the_label_column_scales_with_the_panel_within_its_bounds() {
         widths[2], LABEL_COLUMN_MAX_WIDTH,
         "a wide panel stops at the cap"
     );
+}
+
+/// In a panel narrower than the label column plus roomy fields, a row keeps
+/// its label column and squashes its fields: a scalar row and a three-axis
+/// row both end inside the panel instead of running past its edge.
+#[test]
+fn a_narrow_panel_squashes_fields_and_keeps_labels() {
+    const PANEL_WIDTH: f32 = 230.0;
+    let context = egui::Context::default();
+    style::apply(&context);
+    let values = [
+        FieldValue::F32(1.5),
+        FieldValue::F32(-123_456.75),
+        FieldValue::F32(0.25),
+    ];
+    let mut label_width = 0.0f32;
+    let mut row_rights = Vec::new();
+    let mut panel_right = 0.0f32;
+    run_pass(&context, &mut |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.allocate_ui(egui::vec2(PANEL_WIDTH, 200.0), |ui| {
+                panel_right = ui.max_rect().right();
+                label_width = label_column_width(ui);
+                let scalar_row = ui.horizontal(|ui| {
+                    label_cell(ui, "gravity_scale", None);
+                    label_gap(ui);
+                    fixed_width_field(ui, &values[1], None);
+                });
+                row_rights.push(scalar_row.response.rect.right());
+                let vector_rows = ui.vertical(|ui| {
+                    vector_row(
+                        ui,
+                        "linear_velocity",
+                        None,
+                        values.len(),
+                        &mut |ui, axis| {
+                            fixed_width_field(ui, &values[axis], None);
+                        },
+                    );
+                });
+                row_rights.push(vector_rows.response.rect.right());
+            });
+        });
+    });
+    assert_eq!(
+        label_width, LABEL_COLUMN_MIN_WIDTH,
+        "the labels keep their column"
+    );
+    for right in &row_rights {
+        assert!(
+            *right <= panel_right + 0.5,
+            "a row runs past the panel's edge: rows end at {row_rights:?}, the panel at {panel_right}"
+        );
+    }
 }

@@ -48,9 +48,18 @@ use pill_editor_shell_egui_editor::shell::prelude::*;
 #[allow(unused_imports)]
 use pill_editor_shell_egui_editor::shell::*;
 
-/// The narrowest label column in points, and the fixed column of the tabs
-/// that name fields without scaling with the panel.
+/// The fixed label column of the tabs that name fields without scaling with
+/// the panel.
 pub const ROW_LABEL_WIDTH: f32 = 80.0;
+
+/// The narrowest the Inspector's label column gets, in points. A narrowing
+/// panel takes its room from the fields, never from the labels below this.
+pub const LABEL_COLUMN_MIN_WIDTH: f32 = 130.0;
+
+/// The narrowest a field's control gets, in points, once the panel has no
+/// room left beyond the label column. The control is squashed down to this and
+/// its content cropped inside it.
+pub const CONTROL_MIN_WIDTH: f32 = 16.0;
 
 /// The share of a panel's width the Inspector's label column takes. The rest
 /// is the control column, where every field's control starts at one x.
@@ -76,11 +85,13 @@ pub const ROW_HEIGHT: f32 = 18.0;
 pub const ROW_LABEL_GAP: f32 = 20.0;
 
 /// The label column of a panel `ui` lays out: [`LABEL_COLUMN_FRACTION`] of
-/// the width it has left, between [`ROW_LABEL_WIDTH`] and
+/// the width it has left, between [`LABEL_COLUMN_MIN_WIDTH`] and
 /// [`LABEL_COLUMN_MAX_WIDTH`]. Rows read it before they place anything, so
-/// every row of one panel gets the same column.
+/// every row of one panel gets the same column. Below the minimum the column
+/// stays put and the fields take the squeeze.
 pub fn label_column_width(ui: &egui::Ui) -> f32 {
-    (ui.available_width() * LABEL_COLUMN_FRACTION).clamp(ROW_LABEL_WIDTH, LABEL_COLUMN_MAX_WIDTH)
+    (ui.available_width() * LABEL_COLUMN_FRACTION)
+        .clamp(LABEL_COLUMN_MIN_WIDTH, LABEL_COLUMN_MAX_WIDTH)
 }
 
 /// Draws one row's label in the panel's label column

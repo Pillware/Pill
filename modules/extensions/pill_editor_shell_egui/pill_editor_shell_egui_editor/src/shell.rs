@@ -175,8 +175,10 @@ pub use rows::row;
 pub use rows::row_in;
 pub use rows::value_row;
 pub use rows::value_row_in;
+pub use rows::CONTROL_MIN_WIDTH;
 pub use rows::LABEL_COLUMN_FRACTION;
 pub use rows::LABEL_COLUMN_MAX_WIDTH;
+pub use rows::LABEL_COLUMN_MIN_WIDTH;
 pub use rows::ROW_HEIGHT;
 pub use rows::ROW_LABEL_GAP;
 pub use rows::ROW_LABEL_WIDTH;
@@ -216,6 +218,9 @@ pub use tab_inspector::INSPECTOR_VECTOR_FIELD_HEIGHT;
 pub use tab_inspector::INSPECTOR_VECTOR_FIELD_WIDTH;
 pub use tab_inspector::INSPECTOR_VECTOR_LABEL_WIDTH;
 pub use tab_inspector::SECTION_LINE_GAP;
+pub use tab_inspector::VECTOR_OWN_LINE_INDENT;
+pub use tab_inspector::VECTOR_SLOT_GAP;
+pub use tab_inspector::VECTOR_SLOT_MIN_WIDTH;
 
 /// The [`inspector_fields`] module: the inspector's field rows: the decorators
 /// a component declares, the row model and the control each row draws.
@@ -229,7 +234,10 @@ pub use inspector_fields::inspector_row;
 pub use inspector_fields::is_scalar_field;
 pub use inspector_fields::remember_entity_row_rect;
 pub use inspector_fields::remember_entity_row_text;
+pub use inspector_fields::slot_width_within;
+pub use inspector_fields::vector_row;
 pub use inspector_fields::vector_slot_width;
+pub use inspector_fields::vector_slots;
 pub use inspector_fields::EntityRowInput;
 
 /// The [`inspector_widgets`] module: the inspector's field controls.
@@ -446,11 +454,14 @@ impl TabViewer for EditorTabViewer<'_> {
         !matches!(tab, EditorTab::Scene(_) | EditorTab::Game)
     }
 
-    /// The scene and game tabs' bodies are viewports; they never scroll.
+    /// The scene and game tabs' bodies are viewports; they never scroll. Every
+    /// other tab scrolls vertically only: it is laid out to the tab's width,
+    /// squashing its fields and shortening its text rather than growing past
+    /// the right edge.
     fn scroll_bars(&self, tab: &Self::Tab) -> [bool; 2] {
         match tab {
             EditorTab::Scene(_) | EditorTab::Game => [false, false],
-            _ => [true, true],
+            _ => [false, true],
         }
     }
 }
@@ -949,6 +960,9 @@ pub fn tab_title(viewer: &mut EditorTabViewer<'_>, tab: EditorTab) -> egui::Widg
 #[pill_hot_fn]
 pub fn tab_body(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, tab: EditorTab) {
     let started = pill_core::platform::Instant::now();
+    // A tab has no horizontal scrolling, so text too long for the room left
+    // ends in an ellipsis instead of running past the tab's edge.
+    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
     match tab {
         EditorTab::Scene(view) => {
             let view = view as usize;

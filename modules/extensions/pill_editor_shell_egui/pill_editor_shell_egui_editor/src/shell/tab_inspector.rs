@@ -22,15 +22,27 @@ use pill_editor_shell_egui_editor::shell::*;
 // Constants
 // =============================================================================
 
-/// The narrowest a vector element's group gets, in points: the axis letter and
-/// its field together. The groups share the control column equally and never
-/// shrink below this; a value too long for its field is cropped.
+/// A vector element's group in a typical panel, in points: the axis letter and
+/// its field together. The groups really share the control column equally
+/// ([`vector_slot_width`]); this is the size the shell's tests lay one at.
 pub const INSPECTOR_VECTOR_FIELD_WIDTH: f32 = 58.0;
 
 /// The width of the slot that holds an axis letter inside its group, in
 /// points. The slot is fixed, so every component's editor gets the same width
 /// however wide the letter's glyph is.
 pub const INSPECTOR_VECTOR_LABEL_WIDTH: f32 = 10.0;
+
+/// The narrowest a vector component's slot (its axis letter and field) may be
+/// beside the label, in points. A narrower panel moves the components to their
+/// own line under the label.
+pub const VECTOR_SLOT_MIN_WIDTH: f32 = 46.0;
+
+/// How far a vector's own line of components is indented, in points, so it
+/// reads as belonging to the label above it.
+pub const VECTOR_OWN_LINE_INDENT: f32 = 12.0;
+
+/// The space in points the row leaves after each vector component's slot.
+pub const VECTOR_SLOT_GAP: f32 = 2.0;
 
 /// The space in points between a component's separator line and its header.
 pub const SECTION_LINE_GAP: f32 = 3.0;

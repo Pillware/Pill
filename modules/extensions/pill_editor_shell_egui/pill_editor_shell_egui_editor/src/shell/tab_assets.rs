@@ -150,7 +150,7 @@ pub fn assets_tree(
     pending: &mut PendingEditorCommands,
     overlay_regions: &mut Vec<ShellRect>,
 ) {
-    egui::ScrollArea::both()
+    egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             for root in browser::ROOTS {
@@ -354,7 +354,7 @@ pub fn assets_grid(
         browser.tile_size + ASSETS_TILE_LABEL_HEIGHT,
     );
     let open_folder = browser.folder.clone();
-    egui::ScrollArea::both()
+    egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             // The gap lives inside each cell, so the tiles sit edge to edge.
