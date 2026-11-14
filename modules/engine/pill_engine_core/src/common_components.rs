@@ -139,6 +139,8 @@ pub fn register_transform_component(world: &mut World) {
     world.register_persistable_component_with_layout::<TransformComponent>(
         TransformComponent::FIELD_LAYOUT,
     );
+    // An added transform starts at the identity: unit scale, no rotation.
+    world.record_component_default::<TransformComponent>();
 }
 
 // =============================================================================

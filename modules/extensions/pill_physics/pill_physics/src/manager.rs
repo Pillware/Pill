@@ -437,7 +437,7 @@ impl PhysicsManager {
         self.despawn_body(entity);
         self.despawn_static_collider(entity);
         let mut rapier_collider = build_collider(collider);
-        rapier_collider.set_position(pose_of(transform));
+        rapier_collider.set_position(static_collider_pose(transform, collider));
         let collider_handle = self.simulation.insert_collider(rapier_collider, None);
         self.collider_handles.insert(entity, collider_handle);
         self.collider_owners.insert(collider_handle, entity);
@@ -472,9 +472,10 @@ impl PhysicsManager {
         else {
             return;
         };
+        let offset_changed = state.applied.offset != collider.offset;
         apply_collider_edits(rapier_collider, &state.applied, collider);
-        if state.pose != pose {
-            rapier_collider.set_position(pose_of(transform));
+        if state.pose != pose || offset_changed {
+            rapier_collider.set_position(static_collider_pose(transform, collider));
         }
         state.applied = *collider;
         state.pose = pose;
@@ -823,12 +824,30 @@ pub fn apply_collider_edits(
     {
         rapier_collider.set_collision_groups(collision_groups_of(collider));
     }
+    // A collider on a body is placed relative to it. A static collider has no
+    // parent; its owner re-places it from the transform and the offset.
+    if applied.offset != collider.offset && rapier_collider.parent().is_some() {
+        rapier_collider.set_translation_wrt_parent(vector_from_array(collider.offset));
+    }
 }
 
-/// The rapier pose an entity's transform holds.
-pub fn pose_of(transform: &TransformComponent) -> Pose {
+/// Where a collider's centre is in the world: the entity's position plus the
+/// collider's offset turned by the entity's rotation.
+pub fn collider_center(transform: &TransformComponent, collider: &ColliderComponent) -> [f32; 3] {
+    let turned =
+        rotation_from_array(transform.rotation).mul_vec3(vector_from_array(collider.offset));
+    [
+        transform.translation[0] + turned.x,
+        transform.translation[1] + turned.y,
+        transform.translation[2] + turned.z,
+    ]
+}
+
+/// The world pose of a collider with no body: the entity's rotation, at
+/// [`collider_center`].
+pub fn static_collider_pose(transform: &TransformComponent, collider: &ColliderComponent) -> Pose {
     Pose::from_parts(
-        vector_from_array(transform.translation),
+        vector_from_array(collider_center(transform, collider)),
         rotation_from_array(transform.rotation),
     )
 }
@@ -843,8 +862,13 @@ pub fn collision_groups_of(collider: &ColliderComponent) -> InteractionGroups {
 }
 
 /// Builds the rapier collider a component describes.
+///
+/// The collider sits at the component's offset from its parent body. A static
+/// collider, which has no parent, is placed afterwards
+/// ([`static_collider_pose`]).
 pub fn build_collider(collider: &ColliderComponent) -> rapier3d::prelude::Collider {
     ColliderBuilder::new(shape_of(collider))
+        .translation(vector_from_array(collider.offset))
         .friction(collider.friction)
         .restitution(collider.restitution)
         .density(collider.density)
@@ -1311,5 +1335,56 @@ mod tests {
         manager.despawn_missing(&HashSet::new(), &HashSet::new());
         assert!(!manager.has_static_collider(crate_entity));
         assert_eq!(manager.collider_owners().count(), 0);
+    }
+
+    /// A collider's offset moves its shape away from the entity, turned with
+    /// the entity's rotation: a floor whose collider sits one unit below its
+    /// entity catches a ball one unit lower, and the offset applies to a body's
+    /// collider and to a static one alike.
+    #[test]
+    fn a_collider_offset_moves_the_shape_with_the_entity() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        let floor = entity(&mut world);
+        let mut floor_collider = floor_collider();
+        floor_collider.offset = [0.0, -1.0, 0.0];
+        manager.spawn_static_collider(floor, &transform_at(0.0), &floor_collider);
+        let ball = entity(&mut world);
+        manager.spawn_body(
+            ball,
+            &transform_at(3.0),
+            &RigidBodyComponent::default(),
+            &ball_collider(),
+        );
+        run_frames(&mut manager, 300);
+        let mut transform = transform_at(3.0);
+        manager.write_back(ball, &mut transform);
+        let expected = RESTING_HEIGHT - 1.0;
+        assert!(
+            (transform.translation[1] - expected).abs() < LANDING_TOLERANCE,
+            "the ball should rest at {expected}, but it is at {}",
+            transform.translation[1]
+        );
+
+        // A quarter turn about z carries an offset along x onto y.
+        let turned = TransformComponent {
+            translation: [0.0, 0.0, 0.0],
+            rotation: [
+                0.0,
+                0.0,
+                std::f32::consts::FRAC_1_SQRT_2,
+                std::f32::consts::FRAC_1_SQRT_2,
+            ],
+            scale: [1.0; 3],
+        };
+        let offset_collider = ColliderComponent {
+            offset: [2.0, 0.0, 0.0],
+            ..ColliderComponent::default()
+        };
+        let center = collider_center(&turned, &offset_collider);
+        assert!(
+            center[0].abs() < 1e-5 && (center[1] - 2.0).abs() < 1e-5,
+            "{center:?}"
+        );
     }
 }

@@ -186,6 +186,23 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
             world.register_component_with_layout::<#ident>(#layout_reference);
         }
     };
+    // A component that implements `Default` records that value, so the editor
+    // adds it - and a scene fills a field it leaves out - from the type's own
+    // defaults instead of zeros. Which of the two traits answers is decided by
+    // method lookup on the concrete type, so a type without `Default` compiles
+    // and simply records nothing.
+    let registration_call = quote! {
+        #registration_call
+        {
+            #[allow(unused_imports)]
+            use ::pill_engine::component_registry::{
+                RecordDefaultValue as _, SkipDefaultValue as _,
+            };
+            #[allow(clippy::needless_borrow)]
+            (&::pill_engine::component_registry::DefaultValueProbe::<#ident>::new())
+                .record_default_value(world);
+        }
+    };
     let type_name = quote! {
         ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident))
     };

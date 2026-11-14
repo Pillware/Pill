@@ -1363,6 +1363,9 @@ fn an_entity_field_refuses_a_scalar() {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProbeShape {
+    // Never constructed: it is here so the declaration has the same variants
+    // as the resolver below, which the reads and writes check against.
+    #[allow(dead_code)]
     Ball = 0,
     Cuboid = 1,
     Capsule = 5,

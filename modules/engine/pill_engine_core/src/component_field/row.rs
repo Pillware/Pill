@@ -499,6 +499,47 @@ impl World {
         )
     }
 
+    /// Records the bytes of `T::default()` as the value a component built from
+    /// field values starts from ([`Self::build_component_image`]): the
+    /// editor's Add Component, and a scene field the document leaves out.
+    ///
+    /// Call it after the component registered with its field layout. A
+    /// component with a heap-owning field (`Vec`, `String`, a dynamic buffer)
+    /// records nothing and keeps starting from zeros: every image built from
+    /// one copy of its default would share that value's buffer.
+    pub fn record_component_default<T>(&mut self)
+    where
+        T: crate::component::Component + Default,
+    {
+        let component_id = crate::component::ComponentId::of::<T>();
+        let Some(layout) = self.component_field_layout(component_id) else {
+            return;
+        };
+        if layout
+            .iter()
+            .any(|descriptor| super::is_container_tag(descriptor.type_tag))
+        {
+            return;
+        }
+        let default_value = T::default();
+        let size = std::mem::size_of::<T>();
+        let mut image = vec![0u8; size];
+        // SAFETY: `default_value` is a live `T` of exactly `size` bytes and
+        // `image` holds `size` writable bytes; the two do not overlap. The copy
+        // is untyped, the same byte image a component row is stored as, and
+        // the type owns no heap buffer (checked above), so the copied bytes
+        // own nothing the dropped original frees.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                (&default_value as *const T).cast::<u8>(),
+                image.as_mut_ptr(),
+                size,
+            );
+        }
+        drop(default_value);
+        self.component_default_images.insert(component_id, image);
+    }
+
     /// Builds a zero-initialised component image for a registered type name,
     /// then writes the supplied field values over it.
     ///
@@ -546,9 +587,15 @@ impl World {
                 component: component_name.to_string(),
             },
         )?;
-        // Step 2: allocate the zero-initialised image and write each supplied
-        // value into it.
-        let mut image = vec![0u8; size];
+        // Step 2: start from the component's default value when its
+        // registration recorded one, and from zeros otherwise, then write each
+        // supplied value into it.
+        let mut image = self
+            .component_default_images
+            .get(&component_id)
+            .filter(|default_image| default_image.len() == size)
+            .cloned()
+            .unwrap_or_else(|| vec![0u8; size]);
         for (field_name, value) in fields {
             let descriptor = layout
                 .iter()

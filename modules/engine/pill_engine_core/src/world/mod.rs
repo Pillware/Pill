@@ -497,6 +497,12 @@ pub struct World {
     /// dotted leaf rows (`World::record_component_field_layout`), so a nested
     /// colour or vector can be edited one channel at a time.
     pub(crate) component_field_layouts: HashMap<ComponentId, ComponentFieldLayout>,
+    /// The bytes of each component's `Default` value, for the components whose
+    /// registration recorded one ([`World::record_component_default`]). A
+    /// component built from field values starts from these instead of zeros.
+    /// Owned copies, so a reload that unmaps the declaring image leaves them
+    /// valid.
+    pub(crate) component_default_images: HashMap<ComponentId, Vec<u8>>,
     /// The asset type each `Handle<T>` field of a component refers to, keyed by
     /// field name and holding the registered name of `T`.
     ///
@@ -573,6 +579,7 @@ impl World {
             component_registration_sequence: 0,
             component_registration_log: Vec::new(),
             component_field_layouts: HashMap::new(),
+            component_default_images: HashMap::new(),
             asset_field_types: HashMap::new(),
             value_type_layout_resolver: None,
             enum_layout_resolver: None,

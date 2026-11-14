@@ -12,6 +12,8 @@
 //!   layout of a value type that a component field nests.
 //! - Declare [`EnumLayout`] and [`EnumLayoutResolver`], which let a field of a
 //!   declared enum type become an editable enum field.
+//! - Declare [`DefaultValueProbe`] and its two traits, through which the
+//!   component derive records a type's `Default` value when it has one.
 //!
 //! # Design
 //!
@@ -167,6 +169,61 @@ pub trait ComponentLayout {
 ///
 /// [`World::replace_value_type_layout_resolver`]: crate::World::replace_value_type_layout_resolver
 pub type ValueTypeLayoutResolver = fn(&str) -> Option<&'static [ComponentFieldDescriptor]>;
+
+// =============================================================================
+// DefaultValueProbe
+// =============================================================================
+
+/// Lets generated registration code record a component's `Default` value
+/// when the type has one, and do nothing when it does not, without the derive
+/// knowing which.
+///
+/// The generated code calls `(&DefaultValueProbe::<T>::new()).record_default_value(world)`
+/// with both traits in scope. Method lookup tries the probe itself before a
+/// reference to it, so [`RecordDefaultValue`] - implemented for the probe when
+/// `T: Default` - wins whenever it applies, and [`SkipDefaultValue`] -
+/// implemented for a reference to any probe - answers otherwise.
+pub struct DefaultValueProbe<T>(std::marker::PhantomData<T>);
+
+impl<T> DefaultValueProbe<T> {
+    /// A probe for the component `T`.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T> std::default::Default for DefaultValueProbe<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Records `T::default()` for a component that implements `Default`.
+pub trait RecordDefaultValue {
+    /// Records the component's default value in `world`.
+    fn record_default_value(&self, world: &mut crate::World);
+}
+
+impl<T> RecordDefaultValue for DefaultValueProbe<T>
+where
+    T: crate::component::Component + Default,
+{
+    fn record_default_value(&self, world: &mut crate::World) {
+        world.record_component_default::<T>();
+    }
+}
+
+/// The fallback for a component without `Default`: records nothing, so the
+/// component keeps starting from zeros.
+pub trait SkipDefaultValue {
+    /// Does nothing.
+    fn record_default_value(&self, world: &mut crate::World);
+}
+
+impl<T> SkipDefaultValue for &DefaultValueProbe<T> {
+    fn record_default_value(&self, _world: &mut crate::World) {}
+}
 
 // =============================================================================
 // EnumLayout

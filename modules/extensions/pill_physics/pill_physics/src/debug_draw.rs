@@ -52,6 +52,13 @@ pub fn physics_debug_draw(
     let style = DebugStyle::colored(OUTLINE_COLOR);
     for (collider, transform) in colliders.iter_mut() {
         let [first, second, third] = collider.dimensions;
+        // The outline is drawn where the shape is: at the collider's offset,
+        // turned with the entity.
+        let placed = TransformComponent {
+            translation: crate::manager::collider_center(transform, collider),
+            ..*transform
+        };
+        let transform = &placed;
         match collider.shape {
             ColliderShape::Ball => {
                 debug_draw.sphere(transform.translation, first, style);

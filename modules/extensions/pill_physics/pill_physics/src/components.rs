@@ -145,6 +145,9 @@ pub struct ColliderComponent {
     /// The shape's measurements, in world units; see [`ColliderShape`] for
     /// which slots each shape uses. Unused slots are ignored.
     pub dimensions: [f32; 3],
+    /// Where the shape's centre sits relative to the entity's position, in the
+    /// entity's own axes: it turns with the entity's rotation.
+    pub offset: [f32; 3],
     /// How much a contact resists sliding. `0.0` is ice, `1.0` grips.
     pub friction: f32,
     /// How much speed a contact gives back. `0.0` lands dead, `1.0` bounces
@@ -162,11 +165,13 @@ pub struct ColliderComponent {
 }
 
 impl std::default::Default for ColliderComponent {
-    /// A one-meter ball of wood that collides with everything.
+    /// A ball of wood with unit dimensions (a radius of one), centred on the
+    /// entity, that collides with everything.
     fn default() -> Self {
         Self {
             shape: ColliderShape::Ball,
-            dimensions: [0.5, 0.5, 0.5],
+            dimensions: [1.0, 1.0, 1.0],
+            offset: [0.0, 0.0, 0.0],
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
@@ -227,7 +232,8 @@ mod tests {
     fn a_new_collider_is_a_solid_ball() {
         let collider = ColliderComponent::default();
         assert_eq!(collider.shape, ColliderShape::Ball);
-        assert_eq!(collider.dimensions[0], 0.5);
+        assert_eq!(collider.dimensions, [1.0, 1.0, 1.0]);
+        assert_eq!(collider.offset, [0.0, 0.0, 0.0]);
         assert!(!collider.sensor);
         assert_eq!(collider.collision_mask, u32::MAX);
     }
