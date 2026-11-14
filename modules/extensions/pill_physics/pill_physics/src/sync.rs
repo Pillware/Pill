@@ -4,11 +4,12 @@
 //!
 //! - Creates a body for every entity that carries both components, and drops
 //!   the body of an entity that no longer does.
-//! - Rebuilds a body whose components were edited, and moves a dynamic body
-//!   whose transform was moved from outside the simulation.
+//! - Applies edits to either component to the live body, and moves a dynamic
+//!   body whose transform was moved from outside the simulation.
+//! - Copies a dynamic body's stepped pose and velocities back into the
+//!   entity's transform and rigid body component.
 //! - Hands a kinematic body the pose game code moved its transform to.
 //! - Steps the simulation by the frame's time.
-//! - Copies a dynamic body's stepped pose back into the entity's transform.
 
 // Standard library
 use std::collections::HashSet;
@@ -45,7 +46,7 @@ pub fn physics_sync(
     mut events: ResMut<PhysicsEvents>,
     mut bodies: Query<(
         Entity,
-        &RigidBodyComponent,
+        &mut RigidBodyComponent,
         &ColliderComponent,
         &mut TransformComponent,
     )>,
@@ -67,11 +68,13 @@ pub fn physics_sync(
     for (entity, body, collider, transform) in bodies.iter_mut() {
         live_entities.insert(entity);
         if !manager.has_body(entity) {
-            manager.spawn_body(entity, &transform, body, collider);
-        } else if manager.apply_component_edits(entity, &transform, body, collider) {
-            // The body was rebuilt from the edited components at the
-            // transform's pose, so there is nothing more to carry over.
-        } else if body.body_kind == BodyKind::Dynamic {
+            manager.spawn_body(entity, &transform, &body, collider);
+            continue;
+        }
+        // An Inspector or game-code edit to either component reaches the live
+        // body first, so the pose checks below see the body kind it now has.
+        manager.apply_component_edits(entity, &body, collider);
+        if body.body_kind == BodyKind::Dynamic {
             // A dynamic body owns its pose, unless someone moved the transform
             // since the last write-back.
             manager.follow_moved_transform(entity, &transform);
@@ -92,11 +95,13 @@ pub fn physics_sync(
         *events = frame_events;
     }
 
-    // Step 3: copy the stepped poses into the transforms of the bodies the
-    // simulation moved. A fixed or kinematic body is left where it is.
-    for (entity, body, _collider, mut transform) in bodies.iter_mut() {
+    // Step 3: copy the stepped poses and velocities into the components of the
+    // bodies the simulation moved. A fixed or kinematic body is left where it
+    // is.
+    for (entity, mut body, _collider, mut transform) in bodies.iter_mut() {
         if body.body_kind == BodyKind::Dynamic {
             manager.write_back(entity, &mut transform);
+            manager.write_back_velocities(entity, &mut body);
         }
     }
     Ok(())

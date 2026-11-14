@@ -13,7 +13,11 @@
 //! - Steps the simulation on a fixed timestep, fed by the frame delta.
 //! - Notices an edit made outside the simulation - a component changed in the
 //!   Inspector, a dynamic body's transform moved by the gizmo or by game code -
-//!   and carries it into the body instead of overwriting it.
+//!   and carries it into the live body field by field instead of overwriting
+//!   it.
+//! - Writes a dynamic body's live velocities back into its component.
+//! - Rebuilds the rapier world when a hot reload brings a new image of this
+//!   module, because the old world points into the old image.
 //!
 //! # Design
 //!
@@ -21,10 +25,13 @@
 //! drives it. Entities and components carry plain numbers, so a saved scene, the
 //! editor and a project never need rapier in their own dependencies.
 //!
-//! It is a shared resource: a reload whose layout is unchanged keeps the value,
-//! so the bodies keep their pose and velocity across it. When the layout did
-//! change the engine drops the value, and the system rebuilds every body from
-//! the components on its next pass.
+//! It is a shared resource, so a reload whose layout is unchanged keeps the
+//! value - but not its rapier world when this module itself was reloaded: that
+//! world points into the image that built it, so `register` rebuilds it while
+//! the old image is still loaded. When the layout changed the engine drops the
+//! value instead. Either way the system rebuilds every body from the
+//! components on its next pass, and because the sync writes each dynamic
+//! body's pose and velocities into them, the bodies carry on where they were.
 
 // Standard library
 use std::collections::{HashMap, HashSet};
@@ -36,7 +43,7 @@ use rapier3d::math::{Pose, Rotation, Vector};
 use rapier3d::prelude::{
     ActiveEvents, ChannelEventCollector, Collider, ColliderBuilder, ColliderHandle, CollisionEvent,
     ContactForceEvent, Group, InteractionGroups, InteractionTestMode, LockedAxes, RigidBody,
-    RigidBodyBuilder, RigidBodyHandle,
+    RigidBodyBuilder, RigidBodyHandle, RigidBodyType, SharedShape,
 };
 
 // Current crate
@@ -120,6 +127,9 @@ pub struct PhysicsManager {
     event_collector: ChannelEventCollector,
     /// What the simulation did since it was created.
     statistics: PhysicsStatistics,
+    /// The image of this module that built the rapier world, as the address
+    /// of one of its functions ([`current_image_marker`]).
+    built_by_image: usize,
 }
 
 impl PhysicsManager {
@@ -150,6 +160,7 @@ impl PhysicsManager {
                 soft_body_tear_sender,
             ),
             statistics: PhysicsStatistics::default(),
+            built_by_image: current_image_marker(),
         }
     }
 
@@ -320,17 +331,17 @@ impl PhysicsManager {
         self.statistics.created_bodies += 1;
     }
 
-    /// Rebuilds an entity's body when either component no longer holds the
-    /// values the body was built from, and reports whether it did.
+    /// Carries every edit made to an entity's two components since they were
+    /// last applied into its live body and collider, field by field, and
+    /// reports whether there was one.
     ///
-    /// The rebuilt body starts at the transform's pose. It keeps the speed the
-    /// old one had reached unless the edit was to that velocity itself: the
-    /// component's velocities are starting values, so changing the gravity
-    /// scale must not throw a falling body back to its first speed.
+    /// Nothing is rebuilt: the body keeps its handle, its contacts and its
+    /// sleep state, and only the edited properties change. A velocity the
+    /// simulation wrote into the component last frame is not an edit, because
+    /// [`Self::write_back_velocities`] records it as applied.
     pub fn apply_component_edits(
         &mut self,
         entity: Entity,
-        transform: &TransformComponent,
         body: &RigidBodyComponent,
         collider: &ColliderComponent,
     ) -> bool {
@@ -341,32 +352,125 @@ impl PhysicsManager {
         if applied_body == *body && applied_collider == *collider {
             return false;
         }
-        // Step 1: Read the speed the old body reached before it is dropped.
-        let live_velocities = self
-            .body_handles
-            .get(&entity)
-            .and_then(|handle| self.simulation.bodies.get(*handle))
-            .map(|rigid_body| (rigid_body.linvel(), rigid_body.angvel()));
-        // Step 2: Build the new body from the edited components.
-        self.spawn_body(entity, transform, body, collider);
-        self.previous_poses.remove(&entity);
-        // Step 3: Carry over each velocity the edit did not touch.
-        let Some((linear_velocity, angular_velocity)) = live_velocities else {
-            return true;
-        };
-        let Some(rigid_body) = self
+        // Step 1: The body's own properties.
+        if let Some(rigid_body) = self
             .body_handles
             .get(&entity)
             .and_then(|handle| self.simulation.bodies.get_mut(*handle))
+        {
+            if applied_body.body_kind != body.body_kind {
+                rigid_body.set_body_type(rigid_body_type_of(body.body_kind), true);
+            }
+            if applied_body.linear_velocity != body.linear_velocity {
+                rigid_body.set_linvel(vector_from_array(body.linear_velocity), true);
+            }
+            if applied_body.angular_velocity != body.angular_velocity {
+                rigid_body.set_angvel(vector_from_array(body.angular_velocity), true);
+            }
+            if applied_body.gravity_scale != body.gravity_scale {
+                rigid_body.set_gravity_scale(body.gravity_scale, true);
+            }
+            if applied_body.linear_damping != body.linear_damping {
+                rigid_body.set_linear_damping(body.linear_damping);
+            }
+            if applied_body.angular_damping != body.angular_damping {
+                rigid_body.set_angular_damping(body.angular_damping);
+            }
+            if applied_body.locked_axes != body.locked_axes {
+                rigid_body.set_locked_axes(LockedAxes::from_bits_truncate(body.locked_axes), true);
+            }
+            if applied_body.continuous_collision_detection != body.continuous_collision_detection {
+                rigid_body.enable_ccd(body.continuous_collision_detection);
+            }
+            // A property change on a resting body must take effect now, not
+            // when something next bumps it.
+            rigid_body.wake_up(true);
+        }
+        // Step 2: The collider's shape and material. rapier recomputes the
+        // body's mass from a changed shape or density on its next step.
+        if let Some(rapier_collider) = self
+            .collider_handles
+            .get(&entity)
+            .and_then(|handle| self.simulation.colliders.get_mut(*handle))
+        {
+            if applied_collider.shape != collider.shape
+                || applied_collider.dimensions != collider.dimensions
+            {
+                rapier_collider.set_shape(shape_of(collider));
+            }
+            if applied_collider.friction != collider.friction {
+                rapier_collider.set_friction(collider.friction);
+            }
+            if applied_collider.restitution != collider.restitution {
+                rapier_collider.set_restitution(collider.restitution);
+            }
+            if applied_collider.density != collider.density {
+                rapier_collider.set_density(collider.density);
+            }
+            if applied_collider.sensor != collider.sensor {
+                rapier_collider.set_sensor(collider.sensor);
+            }
+            if applied_collider.collision_group != collider.collision_group
+                || applied_collider.collision_mask != collider.collision_mask
+            {
+                rapier_collider.set_collision_groups(collision_groups_of(collider));
+            }
+        }
+        self.applied_components.insert(entity, (*body, *collider));
+        true
+    }
+
+    /// Copies a dynamic body's current velocities into its component, so the
+    /// component shows the speed the body moves at and a rebuilt body starts
+    /// at that speed.
+    ///
+    /// The written values are recorded as applied, so the next
+    /// [`Self::apply_component_edits`] does not mistake them for an edit. A
+    /// fixed or kinematic body is left alone: its component's velocities are
+    /// what game code set, and rapier does not integrate them.
+    pub fn write_back_velocities(&mut self, entity: Entity, body: &mut RigidBodyComponent) {
+        let Some(rigid_body) = self
+            .body_handles
+            .get(&entity)
+            .and_then(|handle| self.simulation.bodies.get(*handle))
         else {
-            return true;
+            return;
         };
-        if applied_body.linear_velocity == body.linear_velocity {
-            rigid_body.set_linvel(linear_velocity, true);
+        if !rigid_body.is_dynamic() {
+            return;
         }
-        if applied_body.angular_velocity == body.angular_velocity {
-            rigid_body.set_angvel(angular_velocity, true);
+        body.linear_velocity = array_from_vector(rigid_body.linvel());
+        body.angular_velocity = array_from_vector(rigid_body.angvel());
+        if let Some((applied_body, _)) = self.applied_components.get_mut(&entity) {
+            applied_body.linear_velocity = body.linear_velocity;
+            applied_body.angular_velocity = body.angular_velocity;
         }
+    }
+
+    /// Rebuilds the rapier world when it was built by an earlier image of this
+    /// module, and reports whether it did.
+    ///
+    /// rapier is compiled into this module, and its world holds pointers into
+    /// the image that built it: every collider shape is a trait object whose
+    /// function table lives in that image. A hot reload keeps this resource,
+    /// and the host unloads old images after a couple of generations, so a
+    /// world kept across a reload would one day call into freed code. The
+    /// module's `register` calls this on every generation, while the previous
+    /// image is still loaded, so dropping the old world runs code that is still
+    /// there. The bodies come back from the components on the next sync, at
+    /// the transforms' poses and the velocities last written into the
+    /// components. The settings are kept.
+    pub fn rebuild_if_built_by_another_image(&mut self) -> bool {
+        if self.built_by_image == current_image_marker() {
+            return false;
+        }
+        let settings = self.settings;
+        let gravity = self.gravity();
+        *self = Self::new();
+        self.set_gravity(gravity);
+        self.set_fixed_timestep(settings.fixed_timestep, settings.max_substeps);
+        self.set_interpolation(settings.interpolate);
+        self.set_debug_draw(settings.debug_draw);
         true
     }
 
@@ -557,14 +661,25 @@ impl std::default::Default for PhysicsManager {
 // rapier bodies from components
 // =============================================================================
 
+/// An address inside this module's image, which differs between two loaded
+/// images of the module and is the same for every call within one.
+pub fn current_image_marker() -> usize {
+    current_image_marker as fn() -> usize as usize
+}
+
+/// The rapier body type a body kind names.
+pub fn rigid_body_type_of(body_kind: BodyKind) -> RigidBodyType {
+    match body_kind {
+        BodyKind::Dynamic => RigidBodyType::Dynamic,
+        BodyKind::Fixed => RigidBodyType::Fixed,
+        BodyKind::KinematicPosition => RigidBodyType::KinematicPositionBased,
+        BodyKind::KinematicVelocity => RigidBodyType::KinematicVelocityBased,
+    }
+}
+
 /// Builds the rapier body a component pair describes.
 pub fn build_rigid_body(transform: &TransformComponent, body: &RigidBodyComponent) -> RigidBody {
-    let builder = match body.body_kind {
-        BodyKind::Dynamic => RigidBodyBuilder::dynamic(),
-        BodyKind::Fixed => RigidBodyBuilder::fixed(),
-        BodyKind::KinematicPosition => RigidBodyBuilder::kinematic_position_based(),
-        BodyKind::KinematicVelocity => RigidBodyBuilder::kinematic_velocity_based(),
-    };
+    let builder = RigidBodyBuilder::new(rigid_body_type_of(body.body_kind));
     let [translation_x, translation_y, translation_z] = transform.translation;
     builder
         .pose(Pose::from_parts(
@@ -581,26 +696,36 @@ pub fn build_rigid_body(transform: &TransformComponent, body: &RigidBodyComponen
         .build()
 }
 
+/// The rapier shape a collider component describes. The dimensions read as
+/// [`ColliderShape`] documents them.
+pub fn shape_of(collider: &ColliderComponent) -> SharedShape {
+    let [first, second, third] = collider.dimensions;
+    match collider.shape {
+        ColliderShape::Ball => SharedShape::ball(first),
+        ColliderShape::Cuboid => SharedShape::cuboid(first, second, third),
+        ColliderShape::Capsule => SharedShape::capsule_y(first, second),
+        ColliderShape::Cylinder => SharedShape::cylinder(first, second),
+    }
+}
+
+/// The rapier interaction groups a collider component's group and mask name.
+pub fn collision_groups_of(collider: &ColliderComponent) -> InteractionGroups {
+    InteractionGroups::new(
+        Group::from_bits_truncate(collider.collision_group),
+        Group::from_bits_truncate(collider.collision_mask),
+        InteractionTestMode::And,
+    )
+}
+
 /// Builds the rapier collider a component describes.
 pub fn build_collider(collider: &ColliderComponent) -> rapier3d::prelude::Collider {
-    let [first, second, third] = collider.dimensions;
-    let shape = match collider.shape {
-        ColliderShape::Ball => ColliderBuilder::ball(first),
-        ColliderShape::Cuboid => ColliderBuilder::cuboid(first, second, third),
-        ColliderShape::Capsule => ColliderBuilder::capsule_y(first, second),
-        ColliderShape::Cylinder => ColliderBuilder::cylinder(first, second),
-    };
-    shape
+    ColliderBuilder::new(shape_of(collider))
         .friction(collider.friction)
         .restitution(collider.restitution)
         .density(collider.density)
         .sensor(collider.sensor)
         .active_events(ActiveEvents::COLLISION_EVENTS | ActiveEvents::CONTACT_FORCE_EVENTS)
-        .collision_groups(InteractionGroups::new(
-            Group::from_bits_truncate(collider.collision_group),
-            Group::from_bits_truncate(collider.collision_mask),
-            InteractionTestMode::And,
-        ))
+        .collision_groups(collision_groups_of(collider))
         .build()
 }
 
@@ -855,26 +980,30 @@ mod tests {
         );
     }
 
-    /// An edit to a component after the body exists reaches the simulation:
-    /// a ball whose gravity scale is set to zero mid-fall stops speeding up
-    /// but keeps the speed it had, instead of falling as it was built.
+    /// An edit to a component after the body exists reaches the live body in
+    /// place: a ball whose gravity scale is set to zero mid-fall keeps its
+    /// handle and its speed, and stops speeding up.
     #[test]
-    fn an_edited_component_rebuilds_the_body_and_keeps_its_speed() {
+    fn an_edited_component_updates_the_live_body_in_place() {
         let mut world = World::new();
         let mut manager = PhysicsManager::new();
         let ball = entity(&mut world);
         let mut body = RigidBodyComponent::default();
         manager.spawn_body(ball, &transform_at(10.0), &body, &ball_collider());
+        let handle_before = manager.body_handles[&ball];
         run_frames(&mut manager, 30);
         let mut transform = transform_at(10.0);
         manager.write_back(ball, &mut transform);
+        manager.write_back_velocities(ball, &mut body);
 
-        // Step 1: The same values are not an edit.
-        assert!(!manager.apply_component_edits(ball, &transform, &body, &ball_collider()));
+        // Step 1: The velocities the simulation wrote are not an edit.
+        assert!(body.linear_velocity[1] < -4.0, "the ball is falling");
+        assert!(!manager.apply_component_edits(ball, &body, &ball_collider()));
 
-        // Step 2: Turning gravity off rebuilds the body where it is now.
+        // Step 2: Turning gravity off changes the same body.
         body.gravity_scale = 0.0;
-        assert!(manager.apply_component_edits(ball, &transform, &body, &ball_collider()));
+        assert!(manager.apply_component_edits(ball, &body, &ball_collider()));
+        assert_eq!(manager.body_handles[&ball], handle_before);
         let height_after_edit = transform.translation[1];
         run_frames(&mut manager, 30);
         manager.write_back(ball, &mut transform);
@@ -886,6 +1015,58 @@ mod tests {
             (2.2..2.7).contains(&fallen),
             "the ball should coast about 2.45 units, but it fell {fallen}"
         );
+    }
+
+    /// A velocity typed into the component launches the body from where it
+    /// is, and a collider edit reshapes it without a new body.
+    #[test]
+    fn an_edited_velocity_and_shape_reach_the_live_body() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        let ball = entity(&mut world);
+        let mut body = RigidBodyComponent {
+            gravity_scale: 0.0,
+            ..RigidBodyComponent::default()
+        };
+        let mut collider = ball_collider();
+        manager.spawn_body(ball, &transform_at(0.0), &body, &collider);
+
+        body.linear_velocity = [3.0, 0.0, 0.0];
+        collider.dimensions[0] = 2.0;
+        assert!(manager.apply_component_edits(ball, &body, &collider));
+        run_frames(&mut manager, 60);
+        let mut transform = transform_at(0.0);
+        manager.write_back(ball, &mut transform);
+        assert!(
+            (transform.translation[0] - 3.0).abs() < 0.1,
+            "one second at 3 units per second, but it is at {}",
+            transform.translation[0]
+        );
+        let collider_handle = manager.collider_handles[&ball];
+        let radius = manager
+            .collider_of(collider_handle)
+            .and_then(|rapier_collider| rapier_collider.shape().as_ball().map(|ball| ball.radius));
+        assert_eq!(radius, Some(2.0));
+    }
+
+    /// A manager built by another image of the module drops its world and
+    /// keeps its settings; one built by this image is left alone.
+    #[test]
+    fn a_world_from_another_image_is_rebuilt_and_keeps_its_settings() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        manager.set_gravity([0.0, -3.0, 0.0]);
+        manager.set_debug_draw(true);
+        let (_floor, _ball) = drop_a_ball(&mut manager, &mut world);
+        assert!(!manager.rebuild_if_built_by_another_image());
+        assert_eq!(manager.body_count(), 2);
+
+        manager.built_by_image = 0;
+        assert!(manager.rebuild_if_built_by_another_image());
+        assert_eq!(manager.body_count(), 0, "the sync spawns the bodies again");
+        assert_eq!(manager.gravity(), [0.0, -3.0, 0.0]);
+        assert!(manager.debug_draw_enabled());
+        assert!(!manager.rebuild_if_built_by_another_image());
     }
 
     /// A dynamic body's transform moved by someone other than the simulation

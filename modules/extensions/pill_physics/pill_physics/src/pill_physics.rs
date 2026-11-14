@@ -97,8 +97,9 @@ pub fn init(_engine: &mut Engine) -> u32 {
 ///
 /// The host calls this on every generation, so every step is safe to repeat: the
 /// component declarations are idempotent, and a value is only inserted when the
-/// world does not already hold one - a kept manager means the bodies kept their
-/// pose and velocity across the reload.
+/// world does not already hold one. A kept manager's rapier world is rebuilt
+/// when this image is not the one that built it; the bodies come back from the
+/// components, which hold their pose and their last velocities.
 ///
 /// Returns 0.
 pub fn register(engine: &mut Engine) -> u32 {
@@ -144,9 +145,20 @@ pub fn register(engine: &mut Engine) -> u32 {
         );
     }
 
-    // Step 4: Insert what the module owns once. A kept manager is a world whose
-    // bodies kept their pose and velocity across the reload; everything else
-    // here is per-frame data and starts empty.
+    // Step 4: Insert what the module owns once; everything else here is
+    // per-frame data and starts empty.
+    // A manager kept from an earlier image holds a rapier world that points
+    // into that image, which the host will unload. The previous image is
+    // still loaded now, so this is the one safe moment to drop that world;
+    // the sync rebuilds every body from the components on its next pass.
+    if let Some(manager) = engine.world_mut().get_resource_mut::<PhysicsManager>() {
+        if manager.rebuild_if_built_by_another_image() {
+            pill_core::info!(
+                target: telemetry_target::ECS,
+                "[physics] rebuilt the simulation for the reloaded module; bodies return from their components"
+            );
+        }
+    }
     if engine.world().get_resource::<PhysicsManager>().is_none() {
         // The manager insert, not the plain one: it records the settings
         // surface the project tunes the simulation with.
