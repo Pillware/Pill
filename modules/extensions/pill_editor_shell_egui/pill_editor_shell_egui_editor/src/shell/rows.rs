@@ -3,13 +3,16 @@
 //!
 //! # Responsibilities
 //!
-//! - [`ROW_LABEL_WIDTH`] and [`WIDE_ROW_LABEL_WIDTH`]: the two label columns,
-//!   the same in every tab that uses them, so the controls down a panel line
-//!   up at one x.
+//! - [`label_column_width`]: the Inspector's label column, a share of the
+//!   panel's width, so every field's control starts at one x however long its
+//!   label is, and a wider panel gives the labels more room.
+//! - [`ROW_LABEL_WIDTH`] and [`WIDE_ROW_LABEL_WIDTH`]: the fixed columns of the
+//!   tabs whose labels do not scale with the panel, the same in every tab that
+//!   uses them.
 //! - [`row`] and [`row_in`]: one label and the control beside it, the default
 //!   way a field is drawn.
 //! - [`label_cell`] and [`label_cell_in`]: the label alone, for a row whose
-//!   control is a wrapped or nested run the tab builds by hand.
+//!   control is a nested run the tab builds by hand.
 //! - [`label_gap`]: the rest of the space after that label cell, which a tab
 //!   drawing such a row adds itself.
 //! - [`value_row`] and [`value_row_in`]: a read-only row whose control is the
@@ -28,9 +31,10 @@
 //! control, whatever item spacing the panel uses. Rows place standard widgets
 //! at their usual heights.
 //!
-//! A panel whose labels are field names takes the compact column
-//! ([`ROW_LABEL_WIDTH`]); a panel whose labels are whole setting names takes
-//! the wide one ([`WIDE_ROW_LABEL_WIDTH`]).
+//! The Inspector's rows - component fields and asset settings alike - take
+//! the proportional column, so its controls form one column. The tabs that
+//! list whole setting names (Preferences, Systems, Statistics) keep the fixed
+//! wide one ([`WIDE_ROW_LABEL_WIDTH`]).
 //!
 //! The globs below spell absolute paths on purpose: a generated patch crate
 //! replays this file's top-level `use` lines, and a `super::`-relative glob
@@ -44,9 +48,17 @@ use pill_editor_shell_egui_editor::shell::prelude::*;
 #[allow(unused_imports)]
 use pill_editor_shell_egui_editor::shell::*;
 
-/// The width in points of a row's label column where labels are field names:
-/// the Inspector's dense field rows, and the default of every helper here.
+/// The narrowest label column in points, and the fixed column of the tabs
+/// that name fields without scaling with the panel.
 pub const ROW_LABEL_WIDTH: f32 = 80.0;
+
+/// The share of a panel's width the Inspector's label column takes. The rest
+/// is the control column, where every field's control starts at one x.
+pub const LABEL_COLUMN_FRACTION: f32 = 0.4;
+
+/// The widest the Inspector's label column grows, in points, so a very wide
+/// panel gives the extra room to the controls rather than to the labels.
+pub const LABEL_COLUMN_MAX_WIDTH: f32 = 220.0;
 
 /// The width in points of a row's label column where labels are whole setting
 /// names instead of fields: the Preferences, Systems and Statistics tabs and
@@ -63,10 +75,20 @@ pub const ROW_HEIGHT: f32 = 18.0;
 /// the control beside it.
 pub const ROW_LABEL_GAP: f32 = 20.0;
 
-/// Draws one row's label in the compact column, left-aligned and cut off at
-/// [`ROW_LABEL_WIDTH`]. `tooltip` is shown while the pointer rests on it.
+/// The label column of a panel `ui` lays out: [`LABEL_COLUMN_FRACTION`] of
+/// the width it has left, between [`ROW_LABEL_WIDTH`] and
+/// [`LABEL_COLUMN_MAX_WIDTH`]. Rows read it before they place anything, so
+/// every row of one panel gets the same column.
+pub fn label_column_width(ui: &egui::Ui) -> f32 {
+    (ui.available_width() * LABEL_COLUMN_FRACTION).clamp(ROW_LABEL_WIDTH, LABEL_COLUMN_MAX_WIDTH)
+}
+
+/// Draws one row's label in the panel's label column
+/// ([`label_column_width`]), left-aligned and cut off at its edge. `tooltip`
+/// is shown while the pointer rests on it.
 pub fn label_cell(ui: &mut egui::Ui, label: &str, tooltip: Option<&str>) -> egui::Response {
-    label_cell_in(ui, ROW_LABEL_WIDTH, label, tooltip)
+    let width = label_column_width(ui);
+    label_cell_in(ui, width, label, tooltip)
 }
 
 /// Draws one row's label in a label column `label_column_width` points wide.
@@ -106,15 +128,17 @@ pub fn label_gap(ui: &mut egui::Ui) {
     ui.add_space((ROW_LABEL_GAP - spacing).max(0.0));
 }
 
-/// Draws one label-and-control row in the compact column: `label` in the label
-/// column, then whatever `draw_control` draws beside it.
+/// Draws one label-and-control row in the panel's label column
+/// ([`label_column_width`]): `label` on the left, then whatever `draw_control`
+/// draws in the control column, which runs to the panel's right edge.
 pub fn row(
     ui: &mut egui::Ui,
     label: &str,
     tooltip: Option<&str>,
     draw_control: &mut dyn FnMut(&mut egui::Ui),
 ) {
-    row_in(ui, ROW_LABEL_WIDTH, label, tooltip, draw_control);
+    let width = label_column_width(ui);
+    row_in(ui, width, label, tooltip, draw_control);
 }
 
 /// Draws one label-and-control row whose label column is `label_column_width`
@@ -135,7 +159,8 @@ pub fn row_in(
 
 /// Draws one read-only row: the label, then `value` in monospace text.
 pub fn value_row(ui: &mut egui::Ui, label: &str, value: &str) {
-    value_row_in(ui, ROW_LABEL_WIDTH, label, value);
+    let width = label_column_width(ui);
+    value_row_in(ui, width, label, value);
 }
 
 /// Draws one read-only row whose label column is `label_column_width` points

@@ -335,7 +335,7 @@ pub fn reference_list_entry_row(
                 // value the block reads back on release.
                 let handle = ui
                     .add_sized(
-                        egui::vec2(WIDE_ROW_LABEL_WIDTH, ROW_HEIGHT),
+                        egui::vec2(label_column_width(ui), ROW_HEIGHT),
                         egui::Label::new(
                             icons::rich(icons::Icon::ArrowsOutCardinal, &index.to_string())
                                 .color(style::text_muted()),
@@ -445,7 +445,7 @@ pub fn list_append_row(
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             // An empty label column keeps the button under the entries' pickers.
-            label_cell_in(ui, WIDE_ROW_LABEL_WIDTH, "", None);
+            label_cell(ui, "", None);
             label_gap(ui);
             let button = ui.add_sized(
                 egui::vec2(picker_width, ROW_HEIGHT),
@@ -603,7 +603,8 @@ pub fn moved_entry(entries: &[JsonValue], from: usize, to: usize) -> Vec<JsonVal
 /// pushes every row below it out of the panel.
 pub fn list_picker_width(ui: &egui::Ui, row_width: f32) -> f32 {
     let spacing = ui.spacing().item_spacing.x;
-    (row_width - WIDE_ROW_LABEL_WIDTH - ROW_LABEL_GAP - LIST_REMOVE_WIDTH - 2.0 * spacing).max(60.0)
+    (row_width - label_column_width(ui) - ROW_LABEL_GAP - LIST_REMOVE_WIDTH - 2.0 * spacing)
+        .max(60.0)
 }
 
 /// Remembers a list row's rectangle and logs it once per placement, keyed
@@ -711,9 +712,8 @@ pub fn asset_settings_row(
         JsonValue::Bool(current) => {
             let mut edited = *current;
             let mut changed = false;
-            row_in(
+            row(
                 ui,
-                WIDE_ROW_LABEL_WIDTH,
                 &label,
                 Some(settings_row_tooltip(walk.decorators, &key)),
                 &mut |ui| {
@@ -737,9 +737,8 @@ pub fn asset_settings_row(
             match current_integer.as_mut() {
                 Some(edited) => {
                     let mut changed = false;
-                    row_in(
+                    row(
                         ui,
-                        WIDE_ROW_LABEL_WIDTH,
                         &label,
                         Some(settings_row_tooltip(walk.decorators, &key)),
                         &mut |ui| {
@@ -759,9 +758,8 @@ pub fn asset_settings_row(
                 None => {
                     let mut edited = current.as_f64().unwrap_or_default();
                     let mut changed = false;
-                    row_in(
+                    row(
                         ui,
-                        WIDE_ROW_LABEL_WIDTH,
                         &label,
                         Some(settings_row_tooltip(walk.decorators, &key)),
                         &mut |ui| {
@@ -791,9 +789,8 @@ pub fn asset_settings_row(
         JsonValue::String(current) => {
             let mut edited = current.clone();
             let mut should_commit = false;
-            row_in(
+            row(
                 ui,
-                WIDE_ROW_LABEL_WIDTH,
                 &label,
                 Some(settings_row_tooltip(walk.decorators, &key)),
                 &mut |ui| {
@@ -858,7 +855,7 @@ pub fn colour_parameter_row(
     }
     let label = settings_row_label(key);
     let mut picked = None;
-    row_in(ui, WIDE_ROW_LABEL_WIDTH, &label, Some(key), &mut |ui| {
+    row(ui, &label, Some(key), &mut |ui| {
         if ui
             .color_edit_button_rgba_unmultiplied(&mut edited)
             .changed()
@@ -982,7 +979,7 @@ pub fn reference_row(
     let text = reference_text(field);
     let mut chosen: Option<Option<String>> = None;
     let mut button_rect = None;
-    row_in(ui, WIDE_ROW_LABEL_WIDTH, &label, Some(key), &mut |ui| {
+    row(ui, &label, Some(key), &mut |ui| {
         // The picker takes what the row has left beside its clear button, so
         // the two stay on one line however narrow the panel is. A wrapped run
         // would drop the picker, and then the clear button, onto rows of their

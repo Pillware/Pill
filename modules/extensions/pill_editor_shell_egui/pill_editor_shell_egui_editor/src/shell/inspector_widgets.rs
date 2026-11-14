@@ -149,13 +149,15 @@ pub fn scalar_edit_decorated(
         (FieldValue::F32(current), Row::FloatSlider { min, max }) => {
             let mut edited = *current;
             let (low, high) = ascending(*min, *max);
+            fill_slider_width(ui);
             ui.add(egui::Slider::new(&mut edited, low..=high).max_decimals(4))
                 .changed()
                 .then_some(FieldValue::F32(edited))
         }
         (FieldValue::F32(current), Row::FloatDrag { min }) => {
             let mut edited = current.max(*min);
-            ui.add(
+            ui.add_sized(
+                fill_size(ui),
                 egui::DragValue::new(&mut edited)
                     .range(*min..=f32::MAX)
                     .speed(0.05),
@@ -166,13 +168,15 @@ pub fn scalar_edit_decorated(
         (FieldValue::F64(current), Row::FloatSlider { min, max }) => {
             let mut edited = *current;
             let (low, high) = ascending(*min, *max);
+            fill_slider_width(ui);
             ui.add(egui::Slider::new(&mut edited, low as f64..=high as f64).max_decimals(9))
                 .changed()
                 .then_some(FieldValue::F64(edited))
         }
         (FieldValue::F64(current), Row::FloatDrag { min }) => {
             let mut edited = current.max(*min as f64);
-            ui.add(
+            ui.add_sized(
+                fill_size(ui),
                 egui::DragValue::new(&mut edited)
                     .range(*min as f64..=f64::MAX)
                     .speed(0.05)
@@ -236,6 +240,19 @@ pub fn fixed_width_field(
     }
 }
 
+/// The size of a value field that spans the whole width left in the row, the
+/// way every value field in the Inspector runs to the panel's right edge.
+pub fn fill_size(ui: &egui::Ui) -> egui::Vec2 {
+    egui::vec2(ui.available_width(), INSPECTOR_VECTOR_FIELD_HEIGHT)
+}
+
+/// Sizes the next slider's track so the track and its value box together fill
+/// the width left in the row.
+pub fn fill_slider_width(ui: &mut egui::Ui) {
+    let value_box_width = ui.spacing().interact_size.x + ui.spacing().item_spacing.x;
+    ui.spacing_mut().slider_width = (ui.available_width() - value_box_width).max(40.0);
+}
+
 /// Returns the two bounds in ascending order. A decorator pair written the
 /// other way round still draws a usable slider.
 pub fn ascending(min: f32, max: f32) -> (f32, f32) {
@@ -263,6 +280,7 @@ pub fn integer_edit(
             (high, low)
         };
         let mut current = number.rounded(low, high);
+        fill_slider_width(ui);
         return ui
             .add(
                 egui::Slider::new(&mut current, low..=high)
@@ -274,7 +292,8 @@ pub fn integer_edit(
     }
     let low = (floor? as f64).clamp(number.kind_min, number.kind_max);
     let mut current = number.rounded(low, number.kind_max);
-    ui.add(
+    ui.add_sized(
+        fill_size(ui),
         egui::DragValue::new(&mut current)
             .range(low..=number.kind_max)
             .speed(1.0)
@@ -297,13 +316,14 @@ pub fn scalar_edit(ui: &mut egui::Ui, value: &FieldValue) -> Option<FieldValue> 
         }
         FieldValue::F32(current) => {
             let mut edited = *current;
-            ui.add(egui::DragValue::new(&mut edited).speed(0.05))
+            ui.add_sized(fill_size(ui), egui::DragValue::new(&mut edited).speed(0.05))
                 .changed()
                 .then_some(FieldValue::F32(edited))
         }
         FieldValue::F64(current) => {
             let mut edited = *current;
-            ui.add(
+            ui.add_sized(
+                fill_size(ui),
                 egui::DragValue::new(&mut edited)
                     .speed(0.05)
                     .max_decimals(9),
@@ -320,7 +340,7 @@ pub fn scalar_edit(ui: &mut egui::Ui, value: &FieldValue) -> Option<FieldValue> 
         other => {
             let number = Number::of(other)?;
             let mut edited = number.current;
-            ui.add(egui::DragValue::new(&mut edited))
+            ui.add_sized(fill_size(ui), egui::DragValue::new(&mut edited))
                 .changed()
                 .then(|| (number.rebuild)(edited))
         }

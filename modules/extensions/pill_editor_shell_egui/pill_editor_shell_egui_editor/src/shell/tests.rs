@@ -1409,3 +1409,32 @@ fn the_preferences_pair_saves_and_cancels() {
     assert!(draft.is_some(), "the tab seeded its buffers");
     assert!(pending.batches.is_empty(), "drawing queues nothing");
 }
+
+/// The label column is a share of the panel's width within its bounds, so
+/// every row of one panel starts its control at the same x.
+#[test]
+fn the_label_column_scales_with_the_panel_within_its_bounds() {
+    let context = egui::Context::default();
+    let mut widths = Vec::new();
+    for panel_width in [150.0_f32, 360.0, 2000.0] {
+        run_pass(&context, &mut |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                ui.allocate_ui(egui::vec2(panel_width, 40.0), |ui| {
+                    widths.push(label_column_width(ui));
+                });
+            });
+        });
+    }
+    assert_eq!(
+        widths[0], ROW_LABEL_WIDTH,
+        "a narrow panel keeps the narrowest column"
+    );
+    assert!(
+        (widths[1] - 360.0 * LABEL_COLUMN_FRACTION).abs() < 20.0,
+        "a common panel gives its share: {widths:?}"
+    );
+    assert_eq!(
+        widths[2], LABEL_COLUMN_MAX_WIDTH,
+        "a wide panel stops at the cap"
+    );
+}

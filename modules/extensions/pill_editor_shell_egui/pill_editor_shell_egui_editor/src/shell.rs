@@ -169,11 +169,14 @@ pub mod rows;
 
 pub use rows::label_cell;
 pub use rows::label_cell_in;
+pub use rows::label_column_width;
 pub use rows::label_gap;
 pub use rows::row;
 pub use rows::row_in;
 pub use rows::value_row;
 pub use rows::value_row_in;
+pub use rows::LABEL_COLUMN_FRACTION;
+pub use rows::LABEL_COLUMN_MAX_WIDTH;
 pub use rows::ROW_HEIGHT;
 pub use rows::ROW_LABEL_GAP;
 pub use rows::ROW_LABEL_WIDTH;
@@ -212,18 +215,21 @@ pub use tab_inspector::inspector_tab;
 pub use tab_inspector::INSPECTOR_VECTOR_FIELD_HEIGHT;
 pub use tab_inspector::INSPECTOR_VECTOR_FIELD_WIDTH;
 pub use tab_inspector::INSPECTOR_VECTOR_LABEL_WIDTH;
+pub use tab_inspector::SECTION_LINE_GAP;
 
 /// The [`inspector_fields`] module: the inspector's field rows: the decorators
 /// a component declares, the row model and the control each row draws.
 pub mod inspector_fields;
 
 pub use inspector_fields::field_widget_name;
+pub use inspector_fields::has_field_editor;
 pub use inspector_fields::inspector_entity_row;
 pub use inspector_fields::inspector_field_row;
 pub use inspector_fields::inspector_row;
 pub use inspector_fields::is_scalar_field;
 pub use inspector_fields::remember_entity_row_rect;
 pub use inspector_fields::remember_entity_row_text;
+pub use inspector_fields::vector_slot_width;
 pub use inspector_fields::EntityRowInput;
 
 /// The [`inspector_widgets`] module: the inspector's field controls.
@@ -232,6 +238,9 @@ pub mod inspector_widgets;
 pub use inspector_widgets::ascending;
 pub use inspector_widgets::axis_slot;
 pub use inspector_widgets::component_rows;
+pub use inspector_widgets::enum_edit;
+pub use inspector_widgets::fill_size;
+pub use inspector_widgets::fill_slider_width;
 pub use inspector_widgets::fixed_width_field;
 pub use inspector_widgets::format_field_value;
 pub use inspector_widgets::integer_edit;

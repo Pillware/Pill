@@ -22,15 +22,18 @@ use pill_editor_shell_egui_editor::shell::*;
 // Constants
 // =============================================================================
 
-/// The width of one vector element's group, in points: the axis letter and
-/// its field together. The group wraps as one unit, so a wrap never separates
-/// the letter from its field.
+/// The narrowest a vector element's group gets, in points: the axis letter and
+/// its field together. The groups share the control column equally and never
+/// shrink below this; a value too long for its field is cropped.
 pub const INSPECTOR_VECTOR_FIELD_WIDTH: f32 = 58.0;
 
 /// The width of the slot that holds an axis letter inside its group, in
 /// points. The slot is fixed, so every component's editor gets the same width
 /// however wide the letter's glyph is.
 pub const INSPECTOR_VECTOR_LABEL_WIDTH: f32 = 10.0;
+
+/// The space in points between a component's separator line and its header.
+pub const SECTION_LINE_GAP: f32 = 3.0;
 
 /// The height of one vector field, in points. The field's editor and the group
 /// that holds it are both this tall.
@@ -395,12 +398,13 @@ pub fn inspector_targets(
     inspector::selection_targets(&snapshot.selected_details, primary, component)
 }
 
-/// Draws one component section's header bar: the foldout caret, the
-/// component's duotone icon and its label, on the panel's control fill.
+/// Draws one component section's header: a separator line across the panel,
+/// then the foldout caret, the component's duotone icon and its label, with no
+/// fill behind them.
 ///
-/// Returns the bar's response. The whole bar is clickable, and the caller
-/// toggles the section when the response reports a click. The bar logs its
-/// rectangle once per placement.
+/// Returns the header's response. The whole header is clickable, and the
+/// caller toggles the section when the response reports a click. The header
+/// logs its rectangle once per placement.
 pub fn inspector_section_header(
     ui: &mut egui::Ui,
     component: &ComponentView,
@@ -412,11 +416,20 @@ pub fn inspector_section_header(
     } else {
         icons::Icon::CaretDown
     };
+    // The line separates this component from the one above it, across the
+    // whole panel.
+    let line_y = ui.cursor().top();
+    let panel_rect = ui.max_rect();
+    ui.painter().hline(
+        panel_rect.x_range(),
+        line_y,
+        egui::Stroke::new(1.0, style::line()),
+    );
+    ui.add_space(SECTION_LINE_GAP);
     let frame = egui::Frame::new()
-        .fill(style::control())
-        .corner_radius(3.0)
-        .inner_margin(egui::Margin::symmetric(6, 3))
+        .inner_margin(egui::Margin::symmetric(0, 2))
         .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.horizontal(|ui| {
                 let (caret_rect, _) =
                     ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());

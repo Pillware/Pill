@@ -227,14 +227,19 @@ pub fn inspector_field_row(
                         ui,
                         &row_label(field, details, type_name, *index, other),
                         tooltip,
-                        &mut |ui| match scalar_edit_decorated(ui, other, widget) {
-                            Some(edited) => {
+                        &mut |ui| {
+                            // A field with an editor shows only the editor; its
+                            // answer of `None` means "not edited this frame",
+                            // not "no editor". Only a kind without one is shown
+                            // as text.
+                            if !has_field_editor(other) {
+                                ui.label(format_field_value(other));
+                                return;
+                            }
+                            if let Some(edited) = scalar_edit_decorated(ui, other, widget) {
                                 queue_field_edit(
                                     pending, targets, entity, type_name, field, edited,
                                 );
-                            }
-                            None => {
-                                ui.label(format_field_value(other));
                             }
                         },
                     );
@@ -274,12 +279,12 @@ pub fn inspector_field_row(
                 field = field.as_str(),
                 tooltip = tooltip.as_deref().unwrap_or_default(),
             );
-            // Draw the fields on one line that wraps: a wide panel shows X, Y
-            // and Z side by side, while a narrow dock moves the fields that do
-            // not fit to the next line instead of clipping them.
-            ui.horizontal_wrapped(|ui| {
-                label_cell_in(ui, ROW_LABEL_WIDTH, field, tooltip.as_deref());
+            // The label, then the components side by side, sharing the control
+            // column equally like a scalar field's control fills it.
+            ui.horizontal(|ui| {
+                label_cell(ui, field, tooltip.as_deref());
                 label_gap(ui);
+                let slot_width = vector_slot_width(ui, *elements);
                 for (element_index, element) in values.iter().take(*elements).enumerate() {
                     // Keep one axis letter with its field, so a wrap never
                     // separates a label from its widget. Both the letter's
@@ -287,7 +292,7 @@ pub fn inspector_field_row(
                     // cropped inside its field instead of widening the row and
                     // pushing its neighbours along.
                     ui.allocate_ui_with_layout(
-                        egui::vec2(INSPECTOR_VECTOR_FIELD_WIDTH, INSPECTOR_VECTOR_FIELD_HEIGHT),
+                        egui::vec2(slot_width, INSPECTOR_VECTOR_FIELD_HEIGHT),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             axis_slot(ui, element_index);
@@ -395,15 +400,16 @@ pub fn inspector_field_row(
             );
             // This draws the same row as a `[f32; 3]` field, but the three
             // values come from three scalar fields of their own.
-            ui.horizontal_wrapped(|ui| {
-                label_cell_in(ui, ROW_LABEL_WIDTH, field, tooltip.as_deref());
+            ui.horizontal(|ui| {
+                label_cell(ui, field, tooltip.as_deref());
                 label_gap(ui);
+                let slot_width = vector_slot_width(ui, leaves.len());
                 for (axis_index, leaf) in leaves.iter().enumerate() {
                     let Some(value) = component.values.get(leaf.index) else {
                         continue;
                     };
                     ui.allocate_ui_with_layout(
-                        egui::vec2(INSPECTOR_VECTOR_FIELD_WIDTH, INSPECTOR_VECTOR_FIELD_HEIGHT),
+                        egui::vec2(slot_width, INSPECTOR_VECTOR_FIELD_HEIGHT),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             axis_slot(ui, axis_index);
@@ -1162,6 +1168,25 @@ pub fn inspector_row(
     widget: &mut dyn FnMut(&mut egui::Ui),
 ) {
     row(ui, label, tooltip, widget);
+}
+
+/// Returns whether a field's value has an editor in the Inspector: every
+/// scalar kind and every declared enum. Any other kind is shown as text.
+pub fn has_field_editor(value: &FieldValue) -> bool {
+    is_scalar_field(value) || matches!(value, FieldValue::Isize(_) | FieldValue::Enum { .. })
+}
+
+/// Returns the width of one component's slot in a vector row: the control
+/// column left after the label, shared equally by `components` slots and the
+/// gaps between them, and never narrower than
+/// [`INSPECTOR_VECTOR_FIELD_WIDTH`], so a narrow panel crops a value instead
+/// of hiding it.
+pub fn vector_slot_width(ui: &egui::Ui, components: usize) -> f32 {
+    let components = components.max(1) as f32;
+    // Each slot is followed by the 2 points the row adds and egui's own item
+    // spacing.
+    let gap = 2.0 + ui.spacing().item_spacing.x;
+    ((ui.available_width() - gap * components) / components).max(INSPECTOR_VECTOR_FIELD_WIDTH)
 }
 
 /// Returns whether a value has a widget kind of its own.
