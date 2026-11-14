@@ -11,6 +11,9 @@
 //! - Remembers which entity owns which body, in both directions, so a contact or
 //!   a raycast answer can name the entity.
 //! - Steps the simulation on a fixed timestep, fed by the frame delta.
+//! - Notices an edit made outside the simulation - a component changed in the
+//!   Inspector, a dynamic body's transform moved by the gizmo or by game code -
+//!   and carries it into the body instead of overwriting it.
 //!
 //! # Design
 //!
@@ -93,6 +96,12 @@ pub struct PhysicsManager {
     collider_handles: HashMap<Entity, ColliderHandle>,
     /// The entity each collider belongs to, for contacts and raycast answers.
     collider_owners: HashMap<ColliderHandle, Entity>,
+    /// The component values each body was last built from, so an edit to
+    /// either component is noticed and the body rebuilt from it.
+    applied_components: HashMap<Entity, (RigidBodyComponent, ColliderComponent)>,
+    /// The pose last written into each dynamic body's transform. A transform
+    /// that no longer holds it was moved by someone else, and the body follows.
+    written_poses: HashMap<Entity, ([f32; 3], [f32; 4])>,
     /// The pose each body held before its last step, which interpolation blends
     /// towards the pose the step produced.
     previous_poses: HashMap<Entity, ([f32; 3], [f32; 4])>,
@@ -128,6 +137,8 @@ impl PhysicsManager {
             body_handles: HashMap::new(),
             collider_handles: HashMap::new(),
             collider_owners: HashMap::new(),
+            applied_components: HashMap::new(),
+            written_poses: HashMap::new(),
             previous_poses: HashMap::new(),
             accumulator_seconds: 0.0,
             settings,
@@ -305,7 +316,90 @@ impl PhysicsManager {
         self.body_handles.insert(entity, body_handle);
         self.collider_handles.insert(entity, collider_handle);
         self.collider_owners.insert(collider_handle, entity);
+        self.applied_components.insert(entity, (*body, *collider));
         self.statistics.created_bodies += 1;
+    }
+
+    /// Rebuilds an entity's body when either component no longer holds the
+    /// values the body was built from, and reports whether it did.
+    ///
+    /// The rebuilt body starts at the transform's pose. It keeps the speed the
+    /// old one had reached unless the edit was to that velocity itself: the
+    /// component's velocities are starting values, so changing the gravity
+    /// scale must not throw a falling body back to its first speed.
+    pub fn apply_component_edits(
+        &mut self,
+        entity: Entity,
+        transform: &TransformComponent,
+        body: &RigidBodyComponent,
+        collider: &ColliderComponent,
+    ) -> bool {
+        let Some((applied_body, applied_collider)) = self.applied_components.get(&entity).copied()
+        else {
+            return false;
+        };
+        if applied_body == *body && applied_collider == *collider {
+            return false;
+        }
+        // Step 1: Read the speed the old body reached before it is dropped.
+        let live_velocities = self
+            .body_handles
+            .get(&entity)
+            .and_then(|handle| self.simulation.bodies.get(*handle))
+            .map(|rigid_body| (rigid_body.linvel(), rigid_body.angvel()));
+        // Step 2: Build the new body from the edited components.
+        self.spawn_body(entity, transform, body, collider);
+        self.previous_poses.remove(&entity);
+        // Step 3: Carry over each velocity the edit did not touch.
+        let Some((linear_velocity, angular_velocity)) = live_velocities else {
+            return true;
+        };
+        let Some(rigid_body) = self
+            .body_handles
+            .get(&entity)
+            .and_then(|handle| self.simulation.bodies.get_mut(*handle))
+        else {
+            return true;
+        };
+        if applied_body.linear_velocity == body.linear_velocity {
+            rigid_body.set_linvel(linear_velocity, true);
+        }
+        if applied_body.angular_velocity == body.angular_velocity {
+            rigid_body.set_angvel(angular_velocity, true);
+        }
+        true
+    }
+
+    /// Moves a dynamic body to its transform when something other than the
+    /// simulation moved that transform since the last write-back: the editor's
+    /// gizmo, an Inspector edit, or game code placing the entity.
+    ///
+    /// The body keeps its velocity and is woken, so it carries on from the new
+    /// place. A transform still holding the written pose is left alone.
+    pub fn follow_moved_transform(&mut self, entity: Entity, transform: &TransformComponent) {
+        let Some(written_pose) = self.written_poses.get(&entity).copied() else {
+            return;
+        };
+        if written_pose == (transform.translation, transform.rotation) {
+            return;
+        }
+        let Some(rigid_body) = self
+            .body_handles
+            .get(&entity)
+            .and_then(|handle| self.simulation.bodies.get_mut(*handle))
+        else {
+            return;
+        };
+        rigid_body.set_position(
+            Pose::from_parts(
+                vector_from_array(transform.translation),
+                rotation_from_array(transform.rotation),
+            ),
+            true,
+        );
+        // The blend would otherwise start from the pose before the move.
+        self.previous_poses.remove(&entity);
+        self.written_poses.remove(&entity);
     }
 
     /// Drops an entity's body and collider. An entity without a body is left
@@ -317,6 +411,8 @@ impl PhysicsManager {
         if let Some(collider_handle) = self.collider_handles.remove(&entity) {
             self.collider_owners.remove(&collider_handle);
         }
+        self.applied_components.remove(&entity);
+        self.written_poses.remove(&entity);
         let _ = self
             .simulation
             .remove_body_with_colliders(body_handle, true);
@@ -367,6 +463,14 @@ impl PhysicsManager {
         let pose = body.position();
         transform.translation = array_from_vector(pose.translation);
         transform.rotation = array_from_quaternion(pose.rotation);
+        self.blend_towards_last_step(entity, transform);
+        self.written_poses
+            .insert(entity, (transform.translation, transform.rotation));
+    }
+
+    /// Blends a freshly written pose back towards the pose before the last
+    /// step, when interpolation is on.
+    pub fn blend_towards_last_step(&self, entity: Entity, transform: &mut TransformComponent) {
         if !self.settings.interpolate {
             return;
         }
@@ -748,6 +852,68 @@ mod tests {
         assert_eq!(
             array_from_quaternion(rotation_from_array([0.0, 0.0, 0.0, 2.0])),
             [0.0, 0.0, 0.0, 1.0]
+        );
+    }
+
+    /// An edit to a component after the body exists reaches the simulation:
+    /// a ball whose gravity scale is set to zero mid-fall stops speeding up
+    /// but keeps the speed it had, instead of falling as it was built.
+    #[test]
+    fn an_edited_component_rebuilds_the_body_and_keeps_its_speed() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        let ball = entity(&mut world);
+        let mut body = RigidBodyComponent::default();
+        manager.spawn_body(ball, &transform_at(10.0), &body, &ball_collider());
+        run_frames(&mut manager, 30);
+        let mut transform = transform_at(10.0);
+        manager.write_back(ball, &mut transform);
+
+        // Step 1: The same values are not an edit.
+        assert!(!manager.apply_component_edits(ball, &transform, &body, &ball_collider()));
+
+        // Step 2: Turning gravity off rebuilds the body where it is now.
+        body.gravity_scale = 0.0;
+        assert!(manager.apply_component_edits(ball, &transform, &body, &ball_collider()));
+        let height_after_edit = transform.translation[1];
+        run_frames(&mut manager, 30);
+        manager.write_back(ball, &mut transform);
+        let fallen = height_after_edit - transform.translation[1];
+        // Half a second at the speed reached after half a second of falling
+        // (about 4.9 units per second) is about 2.45 units: no faster, since
+        // gravity is off, and not zero, since the speed was kept.
+        assert!(
+            (2.2..2.7).contains(&fallen),
+            "the ball should coast about 2.45 units, but it fell {fallen}"
+        );
+    }
+
+    /// A dynamic body's transform moved by someone other than the simulation
+    /// (the editor's gizmo, game code) moves the body there.
+    #[test]
+    fn a_moved_transform_moves_its_dynamic_body() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        let (_floor, ball) = drop_a_ball(&mut manager, &mut world);
+        run_frames(&mut manager, 300);
+        let mut transform = transform_at(3.0);
+        manager.write_back(ball, &mut transform);
+
+        // Step 1: An untouched transform leaves the resting body alone.
+        manager.follow_moved_transform(ball, &transform);
+        run_frames(&mut manager, 1);
+        manager.write_back(ball, &mut transform);
+        assert!((transform.translation[1] - RESTING_HEIGHT).abs() < LANDING_TOLERANCE);
+
+        // Step 2: Lift it, and it falls back from the new height.
+        transform.translation[1] = 8.0;
+        manager.follow_moved_transform(ball, &transform);
+        run_frames(&mut manager, 1);
+        manager.write_back(ball, &mut transform);
+        assert!(
+            transform.translation[1] > 7.5,
+            "the ball should start falling from 8, but it is at {}",
+            transform.translation[1]
         );
     }
 }

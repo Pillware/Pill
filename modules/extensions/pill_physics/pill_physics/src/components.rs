@@ -71,7 +71,7 @@ pub enum ColliderShape {
 /// [`TransformComponent`](pill_engine::TransformComponent), which the body is
 /// built from and which the simulation writes back to.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, PillComponent)]
 #[pill(persistable, shared)]
 pub struct RigidBodyComponent {
     /// How the simulation may move this body.
@@ -137,7 +137,7 @@ impl std::default::Default for RigidBodyComponent {
 /// A body has no collision without a collider, so the manager simulates the
 /// entities that carry both components.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, PillComponent)]
 #[pill(persistable, shared)]
 pub struct ColliderComponent {
     /// The shape the dimensions are read as.
