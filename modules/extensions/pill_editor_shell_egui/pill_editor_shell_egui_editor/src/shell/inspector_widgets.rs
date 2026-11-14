@@ -156,8 +156,8 @@ pub fn scalar_edit_decorated(
         }
         (FieldValue::F32(current), Row::FloatDrag { min }) => {
             let mut edited = current.max(*min);
-            ui.add_sized(
-                fill_size(ui),
+            stretched_drag_value(
+                ui,
                 egui::DragValue::new(&mut edited)
                     .range(*min..=f32::MAX)
                     .speed(0.05),
@@ -175,8 +175,8 @@ pub fn scalar_edit_decorated(
         }
         (FieldValue::F64(current), Row::FloatDrag { min }) => {
             let mut edited = current.max(*min as f64);
-            ui.add_sized(
-                fill_size(ui),
+            stretched_drag_value(
+                ui,
                 egui::DragValue::new(&mut edited)
                     .range(*min as f64..=f64::MAX)
                     .speed(0.05)
@@ -240,10 +240,18 @@ pub fn fixed_width_field(
     }
 }
 
-/// The size of a value field that spans the whole width left in the row, the
-/// way every value field in the Inspector runs to the panel's right edge.
-pub fn fill_size(ui: &egui::Ui) -> egui::Vec2 {
-    egui::vec2(ui.available_width(), INSPECTOR_VECTOR_FIELD_HEIGHT)
+/// Adds a drag value that spans the whole width left in the row, the way every
+/// value field in the Inspector runs to the panel's right edge.
+///
+/// egui centres a drag value in a larger slot rather than stretching it; its
+/// smallest width is the style's interact width, so the width is raised to the
+/// room left for this one widget.
+pub fn stretched_drag_value(ui: &mut egui::Ui, drag_value: egui::DragValue<'_>) -> egui::Response {
+    ui.scope(|ui| {
+        ui.spacing_mut().interact_size.x = ui.available_width();
+        ui.add(drag_value)
+    })
+    .inner
 }
 
 /// Sizes the next slider's track so the track and its value box together fill
@@ -292,8 +300,8 @@ pub fn integer_edit(
     }
     let low = (floor? as f64).clamp(number.kind_min, number.kind_max);
     let mut current = number.rounded(low, number.kind_max);
-    ui.add_sized(
-        fill_size(ui),
+    stretched_drag_value(
+        ui,
         egui::DragValue::new(&mut current)
             .range(low..=number.kind_max)
             .speed(1.0)
@@ -316,14 +324,14 @@ pub fn scalar_edit(ui: &mut egui::Ui, value: &FieldValue) -> Option<FieldValue> 
         }
         FieldValue::F32(current) => {
             let mut edited = *current;
-            ui.add_sized(fill_size(ui), egui::DragValue::new(&mut edited).speed(0.05))
+            stretched_drag_value(ui, egui::DragValue::new(&mut edited).speed(0.05))
                 .changed()
                 .then_some(FieldValue::F32(edited))
         }
         FieldValue::F64(current) => {
             let mut edited = *current;
-            ui.add_sized(
-                fill_size(ui),
+            stretched_drag_value(
+                ui,
                 egui::DragValue::new(&mut edited)
                     .speed(0.05)
                     .max_decimals(9),
@@ -340,7 +348,7 @@ pub fn scalar_edit(ui: &mut egui::Ui, value: &FieldValue) -> Option<FieldValue> 
         other => {
             let number = Number::of(other)?;
             let mut edited = number.current;
-            ui.add_sized(fill_size(ui), egui::DragValue::new(&mut edited))
+            stretched_drag_value(ui, egui::DragValue::new(&mut edited))
                 .changed()
                 .then(|| (number.rebuild)(edited))
         }

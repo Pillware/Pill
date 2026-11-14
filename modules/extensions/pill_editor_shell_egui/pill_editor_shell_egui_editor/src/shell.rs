@@ -250,7 +250,6 @@ pub use inspector_widgets::ascending;
 pub use inspector_widgets::axis_slot;
 pub use inspector_widgets::component_rows;
 pub use inspector_widgets::enum_edit;
-pub use inspector_widgets::fill_size;
 pub use inspector_widgets::fill_slider_width;
 pub use inspector_widgets::fixed_width_field;
 pub use inspector_widgets::format_field_value;
@@ -258,6 +257,7 @@ pub use inspector_widgets::integer_edit;
 pub use inspector_widgets::read_only_row;
 pub use inspector_widgets::scalar_edit;
 pub use inspector_widgets::scalar_edit_decorated;
+pub use inspector_widgets::stretched_drag_value;
 pub use inspector_widgets::Number;
 
 /// The [`inspector_settings`] module: the inspector's asset import settings.

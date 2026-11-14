@@ -56,7 +56,7 @@ pub const ROW_LABEL_WIDTH: f32 = 80.0;
 
 /// The narrowest the Inspector's label column gets, in points. A narrowing
 /// panel takes its room from the fields, never from the labels below this.
-pub const LABEL_COLUMN_MIN_WIDTH: f32 = 130.0;
+pub const LABEL_COLUMN_MIN_WIDTH: f32 = 100.0;
 
 /// The narrowest a field's control gets, in points, once the panel has no
 /// room left beyond the label column. The control is squashed down to this and
@@ -65,11 +65,11 @@ pub const CONTROL_MIN_WIDTH: f32 = 16.0;
 
 /// The share of a panel's width the Inspector's label column takes. The rest
 /// is the control column, where every field's control starts at one x.
-pub const LABEL_COLUMN_FRACTION: f32 = 0.4;
+pub const LABEL_COLUMN_FRACTION: f32 = 0.3;
 
 /// The widest the Inspector's label column grows, in points, so a very wide
 /// panel gives the extra room to the controls rather than to the labels.
-pub const LABEL_COLUMN_MAX_WIDTH: f32 = 220.0;
+pub const LABEL_COLUMN_MAX_WIDTH: f32 = 200.0;
 
 /// The width in points of a row's label column where labels are whole setting
 /// names instead of fields: the Preferences, Systems and Statistics tabs and
@@ -81,10 +81,10 @@ pub const WIDE_ROW_LABEL_WIDTH: f32 = 140.0;
 /// control, so a checkbox, a drag value and a button all read as one row.
 pub const ROW_HEIGHT: f32 = 18.0;
 
-/// The least space in points a row keeps between its label and its control.
-/// The panel's own item spacing is far too tight for a label to read as naming
-/// the control beside it.
-pub const ROW_LABEL_GAP: f32 = 20.0;
+/// The least space in points a row keeps between its label and its control:
+/// a little more than the panel's own item spacing, so the label reads as
+/// naming the control beside it without drifting away from it.
+pub const ROW_LABEL_GAP: f32 = 8.0;
 
 /// The label column of a panel `ui` lays out: [`LABEL_COLUMN_FRACTION`] of
 /// the width it has left, between [`LABEL_COLUMN_MIN_WIDTH`] and

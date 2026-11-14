@@ -1711,3 +1711,32 @@ fn every_narrow_tab_body_stays_inside_the_tab() {
         );
     }
 }
+
+/// A stretched drag value takes the whole width it is given rather than
+/// sitting centred in it at its natural size, so a vector's fields and a
+/// scalar row's field reach the edge of their slot.
+#[test]
+fn a_stretched_drag_value_fills_its_slot() {
+    const SLOT_WIDTH: f32 = 90.0;
+    let context = egui::Context::default();
+    style::apply(&context);
+    let mut field_width = 0.0f32;
+    let mut value = 0.25f32;
+    run_pass(&context, &mut |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(SLOT_WIDTH, INSPECTOR_VECTOR_FIELD_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    field_width = stretched_drag_value(ui, egui::DragValue::new(&mut value))
+                        .rect
+                        .width();
+                },
+            );
+        });
+    });
+    assert!(
+        field_width >= SLOT_WIDTH - 1.0,
+        "the field is {field_width} wide in a {SLOT_WIDTH}-point slot"
+    );
+}
