@@ -630,13 +630,13 @@ mod tests {
     #[test]
     fn a_document_that_does_not_fit_is_reported_with_the_type_name() {
         let mut manager = FixtureManager::default();
-        let bytes = serde_json::to_vec(&serde_json::json!({
+        let document = serde_json::json!({
             "format_version": crate::asset_metadata::METADATA_FORMAT_VERSION,
             "asset_type": <FixtureSettingsAsset as StandaloneAsset>::metadata_type_name(),
             "guid": "00000000000000000000000000000001",
             "asset": { "steps": "many" },
-        }))
-        .expect("the file renders");
+        });
+        let bytes = crate::asset_document::render(&document).expect("the file renders");
 
         let error =
             apply_fixture_bytes(&mut manager, &bytes).expect_err("the document does not fit");
@@ -816,13 +816,14 @@ mod tests {
             .expect("the created file applies");
 
         // A document whose field has the wrong type cannot reach the manager.
-        let unfitting = serde_json::to_vec(&serde_json::json!({
+        let unfitting_document = serde_json::json!({
             "format_version": crate::asset_metadata::METADATA_FORMAT_VERSION,
             "asset_type": <FixtureSettingsAsset as StandaloneAsset>::metadata_type_name(),
             "guid": "0000000000000000000000000000000c",
             "asset": { "steps": "many" },
-        }))
-        .expect("the file renders");
+        });
+        let unfitting =
+            crate::asset_document::render(&unfitting_document).expect("the file renders");
         res.write(&missing[0].path, &unfitting);
         let failures = world.refresh_manager_settings();
 

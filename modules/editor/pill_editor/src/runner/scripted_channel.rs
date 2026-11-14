@@ -406,20 +406,27 @@ impl EditorWindow {
         );
     }
 
-    /// Log the Problems count and the first ten rows, for the suites.
+    /// Log the Problems count and the first forty rows, for the suites.
+    ///
+    /// Each row carries its index in the panel, so a suite can open the row it
+    /// matched instead of assuming which row came first. The window is wide
+    /// enough that a build's own warnings - the shared workspace's dead code
+    /// and unused imports, reported before a project's error - cannot push
+    /// that error past the end of the dump.
     pub(super) fn dump_problems(&mut self) {
         info!(
             target: telemetry_target::EDITOR,
             count = self.notices.problems.len(),
             "[test] problems"
         );
-        for row in self.notices.problems.iter().take(10) {
+        for (index, row) in self.notices.problems.iter().take(40).enumerate() {
             info!(
                 target: telemetry_target::EDITOR,
                 module = row.module.as_str(),
                 severity = row.problem.severity.name(),
                 file = row.problem.file.as_deref().unwrap_or(""),
                 line = row.problem.line.unwrap_or(0),
+                index = index,
                 text = row.problem.message.as_str(),
                 "[test] problem row"
             );

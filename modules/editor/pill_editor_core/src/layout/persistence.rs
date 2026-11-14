@@ -50,7 +50,7 @@ pub const LAYOUT_SCHEMA_VERSION: u32 = 13;
 const APPLICATION_DIRECTORY: &str = "RustHybridEcs";
 
 /// The dock document's file name in the layout directory.
-const LAYOUT_FILE: &str = "editor_egui_layout.json";
+const LAYOUT_FILE: &str = "editor_egui_layout.yaml";
 
 // =============================================================================
 // Types
@@ -90,10 +90,10 @@ pub fn load_or_default() -> EditorDock {
 /// and the reason is what a person reads.
 fn load_from_path(path: &Path) -> EditorDock {
     // A missing file is the normal first-run state and stays silent.
-    let Ok(contents) = std::fs::read_to_string(path) else {
+    let Ok(bytes) = std::fs::read(path) else {
         return EditorDock::new();
     };
-    match serde_json::from_str::<EditorDock>(&contents) {
+    match crate::editor_files::parse_yaml::<EditorDock>(&bytes) {
         Ok(dock) if dock.is_current() => dock,
         Ok(mut dock) => match migrate(&mut dock) {
             Some(previous_schema_version) => {
@@ -197,21 +197,23 @@ pub fn save(dock: &EditorDock) {
     }
 }
 
-/// Write `dock` as a JSON document at `path`, replacing the file there.
+/// Write `dock` as a YAML document at `path`, replacing the file there.
 ///
 /// The document is written from [`EditorDock::settled`], which replaces the
 /// infinite placeholder rectangles of a dock that was never laid out with
-/// zeros, since JSON cannot hold them and the next show recomputes them.
+/// zeros, since no document format can hold them and the next show recomputes
+/// them.
 ///
 /// # Errors
 ///
 /// [`LayoutPersistenceError::Serialization`] when the dock cannot be turned
-/// into JSON, and [`LayoutPersistenceError::Filesystem`] when the directory,
+/// into YAML, and [`LayoutPersistenceError::Filesystem`] when the directory,
 /// the temporary file or the target cannot be written.
 fn save_to_path(dock: &EditorDock, path: PathBuf) -> Result<(), LayoutPersistenceError> {
-    let document_bytes = serde_json::to_vec_pretty(&dock.settled())
-        .map_err(|source| LayoutPersistenceError::Serialization { source })?;
-    crate::editor_files::write_bytes(&path, &document_bytes).map_err(|error| match error {
+    crate::editor_files::write_yaml(&path, &dock.settled()).map_err(|error| match error {
+        crate::editor_files::FileError::Serialize { message, .. } => {
+            LayoutPersistenceError::Serialization { detail: message }
+        }
         crate::editor_files::FileError::Write { path, source } => {
             LayoutPersistenceError::Filesystem { path, source }
         }
@@ -275,7 +277,7 @@ mod tests {
     /// A dock-layout document saved by `egui_dock` 0.17, whose node model
     /// differs from this build's: a real saved file, not a hand-written
     /// sketch. Its schema is 6, older than the oldest upgrade rule.
-    const V6_LAYOUT: &str = include_str!("fixtures/layout_v6.json");
+    const V6_LAYOUT: &str = include_str!("fixtures/layout_v6.yaml");
 
     /// A directory of this test's own under the temp directory.
     fn scratch_directory(label: &str) -> PathBuf {
@@ -289,7 +291,7 @@ mod tests {
         // The two node models differ, so the document may fail to parse, or
         // may parse and then fail the schema check. Either way it must never
         // be taken for this build's own file.
-        if let Ok(dock) = serde_json::from_str::<EditorDock>(V6_LAYOUT) {
+        if let Ok(dock) = crate::editor_files::parse_yaml::<EditorDock>(V6_LAYOUT.as_bytes()) {
             assert_eq!(dock.schema_version(), 6);
             assert!(!dock.is_current());
         }
@@ -310,12 +312,19 @@ mod tests {
     fn a_layout_written_by_this_build_loads_back_unchanged() {
         let directory = scratch_directory("round_trip");
         let path = directory.join(LAYOUT_FILE);
-        let saved = EditorDock::new();
+        // A dock that differs from the default, so a load that fell back to
+        // `EditorDock::new()` could not pass this test.
+        let mut saved = EditorDock::new();
+        saved.pop_out(EditorTab::Console);
         save_to_path(&saved, path.clone()).expect("the layout saves");
 
         let loaded = load_from_path(&path);
 
         assert_eq!(loaded.schema_version(), LAYOUT_SCHEMA_VERSION);
+        assert!(
+            loaded.is_popped_out(EditorTab::Console),
+            "the loaded layout lost the popped-out tab"
+        );
         for tab in EditorTab::ALL {
             assert_eq!(
                 saved.state().find_tab(&tab),
@@ -345,7 +354,7 @@ mod tests {
             "the second save did not land"
         );
         assert!(
-            !path.with_extension("json.bak").exists(),
+            !path.with_extension("yaml.bak").exists(),
             "the writer kept a backup file"
         );
         std::fs::remove_dir_all(&directory).ok();
@@ -356,11 +365,13 @@ mod tests {
         let directory = scratch_directory("newer");
         let path = directory.join(LAYOUT_FILE);
         let mut document: serde_json::Value =
-            serde_json::from_str(&serde_json::to_string(&EditorDock::new()).expect("serializes"))
-                .expect("the document is JSON");
+            serde_json::to_value(EditorDock::new()).expect("the dock serializes to a value");
         document["schema_version"] = serde_json::Value::from(LAYOUT_SCHEMA_VERSION + 1);
-        std::fs::write(&path, serde_json::to_vec(&document).expect("reserializes"))
-            .expect("the document writes");
+        std::fs::write(
+            &path,
+            pill_engine::asset_document::render(&document).expect("the document renders"),
+        )
+        .expect("the document writes");
 
         let dock = load_from_path(&path);
 

@@ -381,7 +381,7 @@ mod tests {
 
     fn themed(overrides: &str) -> Theme {
         Theme::fallback()
-            .merged_with(&ThemeOverrides::from_json_str(overrides).unwrap())
+            .merged_with(&ThemeOverrides::from_yaml_str(overrides).unwrap())
             .unwrap()
     }
 
@@ -618,6 +618,10 @@ mod tests {
         assert_eq!(style.spacing.item_spacing, vec2(item_spacing));
         assert_eq!(style.spacing.button_padding, vec2(button_padding));
         assert_eq!(style.spacing.interact_size, vec2(interact_size));
+        // egui lays a tooltip out at exactly this width, so the theme's value
+        // must arrive intact and must be positive.
+        assert_eq!(style.spacing.tooltip_width, theme.spacing.tooltip_width);
+        assert!(style.spacing.tooltip_width > 0.0);
     }
 
     #[test]

@@ -76,6 +76,9 @@ pub mod asset;
 /// Every asset of a project by guid and by path, loaded or not.
 pub mod asset_database;
 
+/// The YAML document format every asset file shares.
+pub mod asset_document;
+
 /// Importing assets by file extension, for code that does not know their type.
 pub mod asset_import_registry;
 

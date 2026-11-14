@@ -1,15 +1,9 @@
-{
-  "format_version": 1,
-  "asset_type": "pill_ui_theme::ThemeOverrides",
-  "guid": "000000000000000000000000000000a1",
-  "asset": {
-    "palette": {
-      "accent": "#33d17a"
-    },
-    "text_styles": {
-      "heading": {
-        "size": 24.0
-      }
-    }
-  }
-}
+format_version: 1
+asset_type: pill_ui_theme::ThemeOverrides
+guid: 000000000000000000000000000000a1
+asset:
+  palette:
+    accent: '#33d17a'
+  text_styles:
+    heading:
+      size: 24.0

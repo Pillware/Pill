@@ -22,11 +22,11 @@
 //!
 //! # Design
 //!
-//! The preferences file is plain JSON, and the editor does not own it alone.
-//! The tab's save writes the editor-wide rows, and the executable writes the
-//! per-project gizmo entry. Every write therefore reads the document first and
-//! changes only the keys its owner owns, so a key the other writer left behind
-//! survives the save.
+//! The preferences file is a YAML mapping, and the editor does not own it
+//! alone. The tab's save writes the editor-wide rows, and the executable
+//! writes the per-project gizmo entry. Every write therefore reads the
+//! document first and changes only the keys its owner owns, so a key the other
+//! writer left behind survives the save.
 //!
 //! A row holds the text the user typed. [`parse_value`] tries that text as
 //! bare JSON first, so a number or a boolean round-trips, and stores it as a
@@ -49,8 +49,8 @@ use crate::commands::{GizmoProjectPreferences, KeymapPreset, PREFERENCES_FILE};
 
 /// The preference key the editor's user theme layer is named under.
 ///
-/// The value is a `.theme` or `.json` file, either absolute or relative to the
-/// editor's state directory.
+/// The value is a `.theme`, `.yaml` or `.yml` file, either absolute or
+/// relative to the editor's state directory.
 pub const THEME_PREFERENCE_KEY: &str = "theme";
 
 /// The preference key the keymap preset lives under.
@@ -383,13 +383,13 @@ pub fn set_key(document: &mut Map<String, Value>, key: &str, value: Value) -> Re
 ///
 /// # Errors
 ///
-/// Returns a message naming the file when it cannot be read, is not JSON, or is
-/// not a JSON object.
+/// Returns a message naming the file when it cannot be read, is not YAML, or is
+/// not a YAML mapping.
 pub fn read_document(directory: &Path) -> Result<Map<String, Value>, String> {
     let path = directory.join(PREFERENCES_FILE);
-    match crate::editor_files::read_json::<Value>(&path) {
+    match crate::editor_files::read_yaml::<Value>(&path) {
         Ok(Some(Value::Object(document))) => Ok(document),
-        Ok(Some(_)) => Err(format!("{PREFERENCES_FILE} is not a JSON object")),
+        Ok(Some(_)) => Err(format!("{PREFERENCES_FILE} is not a YAML mapping")),
         Ok(None) => Ok(Map::new()),
         Err(error) => Err(error.message()),
     }
@@ -399,14 +399,14 @@ pub fn read_document(directory: &Path) -> Result<Map<String, Value>, String> {
 ///
 /// # Errors
 ///
-/// Returns a message naming the file when the text is not JSON or is not a JSON
-/// object.
+/// Returns a message naming the file when the text is not YAML or is not a YAML
+/// mapping.
 pub fn parse_document(text: &str) -> Result<Map<String, Value>, String> {
-    let value: Value = serde_json::from_str(text)
-        .map_err(|error| format!("{PREFERENCES_FILE} is not valid JSON: {error}"))?;
+    let value: Value = crate::editor_files::parse_yaml(text.as_bytes())
+        .map_err(|message| format!("{PREFERENCES_FILE} is {message}"))?;
     match value {
         Value::Object(document) => Ok(document),
-        _ => Err(format!("{PREFERENCES_FILE} is not a JSON object")),
+        _ => Err(format!("{PREFERENCES_FILE} is not a YAML mapping")),
     }
 }
 
@@ -420,7 +420,7 @@ pub fn parse_document(text: &str) -> Result<Map<String, Value>, String> {
 /// be written.
 pub fn write_document(directory: &Path, document: &Map<String, Value>) -> Result<(), String> {
     let path = directory.join(PREFERENCES_FILE);
-    crate::editor_files::write_json(&path, &Value::Object(document.clone()))
+    crate::editor_files::write_yaml(&path, &Value::Object(document.clone()))
         .map_err(|error| error.message())
 }
 
@@ -639,17 +639,17 @@ mod tests {
 
     #[test]
     fn a_corrupt_document_is_refused_rather_than_read_as_empty() {
-        // Reading "not JSON" as an empty document would let the next save erase
+        // Reading "not YAML" as an empty document would let the next save erase
         // every key the file held, including the ones this write never touched.
         let directory = scratch_directory("corrupt");
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join(PREFERENCES_FILE);
-        let corrupt_text = "{\"theme\": \"dark\",}";
+        let corrupt_text = "theme: [dark\n";
         std::fs::write(&path, corrupt_text).unwrap();
 
-        let error = read_document(&directory).expect_err("a trailing comma is not a document");
+        let error = read_document(&directory).expect_err("an open sequence is not a document");
         assert!(
-            error.contains("not valid JSON"),
+            error.contains("not valid YAML"),
             "unexpected message: {error}"
         );
         assert_eq!(
@@ -669,15 +669,15 @@ mod tests {
 
     #[test]
     fn a_document_that_is_not_an_object_is_refused() {
-        // A file holding `[1, 2]` parses as JSON but is not a document, so a
-        // save that modified it would have nowhere to put a key.
-        let error = parse_document("[1, 2]").expect_err("a list is not a document");
+        // A file holding `- 1` parses as YAML but is not a document, so a save
+        // that modified it would have nowhere to put a key.
+        let error = parse_document("- 1\n- 2\n").expect_err("a list is not a document");
         assert!(
-            error.contains("not a JSON object"),
+            error.contains("not a YAML mapping"),
             "unexpected message: {error}"
         );
-        assert!(parse_document("{\"theme\": \"dark\"}")
-            .expect("an object is a document")
+        assert!(parse_document("theme: dark\n")
+            .expect("a mapping is a document")
             .contains_key("theme"));
     }
 
@@ -709,7 +709,7 @@ mod tests {
         let directory = scratch_directory("update");
         std::fs::write(
             directory.join(PREFERENCES_FILE),
-            r#"{ "theme": "dark", "editor.history_step_cap": 42 }"#,
+            "theme: dark\neditor.history_step_cap: 42\n",
         )
         .expect("the seeded document");
         update(&directory, |document| {
@@ -733,7 +733,7 @@ mod tests {
     fn an_update_refuses_a_document_it_cannot_read() {
         let directory = scratch_directory("update-corrupt");
         let path = directory.join(PREFERENCES_FILE);
-        let broken_text = "{ \"theme\": \"dark\", }";
+        let broken_text = "theme: [dark\n";
         std::fs::write(&path, broken_text).expect("the broken document");
         let error = update(&directory, |document| {
             document.insert("gizmo".to_owned(), Value::String("written".to_owned()));
@@ -741,7 +741,7 @@ mod tests {
         })
         .expect_err("a broken document stops the update");
         assert!(
-            error.contains("is not valid JSON"),
+            error.contains("is not valid YAML"),
             "unexpected message: {error}"
         );
         assert_eq!(

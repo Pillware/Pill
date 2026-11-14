@@ -1576,7 +1576,7 @@ mod tests {
         let meta = res.root.join("a.txt.meta");
         let edited = std::fs::read_to_string(&meta)
             .unwrap()
-            .replace("\"uppercase\": false", "\"uppercase\": true");
+            .replace("uppercase: false", "uppercase: true");
         std::fs::write(&meta, edited).unwrap();
         let reimported = registry.reimport(&mut assets, Path::new("a.txt")).unwrap();
 

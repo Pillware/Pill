@@ -6,9 +6,10 @@ the anchored readers, the small polls and the `StepState` the areas pass along -
 lives here, so an area module imports its tools instead of the suite.
 """
 
-import json
 import re
 from pathlib import Path
+
+import yaml
 
 from core import log_layout
 from core.editor_log_tokens import (
@@ -268,8 +269,10 @@ def wait_meta_value(
 
     def probe(_text: str):
         try:
-            document = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            document = {}
+        if not isinstance(document, dict):
             document = {}
         return True if document.get("settings", {}).get(key) == expected else None
 
@@ -330,17 +333,14 @@ def wait_for_entity_count(session: EditorSession, target: int, label: str) -> No
 def write_theme_file(path: Path, guid: str, body) -> None:
     """Writes one standalone `.theme` document, the shape the loader reads."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    document = {
+        "format_version": 1,
+        "asset_type": "pill_ui_theme::ThemeOverrides",
+        "guid": guid,
+        "asset": body,
+    }
     path.write_text(
-        json.dumps(
-            {
-                "format_version": 1,
-                "asset_type": "pill_ui_theme::ThemeOverrides",
-                "guid": guid,
-                "asset": body,
-            },
-            indent=2,
-        )
-        + "\n",
+        yaml.safe_dump(document, sort_keys=False, default_flow_style=False),
         encoding="utf-8",
     )
 

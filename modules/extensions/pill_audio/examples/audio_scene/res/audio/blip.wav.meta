@@ -1,6 +1,4 @@
-{
-  "format_version": 1,
-  "asset_type": "pill_audio::Sound",
-  "guid": "0e0e974ea6fe5472515c744e14750fda",
-  "settings": {}
-}
+format_version: 1
+asset_type: pill_audio::Sound
+guid: 0e0e974ea6fe5472515c744e14750fda
+settings: {}

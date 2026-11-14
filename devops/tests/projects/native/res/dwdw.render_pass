@@ -1,21 +1,18 @@
-{
-  "asset": {
-    "blend": false,
-    "cull": "Back",
-    "depth_write": true,
-    "enabled": true,
-    "extra_targets": [],
-    "inputs": {},
-    "kind": "Geometry",
-    "material": null,
-    "order": 0,
-    "parameters": {},
-    "shader": null,
-    "target": "Surface",
-    "target_scale": 1,
-    "textures": {}
-  },
-  "asset_type": "pill_master_renderer::assets::RenderPass",
-  "format_version": 1,
-  "guid": "934c3ab57068b9afe5adc2c69beac3c8"
-}
+asset:
+  blend: false
+  cull: Back
+  depth_write: true
+  enabled: true
+  extra_targets: []
+  inputs: {}
+  kind: Geometry
+  material: null
+  order: 0
+  parameters: {}
+  shader: null
+  target: Surface
+  target_scale: 1
+  textures: {}
+asset_type: pill_master_renderer::assets::RenderPass
+format_version: 1
+guid: 934c3ab57068b9afe5adc2c69beac3c8

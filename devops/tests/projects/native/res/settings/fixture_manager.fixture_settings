@@ -1,10 +1,7 @@
-{
-  "asset": {
-    "enabled": true,
-    "gain": 1.0,
-    "label": "fixture"
-  },
-  "asset_type": "native::FixtureSettingsAsset",
-  "format_version": 1,
-  "guid": "93615c3cd7b496c3f65506a217392d9f"
-}
+asset:
+  enabled: true
+  gain: 1.0
+  label: fixture
+asset_type: native::FixtureSettingsAsset
+format_version: 1
+guid: a728f05c5b05529b9b8c87622ced2b7b

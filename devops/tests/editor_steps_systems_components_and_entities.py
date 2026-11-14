@@ -5,7 +5,8 @@ from `editor_step_support`, the log vocabulary from `editor_log_tokens`.
 """
 
 import re
-import json
+
+import yaml
 
 from core import log_layout
 from core.editor_log_tokens import (
@@ -61,7 +62,7 @@ def run_systems_components_and_entities_steps(state: StepState) -> None:
         "the color texture row selected",
         begin,
     )
-    texture_before = json.loads(texture_meta.read_text(encoding="utf-8"))["settings"][
+    texture_before = yaml.safe_load(texture_meta.read_text(encoding="utf-8"))["settings"][
         "texture_type"
     ]
     texture_next = "Normal" if texture_before == "Color" else "Color"

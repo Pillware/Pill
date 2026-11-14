@@ -452,7 +452,7 @@ pub fn default_theme() -> Theme {
     theme.spacing.icon_width_inner = 8.0;
     theme.spacing.icon_spacing = 6.0;
     theme.spacing.menu_width = 0.0;
-    theme.spacing.tooltip_width = 0.0;
+    theme.spacing.tooltip_width = 500.0;
     theme.spacing.combo_width = 0.0;
     theme.spacing.combo_height = 220.0;
     theme.spacing.text_edit_width = 220.0;
@@ -585,10 +585,10 @@ pub enum UserThemeSelection {
 impl UserThemeSelection {
     /// Reads the value of the `theme` preference.
     ///
-    /// A value ending in `.json` or `.theme` names a file. Anything else is a
-    /// bare theme name, which adds no layer. A relative path is joined to
-    /// `state_directory`, the folder that holds the preferences file. A
-    /// missing or blank value selects [`UserThemeSelection::None`].
+    /// A value ending in `.theme`, `.yaml` or `.yml` names a file. Anything
+    /// else is a bare theme name, which adds no layer. A relative path is
+    /// joined to `state_directory`, the folder that holds the preferences
+    /// file. A missing or blank value selects [`UserThemeSelection::None`].
     pub fn from_preference(
         preference_text: Option<&str>,
         state_directory: &std::path::Path,
@@ -599,7 +599,10 @@ impl UserThemeSelection {
         else {
             return Self::None;
         };
-        if preference_text.ends_with(".json") || preference_text.ends_with(".theme") {
+        if preference_text.ends_with(".theme")
+            || preference_text.ends_with(".yaml")
+            || preference_text.ends_with(".yml")
+        {
             let path = std::path::Path::new(preference_text);
             return Self::File(if path.is_absolute() {
                 path.to_path_buf()
@@ -1076,6 +1079,10 @@ mod tests {
         assert_eq!(theme.palette.selection_bar, theme.palette.accent);
         assert!(theme.palette.frame.0[0] < 24, "the frame is near-black");
         assert_eq!(theme.shape.corner_radius, 3);
+        assert!(
+            theme.spacing.tooltip_width > 0.0,
+            "a tooltip's text wraps at this width, so a zero would show one character per line"
+        );
     }
 
     #[test]
@@ -1118,8 +1125,8 @@ mod tests {
             UserThemeSelection::Legacy("dark".to_string())
         );
         assert_eq!(
-            UserThemeSelection::from_preference(Some("theme.json"), directory),
-            UserThemeSelection::File(directory.join("theme.json"))
+            UserThemeSelection::from_preference(Some("theme.yaml"), directory),
+            UserThemeSelection::File(directory.join("theme.yaml"))
         );
         assert_eq!(
             UserThemeSelection::from_preference(Some("mine.theme"), directory),
@@ -1137,14 +1144,13 @@ mod tests {
     #[test]
     fn the_layers_merge_user_then_project() {
         let code = default_theme();
-        let user = pill_ui_theme::ThemeOverrides::from_json_str(
-            "{\"palette\": {\"accent\": \"#ff488c\", \"panel\": \"#101820\"}}",
+        let user = pill_ui_theme::ThemeOverrides::from_yaml_str(
+            "palette:\n  accent: \"#ff488c\"\n  panel: \"#101820\"\n",
         )
         .expect("user document");
-        let project = pill_ui_theme::ThemeOverrides::from_json_str(
-            "{\"palette\": {\"accent\": \"#33d17a\"}}",
-        )
-        .expect("project document");
+        let project =
+            pill_ui_theme::ThemeOverrides::from_yaml_str("palette:\n  accent: \"#33d17a\"\n")
+                .expect("project document");
         let user_info = ThemeLayerInfo::user("theme.json");
         let project_info = ThemeLayerInfo::project("editor/editor.theme");
 
@@ -1173,14 +1179,12 @@ mod tests {
     #[test]
     fn a_refused_layer_is_skipped_and_named() {
         let code = default_theme();
-        let user = pill_ui_theme::ThemeOverrides::from_json_str(
-            "{\"palette\": {\"accent\": \"not-a-colour\"}}",
-        )
-        .expect("the document parses; the colour does not");
-        let project = pill_ui_theme::ThemeOverrides::from_json_str(
-            "{\"palette\": {\"accent\": \"#33d17a\"}}",
-        )
-        .expect("project document");
+        let user =
+            pill_ui_theme::ThemeOverrides::from_yaml_str("palette:\n  accent: not-a-colour\n")
+                .expect("the document parses; the colour does not");
+        let project =
+            pill_ui_theme::ThemeOverrides::from_yaml_str("palette:\n  accent: \"#33d17a\"\n")
+                .expect("project document");
         let user_info = ThemeLayerInfo::user("broken.theme");
         let project_info = ThemeLayerInfo::project("editor/editor.theme");
 

@@ -47,7 +47,7 @@ EXAMPLE USAGE
 """
 
 import argparse
-import json
+import yaml
 import os
 import re
 import sys
@@ -121,9 +121,13 @@ def wait_for_asset_line(monitor: OutputMonitor, token: str, start_index: int, ti
 
 def set_texture_type(texture_type: str) -> str:
     """Rewrites the metadata file's `texture_type`; returns the file's guid."""
-    document = json.loads(METADATA_FILE.read_text(encoding="utf-8"))
+    document = yaml.safe_load(METADATA_FILE.read_text(encoding="utf-8"))
     document["settings"]["texture_type"] = texture_type
-    METADATA_FILE.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8", newline="")
+    METADATA_FILE.write_text(
+        yaml.safe_dump(document, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+        newline="",
+    )
     return document["guid"]
 
 
@@ -177,7 +181,7 @@ def broken_source(monitor: OutputMonitor) -> bool:
     start_index = monitor.line_count
     SOURCE_FILE.write_bytes(original)
     print(f"  [EDIT] {SOURCE_FILE.name}: original bytes restored")
-    guid = json.loads(METADATA_FILE.read_text(encoding="utf-8"))["guid"]
+    guid = yaml.safe_load(METADATA_FILE.read_text(encoding="utf-8"))["guid"]
     return check_reimported(monitor, start_index, guid, "restored source")
 
 
@@ -262,9 +266,13 @@ def move(monitor: OutputMonitor) -> bool:
 def material_edit(monitor: OutputMonitor) -> bool:
     """Scenario 5: editing the standalone material file reimports it in place."""
     start_index = monitor.line_count
-    document = json.loads(MATERIAL_FILE.read_text(encoding="utf-8"))
+    document = yaml.safe_load(MATERIAL_FILE.read_text(encoding="utf-8"))
     document["asset"]["parameters"]["pbr_roughness"] = {"Scalar": 0.5}
-    MATERIAL_FILE.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8", newline="")
+    MATERIAL_FILE.write_text(
+        yaml.safe_dump(document, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+        newline="",
+    )
     print(f"  [EDIT] {MATERIAL_FILE.name}: pbr_roughness 1.0 -> 0.5")
     if not monitor.wait_for(REIMPORTED_TOKEN, ASSET_TIMEOUT, start_index):
         print(f"  [FAIL] material edit: nothing was reimported within {ASSET_TIMEOUT}s.")

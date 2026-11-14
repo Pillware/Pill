@@ -221,8 +221,8 @@ def run_popouts_and_reloads_steps(state: StepState) -> None:
     # statement of its body, so the probe lands where a statement is legal.
     tab_body = newline.join(
         (
-            "        for (entity, label) in entity_rows(snapshot) {",
-            "            let selected = selection.contains(entity);",
+            "        for entry in &snapshot.entities[visible_rows] {",
+            "            let entity = entry.entity;",
         )
     )
     assert tab_body in state.original_tab_source, "the Entities tab body moved; update the step"
@@ -230,10 +230,10 @@ def run_popouts_and_reloads_steps(state: StepState) -> None:
         tab_body,
         newline.join(
             (
-                "        for (entity, label) in entity_rows(snapshot) {",
+                "        for entry in &snapshot.entities[visible_rows] {",
                 "            // A patch probe: one statement, inside the tab body only.",
                 "            let _hot_body_probe = 0u8;",
-                "            let selected = selection.contains(entity);",
+                "            let entity = entry.entity;",
             )
         ),
         1,

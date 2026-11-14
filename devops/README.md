@@ -98,21 +98,22 @@ A project's UI is the brutalist `Theme` its code default builds, sparsely
 overridden by one `.theme` file under `res`. The document names only what it
 changes:
 
-```json
-{
-  "format_version": 1,
-  "asset_type": "pill_ui_theme::ThemeOverrides",
-  "guid": "000000000000000000000000000000a1",
-  "asset": {
-    "palette": { "accent": "#33d17a" },
-    "text_styles": { "heading": { "size": 24.0 } },
-    "fonts": { "body": "fonts/Silkscreen-Regular.ttf" }
-  }
-}
+```yaml
+format_version: 1
+asset_type: pill_ui_theme::ThemeOverrides
+guid: 000000000000000000000000000000a1
+asset:
+  palette:
+    accent: '#33d17a'
+  text_styles:
+    heading:
+      size: 24.0
+  fonts:
+    body: fonts/Silkscreen-Regular.ttf
 ```
 
 The editor's own look is three layers - its code default, the user's file named
-by the `theme` row in `preferences.json`, and the project's `editor/` layer.
+by the `theme` row in `preferences.yaml`, and the project's `editor/` layer.
 A project configures the last one with `editor_settings.yaml` beside its
 `project_settings.yaml`:
 

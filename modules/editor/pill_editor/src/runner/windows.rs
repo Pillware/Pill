@@ -52,10 +52,8 @@ impl EditorWindow {
         let placement = (origin.x, origin.y, self.size.0, self.size.1);
         if self.overlay_placement != Some(placement) {
             window.set_outer_position(PhysicalPosition::new(origin.x, origin.y));
-            let _ = window.request_inner_size(PhysicalSize::new(
-                placement.2.max(1),
-                placement.3.max(1),
-            ));
+            let _ = window
+                .request_inner_size(PhysicalSize::new(placement.2.max(1), placement.3.max(1)));
             self.overlay_placement = Some(placement);
         }
         // Step 3: hide it with the editor. `set_visible(true)` also raises an
@@ -289,6 +287,7 @@ impl EditorWindow {
         let Some(scene) = &mut self.views[view] else {
             return;
         };
+        scene.body_rect = Some(rect);
         scene.window.place(x, y, width, height, false);
     }
 

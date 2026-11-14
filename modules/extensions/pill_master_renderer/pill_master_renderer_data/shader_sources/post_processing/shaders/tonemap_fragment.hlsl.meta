@@ -1,19 +1,21 @@
-{
-  "format_version": 1,
-  "asset_type": "pill_master_renderer::assets::Shader",
-  "guid": "24e12b2b8b69f414616e6b7b35ed2b2b",
-  "settings": {
-    "vertex": "post_processing/shaders/fullscreen_vertex.wgsl",
-    "parameters": [
-      { "name": "contrast", "type": "Scalar" },
-      { "name": "shoulder", "type": "Scalar" },
-      { "name": "b", "type": "Scalar" },
-      { "name": "c", "type": "Scalar" }
-    ],
-    "textures": [
-      { "name": "hdr", "type": "Color", "texture_binding": 0, "sampler_binding": 1 }
-    ],
-    "engine_parameters": true,
-    "camera_parameters": true
-  }
-}
+format_version: 1
+asset_type: pill_master_renderer::assets::Shader
+guid: 24e12b2b8b69f414616e6b7b35ed2b2b
+settings:
+  vertex: post_processing/shaders/fullscreen_vertex.wgsl
+  parameters:
+  - name: contrast
+    type: Scalar
+  - name: shoulder
+    type: Scalar
+  - name: b
+    type: Scalar
+  - name: c
+    type: Scalar
+  textures:
+  - name: hdr
+    type: Color
+    texture_binding: 0
+    sampler_binding: 1
+  engine_parameters: true
+  camera_parameters: true

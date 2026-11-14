@@ -4,7 +4,7 @@
 //! # Responsibilities
 //!
 //! - [`RecoveryDocument`]: the dock, the selection and the version stamp,
-//!   saved as a JSON document beside the layout file.
+//!   saved as a YAML document beside the layout file.
 //! - [`write`] / [`read`] / [`remove`]: the three operations the editor
 //!   executable calls on that file.
 //!
@@ -36,7 +36,7 @@ pub const RECOVERY_VERSION: u32 = 1;
 
 /// The recovery document's file name, in the same folder as the layout
 /// document.
-pub const RECOVERY_FILE: &str = "editor_egui_recovery.json";
+pub const RECOVERY_FILE: &str = "editor_egui_recovery.yaml";
 
 /// The editor state a run saves as it goes, so the next run can restore it
 /// after an abrupt exit.
@@ -59,8 +59,9 @@ impl RecoveryDocument {
     ///
     /// The dock is settled first (its placeholder rectangles are replaced with
     /// finite ones). A node the frame has not laid out yet holds rectangles
-    /// with non-finite floats, and `serde_json` writes those as `null`, which
-    /// cannot be read back. The layout document is written the same way.
+    /// with non-finite floats, which would be written as YAML's `.nan` and
+    /// read back as a float the layout cannot use. The layout document is
+    /// written the same way.
     pub fn capture(dock: &EditorDock, selection: &EditorSelection) -> Self {
         Self {
             version: RECOVERY_VERSION,
@@ -94,7 +95,7 @@ pub fn recovery_path() -> std::path::PathBuf {
 pub fn write(document: &RecoveryDocument) -> bool {
     let path = recovery_path();
     let write_outcome =
-        crate::editor_files::write_json(&path, document).map_err(|error| error.message());
+        crate::editor_files::write_yaml(&path, document).map_err(|error| error.message());
     match write_outcome {
         Ok(()) => true,
         Err(message) => {
@@ -115,8 +116,8 @@ pub fn write(document: &RecoveryDocument) -> bool {
 /// carries another version, is deleted so the next run does not read it again.
 pub fn read() -> Option<RecoveryDocument> {
     let path = recovery_path();
-    let contents = std::fs::read_to_string(&path).ok()?;
-    match serde_json::from_str::<RecoveryDocument>(&contents) {
+    let bytes = std::fs::read(&path).ok()?;
+    match crate::editor_files::parse_yaml::<RecoveryDocument>(&bytes) {
         Ok(document) if document.is_current() => Some(document),
         Ok(document) => {
             pill_core::info!(

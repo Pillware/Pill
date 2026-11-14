@@ -26,16 +26,15 @@
 //! instead of replacing it, so `helmet.png` and `helmet.obj` get different
 //! metadata files, and a `.meta` file is never an asset itself.
 //!
-//! The file is JSON with a small header the engine owns and the settings the
+//! The file is YAML with a small header the engine owns and the settings the
 //! asset type owns:
 //!
-//! ```json
-//! {
-//!   "format_version": 1,
-//!   "asset_type": "pill_master_renderer::assets::Texture",
-//!   "guid": "9c0e4b7a1f2d3e4c5b6a798812345678",
-//!   "settings": { "texture_type": "Normal" }
-//! }
+//! ```yaml
+//! format_version: 1
+//! asset_type: pill_master_renderer::assets::Texture
+//! guid: 9c0e4b7a1f2d3e4c5b6a798812345678
+//! settings:
+//!   texture_type: Normal
 //! ```
 //!
 //! An asset loaded this way is named by its normalized path relative to `res`
@@ -470,10 +469,9 @@ pub(crate) struct RawHeader {
 pub(crate) fn read_header(
     bytes: &[u8],
 ) -> Result<(RawHeader, serde_json::Map<String, serde_json::Value>), String> {
-    let document: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|error| format!("not valid JSON: {error}"))?;
+    let document = crate::asset_document::parse(bytes)?;
     let serde_json::Value::Object(header) = document else {
-        return Err("not a JSON object".to_owned());
+        return Err("not a YAML mapping".to_owned());
     };
 
     let version = header
@@ -553,13 +551,10 @@ fn render_metadata<T: ImportedAsset>(
         guid,
         settings,
     };
-    let mut bytes =
-        serde_json::to_vec_pretty(&document).map_err(|error| AssetLoadError::Metadata {
-            path: path.to_owned(),
-            detail: format!("the settings cannot be written as JSON: {error}"),
-        })?;
-    bytes.push(b'\n');
-    Ok(bytes)
+    crate::asset_document::render(&document).map_err(|error| AssetLoadError::Metadata {
+        path: path.to_owned(),
+        detail: format!("the settings cannot be written as YAML: {error}"),
+    })
 }
 
 // =============================================================================
@@ -1269,10 +1264,19 @@ mod tests {
         AssetImport::new(path, policy).with_initial_settings(settings(1, "initial"))
     }
 
-    fn metadata_json(guid: &str, settings: &str) -> String {
-        format!(
-            r#"{{"format_version": 1, "asset_type": "pill_engine::asset_metadata::tests::Note", "guid": "{guid}", "settings": {settings}}}"#
-        )
+    /// One metadata file's YAML text: the shared header around the JSON-shaped
+    /// `settings` fragment the tests pass.
+    fn metadata_yaml(guid: &str, settings: &str) -> String {
+        let settings: serde_json::Value =
+            serde_json::from_str(settings).expect("the test fragment is JSON");
+        let document = serde_json::json!({
+            "format_version": 1,
+            "asset_type": "pill_engine::asset_metadata::tests::Note",
+            "guid": guid,
+            "settings": settings,
+        });
+        let bytes = crate::asset_document::render(&document).expect("the document renders");
+        String::from_utf8(bytes).expect("the document is UTF-8")
     }
 
     const GUID_A: &str = "0000000000000000000000000000000a";
@@ -1350,7 +1354,7 @@ mod tests {
         res.write("a.note", "hello");
         res.write(
             "a.note.meta",
-            &metadata_json(GUID_A, r#"{"volume": 3, "label": "file"}"#),
+            &metadata_yaml(GUID_A, r#"{"volume": 3, "label": "file"}"#),
         );
         let mut assets = AssetManager::new();
 
@@ -1372,7 +1376,7 @@ mod tests {
         res.write("a.note", "hello");
         res.write(
             "a.note.meta",
-            &metadata_json(GUID_A, r#"{"label": "file", "added_later": true}"#),
+            &metadata_yaml(GUID_A, r#"{"label": "file", "added_later": true}"#),
         );
         let mut assets = AssetManager::new();
 
@@ -1466,14 +1470,14 @@ mod tests {
     fn packed_metadata_is_read_before_the_filesystem() {
         let res = ScratchRes::new("packed-metadata");
         let key = "pill-meta-test/packed-metadata/a.note";
-        let packed = metadata_json(GUID_A, r#"{"volume": 2, "label": "packed"}"#);
+        let packed = metadata_yaml(GUID_A, r#"{"volume": 2, "label": "packed"}"#);
         mount_pack(
             AssetPack::parse(pack_of(&[(&format!("{key}.meta"), packed.as_bytes())])).unwrap(),
         );
         res.write(key, "hello");
         res.write(
             &format!("{key}.meta"),
-            &metadata_json(GUID_B, r#"{"volume": 9, "label": "on disk"}"#),
+            &metadata_yaml(GUID_B, r#"{"volume": 9, "label": "on disk"}"#),
         );
         let mut assets = AssetManager::new();
 
@@ -1492,7 +1496,7 @@ mod tests {
     fn the_asset_is_named_by_its_normalized_path_and_keyed_by_its_guid() {
         let res = ScratchRes::new("identity");
         res.write("notes/a.note", "hello");
-        res.write("notes/a.note.meta", &metadata_json(GUID_A, "{}"));
+        res.write("notes/a.note.meta", &metadata_yaml(GUID_A, "{}"));
         let mut assets = AssetManager::new();
 
         let outcome = assets
@@ -1625,9 +1629,9 @@ mod tests {
     fn a_copied_metadata_file_is_a_duplicate_guid() {
         let res = ScratchRes::new("duplicate");
         res.write("a.note", "a");
-        res.write("a.note.meta", &metadata_json(GUID_A, "{}"));
+        res.write("a.note.meta", &metadata_yaml(GUID_A, "{}"));
         res.write("copy.note", "a");
-        res.write("copy.note.meta", &metadata_json(GUID_A, "{}"));
+        res.write("copy.note.meta", &metadata_yaml(GUID_A, "{}"));
         let mut assets = AssetManager::new();
         let original = assets
             .import(request("a.note", MetadataPolicy::ReadIfPresent))
@@ -1649,12 +1653,12 @@ mod tests {
     fn a_metadata_guid_edited_while_loaded_is_a_conflict() {
         let res = ScratchRes::new("edited-guid");
         res.write("a.note", "hello");
-        res.write("a.note.meta", &metadata_json(GUID_A, "{}"));
+        res.write("a.note.meta", &metadata_yaml(GUID_A, "{}"));
         let mut assets = AssetManager::new();
         assets
             .import(request("a.note", MetadataPolicy::ReadIfPresent))
             .unwrap();
-        res.write("a.note.meta", &metadata_json(GUID_B, "{}"));
+        res.write("a.note.meta", &metadata_yaml(GUID_B, "{}"));
 
         let result = assets.import(request("a.note", MetadataPolicy::ReadIfPresent));
 
@@ -1729,14 +1733,14 @@ mod tests {
     fn reimport_replaces_the_value_in_its_slot() {
         let res = ScratchRes::new("reimport-in-place");
         res.write("a.note", "hello");
-        res.write("a.note.meta", &metadata_json(GUID_A, r#"{"volume": 2}"#));
+        res.write("a.note.meta", &metadata_yaml(GUID_A, r#"{"volume": 2}"#));
         let mut assets = AssetManager::new();
         let first = assets
             .import(request("a.note", MetadataPolicy::ReadIfPresent))
             .unwrap();
         let version_before = assets.content_version(first.handle).unwrap();
 
-        res.write("a.note.meta", &metadata_json(GUID_A, r#"{"volume": 9}"#));
+        res.write("a.note.meta", &metadata_yaml(GUID_A, r#"{"volume": 9}"#));
         let outcome = assets.reimport::<Note>(Path::new("a.note")).unwrap();
 
         assert!(outcome.replaced);
@@ -1778,13 +1782,13 @@ mod tests {
     fn reimport_refuses_a_changed_guid() {
         let res = ScratchRes::new("reimport-guid");
         res.write("a.note", "hello");
-        res.write("a.note.meta", &metadata_json(GUID_A, "{}"));
+        res.write("a.note.meta", &metadata_yaml(GUID_A, "{}"));
         let mut assets = AssetManager::new();
         let first = assets
             .import(request("a.note", MetadataPolicy::ReadIfPresent))
             .unwrap();
 
-        res.write("a.note.meta", &metadata_json(GUID_B, "{}"));
+        res.write("a.note.meta", &metadata_yaml(GUID_B, "{}"));
         let error = assets.reimport::<Note>(Path::new("a.note")).unwrap_err();
 
         assert!(matches!(
@@ -1820,7 +1824,7 @@ mod tests {
         let res = ScratchRes::new("ensure");
         res.write("a.note", "hello");
         res.write("b.note", "hello");
-        res.write("b.note.meta", &metadata_json(GUID_A, r#"{"volume": 9}"#));
+        res.write("b.note.meta", &metadata_yaml(GUID_A, r#"{"volume": 9}"#));
         let assets = AssetManager::new();
         let decode_count_before = decode_count();
 
@@ -1830,10 +1834,7 @@ mod tests {
         let guid = written.expect("a.note had no metadata");
         let file = res.read("a.note.meta").unwrap();
         assert!(file.contains(&guid.to_string()), "{file}");
-        assert!(
-            file.contains("\"volume\": 7"),
-            "the type's defaults: {file}"
-        );
+        assert!(file.contains("volume: 7"), "the type's defaults: {file}");
         assert_eq!(kept, None);
         assert!(res.read("b.note.meta").unwrap().contains(GUID_A));
         assert_eq!(decode_count(), decode_count_before, "nothing was decoded");
@@ -1877,7 +1878,7 @@ mod tests {
         assert_eq!(written, loaded.guid);
         let file = res.read("a.note.meta").expect("the sidecar was written");
         assert!(
-            file.contains("\"volume\": 1") && file.contains("\"initial\""),
+            file.contains("volume: 1") && file.contains("initial"),
             "the settings the asset was loaded with: {file}"
         );
         let mut next = AssetManager::new();
@@ -1962,7 +1963,7 @@ mod tests {
         res.write("a.note", "hello");
         res.write("b.note", "hello");
         res.write("c.note", "hello");
-        res.write("c.note.meta", &metadata_json(GUID_B, "{}"));
+        res.write("c.note.meta", &metadata_yaml(GUID_B, "{}"));
         let mut assets = AssetManager::new();
         assets
             .import(request("a.note", MetadataPolicy::CreateIfMissing))
@@ -2009,7 +2010,7 @@ mod tests {
         let res = ScratchRes::new("settings-json");
         res.write("a.note", "hello");
         res.write("b.note", "hello");
-        res.write("a.note.meta", &metadata_json(GUID_A, r#"{"volume": 3}"#));
+        res.write("a.note.meta", &metadata_yaml(GUID_A, r#"{"volume": 3}"#));
 
         let from_file = settings_json_for::<Note>(Path::new("a.note")).unwrap();
         let defaults = settings_json_for::<Note>(Path::new("b.note")).unwrap();

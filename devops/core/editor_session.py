@@ -35,7 +35,6 @@ USAGE
 """
 
 import codecs
-import json
 import os
 import re
 import subprocess
@@ -43,6 +42,8 @@ import sys
 import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, TypeVar
+
+import yaml
 
 from core.editor_log_tokens import (  # noqa: F401 - re-exported for the suites
     EDITOR_SCRIPTED_REJECTED_TOKEN,
@@ -220,18 +221,20 @@ class EditorSession:
         """
         return self.sandbox / "RustHybridEcs"
 
-    def write_state_json(self, name: str, document: Dict) -> Path:
+    def write_state_yaml(self, name: str, document: Dict) -> Path:
         """Writes one of the editor's live-read state files, in one format.
 
         The layout, the preferences and the keybindings all sit in
-        `editor_state_directory`, and every one is written the same way: two
-        spaces of indentation and a trailing newline, so a suite's file reads
-        like the editor's own and a byte comparison in a guard stays stable.
+        `editor_state_directory`, and every one is written the same way: YAML
+        in the editor's own dialect, keys sorted as the engine's own writer
+        sorts them, and one trailing newline, so a suite's file reads like the
+        editor's own and a byte comparison in a guard stays stable.
         Returns the path it wrote, for a suite that wants to read it back.
         """
         path = self.editor_state_directory / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        text = yaml.safe_dump(document, sort_keys=True, default_flow_style=False, width=1000)
+        path.write_text(text, encoding="utf-8", newline="")
         return path
 
     def write_keybindings(self, document: Dict) -> None:
@@ -242,7 +245,7 @@ class EditorSession:
         result. The document is the `KeybindingsFile` shape: an optional
         `preset` and `overrides` mapping a command id to its chord list.
         """
-        self.write_state_json("keybindings.json", document)
+        self.write_state_yaml("keybindings.yaml", document)
 
     def write_preferences(self, document: Dict) -> None:
         """Writes the preferences file the editor watches.
@@ -251,7 +254,7 @@ class EditorSession:
         in the document for the Preferences tab. A suite uses this to point
         `code_editor_command` at a stub before clicking a Problems row.
         """
-        self.write_state_json("preferences.json", document)
+        self.write_state_yaml("preferences.yaml", document)
 
     @property
     def stub_editor_record(self) -> Path:
@@ -728,9 +731,9 @@ class EditorSession:
     # Sandbox files and edited sources
     # -------------------------------------------------------------------------
 
-    def write_appdata_json(self, name: str, body: dict) -> Path:
+    def write_appdata_yaml(self, name: str, body: dict) -> Path:
         """Writes one of the editor's live-read files, through the one path."""
-        return self.write_state_json(name, body)
+        return self.write_state_yaml(name, body)
 
     def edit_source(self, path: Path, text: str) -> None:
         """Writes `text` over a source file, LF preserved, restored on close.

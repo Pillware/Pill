@@ -5,7 +5,8 @@ from `editor_step_support`, the log vocabulary from `editor_log_tokens`.
 """
 
 import re
-import json
+
+import yaml
 
 from core import log_layout
 from core.editor_log_tokens import (
@@ -486,7 +487,7 @@ def run_assets_browser_and_pipeline_steps(state: StepState) -> None:
     )
     wait_applied(session, applied_before, "pipeline create applied")
     wait_for_path(session, pipeline_path, True, 30, "the pipeline was created")
-    document = json.loads(pipeline_path.read_text(encoding="utf-8"))
+    document = yaml.safe_load(pipeline_path.read_text(encoding="utf-8"))
     assert (
         document["asset_type"]
         == "pill_master_renderer::assets::RenderingPipeline"
@@ -562,7 +563,7 @@ def run_assets_browser_and_pipeline_steps(state: StepState) -> None:
         "the cube row selected",
         begin,
     )
-    flip_before = json.loads(cube_meta.read_text(encoding="utf-8"))["settings"]["flip_v"]
+    flip_before = yaml.safe_load(cube_meta.read_text(encoding="utf-8"))["settings"]["flip_v"]
     begin = session.length()
     applied_before = occurrence_count(session, re.escape(ENGINE_COMMANDS_APPLIED_TOKEN))
     session.send(

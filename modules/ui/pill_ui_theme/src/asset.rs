@@ -129,8 +129,8 @@ mod tests {
     #[test]
     fn a_theme_file_round_trips_through_the_asset_store() {
         let scratch_directory = ScratchAssetDirectory::new("round-trip");
-        let document = ThemeOverrides::from_json_str(
-            r##"{"palette": {"accent": "#33d17a"}, "fonts": {"body": "fonts/body.ttf"}}"##,
+        let document = ThemeOverrides::from_yaml_str(
+            "palette:\n  accent: \"#33d17a\"\nfonts:\n  body: fonts/body.ttf\n",
         )
         .unwrap();
         let bytes = render_standalone::<ThemeOverrides>(

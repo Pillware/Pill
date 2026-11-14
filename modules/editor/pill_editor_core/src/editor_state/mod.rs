@@ -1226,7 +1226,7 @@ fn asset_slash(path: &Path) -> String {
 /// Returns the guid a standalone asset's own header holds, when its bytes are a
 /// document and the guid parses.
 fn document_guid(bytes: &[u8]) -> Option<pill_engine::AssetGuid> {
-    let document: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let document = pill_engine::asset_document::parse(bytes).ok()?;
     pill_engine::AssetGuid::parse(document.get("guid")?.as_str()?)
 }
 
@@ -2142,13 +2142,16 @@ mod tests {
 
     /// One `.meta` sidecar's text: the header naming `asset_type` and `guid`.
     fn sidecar(asset_type: &str, guid: &str) -> String {
-        serde_json::json!({
+        let document = serde_json::json!({
             "format_version": 1,
             "asset_type": asset_type,
             "guid": guid,
             "settings": {},
-        })
-        .to_string()
+        });
+        String::from_utf8(
+            pill_engine::asset_document::render(&document).expect("the sidecar renders"),
+        )
+        .expect("the sidecar is UTF-8")
     }
 
     /// Builds an engine with both test asset types registered and a mounted
@@ -2987,7 +2990,14 @@ mod tests {
         let mut engine = Engine::new();
         engine.world_mut().register_standalone_asset::<Refused>();
         let path = root.join("kept.refused");
-        let previous_bytes = b"{\"format_version\": 1, \"asset_type\": \"pill_editor_core::tests::Refused\", \"guid\": \"000000000000000000000000000000e1\", \"asset\": {}}".to_vec();
+        let previous_document = serde_json::json!({
+            "format_version": 1,
+            "asset_type": "pill_editor_core::tests::Refused",
+            "guid": "000000000000000000000000000000e1",
+            "asset": {},
+        });
+        let previous_bytes =
+            pill_engine::asset_document::render(&previous_document).expect("the document renders");
         std::fs::write(&path, &previous_bytes).unwrap();
 
         let failures = EditorCommand::apply(
@@ -3012,12 +3022,12 @@ mod tests {
     /// A theme overrides document with `guid` in its header, which is what a
     /// standalone asset's own file holds.
     fn theme_document(guid: pill_engine::AssetGuid) -> Vec<u8> {
-        serde_json::to_vec(&serde_json::json!({
+        let document = serde_json::json!({
             "format_version": pill_engine::asset_metadata::METADATA_FORMAT_VERSION,
             "asset_type": "pill_ui_theme::ThemeOverrides",
             "guid": guid.to_string(),
             "asset": {},
-        }))
-        .unwrap()
+        });
+        pill_engine::asset_document::render(&document).expect("the document renders")
     }
 }

@@ -192,11 +192,13 @@ impl EditorTab {
 
 impl<'de> Deserialize<'de> for EditorTab {
     /// Reads a tab from the saved layout: either the form this build writes
-    /// (`{"Scene": 2}`, `"Game"`) or a bare name an older document holds
-    /// (`"Scene"`, `"SecondScene"`). A bare name reads as a tab without an
+    /// (`{Scene: 2}`, `Game`) or a bare name an older document holds
+    /// (`Scene`, `SecondScene`). A bare name reads as a tab without an
     /// index, so an older document keeps its layout.
     ///
-    /// The layout file is JSON, and nothing else reads a tab document.
+    /// The value is read through the shared value tree, not through this
+    /// format's own type, so the same rule serves the YAML file and the tests
+    /// that drive the impl directly.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -473,9 +475,9 @@ impl EditorDock {
     /// Returns a copy with placeholder geometry replaced by finite values.
     ///
     /// A fresh dock's nodes start with `Rect::NOTHING` (`±INF`) until the
-    /// first `DockArea::show` lays them out; serde_json writes non-finite
-    /// floats as `null`, which cannot be read back. The values are
-    /// recomputed on the next show, so a zero placeholder is safe.
+    /// first `DockArea::show` lays them out, and a non-finite coordinate is
+    /// not a value a saved document reads back. The values are recomputed on
+    /// the next show, so a zero placeholder is safe.
     pub(crate) fn settled(&self) -> Self {
         let mut dock = self.clone();
         for (_surface, node) in dock.state.iter_all_nodes_mut() {

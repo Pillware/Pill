@@ -4,7 +4,7 @@
 //!
 //! - [`ThemeOverrides`]: every token a document may change, each one optional,
 //!   so a file states only what it differs from the base theme.
-//! - [`ThemeOverrides::from_json_str`]: accepts a bare override body or a
+//! - [`ThemeOverrides::from_yaml_str`]: accepts a bare override body or a
 //!   complete standalone asset document (the body under `asset`).
 //! - The nested override types the merge reads.
 //!
@@ -57,26 +57,26 @@ pub struct ThemeOverrides {
 }
 
 impl ThemeOverrides {
-    /// Reads an override document from its JSON text.
+    /// Reads an override document from its YAML text.
     ///
     /// The text is either the override body itself or a standalone asset file,
     /// which carries its body under `asset`. Both give the same value.
     ///
     /// # Errors
     ///
-    /// [`ThemeError::Json`] with serde's message when the text is not JSON,
-    /// does not hold an object, or names an unknown or wrongly typed item.
-    pub fn from_json_str(json_text: &str) -> Result<Self, ThemeError> {
-        let parsed_json: serde_json::Value =
-            serde_json::from_str(json_text).map_err(|error| ThemeError::Json(error.to_string()))?;
-        let body = match parsed_json {
+    /// [`ThemeError::Format`] with serde's message when the text is not YAML,
+    /// does not hold a mapping, or names an unknown or wrongly typed item.
+    pub fn from_yaml_str(yaml_text: &str) -> Result<Self, ThemeError> {
+        let parsed_document = pill_engine_core::asset_document::parse(yaml_text.as_bytes())
+            .map_err(ThemeError::Format)?;
+        let body = match parsed_document {
             serde_json::Value::Object(mut map) => match map.remove("asset") {
                 Some(asset) => asset,
                 None => serde_json::Value::Object(map),
             },
             other => other,
         };
-        serde_json::from_value(body).map_err(|error| ThemeError::Json(error.to_string()))
+        serde_json::from_value(body).map_err(|error| ThemeError::Format(error.to_string()))
     }
 }
 
@@ -314,17 +314,12 @@ mod tests {
 
     #[test]
     fn a_bare_body_and_a_standalone_document_parse_equal() {
-        let bare = ThemeOverrides::from_json_str(
-            r##"{"palette": {"accent": "#33d17a"}, "spacing": {"indent": 20.0}}"##,
+        let bare = ThemeOverrides::from_yaml_str(
+            "palette:\n  accent: \"#33d17a\"\nspacing:\n  indent: 20.0\n",
         )
         .unwrap();
-        let standalone = ThemeOverrides::from_json_str(
-            r##"{
-                "format_version": 1,
-                "asset_type": "pill_ui_theme::ThemeOverrides",
-                "guid": "00000000000000000000000000000001",
-                "asset": {"palette": {"accent": "#33d17a"}, "spacing": {"indent": 20.0}}
-            }"##,
+        let standalone = ThemeOverrides::from_yaml_str(
+            "format_version: 1\nasset_type: pill_ui_theme::ThemeOverrides\nguid: \"00000000000000000000000000000001\"\nasset:\n  palette:\n    accent: \"#33d17a\"\n  spacing:\n    indent: 20.0\n",
         )
         .unwrap();
         assert_eq!(bare, standalone);
@@ -332,7 +327,7 @@ mod tests {
 
     #[test]
     fn an_unknown_item_is_refused_by_name() {
-        let error = ThemeOverrides::from_json_str(r##"{"palette": {"acccent": "#ffffff"}}"##)
+        let error = ThemeOverrides::from_yaml_str("palette:\n  acccent: \"#ffffff\"\n")
             .unwrap_err()
             .to_string();
         assert!(error.contains("acccent"), "{error}");
@@ -341,7 +336,7 @@ mod tests {
     #[test]
     fn an_empty_document_is_the_default() {
         assert_eq!(
-            ThemeOverrides::from_json_str("{}").unwrap(),
+            ThemeOverrides::from_yaml_str("{}").unwrap(),
             ThemeOverrides::default()
         );
     }

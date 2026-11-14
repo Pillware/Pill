@@ -10,7 +10,8 @@
 //!   rules match a sourced asset's: the asset is named by its path and keyed
 //!   by the guid in its file.
 //! - Write a new standalone file ([`render_standalone`]), and read or
-//!   normalize its document as JSON for code that does not know its type.
+//!   normalize its document as a plain value for code that does not know its
+//!   type.
 //!
 //! A new standalone file's name is checked by
 //! [`crate::asset_metadata::standalone_file_name`], so every editor's create
@@ -23,13 +24,15 @@
 //! format version, asset type, guid - and holds the asset under `asset`,
 //! where a metadata file holds `settings`:
 //!
-//! ```json
-//! {
-//!   "format_version": 1,
-//!   "asset_type": "pill_master_renderer::assets::Material",
-//!   "guid": "5d1f0e2b9a8c4d3e7f6a5b4c3d2e1f00",
-//!   "asset": { "shader": "...", "parameters": { "pbr_roughness": { "Scalar": 1.0 } } }
-//! }
+//! ```yaml
+//! format_version: 1
+//! asset_type: pill_master_renderer::assets::Material
+//! guid: 5d1f0e2b9a8c4d3e7f6a5b4c3d2e1f00
+//! asset:
+//!   shader: materials/pill.pbr.hlsl
+//!   parameters:
+//!     pbr_roughness:
+//!       Scalar: 1.0
 //! ```
 //!
 //! The guid lives in the file's own header, so a standalone file needs no
@@ -71,7 +74,7 @@ pub const STANDALONE_BODY_FIELD: &str = "asset";
 // StandaloneAsset
 // =============================================================================
 
-/// An asset stored as its own JSON file in `res`, with no source file.
+/// An asset stored as its own YAML file in `res`, with no source file.
 ///
 /// Implemented by the crate that owns the type, and registered with
 /// [`World::register_standalone_asset`](crate::World::register_standalone_asset)
@@ -262,24 +265,21 @@ impl AssetManager {
 /// # Errors
 ///
 /// Returns [`AssetLoadError::Metadata`] when the document cannot be written as
-/// JSON.
+/// YAML.
 pub fn render_standalone<T: StandaloneAsset>(
     guid: AssetGuid,
     document: &T::Document,
 ) -> AssetLoadResult<Vec<u8>> {
-    let document_json = serde_json::json!({
+    let document_value = serde_json::json!({
         "format_version": METADATA_FORMAT_VERSION,
         "asset_type": T::metadata_type_name(),
         "guid": guid,
         STANDALONE_BODY_FIELD: document,
     });
-    let mut bytes =
-        serde_json::to_vec_pretty(&document_json).map_err(|error| AssetLoadError::Metadata {
-            path: T::metadata_type_name().into(),
-            detail: format!("the document cannot be written as JSON: {error}"),
-        })?;
-    bytes.push(b'\n');
-    Ok(bytes)
+    crate::asset_document::render(&document_value).map_err(|error| AssetLoadError::Metadata {
+        path: T::metadata_type_name().into(),
+        detail: format!("the document cannot be written as YAML: {error}"),
+    })
 }
 
 /// Returns the guid and document of the standalone file at the normalized
@@ -464,19 +464,21 @@ mod tests {
             }
         }
 
-        /// Writes a swatch file at `relative_path` with `guid` and the JSON
-        /// `body` under the asset header.
+        /// Writes a swatch file at `relative_path` with `guid` and the
+        /// JSON-shaped `body` under the asset header, rendered as YAML.
         fn write_swatch(&self, relative_path: &str, guid: &str, body: &str) {
             let path = self.root.join(relative_path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(
-                path,
-                format!(
-                    r#"{{"format_version": 1, "asset_type": "{}", "guid": "{guid}", "asset": {body}}}"#,
-                    Swatch::metadata_type_name()
-                ),
-            )
-            .unwrap();
+            let body: serde_json::Value =
+                serde_json::from_str(body).expect("the test body is JSON");
+            let document = serde_json::json!({
+                "format_version": 1,
+                "asset_type": Swatch::metadata_type_name(),
+                "guid": guid,
+                "asset": body,
+            });
+            let bytes = crate::asset_document::render(&document).expect("the document renders");
+            std::fs::write(path, bytes).unwrap();
         }
     }
 

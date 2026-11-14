@@ -47,7 +47,7 @@ EXAMPLE USAGE
 """
 
 import argparse
-import json
+import yaml
 import os
 import re
 import subprocess
@@ -125,10 +125,12 @@ def wait_for_apply(monitor: OutputMonitor, start_index: int, predicate, label: s
 
 def write_accent(accent: str) -> None:
     """Rewrites the override's palette accent, keeping the document's header."""
-    document = json.loads(THEME_FILE.read_text(encoding="utf-8"))
+    document = yaml.safe_load(THEME_FILE.read_text(encoding="utf-8"))
     document["asset"]["palette"]["accent"] = accent
     THEME_FILE.write_text(
-        json.dumps(document, indent=2) + "\n", encoding="utf-8", newline=""
+        yaml.safe_dump(document, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+        newline="",
     )
 
 

@@ -35,7 +35,7 @@ use super::*;
 /// - the engine has no asset directory, no registered asset type, no
 ///   `AssetManager`, or no random source for a new guid;
 /// - a written asset does not load, or the file the new settings go into is
-///   not a JSON object.
+///   not a YAML mapping.
 ///
 /// A rollback that cannot finish adds the files it left on disk to the
 /// message.
@@ -231,9 +231,8 @@ pub(super) fn apply(
                 "guid": guid.to_string(),
                 "asset": document,
             });
-            let mut bytes = serde_json::to_vec_pretty(&file_document)
+            let bytes = pill_engine::asset_document::render(&file_document)
                 .map_err(|error| format!("{command:?}: {error}"))?;
-            bytes.push(b'\n');
             let sidecar = pill_engine::asset_metadata::metadata_path_for(&relative);
             let sidecar_existed = sidecar
                 .as_ref()
@@ -432,9 +431,9 @@ pub(super) fn apply(
                 // changes and nothing is recorded. A sidecar left empty or
                 // unreadable by an interrupted write counts as missing and is
                 // replaced; the undo removes the replacement.
-                let carries_guid = std::fs::read_to_string(&meta_path)
+                let carries_guid = std::fs::read(&meta_path)
                     .ok()
-                    .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                    .and_then(|bytes| pill_engine::asset_document::parse(&bytes).ok())
                     .and_then(|document| {
                         document
                             .get("guid")
@@ -516,28 +515,23 @@ pub(super) fn apply(
                 }
                 settings_file
             };
-            let text = std::fs::read_to_string(&settings_file).map_err(|error| {
+            let file_bytes = std::fs::read(&settings_file).map_err(|error| {
                 format!(
                     "{command:?}: cannot read `{}`: {error}",
                     settings_file.display()
                 )
             })?;
-            let mut document: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
-                format!(
-                    "{command:?}: `{}` is not valid JSON: {error}",
-                    settings_file.display()
-                )
-            })?;
+            let mut document = pill_engine::asset_document::parse(&file_bytes)
+                .map_err(|error| format!("{command:?}: `{}`: {error}", settings_file.display()))?;
             let document_object = document.as_object_mut().ok_or_else(|| {
                 format!(
-                    "{command:?}: `{}` is not a JSON object",
+                    "{command:?}: `{}` is not a YAML mapping",
                     settings_file.display()
                 )
             })?;
             document_object.insert(body_field.to_owned(), normalized_settings);
-            let mut bytes = serde_json::to_vec_pretty(&document)
+            let bytes = pill_engine::asset_document::render(&document)
                 .map_err(|error| format!("{command:?}: {error}"))?;
-            bytes.push(b'\n');
             write_asset_bytes(&settings_file, &bytes)
                 .map_err(|message| format!("{command:?}: {message}"))?;
             Ok(CommandOutcome::inverse(EditorCommand::SetAssetSettings {

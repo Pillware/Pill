@@ -332,10 +332,11 @@ mod tests {
                 .join(DEFAULT_MATERIAL_PATH),
         )
         .expect("the shipped file is in the crate);");
-        let file_json: serde_json::Value =
-            serde_json::from_str(&source).expect("the shipped file parses");
-        let file_document: MaterialDocument = serde_json::from_value(file_json["asset"].clone())
-            .expect("the shipped file carries a document");
+        let file_document =
+            pill_engine::asset_document::parse(source.as_bytes()).expect("the shipped file parses");
+        let file_document: MaterialDocument =
+            serde_json::from_value(file_document["asset"].clone())
+                .expect("the shipped file carries a document");
         let mut assets = AssetManager::new();
         crate::declare_crate_roots();
         install(&mut assets).expect("a free name");
@@ -402,7 +403,8 @@ mod tests {
                 .join(format!("{SHADER_PATH}.meta")),
         )
         .expect("the shipped meta is in the crate");
-        let file_json: serde_json::Value = serde_json::from_str(&source).expect("the meta parses");
+        let file_json =
+            pill_engine::asset_document::parse(source.as_bytes()).expect("the meta parses");
         assert_eq!(
             file_json["guid"].as_str(),
             Some(SHADER_GUID.to_string().as_str()),

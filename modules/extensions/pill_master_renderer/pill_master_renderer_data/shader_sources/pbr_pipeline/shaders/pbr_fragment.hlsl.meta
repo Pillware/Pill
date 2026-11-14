@@ -1,22 +1,33 @@
-{
-  "format_version": 1,
-  "asset_type": "pill_master_renderer::assets::Shader",
-  "guid": "8cedb4197c9f26a86708b1cd14399eab",
-  "settings": {
-    "vertex": "common_shaders/default_vertex.wgsl",
-    "parameters": [
-      { "name": "pbr_base", "type": "Color" },
-      { "name": "pbr_roughness", "type": "Scalar" },
-      { "name": "pbr_metallic", "type": "Scalar" },
-      { "name": "pbr_emissive", "type": "Color" }
-    ],
-    "textures": [
-      { "name": "base_color", "type": "Color", "texture_binding": 0, "sampler_binding": 1 },
-      { "name": "normal", "type": "Normal", "texture_binding": 2, "sampler_binding": 3 },
-      { "name": "metallic_roughness", "type": "Color", "texture_binding": 4, "sampler_binding": 5 },
-      { "name": "emissive", "type": "Color", "texture_binding": 6, "sampler_binding": 7 }
-    ],
-    "engine_parameters": true,
-    "camera_parameters": true
-  }
-}
+format_version: 1
+asset_type: pill_master_renderer::assets::Shader
+guid: 8cedb4197c9f26a86708b1cd14399eab
+settings:
+  vertex: common_shaders/default_vertex.wgsl
+  parameters:
+  - name: pbr_base
+    type: Color
+  - name: pbr_roughness
+    type: Scalar
+  - name: pbr_metallic
+    type: Scalar
+  - name: pbr_emissive
+    type: Color
+  textures:
+  - name: base_color
+    type: Color
+    texture_binding: 0
+    sampler_binding: 1
+  - name: normal
+    type: Normal
+    texture_binding: 2
+    sampler_binding: 3
+  - name: metallic_roughness
+    type: Color
+    texture_binding: 4
+    sampler_binding: 5
+  - name: emissive
+    type: Color
+    texture_binding: 6
+    sampler_binding: 7
+  engine_parameters: true
+  camera_parameters: true

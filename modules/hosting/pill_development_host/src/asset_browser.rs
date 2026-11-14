@@ -245,11 +245,11 @@ fn visit(
     }
 }
 
-/// Returns the `guid` field of the JSON asset header stored in `path`, if the
-/// file has one.
+/// Returns the `guid` field of the asset header stored in `path`, if the file
+/// has one.
 fn read_guid(path: &Path) -> Option<String> {
-    let file_text = std::fs::read_to_string(path).ok()?;
-    let header_document: serde_json::Value = serde_json::from_str(&file_text).ok()?;
+    let bytes = std::fs::read(path).ok()?;
+    let header_document = pill_engine::asset_document::parse(&bytes).ok()?;
     header_document.get("guid")?.as_str().map(str::to_owned)
 }
 
@@ -345,17 +345,16 @@ pub fn save_asset_settings(
 
     // Step 4: Replace only the body field and keep the rest of the header. The
     // result is put in place atomically.
-    let file_contents = std::fs::read_to_string(&settings_file)
+    let file_bytes = std::fs::read(&settings_file)
         .map_err(|error| format!("cannot read `{}`: {error}", settings_file.display()))?;
-    let mut settings_document: serde_json::Value = serde_json::from_str(&file_contents)
-        .map_err(|error| format!("`{}` is not valid JSON: {error}", settings_file.display()))?;
+    let mut settings_document = pill_engine::asset_document::parse(&file_bytes)
+        .map_err(|error| format!("`{}`: {error}", settings_file.display()))?;
     let settings_object = settings_document
         .as_object_mut()
-        .ok_or_else(|| format!("`{}` is not a JSON object", settings_file.display()))?;
+        .ok_or_else(|| format!("`{}` is not a YAML mapping", settings_file.display()))?;
     settings_object.insert(body_field.to_owned(), normalized.clone());
-    let mut bytes =
-        serde_json::to_vec_pretty(&settings_document).map_err(|error| error.to_string())?;
-    bytes.push(b'\n');
+    let bytes = pill_engine::asset_document::render(&settings_document)
+        .map_err(|error| error.to_string())?;
     replace_atomically(&settings_file, &bytes)?;
     Ok(normalized)
 }
@@ -500,9 +499,8 @@ pub fn create_standalone_asset(
         "guid": guid,
         "asset": document,
     });
-    let mut bytes =
-        serde_json::to_vec_pretty(&asset_document).map_err(|error| error.to_string())?;
-    bytes.push(b'\n');
+    let bytes =
+        pill_engine::asset_document::render(&asset_document).map_err(|error| error.to_string())?;
     pill_engine::asset_store::write_new(&destination, &bytes).map_err(|error| error.to_string())?;
 
     // Step 4: Import the finished file, so the caller holds a loaded asset
@@ -763,9 +761,10 @@ mod tests {
             second, "idea.note",
             "an extension the user typed is not doubled"
         );
-        let file_document: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(root.join("notes/todo.note")).unwrap())
-                .unwrap();
+        let file_document = pill_engine::asset_document::parse(
+            &std::fs::read(root.join("notes/todo.note")).unwrap(),
+        )
+        .expect("the file is YAML");
         assert_eq!(file_document["format_version"], METADATA_FORMAT_VERSION);
         assert_eq!(file_document["asset_type"], Note::metadata_type_name());
         assert_eq!(
@@ -774,9 +773,9 @@ mod tests {
         );
         let guid = file_document["guid"].as_str().unwrap();
         assert!(AssetGuid::parse(guid).is_some());
-        let idea_document: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(root.join("idea.note")).unwrap())
-                .unwrap();
+        let idea_document =
+            pill_engine::asset_document::parse(&std::fs::read(root.join("idea.note")).unwrap())
+                .expect("the file is YAML");
         assert_ne!(
             idea_document["guid"], file_document["guid"],
             "every file gets its own guid"
@@ -893,9 +892,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(saved_settings, serde_json::json!({"bright": true}));
-        let meta_document: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(root.join("a.swatch.meta")).unwrap())
-                .unwrap();
+        let meta_document =
+            pill_engine::asset_document::parse(&std::fs::read(root.join("a.swatch.meta")).unwrap())
+                .expect("the sidecar is YAML");
         assert_eq!(
             meta_document["settings"],
             serde_json::json!({"bright": true})
@@ -920,9 +919,9 @@ mod tests {
 
         // A second save replaces the settings in place and keeps the guid.
         save_asset_settings(&mut world, &root, "a.swatch", serde_json::json!({})).unwrap();
-        let meta_document: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(root.join("a.swatch.meta")).unwrap())
-                .unwrap();
+        let meta_document =
+            pill_engine::asset_document::parse(&std::fs::read(root.join("a.swatch.meta")).unwrap())
+                .expect("the sidecar is YAML");
         assert_eq!(
             meta_document["settings"],
             serde_json::json!({"bright": false})

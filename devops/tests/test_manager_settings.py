@@ -79,15 +79,15 @@ RES_DIRECTORY = PROJECT_ROOT / "res"
 SETTINGS_DIRECTORY = RES_DIRECTORY / "settings"
 SETTINGS_FILE = SETTINGS_DIRECTORY / "fixture_manager.fixture_settings"
 
-# The declared default document, as the test project's document spells it in JSON.
-DEFAULT_ENABLED = '"enabled": true'
-DEFAULT_GAIN = '"gain": 1.0'
+# The declared default document, as the test project's document spells it in YAML.
+DEFAULT_ENABLED = "enabled: true"
+DEFAULT_GAIN = "gain: 1.0"
 
 # The edit scenario 2 writes and scenario 3 expects to survive a reload.
-EDITED_GAIN = '"gain": 4.5'
+EDITED_GAIN = "gain: 4.5"
 
 # The value scenario 4 writes: a gain no sound could use.
-REFUSED_GAIN = '"gain": -1.0'
+REFUSED_GAIN = "gain: -1.0"
 
 # An unrelated project source, edited to force a reload in scenario 3.
 RELOAD_SOURCE = SOURCE_DIRECTORY / "simulation_time.rs"
@@ -154,7 +154,7 @@ def check_created(text: str, file_text: str) -> list:
             "the created file spells out every default",
         ),
         (
-            '"asset_type"' in file_text and '"format_version"' in file_text,
+            "asset_type" in file_text and "format_version" in file_text,
             "the created file is a settings asset, header included",
         ),
         (

@@ -40,11 +40,12 @@ EXAMPLE USAGE
 """
 
 import argparse
-import json
 import sys
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
+
+import yaml
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT / "devops"))
@@ -55,17 +56,17 @@ METADATA_SUFFIX = ".meta"
 
 
 def read_guid(path: Path) -> Optional[str]:
-    """The `guid` in a JSON asset header, or None when the file has none."""
+    """The `guid` in a YAML asset header, or None when the file has none."""
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
         return None
     guid = document.get("guid") if isinstance(document, dict) else None
     return guid.lower() if isinstance(guid, str) else None
 
 
 def is_standalone_document(path: Path) -> bool:
-    """Whether `path` is a standalone asset: a JSON file with an asset header.
+    """Whether `path` is a standalone asset: a YAML file with an asset header.
 
     Recognized by content rather than by a list of extensions, so a standalone
     type added later is covered without editing this check.
@@ -75,8 +76,8 @@ def is_standalone_document(path: Path) -> bool:
     try:
         if path.stat().st_size > 1_000_000:
             return False
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
         return False
     return isinstance(document, dict) and {"format_version", "asset_type", "guid"} <= document.keys()
 
@@ -133,7 +134,10 @@ def self_test() -> int:
     header = {"format_version": 1, "asset_type": "test::Asset", "settings": {}}
 
     def write_meta(path: Path, guid: str) -> None:
-        path.write_text(json.dumps(dict(header, guid=guid)), encoding="utf-8")
+        path.write_text(
+            yaml.safe_dump(dict(header, guid=guid), sort_keys=False),
+            encoding="utf-8",
+        )
 
     cases = []
     with tempfile.TemporaryDirectory(prefix="pill-asset-metadata-") as scratch:
@@ -143,7 +147,9 @@ def self_test() -> int:
         (clean / "textures").mkdir(parents=True)
         (clean / "textures/a.png").write_bytes(b"x")
         write_meta(clean / "textures/a.png.meta", "a" * 32)
-        (clean / "b.material").write_text(json.dumps(dict(header, guid="b" * 32)), encoding="utf-8")
+        (clean / "b.material").write_text(
+            yaml.safe_dump(dict(header, guid="b" * 32), sort_keys=False), encoding="utf-8"
+        )
         cases.append(("a clean tree passes", clean, None))
 
         orphan = base / "orphan"
@@ -162,7 +168,9 @@ def self_test() -> int:
         standalone.mkdir()
         (standalone / "a.png").write_bytes(b"x")
         write_meta(standalone / "a.png.meta", "e" * 32)
-        (standalone / "copy.material").write_text(json.dumps(dict(header, guid="e" * 32)), encoding="utf-8")
+        (standalone / "copy.material").write_text(
+            yaml.safe_dump(dict(header, guid="e" * 32), sort_keys=False), encoding="utf-8"
+        )
         cases.append(("a standalone asset sharing a sidecar's guid fails", standalone, "duplicate guid"))
 
         failures = 0

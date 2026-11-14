@@ -289,7 +289,7 @@ def step_11_layout_survives_restart(
         assert restart.wait_exit(timeout=60) == 0, "the restarted editor did not exit 0"
         print_ok("the restarted editor saved its layout and exited 0")
         # A clean exit leaves nothing to recover.
-        recovery_file = restart.editor_state_directory / "editor_egui_recovery.json"
+        recovery_file = restart.editor_state_directory / "editor_egui_recovery.yaml"
         assert not recovery_file.exists(), (
             "a clean exit left a recovery document behind: {}".format(recovery_file)
         )
@@ -318,7 +318,7 @@ def step_11b_recovery_after_unclean_exit(binary: Path, project: str) -> None:
         # The document exists from the first frames; a change the autosave
         # watches (here an undock) rewrites it, which is what the survivor must
         # see, so the step waits for that write rather than for the file.
-        recovery_file = recovered.editor_state_directory / "editor_egui_recovery.json"
+        recovery_file = recovered.editor_state_directory / "editor_egui_recovery.yaml"
         deadline = time.time() + 30
         while time.time() < deadline and not recovery_file.exists():
             # The editor writes the document on its own cadence; poll the

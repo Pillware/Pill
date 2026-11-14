@@ -1,10 +1,7 @@
-{
-  "asset": {
-    "ambient_sinks": 16,
-    "ear_separation": 1.0,
-    "spatial_sinks": 16
-  },
-  "asset_type": "pill_audio::AudioSettingsAsset",
-  "format_version": 1,
-  "guid": "e5c4e207c2d8de09d27c856a4e46fb4c"
-}
+asset:
+  ambient_sinks: 16
+  ear_separation: 1.0
+  spatial_sinks: 16
+asset_type: pill_audio::AudioSettingsAsset
+format_version: 1
+guid: e5c4e207c2d8de09d27c856a4e46fb4c

@@ -62,7 +62,7 @@ Inspector step round-trips through the real apply), all restored when the
 session closes; everything else it starts is its own process tree.
 """
 import argparse
-import json
+import yaml
 import sys
 from pathlib import Path
 
@@ -191,7 +191,7 @@ def main() -> int:
     reference_material = asset_root / "materials" / "s16_reference.material"
     reference_material.parent.mkdir(exist_ok=True)
     reference_material.write_text(
-        json.dumps(
+        yaml.safe_dump(
             {
                 "format_version": 1,
                 "asset_type": "pill_master_renderer::assets::Material",
@@ -208,9 +208,9 @@ def main() -> int:
                     "rendering_order": 255,
                 },
             },
-            indent=2,
-        )
-        + "\n",
+            sort_keys=False,
+            default_flow_style=False,
+        ),
         encoding="utf-8",
     )
     # The Inspector's settings step writes two `.meta` sidecars through the
@@ -245,8 +245,8 @@ def main() -> int:
     # seeded cap proves the startup read of the live reader, and the
     # project's remembered entry keeps the tool at the defaults (translate,
     # world, unsnapped) so the earlier steps see the state they expect.
-    session.write_appdata_json(
-        "preferences.json",
+    session.write_appdata_yaml(
+        "preferences.yaml",
         {
             "history_step_cap": 400,
             "snapping_steps": {

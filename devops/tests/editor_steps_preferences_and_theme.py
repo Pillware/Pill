@@ -5,7 +5,8 @@ from `editor_step_support`, the log vocabulary from `editor_log_tokens`.
 """
 
 import re
-import json
+
+import yaml
 
 from core.projects import THEMED_PROJECT_FONT
 from core import log_layout
@@ -57,7 +58,7 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
     # the scripted channel, the live halves the reader applies (the
     # history limits and the snapping steps), and the per-project gizmo
     # entry the tool choices persist.
-    preferences_path = session.sandbox / "RustHybridEcs" / "preferences.json"
+    preferences_path = session.sandbox / "RustHybridEcs" / "preferences.yaml"
 
     def wait_preference_value(key: str, expected: str, label: str) -> None:
         """Waits until the preferences document's dotted `key` shows `expected`."""
@@ -65,7 +66,7 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
         def probe(_text: str):
             if not preferences_path.is_file():
                 return None
-            current = json.loads(preferences_path.read_text(encoding="utf-8"))
+            current = yaml.safe_load(preferences_path.read_text(encoding="utf-8"))
             for segment in key.split("."):
                 current = current.get(segment) if isinstance(current, dict) else None
                 if current is None:
@@ -241,13 +242,17 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
     # shell installs.
 
     # 1. The user's file: an accent and a panel fill over the code default.
-    user_theme_path = session.sandbox / "RustHybridEcs" / "theme_user.json"
+    user_theme_path = session.sandbox / "RustHybridEcs" / "theme_user.theme"
     user_theme_path.write_text(
-        json.dumps({"palette": {"accent": "#ff488c", "panel": "#101820"}}),
+        yaml.safe_dump(
+            {"palette": {"accent": "#ff488c", "panel": "#101820"}},
+            sort_keys=False,
+            default_flow_style=False,
+        ),
         encoding="utf-8",
     )
     begin = session.length()
-    session.send("edit preference theme theme_user.json")
+    session.send("edit preference theme theme_user.theme")
     session.wait(re.escape(PREFERENCES_SAVED_TOKEN), 30, "the theme row saved", begin)
     session.wait(
         log_layout.message_then_fields_pattern(re.escape(EDITOR_THEME_RESOLVED_TOKEN), r"\s+layers=code,user\s+generation=\d+"),
@@ -256,7 +261,7 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
         begin,
     )
     session.wait(
-        log_layout.message_then_fields_pattern(re.escape(EDITOR_THEME_APPLIED_TOKEN), r"\s+layers=code,user\s+user=\S*theme_user\.json"),
+        log_layout.message_then_fields_pattern(re.escape(EDITOR_THEME_APPLIED_TOKEN), r"\s+layers=code,user\s+user=\S*theme_user\.theme"),
         60,
         "the shell installed the user layer",
         begin,
@@ -412,7 +417,7 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
     # project layer still applies: one broken file costs only itself.
     broken_path = session.sandbox / "RustHybridEcs" / "broken.theme"
     broken_path.write_text(
-        json.dumps({"palette": {"accent": "not-a-colour"}}), encoding="utf-8"
+        "palette:\n  accent: not-a-colour\n", encoding="utf-8"
     )
     begin = session.length()
     session.send("edit preference theme broken.theme")

@@ -50,6 +50,7 @@ use pill_editor_core::commands::{
 };
 use pill_editor_core::console::{ConsoleChannel, ConsoleLine, ConsoleState};
 use pill_editor_core::drain::{self, HistoryDirection};
+use pill_editor_core::editor_files;
 use pill_editor_core::editor_state::{
     AssetDetail, AssetKind, AssetListing, AssetReferenceField, EditorCommand, EditorSelection,
     EditorSnapshot, EntityPickRequest, SelectionClick, StandaloneTypeInfo,
@@ -279,9 +280,7 @@ fn choose_display_backend() {
         }
         // Step 2: a session with no X display has nothing to fall back to, so
         // the native backend is the only one there is.
-        if std::env::var_os("WAYLAND_DISPLAY").is_none()
-            || std::env::var_os("DISPLAY").is_none()
-        {
+        if std::env::var_os("WAYLAND_DISPLAY").is_none() || std::env::var_os("DISPLAY").is_none() {
             return;
         }
         // Step 3: `winit` picks Wayland when it sees the variable and X11 when
@@ -1035,9 +1034,12 @@ impl EditorWindow {
         }
     }
 
-    /// Whether a scene view's pointer is over one of the overlay's chips. The
-    /// pointer's child-local pixels are mapped into the main window's logical
-    /// points, because that is where the shell reported the chips.
+    /// Whether a scene view's pointer is over the shell's own UI rather than
+    /// the viewport: one of the overlay's chips, or the margin the composition
+    /// overlay grows the view's window by, where the shell draws the tab bar
+    /// and the splitters. The pointer's child-local pixels are mapped into the
+    /// main window's logical points, because that is where the shell reported
+    /// both.
     fn scene_point_is_ui(&self, view: usize) -> bool {
         let Some((x, y)) = self.scene_cursor[view] else {
             return false;
@@ -1045,6 +1047,21 @@ impl EditorWindow {
         let (origin_x, origin_y) = self.view_origin(view);
         let logical_x = (origin_x + x) / self.scale_factor;
         let logical_y = (origin_y + y) / self.scale_factor;
+        // The window under the pointer may be the scene's while the shell's
+        // chrome is drawn over it: the composition overlay grows each view's
+        // window past the viewport so no seam shows, and a splitter or the tab
+        // bar sits in that margin. A press there belongs to the UI, or
+        // starting a resize would also ask the scene what it hit and clear the
+        // selection.
+        if let Some(Some(scene)) = self.views.get(view) {
+            let docked_child = !scene.popped && !scene.window.detached;
+            if let Some(body) = scene.body_rect.filter(|_| docked_child) {
+                if point_is_outside_view_body((x, y), (origin_x, origin_y), self.scale_factor, body)
+                {
+                    return true;
+                }
+            }
+        }
         self.overlay_regions
             .iter()
             .any(|region| region.contains(logical_x, logical_y))
@@ -2223,7 +2240,7 @@ impl EditorWindow {
         let preferences_text = self.preferences.text().map(str::to_string);
         let file_preferences = preferences_text
             .as_deref()
-            .and_then(|text| serde_json::from_str::<EditorPreferences>(text).ok())
+            .and_then(|text| editor_files::parse_yaml::<EditorPreferences>(text.as_bytes()).ok())
             .unwrap_or_default();
         self.preferences_document = match preferences_text.as_deref() {
             Some(text) => match preferences::parse_document(text) {
@@ -2473,7 +2490,7 @@ impl EditorWindow {
         // unchanged broken file every cadence tick.
         let user_overrides = match &selection {
             UserThemeSelection::File(path) => match std::fs::read_to_string(path) {
-                Ok(text) => match ThemeOverrides::from_json_str(&text) {
+                Ok(text) => match ThemeOverrides::from_yaml_str(&text) {
                     Ok(overrides) => {
                         self.theme_watch.clear_refusal("user");
                         Some(overrides)
@@ -2803,7 +2820,7 @@ impl EditorWindow {
         self.keybindings_applied = true;
         let file = text
             .as_deref()
-            .and_then(|text| serde_json::from_str::<KeybindingsFile>(text).ok())
+            .and_then(|text| editor_files::parse_yaml::<KeybindingsFile>(text.as_bytes()).ok())
             .unwrap_or_else(editor_default_keybindings);
         let world = self.host.host_mut().engine_mut().world_mut();
         CommandRegistry::ensure(world);
@@ -2882,7 +2899,7 @@ impl EditorWindow {
         let command = self
             .preferences
             .text()
-            .and_then(|text| serde_json::from_str::<EditorPreferences>(text).ok())
+            .and_then(|text| editor_files::parse_yaml::<EditorPreferences>(text.as_bytes()).ok())
             .and_then(|preferences| preferences.code_editor_command)
             .filter(|command| !command.trim().is_empty())
             .unwrap_or_else(|| "code".to_string());
@@ -3337,6 +3354,10 @@ struct SceneView {
     window: SurfaceWindow,
     /// The renderer surface id the scene draws through.
     surface_id: SurfaceId,
+    /// The dock's rectangle for the viewport body, in the shell's logical
+    /// points, from the last placement. The window is grown past it, and a
+    /// press in that margin belongs to the shell's chrome.
+    body_rect: Option<ShellRect>,
     /// Whether `window` was created for a popped-out tab:
     /// a top-level window the view follows to another monitor, rather than
     /// the child window the dock places. A detached window the *platform*
@@ -3363,6 +3384,7 @@ impl SceneView {
         Some(SceneView {
             window,
             surface_id: scene_surface(view),
+            body_rect: None,
             popped: false,
         })
     }
@@ -3741,6 +3763,25 @@ impl SurfaceWindow {
         let size = self.window.inner_size();
         (size.width.max(1), size.height.max(1))
     }
+}
+
+/// Whether one scene view's child-local pixel lies outside the viewport body
+/// the shell reported, once the child window's origin and the display scale
+/// have been applied.
+///
+/// The composition overlay grows each view's window past the viewport body so
+/// no seam shows under the UI, and the shell's chrome - the tab bar above the
+/// viewport, the splitters beside it - is drawn over that margin. A press in
+/// the margin belongs to the UI, not the scene.
+fn point_is_outside_view_body(
+    point: (f32, f32),
+    origin: (f32, f32),
+    scale_factor: f32,
+    body: ShellRect,
+) -> bool {
+    let logical_x = (origin.0 + point.0) / scale_factor;
+    let logical_y = (origin.1 + point.1) / scale_factor;
+    !body.contains(logical_x, logical_y)
 }
 
 /// A shell rectangle in logical points as the child window's own client
@@ -4436,6 +4477,43 @@ mod tests {
             height: 0.1,
         };
         assert_eq!(scaled_view_rect(tiny, 1.0, (1280, 800)), (4, 4, 1, 1));
+    }
+
+    /// A press in the margin the composition overlay grows a viewport window
+    /// by belongs to the shell's chrome - the tab bar or a splitter - so it
+    /// must not reach the scene. A press inside the body does, at every
+    /// display scale.
+    #[test]
+    fn a_press_in_the_grown_margin_is_ui() {
+        let body = ShellRect {
+            x: 116.0,
+            y: 66.0,
+            width: 300.0,
+            height: 200.0,
+        };
+        // The window's origin is the body's corner less the 16-point margin.
+        let grown_origin = (100.0_f32, 50.0_f32);
+        for scale in [1.0_f32, 1.25, 1.5, 2.0] {
+            let origin = (grown_origin.0 * scale, grown_origin.1 * scale);
+            // 8 points into the margin, beside and above the body's corner.
+            let in_margin = (8.0 * scale, 8.0 * scale);
+            assert!(
+                point_is_outside_view_body(in_margin, origin, scale, body),
+                "a press in the margin at scale {scale} is the UI's"
+            );
+            // 24 points in: past the margin, inside the body.
+            let in_body = (24.0 * scale, 24.0 * scale);
+            assert!(
+                !point_is_outside_view_body(in_body, origin, scale, body),
+                "a press in the body at scale {scale} is the scene's"
+            );
+            // Above the body but horizontally inside it: still the tab bar.
+            let above = (160.0 * scale, 8.0 * scale);
+            assert!(
+                point_is_outside_view_body(above, origin, scale, body),
+                "a press in the tab bar at scale {scale} is the UI's"
+            );
+        }
     }
 
     /// The change detector compares the two captures field by field, so an

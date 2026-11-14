@@ -2,7 +2,7 @@
 //!
 //! # Responsibilities
 //!
-//! - One durability rule for the editor's JSON state files. Create the
+//! - One durability rule for the editor's YAML state files. Create the
 //!   directory, write a temporary file beside the target, then rename it into
 //!   place, so a crash mid-write never leaves a half-written document.
 //! - One error type ([`FileError`]) for every read, write, parse and removal,
@@ -11,13 +11,17 @@
 //! # Design
 //!
 //! The documents differ - a dock layout, the preferences map, the recovery
-//! snapshot, the open scene - so the JSON helpers are generic over `serde`
-//! and every function takes a full path. What the documents share is the file
+//! snapshot, the keybindings - so the helpers are generic over `serde` and
+//! every function takes a full path. What the documents share is the file
 //! handling, and that is what this module holds.
+//!
+//! The text format is the one `pill_engine::asset_document` owns, so an editor
+//! state file is a YAML document in the same dialect as an asset file: one
+//! parser, one writer, one set of refusal messages.
 //!
 //! Two policies are stated once instead of per call site:
 //!
-//! - **A missing file is empty, not broken.** [`read_json`] answers `Ok(None)`
+//! - **A missing file is empty, not broken.** [`read_yaml`] answers `Ok(None)`
 //!   only for `NotFound`. A document that exists and cannot be read or parsed
 //!   is an error, never a blank slate. Folding it into an empty one would let
 //!   the next save write a file holding only the keys it set, erasing every
@@ -58,7 +62,7 @@ pub enum FileError {
         /// What the filesystem said.
         source: io::Error,
     },
-    /// The file holds text that is not the JSON the caller expects.
+    /// The file holds text that is not the YAML the caller expects.
     Parse {
         /// The file's path, spelled the way the messages show it.
         path: String,
@@ -88,7 +92,7 @@ impl FileError {
     pub fn message(&self) -> String {
         match self {
             FileError::Read { path, source } => format!("{path}: {source}"),
-            FileError::Parse { path, message } => format!("{path} is not valid JSON: {message}"),
+            FileError::Parse { path, message } => format!("{path} is {message}"),
             FileError::Serialize { path, message } => {
                 format!("cannot serialize `{path}`: {message}")
             }
@@ -116,16 +120,16 @@ impl std::error::Error for FileError {
 // Free Functions
 // =============================================================================
 
-/// Reads one JSON document, or `None` when the file does not exist.
+/// Reads one YAML document, or `None` when the file does not exist.
 ///
 /// # Errors
 ///
 /// Returns [`FileError::Read`] when the file exists and cannot be read, and
 /// [`FileError::Parse`] when its text is not the document the caller asked
 /// for.
-pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, FileError> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
+pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, FileError> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(source) => {
             return Err(FileError::Read {
@@ -134,26 +138,52 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, FileErro
             })
         }
     };
-    serde_json::from_str(&text)
+    parse_yaml(&bytes)
         .map(Some)
-        .map_err(|error| FileError::Parse {
+        .map_err(|message| FileError::Parse {
             path: path.display().to_string(),
-            message: error.to_string(),
+            message,
         })
 }
 
-/// Serializes and writes one JSON document.
+/// Parses one YAML document from `bytes`, without touching the filesystem.
+///
+/// The text-driven counterpart of [`read_yaml`], for a caller that watches a
+/// file and keeps its bytes instead of its path.
+///
+/// # Errors
+///
+/// Returns the parser's message when the bytes are not YAML, and the
+/// converter's when the document is YAML but not the caller's shape.
+pub fn parse_yaml<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
+    let document = pill_engine::asset_document::parse(bytes)?;
+    serde_json::from_value(document)
+        .map_err(|error| format!("not the document this file needs: {error}"))
+}
+
+/// Serializes and writes one YAML document.
+///
+/// The document goes through the same value tree the reader produces
+/// ([`parse_yaml`]) before it is written, so a file the editor writes is one it
+/// can read back. Writing a typed structure straight to YAML would encode an
+/// enum as a tag (`!Scene 2`), and the value tree that every reader works in
+/// cannot hold one.
 ///
 /// # Errors
 ///
 /// Returns [`FileError::Serialize`] when the document cannot be serialized and
 /// [`FileError::Write`] when the file cannot be replaced.
-pub fn write_json<T: Serialize>(path: &Path, document: &T) -> Result<(), FileError> {
-    let text = serde_json::to_string_pretty(document).map_err(|error| FileError::Serialize {
+pub fn write_yaml<T: Serialize + ?Sized>(path: &Path, document: &T) -> Result<(), FileError> {
+    let value = serde_json::to_value(document).map_err(|error| FileError::Serialize {
         path: path.display().to_string(),
-        message: error.to_string(),
+        message: format!("the document has no value form: {error}"),
     })?;
-    write_bytes(path, text.as_bytes())
+    let bytes =
+        pill_engine::asset_document::render(&value).map_err(|message| FileError::Serialize {
+            path: path.display().to_string(),
+            message,
+        })?;
+    write_bytes(path, &bytes)
 }
 
 /// Writes one document's bytes through a temporary file and a rename.
@@ -229,12 +259,12 @@ mod tests {
     #[test]
     fn a_missing_document_is_absent_and_a_write_creates_its_directory() {
         let directory = scratch_directory("missing");
-        let path = directory.join("nested").join("state.json");
-        assert!(read_json::<serde_json::Value>(&path)
+        let path = directory.join("nested").join("state.yaml");
+        assert!(read_yaml::<serde_json::Value>(&path)
             .expect("an absent document is not an error")
             .is_none());
-        write_json(&path, &serde_json::json!({ "kept": true })).expect("the write");
-        let read: serde_json::Value = read_json(&path).expect("the read").expect("the document");
+        write_yaml(&path, &serde_json::json!({ "kept": true })).expect("the write");
+        let read: serde_json::Value = read_yaml(&path).expect("the read").expect("the document");
         assert_eq!(read, serde_json::json!({ "kept": true }));
         let _ = std::fs::remove_dir_all(&directory);
     }
@@ -244,14 +274,14 @@ mod tests {
     #[test]
     fn an_unparsable_document_is_an_error() {
         let directory = scratch_directory("unparsable");
-        let path = directory.join("state.json");
-        std::fs::write(&path, "{ \"a\": 1, }").expect("the broken document");
-        let error = read_json::<serde_json::Value>(&path).expect_err("a broken document errors");
+        let path = directory.join("state.yaml");
+        std::fs::write(&path, "entries: [1, 2\n").expect("the broken document");
+        let error = read_yaml::<serde_json::Value>(&path).expect_err("a broken document errors");
         assert!(
             matches!(error, FileError::Parse { .. }),
             "{error:?} is not a parse error"
         );
-        assert!(error.message().contains("is not valid JSON"), "{error}");
+        assert!(error.message().contains("is not valid YAML"), "{error}");
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -260,10 +290,10 @@ mod tests {
     #[test]
     fn the_second_write_replaces_the_first() {
         let directory = scratch_directory("twice");
-        let path = directory.join("state.json");
-        write_json(&path, &serde_json::json!({ "generation": 1 })).expect("the first write");
-        write_json(&path, &serde_json::json!({ "generation": 2 })).expect("the second write");
-        let read: serde_json::Value = read_json(&path).expect("the read").expect("the document");
+        let path = directory.join("state.yaml");
+        write_yaml(&path, &serde_json::json!({ "generation": 1 })).expect("the first write");
+        write_yaml(&path, &serde_json::json!({ "generation": 2 })).expect("the second write");
+        let read: serde_json::Value = read_yaml(&path).expect("the read").expect("the document");
         assert_eq!(read, serde_json::json!({ "generation": 2 }));
         let staged_file = path.with_extension(TEMPORARY_FILE_EXTENSION);
         assert!(!staged_file.exists(), "the staged file was left behind");
@@ -274,9 +304,9 @@ mod tests {
     #[test]
     fn removing_an_absent_document_is_not_an_error() {
         let directory = scratch_directory("remove");
-        let path = directory.join("state.json");
+        let path = directory.join("state.yaml");
         remove(&path).expect("an absent document is not an error");
-        write_json(&path, &serde_json::json!({})).expect("the write");
+        write_yaml(&path, &serde_json::json!({})).expect("the write");
         remove(&path).expect("the removal");
         assert!(!path.exists());
         let _ = std::fs::remove_dir_all(&directory);

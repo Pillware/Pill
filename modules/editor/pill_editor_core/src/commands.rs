@@ -959,14 +959,14 @@ pub struct GizmoProjectPreferences {
 /// Declared here rather than in an editor frontend: the executable reads the
 /// file and applies the shell's save commands to it, and both sides link this
 /// crate.
-pub const PREFERENCES_FILE: &str = "preferences.json";
+pub const PREFERENCES_FILE: &str = "preferences.yaml";
 
 /// The keybindings file's name, next to the layout file.
 ///
 /// The executable watches it and applies every change through
 /// [`CommandRegistry::apply_file`]; the preset and the overrides it holds
 /// decide what each shortcut does.
-pub const KEYBINDINGS_FILE: &str = "keybindings.json";
+pub const KEYBINDINGS_FILE: &str = "keybindings.yaml";
 
 /// Reads the gizmo settings a project starts a session with.
 ///
@@ -980,10 +980,11 @@ pub fn read_gizmo_settings(
     project: &str,
 ) -> crate::gizmo::GizmoSettings {
     // Step 1: read the file, treating a missing or unreadable one as empty.
-    let preferences: EditorPreferences = std::fs::read_to_string(directory.join(PREFERENCES_FILE))
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default();
+    let preferences =
+        crate::editor_files::read_yaml::<EditorPreferences>(&directory.join(PREFERENCES_FILE))
+            .ok()
+            .flatten()
+            .unwrap_or_default();
     let mut settings = crate::gizmo::GizmoSettings::default();
     if let Some(steps) = preferences.snapping_steps {
         settings.translate_step = steps.translation;
@@ -1029,7 +1030,7 @@ pub fn read_gizmo_settings(
 ///
 /// # Errors
 ///
-/// Returns a message when the file cannot be read, is not a JSON object, or
+/// Returns a message when the file cannot be read, is not a YAML mapping, or
 /// cannot be written back.
 pub fn write_gizmo_preferences(
     directory: &std::path::Path,
@@ -1239,7 +1240,7 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(
             directory.join(PREFERENCES_FILE),
-            r#"{ "theme": "dark", "history_step_cap": 42 }"#,
+            "theme: dark\nhistory_step_cap: 42\n",
         )
         .unwrap();
         let settings = crate::gizmo::GizmoSettings {
@@ -1255,8 +1256,9 @@ mod tests {
             ..crate::gizmo::GizmoSettings::default()
         };
         write_gizmo_preferences(&directory, "project_rs", &second_project_settings).unwrap();
-        let preferences_text = std::fs::read_to_string(directory.join(PREFERENCES_FILE)).unwrap();
-        let document: serde_json::Value = serde_json::from_str(&preferences_text).unwrap();
+        let preferences_bytes = std::fs::read(directory.join(PREFERENCES_FILE)).unwrap();
+        let document: serde_json::Value =
+            crate::editor_files::parse_yaml(&preferences_bytes).unwrap();
         assert_eq!(document["theme"], "dark");
         assert_eq!(document["history_step_cap"], 42);
         assert_eq!(

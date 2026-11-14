@@ -1,35 +1,24 @@
-{
-  "format_version": 1,
-  "asset_type": "pill_master_renderer::assets::Material",
-  "guid": "b8481529ba142b95a2e672d036e7c5a2",
-  "asset": {
-    "shader": "8cedb4197c9f26a86708b1cd14399eab",
-    "textures": {
-      "base_color": "e5563cb06bb16148943b2da7de466e1d",
-      "emissive": "e5563cb06bb16148943b2da7de466e1d"
-    },
-    "parameters": {
-      "pbr_base": {
-        "Color": [
-          0.8,
-          0.1,
-          0.1
-        ]
-      },
-      "pbr_emissive": {
-        "Color": [
-          7.0,
-          1.0,
-          1.0
-        ]
-      },
-      "pbr_metallic": {
-        "Scalar": 1.0
-      },
-      "pbr_roughness": {
-        "Scalar": 0.3
-      }
-    },
-    "rendering_order": 255
-  }
-}
+format_version: 1
+asset_type: pill_master_renderer::assets::Material
+guid: b8481529ba142b95a2e672d036e7c5a2
+asset:
+  shader: 8cedb4197c9f26a86708b1cd14399eab
+  textures:
+    base_color: e5563cb06bb16148943b2da7de466e1d
+    emissive: e5563cb06bb16148943b2da7de466e1d
+  parameters:
+    pbr_base:
+      Color:
+      - 0.8
+      - 0.1
+      - 0.1
+    pbr_emissive:
+      Color:
+      - 7.0
+      - 1.0
+      - 1.0
+    pbr_metallic:
+      Scalar: 1.0
+    pbr_roughness:
+      Scalar: 0.3
+  rendering_order: 255

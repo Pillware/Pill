@@ -128,7 +128,7 @@ def run_tail_steps(state: StepState) -> None:
         problems_begin,
     )
     row = re.search(
-        log_layout.message_then_fields_pattern(re.escape(PROBLEM_ROW_TOKEN), r'\s+module="[^"]*"\s+severity="error"\s+file="([^"]+)"\s+line=([1-9][0-9]*)'),
+        log_layout.message_then_fields_pattern(re.escape(PROBLEM_ROW_TOKEN), r'\s+module="[^"]*"\s+severity="error"\s+file="([^"]+)"\s+line=([1-9][0-9]*)\s+index=([0-9]+)'),
         session.read_since(problems_begin),
     )
     assert row, "the Problems panel showed no located error row"
@@ -136,7 +136,7 @@ def run_tail_steps(state: StepState) -> None:
         "the Problems row pointed at {!r}, not the edited source".format(row.group(1))
     )
     open_begin = session.length()
-    session.send("problem open 0")
+    session.send("problem open {}".format(row.group(3)))
     session.wait(
         re.escape(PROBLEM_OPENED_TOKEN), 60, "the row opened in the editor", open_begin
     )

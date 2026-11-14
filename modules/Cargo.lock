@@ -1304,12 +1304,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "host_project_cube_rust"
+name = "host_project_scene"
 version = "0.1.0"
 dependencies = [
  "glam 0.33.7",
  "pill_engine",
  "pill_master_renderer_data",
+ "pill_project_ui",
+ "serde",
 ]
 
 [[package]]
@@ -2878,6 +2880,7 @@ name = "pill_engine_core"
 version = "0.1.0"
 dependencies = [
  "getrandom 0.3.4",
+ "hashbrown 0.17.1",
  "metrics",
  "miette",
  "pill_asset_format",
@@ -2887,6 +2890,7 @@ dependencies = [
  "pill_engine_macros",
  "serde",
  "serde_json",
+ "serde_yaml",
  "thiserror 2.0.20",
  "tracing",
  "tracy-client",

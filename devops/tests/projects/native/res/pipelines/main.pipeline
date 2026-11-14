@@ -1,10 +1,7 @@
-{
-  "format_version": 1,
-  "asset_type": "pill_master_renderer::assets::RenderingPipeline",
-  "guid": "0f5e2c7a9b1d34c8a6e40b52d7c19f83",
-  "asset": {
-    "passes": [
-      { "guid": "934c3ab57068b9afe5adc2c69beac3c8", "enabled": true }
-    ]
-  }
-}
+format_version: 1
+asset_type: pill_master_renderer::assets::RenderingPipeline
+guid: 0f5e2c7a9b1d34c8a6e40b52d7c19f83
+asset:
+  passes:
+  - guid: 934c3ab57068b9afe5adc2c69beac3c8
+    enabled: true

@@ -247,7 +247,9 @@ pub struct Spacing {
     /// A menu's wrapping width. egui 0.36 never reads its `menu_width`, so
     /// this changes nothing today.
     pub menu_width: f32,
-    /// A tooltip's maximum width; zero lets egui size it.
+    /// The width a tooltip wraps its text at. Must be positive: egui gives a
+    /// tooltip exactly this width, so zero collapses its text to one
+    /// character per line.
     pub tooltip_width: f32,
     /// A combo box's minimum width; zero lets egui size it.
     pub combo_width: f32,
@@ -279,7 +281,7 @@ impl Default for Spacing {
             icon_width_inner: 8.0,
             icon_spacing: 4.0,
             menu_width: 0.0,
-            tooltip_width: 0.0,
+            tooltip_width: 500.0,
             combo_width: 0.0,
             combo_height: 200.0,
             text_edit_width: 280.0,
@@ -673,7 +675,7 @@ impl Theme {
                 icon_width_inner: 8.0,
                 icon_spacing: 6.0,
                 menu_width: 0.0,
-                tooltip_width: 0.0,
+                tooltip_width: 500.0,
                 combo_width: 0.0,
                 combo_height: 200.0,
                 text_edit_width: 280.0,
@@ -754,9 +756,9 @@ fn fallback_text_styles() -> BTreeMap<String, TextStyle> {
 /// A refused theme document or item.
 #[derive(Debug, Error)]
 pub enum ThemeError {
-    /// The document did not parse as JSON, or did not fit the override shape.
+    /// The document did not parse as YAML, or did not fit the override shape.
     #[error("theme document: {0}")]
-    Json(String),
+    Format(String),
     /// One item's value was refused.
     #[error("`{item}`: {detail}")]
     Item {
@@ -889,7 +891,7 @@ fn merge_text_styles(
 /// # Errors
 ///
 /// [`ThemeError::Item`] naming the first number that is negative, infinite or
-/// NaN.
+/// NaN, or a tooltip width that is not positive.
 fn merge_spacing(spacing: &mut Spacing, overrides: &SpacingOverrides) -> Result<(), ThemeError> {
     macro_rules! numbers {
         ($( $field:ident => $item:literal ),* $(,)?) => {{
@@ -928,13 +930,24 @@ fn merge_spacing(spacing: &mut Spacing, overrides: &SpacingOverrides) -> Result<
         icon_width_inner => "spacing.icon_width_inner",
         icon_spacing => "spacing.icon_spacing",
         menu_width => "spacing.menu_width",
-        tooltip_width => "spacing.tooltip_width",
         combo_width => "spacing.combo_width",
         combo_height => "spacing.combo_height",
         text_edit_width => "spacing.text_edit_width",
         menu_spacing => "spacing.menu_spacing",
         scroll_bar_width => "spacing.scroll_bar_width",
     );
+    // A tooltip is laid out at exactly its named width. A zero or negative
+    // width would wrap the text one character per line, so it is refused
+    // rather than passed through.
+    if let Some(value) = overrides.tooltip_width {
+        if !value.is_finite() || value <= 0.0 {
+            return Err(ThemeError::item(
+                "spacing.tooltip_width",
+                format!("`{value}` is not a positive width"),
+            ));
+        }
+        spacing.tooltip_width = value;
+    }
     if let Some(value) = overrides.scroll_floating {
         spacing.scroll_floating = value;
     }
@@ -1123,7 +1136,7 @@ mod tests {
 
     /// A document naming only the accent.
     fn accent_only() -> ThemeOverrides {
-        ThemeOverrides::from_json_str(r##"{"palette": {"accent": "#33d17a"}}"##).unwrap()
+        ThemeOverrides::from_yaml_str("palette:\n  accent: \"#33d17a\"\n").unwrap()
     }
 
     #[test]
@@ -1150,12 +1163,11 @@ mod tests {
     /// `monospace`.
     #[test]
     fn font_paths_merge_per_family() {
-        let lower = ThemeOverrides::from_json_str(
-            r#"{"fonts": {"body": "fonts/body.ttf", "monospace": "fonts/code.ttf"}}"#,
+        let lower = ThemeOverrides::from_yaml_str(
+            "fonts:\n  body: fonts/body.ttf\n  monospace: fonts/code.ttf\n",
         )
         .unwrap();
-        let upper =
-            ThemeOverrides::from_json_str(r#"{"fonts": {"body": "fonts/other.ttf"}}"#).unwrap();
+        let upper = ThemeOverrides::from_yaml_str("fonts:\n  body: fonts/other.ttf\n").unwrap();
 
         let merged = Theme::fallback()
             .merged_with(&lower)
@@ -1171,14 +1183,13 @@ mod tests {
     #[test]
     fn two_documents_merge_in_order() {
         let base = Theme::fallback();
-        let first = ThemeOverrides::from_json_str(
-            r##"{"palette": {"accent": "#111111"}, "spacing": {"indent": 20.0}}"##,
+        let first = ThemeOverrides::from_yaml_str(
+            "palette:\n  accent: \"#111111\"\nspacing:\n  indent: 20.0\n",
         )
         .unwrap();
-        let second = ThemeOverrides::from_json_str(
-            r##"{"palette": {"accent": "#222222", "text": "#eeeeee"}}"##,
-        )
-        .unwrap();
+        let second =
+            ThemeOverrides::from_yaml_str("palette:\n  accent: \"#222222\"\n  text: \"#eeeeee\"\n")
+                .unwrap();
 
         let merged = base
             .merged_with(&first)
@@ -1195,7 +1206,7 @@ mod tests {
 
     #[test]
     fn a_bad_colour_is_refused_with_its_item() {
-        let document = ThemeOverrides::from_json_str(r#"{"palette": {"accent": "nope"}}"#).unwrap();
+        let document = ThemeOverrides::from_yaml_str("palette:\n  accent: nope\n").unwrap();
         let error = Theme::fallback().merged_with(&document).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("palette.accent"), "{message}");
@@ -1204,8 +1215,7 @@ mod tests {
     #[test]
     fn an_out_of_range_shadow_is_refused_with_its_item() {
         let document =
-            ThemeOverrides::from_json_str(r#"{"shape": {"window_shadow": {"blur": 300}}}"#)
-                .unwrap();
+            ThemeOverrides::from_yaml_str("shape:\n  window_shadow:\n    blur: 300\n").unwrap();
         let error = Theme::fallback().merged_with(&document).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("shape.window_shadow.blur"), "{message}");
@@ -1214,16 +1224,30 @@ mod tests {
     #[test]
     fn a_non_positive_text_size_is_refused() {
         let document =
-            ThemeOverrides::from_json_str(r#"{"text_styles": {"body": {"size": 0.0}}}"#).unwrap();
+            ThemeOverrides::from_yaml_str("text_styles:\n  body:\n    size: 0.0\n").unwrap();
         let error = Theme::fallback().merged_with(&document).unwrap_err();
         let message = error.to_string();
         assert!(message.contains("text_styles.body.size"), "{message}");
     }
 
     #[test]
+    fn a_non_positive_tooltip_width_is_refused() {
+        let document = ThemeOverrides::from_yaml_str("spacing:\n  tooltip_width: 0.0\n").unwrap();
+        let error = Theme::fallback().merged_with(&document).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("spacing.tooltip_width"), "{message}");
+    }
+
+    #[test]
+    fn the_code_themes_give_tooltips_a_usable_width() {
+        assert!(Theme::fallback().spacing.tooltip_width > 0.0);
+        assert!(Theme::brutalist().spacing.tooltip_width > 0.0);
+    }
+
+    #[test]
     fn a_refused_document_leaves_the_base_untouched() {
         let base = Theme::fallback();
-        let document = ThemeOverrides::from_json_str(r#"{"palette": {"accent": "nope"}}"#).unwrap();
+        let document = ThemeOverrides::from_yaml_str("palette:\n  accent: nope\n").unwrap();
         assert!(base.merged_with(&document).is_err());
         assert_eq!(base, Theme::fallback());
     }

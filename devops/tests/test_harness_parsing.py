@@ -519,35 +519,35 @@ def check_editor_load_set_is_verified() -> None:
 
 def check_editor_state_writers_share_one_path() -> None:
     """The state-file writers land in one folder, in one format."""
-    import json
+    import yaml
 
     from core.editor_session import EditorSession
 
     session = EditorSession("probe-state-files")
     session.run_directory.mkdir(parents=True, exist_ok=True)
-    preferences = session.write_appdata_json("preferences.json", {"history_step_cap": 400})
-    keybindings = session.editor_state_directory / "keybindings.json"
+    preferences = session.write_appdata_yaml("preferences.yaml", {"history_step_cap": 400})
+    keybindings = session.editor_state_directory / "keybindings.yaml"
     session.write_keybindings({"preset": "default"})
     session.write_preferences({"history_step_cap": 200})
-    if preferences != session.editor_state_directory / "preferences.json":
+    if preferences != session.editor_state_directory / "preferences.yaml":
         fail(
-            "write_appdata_json must write into editor_state_directory, "
+            "write_appdata_yaml must write into editor_state_directory, "
             f"not {preferences.parent}"
         )
     if not keybindings.is_file():
         fail("write_keybindings must write into editor_state_directory")
     expected = {
-        "preferences.json": {"history_step_cap": 200},
-        "keybindings.json": {"preset": "default"},
+        "preferences.yaml": {"history_step_cap": 200},
+        "keybindings.yaml": {"preset": "default"},
     }
     for name, document in expected.items():
         path = session.editor_state_directory / name
         text = path.read_text(encoding="utf-8")
-        if not text.startswith('{\n  "'):
-            fail(f"{name} must be written with two spaces of indentation")
+        if text.lstrip().startswith("{"):
+            fail(f"{name} must be a YAML mapping, not a JSON text: {text}")
         if not text.endswith("\n"):
             fail(f"{name} must end with a newline")
-        if json.loads(text) != document:
+        if yaml.safe_load(text) != document:
             fail(f"{name} carried the wrong document: {text}")
 
 

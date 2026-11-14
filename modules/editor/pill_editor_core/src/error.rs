@@ -55,11 +55,11 @@ pub enum LayoutPersistenceError {
         source: LayoutError,
     },
 
-    /// The dock model could not be turned into JSON, so nothing was written.
-    #[message("failed to serialize the dock layout")]
+    /// The dock model could not be turned into YAML, so nothing was written.
+    #[message("failed to serialize the dock layout: ", value(detail))]
     Serialization {
-        #[source]
-        source: serde_json::Error,
+        /// What the YAML writer said.
+        detail: String,
     },
 
     /// Writing the document failed: creating its folder, writing the temporary
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn layout_persistence_codes_derive_from_namespace_and_variant() {
         let error = LayoutPersistenceError::Serialization {
-            source: serde_json::from_str::<serde_json::Value>("{").unwrap_err(),
+            detail: String::from("the document cannot be written as YAML"),
         };
         let code = error.code().expect("generated code");
         assert_eq!(code.to_string(), "editor::layout::serialization");

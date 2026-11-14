@@ -1,12 +1,8 @@
-{
-  "format_version": 1,
-  "asset_type": "pill_ui_theme::ThemeOverrides",
-  "guid": "0000000000000000000000000000c001",
-  "asset": {
-    "name": "cube",
-    "palette": {
-      "accent": "#4f8ef7",
-      "accent_hot": "#6ba3ff"
-    }
-  }
-}
+format_version: 1
+asset_type: pill_ui_theme::ThemeOverrides
+guid: 0000000000000000000000000000c001
+asset:
+  name: cube
+  palette:
+    accent: '#4f8ef7'
+    accent_hot: '#6ba3ff'

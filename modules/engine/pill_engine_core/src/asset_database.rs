@@ -27,7 +27,7 @@
 //! file, the one in its own header). A guid that a second path claims is
 //! refused, not moved. The index takes only the identity out of a header -
 //! `format_version`, `asset_type` and `guid` - and never decodes an asset's
-//! settings, so indexing a large project costs one small JSON read per asset.
+//! settings, so indexing a large project costs one small YAML read per asset.
 //! A source with no `.meta` has no guid yet and is not indexed; the write that
 //! gives it one is a change [`AssetDatabase::refresh`] picks up.
 //!

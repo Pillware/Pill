@@ -1,17 +1,17 @@
-{
-  "format_version": 1,
-  "asset_type": "pill_master_renderer::assets::Shader",
-  "guid": "5c3d9b7e14a2f8069d4e2b1c7a8f3e60",
-  "settings": {
-    "vertex": "common_shaders/default_vertex.wgsl",
-    "parameters": [
-      { "name": "tint", "type": "Color" },
-      { "name": "specularity", "type": "Scalar" }
-    ],
-    "textures": [
-      { "name": "color", "type": "Color", "texture_binding": 0, "sampler_binding": 1 }
-    ],
-    "engine_parameters": true,
-    "camera_parameters": true
-  }
-}
+format_version: 1
+asset_type: pill_master_renderer::assets::Shader
+guid: 5c3d9b7e14a2f8069d4e2b1c7a8f3e60
+settings:
+  vertex: common_shaders/default_vertex.wgsl
+  parameters:
+  - name: tint
+    type: Color
+  - name: specularity
+    type: Scalar
+  textures:
+  - name: color
+    type: Color
+    texture_binding: 0
+    sampler_binding: 1
+  engine_parameters: true
+  camera_parameters: true
