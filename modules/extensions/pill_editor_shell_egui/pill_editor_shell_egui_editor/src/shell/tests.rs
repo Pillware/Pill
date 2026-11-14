@@ -1740,3 +1740,35 @@ fn a_stretched_drag_value_fills_its_slot() {
         "the field is {field_width} wide in a {SLOT_WIDTH}-point slot"
     );
 }
+
+/// A field drawn in a row's slot fits inside the row's height with the same
+/// room above and below it, so no field is cut at its top or bottom edge.
+#[test]
+fn a_field_fits_its_row_with_even_padding() {
+    let context = egui::Context::default();
+    style::apply(&context);
+    let mut slot = egui::Rect::NOTHING;
+    let mut field = egui::Rect::NOTHING;
+    let mut value = 1.0f32;
+    run_pass(&context, &mut |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
+            let response = ui.allocate_ui_with_layout(
+                egui::vec2(120.0, ROW_HEIGHT),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| stretched_drag_value(ui, egui::DragValue::new(&mut value)).rect,
+            );
+            slot = response.response.rect;
+            field = response.inner;
+        });
+    });
+    assert!(
+        field.top() >= slot.top() && field.bottom() <= slot.bottom(),
+        "the field {field:?} reaches outside its row {slot:?}"
+    );
+    let room_above = field.top() - slot.top();
+    let room_below = slot.bottom() - field.bottom();
+    assert!(
+        (room_above - room_below).abs() <= 1.0,
+        "the field sits off centre: {room_above} above, {room_below} below"
+    );
+}

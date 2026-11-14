@@ -573,7 +573,7 @@ pub fn inspector_asset_row(
         };
         let icon = assets_tiles::asset_type_icon(row_input.asset_type.unwrap_or_default());
         let response = ui.add_sized(
-            egui::vec2(width, 18.0),
+            egui::vec2(width, ROW_HEIGHT),
             egui::Button::new(icons::rich(icon, &text).color(color)).truncate(),
         );
         // A file dragged out of the Assets tab can be dropped on this button,
@@ -809,7 +809,7 @@ pub fn inspector_entity_row(
             _ => style::text_muted(),
         };
         let response = ui.add_sized(
-            egui::vec2(width, 18.0),
+            egui::vec2(width, ROW_HEIGHT),
             egui::Button::new(icons::rich(icons::Icon::TreeStructure, &text).color(color))
                 .truncate(),
         );

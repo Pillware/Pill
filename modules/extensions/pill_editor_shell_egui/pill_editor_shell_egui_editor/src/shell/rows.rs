@@ -77,9 +77,10 @@ pub const LABEL_COLUMN_MAX_WIDTH: f32 = 200.0;
 /// label and still leaves the narrow Preferences panel room for its controls.
 pub const WIDE_ROW_LABEL_WIDTH: f32 = 140.0;
 
-/// The height in points of a row's label cell, about that of a standard
-/// control, so a checkbox, a drag value and a button all read as one row.
-pub const ROW_HEIGHT: f32 = 18.0;
+/// The height in points of every row: its label cell and the slot its control
+/// is centred in. It is a few points taller than a standard control, so every
+/// field has the same room above and below it and none is cut at its edge.
+pub const ROW_HEIGHT: f32 = 22.0;
 
 /// The least space in points a row keeps between its label and its control:
 /// a little more than the panel's own item spacing, so the label reads as
@@ -180,16 +181,19 @@ pub fn row_in(
 /// [`ROW_HEIGHT`].
 pub fn control_column(ui: &mut egui::Ui, draw_control: &mut dyn FnMut(&mut egui::Ui)) {
     let width = ui.available_width().max(0.0);
-    let column_rect = egui::Rect::from_min_size(
-        ui.cursor().min,
-        egui::vec2(width, ui.available_height().max(ROW_HEIGHT)),
-    );
+    // The control is centred in one row's height; a taller one (a text box of
+    // several lines) grows the column downwards. Only the sides are clipped.
+    let column_rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(width, ROW_HEIGHT));
     let mut control = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(column_rect)
-            .layout(egui::Layout::left_to_right(egui::Align::Min)),
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
-    control.set_clip_rect(column_rect.intersect(ui.clip_rect()));
+    let parent_clip = ui.clip_rect();
+    control.set_clip_rect(egui::Rect::from_x_y_ranges(
+        column_rect.x_range().intersection(parent_clip.x_range()),
+        parent_clip.y_range(),
+    ));
     draw_control(&mut control);
     let height = control.min_rect().height().max(ROW_HEIGHT);
     ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());

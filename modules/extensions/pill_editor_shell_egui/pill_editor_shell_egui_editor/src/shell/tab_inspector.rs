@@ -47,9 +47,10 @@ pub const VECTOR_SLOT_GAP: f32 = 2.0;
 /// The space in points between a component's separator line and its header.
 pub const SECTION_LINE_GAP: f32 = 3.0;
 
-/// The height of one vector field, in points. The field's editor and the group
-/// that holds it are both this tall.
-pub const INSPECTOR_VECTOR_FIELD_HEIGHT: f32 = 18.0;
+/// The height of one vector field, in points: the shared row height, so a
+/// vector row has the same padding as every other row. The field's editor and
+/// the group that holds it are both this tall.
+pub const INSPECTOR_VECTOR_FIELD_HEIGHT: f32 = ROW_HEIGHT;
 
 // =============================================================================
 // Free Functions
