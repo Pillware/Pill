@@ -118,7 +118,7 @@ impl World {
         T: Component,
     {
         let component_id = ComponentId::of::<T>();
-        for archetype in self.archetypes.values_mut() {
+        for archetype in self.storage.archetypes.values_mut() {
             if archetype.component_types.contains(&component_id) {
                 let column = archetype.component_storages.column_of_mut::<T>();
                 column.reserve::<T>(additional);
@@ -143,6 +143,7 @@ impl World {
     {
         let component_id = ComponentId::of::<T>();
         let archetype = self
+            .storage
             .archetypes
             .values_mut()
             .filter(|archetype| archetype.component_types.contains(&component_id))
@@ -170,7 +171,7 @@ impl World {
         T: Component,
     {
         let component_id = ComponentId::of::<T>();
-        let archetype = self.archetypes.get_mut(&archetype_id)?;
+        let archetype = self.storage.archetypes.get_mut(&archetype_id)?;
         if !archetype.component_types.contains(&component_id) {
             return None;
         }
@@ -455,7 +456,7 @@ impl World {
     pub fn rehome_native_columns(&mut self) {
         // Step 1: Copy the current per-type function tables out first, so the
         // immutable borrow of `storage_factories` does not overlap the mutable
-        // borrow of `archetypes` below.
+        // borrow of the archetypes below.
         let factory_ops_by_component_id: HashMap<ComponentId, crate::archetype::ColumnOps> = self
             .storage_factories
             .iter()
@@ -466,8 +467,19 @@ impl World {
             .collect();
 
         // Step 2: Give every column whose component id has a native factory the
-        // table that factory holds.
-        for archetype in self.archetypes.values_mut() {
+        // table that factory holds, in the live storage and in the held one.
+        self.run_on_every_entity_storage(|world| {
+            world.rehome_native_columns_of_storage(&factory_ops_by_component_id)
+        });
+    }
+
+    /// Points one storage's native columns at the tables in `factory_ops_by_component_id`.
+    #[cfg(feature = "development")]
+    fn rehome_native_columns_of_storage(
+        &mut self,
+        factory_ops_by_component_id: &HashMap<ComponentId, crate::archetype::ColumnOps>,
+    ) {
+        for archetype in self.storage.archetypes.values_mut() {
             for &component_id in &archetype.component_types {
                 let Some(&ops) = factory_ops_by_component_id.get(&component_id) else {
                     continue;
@@ -489,7 +501,8 @@ impl World {
     /// before it unmaps a retired image, because a column's drop table lives in
     /// the image that produced it.
     pub fn columns_without_factory(&self) -> usize {
-        self.archetypes
+        self.storage
+            .archetypes
             .values()
             .flat_map(|archetype| archetype.component_types.iter())
             .filter(|component_id| {
@@ -511,11 +524,22 @@ impl World {
     /// ids dropped.
     #[cfg(feature = "development")]
     pub fn drop_columns_without_factory(&mut self) -> usize {
+        let mut dropped_count = 0;
+        self.run_on_every_entity_storage(|world| {
+            dropped_count += world.drop_columns_without_factory_in_storage();
+        });
+        dropped_count
+    }
+
+    /// Drops one storage's factory-less native columns; see
+    /// [`Self::drop_columns_without_factory`].
+    #[cfg(feature = "development")]
+    fn drop_columns_without_factory_in_storage(&mut self) -> usize {
         // Step 1: Collect the orphaned ids across every archetype. Deduplicated
         // by hand: the list is a handful of entries at most, and a `HashSet`
         // would hide the order.
         let mut orphaned_ids: Vec<ComponentId> = Vec::new();
-        for archetype in self.archetypes.values() {
+        for archetype in self.storage.archetypes.values() {
             for &component_id in &archetype.component_types {
                 if component_id.is_native_storage()
                     && !self.storage_factories.contains_key(&component_id)
@@ -532,10 +556,12 @@ impl World {
         // `drop_forgotten_components`.
         for component_id in &orphaned_ids {
             let entities: Vec<Entity> = self
+                .storage
                 .entity_locations
                 .iter()
                 .filter(|(_, location)| {
-                    self.archetypes
+                    self.storage
+                        .archetypes
                         .get(&location.archetype_id)
                         .is_some_and(|archetype| archetype.component_types.contains(component_id))
                 })
@@ -703,7 +729,7 @@ impl World {
         // relayout leaves behind. So the whole set is checked first, and the
         // error names the column that disagrees.
         let mut target_archetype_ids = Vec::new();
-        for (archetype_id, archetype) in &self.archetypes {
+        for (archetype_id, archetype) in &self.storage.archetypes {
             if !archetype.component_types.contains(&component_id) {
                 continue;
             }
@@ -729,6 +755,7 @@ impl World {
         let mut migrated_row_count = 0;
         for archetype_id in target_archetype_ids {
             let archetype = self
+                .storage
                 .archetypes
                 .get_mut(&archetype_id)
                 .expect("the verification pass listed only present archetypes");
@@ -814,7 +841,7 @@ impl World {
         // plan was validated against the registered sizes, so the slices in
         // here are in bounds.
         let mut row_moves: Vec<(Entity, Vec<u8>)> = Vec::new();
-        for (archetype_id, archetype) in &self.archetypes {
+        for (archetype_id, archetype) in &self.storage.archetypes {
             if !archetype.component_types.contains(&source_component_id) {
                 continue;
             }
@@ -861,6 +888,7 @@ impl World {
         chunk_index: usize,
     ) -> Option<ColumnChunk<'_>> {
         let archetype = self
+            .storage
             .archetypes
             .values_mut()
             .filter(|archetype| archetype.component_types.contains(&component_id))
@@ -896,6 +924,7 @@ impl World {
             return None;
         }
         let archetype = self
+            .storage
             .archetypes
             .values_mut()
             .filter(|archetype| archetype.component_types.contains(&component_id))
@@ -922,7 +951,7 @@ impl World {
         component_id: ComponentId,
         archetype_id: ArchetypeId,
     ) -> Option<ColumnChunk<'_>> {
-        let archetype = self.archetypes.get_mut(&archetype_id)?;
+        let archetype = self.storage.archetypes.get_mut(&archetype_id)?;
         let column = archetype.component_storages.get_mut(component_id)?;
         let element_size = column.element_size();
         let (row_buffer, len, ticks) = column.raw_rows_and_ticks_mut();
@@ -947,7 +976,7 @@ impl World {
         if !component_id.is_native_storage() {
             return None;
         }
-        let archetype = self.archetypes.get_mut(&archetype_id)?;
+        let archetype = self.storage.archetypes.get_mut(&archetype_id)?;
         if !archetype.component_types.contains(&component_id) {
             return None;
         }
@@ -971,7 +1000,8 @@ impl World {
     /// migrated away. A non-zero count means the column is still live, so its
     /// registration cannot be treated as stale and discarded.
     pub fn live_row_count(&self, component_id: ComponentId) -> usize {
-        self.archetypes
+        self.storage
+            .archetypes
             .values()
             .filter(|archetype| archetype.component_types.contains(&component_id))
             .map(|archetype| archetype.entities.len())
@@ -985,7 +1015,8 @@ impl World {
     /// columns and tables - before the image that defined it leaves the
     /// graveyard.
     pub fn any_archetype_lists_component(&self, component_id: ComponentId) -> bool {
-        self.archetypes
+        self.storage
+            .archetypes
             .values()
             .any(|archetype| archetype.component_types.contains(&component_id))
     }
@@ -1085,8 +1116,9 @@ impl World {
         entity: Entity,
         component_id: ComponentId,
     ) -> Option<&[u8]> {
-        let location = self.entity_locations.get(&entity)?;
-        self.archetypes
+        let location = self.storage.entity_locations.get(&entity)?;
+        self.storage
+            .archetypes
             .get(&location.archetype_id)?
             .component_storages
             .get(component_id)?
@@ -1116,8 +1148,8 @@ impl World {
 
         // Step 2: Find the entity's location and its archetype, and confirm
         // that the archetype's mask lists the component.
-        let location = self.entity_locations.get(&entity)?;
-        let archetype = self.archetypes.get(&location.archetype_id)?;
+        let location = self.storage.entity_locations.get(&entity)?;
+        let archetype = self.storage.archetypes.get(&location.archetype_id)?;
         if !archetype.has_component_bit(bit) {
             return None;
         }
@@ -1154,10 +1186,10 @@ impl World {
 
         // Step 2: Find the entity's location and its archetype, and confirm
         // that the archetype's mask lists the component.
-        let location = self.entity_locations.get(&entity)?;
+        let location = self.storage.entity_locations.get(&entity)?;
         let archetype_id = location.archetype_id;
         let index_in_archetype = location.index_in_archetype;
-        let archetype = self.archetypes.get_mut(&archetype_id)?;
+        let archetype = self.storage.archetypes.get_mut(&archetype_id)?;
         if !archetype.has_component_bit(bit) {
             return None;
         }
@@ -1189,10 +1221,10 @@ impl World {
 
         // Step 2: Find the entity's location and its archetype, and confirm
         // that the archetype's mask lists the component.
-        let location = self.entity_locations.get(&entity)?;
+        let location = self.storage.entity_locations.get(&entity)?;
         let archetype_id = location.archetype_id;
         let index_in_archetype = location.index_in_archetype;
-        let archetype = self.archetypes.get_mut(&archetype_id)?;
+        let archetype = self.storage.archetypes.get_mut(&archetype_id)?;
         if !archetype.has_component_bit(bit) {
             return None;
         }
@@ -1247,10 +1279,11 @@ impl World {
     {
         // Step 1: Locate the entity and reject a stale archetype reference.
         let location = *self
+            .storage
             .entity_locations
             .get(&entity)
             .ok_or(WorldError::EntityNotFound)?;
-        let Some(old_archetype) = self.archetypes.get(&location.archetype_id) else {
+        let Some(old_archetype) = self.storage.archetypes.get(&location.archetype_id) else {
             return Err(WorldError::ArchetypeMissing {
                 entity,
                 archetype_id: location.archetype_id,
@@ -1300,10 +1333,11 @@ impl World {
     ) -> Result<(), WorldError> {
         // Step 1: Locate the entity and reject a stale archetype reference.
         let location = *self
+            .storage
             .entity_locations
             .get(&entity)
             .ok_or(WorldError::EntityNotFound)?;
-        let Some(old_archetype) = self.archetypes.get(&location.archetype_id) else {
+        let Some(old_archetype) = self.storage.archetypes.get(&location.archetype_id) else {
             return Err(WorldError::ArchetypeMissing {
                 entity,
                 archetype_id: location.archetype_id,
@@ -1486,10 +1520,12 @@ impl World {
         bytes: &[u8],
     ) -> Result<(), WorldError> {
         let location = *self
+            .storage
             .entity_locations
             .get(&entity)
             .ok_or(WorldError::EntityNotFound)?;
-        self.archetypes
+        self.storage
+            .archetypes
             .get_mut(&location.archetype_id)
             .and_then(|archetype| archetype.component_storages.get_mut(component_id))
             .ok_or(WorldError::DescriptorComponentMissing)?

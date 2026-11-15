@@ -188,6 +188,14 @@ pub enum EditorCommand {
     },
     /// Run exactly one system phase on the next frame, then pause again.
     StepOnce,
+    /// Start a play session: the edit world is copied aside and the game runs.
+    ///
+    /// Nothing is recorded, and Stop is the only way back. A session that cannot
+    /// start reports every type it could not copy.
+    EnterPlay,
+    /// Stop the session, restore the edit world and put the editor's own state
+    /// back.
+    ExitPlay,
     /// Copy files from outside the project into the assets directory, which is
     /// what a drag-and-drop import queues. Undo removes the copies. A file with
     /// the same name is overwritten.
@@ -445,6 +453,8 @@ impl EditorCommand {
             EditorCommand::DestroyEntity { .. }
             | EditorCommand::SetSystemEnabled { .. }
             | EditorCommand::SetPaused { .. }
+            | EditorCommand::EnterPlay
+            | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::StepOnce
@@ -508,6 +518,8 @@ impl EditorCommand {
             EditorCommand::CreateEntity { .. }
             | EditorCommand::SetSystemEnabled { .. }
             | EditorCommand::SetPaused { .. }
+            | EditorCommand::EnterPlay
+            | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::StepOnce
@@ -554,7 +566,9 @@ impl EditorCommand {
             | EditorCommand::SetPaused { .. }
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
-            | EditorCommand::StepOnce => CommandFamily::Engine,
+            | EditorCommand::StepOnce
+            | EditorCommand::EnterPlay
+            | EditorCommand::ExitPlay => CommandFamily::Engine,
             EditorCommand::SetSelection { .. }
             | EditorCommand::SelectResource { .. }
             | EditorCommand::RestoreSelection { .. }

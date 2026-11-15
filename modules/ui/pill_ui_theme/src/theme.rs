@@ -519,6 +519,12 @@ pub struct Palette {
     pub log_warn: Rgba,
     /// A log line at `error`.
     pub log_error: Rgba,
+    /// The tint the menu bar and the dock's frame take while a play session
+    /// runs, so the person can see at a glance that the game is live.
+    pub play_tint: Rgba,
+    /// The tint while a running session is paused: the same signal, stronger,
+    /// because a paused game is the state that surprises people.
+    pub play_tint_paused: Rgba,
 }
 
 impl Default for Palette {
@@ -546,6 +552,8 @@ impl Default for Palette {
             log_debug: Rgba::rgb(138, 138, 138),
             log_warn: Rgba::rgb(218, 170, 56),
             log_error: Rgba::rgb(217, 72, 62),
+            play_tint: Rgba::rgb(34, 52, 78),
+            play_tint_paused: Rgba::rgb(72, 56, 24),
         }
     }
 }
@@ -576,6 +584,8 @@ impl Palette {
             log_debug: Rgba::rgb(130, 122, 126),
             log_warn: Rgba::rgb(255, 196, 80),
             log_error: Rgba::rgb(255, 70, 70),
+            play_tint: Rgba::rgb(52, 24, 40),
+            play_tint_paused: Rgba::rgb(96, 60, 20),
         }
     }
 }
@@ -850,6 +860,8 @@ fn merge_palette(palette: &mut Palette, overrides: &PaletteOverrides) -> Result<
         log_debug => "palette.log_debug",
         log_warn => "palette.log_warn",
         log_error => "palette.log_error",
+        play_tint => "palette.play_tint",
+        play_tint_paused => "palette.play_tint_paused",
     );
     Ok(())
 }

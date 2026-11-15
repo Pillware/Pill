@@ -678,6 +678,12 @@ pub struct AssetManager {
 pub const ASSET_MANAGER_SHARED_NAME: &str = "pill_engine::asset::AssetManager";
 
 impl Resource for AssetManager {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some(ASSET_MANAGER_SHARED_NAME)
     }

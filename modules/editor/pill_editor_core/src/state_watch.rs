@@ -198,9 +198,16 @@ mod tests {
         // Unchanged: the stamp did not move, so nothing is read.
         assert_eq!(watch.poll(4), None);
 
-        // Edited: the stamp moved again.
+        // Edited: the two documents have the same length, so a filesystem
+        // whose modification time is coarse reports the same stamp and only
+        // the regular re-read can see the edit. Polling on a frame that is due
+        // is therefore what the contract promises, not a stamp that moves.
         std::fs::write(&path, "{\"a\": 2}").expect("the edit");
-        assert_eq!(watch.poll(5), Some(Some("{\"a\": 2}".to_owned())));
+        let poll_due_frame = STATE_FILE_POLL_FRAMES * 2;
+        assert_eq!(
+            watch.poll(poll_due_frame),
+            Some(Some("{\"a\": 2}".to_owned()))
+        );
 
         let _ = std::fs::remove_dir_all(&directory);
     }

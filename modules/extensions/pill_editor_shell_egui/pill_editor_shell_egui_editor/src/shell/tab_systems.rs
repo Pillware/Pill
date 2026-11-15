@@ -32,28 +32,8 @@ pub fn systems_tab(
     pending: &mut PendingEditorCommands,
 ) {
     ui.horizontal(|ui| {
-        let pause_icon = if snapshot.paused {
-            icons::Icon::Play
-        } else {
-            icons::Icon::Pause
-        };
-        if ui
-            .add(icons::IconButton::new(
-                pause_icon,
-                systems::pause_button_label(snapshot.paused),
-            ))
-            .clicked()
-        {
-            // Queue the pause toggle unrecorded: it changes the engine's pause
-            // flag but never becomes an undo entry.
-            pending.push(vec![systems::pause_toggle_command(snapshot.paused)]);
-        }
-        if ui
-            .add(icons::IconButton::new(icons::Icon::SkipForward, "Step"))
-            .clicked()
-        {
-            pending.push(vec![EditorCommand::StepOnce]);
-        }
+        // Pause and Step live in the menu bar's play toolbar, above every
+        // tab, so the tab only reports what the system list holds.
         let enabled_system_count = snapshot.systems.iter().filter(|row| row.enabled).count();
         ui.label(
             egui::RichText::new(format!(

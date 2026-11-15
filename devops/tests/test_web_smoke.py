@@ -40,14 +40,22 @@ DESCRIPTION
     because the logged reactions are the default project's. `--save-capture`
     keeps the last canvas capture as a PNG, for a look at what was drawn.
 
+    `--editor` builds the editor posture instead (`build_web.py --dev --editor`)
+    and drives its scripted channel: `dump play`, `command editor.play`,
+    `dump play`, `command editor.stop`, `dump play`, one line per
+    `EDITOR_STEP_SECONDS` once `window.pillEditor` exists. It asserts that the
+    page reported edit mode, that Play switched it to playing, and that Stop
+    restored the world (`restore_epoch=1`).
+
 USAGE
   python devops/tests/test_web_smoke.py [--timeout-scale N] [--seconds N]
-      [--project PATH] [--save-capture FILE]
+      [--project PATH] [--save-capture FILE] [--editor]
 
 EXAMPLE USAGE
   python devops/tests/test_web_smoke.py
   python devops/tests/test_web_smoke.py --timeout-scale 2 --seconds 20
   python devops/tests/test_web_smoke.py --project examples/pills/pills_rust --save-capture local/temp/web.png
+  python devops/tests/test_web_smoke.py --editor --project devops/tests/projects/native
 
 --- SCRIPT ---
 """
@@ -126,6 +134,28 @@ INPUT_TOKENS = (
 # A blurred capture whose brightness varies this much shows a scene; an empty
 # frame is the clear colour under the lens grain, which blurs flat.
 SCENE_STANDARD_DEVIATION = 15.0
+
+# The editor posture's play check: the lines pushed into the page's scripted
+# channel, one per `EDITOR_STEP_SECONDS`, once `window.pillEditor` exists. The
+# dumps either side of the session are what the check reads.
+PLAY_DUMP_TOKEN = "[test] play"
+PLAY_EDITING_TOKEN = 'mode="editing"'
+PLAY_PLAYING_TOKEN = 'mode="playing"'
+PLAY_RESTORED_TOKEN = "restore_epoch=1"
+# The editor page's own frame report, which stands in for the game posture's
+# project statistics line in the frame check.
+EDITOR_FRAME_TOKEN = "[editor] web frame"
+EDITOR_PLAY_LINES = (
+    "dump play",
+    "command editor.play",
+    "dump play",
+    "command editor.stop",
+    "dump play",
+)
+EDITOR_STEP_SECONDS = 1.5
+# How long an editor run watches the page: the wasm boots, then the five lines
+# above have their own time.
+EDITOR_MIN_SECONDS = 20.0
 
 BUILD_TIMEOUT = 1800
 BROWSER_START_TIMEOUT = 30
@@ -271,11 +301,14 @@ def scene_variation(png_bytes: bytes):
     return ImageStat.Stat(image).stddev[0]
 
 
-def observe_page(browser: str, url: str, seconds: float, send_input: bool, captures: list) -> tuple:
+def observe_page(
+    browser: str, url: str, seconds: float, send_input: bool, captures: list, editor: bool = False
+) -> tuple:
     """Open `url` and collect console text, problems and capture variations.
 
     Sends the default project's input when `send_input`; every capture's PNG
-    bytes are appended to `captures`.
+    bytes are appended to `captures`. With `editor`, the page's scripted channel
+    is driven through `EDITOR_PLAY_LINES` instead: one session, entered and left.
     """
     console_lines = []
     problems = []
@@ -322,6 +355,11 @@ def observe_page(browser: str, url: str, seconds: float, send_input: bool, captu
             next_capture = time.monotonic() + 1
             capture_requests = set()
             input_due = None
+            # An editor page is driven once its scripted channel exists, which
+            # the probe below polls for.
+            editor_ready_at = None
+            editor_lines_sent = 0
+            next_editor_probe = time.monotonic()
             while time.monotonic() < end:
                 if time.monotonic() >= next_capture:
                     capture_requests.add(devtools.send("Page.captureScreenshot", {"format": "png"}))
@@ -330,10 +368,34 @@ def observe_page(browser: str, url: str, seconds: float, send_input: bool, captu
                     for method, params in INPUT_EVENTS:
                         devtools.send(method, params)
                     input_due = float("inf")
+                if editor and editor_ready_at is None and time.monotonic() >= next_editor_probe:
+                    devtools.send(
+                        "Runtime.evaluate",
+                        {"expression": "typeof window.pillEditor", "returnByValue": True},
+                    )
+                    next_editor_probe = time.monotonic() + 0.5
+                if editor and editor_ready_at is not None:
+                    due = editor_ready_at + EDITOR_STEP_SECONDS * (editor_lines_sent + 1)
+                    if editor_lines_sent < len(EDITOR_PLAY_LINES) and time.monotonic() >= due:
+                        line = EDITOR_PLAY_LINES[editor_lines_sent]
+                        devtools.send(
+                            "Runtime.evaluate",
+                            {
+                                "expression": "window.pillEditor.command("
+                                + json.dumps(line)
+                                + ")",
+                                "returnByValue": True,
+                            },
+                        )
+                        editor_lines_sent += 1
                 try:
                     message = devtools.receive()
                 except (socket.timeout, TimeoutError):
                     continue
+                result = message.get("result")
+                if editor and editor_ready_at is None and isinstance(result, dict):
+                    if result.get("result", {}).get("value") == "object":
+                        editor_ready_at = time.monotonic()
                 if message.get("id") in capture_requests and "result" in message:
                     png_bytes = base64.b64decode(message["result"]["data"])
                     captures.append(png_bytes)
@@ -385,13 +447,21 @@ def res_files_in_module(module_path: Path, res_directory: Path) -> list:
     return embedded
 
 
-def run_smoke_test(timeout_scale: float, seconds: float, project: str, save_capture) -> int:
+def run_smoke_test(
+    timeout_scale: float, seconds: float, project: str, save_capture, editor: bool = False
+) -> int:
     """Build, serve and open the web build of `project`, then check what it
-    did; the last capture goes to `save_capture` when given."""
+    did; the last capture goes to `save_capture` when given.
+
+    With `editor`, the editor posture is built and the scripted channel's play
+    verbs are driven instead of the game's input.
+    """
     web_build_directory = REPOSITORY_ROOT / project / "build" / "web"
-    checks_input = project == PROJECT
+    checks_input = project == PROJECT and not editor
+    if editor:
+        seconds = max(seconds, EDITOR_MIN_SECONDS)
     print("=" * 70)
-    print("  Web Build Smoke Test")
+    print("  Web Editor Play Smoke Test" if editor else "  Web Build Smoke Test")
     print("=" * 70)
 
     browser = find_browser()
@@ -400,11 +470,15 @@ def run_smoke_test(timeout_scale: float, seconds: float, project: str, save_capt
         return 1
 
     # Step 1: build, restoring the shipping bundle the build regenerates.
-    print(f"\n  [BUILD] build_web.py --dev {project}")
+    build_command = [sys.executable, str(BUILD_SCRIPT), "--dev"]
+    if editor:
+        build_command.append("--editor")
+    build_command.append(project)
+    print(f"\n  [BUILD] {' '.join(build_command[3:])}")
     snapshot = snapshot_paths(SHIPPING_BUNDLE_PATHS)
     try:
         result = subprocess.run(
-            [sys.executable, str(BUILD_SCRIPT), "--dev", project],
+            build_command,
             cwd=str(REPOSITORY_ROOT),
             capture_output=True,
             text=True,
@@ -427,7 +501,7 @@ def run_smoke_test(timeout_scale: float, seconds: float, project: str, save_capt
     try:
         url = f"http://127.0.0.1:{server.server_address[1]}/"
         console_lines, problems, variations = observe_page(
-            browser, url, seconds * timeout_scale, checks_input, captures
+            browser, url, seconds * timeout_scale, checks_input, captures, editor
         )
     finally:
         server.shutdown()
@@ -437,7 +511,25 @@ def run_smoke_test(timeout_scale: float, seconds: float, project: str, save_capt
 
     # Step 3: judge.
     console = "\n".join(console_lines)
+    console_dump = os.environ.get("PILL_WEB_CONSOLE_OUT")
+    if console_dump:
+        Path(console_dump).write_text(console, encoding="utf-8")
+        print(f"  [SAVED] the whole page console: {console_dump}")
     failures = list(problems)
+    if editor:
+        # The editor posture: one session entered and left, read from the
+        # scripted channel's dumps. The dumps either side of the session are
+        # what tell an entered session from a refused one.
+        if console.count(PLAY_DUMP_TOKEN) < 3:
+            failures.append(
+                f"the editor answered {console.count(PLAY_DUMP_TOKEN)} dump(s) instead of 3"
+            )
+        if PLAY_EDITING_TOKEN not in console:
+            failures.append("the editor never reported edit mode")
+        if PLAY_PLAYING_TOKEN not in console:
+            failures.append("Play never switched the run mode")
+        if PLAY_RESTORED_TOKEN not in console:
+            failures.append("Stop never restored the world (no restore_epoch=1)")
     pack_path = web_build_directory / ASSET_PACK_FILE_NAME
     if not pack_path.is_file():
         failures.append(f"the page has no {ASSET_PACK_FILE_NAME} beside it to fetch")
@@ -452,12 +544,18 @@ def run_smoke_test(timeout_scale: float, seconds: float, project: str, save_capt
     for token, meaning in (
         (PACK_TOKEN, "the fetched asset pack was not mounted"),
         (FIRST_FRAME_TOKEN, "no first frame was presented with a camera"),
-        (FRAME_TOKEN, "frames did not keep running"),
+        # An editor page reports its own frames: the project's statistics line
+        # belongs to the game posture's project, which the editor does not run
+        # the same way.
+        (
+            EDITOR_FRAME_TOKEN if editor else FRAME_TOKEN,
+            "frames did not keep running",
+        ),
         *(INPUT_TOKENS if checks_input else ()),
     ):
         if token not in console:
             failures.append(meaning)
-    if variations and max(variations) < SCENE_STANDARD_DEVIATION:
+    if not editor and variations and max(variations) < SCENE_STANDARD_DEVIATION:
         failures.append(
             f"no capture showed a scene (largest variation {max(variations):.1f})"
         )
@@ -470,7 +568,11 @@ def run_smoke_test(timeout_scale: float, seconds: float, project: str, save_capt
     print("  [OK] the module carries none of the project's assets")
     print("  [OK] the first frame was presented with a camera")
     print(f"  [OK] frames kept running ({console.count(FRAME_TOKEN)} statistics report(s))")
-    if checks_input:
+    if editor:
+        print(
+            f"  [OK] one session entered and left ({console.count(PLAY_DUMP_TOKEN)} dumps)"
+        )
+    elif checks_input:
         print("  [OK] keyboard, wheel and mouse button input reached the game")
     else:
         print("  [SKIP] input check: it reads the default project's logs")
@@ -513,10 +615,19 @@ def main() -> None:
         default=None,
         help="write the last canvas capture to this PNG file",
     )
+    parser.add_argument(
+        "--editor",
+        action="store_true",
+        help="build the editor posture and drive its play verbs instead of the game's input",
+    )
     arguments = parser.parse_args()
     sys.exit(
         run_smoke_test(
-            arguments.timeout_scale, arguments.seconds, arguments.project, arguments.save_capture
+            arguments.timeout_scale,
+            arguments.seconds,
+            arguments.project,
+            arguments.save_capture,
+            arguments.editor,
         )
     )
 

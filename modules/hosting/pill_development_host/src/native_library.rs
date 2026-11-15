@@ -150,9 +150,8 @@ struct PreloadedEngineDylibs {
 
 /// The process-wide [`PreloadedEngineDylibs`] table.
 #[cfg(not(windows))]
-static PRELOADED_ENGINE_DYLIBS: std::sync::OnceLock<
-    std::sync::Mutex<PreloadedEngineDylibs>,
-> = std::sync::OnceLock::new();
+static PRELOADED_ENGINE_DYLIBS: std::sync::OnceLock<std::sync::Mutex<PreloadedEngineDylibs>> =
+    std::sync::OnceLock::new();
 
 /// Directory, under the workspace root, where temporary native-library copies
 /// are stored.

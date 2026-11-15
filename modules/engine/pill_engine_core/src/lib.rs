@@ -224,6 +224,9 @@ pub mod world;
 #[cfg(test)]
 mod test_fixtures;
 
+#[cfg(test)]
+mod engine_mode_tests;
+
 // =============================================================================
 // Public Re-exports
 // =============================================================================
@@ -255,7 +258,7 @@ pub use debug_draw::{
     DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
     GizmoTriangle, LabelAnchor,
 };
-pub use engine::{Engine, SystemOwner, SystemSnapshot};
+pub use engine::{Engine, PlayRefusal, RunMode, SystemOwner, SystemSnapshot};
 pub use entity::{Entity, EntityId};
 pub use error::{EngineError, SystemError, SystemFailure};
 pub use hot_patch::{HotPatchError, HotPatchRegistry, HotSlot, PlainSlot};
@@ -272,7 +275,9 @@ pub use pill_core::DynamicBuffer;
 pub use query::{
     Added, BatchStats, Changed, Or, Query, QueryFilter, QueryTarget, Res, ResMut, With, Without,
 };
-pub use resource::{KeptLayoutDeclaration, ResHandle, Resource, ResourceId};
+pub use resource::{
+    KeptLayoutDeclaration, PlayState, ResHandle, Resource, ResourceId, RestoreEpoch,
+};
 pub use saved_references::{
     restore_asset_reference, saved_reference, SavedAssetReference, SavedEntityLink,
     SavedEntityLinks, SavedReference,

@@ -1190,6 +1190,21 @@ impl ComponentColumn {
         (self.row_buffer.as_ptr(), self.len, &mut self.ticks)
     }
 
+    /// The rows as `T`, read-only.
+    ///
+    /// The counterpart of [`Self::rows_and_ticks_mut`] for a caller that copies
+    /// rows out without moving them, such as the play-mode storage copy.
+    ///
+    /// # Panics
+    ///
+    /// If `T` is not this column's element type.
+    pub fn rows<T: 'static>(&self) -> &[T] {
+        self.assert_element_type::<T>();
+        // SAFETY: the element type was just checked, rows `0..len` are
+        // initialized, and the buffer is allocated and aligned for `T`.
+        unsafe { std::slice::from_raw_parts(self.row_buffer.as_ptr().cast::<T>(), self.len) }
+    }
+
     /// Returns the raw bytes of the row at `index`, or `None` when out of bounds.
     pub fn bytes(&self, index: usize) -> Option<&[u8]> {
         if index >= self.len {

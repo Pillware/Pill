@@ -51,6 +51,9 @@ pub mod events;
 pub mod manager;
 /// Ray queries against the simulated world.
 pub mod queries;
+/// The system that drops the simulation when the world it mirrors was
+/// restored.
+pub mod restore;
 /// The tuning document and its `.physics_settings` asset.
 pub mod settings;
 /// The system that steps the simulation each frame.
@@ -70,6 +73,7 @@ pub use manager::{
     MAXIMUM_SUBSTEPS_PER_FRAME,
 };
 pub use queries::RayHit;
+pub use restore::physics_restore;
 pub use settings::{PhysicsSettings, PhysicsSettingsAsset};
 
 // =============================================================================
@@ -165,6 +169,12 @@ pub fn register(engine: &mut Engine) -> u32 {
         engine
             .world_mut()
             .insert_settings_asset_manager(PhysicsManager::new());
+    }
+    // A manager built while a session runs describes the world that session
+    // restored to, so it must not clear itself on the first frame.
+    let restore_epoch = engine.world().restore_epoch();
+    if let Some(manager) = engine.world_mut().get_resource_mut::<PhysicsManager>() {
+        manager.adopt_restore_epoch(restore_epoch);
     }
     if engine.world().get_resource::<PhysicsEvents>().is_none() {
         engine.world_mut().insert_resource(PhysicsEvents::default());

@@ -99,12 +99,26 @@ impl World {
                 type_name, previous_metadata.schema_hash, current_schema_hash,
             );
 
-            match self.migrate_single_component_type(
-                type_name,
-                previous_metadata,
-                pre_swap_entities,
-            ) {
-                Ok(migrated_entity_count_for_type) => {
+            // Step 2: Migrate the type in the live storage and, when one is
+            // held, in the held storage too. A held column carries the
+            // retiring generation's rows and function table, so leaving it
+            // alone would leave a column that calls unmapped code.
+            let mut migrated_entity_count_for_type = 0;
+            let mut failure: Option<String> = None;
+            self.run_on_every_entity_storage(|world| {
+                match world.migrate_single_component_type(
+                    type_name,
+                    previous_metadata,
+                    pre_swap_entities,
+                ) {
+                    Ok(migrated_entity_count) => {
+                        migrated_entity_count_for_type += migrated_entity_count
+                    }
+                    Err(error) => failure = Some(error.to_string()),
+                }
+            });
+            match failure {
+                None => {
                     info!(
                         target: telemetry_target::HOT_RELOAD,
                         "[persistence]   '{}' -> OK ({} entities)",
@@ -113,8 +127,7 @@ impl World {
                     migration_report.migrated_type_count += 1;
                     migration_report.migrated_entity_count += migrated_entity_count_for_type;
                 }
-                Err(error) => {
-                    let reason = error.to_string();
+                Some(reason) => {
                     debug!(
                         target: telemetry_target::HOT_RELOAD,
                         "[persistence]   '{type_name}' -> SKIP ({reason})",
@@ -277,6 +290,7 @@ impl World {
     ) -> Result<usize, PersistenceError> {
         // Step 1: Find every archetype that stores the old component id.
         let archetype_ids: Vec<_> = self
+            .storage
             .archetypes
             .iter()
             .filter(|(_, archetype)| archetype.component_types.contains(&component_id))
@@ -291,7 +305,7 @@ impl World {
             // set, so their rows already hold current-layout values and go
             // through the current serializer.
             let serialized_components: Vec<Vec<u8>> = {
-                let Some(archetype) = self.archetypes.get(&archetype_id) else {
+                let Some(archetype) = self.storage.archetypes.get(&archetype_id) else {
                     continue;
                 };
 
@@ -330,7 +344,7 @@ impl World {
             // Step 4: Replace the storage column. Remove the old one, build a
             // new one from the registered storage factory, and insert the
             // migrated values.
-            let Some(archetype) = self.archetypes.get_mut(&archetype_id) else {
+            let Some(archetype) = self.storage.archetypes.get_mut(&archetype_id) else {
                 continue;
             };
 
@@ -406,6 +420,7 @@ impl World {
     ) -> Result<usize, PersistenceError> {
         // Step 1: Find every archetype that holds the old component id.
         let source_archetype_ids: Vec<_> = self
+            .storage
             .archetypes
             .iter()
             .filter(|(_, archetype)| archetype.component_types.contains(&retiring_component_id))
@@ -418,7 +433,8 @@ impl World {
             // Step 2: Remove the source archetype and work out which ids its
             // destination holds: the same set with the old id replaced by the
             // new one.
-            let Some(mut source_archetype) = self.archetypes.remove(&source_archetype_id) else {
+            let Some(mut source_archetype) = self.storage.archetypes.remove(&source_archetype_id)
+            else {
                 continue;
             };
 
@@ -450,7 +466,8 @@ impl World {
                     &source_archetype.component_storages,
                     entity_index,
                 ) else {
-                    self.archetypes
+                    self.storage
+                        .archetypes
                         .insert(source_archetype_id, source_archetype);
                     return Err(PersistenceError::SerializationFailed {
                         component_id: retiring_component_id,
@@ -479,7 +496,8 @@ impl World {
             // by moving the column's last row into that slot, and going back to
             // front keeps the taken row last, so no other row moves and the
             // waiting rows keep the index their value was read at.
-            let Some(destination_archetype) = self.archetypes.get_mut(&destination_archetype_id)
+            let Some(destination_archetype) =
+                self.storage.archetypes.get_mut(&destination_archetype_id)
             else {
                 return Err(PersistenceError::DestinationArchetypeMissing);
             };
@@ -543,7 +561,7 @@ impl World {
                     column.set_row_ticks(destination_index, rewritten_ticks);
                 }
 
-                self.entity_locations.insert(
+                self.storage.entity_locations.insert(
                     entity,
                     crate::world::EntityLocation {
                         archetype_id: destination_archetype_id,
@@ -557,7 +575,7 @@ impl World {
 
         // Step 5: Add one to the archetype generation, so cached query plans
         // notice the new archetype layout.
-        self.archetype_generation = self.archetype_generation.wrapping_add(1);
+        self.storage.archetype_generation = self.storage.archetype_generation.wrapping_add(1);
         Ok(migrated_entity_count)
     }
 }

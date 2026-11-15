@@ -297,7 +297,7 @@ fn note_ui_producer(producer: u8, producer_name: &str) {
 /// system returns and draws nothing. A world with no enabled camera still gets
 /// a frame, but the primary surface has no view unless a camera is bound to it,
 /// and the renderer skips a frame that has no views at all.
-#[system(name = "rendering", post_update)]
+#[system(name = "rendering", post_update, edit_mode)]
 pub fn rendering_system(
     mut frame: ResMut<RenderFrame>,
     assets: Res<AssetManager>,

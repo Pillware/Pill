@@ -449,7 +449,13 @@ impl Default for CommandHistory {
     }
 }
 
-impl pill_engine::Resource for CommandHistory {}
+impl pill_engine::Resource for CommandHistory {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 // =============================================================================
 // Free Functions
@@ -507,6 +513,8 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
             EditorCommand::DestroyEntity { .. }
             | EditorCommand::SetSystemEnabled { .. }
             | EditorCommand::SetPaused { .. }
+            | EditorCommand::EnterPlay
+            | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::StepOnce => 0,

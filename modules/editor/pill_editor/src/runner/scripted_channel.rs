@@ -336,6 +336,33 @@ impl EditorWindow {
         );
     }
 
+    /// Logs the play session's state: the run mode, the pause flag and the
+    /// world's restore epoch, which moves on every Stop.
+    pub(super) fn dump_play(&mut self) {
+        let engine = self.host.host_mut().engine_mut();
+        let mode = match engine.run_mode() {
+            pill_engine_core::RunMode::Editing => "editing",
+            pill_engine_core::RunMode::Playing => "playing",
+        };
+        // The history's depths are part of the session's contract: the
+        // document's stack goes aside at Play and comes back at Stop, so a
+        // suite compares these across a session.
+        let (undo, redo) = engine
+            .world()
+            .get_resource::<CommandHistory>()
+            .map(|history| (history.undo_depth(), history.redo_depth()))
+            .unwrap_or((0, 0));
+        info!(
+            target: telemetry_target::EDITOR,
+            mode,
+            paused = engine.systems_paused(),
+            restore_epoch = engine.world().restore_epoch(),
+            undo,
+            redo,
+            "[test] play"
+        );
+    }
+
     /// Logs the module panels, for the suites.
     pub(super) fn dump_panels(&mut self) {
         let world = self.host.host_mut().engine_mut().world_mut();
@@ -1057,6 +1084,7 @@ impl EditorWindow {
                 Dump::Scenes => self.dump_scenes(),
                 Dump::Viewport => self.dump_viewport(),
                 Dump::Grid => self.dump_grid(),
+                Dump::Play => self.dump_play(),
                 Dump::Assets => self.dump_assets(),
                 Dump::EngineAssets => self.dump_engine_assets(),
                 Dump::Browser => self.dump_browser(),
@@ -1090,7 +1118,7 @@ impl EditorWindow {
             ScriptedCommand::HoverUi { x, y } => self.scripted_hover_ui(x, y),
             ScriptedCommand::Drop(path) => self.drop_files(vec![std::path::PathBuf::from(path)]),
             ScriptedCommand::HoverFile(path) => self.preview_drop(std::path::Path::new(&path)),
-            ScriptedCommand::DragOut(path) => self.start_drag_out(&path),
+            ScriptedCommand::DragOut(path) => self.start_drag_out(&path, false),
             ScriptedCommand::SelectAsset(path) => self.scripted_select_asset(&path),
             ScriptedCommand::SelectEntity(entity_text) => {
                 reject_on_failure(line, self.scripted_select_entity(&entity_text))
@@ -1173,6 +1201,9 @@ impl EditorWindow {
             ScriptedCommand::Cut => self.scripted_clipboard(ClipboardAction::Cut),
             ScriptedCommand::Paste => self.scripted_clipboard(ClipboardAction::Paste),
             ScriptedCommand::PauseToggle => self.scripted_pause_toggle(),
+            ScriptedCommand::Play => self.scripted_play(),
+            ScriptedCommand::Stop => self.scripted_stop(),
+            ScriptedCommand::PlayToggle => self.scripted_play_toggle(),
             ScriptedCommand::NewSceneView => {
                 reject_on_failure(line, self.scripted_new_scene_view())
             }
@@ -2047,6 +2078,36 @@ impl EditorWindow {
             paused = !paused,
             "[editor] pause toggled"
         );
+    }
+
+    /// Runs `editor.play` from the scripted channel: the same queued
+    /// `EnterPlay` the toolbar's Play button queues.
+    pub(super) fn scripted_play(&mut self) {
+        self.queue_play_command(EditorCommand::EnterPlay);
+    }
+
+    /// Runs `editor.stop` from the scripted channel: the same queued `ExitPlay`
+    /// the toolbar's Stop button queues.
+    pub(super) fn scripted_stop(&mut self) {
+        self.queue_play_command(EditorCommand::ExitPlay);
+    }
+
+    /// Runs `editor.play_toggle`: Play while editing, Stop while playing.
+    pub(super) fn scripted_play_toggle(&mut self) {
+        let run_mode = self.host.host_mut().engine_mut().run_mode();
+        let command = match run_mode {
+            pill_engine_core::RunMode::Editing => EditorCommand::EnterPlay,
+            pill_engine_core::RunMode::Playing => EditorCommand::ExitPlay,
+        };
+        self.queue_play_command(command);
+    }
+
+    /// Queues one play command for the frame boundary's drain.
+    fn queue_play_command(&mut self, command: EditorCommand) {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push(vec![command]);
+        }
     }
 
     /// Arms an entity reference row (`pick entity <entity> <component>

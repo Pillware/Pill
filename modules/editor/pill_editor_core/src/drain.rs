@@ -477,6 +477,64 @@ mod tests {
         );
     }
 
+    /// A world the engine cannot copy refuses Play: the person gets a toast
+    /// naming the type, and the editor stays in edit mode.
+    #[test]
+    fn a_refused_play_shows_a_notice_and_stays_in_edit_mode() {
+        /// A component that owns heap data and is not `Clone`.
+        #[derive(Debug)]
+        struct UncopyableProbe {
+            #[allow(dead_code)]
+            buffer: Vec<u32>,
+        }
+        impl pill_engine::Component for UncopyableProbe {}
+
+        let mut engine = engine();
+        engine.set_run_mode(pill_engine::RunMode::Editing);
+        let world = engine.world_mut();
+        world.register_component::<UncopyableProbe>();
+        world
+            .create_entity()
+            .with(UncopyableProbe {
+                buffer: vec![1, 2, 3],
+            })
+            .build()
+            .expect("the entity builds");
+
+        // Queue the command the toolbar's Play button queues.
+        let pending = engine
+            .world_mut()
+            .get_resource_mut::<PendingEditorCommands>()
+            .expect("the test engine carries a queue");
+        pending.push(vec![EditorCommand::EnterPlay]);
+        apply_pending(&mut engine, 0);
+        assert_eq!(
+            engine.run_mode(),
+            pill_engine::RunMode::Editing,
+            "a refused Play leaves the editor editing"
+        );
+        let world = engine.world();
+        let notices = world
+            .get_resource::<crate::notices::EditorNotices>()
+            .expect("the refusal pushes a notice");
+        let refusal = notices
+            .events
+            .iter()
+            .find(|notice| notice.text.starts_with("Play refused"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "a refused Play must show a toast, but the notices are {:?}",
+                    notices.events
+                )
+            });
+        assert_eq!(refusal.level, crate::notices::NoticeLevel::Error);
+        assert!(
+            refusal.text.contains("UncopyableProbe"),
+            "the toast names the type: {}",
+            refusal.text
+        );
+    }
+
     #[test]
     fn the_registry_stamp_changes_only_when_the_registry_does() {
         let engine = engine();

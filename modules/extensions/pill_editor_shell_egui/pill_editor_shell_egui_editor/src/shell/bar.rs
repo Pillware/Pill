@@ -21,6 +21,13 @@ use pill_editor_shell_egui_editor::shell::*;
 /// The gap between two menu titles in the bar, in points.
 pub const MENU_TITLE_GAP: f32 = 2.0;
 
+/// The gap between two play-toolbar buttons, in points.
+pub const PLAY_BUTTON_GAP: f32 = 4.0;
+
+/// How far below the window's top the play toolbar sits, in points. The bar is
+/// [`menubar::MENU_BAR_HEIGHT`] tall and the toolbar is centred in it.
+pub const PLAY_TOOLBAR_TOP: f32 = 4.0;
+
 // =============================================================================
 // Free Functions
 // =============================================================================
@@ -100,7 +107,10 @@ pub fn menu_bar(
                     }
                 }
             });
-            // Step 3: Remember which menu is open, and log a change once.
+            // Step 3: Draw the play controls over the strip, centred, and
+            // remember the group's rectangle so a suite can click it.
+            play_toolbar(ui, session, viewer);
+            // Step 4: Remember which menu is open, and log a change once.
             if let Some(menu) = open_menu {
                 if session.open != Some(menu) {
                     session.open = Some(menu);
@@ -114,6 +124,81 @@ pub fn menu_bar(
                 session.open = None;
             }
         });
+}
+
+/// Draws the play controls centred over the menu bar: Play or Stop, then
+/// Pause or Resume, then Step.
+///
+/// The first button's label follows the run mode, so one control both starts a
+/// session and ends it. Every press queues the same command the View menu's row
+/// and the scripted channel queue, and none is recorded: a session is not an
+/// undo step. The group's rectangle joins the frame's overlay regions, so a
+/// click on it is the UI's and never a scene pick.
+pub fn play_toolbar(
+    ui: &mut egui::Ui,
+    session: &mut MenubarSession,
+    viewer: &mut EditorTabViewer<'_>,
+) {
+    let run_mode = viewer.snapshot.run_mode;
+    let paused = viewer.snapshot.paused;
+    let mut group_rect = None;
+    egui::Area::new(egui::Id::new("pill_editor_shell_egui.play_toolbar"))
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, PLAY_TOOLBAR_TOP))
+        .order(egui::Order::Foreground)
+        .show(ui.ctx(), |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = PLAY_BUTTON_GAP;
+                if play_button(ui, menubar::play_title(run_mode), "Ctrl+P") {
+                    let command = menubar::play_toggle_command(run_mode);
+                    run_play_control("play", command, viewer);
+                }
+                if play_button(ui, systems::pause_button_label(paused), "Ctrl+Alt+P") {
+                    let command = systems::pause_toggle_command(paused);
+                    run_play_control("pause", command, viewer);
+                }
+                if play_button(ui, "Step", "F10") {
+                    run_play_control("step", EditorCommand::StepOnce, viewer);
+                }
+            });
+            group_rect = Some(ui.min_rect());
+        });
+    let Some(group_rect) = group_rect else {
+        return;
+    };
+    if session
+        .geometry
+        .remember_exact(MenubarSlot::Toolbar, group_rect)
+    {
+        pill_core::debug!(
+            target: telemetry_target::EDITOR,
+            x = group_rect.min.x,
+            y = group_rect.min.y,
+            width = group_rect.width(),
+            height = group_rect.height(),
+            "[editor] play toolbar rect"
+        );
+    }
+    claim_pointer(group_rect, &mut viewer.overlay_regions);
+}
+
+/// Draws one toolbar button and reports whether it was pressed.
+///
+/// The label is the action's word (`Play`, `Stop`, `Pause`, `Resume`, `Step`)
+/// and the tooltip carries the chord, because the bar has no room for one.
+pub fn play_button(ui: &mut egui::Ui, label: &str, shortcut: &str) -> bool {
+    ui.add(egui::Button::new(label))
+        .on_hover_text(format!("{label} ({shortcut})"))
+        .clicked()
+}
+
+/// Queues one play control's command, unrecorded, and logs the press.
+pub fn run_play_control(control: &str, command: EditorCommand, viewer: &mut EditorTabViewer<'_>) {
+    viewer.pending.push(vec![command]);
+    pill_core::info!(
+        target: telemetry_target::EDITOR,
+        control,
+        "[editor] play control"
+    );
 }
 
 /// Draws one open menu: the rows its model returns, each row's rectangle in
@@ -235,6 +320,13 @@ pub fn run_menu_action(
             .history
             .push(pill_editor_core::requests::HistoryRequest::Redo),
         menubar::MenuAction::ActivateTab(tab) => viewer.requests.pending_tab = Some(tab),
+        // Play and Stop share one action, the same way the toolbar's first
+        // button does.
+        menubar::MenuAction::TogglePlay => {
+            viewer
+                .pending
+                .push(vec![menubar::play_toggle_command(viewer.snapshot.run_mode)]);
+        }
         // The dock is borrowed by the `DockArea` while this menu draws, so the
         // new view is docked after the pass.
         menubar::MenuAction::NewSceneView => viewer.deferred.new_scene_view = true,

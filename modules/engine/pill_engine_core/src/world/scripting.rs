@@ -116,7 +116,7 @@ impl World {
         );
         // Step 1: Reserve the per-frame work list and capture raw pointers to
         // self and the command queue before any field borrows on self.
-        let entity_count = self.entity_locations.len();
+        let entity_count = self.storage.entity_locations.len();
         let mut entities_to_update: Vec<(Entity, ArchetypeId, usize)> =
             Vec::with_capacity(entity_count);
 
@@ -134,7 +134,7 @@ impl World {
             };
 
             // Every entity of an archetype whose mask carries the script bit.
-            for (archetype_id, archetype) in &self.archetypes {
+            for (archetype_id, archetype) in &self.storage.archetypes {
                 if archetype.has_component_bit(script_bit) {
                     for (index, &entity) in archetype.entities.iter().enumerate() {
                         entities_to_update.push((entity, *archetype_id, index));
@@ -148,7 +148,7 @@ impl World {
             entities_to_update.sort_by_key(|(_, archetype_id, index)| (*archetype_id, *index));
 
             for (entity, archetype_id, index) in entities_to_update.drain(..) {
-                if let Some(archetype) = self.archetypes.get_mut(&archetype_id) {
+                if let Some(archetype) = self.storage.archetypes.get_mut(&archetype_id) {
                     updater(
                         &mut archetype.component_storages,
                         index,

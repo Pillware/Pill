@@ -184,7 +184,7 @@ impl<'w, Q: QueryTarget, F: QueryFilter> QueryIterMut<'w, Q, F> {
             drop(_zone_pointers);
 
             let _zone_archetype = crate::profile_scope!("get archetype");
-            let archetype = world.archetypes.get_mut(&archetype_id)?;
+            let archetype = world.storage.archetypes.get_mut(&archetype_id)?;
             _zone_archetype.text_lazy(|| archetype.get_archetype_info(&world.component_registry));
             drop(_zone_archetype);
 

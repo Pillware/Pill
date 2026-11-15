@@ -1007,6 +1007,7 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut runtime = setup(crate::static_project::test_project(
             crate::StaticProjectBackend::Native {
+                register: registers_nothing,
                 init: registers_nothing,
             },
         ))
@@ -1026,6 +1027,7 @@ mod tests {
 
         let _runtime = setup_with_asset_database(
             crate::static_project::test_project(crate::StaticProjectBackend::Native {
+                register: registers_nothing,
                 init: record_whether_the_pack_is_mounted,
             }),
             Some(database),

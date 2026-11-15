@@ -289,7 +289,13 @@ impl EntityPickRequest {
     }
 }
 
-impl pill_engine::Resource for EntityPickRequest {}
+impl pill_engine::Resource for EntityPickRequest {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// The expensive tier of the snapshot, built only for the selected entities.
 #[derive(Clone, Debug, PartialEq)]
@@ -642,7 +648,13 @@ impl EditorSelection {
     }
 }
 
-impl pill_engine::Resource for EditorSelection {}
+impl pill_engine::Resource for EditorSelection {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// The complete per-refresh view the editor renders.
 ///
@@ -680,6 +692,13 @@ pub struct EditorSnapshot {
     pub asset_detail: Option<AssetDetail>,
     /// Whether the engine's system phase is paused.
     pub paused: bool,
+    /// Whether Play brings the Game tab forward, from the project's
+    /// `editor_settings.yaml`. The executable fills it in; a snapshot captured
+    /// without one assumes the switch is on.
+    pub focus_game_on_play: bool,
+    /// Whether the frame is edited or played. While playing, the menu bar and
+    /// the dock's frame are tinted and Play has become Stop.
+    pub run_mode: pill_engine::RunMode,
     /// The gizmo tool's settings: mode, space and snapping. The Scene tab's
     /// context menu checks its items against them.
     pub gizmo: crate::gizmo::GizmoSettings,
@@ -753,7 +772,13 @@ pub struct ResourceFieldView {
     pub value: FieldValue,
 }
 
-impl pill_engine::Resource for EditorSnapshot {}
+impl pill_engine::Resource for EditorSnapshot {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 impl EditorSnapshot {
     /// Builds the tiers this crate can read from a live engine. It never
@@ -792,6 +817,8 @@ impl EditorSnapshot {
             standalone_types: Vec::new(),
             asset_detail: None,
             paused: engine.systems_paused(),
+            focus_game_on_play: true,
+            run_mode: engine.run_mode(),
             gizmo: engine
                 .world()
                 .get_resource::<crate::gizmo::GizmoState>()
@@ -895,6 +922,9 @@ impl EditorSnapshot {
         }
         if previous.paused != current.paused {
             changed.push("paused");
+        }
+        if previous.run_mode != current.run_mode {
+            changed.push("run_mode");
         }
         if previous.gizmo != current.gizmo {
             changed.push("gizmo");

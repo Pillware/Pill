@@ -820,7 +820,7 @@ impl EditorWindow {
         // an OLE drag, and the editor's thread runs the modal loop until the
         // drop ends.
         if let Some(path) = drag_out {
-            self.start_drag_out(&path);
+            self.start_drag_out(&path, true);
         }
         if let Some(text) = clipboard_text {
             // egui's own copy (a text field's selection) goes through the

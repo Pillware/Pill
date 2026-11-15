@@ -67,9 +67,13 @@ EDITOR_VALIDATION_ROOT = REPOSITORY_ROOT / "local" / "editor-validation"
 
 # The default poll for log waits: the cursor reads only appended bytes, so a
 # poll costs one stat and, at most, one small read. The disk probes pass their
-# own slower cadence because another process writes those files. 0.3 is the
-# audit's conservative first step; the frame and count waits pass their own.
-LOG_POLL_SECONDS = 0.3
+# own slower cadence because another process writes those files; the frame and
+# count waits pass their own. The poll is the floor of every step: the first
+# probe runs before the editor has answered, so a step costs at least one
+# poll. At 0.3 s, half of the egui suite's ~780 steps took exactly ~312 ms
+# (the editor answers within a frame under continuous redraw), about two
+# minutes of every run spent sleeping; 0.05 s keeps that floor near a frame.
+LOG_POLL_SECONDS = 0.05
 
 # What a wait's probe produces; `wait_until` returns it unchanged.
 T = TypeVar("T")

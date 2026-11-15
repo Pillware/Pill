@@ -30,7 +30,7 @@ const OUTLINE_COLOR: [f32; 4] = [0.35, 0.95, 0.55, 1.0];
 /// Returns [`SystemError::MissingResource`] when the physics manager or the
 /// engine's debug collection is absent, which only happens in a world this
 /// module was not registered in.
-#[system(name = "physics_debug_draw", order = 901)]
+#[system(name = "physics_debug_draw", order = 901, edit_mode)]
 pub fn physics_debug_draw(
     manager: Res<PhysicsManager>,
     mut debug_draw: ResMut<DebugDraw>,

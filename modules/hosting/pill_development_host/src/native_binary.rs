@@ -55,12 +55,18 @@ const SECTION_TYPE_DYNAMIC_SYMBOLS: u32 = 11;
 
 /// Bytes of the fixed ELF header this reader takes: the 64-bit header, which
 /// is the longer of the two.
+///
+/// Only the dependency-only reader ([`needed_libraries`]) uses it, and that
+/// reader exists for a host that resolves its engine dylibs through `DT_NEEDED`
+/// - a non-Windows one.
+#[cfg(not(windows))]
 const ELF_HEADER_LENGTH: usize = 64;
 
 /// The largest table [`needed_libraries`] will read in one piece.
 ///
 /// The tables it reads are kilobytes in every real image; the bound only keeps
 /// a damaged header from asking for an allocation the size of the file.
+#[cfg(not(windows))]
 const MAX_TABLE_BYTES: usize = 8 * 1024 * 1024;
 
 /// `DT_NEEDED`: a string-table offset holding one dependency's name.
@@ -166,7 +172,11 @@ impl ByteReader<'_> {
 
     /// A two-byte field at `offset`.
     fn u16(&self, offset: usize) -> Option<u16> {
-        let field: [u8; 2] = self.bytes.get(offset..offset.checked_add(2)?)?.try_into().ok()?;
+        let field: [u8; 2] = self
+            .bytes
+            .get(offset..offset.checked_add(2)?)?
+            .try_into()
+            .ok()?;
         Some(if self.little_endian {
             u16::from_le_bytes(field)
         } else {
@@ -176,7 +186,11 @@ impl ByteReader<'_> {
 
     /// A four-byte unsigned field at `offset`.
     fn u32(&self, offset: usize) -> Option<u32> {
-        let field: [u8; 4] = self.bytes.get(offset..offset.checked_add(4)?)?.try_into().ok()?;
+        let field: [u8; 4] = self
+            .bytes
+            .get(offset..offset.checked_add(4)?)?
+            .try_into()
+            .ok()?;
         Some(if self.little_endian {
             u32::from_le_bytes(field)
         } else {
@@ -186,7 +200,11 @@ impl ByteReader<'_> {
 
     /// A four-byte signed field at `offset`, which is how `d_tag` is spelled.
     fn i32(&self, offset: usize) -> Option<i32> {
-        let field: [u8; 4] = self.bytes.get(offset..offset.checked_add(4)?)?.try_into().ok()?;
+        let field: [u8; 4] = self
+            .bytes
+            .get(offset..offset.checked_add(4)?)?
+            .try_into()
+            .ok()?;
         Some(if self.little_endian {
             i32::from_le_bytes(field)
         } else {
@@ -196,7 +214,11 @@ impl ByteReader<'_> {
 
     /// An eight-byte unsigned field at `offset`.
     fn u64(&self, offset: usize) -> Option<u64> {
-        let field: [u8; 8] = self.bytes.get(offset..offset.checked_add(8)?)?.try_into().ok()?;
+        let field: [u8; 8] = self
+            .bytes
+            .get(offset..offset.checked_add(8)?)?
+            .try_into()
+            .ok()?;
         Some(if self.little_endian {
             u64::from_le_bytes(field)
         } else {
@@ -206,7 +228,11 @@ impl ByteReader<'_> {
 
     /// An eight-byte signed field at `offset`.
     fn i64(&self, offset: usize) -> Option<i64> {
-        let field: [u8; 8] = self.bytes.get(offset..offset.checked_add(8)?)?.try_into().ok()?;
+        let field: [u8; 8] = self
+            .bytes
+            .get(offset..offset.checked_add(8)?)?
+            .try_into()
+            .ok()?;
         Some(if self.little_endian {
             i64::from_le_bytes(field)
         } else {
@@ -290,9 +316,8 @@ fn parse_elf(image_bytes: &[u8]) -> Option<ElfImage> {
     if section_count == 0 || declared_entry_size < minimum_entry_size {
         return None;
     }
-    let section_table_end = section_table_offset.checked_add(
-        declared_entry_size.checked_mul(section_count)?,
-    )?;
+    let section_table_end =
+        section_table_offset.checked_add(declared_entry_size.checked_mul(section_count)?)?;
     if section_table_end > image_bytes.len() {
         return None;
     }
@@ -343,8 +368,9 @@ fn parse_elf(image_bytes: &[u8]) -> Option<ElfImage> {
         );
         let entry_count = dynamic_section.size / entry_size;
         for index in 0..entry_count {
-            let Some(entry_offset) =
-                dynamic_section.offset.checked_add(index.checked_mul(entry_size)?)
+            let Some(entry_offset) = dynamic_section
+                .offset
+                .checked_add(index.checked_mul(entry_size)?)
             else {
                 break;
             };
@@ -392,8 +418,9 @@ fn parse_elf(image_bytes: &[u8]) -> Option<ElfImage> {
         let entry_count = symbol_section.size / entry_size;
         // Entry 0 is the reserved null symbol, which names nothing.
         for index in 1..entry_count {
-            let Some(entry_offset) =
-                symbol_section.offset.checked_add(index.checked_mul(entry_size)?)
+            let Some(entry_offset) = symbol_section
+                .offset
+                .checked_add(index.checked_mul(entry_size)?)
             else {
                 break;
             };
@@ -424,15 +451,11 @@ fn parse_elf(image_bytes: &[u8]) -> Option<ElfImage> {
             if name_offset == 0 {
                 continue;
             }
-            let Some(string_table) = string_table else {
-                return None;
-            };
+            let string_table = string_table?;
             let Ok(name_offset) = usize::try_from(name_offset) else {
                 return None;
             };
-            let Some(name) = string_at(&reader, string_table, name_offset) else {
-                return None;
-            };
+            let name = string_at(&reader, string_table, name_offset)?;
             if section_index == SECTION_INDEX_UNDEFINED {
                 required_symbols.push(name);
                 continue;
@@ -467,7 +490,8 @@ fn parse_elf(image_bytes: &[u8]) -> Option<ElfImage> {
 ///
 /// The PE side reuses the analytics reader, which reads the image; it is only
 /// reached on a Windows host, where the caller that needs this fast path does
-/// not run.
+/// not run. The function itself is compiled where that caller is.
+#[cfg(not(windows))]
 pub(crate) fn needed_libraries(path: &Path) -> Option<Vec<String>> {
     use std::io::{Read as _, Seek as _, SeekFrom};
 
@@ -579,8 +603,11 @@ pub(crate) fn needed_libraries(path: &Path) -> Option<Vec<String>> {
         let Some(remaining) = string_section.size.checked_sub(name_offset) else {
             continue;
         };
-        let Some(bytes) = read_at(&mut file, name_start as u64, remaining.min(MAX_DEPENDENCY_NAME))
-        else {
+        let Some(bytes) = read_at(
+            &mut file,
+            name_start as u64,
+            remaining.min(MAX_DEPENDENCY_NAME),
+        ) else {
             continue;
         };
         let length = bytes
@@ -833,10 +860,22 @@ mod tests {
         // Dynamic entries: DT_NEEDED -> "libc.so.6", then DT_NULL.
         let dynamic_start = DYNAMIC_TABLE_OFFSET as usize;
         write_u64(&mut image, dynamic_start, 1);
-        write_u64(&mut image, dynamic_start + 8, u64::from(DEPENDENCY_NAME_OFFSET));
+        write_u64(
+            &mut image,
+            dynamic_start + 8,
+            u64::from(DEPENDENCY_NAME_OFFSET),
+        );
         // Section 1: the string table. Section 2: the symbol table, which
         // reads strings from section 1. Section 3: the dynamic table, likewise.
-        write_section_header(&mut image, 1, 3, STRING_TABLE_OFFSET, STRING_TABLE_SIZE, 0, 0);
+        write_section_header(
+            &mut image,
+            1,
+            3,
+            STRING_TABLE_OFFSET,
+            STRING_TABLE_SIZE,
+            0,
+            0,
+        );
         write_section_header(&mut image, 2, 11, SYMBOL_TABLE_OFFSET, 3 * 24, 1, 24);
         write_section_header(&mut image, 3, 6, DYNAMIC_TABLE_OFFSET, 2 * 16, 1, 16);
         image
@@ -892,6 +931,9 @@ mod tests {
     ///
     /// It reads the header, the section table and the dynamic table, never the
     /// symbol table: a load path runs this on files hundreds of megabytes long.
+    /// Only a non-Windows host has that load path, so the reader and its test
+    /// exist there.
+    #[cfg(not(windows))]
     #[test]
     fn dependencies_are_read_without_the_symbol_table() {
         let directory = ScratchDirectory::new("native_binary_needed");

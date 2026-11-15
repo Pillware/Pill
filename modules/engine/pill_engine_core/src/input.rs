@@ -699,7 +699,13 @@ pub struct Input {
     rumble_requests: Vec<RumbleRequest>,
 }
 
-impl Resource for Input {}
+impl Resource for Input {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+}
 
 impl Input {
     /// Input with nothing held and no gamepad connected.

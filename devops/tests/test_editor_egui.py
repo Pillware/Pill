@@ -62,6 +62,9 @@ Inspector step round-trips through the real apply), all restored when the
 session closes; everything else it starts is its own process tree.
 """
 import argparse
+import json
+import os
+import time
 import yaml
 import sys
 from pathlib import Path
@@ -97,6 +100,42 @@ from editor_step_areas import (  # noqa: E402
 )
 
 
+# The last run's per-area outcome, read back by `--steps failed`.
+LAST_RUN_SUMMARY = Path(__file__).resolve().parents[2] / "local" / "editor-validation" / "egui-last-run.json"
+
+
+def failed_areas_of_last_run() -> list:
+    """The area names the last recorded run failed in ([] when it passed or none is recorded)."""
+    try:
+        summary = json.loads(LAST_RUN_SUMMARY.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [area["name"] for area in summary.get("areas", []) if area.get("state") == "failed"]
+
+
+def write_run_summary(area_results: list, steps: str) -> None:
+    """Records each area's time and outcome: the last-run file and, under agent_run, timings.json.
+
+    `--steps failed` reads the first to rerun only what broke; agent_run's
+    `work checks --steps <check>` reads the second for per-area medians, so a
+    slow area shows up as a trend instead of a feeling.
+    """
+    summary = {"finished": time.strftime("%Y-%m-%d %H:%M:%S"), "steps": steps, "areas": area_results}
+    try:
+        LAST_RUN_SUMMARY.parent.mkdir(parents=True, exist_ok=True)
+        LAST_RUN_SUMMARY.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    except OSError as error:
+        print("warning: the run summary was not written: {}".format(error))
+    run_directory = os.environ.get("AGENT_RUN_DIRECTORY")
+    if run_directory:
+        try:
+            (Path(run_directory) / "timings.json").write_text(
+                json.dumps({"steps": area_results}, indent=2), encoding="utf-8"
+            )
+        except OSError as error:
+            print("warning: timings.json was not written: {}".format(error))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -113,8 +152,9 @@ def main() -> int:
     parser.add_argument(
         "--steps",
         default="all",
-        help="all (the default), list (prints the area names in run order), or a "
-        "comma-separated subset of area names",
+        help="all (the default), list (prints the area names in run order and "
+        "checks every area module imports, without a build), failed (the areas "
+        "the last run failed in), or a comma-separated subset of area names",
     )
     arguments = parser.parse_args()
     # The areas are discovered before anything else: `--steps list` must answer
@@ -125,6 +165,14 @@ def main() -> int:
         for area in areas:
             print(area.name)
         return 0
+    # The cheap rerun after a failure: only what broke, not the whole suite.
+    if arguments.steps == "failed":
+        failed = failed_areas_of_last_run()
+        if not failed:
+            print("the last recorded run failed in no area ({}); nothing to rerun".format(LAST_RUN_SUMMARY))
+            return 0
+        print("[RERUN] the last run failed in: {}".format(", ".join(failed)))
+        arguments.steps = ",".join(failed)
     chosen = select_areas(areas, arguments.steps)
     # The egui editor needs the DirectComposition overlay, a Windows facility.
     if not EditorSession.supported():
@@ -286,10 +334,17 @@ def main() -> int:
     )
     if arguments.steps != "all":
         print_subset_banner(chosen, areas)
+    # Each area's time and outcome; the area still "running" when an exception
+    # leaves the loop is the one that failed.
+    area_results = []
+    area_started = time.monotonic()
     try:
         for area in chosen:
             print("[STEP AREA] {}".format(area.name))
+            area_started = time.monotonic()
+            area_results.append({"name": area.name, "seconds": None, "state": "running"})
             area.run(context)
+            area_results[-1].update(seconds=round(time.monotonic() - area_started, 1), state="passed")
         # The read budget: the cursor decodes each appended byte once, so a run
         # that read far more than the log holds has a poll rereading the whole
         # file instead of appending to what it already read.
@@ -300,6 +355,9 @@ def main() -> int:
             )
         )
     finally:
+        if area_results and area_results[-1]["state"] == "running":
+            area_results[-1].update(seconds=round(time.monotonic() - area_started, 1), state="failed")
+        write_run_summary(area_results, arguments.steps)
         session.close()
         # The step's files (created, renamed, moved, restored, and their
         # sidecars) come off the project's disk; the staging probe too.

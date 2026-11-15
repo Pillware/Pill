@@ -77,6 +77,47 @@ use crate::world::World;
 /// impl Resource for ProjectTime {}
 /// ```
 pub trait Resource: Send + Sync + 'static {
+    /// What the editor's play mode does with this resource when it copies the
+    /// game state at Play and puts it back at Stop.
+    ///
+    /// The default, [`PlayState::Restore`], treats the resource as game state:
+    /// its value is copied and restored, so anything the game changes while it
+    /// runs is discarded.
+    ///
+    /// Infrastructure and editor state opt out with [`PlayState::Keep`]: a
+    /// render frame, a selection, a command registry. A manager that mirrors
+    /// the world somewhere else opts out with [`PlayState::Rebuild`] and
+    /// rebuilds from the world after a restore, such as the physics manager and
+    /// its rapier world.
+    ///
+    /// A `Restore` resource the engine cannot copy - one that is neither
+    /// `Clone` nor a foreign payload - refuses Play by name rather than being
+    /// silently left as it is.
+    fn play_state() -> crate::resource::PlayState
+    where
+        Self: Sized,
+    {
+        crate::resource::PlayState::Restore
+    }
+
+    /// A copy of `value`, when a resource of this type can be copied at Play.
+    ///
+    /// `None` means "not copyable", and a `Restore` resource that answers
+    /// `None` refuses Play by name instead of being silently left as it is.
+    ///
+    /// `#[derive(PillResource)]` implements this for a type that also derives
+    /// `Clone`; a type declared with a hand-written `impl Resource` gets the
+    /// default and is therefore refused, unless it writes the method itself.
+    fn clone_erased(
+        value: &crate::resource::ErasedResource,
+    ) -> Option<crate::resource::ErasedResource>
+    where
+        Self: Sized,
+    {
+        let _ = value;
+        None
+    }
+
     /// A stable name for this resource, or `None` to be identified by its
     /// [`TypeId`] inside this binary only.
     ///
@@ -181,6 +222,127 @@ pub trait Resource: Send + Sync + 'static {
     where
         Self: Sized,
     {
+        None
+    }
+}
+
+// =============================================================================
+// PlayState
+// =============================================================================
+
+/// What the editor's play mode does with a resource at Play and Stop.
+///
+/// See [`Resource::play_state`] for which class a type belongs in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PlayState {
+    /// The resource is game state: it is copied at Play and put back at Stop,
+    /// so play-time changes are discarded. The default.
+    #[default]
+    Restore,
+    /// The resource is left alone: infrastructure, or editor state the editor
+    /// restores itself.
+    Keep,
+    /// The resource is left alone and rebuilds itself from the restored world
+    /// after Stop, using the world's restore epoch.
+    Rebuild,
+}
+
+// =============================================================================
+// RestoreEpoch
+// =============================================================================
+
+/// A play session's Stop counter, published as a resource.
+///
+/// [`World::restore_epoch`](crate::World::restore_epoch) is the world's own
+/// number, and a system cannot read the world. A manager that mirrors the world
+/// somewhere else - the physics simulation and its rapier world - cannot be
+/// copied into the session and put back either, so it compares this value with
+/// the one it built its mirror against: a value it has not seen means the world
+/// it describes was replaced and the mirror has to be dropped.
+///
+/// The world writes it whenever a restore happens. It is a [`PlayState::Keep`]
+/// resource: putting back the pre-play number would hide the restore it
+/// announces.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RestoreEpoch(pub u64);
+
+impl Resource for RestoreEpoch {
+    fn play_state() -> PlayState {
+        PlayState::Keep
+    }
+}
+
+// =============================================================================
+// CloneResourceProbe
+// =============================================================================
+
+/// Lets a generic insert path record a resource's cloning function when the
+/// type implements `Clone`, and do nothing when it does not.
+///
+/// The resource counterpart of
+/// [`CloneValueProbe`](crate::component_registry::CloneValueProbe), with the
+/// same autoref trick: [`RecordResourceClone`] answers on the probe itself when
+/// `T: Clone`, and [`SkipResourceClone`] on a reference to it otherwise.
+pub struct CloneResourceProbe<T>(std::marker::PhantomData<T>);
+
+impl<T> CloneResourceProbe<T> {
+    /// A probe for the resource `T`.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T> std::default::Default for CloneResourceProbe<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Answers with a copy of the value when the probed type implements `Clone`.
+///
+/// The first impl takes `self` by value on a double reference and the fallback
+/// takes one more reference, which is the arrangement method lookup resolves in
+/// that order. It only works at a site where the type is concrete: a generic
+/// caller cannot prove `T: Clone`, so it always reaches the fallback, which is
+/// why [`Resource::clone_erased`] exists and the derive answers from the type's
+/// own site.
+pub trait RecordResourceClone {
+    /// A copy of `value`, or `None` when the type cannot be copied.
+    fn copy_value(
+        self,
+        value: &crate::resource::ErasedResource,
+    ) -> Option<crate::resource::ErasedResource>;
+}
+
+impl<T> RecordResourceClone for &&CloneResourceProbe<T>
+where
+    T: Resource + Clone,
+{
+    fn copy_value(
+        self,
+        value: &crate::resource::ErasedResource,
+    ) -> Option<crate::resource::ErasedResource> {
+        let copied = value.get::<T>()?.clone();
+        Some(crate::resource::ErasedResource::new(copied))
+    }
+}
+
+/// The fallback for a resource without `Clone`: reports that it cannot copy,
+/// so a copy of that resource is refused by name.
+pub trait SkipResourceClone {
+    /// Answers `None`.
+    fn copy_value(
+        self,
+        value: &crate::resource::ErasedResource,
+    ) -> Option<crate::resource::ErasedResource>;
+}
+
+impl<T> SkipResourceClone for &&&CloneResourceProbe<T> {
+    fn copy_value(
+        self,
+        _value: &crate::resource::ErasedResource,
+    ) -> Option<crate::resource::ErasedResource> {
         None
     }
 }

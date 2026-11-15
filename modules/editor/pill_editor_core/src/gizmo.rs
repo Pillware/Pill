@@ -48,6 +48,12 @@ pub struct GizmoState {
 }
 
 impl pill_engine::Resource for GizmoState {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some(RESOURCE_NAME)
     }

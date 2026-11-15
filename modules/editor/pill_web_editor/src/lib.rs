@@ -50,6 +50,7 @@ use pill_editor_core::commands::{ensure_command_resources, PendingEditorCommands
 use pill_editor_core::drain::{self, HistoryDirection};
 use pill_editor_core::editor_state::{EditorCommand, EditorSelection, EditorSnapshot};
 use pill_editor_core::gizmo::{GizmoMode, GizmoSettings, GizmoSpace, GizmoState};
+use pill_editor_core::history::CommandHistory;
 use pill_editor_core::scripted::{Dump, ScriptedCommand};
 use pill_editor_core::{entities, systems};
 use pill_engine_core::input::InputEvent;
@@ -231,6 +232,12 @@ impl ApplicationHandler for WebEditorApplication {
                     {
                         attached.resize_surface(SurfaceId::PRIMARY, size.width, size.height);
                     }
+                    // The browser editor starts in edit mode too: the project's
+                    // game systems wait for Play, while the shell's pass and the
+                    // renderer's frame build keep running.
+                    attached
+                        .engine_mut()
+                        .set_run_mode(pill_engine_core::RunMode::Editing);
                     *driver.borrow_mut() = Some(attached);
                     info!(target: telemetry_target::EDITOR, "renderer attached to the scene canvas");
                     scene_window.request_redraw();
@@ -583,6 +590,15 @@ fn run_scripted_command(
             }
             info!(target: telemetry_target::EDITOR, "[editor] step queued");
         }
+        ScriptedCommand::Play => queue_play_command(engine, EditorCommand::EnterPlay),
+        ScriptedCommand::Stop => queue_play_command(engine, EditorCommand::ExitPlay),
+        ScriptedCommand::PlayToggle => {
+            let command = match engine.run_mode() {
+                pill_engine_core::RunMode::Editing => EditorCommand::EnterPlay,
+                pill_engine_core::RunMode::Playing => EditorCommand::ExitPlay,
+            };
+            queue_play_command(engine, command);
+        }
         ScriptedCommand::EntityCreate => {
             let (command, label) = entities::entity_create();
             if let Some(pending_commands) = engine
@@ -633,6 +649,30 @@ fn run_scripted_command(
             };
             queue_gizmo_tool(engine, None, Some(space), None);
         }
+        // The run mode, the pause flag and the world's restore epoch. The
+        // browser has no hot reload, so nothing there moves the epoch; the
+        // line still reports it, so a page and the desktop editor are read the
+        // same way.
+        ScriptedCommand::Dump(Dump::Play) => {
+            let mode = match engine.run_mode() {
+                pill_engine_core::RunMode::Editing => "editing",
+                pill_engine_core::RunMode::Playing => "playing",
+            };
+            let (undo, redo) = engine
+                .world()
+                .get_resource::<CommandHistory>()
+                .map(|history| (history.undo_depth(), history.redo_depth()))
+                .unwrap_or((0, 0));
+            info!(
+                target: telemetry_target::EDITOR,
+                mode,
+                paused = engine.systems_paused(),
+                restore_epoch = engine.world().restore_epoch(),
+                undo,
+                redo,
+                "[test] play"
+            );
+        }
         // The page's data channel: the entity and system counts that the
         // shell's tabs list.
         ScriptedCommand::Dump(Dump::Tabs) => {
@@ -651,6 +691,21 @@ fn run_scripted_command(
         }
         other => refuse_in_browser(line, &other),
     }
+}
+
+/// Queues one play command for the frame boundary's drain, unrecorded.
+///
+/// The same command the desktop editor's toolbar, its View menu row and its
+/// scripted channel queue, so a session is never an undo step in either
+/// posture.
+fn queue_play_command(engine: &mut pill_engine_core::Engine, command: EditorCommand) {
+    if let Some(pending_commands) = engine
+        .world_mut()
+        .get_resource_mut::<PendingEditorCommands>()
+    {
+        pending_commands.push(vec![command]);
+    }
+    info!(target: telemetry_target::EDITOR, "[editor] play control queued");
 }
 
 /// Refuse a command this posture cannot run, naming the line and its verb so
@@ -721,6 +776,9 @@ fn scripted_name(command: &ScriptedCommand) -> &'static str {
         ScriptedCommand::Undo => "command editor.undo",
         ScriptedCommand::Redo => "command editor.redo",
         ScriptedCommand::PauseToggle => "command editor.pause_toggle",
+        ScriptedCommand::Play => "command editor.play",
+        ScriptedCommand::Stop => "command editor.stop",
+        ScriptedCommand::PlayToggle => "command editor.play_toggle",
         ScriptedCommand::Step => "command editor.step",
         ScriptedCommand::EntityCreate => "command editor.entity_create",
         ScriptedCommand::EntityDelete => "command editor.entity_delete",

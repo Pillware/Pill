@@ -59,7 +59,13 @@ pub struct SceneSession {
     pub dirty: bool,
 }
 
-impl Resource for SceneSession {}
+impl Resource for SceneSession {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 impl SceneSession {
     /// Register the resource, and keep the value already in the world, so a

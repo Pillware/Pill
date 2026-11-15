@@ -66,8 +66,13 @@ pub mod bar;
 pub use bar::about_window;
 pub use bar::menu_bar;
 pub use bar::menu_body;
+pub use bar::play_button;
+pub use bar::play_toolbar;
 pub use bar::run_menu_action;
+pub use bar::run_play_control;
 pub use bar::MENU_TITLE_GAP;
+pub use bar::PLAY_BUTTON_GAP;
+pub use bar::PLAY_TOOLBAR_TOP;
 
 /// The [`palette`] module: the searchable command popup.
 pub mod palette;
@@ -307,6 +312,11 @@ pub use assets_tiles::ASSETS_TILE_LABEL_ROWS;
 /// the test build only.
 #[cfg(test)]
 pub mod tests;
+
+/// The play toolbar's own tests: the rectangle it claims over the bar, and the
+/// commands its controls queue.
+#[cfg(test)]
+pub mod play_toolbar_geometry_tests;
 
 // =============================================================================
 // Types
@@ -597,6 +607,43 @@ pub fn run_frame(
                 window: answer.window.clone(),
                 accepted: answer.accepted,
             });
+    // The play session's tab focus, decided before the dock draws. Entering
+    // Play remembers the tab that was in front and brings the Game view
+    // forward, so the person sees what the session shows; Stop puts that tab
+    // back. The switch in the project's `editor_settings.yaml` can turn the
+    // focus off, and then nothing moves.
+    if state.last_run_mode != Some(snapshot.run_mode) {
+        let entering_play = snapshot.run_mode == pill_engine::RunMode::Playing;
+        state.last_run_mode = Some(snapshot.run_mode);
+        if entering_play {
+            if snapshot.focus_game_on_play {
+                let in_front = state
+                    .dock
+                    .state()
+                    .iter_leaves()
+                    .find_map(|(_path, leaf)| leaf.tabs.get(leaf.active.0).copied());
+                state.tab_before_play = in_front.filter(|tab| *tab != EditorTab::Game);
+                state.requests.pending_tab = Some(EditorTab::Game);
+                pill_core::info!(
+                    target: telemetry_target::EDITOR,
+                    tab = "game",
+                    "[editor] play focused the game tab"
+                );
+            }
+        } else if let Some(tab) = state.tab_before_play.take() {
+            state.requests.pending_tab = Some(tab);
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                tab = tab.name(),
+                "[editor] play restored the tab"
+            );
+        }
+    }
+    // The tint the bar and the dock take while a session runs: nothing while
+    // editing, the theme's play colour while playing, and the stronger one
+    // while paused.
+    let play_tint =
+        pill_editor_core::style::play_tint(&snapshot.theme, snapshot.run_mode, snapshot.paused);
     // What the pass could not do while the dock and its tabs were borrowed.
     // Each tab and menu writes its request into this value where it is raised,
     // and `settle_pass` applies it after the pass.
@@ -684,10 +731,16 @@ pub fn run_frame(
         // collapse chevron and no panel-level close-all button, a panel closes
         // exactly when its last tab closes.
         DockArea::new(dock.state_mut())
-            .style(style::dock_style(
-                ui.ctx().global_style().as_ref(),
-                &style::palette(),
-            ))
+            .style({
+                let mut dock_style =
+                    style::dock_style(ui.ctx().global_style().as_ref(), &style::palette());
+                // While a session runs the tab strips carry the play tint, so
+                // the whole frame reads as the game's.
+                if let Some(tint) = play_tint {
+                    dock_style.tab_bar.bg_fill = tint;
+                }
+                dock_style
+            })
             .show_leaf_collapse_buttons(false)
             .show_leaf_close_all_buttons(false)
             .show_inside(ui, &mut viewer);

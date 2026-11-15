@@ -56,6 +56,12 @@ impl Default for SelectionOutlines {
 }
 
 impl Resource for SelectionOutlines {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some("pill_renderer_api::picking::SelectionOutlines")
     }
@@ -136,6 +142,12 @@ impl PickRequests {
 }
 
 impl Resource for PickRequests {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some("pill_renderer_api::picking::PickRequests")
     }
@@ -160,6 +172,12 @@ impl PickResults {
 }
 
 impl Resource for PickResults {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some("pill_renderer_api::picking::PickResults")
     }

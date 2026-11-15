@@ -133,6 +133,10 @@ pub struct PaletteOverrides {
     pub log_warn: Option<String>,
     /// See [`Palette::log_error`](crate::theme::Palette::log_error).
     pub log_error: Option<String>,
+    /// See [`Palette::play_tint`](crate::theme::Palette::play_tint).
+    pub play_tint: Option<String>,
+    /// See [`Palette::play_tint_paused`](crate::theme::Palette::play_tint_paused).
+    pub play_tint_paused: Option<String>,
 }
 
 // =============================================================================

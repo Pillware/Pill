@@ -217,7 +217,13 @@ impl Default for ConsoleState {
     }
 }
 
-impl pill_engine::Resource for ConsoleState {}
+impl pill_engine::Resource for ConsoleState {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// What the Console tab draws: the filters in force and the rows they leave.
 ///

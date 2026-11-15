@@ -105,6 +105,12 @@ impl UiFrameSlot {
 }
 
 impl Resource for UiFrameSlot {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine_core::resource::PlayState {
+        pill_engine_core::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some("pill_ui_frame::UiFrameSlot")
     }

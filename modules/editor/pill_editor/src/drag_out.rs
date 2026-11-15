@@ -27,7 +27,8 @@
 //! The same rule applies before the loop. `DoDragDrop` only asks its drop
 //! source whether to continue when input arrives, so a drag started with no
 //! button held would leave the editor frozen until more input arrived.
-//! [`start`] reads the button first and starts no drag.
+//! [`start`] reads the button first and starts no drag. A drag no pointer
+//! started - a scripted one - never runs the loop at all, for the same reason.
 //!
 //! # Platforms
 //!
@@ -117,6 +118,10 @@ pub enum DragOutOutcome {
     /// The pointer button was not held, so no drag was started.
     NoButtonHeld,
     /// The platform has no source for a file drag, so nothing was started.
+    ///
+    /// Only the non-Windows [`start`] answers this, so it is unconstructed on
+    /// Windows while the runner still matches on it.
+    #[cfg_attr(windows, allow(dead_code))]
     Unsupported,
     /// The drag could not be prepared, or the platform refused to run it.
     Failed,
@@ -183,10 +188,13 @@ fn left_button_held() -> bool {
 /// naming the reason when a step fails. The runner logs one line for each of
 /// the other outcomes, so every way a drag can end leaves a trace.
 ///
-/// A drag started with no button held is refused rather than run, because the
-/// modal loop would freeze the editor until more input arrived.
+/// `driven_by_pointer` says whether a person's pointer started the drag. Only a
+/// pointer drag runs OLE's loop; one asked for by anything else - the scripted
+/// channel, whose input never reaches the pointer - stops once the data object
+/// exists, because the loop would freeze the editor until more input arrived.
+/// A pointer drag started with no button held is refused for the same reason.
 #[cfg(windows)]
-pub fn start(absolute_path: &str) -> DragOutOutcome {
+pub fn start(absolute_path: &str, driven_by_pointer: bool) -> DragOutOutcome {
     // Step 1: make sure this thread has OLE, which `DoDragDrop` needs.
     if !initialize_ole() {
         return DragOutOutcome::Failed;
@@ -233,10 +241,10 @@ pub fn start(absolute_path: &str) -> DragOutOutcome {
             // `DoDragDrop` only asks the drop source whether to continue when
             // input arrives, so a drag started without the button held would
             // freeze the editor until more input arrived.
-            if !left_button_held() {
-                DragOutOutcome::NoButtonHeld
-            } else {
+            if driven_by_pointer && left_button_held() {
                 run_modal_drag(data_object)
+            } else {
+                DragOutOutcome::NoButtonHeld
             }
         }
         Err(error) => {
@@ -262,7 +270,7 @@ pub fn start(absolute_path: &str) -> DragOutOutcome {
 /// [`DragOutOutcome::Unsupported`]. The runner logs one line for it and the
 /// asset stays where it is; every other shell feature is unaffected.
 #[cfg(not(windows))]
-pub fn start(_absolute_path: &str) -> DragOutOutcome {
+pub fn start(_absolute_path: &str, _driven_by_pointer: bool) -> DragOutOutcome {
     DragOutOutcome::Unsupported
 }
 

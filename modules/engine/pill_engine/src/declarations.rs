@@ -123,6 +123,13 @@ pub struct PillSystemDescriptor {
     /// Whether the system runs in the post-update stage, after the command
     /// flush.
     pub post_update: bool,
+    /// Whether the system also runs while the editor is editing, and while the
+    /// engine is paused.
+    ///
+    /// The editor's own systems and the renderer opt in; a game system leaves
+    /// it false, which is what makes Play stop the game rather than only
+    /// painting it differently.
+    pub edit_mode: bool,
     /// Registers the system with the engine.
     ///
     /// A function pointer rather than the system itself: the attribute emits

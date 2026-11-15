@@ -108,8 +108,17 @@ struct StaticColliderState {
 // =============================================================================
 
 /// The simulation, and the map from entities to the bodies it built for them.
+///
+/// It is a `Rebuild` resource: the rapier world mirrors the entities'
+/// transforms, so putting a copy back at Stop would leave the simulation
+/// describing bodies that no longer exist. Stop leaves it untouched, and the
+/// next Play rebuilds it from the restored components.
 #[derive(PillResource)]
-#[pill(shared, layout_sources = ["Cargo.toml", "src/components.rs", "src/manager.rs"])]
+#[pill(
+    shared,
+    play_state = "rebuild",
+    layout_sources = ["Cargo.toml", "src/components.rs", "src/manager.rs"]
+)]
 pub struct PhysicsManager {
     /// The rapier world: gravity, settings, bodies, colliders and broad phase.
     simulation: rapier3d::prelude::PhysicsWorld,
@@ -149,6 +158,14 @@ pub struct PhysicsManager {
     /// The image of this module that built the rapier world, as the address
     /// of one of its functions ([`current_image_marker`]).
     built_by_image: usize,
+    /// The world's restore epoch the simulation was built against.
+    ///
+    /// A play session's Stop swaps the edit world back and moves the epoch. The
+    /// rapier world then describes entities that no longer exist, and the
+    /// restored entity allocator can hand out a handle that matches one the
+    /// session used, which would attach a play-time body to a new entity. A
+    /// different epoch therefore means the simulation is dropped at once.
+    built_against_restore_epoch: u64,
 }
 
 impl PhysicsManager {
@@ -181,6 +198,7 @@ impl PhysicsManager {
             ),
             statistics: PhysicsStatistics::default(),
             built_by_image: current_image_marker(),
+            built_against_restore_epoch: 0,
         }
     }
 
@@ -216,7 +234,11 @@ impl PhysicsManager {
     }
 
     /// Sets the world gravity, in world units per second squared.
+    ///
+    /// The settings keep the value too, so a rebuilt simulation starts from the
+    /// tuning this one was given rather than from the default.
     pub fn set_gravity(&mut self, gravity: [f32; 3]) {
+        self.settings.gravity = gravity;
         self.simulation.gravity = vector_from_array(gravity);
     }
 
@@ -538,14 +560,56 @@ impl PhysicsManager {
         if self.built_by_image == current_image_marker() {
             return false;
         }
-        let settings = self.settings;
+        // Gravity is read from the simulation, which is where a project's own
+        // call lands; the rest of the tuning lives in the settings.
         let gravity = self.gravity();
+        let settings = self.settings;
+        let restore_epoch = self.built_against_restore_epoch;
         *self = Self::new();
         self.set_gravity(gravity);
         self.set_fixed_timestep(settings.fixed_timestep, settings.max_substeps);
         self.set_interpolation(settings.interpolate);
         self.set_debug_draw(settings.debug_draw);
+        self.built_against_restore_epoch = restore_epoch;
         true
+    }
+
+    /// Drops the rapier world when the world it mirrors was restored.
+    ///
+    /// Returns whether it cleared. Everything the simulation built is released -
+    /// bodies, colliders, the entity maps, the remembered poses and the events
+    /// of the frame that was interrupted - while the gravity and the settings
+    /// document are kept, so the next Play rebuilds from the restored
+    /// components with the tuning the project chose.
+    ///
+    /// Clearing at once matters even though nothing steps in edit mode: the
+    /// restored allocator can hand out a handle which a body in these maps still
+    /// occupies, and the first play frame would then treat that body as the new
+    /// entity's.
+    pub fn clear_if_world_was_restored(&mut self, restore_epoch: u64) -> bool {
+        if self.built_against_restore_epoch == restore_epoch {
+            return false;
+        }
+        // Gravity is read from the simulation, which is where a project's own
+        // call lands; the rest of the tuning lives in the settings.
+        let gravity = self.gravity();
+        let settings = self.settings;
+        *self = Self::new();
+        self.set_gravity(gravity);
+        self.set_fixed_timestep(settings.fixed_timestep, settings.max_substeps);
+        self.set_interpolation(settings.interpolate);
+        self.set_debug_draw(settings.debug_draw);
+        self.built_against_restore_epoch = restore_epoch;
+        true
+    }
+
+    /// Records the world's restore epoch as the one this simulation describes.
+    ///
+    /// A manager built during a play session starts from the epoch the session
+    /// restored to, so the next frame does not clear a simulation that was built
+    /// from the world it is looking at.
+    pub fn adopt_restore_epoch(&mut self, restore_epoch: u64) {
+        self.built_against_restore_epoch = restore_epoch;
     }
 
     /// Moves a dynamic body to its transform when something other than the
@@ -1216,6 +1280,74 @@ mod tests {
         assert_eq!(manager.gravity(), [0.0, -3.0, 0.0]);
         assert!(manager.debug_draw_enabled());
         assert!(!manager.rebuild_if_built_by_another_image());
+    }
+
+    /// A restore drops the session's simulation, and the next sync builds its
+    /// bodies from the restored components: the ball falls from its edit pose
+    /// again rather than from where the session left it.
+    #[test]
+    fn a_restore_clears_the_simulation_and_the_next_sync_builds_from_the_components() {
+        let mut world = World::new();
+        let mut manager = PhysicsManager::new();
+        let (floor, ball) = drop_a_ball(&mut manager, &mut world);
+        run_frames(&mut manager, 300);
+        let mut landed = transform_at(3.0);
+        manager.write_back(ball, &mut landed);
+        assert!(
+            (landed.translation[1] - RESTING_HEIGHT).abs() < LANDING_TOLERANCE,
+            "the session's ball should be resting before the restore"
+        );
+
+        // Step 1: the epoch the simulation was built against clears nothing.
+        assert!(!manager.clear_if_world_was_restored(0));
+        assert_eq!(manager.body_count(), 2);
+
+        // Step 2: a restore - the edit world's components are back and the
+        // world announced a new epoch - drops what the session built.
+        assert!(manager.clear_if_world_was_restored(1));
+        assert_eq!(manager.body_count(), 0, "the session's bodies are gone");
+
+        // Step 3: the next sync builds the bodies again, from the components.
+        // What follows is what `physics_sync` does with a resting ball at its
+        // edit pose and the floor under it.
+        manager.spawn_body(
+            floor,
+            &transform_at(0.0),
+            &RigidBodyComponent {
+                body_kind: BodyKind::Fixed,
+                ..RigidBodyComponent::default()
+            },
+            &floor_collider(),
+        );
+        manager.spawn_body(
+            ball,
+            &transform_at(3.0),
+            &RigidBodyComponent::default(),
+            &ball_collider(),
+        );
+        assert_eq!(manager.body_count(), 2, "the bodies are back");
+
+        // The rebuilt ball starts where the component says, so it falls the
+        // same way instead of resting where the session left it.
+        run_frames(&mut manager, 1);
+        let mut rebuilt = transform_at(3.0);
+        manager.write_back(ball, &mut rebuilt);
+        assert!(
+            rebuilt.translation[1] > 2.9,
+            "the rebuilt ball starts at its edit pose, but it is at {}",
+            rebuilt.translation[1]
+        );
+        run_frames(&mut manager, 300);
+        manager.write_back(ball, &mut rebuilt);
+        assert!(
+            (rebuilt.translation[1] - RESTING_HEIGHT).abs() < LANDING_TOLERANCE,
+            "the rebuilt ball should land at {RESTING_HEIGHT}, but it is at {}",
+            rebuilt.translation[1]
+        );
+
+        // A simulation built after the restore is left alone by the same epoch.
+        assert!(!manager.clear_if_world_was_restored(1));
+        assert_eq!(manager.body_count(), 2);
     }
 
     /// A dynamic body's transform moved by someone other than the simulation

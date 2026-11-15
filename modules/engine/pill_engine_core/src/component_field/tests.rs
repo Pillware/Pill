@@ -1004,6 +1004,7 @@ fn reads_do_not_stamp_but_writes_do() {
     let component_id = ComponentId::of::<SampleComponent>();
     let row_ticks_of = |world: &World| {
         *world
+            .storage
             .archetypes
             .values()
             .next()

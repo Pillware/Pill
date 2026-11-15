@@ -1421,6 +1421,10 @@ pub(crate) fn mirror_object(attribute: TokenStream2, item: syn::Item) -> syn::Re
 /// `#[pill_mirror_impl]` methods become extension methods on `Res<T>` and
 /// `ResMut<T>`, and a mirrored function can take it as `&T` or `&mut T`.
 ///
+/// The emitted `Resource` impl resolves a `Clone` probe at the type's own site,
+/// so the editor's play mode can copy the value at Play and put it back at
+/// Stop. A mirrored resource that does not derive `Clone` refuses Play by name.
+///
 /// # Errors
 ///
 /// Returns an error when the attribute is not a string literal, and when the
@@ -1472,6 +1476,22 @@ pub(crate) fn mirror_resource(
         impl ::pill_engine::Resource for #ident {
             fn shared_name() -> ::core::option::Option<&'static str> {
                 ::core::option::Option::Some(#name)
+            }
+
+            /// A copy of this value for the editor's play mode.
+            ///
+            /// The probe is resolved here, at the type's own site, where the
+            /// compiler can see whether the type is `Clone`: a mirrored
+            /// resource that derives it is copied at Play and put back at Stop,
+            /// and one that does not is refused by name instead.
+            fn clone_erased(
+                value: &::pill_engine::resource::ErasedResource,
+            ) -> ::core::option::Option<::pill_engine::resource::ErasedResource> {
+                // The two probes only answer as methods, so their traits have
+                // to be in scope here; the calling module does not import them.
+                #[allow(unused_imports)]
+                use ::pill_engine::resource::{RecordResourceClone as _, SkipResourceClone as _};
+                (&&::pill_engine::resource::CloneResourceProbe::<Self>::new()).copy_value(value)
             }
         }
 

@@ -30,6 +30,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 // External crates
 use egui::{Color32, Context, CornerRadius, Stroke};
 use pill_core::telemetry::telemetry_target;
+use pill_engine::RunMode;
 use pill_ui_theme::{
     Rgba, Shadow as TokenShadow, Stroke as TokenStroke, Theme, WidgetStates, WidgetStyle,
 };
@@ -809,6 +810,23 @@ pub fn apply(context: &Context) {
 // The dock's style
 // =============================================================================
 
+/// The tint the menu bar and the dock's frame take while a game runs.
+///
+/// `None` while the editor is being edited, so the editor looks as it always
+/// did. A paused session takes the stronger colour: a game that is running but
+/// not moving is the state that surprises people.
+pub fn play_tint(theme: &Theme, run_mode: RunMode, paused: bool) -> Option<Color32> {
+    if run_mode != RunMode::Playing {
+        return None;
+    }
+    let [red, green, blue, alpha] = if paused {
+        theme.palette.play_tint_paused.0
+    } else {
+        theme.palette.play_tint.0
+    };
+    Some(Color32::from_rgba_unmultiplied(red, green, blue, alpha))
+}
+
 /// The `egui_dock` styling for the shell's `DockArea`.
 ///
 /// It starts from `egui_style` and changes it to the editor's look: flat tabs
@@ -1319,6 +1337,22 @@ mod tests {
             icons.get(1).map(String::as_str),
             Some(kit::style::THEME_BODY_KEY),
             "the theme's body font follows it as the fallback"
+        );
+    }
+    /// The play tint is absent while editing and present while a session runs,
+    /// with the stronger colour once it is paused.
+    #[test]
+    fn the_play_tint_appears_only_while_a_session_runs() {
+        let theme = default_theme();
+        assert_eq!(play_tint(&theme, RunMode::Editing, false), None);
+        assert_eq!(play_tint(&theme, RunMode::Editing, true), None);
+        let playing = play_tint(&theme, RunMode::Playing, false).expect("a playing tint");
+        let paused = play_tint(&theme, RunMode::Playing, true).expect("a paused tint");
+        assert_ne!(playing, paused, "a paused session reads differently");
+        let [red, green, blue, alpha] = theme.palette.play_tint.0;
+        assert_eq!(
+            playing,
+            Color32::from_rgba_unmultiplied(red, green, blue, alpha)
         );
     }
 }

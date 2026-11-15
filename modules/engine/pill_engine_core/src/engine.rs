@@ -138,6 +138,14 @@ struct RegisteredSystem {
     /// Whether the system runs in the post-update phase: after the command
     /// flush, and even while the engine is paused.
     post_update: bool,
+    /// Whether the system also runs in edit mode, and while paused.
+    ///
+    /// A game system leaves this `false`: it runs only while the game is
+    /// playing, so the editor's Play and Stop mean something. A system that
+    /// keeps the editor itself alive opts in - the renderer, the egui shell,
+    /// the debug outlines, the audio loader - because a frozen editor with no
+    /// picture would be unusable.
+    edit_mode: bool,
     /// Name used for registration, debugging, and profiling.
     name: String,
     /// Who registered this system; a hot reload removes systems by owner.
@@ -226,6 +234,72 @@ pub struct SystemSnapshot {
 // Engine
 // =============================================================================
 
+/// Whether the frame is being edited or played.
+///
+/// Every posture except the editor plays, which is what the default says: the
+/// standalone, shipping and web builds know nothing about editing, so their
+/// behaviour does not depend on this type at all.
+///
+/// The editor starts in [`RunMode::Editing`] and switches to `Playing` when the
+/// person presses Play, at which point the game systems and the scripts run
+/// again. A system that must keep running while editing opts in at
+/// registration; see [`Engine::register_system_in_edit_mode`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RunMode {
+    /// The editor is being used. Only the systems that opted in to edit mode
+    /// run, and no script runs.
+    Editing,
+    /// The game is running: every enabled system and every script runs. The
+    /// default.
+    #[default]
+    Playing,
+}
+
+/// Why a play session could not start.
+///
+/// Every type that made the copy impossible is named, components first, so one
+/// message tells a person the whole fix.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlayRefusal {
+    /// Component types that are neither `Clone` nor plain data.
+    pub component_type_names: Vec<String>,
+    /// `Restore` resource types whose values could not be copied.
+    pub resource_type_names: Vec<String>,
+}
+
+impl PlayRefusal {
+    /// Whether the refusal names nothing.
+    pub fn is_empty(&self) -> bool {
+        self.component_type_names.is_empty() && self.resource_type_names.is_empty()
+    }
+}
+
+impl std::fmt::Display for PlayRefusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("cannot play: ")?;
+        let mut wrote_a_reason = false;
+        if !self.component_type_names.is_empty() {
+            write!(
+                formatter,
+                "these components are neither `Clone` nor plain data: {}",
+                self.component_type_names.join(", ")
+            )?;
+            wrote_a_reason = true;
+        }
+        if !self.resource_type_names.is_empty() {
+            if wrote_a_reason {
+                formatter.write_str("; ")?;
+            }
+            write!(
+                formatter,
+                "these resources cannot be copied: {}",
+                self.resource_type_names.join(", ")
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// The main engine that drives the ECS.
 ///
 /// It owns the [`World`], the [`SystemScheduler`] and the [`CommandQueue`],
@@ -241,6 +315,10 @@ pub struct SystemSnapshot {
 /// methods on this type are what a *host* uses for the systems it owns - the
 /// renderer's frame build, an editor's own passes - and what the entry point
 /// calls on the artifact's behalf.
+///
+/// A play session lives here too: [`Engine::enter_play`] copies the world aside
+/// and [`Engine::exit_play`] puts it back, so an editor can run a game against
+/// the scene it has open and return to it unchanged.
 ///
 /// # Examples
 /// ```no_run
@@ -274,6 +352,17 @@ pub struct Engine {
     /// itself to keep ticking and flushing while the update systems are
     /// paused, so it can change a paused world and see the result.
     systems_paused: bool,
+    /// Whether the frame is being edited or played; see [`RunMode`].
+    ///
+    /// Every posture except the editor keeps [`RunMode::Playing`], so its
+    /// behaviour is unchanged.
+    run_mode: RunMode,
+    /// Whether the frame that is running dispatches every system, or only the
+    /// ones that opted in to edit mode.
+    ///
+    /// It is computed once at the start of a frame from the run mode, the pause
+    /// state and the step flag, so every phase of that frame agrees.
+    runs_every_system_this_frame: bool,
     /// When true, the next `process_frame` runs the system phase once even if
     /// the engine is paused. Set by [`Engine::request_single_step`]; the frame
     /// clears it.
@@ -380,6 +469,9 @@ impl Engine {
         world.insert_resource(crate::time::Time::new());
         world.insert_resource(crate::input::Input::new());
         world.insert_resource(crate::asset::AssetManager::new());
+        // The world's restore counter, in the form a system can read. It
+        // starts at zero and only a play session's Stop moves it.
+        world.insert_resource(crate::resource::RestoreEpoch::default());
         // The scene type belongs to the engine, so every build can list and
         // load a `.scene` file without a module or a project registering it.
         // This runs before any generation starts, so its registration is older
@@ -395,6 +487,8 @@ impl Engine {
             system_failures: Vec::new(),
             parallel_execution_enabled: true,
             systems_paused: false,
+            run_mode: RunMode::Playing,
+            runs_every_system_this_frame: true,
             single_step_pending: false,
             should_exit_on_error: false,
             frame_budget: None,
@@ -521,10 +615,11 @@ impl Engine {
 
     /// Pauses or resumes the update systems without stopping the frame.
     ///
-    /// A paused engine still bumps the world tick, still updates scripts and
-    /// still flushes deferred commands, so an editor can change a frozen world
-    /// and see the result. The post-update systems still run after the flush;
-    /// only the update systems are skipped.
+    /// A paused engine still bumps the world tick and still flushes deferred
+    /// commands, so an editor can change a frozen world and see the result.
+    /// While paused, only the systems that opted in to edit mode run, plus the
+    /// post-update systems after the flush, so scripts stop with the update
+    /// systems rather than running on under them.
     pub fn set_systems_paused(&mut self, paused: bool) {
         self.systems_paused = paused;
         if !paused {
@@ -537,6 +632,131 @@ impl Engine {
     /// Returns whether the update systems are currently skipped.
     pub fn systems_paused(&self) -> bool {
         self.systems_paused
+    }
+
+    /// Sets whether the engine is editing or playing.
+    ///
+    /// Editing means the editor is being used: only the systems that opted in
+    /// to edit mode run, and no script runs. Playing is the normal posture of
+    /// every non-editor build, which is why it is the default.
+    ///
+    /// The mode is engine state rather than a resource on purpose: project code
+    /// gets no play-mode API, so a game cannot behave differently depending on
+    /// who runs it.
+    pub fn set_run_mode(&mut self, mode: RunMode) {
+        self.run_mode = mode;
+    }
+
+    /// The current run mode.
+    pub fn run_mode(&self) -> RunMode {
+        self.run_mode
+    }
+
+    /// Whether a frame in the current posture runs every system.
+    ///
+    /// True while playing and not paused, and for a step, which is one playing
+    /// frame by definition.
+    fn runs_every_system(&self) -> bool {
+        self.single_step_pending || (self.run_mode == RunMode::Playing && !self.systems_paused)
+    }
+
+    /// Starts a play session: the edit world is copied aside, the copy becomes
+    /// the running world, and the game starts.
+    ///
+    /// The copy is exact: entity handles, the allocator's state, every
+    /// component and every [`PlayState::Restore`](crate::PlayState::Restore)
+    /// resource. A `Keep` or `Rebuild` resource stays live and is left alone on
+    /// Stop.
+    ///
+    /// A session that is already running is left as it is, so a second Play
+    /// cannot replace the held edit world with the playing one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PlayRefusal`] naming every component and resource type the
+    /// copy could not include, and changes nothing. A component that owns heap
+    /// data and does not implement `Clone` is the usual cause.
+    pub fn enter_play(&mut self) -> Result<(), PlayRefusal> {
+        if self.world.held_entity_storage.is_some() {
+            return Ok(());
+        }
+        let held_storage = match self.world.copy_entity_storage() {
+            Ok(held_storage) => held_storage,
+            Err(uncopyable) => {
+                let refusal = PlayRefusal {
+                    component_type_names: uncopyable.type_names,
+                    resource_type_names: Vec::new(),
+                };
+                pill_core::warn!(
+                    target: telemetry_target::ECS,
+                    reason = %refusal,
+                    "[engine] play refused"
+                );
+                return Err(refusal);
+            }
+        };
+        let resource_copy = match self.world.copy_game_state_resources() {
+            Ok(resource_copy) => resource_copy,
+            Err(uncopyable) => {
+                let refusal = PlayRefusal {
+                    component_type_names: Vec::new(),
+                    resource_type_names: uncopyable.type_names,
+                };
+                pill_core::warn!(
+                    target: telemetry_target::ECS,
+                    reason = %refusal,
+                    "[engine] play refused"
+                );
+                return Err(refusal);
+            }
+        };
+
+        // Step 3: Take the copy. Nothing above this line changed the world, so
+        // a refusal leaves the session exactly as it was.
+        let entity_count = self.world.entity_count();
+        let component_count = self.world.component_row_count();
+        self.world.hold_entity_storage(held_storage);
+        self.world.hold_resource_copy(resource_copy);
+        self.run_mode = RunMode::Playing;
+        self.systems_paused = false;
+        pill_core::info!(
+            target: telemetry_target::ECS,
+            entities = entity_count,
+            components = component_count,
+            "[engine] play entered"
+        );
+        Ok(())
+    }
+
+    /// Stops a play session: the edit world comes back and the game's changes
+    /// are discarded.
+    ///
+    /// Everything the game did to entities, to components and to a `Restore`
+    /// resource is undone, including a resource the game inserted. A `Keep`
+    /// resource keeps whatever the game did to it, and a `Rebuild` resource is
+    /// told about the restore through the world's restore epoch.
+    ///
+    /// Returns whether a session was running.
+    pub fn exit_play(&mut self) -> bool {
+        let restored = self.world.restore_held_entity_storage();
+        if !restored {
+            return false;
+        }
+        // Step 1: Put every copied resource back, and remove the ones the game
+        // inserted: a `Restore` resource with no copy was not there at Play.
+        self.world.restore_held_resources();
+        // Step 2: Commands queued by the last play frame belong to that world,
+        // not to the restored one.
+        self.command_queue.clear();
+        // Step 3: The session is over: back to editing, unpaused.
+        self.run_mode = RunMode::Editing;
+        self.systems_paused = false;
+        pill_core::info!(
+            target: telemetry_target::ECS,
+            restore_epoch = self.world.restore_epoch(),
+            "[engine] play exited"
+        );
+        true
     }
 
     /// Runs the update systems once on the next `process_frame`.
@@ -814,7 +1034,7 @@ impl Engine {
         Input: SystemParam,
     {
         let (system_name, system_access, boxed_system) = self.prepare_system(name, system);
-        self.push_system(system_name, system_access, boxed_system, false);
+        self.push_system(system_name, system_access, boxed_system, false, false);
     }
 
     /// Registers a system that runs after the command flush. The commands it
@@ -828,7 +1048,36 @@ impl Engine {
         Input: SystemParam,
     {
         let (system_name, system_access, boxed_system) = self.prepare_system(name, system);
-        self.push_system(system_name, system_access, boxed_system, true);
+        self.push_system(system_name, system_access, boxed_system, true, false);
+    }
+
+    /// Registers an update system that also runs in edit mode and while the
+    /// engine is paused.
+    ///
+    /// The renderer, the editor's own systems and anything else the editor
+    /// needs to stay alive use this: a game system registered with
+    /// [`Self::register_system`] stops when the person is editing, which is the
+    /// point of play mode.
+    pub fn register_system_in_edit_mode<F, Input>(&mut self, name: impl Into<String>, system: F)
+    where
+        F: IntoSystem<Input>,
+        Input: SystemParam,
+    {
+        let (system_name, system_access, boxed_system) = self.prepare_system(name, system);
+        self.push_system(system_name, system_access, boxed_system, false, true);
+    }
+
+    /// Registers a post-update system that also runs in edit mode.
+    pub fn register_post_update_system_in_edit_mode<F, Input>(
+        &mut self,
+        name: impl Into<String>,
+        system: F,
+    ) where
+        F: IntoSystem<Input>,
+        Input: SystemParam,
+    {
+        let (system_name, system_access, boxed_system) = self.prepare_system(name, system);
+        self.push_system(system_name, system_access, boxed_system, true, true);
     }
 
     /// Derives a registration's access pattern and boxes its system.
@@ -961,7 +1210,7 @@ impl Engine {
     ) where
         F: FnMut(&mut World, &mut CommandQueue) -> Result<(), SystemError> + Send + 'static,
     {
-        self.push_system(name.into(), system_access, Box::new(system), false);
+        self.push_system(name.into(), system_access, Box::new(system), false, false);
     }
 
     /// Adds one system to the list and marks the scheduler out of date.
@@ -981,9 +1230,11 @@ impl Engine {
         system_access: SystemAccess,
         system: Box<dyn System>,
         post_update: bool,
+        edit_mode: bool,
     ) {
         self.systems.push(RegisteredSystem {
             post_update,
+            edit_mode,
             name,
             system_owner: self.active_owner,
             system,
@@ -1202,7 +1453,10 @@ impl Engine {
                 "frame",
                 [
                     ("Active entities in world: {}", self.world.entity_count()),
-                    ("Archetypes in world: {}", self.world.archetypes.len())
+                    (
+                        "Archetypes in world: {}",
+                        self.world.storage.archetypes.len()
+                    )
                 ]
             );
 
@@ -1239,6 +1493,11 @@ impl Engine {
             #[cfg(debug_assertions)]
             self.world.debug_clear_resource_locks();
 
+            // Step 2: Decide once whether this frame runs every system. Playing
+            // and unpaused runs them all, a step runs them all once, and edit
+            // mode - or a pause - runs only the systems that opted in.
+            self.runs_every_system_this_frame = self.runs_every_system();
+
             // Step 2: Rebuild the execution graph when the system set changed
             // since the last frame, so parallel batches reflect the active
             // set. Both the conflict matrix and the batches are derived here,
@@ -1256,18 +1515,20 @@ impl Engine {
             // Step 4: Run the update systems, in parallel batches or one after
             // another.
             //
-            // A paused engine skips this phase but still bumps the world tick
-            // (Step 1), still updates scripts (Step 5) and still flushes
-            // deferred commands (Step 6). A single step runs the systems once;
-            // clearing the pending flag here is what pauses the engine again.
-            if !self.systems_paused || self.single_step_pending {
-                if self.parallel_execution_enabled && self.systems.len() > 1 {
-                    self.run_systems_parallel();
-                } else {
-                    self.run_systems_sequential(false);
-                }
-                self.single_step_pending = false;
+            // The phase runs every frame, and the per-system gate above decides
+            // what in it runs: the game's systems run while it plays and is not
+            // paused, and a system that opted in to edit mode runs either way.
+            // A paused engine therefore keeps its opted-in update systems - the
+            // physics outlines among them - and stops the rest.
+            //
+            // A single step runs the systems once; clearing the pending flag
+            // here is what pauses the engine again.
+            if self.parallel_execution_enabled && self.systems.len() > 1 {
+                self.run_systems_parallel();
+            } else {
+                self.run_systems_sequential(false);
             }
+            self.single_step_pending = false;
 
             // Compute parallel-utilization metrics and emit Tracy plots.
             #[cfg(feature = "profiling")]
@@ -1283,7 +1544,11 @@ impl Engine {
 
             // Step 5: Update the scripts. Each script reads the world, changes
             // only its own component and queues its other changes as commands.
-            {
+            //
+            // No script type has opted in to edit mode, so scripts follow the
+            // same gate as game systems: they run while the game runs, and not
+            // while it is edited or paused.
+            if self.runs_every_system_this_frame {
                 let _zone = crate::profile_scope!("update scripts");
                 self.world.update_scripts(&mut self.command_queue);
             }
@@ -1352,7 +1617,7 @@ impl Engine {
     fn emit_frame_telemetry(&self, frame_start: Instant) {
         // Emit per-frame time-series plots for Tracy (native plot API).
         crate::profile_plot!(entity_count, self.world.entity_count() as f64);
-        crate::profile_plot!(archetype_count, self.world.archetypes.len() as f64);
+        crate::profile_plot!(archetype_count, self.world.storage.archetypes.len() as f64);
         crate::profile_plot!(frame_time_us, frame_start.elapsed().as_micros() as f64);
         // Memory estimate: sums archetype columns, entity locations, resources, and overhead.
         crate::profile_plot!(
@@ -1360,7 +1625,10 @@ impl Engine {
             self.world.memory_estimate() as f64 / 1024.0
         );
         // ECS internals.
-        crate::profile_plot!(free_entity_ids, self.world.free_entity_ids.len() as f64);
+        crate::profile_plot!(
+            free_entity_ids,
+            self.world.storage.free_entity_ids.len() as f64
+        );
         crate::profile_plot!(component_types, self.world.component_registry.len() as f64);
         crate::profile_plot!(resource_count, self.world.resources.len() as f64);
         crate::profile_plot!(registered_systems, self.systems.len() as f64);
@@ -1386,7 +1654,8 @@ impl Engine {
         #[cfg(feature = "metrics")]
         {
             metrics::gauge!("ecs.entities").set(self.world.entity_count() as f64);
-            metrics::gauge!("ecs.archetypes").set(self.world.archetypes.len() as f64);
+            metrics::gauge!("ecs.storage.archetypes")
+                .set(self.world.storage.archetypes.len() as f64);
             metrics::gauge!("ecs.systems").set(self.systems.len() as f64);
             metrics::gauge!("ecs.components").set(self.world.component_registry.len() as f64);
             metrics::histogram!("ecs.frame_time_ms")
@@ -1397,12 +1666,12 @@ impl Engine {
     /// Emits one memory-breakdown block when the archetype set has changed.
     #[cfg_attr(not(feature = "profiling"), allow(unused_variables))]
     fn emit_archetype_memory_breakdown(&mut self) {
-        let current_generation = self.world.archetype_generation;
+        let current_generation = self.world.storage.archetype_generation;
         if current_generation == self.last_archetype_generation {
             return;
         }
         self.last_archetype_generation = current_generation;
-        for archetype in self.world.archetypes.values() {
+        for archetype in self.world.storage.archetypes.values() {
             crate::profile_message!(
                 "archetype {:?}: {} entities, {} component types, ~{} bytes",
                 archetype.id,
@@ -1457,11 +1726,17 @@ impl Engine {
                 self.systems.len()
             )]
         );
+        let runs_every_system = self.runs_every_system_this_frame;
         let world = &mut self.world;
         let command_queue = &mut self.command_queue;
         let failures = &mut self.system_failures;
         for registered_system in &mut self.systems {
             if !registered_system.enabled || registered_system.post_update != post_update {
+                continue;
+            }
+            // In edit mode, and while paused, only the systems that opted in
+            // run; a step runs them all once.
+            if !runs_every_system && !registered_system.edit_mode {
                 continue;
             }
             run_registered_system(world, command_queue, failures, registered_system);
@@ -1517,11 +1792,14 @@ impl Engine {
             if batch_size == 1 {
                 // Single system - run directly on main thread, skip rayon
                 let system_index = systems_batch[0];
+                let runs_every_system = self.runs_every_system_this_frame;
                 let runs = {
                     let registered_system = &self.systems[system_index];
                     // The post-flush phase runs after the command flush, never
                     // from a batch.
-                    registered_system.enabled && !registered_system.post_update
+                    registered_system.enabled
+                        && !registered_system.post_update
+                        && (runs_every_system || registered_system.edit_mode)
                 };
                 if runs {
                     let registered_system = &mut self.systems[system_index];
@@ -1565,7 +1843,9 @@ impl Engine {
                         this_run_tick: self.world.increment_change_tick().get(),
                         name: registered_system.name.as_str(),
                         zone_color: system_zone_color(registered_system.system_owner),
-                        runs: registered_system.enabled && !registered_system.post_update,
+                        runs: registered_system.enabled
+                            && !registered_system.post_update
+                            && (self.runs_every_system_this_frame || registered_system.edit_mode),
                     });
                 }
 
@@ -1794,6 +2074,32 @@ fn record_system_run(
 
 #[cfg(test)]
 mod tests {
+
+    /// `Position`'s two `f32` fields, as the derive would declare them.
+    ///
+    /// A component registered by hand has no field layout, and a play session
+    /// refuses to copy a type it cannot prove holds no heap data.
+    static POSITION_FIELDS: &[crate::component_registry::ComponentFieldDescriptor] = &[
+        crate::component_registry::ComponentFieldDescriptor {
+            name: "x",
+            type_tag: "f32",
+            offset: 0,
+            size: 4,
+            align: 4,
+            element_count: 0,
+            decorators: std::borrow::Cow::Borrowed(&[]),
+        },
+        crate::component_registry::ComponentFieldDescriptor {
+            name: "y",
+            type_tag: "f32",
+            offset: 4,
+            size: 4,
+            align: 4,
+            element_count: 0,
+            decorators: std::borrow::Cow::Borrowed(&[]),
+        },
+    ];
+
     // Standard library
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::sync::Arc;
@@ -2249,6 +2555,119 @@ mod tests {
         engine.process_frame().unwrap();
         assert_eq!(counter.load(AtomicOrdering::SeqCst), 3);
         assert!(!engine.systems_paused());
+    }
+
+    /// A play session gives the edit world back and keeps what a `Keep`
+    /// resource was changed to.
+    ///
+    /// The game spawns an entity, destroys one, moves a component, changes a
+    /// restored resource, inserts a resource of its own and changes a `Keep`
+    /// resource. Stop must undo everything but the last of those.
+    #[test]
+    fn a_play_session_restores_the_world_and_keeps_only_a_kept_resource() {
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        struct Score(i32);
+        impl crate::resource::Resource for Score {
+            // A hand-written resource opts in to being copied at Play by
+            // answering with a copy of itself; the derive writes this for a
+            // type it generates.
+            fn clone_erased(
+                value: &crate::resource::ErasedResource,
+            ) -> Option<crate::resource::ErasedResource> {
+                Some(crate::resource::ErasedResource::new(*value.get::<Self>()?))
+            }
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        struct PlayOnly(i32);
+        impl crate::resource::Resource for PlayOnly {}
+
+        struct KeptResource(i32);
+        impl crate::resource::Resource for KeptResource {
+            fn play_state() -> crate::resource::PlayState {
+                crate::resource::PlayState::Keep
+            }
+        }
+
+        let mut engine = Engine::new();
+        engine.set_run_mode(crate::engine::RunMode::Editing);
+        let world = engine.world_mut();
+        world.register_component::<crate::test_fixtures::Position>();
+        world.record_component_field_layout(
+            crate::component::ComponentId::of::<crate::test_fixtures::Position>(),
+            POSITION_FIELDS,
+        );
+        world.insert_resource(Score(1));
+        world.insert_resource(KeptResource(7));
+        let kept_entity = world
+            .create_entity()
+            .with(crate::test_fixtures::Position { x: 1.0, y: 2.0 })
+            .build()
+            .expect("the edit world holds one entity");
+        // A second entity exists so the game has one to destroy.
+        let doomed_entity = world
+            .create_entity()
+            .with(crate::test_fixtures::Position { x: 3.0, y: 4.0 })
+            .build()
+            .expect("the edit world holds a second entity");
+
+        engine.enter_play().expect("a plain world copies");
+        assert_eq!(engine.run_mode(), crate::engine::RunMode::Playing);
+
+        // Step 1: what the game does to the world.
+        {
+            let world = engine.world_mut();
+            world
+                .create_entity()
+                .with(crate::test_fixtures::Position { x: 9.0, y: 9.0 })
+                .build()
+                .expect("the game spawns an entity");
+            let _ = world.destroy_entity(doomed_entity);
+            if let Some(position) =
+                world.get_component_mut::<crate::test_fixtures::Position>(kept_entity)
+            {
+                position.x = 42.0;
+            }
+            if let Some(score) = world.get_resource_mut::<Score>() {
+                score.0 = 100;
+            }
+            world.insert_resource(PlayOnly(5));
+            if let Some(kept) = world.get_resource_mut::<KeptResource>() {
+                kept.0 = 11;
+            }
+        }
+
+        // Step 2: Stop.
+        assert!(engine.exit_play());
+        assert_eq!(engine.run_mode(), crate::engine::RunMode::Editing);
+        assert_eq!(engine.world().restore_epoch(), 1);
+
+        let world = engine.world();
+        assert_eq!(world.entity_count(), 2, "the spent entity came back");
+        assert_eq!(
+            world
+                .get_component::<crate::test_fixtures::Position>(kept_entity)
+                .map(|position| position.x),
+            Some(1.0),
+            "the component holds its edit value"
+        );
+        assert_eq!(
+            world.get_resource::<Score>().map(|score| score.0),
+            Some(1),
+            "a restored resource comes back"
+        );
+        assert_eq!(
+            world
+                .get_resource::<PlayOnly>()
+                .map(|play_only| play_only.0),
+            None,
+            "a resource the game inserted is gone"
+        );
+        assert_eq!(
+            world.get_resource::<KeptResource>().map(|kept| kept.0),
+            Some(11),
+            "a kept resource keeps its play-time value"
+        );
     }
 
     /// Checks that `system_snapshots` reports owners, enabled state and name

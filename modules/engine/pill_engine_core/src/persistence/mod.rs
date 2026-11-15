@@ -229,7 +229,7 @@ mod tests {
             "a refused registration leaves the registry as it was"
         );
         assert_eq!(world.live_row_count(host_id), 1);
-        assert!(world.entity_locations.contains_key(&entity));
+        assert!(world.storage.entity_locations.contains_key(&entity));
         assert!(!world
             .storage_factories
             .contains_key(&ComponentId::of::<LayoutWidenedComponent>()));
@@ -304,14 +304,20 @@ mod tests {
 
         // The entity that carried only the forgotten component is destroyed.
         // The entity that also carries a kept component survives.
-        assert!(!world.entity_locations.contains_key(&entity_only_forgotten));
-        assert!(world.entity_locations.contains_key(&entity_with_both));
-        assert_eq!(world.entity_locations.len(), 1);
+        assert!(!world
+            .storage
+            .entity_locations
+            .contains_key(&entity_only_forgotten));
+        assert!(world
+            .storage
+            .entity_locations
+            .contains_key(&entity_with_both));
+        assert_eq!(world.storage.entity_locations.len(), 1);
 
         // The surviving entity's archetype keeps the kept component and no
         // longer contains the forgotten one.
-        let location = world.entity_locations[&entity_with_both];
-        let archetype = &world.archetypes[&location.archetype_id];
+        let location = world.storage.entity_locations[&entity_with_both];
+        let archetype = &world.storage.archetypes[&location.archetype_id];
         assert!(archetype.component_types.contains(&kept_id));
         assert!(!archetype.component_types.contains(&forgotten_id));
 
@@ -334,7 +340,7 @@ mod tests {
             .with(DropTestForgottenComponent { value: 9 })
             .build()
             .unwrap();
-        assert!(world.entity_locations.contains_key(&reseeded));
+        assert!(world.storage.entity_locations.contains_key(&reseeded));
     }
 
     /// Every native id that shares the forgotten name loses its rows, not only
@@ -376,8 +382,11 @@ mod tests {
             dropped_entity_count, 2,
             "both generations' rows are stripped, not just one id's"
         );
-        assert!(!world.entity_locations.contains_key(&native_entity));
-        assert!(!world.entity_locations.contains_key(&successor_entity));
+        assert!(!world.storage.entity_locations.contains_key(&native_entity));
+        assert!(!world
+            .storage
+            .entity_locations
+            .contains_key(&successor_entity));
         assert!(!world.storage_factories.contains_key(&native_id));
         assert!(!world.storage_factories.contains_key(&successor_id));
     }
@@ -416,7 +425,7 @@ mod tests {
                 "a refused attempt leaves the registry as it was"
             );
         }
-        assert!(world.entity_locations.contains_key(&peer_entity));
+        assert!(world.storage.entity_locations.contains_key(&peer_entity));
         assert_eq!(
             world.live_row_count(peer_id),
             1,
@@ -457,7 +466,7 @@ mod tests {
         );
 
         // The failed generation's id holds nothing anywhere...
-        assert!(!world.entity_locations.contains_key(&entity));
+        assert!(!world.storage.entity_locations.contains_key(&entity));
         assert!(!world.storage_factories.contains_key(&stranded_id));
         assert!(!world.persist_serializers.contains_key(&stranded_id));
         assert!(!world.persist_inserters.contains_key(&stranded_id));
@@ -737,7 +746,7 @@ mod tests {
             .with(RetiringGlueComponent { value: 3 })
             .build()
             .unwrap();
-        assert!(world.entity_locations.contains_key(&entity));
+        assert!(world.storage.entity_locations.contains_key(&entity));
         world.rehome_native_columns();
 
         // Capture the retiring generation's serializer while it is still the

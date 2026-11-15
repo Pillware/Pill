@@ -104,6 +104,10 @@ use winit::window::{Window, WindowId};
 
 // Current crate
 use crate::frontend::EditorError;
+/// The overlay's error, which only the floating posture produces: the
+/// composition one reports through the same type on Windows, so the import is
+/// needed where that posture is built.
+#[cfg(not(windows))]
 use crate::overlay::OverlayError;
 use crate::overlay::OverlayMode;
 use crate::overlay::OverlaySurface;
@@ -131,6 +135,11 @@ pub const NO_OVERLAY_ENV: &str = "PILL_EDITOR_NO_OVERLAY";
 
 /// The environment variable that keeps the editor on the native Wayland
 /// backend.
+/// The environment switch that keeps the native Wayland backend.
+///
+/// Only a non-Windows session chooses a display backend, and only that one can
+/// be moved to X11, so the name exists where that choice does.
+#[cfg(not(windows))]
 pub const WAYLAND_ENV: &str = "PILL_EDITOR_WAYLAND";
 
 /// The environment variable that keeps a scene view in a top-level window.
@@ -309,6 +318,9 @@ fn create_overlay(
     window: Arc<Window>,
     size: (u32, u32),
 ) -> Option<OverlaySurface> {
+    // The event loop is what a Unix session builds the floating overlay's
+    // window on; Windows draws the overlay without one.
+    let _ = event_loop;
     if no_overlay {
         warn!(
             target: telemetry_target::EDITOR,
@@ -1491,6 +1503,14 @@ impl EditorWindow {
     /// does not implement is found, logs `[editor] shortcut has no action
     /// yet`, and does nothing.
     fn run_bound_command(&mut self, key: KeyCode, modifiers: EngineModifiers) -> bool {
+        // Nothing is bound until the keybindings document has been read once.
+        // A key that arrives during the first frames would otherwise run the
+        // build-in preset's binding - which is how a stray Space at window
+        // creation used to pause the engine before the project's own file
+        // replaced the table.
+        if !self.keybindings_applied {
+            return false;
+        }
         let world = self.host.host_mut().engine_mut().world_mut();
         CommandRegistry::ensure(world);
         let resolved_command_id = world
@@ -1512,6 +1532,7 @@ impl EditorWindow {
                 CommandAction::Redo => self.scripted_redo(),
                 CommandAction::PauseToggle => self.scripted_pause_toggle(),
                 CommandAction::Step => self.scripted_step(),
+                CommandAction::PlayToggle => self.scripted_play_toggle(),
             }
         } else {
             info!(
@@ -2009,6 +2030,16 @@ impl EditorWindow {
         // The theme the shell installs. The executable owns the layers, so the
         // merged theme travels on the snapshot together with the generation
         // number that tells the shell whether to install it again.
+        // The project's switch for the Game tab focus, read from
+        // `editor_settings.yaml` and defaulting to on when the file says
+        // nothing.
+        snapshot.focus_game_on_play = self
+            .theme_watch
+            .settings
+            .as_ref()
+            .and_then(|settings| settings.as_ref().ok())
+            .map(|settings| settings.focus_game_on_play)
+            .unwrap_or(true);
         snapshot.theme = self.theme.clone();
         snapshot.theme_generation = self.theme_generation;
         snapshot.theme_layers = self.theme_layers.clone();
@@ -2992,9 +3023,11 @@ impl EditorWindow {
     ///
     /// The shell reports the asset's project-relative path; the target needs a
     /// file on disk, so it is resolved through the host's asset directory
-    /// first. The drag itself blocks in OLE's modal loop, which is why nothing
-    /// else happens on this thread until the person drops or cancels.
-    fn start_drag_out(&mut self, path: &str) {
+    /// first. A drag the pointer started then blocks in OLE's modal loop, which
+    /// is why nothing else happens on this thread until the person drops or
+    /// cancels; `driven_by_pointer` is false for the scripted channel, whose
+    /// input never reaches the pointer, and that drag stops before the loop.
+    fn start_drag_out(&mut self, path: &str, driven_by_pointer: bool) {
         let Some(root) = self
             .host
             .host_mut()
@@ -3017,7 +3050,7 @@ impl EditorWindow {
         } else {
             root.join(relative)
         };
-        match crate::drag_out::start(&absolute.to_string_lossy()) {
+        match crate::drag_out::start(&absolute.to_string_lossy(), driven_by_pointer) {
             crate::drag_out::DragOutOutcome::Dropped(effect) => info!(
                 target: telemetry_target::EDITOR,
                 path = %absolute.display(),
@@ -4039,6 +4072,8 @@ enum CommandAction {
     PauseToggle,
     /// Advance exactly one frame.
     Step,
+    /// Start a play session, or stop the one that is running.
+    PlayToggle,
 }
 
 /// Split a command line into a program and its arguments.
@@ -4077,6 +4112,7 @@ fn command_action(command_id: &str) -> Option<CommandAction> {
         "editor.redo" => Some(CommandAction::Redo),
         "editor.pause_toggle" => Some(CommandAction::PauseToggle),
         "editor.step" => Some(CommandAction::Step),
+        "editor.play_toggle" => Some(CommandAction::PlayToggle),
         _ => None,
     }
 }

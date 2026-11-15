@@ -98,7 +98,13 @@ pub struct AssetDatabase {
     conflicts: Vec<GuidConflict>,
 }
 
-impl Resource for AssetDatabase {}
+impl Resource for AssetDatabase {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+}
 
 impl AssetDatabase {
     /// An empty database.

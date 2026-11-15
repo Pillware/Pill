@@ -60,6 +60,13 @@ pub(super) struct EditorWindow {
     /// active viewport's camera, and a scene ray always projects through the
     /// camera of the view it was cast in.
     pub(super) cameras: Vec<OrbitCamera>,
+    /// The scene cameras as Play found them. A session may move a view - the
+    /// Game tab has its own camera, but a person can still orbit a scene one -
+    /// and Stop puts these back, so the edit view returns where it was.
+    pub(super) play_cameras: Option<Vec<OrbitCamera>>,
+    /// The run mode the last frame saw, so entering and leaving a session is
+    /// noticed exactly once.
+    pub(super) last_run_mode: Option<pill_engine_core::RunMode>,
     /// The viewport the last scene click activated; the gizmo and the
     /// viewport commands read it.
     pub(super) active_view: usize,
@@ -599,6 +606,13 @@ impl EditorWindow {
             scene.attach(&mut host, &cameras[view]);
             views[view] = Some(scene);
         }
+        // The editor starts in edit mode: the project's game systems and its
+        // scripts stay still until the person presses Play, while the systems
+        // that opted in to edit mode - the shell's pass, the renderer's frame
+        // build, the physics outlines - keep running.
+        host.host_mut()
+            .engine_mut()
+            .set_run_mode(pill_engine_core::RunMode::Editing);
         // The scene grid starts on, because the editor's view-bound viewports
         // draw it. The toolbox's grid row and the viewport menu toggle it
         // through `SetGrid`, which flips this same switch.
@@ -622,6 +636,8 @@ impl EditorWindow {
             game_surface,
             popouts: std::collections::BTreeMap::new(),
             cameras,
+            play_cameras: None,
+            last_run_mode: None,
             active_view: 0,
             left_down: vec![false; DEFAULT_SCENE_VIEWS],
             camera_drag: None,

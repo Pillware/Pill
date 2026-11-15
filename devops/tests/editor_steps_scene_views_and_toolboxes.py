@@ -29,6 +29,7 @@ from core.editor_log_tokens import (
     VIEWPORT_CAMERA_TOKEN,
     VIEWPORT_DUMP_TOKEN,
 )
+from core.projects import THEMED_PROJECT_FONT
 from editor_step_areas import StepArea, StepContext
 from editor_step_support import (
     print_ok,
@@ -50,6 +51,16 @@ from editor_step_support import (
 def run_scene_views_and_toolboxes_steps(state: StepState) -> None:
     """The steps through: three scene views hold three independent cameras."""
     session = state.session
+
+    # The theme file below names a project font. The Preferences area puts the
+    # file under `res/editor/fonts/` in a full run, so a subset that skips that
+    # area writes it here: an absent font is refused, and the step would then
+    # read the built-in signature as its own baseline.
+    font_directory = state.theme_root / "fonts"
+    font_directory.mkdir(parents=True, exist_ok=True)
+    themed_font_path = font_directory / THEMED_PROJECT_FONT.name
+    if not themed_font_path.is_file():
+        themed_font_path.write_bytes(THEMED_PROJECT_FONT.read_bytes())
 
     write_theme_file(
         state.theme_root / "font.theme",

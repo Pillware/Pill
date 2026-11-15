@@ -51,8 +51,10 @@ from editor_step_areas import StepArea, StepContext
 from editor_step_support import (
     print_ok,
     StepState,
+    BADGE_CLICK_ATTEMPTS,
     console_dump,
     dump_field_values,
+    newest_badge_rect,
     occurrence_count,
     visible_scene_rect,
     wait_applied,
@@ -107,8 +109,6 @@ def run_tiles_inspector_and_input_steps(state: StepState) -> None:
     )
     assert badge, "the badge's rectangle carried no entity"
     badge_entity = badge.group(1)
-    badge_x = (float(badge.group(2)) + float(badge.group(4))) * 0.5
-    badge_y = (float(badge.group(3)) + float(badge.group(5))) * 0.5
     # Select another entity first, so the badge's own selection is a
     # change the log states rather than a repeat of the same handle.
     entities = re.findall(
@@ -132,14 +132,28 @@ def run_tiles_inspector_and_input_steps(state: StepState) -> None:
             "another entity selected before the badge click",
             begin,
         )
-    begin = session.length()
-    session.send(f"click {badge_x:.0f} {badge_y:.0f}")
-    session.wait(
-        log_layout.message_then_fields_pattern(re.escape(SCENE_BADGE_TOKEN), rf"\s+entity={re.escape(badge_entity)}"),
-        60,
-        "the badge's click selected its entity",
-        begin,
-    )
+    # The chips follow the scene camera, and the camera keeps easing for a
+    # moment after the splitter drag above. A click at the rectangle read
+    # first lands where the chip was a report ago: a run missed by 0.25 px,
+    # which is one report's worth of drift. Each attempt clicks the newest
+    # rectangle, and a chip that never answers still fails here.
+    for attempt in range(1, BADGE_CLICK_ATTEMPTS + 1):
+        badge_rect = newest_badge_rect(session, badge_entity, state.badge_begin)
+        badge_x = (badge_rect[0] + badge_rect[2]) * 0.5
+        badge_y = (badge_rect[1] + badge_rect[3]) * 0.5
+        begin = session.length()
+        session.send(f"click {badge_x:.0f} {badge_y:.0f}")
+        try:
+            session.wait(
+                log_layout.message_then_fields_pattern(re.escape(SCENE_BADGE_TOKEN), rf"\s+entity={re.escape(badge_entity)}"),
+                20,
+                "the badge's click selected its entity",
+                begin,
+            )
+            break
+        except TimeoutError:
+            if attempt == BADGE_CLICK_ATTEMPTS:
+                raise
     session.wait(
         log_layout.message_then_fields_pattern(re.escape(SELECTION_CHANGED_TOKEN), rf"\s+entity={re.escape(badge_entity)}"),
         60,

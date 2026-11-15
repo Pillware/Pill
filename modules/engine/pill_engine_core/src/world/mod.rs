@@ -58,9 +58,11 @@ mod components;
 mod reflection;
 mod resources;
 mod scripting;
+mod storage;
 mod ticks;
 
 pub use components::ColumnChunk;
+pub(crate) use storage::{CloneColumnFn, EntityStorage, ResourceCloneFn, ResourceCopy};
 
 // =============================================================================
 // Re-exports
@@ -260,29 +262,29 @@ impl ComponentFieldLayout {
 /// singleton resources, and keeps the component registry that archetype
 /// storage is built from.
 pub struct World {
-    // --- Entity allocation and locations ---
-    /// Next fresh entity ID handed out when the free list is empty.
-    next_fresh_entity_id: u64,
-    /// Free list of recycled entity IDs, each with the generation it will be
-    /// handed out with. Stored as (id, generation) pairs.
-    pub(crate) free_entity_ids: Vec<(u64, u32)>,
-    /// The stable id of every live entity, keyed by its handle.
+    // --- Entity storage ---
+    /// Every entity the world holds: the archetypes and their columns, the
+    /// allocator and its free list, the locations and the stable ids.
     ///
-    /// This is world data, not a component. Keeping it here means the
-    /// archetypes do not have to carry a row for it through every migration,
-    /// and no query needs the id as component data.
-    entity_ids: HashMap<Entity, EntityId>,
-    /// Reverse of [`Self::entity_ids`], so a saved reference finds its entity
-    /// in O(1).
-    entity_handles: HashMap<EntityId, Entity>,
-    /// Seeds the counter-derived ids used when the platform has no random
-    /// source; see [`Self::mint_entity_id`].
-    entity_id_fallback_counter: u64,
+    /// It is a field of its own so the whole value can be held aside and
+    /// swapped back; see [`EntityStorage`].
+    pub(crate) storage: EntityStorage,
+    /// A second entity storage the world is keeping aside, when it holds one.
+    ///
+    /// The editor's play mode puts the edit state here while a game runs, so
+    /// stopping restores the world the person arranged. Every reload pass that
+    /// walks archetypes runs over this storage too, because a column's function
+    /// table points into the image that registered its type.
+    pub(crate) held_entity_storage: Option<EntityStorage>,
+    /// The `Restore` resource values a play session copied at Play, put back at
+    /// Stop.
+    ///
+    /// `None` between sessions. It lives beside the held storage rather than on
+    /// the engine so the reload passes reach both: a copy is a value of a
+    /// module's type and has to be re-homed, and dropped, together with the live
+    /// value it came from.
+    pub(crate) held_resource_copy: Option<ResourceCopy>,
     // --- Archetypes, columns and entity locations ---
-    /// All archetypes in the world
-    pub(crate) archetypes: HashMap<ArchetypeId, Archetype>,
-    /// The archetype and row each entity lives in.
-    pub(crate) entity_locations: HashMap<Entity, EntityLocation>,
     /// Storage factories for creating component storage by component id
     pub(crate) storage_factories: HashMap<ComponentId, StorageFactory>,
     /// The native function table each component id had before its latest
@@ -370,6 +372,15 @@ pub struct World {
     /// ([`Tick::is_newer_than`](crate::component::Tick::is_newer_than)), so
     /// wrapping around is harmless.
     pub(crate) change_tick: u32,
+    /// Counter that goes up by one whenever a play session's restore swapped
+    /// the edit state back in.
+    ///
+    /// A manager that mirrors the world elsewhere - the physics simulation and
+    /// its rapier world - cannot be copied and put back, so it watches this
+    /// counter instead: a value it did not see before means the world it
+    /// describes was replaced, and it rebuilds from the components rather than
+    /// from a stale mirror.
+    pub(crate) restore_epoch: u64,
     /// The tick at which the system fetching parameters from this world last
     /// ran.
     ///
@@ -379,13 +390,6 @@ pub struct World {
     /// `0`, which means "since the beginning", so an ad-hoc query that no
     /// system drives still sees everything.
     pub(crate) system_last_run: u32,
-
-    /// Counter that goes up by one whenever an archetype is added or removed.
-    ///
-    /// Queries cache the list of archetypes that match them and compare this
-    /// counter on each run: if it has not changed, the cached list is still
-    /// correct. It exists only to save that work.
-    pub(crate) archetype_generation: u64,
 
     /// Debug builds only: resources that currently have a mutable borrow.
     ///
@@ -503,6 +507,23 @@ pub struct World {
     /// Owned copies, so a reload that unmaps the declaring image leaves them
     /// valid.
     pub(crate) component_default_images: HashMap<ComponentId, Vec<u8>>,
+    /// The row-cloning function of every component type that implements
+    /// `Clone`, recorded at registration.
+    ///
+    /// A storage copy clones a type with a function here and copies the rows
+    /// of a type without one byte for byte, which is only sound while the type
+    /// owns no heap data. The function is monomorphised in the DLL that
+    /// registered the type, so a reload re-registers it with the other per-type
+    /// functions.
+    pub(crate) component_clone_functions: HashMap<ComponentId, crate::world::CloneColumnFn>,
+    /// The play-mode class of every resource type, recorded at registration.
+    ///
+    /// A resource with no entry is game state and is restored on Stop; see
+    /// [`Resource::play_state`](crate::Resource::play_state).
+    pub(crate) resource_play_states: HashMap<ResourceId, crate::resource::PlayState>,
+    /// The cloning function of every resource type that implements `Clone`,
+    /// recorded when its value is inserted.
+    pub(crate) resource_clone_functions: HashMap<ResourceId, crate::world::ResourceCloneFn>,
     /// The asset type each `Handle<T>` field of a component refers to, keyed by
     /// field name and holding the registered name of `T`.
     ///
@@ -537,13 +558,9 @@ impl World {
     /// Creates an empty world.
     pub fn new() -> Self {
         Self {
-            next_fresh_entity_id: 0,
-            free_entity_ids: Vec::new(),
-            entity_ids: HashMap::new(),
-            entity_handles: HashMap::new(),
-            entity_id_fallback_counter: 0,
-            archetypes: HashMap::new(),
-            entity_locations: HashMap::new(),
+            storage: EntityStorage::new(),
+            held_entity_storage: None,
+            held_resource_copy: None,
             storage_factories: HashMap::new(),
             retired_native_storage_ops: HashMap::new(),
             script_updaters: HashMap::new(),
@@ -557,8 +574,8 @@ impl World {
             resource_registration_stamps: HashMap::new(),
             resource_claim_counts: HashMap::new(),
             change_tick: 0,
+            restore_epoch: 0,
             system_last_run: 0,
-            archetype_generation: 0,
             #[cfg(debug_assertions)]
             debug_resource_write_locks: std::sync::Mutex::new(std::collections::HashSet::new()),
             commands_executed_this_frame: 0,
@@ -580,6 +597,9 @@ impl World {
             component_registration_log: Vec::new(),
             component_field_layouts: HashMap::new(),
             component_default_images: HashMap::new(),
+            component_clone_functions: HashMap::new(),
+            resource_play_states: HashMap::new(),
+            resource_clone_functions: HashMap::new(),
             asset_field_types: HashMap::new(),
             value_type_layout_resolver: None,
             enum_layout_resolver: None,
@@ -608,8 +628,8 @@ impl World {
             "reserve entities",
             [("Additional entities to reserve: {}", additional)]
         );
-        self.free_entity_ids.reserve(additional);
-        self.entity_locations.reserve(additional);
+        self.storage.free_entity_ids.reserve(additional);
+        self.storage.entity_locations.reserve(additional);
     }
 
     /// Returns the entities of the archetype at `chunk_index`, for language
@@ -618,7 +638,7 @@ impl World {
     /// Entity chunks let a binding walk every archetype in turn. They drive
     /// `EntityTerm` and queries whose component terms are all optional.
     pub fn entity_chunk(&self, chunk_index: usize) -> Option<(ArchetypeId, &[Entity])> {
-        let archetype = self.archetypes.values().nth(chunk_index)?;
+        let archetype = self.storage.archetypes.values().nth(chunk_index)?;
         Some((archetype.id, archetype.entities.as_slice()))
     }
 
@@ -630,7 +650,7 @@ impl World {
         &self,
         archetype_id: ArchetypeId,
     ) -> Option<(ArchetypeId, &[Entity])> {
-        let archetype = self.archetypes.get(&archetype_id)?;
+        let archetype = self.storage.archetypes.get(&archetype_id)?;
         Some((archetype.id, archetype.entities.as_slice()))
     }
 
@@ -641,7 +661,7 @@ impl World {
     /// the next generation; a slot released before its entity was inserted
     /// keeps its own.
     pub fn recycled_entity_id_count(&self) -> usize {
-        self.free_entity_ids.len()
+        self.storage.free_entity_ids.len()
     }
 
     /// Creates an entity from components that are defined at runtime.
@@ -706,7 +726,7 @@ impl World {
     /// generation.
     #[must_use]
     pub fn is_entity_valid(&self, entity: Entity) -> bool {
-        self.entity_locations.contains_key(&entity)
+        self.storage.entity_locations.contains_key(&entity)
     }
 
     /// Takes the next entity handle.
@@ -720,24 +740,24 @@ impl World {
             [
                 (
                     "Free entity IDs available for reuse: {}",
-                    self.free_entity_ids.len()
+                    self.storage.free_entity_ids.len()
                 ),
                 (
                     "Next fresh entity ID to allocate: {}",
-                    self.next_fresh_entity_id
+                    self.storage.next_fresh_entity_id
                 )
             ]
         );
         // Try to reuse an ID from the free list
-        if let Some((id, generation)) = self.free_entity_ids.pop() {
+        if let Some((id, generation)) = self.storage.free_entity_ids.pop() {
             Entity { id, generation }
         } else {
             // Allocate a fresh ID
             let entity = Entity {
-                id: self.next_fresh_entity_id,
+                id: self.storage.next_fresh_entity_id,
                 generation: 0,
             };
-            self.next_fresh_entity_id += 1;
+            self.storage.next_fresh_entity_id += 1;
             entity
         }
     }
@@ -760,19 +780,19 @@ impl World {
     /// entity and never points at the next occupant of the slot.
     #[must_use]
     pub fn entity_id(&self, entity: Entity) -> Option<EntityId> {
-        self.entity_ids.get(&entity).copied()
+        self.storage.entity_ids.get(&entity).copied()
     }
 
     /// The live entity an [`EntityId`] names, or `None`.
     #[must_use]
     pub fn entity_by_id(&self, id: EntityId) -> Option<Entity> {
-        self.entity_handles.get(&id).copied()
+        self.storage.entity_handles.get(&id).copied()
     }
 
     /// Whether an [`EntityId`] already belongs to a live entity.
     #[must_use]
     pub fn entity_id_is_taken(&self, id: EntityId) -> bool {
-        self.entity_handles.contains_key(&id)
+        self.storage.entity_handles.contains_key(&id)
     }
 
     /// Makes a fresh id for an entity that is about to be inserted.
@@ -798,8 +818,12 @@ impl World {
                 }
             }
         }
-        let id = EntityId::from_name(&format!("pill:entity:{}", self.entity_id_fallback_counter));
-        self.entity_id_fallback_counter = self.entity_id_fallback_counter.wrapping_add(1);
+        let id = EntityId::from_name(&format!(
+            "pill:entity:{}",
+            self.storage.entity_id_fallback_counter
+        ));
+        self.storage.entity_id_fallback_counter =
+            self.storage.entity_id_fallback_counter.wrapping_add(1);
         id
     }
 
@@ -810,7 +834,9 @@ impl World {
     /// see would let its id be handed out again under a different generation,
     /// while the old entity still exists.
     pub fn release_entity(&mut self, entity: Entity) {
-        self.free_entity_ids.push((entity.id, entity.generation));
+        self.storage
+            .free_entity_ids
+            .push((entity.id, entity.generation));
     }
 
     /// Recycles the slot of a create that the command flush refused.
@@ -822,7 +848,8 @@ impl World {
     /// instead of wrapping; see there for why.
     pub(crate) fn recycle_refused_entity(&mut self, entity: Entity) {
         if entity.generation != u32::MAX {
-            self.free_entity_ids
+            self.storage
+                .free_entity_ids
                 .push((entity.id, entity.generation + 1));
         }
     }
@@ -861,7 +888,7 @@ impl World {
         // set. The assertion below checks that rule here in case the release
         // path is ever bypassed. It matters because the mask is the id, so an
         // alias would serve the wrong columns and nothing else would show it.
-        if let Some(existing) = self.archetypes.get(&archetype_id) {
+        if let Some(existing) = self.storage.archetypes.get(&archetype_id) {
             debug_assert!(
                 existing.component_types.len() == component_ids.len()
                     && component_ids
@@ -881,7 +908,7 @@ impl World {
             "new archetype created: {:?} with {} component types (total archetypes now: {})",
             ArchetypeId(component_mask.bits()),
             sorted_component_ids.len(),
-            self.archetypes.len() + 1,
+            self.storage.archetypes.len() + 1,
         );
 
         // Create archetype with storage for all component types
@@ -891,8 +918,8 @@ impl World {
             component_mask,
             &self.storage_factories,
         );
-        self.archetypes.insert(archetype_id, new_archetype);
-        self.archetype_generation = self.archetype_generation.wrapping_add(1);
+        self.storage.archetypes.insert(archetype_id, new_archetype);
+        self.storage.archetype_generation = self.storage.archetype_generation.wrapping_add(1);
 
         archetype_id
     }
@@ -959,16 +986,20 @@ impl World {
         let archetype_id = self.get_or_create_archetype(component_ids);
         let current_tick = Tick::new(self.change_tick);
 
-        let archetype = self.archetypes.get_mut(&archetype_id).unwrap_or_else(|| {
-            // `get_or_create_archetype` either returns an existing entry
-            // or inserts a fresh one, so a miss here is an
-            // internal-invariant break. Naming the archetype and entity
-            // makes the report useful.
-            panic!(
-                "archetype {archetype_id:?} vanished after get_or_create_archetype \
+        let archetype = self
+            .storage
+            .archetypes
+            .get_mut(&archetype_id)
+            .unwrap_or_else(|| {
+                // `get_or_create_archetype` either returns an existing entry
+                // or inserts a fresh one, so a miss here is an
+                // internal-invariant break. Naming the archetype and entity
+                // makes the report useful.
+                panic!(
+                    "archetype {archetype_id:?} vanished after get_or_create_archetype \
                      while inserting entity {entity:?}"
-            )
-        });
+                )
+            });
         let row_index: usize = archetype.entities.len();
 
         // Step 2: Append the entity row, then let the closure push each
@@ -1010,7 +1041,7 @@ impl World {
         }
 
         // Step 5: Record where the entity lives so random access stays O(1).
-        self.entity_locations.insert(
+        self.storage.entity_locations.insert(
             entity,
             EntityLocation {
                 archetype_id,
@@ -1022,8 +1053,8 @@ impl World {
         // The id is minted here rather than when the handle was reserved, so a
         // handle that is reserved and never inserted costs nothing.
         let stable_id = stable_id.unwrap_or_else(|| self.mint_entity_id());
-        self.entity_ids.insert(entity, stable_id);
-        self.entity_handles.insert(stable_id, entity);
+        self.storage.entity_ids.insert(entity, stable_id);
+        self.storage.entity_handles.insert(stable_id, entity);
     }
 
     /// Moves an entity to another archetype, keeping every component it keeps.
@@ -1071,7 +1102,7 @@ impl World {
             )]
         );
         // Step 1: Find where the entity currently lives.
-        let old_location = match self.entity_locations.get(&entity) {
+        let old_location = match self.storage.entity_locations.get(&entity) {
             Some(location) => *location,
             None => return Err(WorldError::EntityNotFound),
         };
@@ -1099,7 +1130,7 @@ impl World {
         // Moving a row needs `&mut` on both archetypes at once, and the borrow
         // checker cannot express that through one `HashMap`. Owning one of them
         // outright makes the aliasing rule explicit here.
-        let Some(mut old_archetype) = self.archetypes.remove(&old_archetype_id) else {
+        let Some(mut old_archetype) = self.storage.archetypes.remove(&old_archetype_id) else {
             return Err(WorldError::ArchetypeMissing {
                 entity,
                 archetype_id: old_archetype_id,
@@ -1122,9 +1153,11 @@ impl World {
         // for a component set nothing uses. Every other exit - a refusal, or
         // rows still in it - puts it back exactly as it was found.
         if outcome.is_ok() && old_archetype.entities.is_empty() {
-            self.archetype_generation = self.archetype_generation.wrapping_add(1);
+            self.storage.archetype_generation = self.storage.archetype_generation.wrapping_add(1);
         } else {
-            self.archetypes.insert(old_archetype_id, old_archetype);
+            self.storage
+                .archetypes
+                .insert(old_archetype_id, old_archetype);
         }
 
         outcome
@@ -1167,7 +1200,7 @@ impl World {
         // has moved when this refuses, so the archetype the caller puts back is
         // the world exactly as it was handed over.
         Self::prepare_destination_columns(
-            &mut self.archetypes,
+            &mut self.storage.archetypes,
             old_archetype,
             entity,
             old_index,
@@ -1177,7 +1210,7 @@ impl World {
         // Step 2: Write the entity's row into the destination. The attached
         // component goes first, while a refusal is still free; the carried rows
         // follow, and Step 1 has ruled out every way those can fail.
-        let Some(new_archetype) = self.archetypes.get_mut(&new_archetype_id) else {
+        let Some(new_archetype) = self.storage.archetypes.get_mut(&new_archetype_id) else {
             return Err(WorldError::ArchetypeMissing {
                 entity,
                 archetype_id: new_archetype_id,
@@ -1251,7 +1284,7 @@ impl World {
             }
         }
 
-        self.entity_locations.insert(
+        self.storage.entity_locations.insert(
             entity,
             EntityLocation {
                 archetype_id: new_archetype_id,
@@ -1270,6 +1303,7 @@ impl World {
             // condition the move above branched on, so it tells a carried
             // column apart from a dropped one.
             let destination_columns = self
+                .storage
                 .archetypes
                 .get(&new_archetype_id)
                 .map(|archetype| &archetype.component_storages);
@@ -1288,7 +1322,9 @@ impl World {
             // Update the location of the entity that was swapped (if any)
             if old_index < old_archetype.entities.len() {
                 let swapped_entity = old_archetype.entities[old_index];
-                if let Some(swapped_location) = self.entity_locations.get_mut(&swapped_entity) {
+                if let Some(swapped_location) =
+                    self.storage.entity_locations.get_mut(&swapped_entity)
+                {
                     swapped_location.index_in_archetype = old_index;
                 }
             }
@@ -1376,18 +1412,18 @@ impl World {
         );
         // Step 1: Remove the entity's location record; a missing record
         // means the entity is already gone.
-        let location = match self.entity_locations.remove(&entity) {
+        let location = match self.storage.entity_locations.remove(&entity) {
             Some(location) => location,
             None => return false, // Entity doesn't exist
         };
 
         // Step 1b: forget its stable id. Both indexes go together so the id
         // never names a later occupant of the recycled slot.
-        if let Some(stable_id) = self.entity_ids.remove(&entity) {
-            self.entity_handles.remove(&stable_id);
+        if let Some(stable_id) = self.storage.entity_ids.remove(&entity) {
+            self.storage.entity_handles.remove(&stable_id);
         }
 
-        let archetype = match self.archetypes.get_mut(&location.archetype_id) {
+        let archetype = match self.storage.archetypes.get_mut(&location.archetype_id) {
             Some(archetype) => archetype,
             None => return false,
         };
@@ -1402,7 +1438,9 @@ impl World {
             // Update the location of the entity that was swapped (if any)
             if old_index < archetype.entities.len() {
                 let swapped_entity = archetype.entities[old_index];
-                if let Some(swapped_location) = self.entity_locations.get_mut(&swapped_entity) {
+                if let Some(swapped_location) =
+                    self.storage.entity_locations.get_mut(&swapped_entity)
+                {
                     swapped_location.index_in_archetype = old_index;
                 }
             }
@@ -1437,8 +1475,8 @@ impl World {
         // prevent memory leaks.
         let archetype_id = location.archetype_id;
         if archetype.entities.is_empty() {
-            self.archetypes.remove(&archetype_id);
-            self.archetype_generation = self.archetype_generation.wrapping_add(1);
+            self.storage.archetypes.remove(&archetype_id);
+            self.storage.archetype_generation = self.storage.archetype_generation.wrapping_add(1);
         }
 
         // Step 4: Put the entity id back with the next generation, so the slot
@@ -1450,7 +1488,8 @@ impl World {
         // reachable in practice, but it is cheap to make the wrap impossible
         // instead of silent.
         if entity.generation != u32::MAX {
-            self.free_entity_ids
+            self.storage
+                .free_entity_ids
                 .push((entity.id, entity.generation + 1));
         }
 
@@ -1461,9 +1500,18 @@ impl World {
     ///
     /// This is rarely needed, because an empty archetype is reused when an
     /// entity with the same component set appears again. It is useful when the
-    /// memory its columns hold should be given back.
+    /// memory its columns hold should be given back. It runs over the held
+    /// storage too, because an archetype's columns carry the function table of
+    /// the image that created them.
     pub fn cleanup_empty_archetypes(&mut self) {
+        self.run_on_every_entity_storage(|world| world.cleanup_empty_archetypes_in_storage());
+    }
+
+    /// Removes one storage's empty archetypes; see
+    /// [`Self::cleanup_empty_archetypes`].
+    fn cleanup_empty_archetypes_in_storage(&mut self) {
         let empty_archetype_ids: Vec<ArchetypeId> = self
+            .storage
             .archetypes
             .iter()
             .filter(|(_, archetype)| archetype.entities.is_empty())
@@ -1475,17 +1523,26 @@ impl World {
             [("removed: {}", empty_archetype_ids.len())]
         );
         for archetype_id in &empty_archetype_ids {
-            self.archetypes.remove(archetype_id);
+            self.storage.archetypes.remove(archetype_id);
         }
         if !empty_archetype_ids.is_empty() {
-            self.archetype_generation = self.archetype_generation.wrapping_add(1);
+            self.storage.bump_archetype_generation();
         }
     }
 
     /// Total number of entities alive in the world.
     #[inline]
     pub fn entity_count(&self) -> usize {
-        self.entity_locations.len()
+        self.storage.entity_count()
+    }
+
+    /// How many component rows the world holds.
+    ///
+    /// One entity carrying three components counts three, so this is the size a
+    /// play session copies rather than the number of entities.
+    #[inline]
+    pub fn component_row_count(&self) -> usize {
+        self.storage.component_row_count()
     }
 
     /// Iterates over every archetype in the world, for read-only column
@@ -1501,7 +1558,7 @@ impl World {
     /// columns seen here by stable type name and size.
     #[inline]
     pub fn archetypes_iter(&self) -> impl Iterator<Item = &Archetype> {
-        self.archetypes.values()
+        self.storage.archetypes.values()
     }
 }
 
@@ -1757,3 +1814,6 @@ mod layout_tests {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod copy_tests;

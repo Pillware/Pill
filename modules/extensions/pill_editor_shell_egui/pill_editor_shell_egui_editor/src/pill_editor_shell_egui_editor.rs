@@ -179,7 +179,7 @@ pub fn init(engine: &mut Engine) -> u32 {
 /// windows. After it, it drains [`EguiShellFrame`].
 #[allow(clippy::type_complexity)]
 #[pill_hot]
-#[system(name = "egui_shell", post_update)]
+#[system(name = "egui_shell", post_update, edit_mode)]
 pub fn egui_shell_update(
     resources: (
         ResMut<EguiShellState>,

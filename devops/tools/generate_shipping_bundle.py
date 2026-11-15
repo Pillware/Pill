@@ -111,6 +111,9 @@ BUNDLE_DIRECTORY = Path("build") / BUNDLE_CRATE_NAME
 # File names the generator reads and writes.
 PROJECT_SETTINGS_FILE_NAME = "project_settings.yaml"
 PROJECT_MANIFEST_FILE_NAME = "Cargo.toml"
+# Where a native project's sources live; the generator scans them for the
+# `register` half of the project's entry point.
+PROJECT_SOURCE_DIRECTORY_NAME = "src"
 EXTENSION_DIRECTORY = Path("modules") / "extensions"
 # Extension crates live one level down, one folder per extension:
 # `modules/extensions/<extension>/<crate>/`.
@@ -438,6 +441,25 @@ def load_project_package_name(project_root: Path) -> str:
             value = stripped.split("=", 1)[1].strip().strip('"').strip("'")
             return value
     raise ValueError(f"no package name in {manifest_path}")
+
+
+def project_declares_register(project_root: Path) -> bool:
+    """Whether the project exports a `register` half of its entry point.
+
+    `#[pill_project(register = register)]` names a `pub fn register` in the
+    project's own sources; a project without one seeds everything from its
+    `init`. The generated bundle points the static backend at that function
+    only when it exists, and at the player's no-op otherwise. Scanned rather
+    than compiled because the generator must not build the project to
+    describe it.
+    """
+    sources = project_root / PROJECT_SOURCE_DIRECTORY_NAME
+    if not sources.is_dir():
+        return False
+    for source in sources.rglob("*.rs"):
+        if "pub fn register(" in source.read_text(encoding="utf-8", errors="replace"):
+            return True
+    return False
 
 
 def load_project_features(project_root: Path) -> set:
@@ -797,11 +819,20 @@ def build_library_source(
     else:
         # Skipped for the same reason as the module list: rustfmt joins this
         # literal onto one line when the package name is short, so the shape
-        # would depend on the project's name.
+        # would depend on the project's name. A project without a `register`
+        # half points the static backend at the player's no-op, which is the
+        # only thing a project that seeds everything from `init` can mean.
+        project_root = (bundle_directory.parent.parent / project_path).resolve()
+        register_expression = (
+            f"{package_name}::register"
+            if project_declares_register(project_root)
+            else "pill_player::no_project_registration"
+        )
         lines += [
             "#[rustfmt::skip]",
             "pub fn project_backend() -> StaticProjectBackend {",
             "    StaticProjectBackend::Native {",
+            f"        register: {register_expression},",
             f"        init: {package_name}::init,",
             "    }",
             "}",

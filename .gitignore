@@ -77,3 +77,4 @@ performance_benchmarks/cache/artifacts/
 
 # Workflow data, kept in its own repository.
 .construction_site/
+.github/hooks/construction-site.json

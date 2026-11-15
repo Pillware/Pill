@@ -398,7 +398,12 @@ mod tests {
         let created = first_run.import(request()).expect("the file exists");
         assert_eq!(created.metadata, MetadataSource::CreatedOnDisk);
         let metadata = std::fs::read_to_string(root.join("sounds/click.mp3.meta")).unwrap();
-        assert!(metadata.contains("\"pill_audio::Sound\""), "{metadata}");
+        // The sidecar is YAML, so the type is a bare scalar rather than a
+        // quoted JSON string.
+        assert!(
+            metadata.contains("asset_type: pill_audio::Sound"),
+            "{metadata}"
+        );
         assert_eq!(
             first_run.get(created.handle).map(Sound::bytes),
             Some(&[1, 2, 3][..])

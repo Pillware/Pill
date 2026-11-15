@@ -615,7 +615,13 @@ pub struct ImportRegistry {
     decorators: std::collections::BTreeMap<String, Vec<(String, FieldDecorator)>>,
 }
 
-impl Resource for ImportRegistry {}
+impl Resource for ImportRegistry {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+}
 
 impl ImportRegistry {
     /// Record `T`'s entry points. They stay callable for as long as `alive`
@@ -1367,7 +1373,13 @@ impl<T> ImportRegistrationMarker<T> {
     }
 }
 
-impl<T: 'static> Resource for ImportRegistrationMarker<T> {}
+impl<T: 'static> Resource for ImportRegistrationMarker<T> {
+    /// Infrastructure, not game state: the marker says which generation
+    /// registered a type, so a play session neither copies nor restores it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+}
 
 // =============================================================================
 // Tests

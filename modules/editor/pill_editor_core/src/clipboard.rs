@@ -137,7 +137,13 @@ pub struct EditorClipboard {
     pub text: String,
 }
 
-impl pill_engine::Resource for EditorClipboard {}
+impl pill_engine::Resource for EditorClipboard {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 impl EditorClipboard {
     /// Takes the waiting request, if there is one.

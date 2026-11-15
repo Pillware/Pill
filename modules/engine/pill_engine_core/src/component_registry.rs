@@ -200,16 +200,21 @@ impl<T> std::default::Default for DefaultValueProbe<T> {
 }
 
 /// Records `T::default()` for a component that implements `Default`.
+///
+/// The impl takes `self` by value, and the fallback below takes one more
+/// reference. Method lookup then matches this one on the call's own reference
+/// and only reaches the fallback through an automatic borrow, which is the
+/// order that lets a type without `Default` compile.
 pub trait RecordDefaultValue {
     /// Records the component's default value in `world`.
-    fn record_default_value(&self, world: &mut crate::World);
+    fn record_default_value(self, world: &mut crate::World);
 }
 
-impl<T> RecordDefaultValue for DefaultValueProbe<T>
+impl<T> RecordDefaultValue for &DefaultValueProbe<T>
 where
     T: crate::component::Component + Default,
 {
-    fn record_default_value(&self, world: &mut crate::World) {
+    fn record_default_value(self, world: &mut crate::World) {
         world.record_component_default::<T>();
     }
 }
@@ -218,11 +223,73 @@ where
 /// component keeps starting from zeros.
 pub trait SkipDefaultValue {
     /// Does nothing.
-    fn record_default_value(&self, world: &mut crate::World);
+    fn record_default_value(self, world: &mut crate::World);
 }
 
-impl<T> SkipDefaultValue for &DefaultValueProbe<T> {
-    fn record_default_value(&self, _world: &mut crate::World) {}
+impl<T> SkipDefaultValue for &&DefaultValueProbe<T> {
+    fn record_default_value(self, _world: &mut crate::World) {}
+}
+
+// =============================================================================
+// CloneValueProbe
+// =============================================================================
+
+/// Lets generated registration code record a component's row-cloning function
+/// when the type implements `Clone`, and do nothing when it does not, without
+/// the derive knowing which.
+///
+/// It works exactly like [`DefaultValueProbe`]: the generated code calls
+/// `(&CloneValueProbe::<T>::new()).record_clone_value(world)` with both traits
+/// in scope, and method lookup prefers [`RecordCloneValue`] on the probe over
+/// [`SkipCloneValue`] on a reference to it.
+///
+/// A recorded clone function is what lets the engine copy a storage row by row
+/// for a type that owns heap data. A type without one can still be copied, but
+/// only when its rows are plain bytes (see the copy rules in
+/// [`crate::world::EntityStorage`]).
+pub struct CloneValueProbe<T>(std::marker::PhantomData<T>);
+
+impl<T> CloneValueProbe<T> {
+    /// A probe for the component `T`.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
+}
+
+impl<T> std::default::Default for CloneValueProbe<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Records `T`'s row-cloning function for a component that implements `Clone`.
+///
+/// The impls follow [`RecordDefaultValue`]'s arrangement, which is what makes
+/// the specific one win.
+pub trait RecordCloneValue {
+    /// Records the component's clone function in `world`.
+    fn record_clone_value(self, world: &mut crate::World);
+}
+
+impl<T> RecordCloneValue for &CloneValueProbe<T>
+where
+    T: crate::component::Component + Clone,
+{
+    fn record_clone_value(self, world: &mut crate::World) {
+        world.record_component_clone::<T>();
+    }
+}
+
+/// The fallback for a component without `Clone`: records nothing, so the type
+/// is copied row by row only when its rows are plain bytes.
+pub trait SkipCloneValue {
+    /// Does nothing.
+    fn record_clone_value(self, _world: &mut crate::World);
+}
+
+impl<T> SkipCloneValue for &&CloneValueProbe<T> {
+    fn record_clone_value(self, _world: &mut crate::World) {}
 }
 
 // =============================================================================

@@ -99,4 +99,47 @@ mod tests {
     fn the_resource_crosses_the_module_boundary_by_name() {
         assert!(RenderingManager::shared_name().is_some());
     }
+
+    #[test]
+    fn a_play_session_can_copy_the_manager() {
+        // Play copies every resource it restores on Stop, so a resource the
+        // engine cannot copy refuses the session by name.
+        let value = pill_engine::resource::ErasedResource::new(RenderingManager::new());
+        assert!(RenderingManager::clone_erased(&value).is_some());
+    }
+
+    /// A pipeline the game sets during a session is the session's: Stop puts
+    /// the editor's selection back.
+    #[test]
+    fn a_pipeline_set_during_a_play_session_is_reverted_on_stop() {
+        let mut engine = pill_engine::Engine::new();
+        engine.set_run_mode(pill_engine::RunMode::Editing);
+        engine.world_mut().insert_resource(RenderingManager::new());
+
+        engine.enter_play().expect("the manager is copyable");
+        let pipeline = Handle::from_raw(5, 2);
+        engine
+            .world_mut()
+            .get_resource_mut::<RenderingManager>()
+            .expect("the manager is live")
+            .set_pipeline(pipeline);
+        assert_eq!(
+            engine
+                .world()
+                .get_resource::<RenderingManager>()
+                .and_then(RenderingManager::pipeline),
+            Some(pipeline)
+        );
+
+        assert!(engine.exit_play(), "the session ends");
+
+        assert_eq!(
+            engine
+                .world()
+                .get_resource::<RenderingManager>()
+                .and_then(RenderingManager::pipeline),
+            None,
+            "Stop puts the edit world's pipeline selection back"
+        );
+    }
 }

@@ -142,8 +142,8 @@ impl World {
         // Step 1: Name each archetype's components once, so the string work is
         // per archetype instead of per entity.
         let mut component_names_by_archetype: HashMap<ArchetypeId, Vec<String>> =
-            HashMap::with_capacity(self.archetypes.len());
-        for (archetype_id, archetype) in &self.archetypes {
+            HashMap::with_capacity(self.storage.archetypes.len());
+        for (archetype_id, archetype) in &self.storage.archetypes {
             let component_names: Vec<String> = archetype
                 .component_types
                 .iter()
@@ -158,6 +158,7 @@ impl World {
 
         // Step 2: Build one row per live entity, copying its archetype's names.
         let mut rows: Vec<EntityRow> = self
+            .storage
             .entity_locations
             .iter()
             .map(|(entity, location)| EntityRow {
@@ -180,7 +181,7 @@ impl World {
     /// component names are copied, so a caller that walks a large world every
     /// frame pays one allocation for the whole list.
     pub fn live_entities(&self) -> Vec<Entity> {
-        let mut entities: Vec<Entity> = self.entity_locations.keys().copied().collect();
+        let mut entities: Vec<Entity> = self.storage.entity_locations.keys().copied().collect();
         entities.sort_by_key(|entity| entity.id());
         entities
     }
@@ -192,8 +193,8 @@ impl World {
     /// not from a scan of the registry, so a type that another generation
     /// registered, but this entity does not have, never appears.
     pub fn entity_component_names(&self, entity: Entity) -> Option<Vec<String>> {
-        let location = self.entity_locations.get(&entity)?;
-        let archetype = self.archetypes.get(&location.archetype_id)?;
+        let location = self.storage.entity_locations.get(&entity)?;
+        let archetype = self.storage.archetypes.get(&location.archetype_id)?;
         Some(
             archetype
                 .component_types
@@ -251,8 +252,8 @@ impl World {
         entity: Entity,
         type_name: &str,
     ) -> Option<ComponentId> {
-        let location = self.entity_locations.get(&entity)?;
-        let archetype = self.archetypes.get(&location.archetype_id)?;
+        let location = self.storage.entity_locations.get(&entity)?;
+        let archetype = self.storage.archetypes.get(&location.archetype_id)?;
         archetype
             .component_types
             .iter()
@@ -282,16 +283,20 @@ impl World {
     /// count. Useful when debugging the ECS.
     pub fn print_archetypes(&self) {
         let mut lines: Vec<String> = self
+            .storage
             .archetypes
             .values()
             .map(|archetype| archetype.get_archetype_info(&self.component_registry))
             .collect();
-        lines.push(format!("Total entities: {}", self.entity_locations.len()));
+        lines.push(format!(
+            "Total entities: {}",
+            self.storage.entity_locations.len()
+        ));
         pill_core::info!(
             target: telemetry_target::ECS,
             "{}",
             pill_core::telemetry::log_block(
-                &format!("World archetypes (total: {})", self.archetypes.len()),
+                &format!("World archetypes (total: {})", self.storage.archetypes.len()),
                 lines
             )
         );
@@ -308,25 +313,25 @@ impl World {
         let mut total_bytes = 0usize;
 
         // Archetype storage: component columns, entities and change ticks.
-        for archetype in self.archetypes.values() {
+        for archetype in self.storage.archetypes.values() {
             total_bytes += archetype.memory_estimate();
         }
 
         // Entity location map, charged at a flat 48 bytes per entry for the
         // key, the value and the table overhead.
-        total_bytes += self.entity_locations.len() * 48;
+        total_bytes += self.storage.entity_locations.len() * 48;
 
         // The two stable-id maps, handle to id and id back to handle. Between
         // them they hold two entries per live entity, with 16-byte keys and
         // values, each charged at 48 bytes.
-        total_bytes += self.entity_ids.len() * 48;
-        total_bytes += self.entity_handles.len() * 48;
+        total_bytes += self.storage.entity_ids.len() * 48;
+        total_bytes += self.storage.entity_handles.len() * 48;
 
         // Resources, at a flat allowance per type.
         total_bytes += self.resources.len() * 128;
 
         // The recycled-id free list, at its reserved capacity.
-        total_bytes += self.free_entity_ids.capacity() * 12;
+        total_bytes += self.storage.free_entity_ids.capacity() * 12;
 
         // Storage factories and script updaters.
         total_bytes += self.storage_factories.len() * 128;
@@ -351,7 +356,7 @@ impl World {
     pub fn to_dot_graph(&self) -> String {
         let mut dot = String::from("digraph World {\n    rankdir=LR;\n    node [shape=record];\n");
 
-        for (_, archetype) in self.archetypes.iter() {
+        for (_, archetype) in self.storage.archetypes.iter() {
             let component_names: Vec<String> = archetype
                 .component_types
                 .iter()

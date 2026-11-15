@@ -16,6 +16,7 @@
 
 // External crates
 use egui::{pos2, Rect, Vec2};
+use pill_engine::RunMode;
 
 // Current crate
 use crate::assets;
@@ -177,6 +178,9 @@ pub enum MenuAction {
     ActivateTab(EditorTab),
     /// Dock one more scene view, with its own camera and toolbox.
     NewSceneView,
+    /// Start a play session, or stop the one that is running. The toolbar's
+    /// first button and the View menu's Play row both carry it.
+    TogglePlay,
     /// Open the About window.
     About,
     /// Quit the editor.
@@ -383,6 +387,12 @@ fn menu_entry_for_command(command: &CommandView, view: &MenuView<'_>) -> Option<
             checked = menu_row.2;
             menu_row.1
         }
+        // The play row shows the action a press takes, so it reads `Play`
+        // while the editor is being edited and `Stop` while a game runs.
+        "editor.play_toggle" => {
+            label = play_title(view.snapshot.run_mode).to_string();
+            MenuAction::TogglePlay
+        }
         "editor.pause_toggle" => {
             let paused = view.snapshot.paused;
             MenuAction::Queue {
@@ -410,6 +420,26 @@ fn menu_entry_for_command(command: &CommandView, view: &MenuView<'_>) -> Option<
         enabled,
         checked,
     })
+}
+
+/// The play control's label for a run mode: what pressing it does.
+///
+/// The toolbar's first button and the View menu's row share it, so both read
+/// `Play` while the editor is being edited and `Stop` while a game runs.
+pub fn play_title(run_mode: RunMode) -> &'static str {
+    match run_mode {
+        RunMode::Editing => "Play",
+        RunMode::Playing => "Stop",
+    }
+}
+
+/// The command the play control queues: start a session or stop the one that
+/// runs. Neither is recorded, so a session never becomes an undo step.
+pub fn play_toggle_command(run_mode: RunMode) -> EditorCommand {
+    match run_mode {
+        RunMode::Editing => EditorCommand::EnterPlay,
+        RunMode::Playing => EditorCommand::ExitPlay,
+    }
 }
 
 /// Returns a toolbox row as menu data: the label it shows for the current
@@ -642,7 +672,8 @@ mod tests {
         let selection = EditorSelection::default();
         let menu_entries = entries(Menu::View, &view_over(&snapshot, &selection, &commands));
         // The toolbox's six rows in the panel's order, then the simulation
-        // controls after the last rule.
+        // controls after the last rule. The play row shows what a press does,
+        // so it reads `Play` while the editor is being edited.
         assert_eq!(
             labels(&menu_entries),
             vec![
@@ -652,6 +683,7 @@ mod tests {
                 "World",
                 "Snap",
                 "Grid",
+                "Play",
                 "Pause / Resume Simulation",
                 "Step One Frame",
             ]
@@ -668,7 +700,7 @@ mod tests {
         // Three rules split the rows: before the space row, before the grid
         // row, and before the simulation controls.
         assert_eq!(separator_count(&menu_entries), 3);
-        // The six rows that toggle carry a check state. The two simulation
+        // The six rows that toggle carry a check state. The three simulation
         // rows are plain actions.
         assert!(action_rows[..6].iter().all(|row| row.2.is_some()));
         assert!(action_rows[6..].iter().all(|row| row.2.is_none()));
@@ -814,10 +846,54 @@ mod tests {
         assert_eq!(labels(&menu_entries)[0], "Step Back");
     }
 
+    /// The play control reads what a press does, and queues that: `Play` while
+    /// the editor is being edited, `Stop` while a session runs.
+    #[test]
+    fn the_play_control_follows_the_run_mode() {
+        assert_eq!(play_title(RunMode::Editing), "Play");
+        assert_eq!(play_title(RunMode::Playing), "Stop");
+        assert_eq!(
+            play_toggle_command(RunMode::Editing),
+            EditorCommand::EnterPlay
+        );
+        assert_eq!(
+            play_toggle_command(RunMode::Playing),
+            EditorCommand::ExitPlay
+        );
+        // A session is not an undo step, so neither command records.
+        assert!(!EditorCommand::EnterPlay.recordable());
+        assert!(!EditorCommand::ExitPlay.recordable());
+    }
+
+    /// The View menu's play row greys nothing out and shows the same label the
+    /// toolbar's first button does.
+    #[test]
+    fn the_view_menu_shows_the_play_row_for_both_modes() {
+        let commands = commands_fixture();
+        let selection = EditorSelection::default();
+        let mut snapshot = snapshot_fixture();
+        let editing = entries(Menu::View, &view_over(&snapshot, &selection, &commands));
+        assert!(labels(&editing).contains(&"Play".to_string()));
+        snapshot.run_mode = RunMode::Playing;
+        let playing = entries(Menu::View, &view_over(&snapshot, &selection, &commands));
+        assert!(labels(&playing).contains(&"Stop".to_string()));
+        let rows = action_states(&playing);
+        let play_row = rows
+            .iter()
+            .position(|row| row.0 == "Stop")
+            .expect("the play row is in the View menu");
+        assert!(rows[play_row].1, "the play row is never greyed out");
+    }
+
     /// Returns a snapshot over a fresh engine, which the entry tests take
     /// views of.
+    ///
+    /// The engine is put in edit mode first, because that is the mode an
+    /// editor's own engine is in: a fresh engine defaults to playing, which is
+    /// what a standalone build does.
     fn snapshot_fixture() -> EditorSnapshot {
-        let engine = pill_engine::Engine::new();
+        let mut engine = pill_engine::Engine::new();
+        engine.set_run_mode(RunMode::Editing);
         EditorSnapshot::capture_engine_tiers(&engine, 0, &[], Vec::new())
     }
 }

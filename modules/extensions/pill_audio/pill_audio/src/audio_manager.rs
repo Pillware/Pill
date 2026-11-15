@@ -62,7 +62,14 @@ pub const EAR_SEPARATION: f32 = 1.0;
 /// It declares its settings surface in the module's `register`
 /// ([`AudioSettingsAsset`]): the applier points into that image, so every
 /// generation re-points it.
+///
+/// It is a [`PlayState::Keep`](pill_engine::PlayState::Keep) resource: the
+/// output stream belongs to the machine, so there is nothing to copy at Play,
+/// and putting a pre-play copy back would drop the live stream and stop the
+/// audio. What plays is decided by the entities' components, which the session
+/// does restore.
 #[derive(PillResource)]
+#[pill(play_state = "keep")]
 pub struct AudioManager {
     /// The output stream. Nothing reads it after construction, but dropping it
     /// silences every sink, so it is held for its lifetime alone.

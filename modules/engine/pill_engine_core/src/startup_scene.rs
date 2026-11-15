@@ -47,7 +47,13 @@ pub struct StartupScene {
     pub path: String,
 }
 
-impl Resource for StartupScene {}
+impl Resource for StartupScene {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+}
 
 // =============================================================================
 // Free Functions

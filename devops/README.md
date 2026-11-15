@@ -119,12 +119,16 @@ A project configures the last one with `editor_settings.yaml` beside its
 
 ```yaml
 editor_theme: "editor/my_theme.theme"   # below res; default: editor/editor.theme
+focus_game_on_play: true                # Play brings the Game tab forward; default: true
 ```
 
 `res/editor/` is editor-only content: game packs never carry it. The pipeline
 is described in `AGENTS.md` ("The theme pipeline"), and
 `tests/test_ui_theme.py` proves the game half end to end while
-`tests/test_editor_egui.py` proves the editor half.
+`tests/test_editor_egui.py` proves the editor half. That suite's play-mode area
+(`tests/editor_steps_play_mode.py`) drives a whole session through the scripted
+channel: Play, an edit that Stop discards, the restore epoch, the Game tab focus,
+the history's depth and the pause/step controls.
 
 ## core/
 

@@ -240,8 +240,8 @@ impl Spline {
                 #[cfg(feature = "test-hooks")]
                 let sampled_position = Vector3f::new(
                     sampled_position.x,
-                    sampled_position.y,
-                    sampled_position.z + 0.0,
+                    sampled_position.y + SAMPLE_VERTICAL_OFFSET,
+                    sampled_position.z,
                 );
                 sampled_position
             }

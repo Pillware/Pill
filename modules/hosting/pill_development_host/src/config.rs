@@ -1246,11 +1246,23 @@ impl ProjectModuleConfig {
 }
 
 /// What `editor_settings.yaml` selected for the editor.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditorSettings {
     /// The `editor_theme:` value, as the file spells it: a path below the
     /// project's `res`.
     pub editor_theme: Option<String>,
+    /// The `focus_game_on_play:` value: whether Play brings the Game tab
+    /// forward. Absent means `true`, which is what a person expects of Play.
+    pub focus_game_on_play: bool,
+}
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            editor_theme: None,
+            focus_game_on_play: true,
+        }
+    }
 }
 
 /// Values declared by the project's own `editor_settings.yaml`.
@@ -1259,6 +1271,8 @@ pub struct EditorSettings {
 struct EditorSettingsFile {
     /// The editor theme the project's editor layer uses, below `res`.
     editor_theme: Option<String>,
+    /// Whether Play brings the Game tab forward.
+    focus_game_on_play: Option<bool>,
 }
 
 /// Values declared by the project's own `project_settings.yaml`.
@@ -1756,6 +1770,7 @@ pub fn read_editor_settings(project_directory: &Path) -> Result<EditorSettings, 
         editor_theme: file
             .editor_theme
             .filter(|editor_theme| !editor_theme.trim().is_empty()),
+        focus_game_on_play: file.focus_game_on_play.unwrap_or(true),
     })
 }
 
@@ -2663,6 +2678,7 @@ serde = { version = "1", features = ["derive"] }
 
         let named_settings = EditorSettings {
             editor_theme: Some("editor/alt.theme".to_string()),
+            focus_game_on_play: true,
         };
         assert_eq!(
             resolve_editor_theme(&directory, &named_settings).as_deref(),

@@ -163,7 +163,13 @@ pub(crate) struct ManagerSettingsBinding {
     pub(crate) applied_fingerprint: Option<u64>,
 }
 
-impl Resource for ManagerSettingsBindings {}
+impl Resource for ManagerSettingsBindings {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+}
 
 // =============================================================================
 // World

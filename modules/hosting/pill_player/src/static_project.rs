@@ -95,6 +95,14 @@ pub trait ProjectBackend {
 pub enum StaticProjectBackend {
     /// A Rust project linked into this binary.
     Native {
+        /// The `register` half of `#[pill_project(register = ...)]`.
+        ///
+        /// A linked project runs it once, before [`Self::Native::init`] and
+        /// after its declarations, which is the same order a reloading host
+        /// uses on its first load. A project that keeps state only a
+        /// registration half can refresh therefore behaves in a shipped build
+        /// as it does in the development host.
+        register: fn(&mut Engine) -> u32,
         /// The function `#[pill_project]` was written on.
         init: fn(&mut Engine) -> u32,
     },
@@ -223,12 +231,17 @@ impl StaticProject {
         for (index, module) in self.modules.iter().enumerate() {
             let system_owner = extension_owner(index);
             let registration_sequence = engine.world().component_registration_sequence();
-            run_linked_entry_point(engine, module.init, Some(system_owner), None).map_err(
-                |status| ModuleError::InitializationFailed {
-                    module: module.name.to_string(),
-                    status,
-                },
-            )?;
+            run_linked_entry_point(
+                engine,
+                pill_engine::component_registry::no_registration,
+                module.init,
+                Some(system_owner),
+                None,
+            )
+            .map_err(|status| ModuleError::InitializationFailed {
+                module: module.name.to_string(),
+                status,
+            })?;
             exposed_component_names.extend(
                 engine
                     .world()
@@ -242,11 +255,11 @@ impl StaticProject {
             );
         }
 
-        // Step 2: The project itself, through its linked function or through
+        // Step 2: The project itself, through its linked functions or through
         // an external backend.
         let project_guard = match &self.backend {
-            StaticProjectBackend::Native { init } => {
-                run_linked_entry_point(engine, *init, PROJECT_SCOPE, self.startup_scene)
+            StaticProjectBackend::Native { register, init } => {
+                run_linked_entry_point(engine, *register, *init, PROJECT_SCOPE, self.startup_scene)
                     .map_err(|status| LibraryError::InitializationFailed { status })?;
                 None
             }
@@ -389,6 +402,15 @@ fn apply_project_startup_scene(engine: &mut Engine, scene_path: &str) {
     }
 }
 
+/// A project registration half that does nothing.
+///
+/// A generated shipping bundle points a project without a `register` half at
+/// this, so the static backend's shape stays the same for every project. A
+/// project that seeds everything from its `init` needs nothing else.
+pub fn no_project_registration(_engine: &mut Engine) -> u32 {
+    0
+}
+
 /// Run one linked entry point the way its generated ABI wrapper would.
 ///
 /// `scope` sets the owner the registrations are recorded under when present.
@@ -404,6 +426,7 @@ fn apply_project_startup_scene(engine: &mut Engine, scene_path: &str) {
 /// knows whether the failure is a module's or the project's.
 pub(crate) fn run_linked_entry_point(
     engine: &mut Engine,
+    register: fn(&mut Engine) -> u32,
     init: fn(&mut Engine) -> u32,
     scope: Option<SystemOwner>,
     startup_scene: Option<&'static str>,
@@ -421,9 +444,7 @@ pub(crate) fn run_linked_entry_point(
                 apply_project_startup_scene(engine, path);
             }
         },
-        // A statically linked project is loaded once and never reloaded, so
-        // there is no later generation for a registration half to serve.
-        pill_engine::component_registry::no_registration,
+        register,
         |engine| register_module(engine, scope, init),
     );
 
@@ -516,12 +537,39 @@ mod tests {
         let project = StaticProject {
             modules: MODULES,
             ..test_project(StaticProjectBackend::Native {
+                register: no_op,
                 init: project_module_init,
             })
         };
         project.initialize(&mut engine).expect("both succeed");
 
         assert_eq!(*ORDER.lock().unwrap(), vec!["module", "project"]);
+    }
+
+    /// A linked project runs its own registration half first, then its init,
+    /// so a project that keeps state in `register` behaves in a shipped build
+    /// as it does in the development host.
+    #[test]
+    fn a_linked_project_registers_before_it_initializes() {
+        static ORDER: std::sync::Mutex<Vec<&str>> = std::sync::Mutex::new(Vec::new());
+
+        fn project_register(_engine: &mut Engine) -> u32 {
+            ORDER.lock().unwrap().push("register");
+            0
+        }
+        fn project_init(_engine: &mut Engine) -> u32 {
+            ORDER.lock().unwrap().push("init");
+            0
+        }
+
+        let mut engine = Engine::new();
+        let project = test_project(StaticProjectBackend::Native {
+            register: project_register,
+            init: project_init,
+        });
+        project.initialize(&mut engine).expect("both succeed");
+
+        assert_eq!(*ORDER.lock().unwrap(), vec!["register", "init"]);
     }
 
     /// A failing module stops initialization and names itself, rather than
@@ -542,7 +590,10 @@ mod tests {
         let mut engine = Engine::new();
         let project = StaticProject {
             modules: MODULES,
-            ..test_project(StaticProjectBackend::Native { init: no_op })
+            ..test_project(StaticProjectBackend::Native {
+                register: no_op,
+                init: no_op,
+            })
         };
         let Err(error) = project.initialize(&mut engine) else {
             panic!("a non-zero module status must be reported");
@@ -559,7 +610,10 @@ mod tests {
     #[test]
     fn a_native_project_returns_no_guard() {
         let mut engine = Engine::new();
-        let project = test_project(StaticProjectBackend::Native { init: no_op });
+        let project = test_project(StaticProjectBackend::Native {
+            register: no_op,
+            init: no_op,
+        });
         let guard = project.initialize(&mut engine).expect("it succeeds");
         assert!(guard.is_none());
     }

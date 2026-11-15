@@ -647,7 +647,13 @@ pub struct CommandView {
     pub separator_before: bool,
 }
 
-impl pill_engine::Resource for CommandRegistry {}
+impl pill_engine::Resource for CommandRegistry {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// Groups the registry's commands by their top-level menu, in command order.
 /// Commands with no menu path are left out.
@@ -772,14 +778,24 @@ fn builtin_commands() -> Vec<CommandSpec> {
         CommandSpec::new("editor.grid_toggle", "Grid")
             .menu(&["View", "Grid"])
             .separator(),
-        // The simulation controls close the View menu, behind a rule.
+        // The simulation controls close the View menu, behind a rule. Play
+        // opens the group and its title follows the run mode.
+        CommandSpec::new("editor.play_toggle", "Play / Stop Simulation")
+            .menu(&["View", "Play / Stop Simulation"])
+            .separator()
+            .bind(Blender, "ctrl+p")
+            .bind(Unity, "ctrl+p")
+            .bind(Godot, "ctrl+p")
+            .bind(Unreal, "ctrl+p"),
+        // Ctrl+P belongs to Play now, and Ctrl+Shift+P opens the palette in
+        // every preset but Blender's, so Pause takes Ctrl+Alt+P. Blender keeps
+        // Space, which is its own play key.
         CommandSpec::new("editor.pause_toggle", "Pause / Resume Simulation")
             .menu(&["View", "Pause / Resume Simulation"])
-            .separator()
             .bind(Blender, "space")
-            .bind(Unity, "ctrl+p")
-            .bind(Godot, "f5")
-            .bind(Unreal, "alt+p"),
+            .bind(Unity, "ctrl+alt+p")
+            .bind(Godot, "ctrl+alt+p")
+            .bind(Unreal, "ctrl+alt+p"),
         CommandSpec::new("editor.step", "Step One Frame")
             .menu(&["View", "Step One Frame"])
             .bind(Blender, "right")
@@ -1078,7 +1094,13 @@ pub struct CommandInbox {
     pub executed: Vec<String>,
 }
 
-impl pill_engine::Resource for CommandInbox {}
+impl pill_engine::Resource for CommandInbox {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// The world resource holding the engine mutations queued by command
 /// handlers.
@@ -1192,7 +1214,13 @@ pub struct PendingCommandBatch {
     pub replay: Option<HistoryDirection>,
 }
 
-impl pill_engine::Resource for PendingEditorCommands {}
+impl pill_engine::Resource for PendingEditorCommands {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// Inserts every command resource the editor relies on, keeping the values a
 /// previous generation set.
@@ -1314,12 +1342,17 @@ mod tests {
             registry.effective_chords(pause_command_id),
             vec![Chord::plain(KeyName::Space)]
         );
-        // Switching the preset rebinds without touching any command.
+        // Switching the preset rebinds without touching any command. Unity
+        // gives Ctrl+P to Play, so Pause answers to Ctrl+Alt+P there.
         let keybindings: KeybindingsFile =
             serde_json::from_str(r#"{ "preset": "unity" }"#).unwrap();
         assert!(registry.apply_file(&keybindings).is_empty());
         assert_eq!(
             registry.effective_chords(pause_command_id),
+            vec![Chord::with(KeyName::P, true, false, true)]
+        );
+        assert_eq!(
+            registry.effective_chords("editor.play_toggle"),
             vec![Chord::with(KeyName::P, true, false, false)]
         );
         // A single override wins on top of the preset.

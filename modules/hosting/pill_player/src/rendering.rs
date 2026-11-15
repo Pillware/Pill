@@ -727,9 +727,12 @@ pub async fn attach_renderer<W: RendererWindow>(
             detail: NO_LINKED_RENDERER.to_owned(),
         }));
     };
-    // Step 2: Register its system the way its module entry point would.
+    // Step 2: Register its system the way its module entry point would. The
+    // renderer crate exposes one function, so its registration half is the
+    // whole entry point.
     crate::static_project::run_linked_entry_point(
         runtime.engine_mut(),
+        pill_engine::component_registry::no_registration,
         renderer.init,
         Some(owner),
         None,

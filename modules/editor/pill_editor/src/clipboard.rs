@@ -450,7 +450,9 @@ pub fn write(text: &str) -> Result<(), String> {
             .write_all(text.as_bytes())
             .map_err(|error| format!("{program}: {error}"))?;
     }
-    let status = child.wait().map_err(|error| format!("{program}: {error}"))?;
+    let status = child
+        .wait()
+        .map_err(|error| format!("{program}: {error}"))?;
     if status.success() {
         Ok(())
     } else {

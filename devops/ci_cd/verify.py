@@ -13,7 +13,19 @@ DESCRIPTION
     Steps run in the order below. Cargo steps run from `modules/`, Python steps
     from the repository root, and every Python step uses this interpreter. The
     run stops at the first failure unless `--keep-going` is given, and always
-    ends with a PASS/FAIL table.
+    ends with a PASS/FAIL table. A failing quick step (formatting, clippy, the
+    lints) ends the run even under `--keep-going`: the slow steps after it
+    cannot say anything about a change that does not yet lint, and twenty
+    minutes of them after a three-second formatting failure is pure waste.
+
+    `--changed` runs a step that declares `paths` only when a changed file
+    (uncommitted or untracked) matches one of them: the engine feature drift
+    check (five minutes) only looks at what the Cargo manifests resolve to, so
+    a change that touches none of them skips it.
+
+    Under agent_run.py (`AGENT_RUN_DIRECTORY` set) every finished step is
+    written to `timings.json` in the run's folder, so `work checks --steps`
+    shows per-step medians across runs.
 
     The unit-test steps run through `cargo nextest run` when nextest is
     installed: every test gets its own process and its own line with its
@@ -60,6 +72,8 @@ EXAMPLE USAGE
 """
 
 import argparse
+import fnmatch
+import json
 import os
 import shutil
 import subprocess
@@ -136,6 +150,9 @@ class Step:
     # failing step cannot leave a build artifact behind for a later commit to
     # pick up.
     cleanup: List[List[str]] = field(default_factory=list)
+    # With `--changed`, the step runs only when a changed path matches one of
+    # these globs (fnmatch, `*` spans folders); empty means it always runs.
+    paths: List[str] = field(default_factory=list)
 
 
 def unit_test_step(name: str, title: str, lane: List[str]) -> Step:
@@ -360,6 +377,7 @@ STEPS: List[Step] = [
         "Engine dylib feature drift (host vs module and project builds)",
         [[PYTHON, "devops/tests/test_engine_feature_drift.py"]],
         working_directory=REPOSITORY_ROOT,
+        paths=["Cargo.toml", "*/Cargo.toml", "Cargo.lock", "*/Cargo.lock", "modules/.cargo/*"],
     ),
     Step(
         "extension-examples",
@@ -491,7 +509,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--quick", action="store_true", help="run only the quick steps")
     parser.add_argument("--only", nargs="+", default=[], metavar="NAME", help="run only these steps")
     parser.add_argument("--skip", nargs="+", default=[], metavar="NAME", help="leave out these steps")
-    parser.add_argument("--keep-going", action="store_true", help="continue after a failure")
+    parser.add_argument("--keep-going", action="store_true",
+                        help="continue after a failure (a failing quick step still ends the run)")
+    parser.add_argument("--changed", action="store_true",
+                        help="skip steps whose paths no changed file matches")
     parser.add_argument("--list", action="store_true", help="print the steps and exit")
     # Internal: the body of the `default-lane-features` step.
     parser.add_argument("--assert-default-lane-features", action="store_true", help=argparse.SUPPRESS)
@@ -542,6 +563,36 @@ def select_steps(arguments: argparse.Namespace) -> Optional[List[Step]]:
     elif arguments.quick:
         selected = [step for step in selected if step.quick]
     return [step for step in selected if step.name not in arguments.skip]
+
+
+def changed_paths() -> List[str]:
+    """Repository paths changed in the working tree (tracked edits and untracked files)."""
+    paths: List[str] = []
+    for arguments in (["diff", "--name-only", "HEAD"], ["ls-files", "--others", "--exclude-standard"]):
+        result = subprocess.run(["git", *arguments], cwd=REPOSITORY_ROOT, capture_output=True, text=True)
+        if result.returncode == 0:
+            paths.extend(line for line in result.stdout.splitlines() if line)
+    return paths
+
+
+def unaffected_steps(steps: List[Step], paths: List[str]) -> List[Step]:
+    """The steps with `paths` that no changed path matches."""
+    return [step for step in steps
+            if step.paths and not any(fnmatch.fnmatch(path, pattern) for path in paths for pattern in step.paths)]
+
+
+def write_timings(results: List[tuple]) -> None:
+    """The finished steps as `timings.json` in the agent_run folder, when run under it."""
+    run_directory = os.environ.get("AGENT_RUN_DIRECTORY")
+    if not run_directory:
+        return
+    steps = [{"name": step.name, "seconds": round(seconds, 1),
+              "state": {"PASS": "passed", "FAIL": "failed", "SKIP": "skipped"}[outcome]}
+             for step, outcome, seconds in results]
+    try:
+        (Path(run_directory) / "timings.json").write_text(json.dumps({"steps": steps}, indent=2), encoding="utf-8")
+    except OSError as error:
+        print(f"warning: timings.json was not written: {error}", file=sys.stderr)
 
 
 def format_command(command: Sequence[str]) -> str:
@@ -605,11 +656,19 @@ def main() -> int:
                 print(f"    (always) {format_command(command)}")
         return 0
 
+    if arguments.changed:
+        paths = changed_paths()
+        skipped = unaffected_steps(steps, paths)
+        for step in skipped:
+            print(f"skip {step.name}: no changed path matches {', '.join(step.paths)}", flush=True)
+        steps = [step for step in steps if step not in skipped]
+
     # Each result is "PASS", "FAIL" or "SKIP" (not run after a failure).
     results: List[tuple] = []
     failed = False
+    quick_failed = False
     for step in steps:
-        if failed and not arguments.keep_going:
+        if failed and (not arguments.keep_going or quick_failed):
             results.append((step, "SKIP", 0.0))
             continue
         if RUNNING_IN_GITHUB_ACTIONS:
@@ -624,6 +683,13 @@ def main() -> int:
                 print(f"::error::{step.name} failed", flush=True)
         results.append((step, "PASS" if passed else "FAIL", time.monotonic() - started))
         failed = failed or not passed
+        if not passed and step.quick and not quick_failed:
+            quick_failed = True
+            if arguments.keep_going:
+                print()
+                print(f"{step.name} is a quick step and failed: the run ends here even with --keep-going "
+                      "(fix it, then run again)", flush=True)
+        write_timings(results)
 
     print("\n=== Summary ===")
     for step, outcome, seconds in results:

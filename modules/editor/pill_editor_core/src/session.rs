@@ -158,6 +158,11 @@ pub struct EguiShellState {
     /// clears it only in the pass where that panel draws - a request must not
     /// be dropped by a frame where its tab was not on screen.
     pub pending_panel_window: Option<(u16, String)>,
+    /// The run mode the last pass drew, so the shell can tell an entering or
+    /// leaving Play from a frame that is merely playing.
+    pub last_run_mode: Option<pill_engine::RunMode>,
+    /// The tab that was in front when Play took over, restored on Stop.
+    pub tab_before_play: Option<EditorTab>,
     /// One egui context per popped-out tab: a popped-out window runs its own
     /// pass, so it needs its own context while the main one runs the dock in
     /// the same frame. The map lives in the session for the same reason the
@@ -420,6 +425,8 @@ pub enum MenubarSlot {
     Bar,
     /// One menu title, by its index in [`crate::menubar::Menu::ALL`].
     Title(usize),
+    /// The play controls, centred over the strip.
+    Toolbar,
 }
 
 /// The menu bar's session state: the logged geometry of the strip, its titles
@@ -1035,6 +1042,8 @@ impl EguiShellState {
             panels_remapped: false,
             panel_windows: PanelWindowSession::default(),
             pending_panel_window: None,
+            last_run_mode: None,
+            tab_before_play: None,
             popout_contexts: std::collections::BTreeMap::new(),
         }
     }
@@ -1054,7 +1063,13 @@ impl EguiShellState {
     }
 }
 
-impl Resource for EguiShellState {}
+impl Resource for EguiShellState {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 impl Default for EguiShellState {
     fn default() -> Self {

@@ -198,6 +198,17 @@ EXTERNALLY_PRODUCED: Dict[str, str] = {
     "TIME SURVIVAL PROBE":
         "Printed by Rust that test_shared_component_identity.py injects into "
         "the project during the run.",
+    'mode="editing"':
+        "Composed at runtime: the `dump play` line and the play-toggle line "
+        "carry `mode` as a structured field, so the quotes come from the field "
+        "formatter rather than from a literal.",
+    'mode="playing"':
+        "Composed at runtime: the `dump play` line and the play-toggle line "
+        "carry `mode` as a structured field, so the quotes come from the field "
+        "formatter rather than from a literal.",
+    "restore_epoch=1":
+        "Composed at runtime: `restore_epoch` is a structured field on the "
+        "`dump play` and `play exited` lines, and its value is a count.",
 }
 
 # Tokens whose text another language prints and whose shape a Rust format string

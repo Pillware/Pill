@@ -124,6 +124,67 @@ pub(super) fn apply(
             Ok(CommandOutcome::plain())
         }
 
+        EditorCommand::EnterPlay => {
+            if engine.run_mode() == pill_engine::RunMode::Playing {
+                return Ok(CommandOutcome::plain());
+            }
+            // Step 1: Take the document's own state aside before the world is
+            // copied, so the copy a game runs against cannot hold it.
+            crate::play_session::EditorPlaySession::save(engine.world_mut());
+            // Step 2: Copy the world. A refusal changes nothing, so the state
+            // taken above is put straight back.
+            match engine.enter_play() {
+                Ok(()) => {
+                    pill_core::info!(
+                        target: telemetry_target::EDITOR,
+                        mode = "playing",
+                        "[editor] play toggled"
+                    );
+                    Ok(CommandOutcome::plain())
+                }
+                Err(refusal) => {
+                    crate::play_session::EditorPlaySession::restore(engine.world_mut());
+                    let reason = refusal.to_string();
+                    pill_core::warn!(
+                        target: telemetry_target::EDITOR,
+                        mode = "editing",
+                        reason = %reason,
+                        "[editor] play toggled"
+                    );
+                    push_play_refusal_notice(engine.world_mut(), &reason);
+                    Err(reason)
+                }
+            }
+        }
+
+        EditorCommand::ExitPlay => {
+            if !engine.exit_play() {
+                return Ok(CommandOutcome::plain());
+            }
+            // The engine put the world back; the editor puts its own document
+            // state back in the same command, so the next frame sees one state.
+            crate::play_session::EditorPlaySession::restore(engine.world_mut());
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                mode = "editing",
+                "[editor] play toggled"
+            );
+            Ok(CommandOutcome::plain())
+        }
+
         other => unreachable!("{:?} is not a engine command", other.family()),
     }
+}
+
+/// Adds one error notice for a refused Play, so the person sees the reason as
+/// a toast instead of only in the Console.
+fn push_play_refusal_notice(world: &mut pill_engine::World, reason: &str) {
+    use crate::notices::{EditorNotices, NoticeLevel};
+    if world.get_resource::<EditorNotices>().is_none() {
+        world.insert_resource(EditorNotices::default());
+    }
+    let Some(notices) = world.get_resource_mut::<EditorNotices>() else {
+        return;
+    };
+    notices.push_event(NoticeLevel::Error, format!("Play refused: {reason}"));
 }

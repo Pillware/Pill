@@ -88,6 +88,12 @@ impl PreviewRequests {
 }
 
 impl Resource for PreviewRequests {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some("pill_renderer_api::preview::PreviewRequests")
     }
@@ -153,6 +159,12 @@ impl PreviewResults {
 }
 
 impl Resource for PreviewResults {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some("pill_renderer_api::preview::PreviewResults")
     }

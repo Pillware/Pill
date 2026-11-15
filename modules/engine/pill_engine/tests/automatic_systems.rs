@@ -71,6 +71,36 @@ fn after_flush_system(mut run_log: ResMut<RunLog>) {
     record(&mut run_log, "after_flush");
 }
 
+/// Declares a system that opts in to edit mode, so it runs while the editor
+/// edits and pauses with the rest of the game's work.
+#[system(name = "editing_only", order = 30, edit_mode)]
+fn editing_only_system(mut run_log: ResMut<RunLog>) {
+    record(&mut run_log, "editing_only");
+}
+
+/// The attribute marks the declaration, and the engine runs that system while
+/// the editor is editing and the game's systems are not running.
+#[test]
+fn an_edit_mode_declaration_runs_while_the_editor_edits() {
+    let mut engine = Engine::new();
+    component_registry::run_artifact_registration(&mut engine, component_registry::no_registration);
+    engine.world_mut().insert_resource(RunLog::default());
+
+    engine.set_run_mode(pill_engine::RunMode::Editing);
+    engine.process_frame().expect("the frame reports no errors");
+    let entries = engine
+        .world()
+        .get_resource::<RunLog>()
+        .expect("the systems ran against the log")
+        .entries
+        .clone();
+    assert_eq!(
+        entries,
+        ["editing_only"],
+        "only the opted-in system runs while the editor edits"
+    );
+}
+
 /// A declared system is registered by the artifact entry point under the name
 /// its attribute asks for, and the entry point's result is a success.
 #[test]
@@ -95,6 +125,7 @@ fn declared_systems_are_registered_by_the_entry_point() {
             String::from("after_flush"),
             String::from("first"),
             String::from("second"),
+            String::from("editing_only"),
         ],
         "declared systems register in (order, name) order"
     );
@@ -116,7 +147,10 @@ fn declared_systems_run_in_their_declared_order() {
         .expect("the systems ran against the log")
         .entries
         .clone();
-    assert_eq!(entries, ["unnamed", "first", "second", "after_flush"]);
+    assert_eq!(
+        entries,
+        ["unnamed", "first", "second", "editing_only", "after_flush"]
+    );
 }
 
 /// A registration walks from the baseline the host took before mapping the
@@ -142,7 +176,7 @@ fn a_load_baseline_leaves_the_declarations_taken_before_it_alone() {
     component_registry::run_artifact_registration(&mut engine, component_registry::no_registration);
     assert_eq!(
         engine.system_snapshots().len(),
-        4,
+        5,
         "without a baseline the declarations register"
     );
 }

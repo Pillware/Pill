@@ -39,6 +39,15 @@ struct DeclaredManager {
     applied_count: u32,
 }
 
+/// A game-state resource the derive makes copyable, so a play session can put
+/// its edit-world value back at Stop.
+#[derive(PillResource, Clone)]
+#[pill(shared = "automatic_resources::SessionPoints")]
+struct SessionPoints {
+    /// The session's running total.
+    points: u32,
+}
+
 /// The document a declared manager's settings asset holds.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct DeclaredManagerDocument {
@@ -164,4 +173,38 @@ fn a_manager_declares_its_settings_asset_surface_from_register() {
     // The surface is reported without a value: a manager is only listed once
     // it is stored, which no declaration does on its own.
     assert!(engine.world().settings_asset_manager_ids().is_empty());
+}
+
+/// A derived resource that derives `Clone` records its copy hook at the type's
+/// own site, so a play session copies it and Stop puts the edit-world value
+/// back.
+#[test]
+fn a_derived_clone_resource_survives_a_play_round_trip() {
+    let mut engine = Engine::new();
+    engine.set_run_mode(pill_engine::RunMode::Editing);
+    engine
+        .world_mut()
+        .insert_resource(SessionPoints { points: 3 });
+
+    engine
+        .enter_play()
+        .expect("a derived `Clone` resource is copyable");
+
+    engine
+        .world_mut()
+        .get_resource_mut::<SessionPoints>()
+        .expect("the value is live")
+        .points = 42;
+    assert!(engine.exit_play(), "the session ends");
+
+    assert_eq!(
+        engine
+            .world()
+            .get_resource::<SessionPoints>()
+            .map(|points| points.points),
+        Some(3),
+        "Stop puts the edit world's value back"
+    );
+    assert_eq!(engine.run_mode(), pill_engine::RunMode::Editing);
+    assert_eq!(engine.world().restore_epoch(), 1);
 }

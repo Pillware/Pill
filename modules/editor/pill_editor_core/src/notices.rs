@@ -90,7 +90,26 @@ pub struct EditorNotices {
     pub next_event_seq: u64,
 }
 
-impl Resource for EditorNotices {}
+impl Resource for EditorNotices {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
+
+impl EditorNotices {
+    /// Adds one toast event and returns its id.
+    ///
+    /// The sequence it takes is unique for the life of the session, which is
+    /// what lets the shell show each line once without storing the text.
+    pub fn push_event(&mut self, level: NoticeLevel, text: String) -> u64 {
+        let seq = self.next_event_seq;
+        self.next_event_seq = seq.wrapping_add(1);
+        self.events.push(Notice { seq, level, text });
+        seq
+    }
+}
 
 // =============================================================================
 // Free Functions

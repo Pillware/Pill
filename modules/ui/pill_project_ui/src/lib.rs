@@ -131,7 +131,13 @@ pub struct GameUi {
     font_signature: kit::style::FontSignature,
 }
 
-impl Resource for GameUi {}
+impl Resource for GameUi {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine_core::resource::PlayState {
+        pill_engine_core::resource::PlayState::Keep
+    }
+}
 
 impl Default for GameUi {
     fn default() -> Self {

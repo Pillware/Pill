@@ -311,6 +311,12 @@ pub enum ScriptedCommand {
     },
     /// `command editor.pause_toggle` - flip the engine's pause flag.
     PauseToggle,
+    /// `command editor.play` - start a play session.
+    Play,
+    /// `command editor.stop` - stop the session and restore the edit world.
+    Stop,
+    /// `command editor.play_toggle` - Play when editing, Stop when playing.
+    PlayToggle,
     /// `command editor.step` - run one frame while paused.
     Step,
     /// `command editor.entity_create` - the recorded New Entity edit.
@@ -364,6 +370,9 @@ pub enum Dump {
     Viewport,
     /// `dump grid` - the scene grid's switch and the surfaces it draws on.
     Grid,
+    /// `dump play` - the run mode, the pause flag and the world's restore
+    /// epoch.
+    Play,
     /// `dump assets` - the asset listing's rows.
     Assets,
     /// `dump engine-assets` - the assets the store holds that no file backs,
@@ -963,6 +972,7 @@ fn dump(cursor: &mut Cursor<'_>) -> Result<Dump, ParseError> {
         "scenes" => Dump::Scenes,
         "viewport" => Dump::Viewport,
         "grid" => Dump::Grid,
+        "play" => Dump::Play,
         "assets" => Dump::Assets,
         "engine-assets" => Dump::EngineAssets,
         "browser" => Dump::Browser,
@@ -1233,6 +1243,9 @@ fn command(cursor: &mut Cursor<'_>) -> Result<ScriptedCommand, ParseError> {
         "editor.undo" => ScriptedCommand::Undo,
         "editor.redo" => ScriptedCommand::Redo,
         "editor.pause_toggle" => ScriptedCommand::PauseToggle,
+        "editor.play" => ScriptedCommand::Play,
+        "editor.stop" => ScriptedCommand::Stop,
+        "editor.play_toggle" => ScriptedCommand::PlayToggle,
         "editor.step" => ScriptedCommand::Step,
         "editor.entity_create" => ScriptedCommand::EntityCreate,
         "editor.entity_delete" => ScriptedCommand::EntityDelete,
@@ -1920,6 +1933,10 @@ mod tests {
                 command: ScriptedCommand::Dump(Dump::Grid),
             },
             Accept {
+                line: "dump play",
+                command: ScriptedCommand::Dump(Dump::Play),
+            },
+            Accept {
                 line: "dump assets",
                 command: ScriptedCommand::Dump(Dump::Assets),
             },
@@ -2282,6 +2299,18 @@ mod tests {
             Accept {
                 line: "command editor.pause_toggle",
                 command: ScriptedCommand::PauseToggle,
+            },
+            Accept {
+                line: "command editor.play",
+                command: ScriptedCommand::Play,
+            },
+            Accept {
+                line: "command editor.stop",
+                command: ScriptedCommand::Stop,
+            },
+            Accept {
+                line: "command editor.play_toggle",
+                command: ScriptedCommand::PlayToggle,
             },
             Accept {
                 line: "command editor.step",

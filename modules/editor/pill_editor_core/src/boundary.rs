@@ -120,7 +120,13 @@ pub struct ShellBadge {
     pub entity: pill_engine::Entity,
 }
 
-impl Resource for EguiShellInput {}
+impl Resource for EguiShellInput {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 impl Default for EguiShellInput {
     fn default() -> Self {
@@ -152,7 +158,13 @@ pub struct EguiPopoutInputs {
     pub by_tab: std::collections::BTreeMap<String, EguiShellInput>,
 }
 
-impl Resource for EguiPopoutInputs {}
+impl Resource for EguiPopoutInputs {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// A rectangle in logical pixels that crosses the boundary: a viewport body,
 /// an overlay region or the IME candidate's place.
@@ -245,7 +257,13 @@ pub struct PopoutFrame {
     pub frame: Box<EguiShellFrame>,
 }
 
-impl Resource for EguiShellFrame {}
+impl Resource for EguiShellFrame {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 impl EguiShellFrame {
     /// Clears every texture update the frame still carries.

@@ -15,6 +15,7 @@ from core import log_layout
 from core.editor_log_tokens import (
     CONSOLE_DUMP_PATTERN,
     EDITOR_THEME_DUMP_TOKEN,
+    EGUI_ROWS_TOKEN,
     ENGINE_COMMANDS_APPLIED_TOKEN,
     ENTITIES_DUMP_TOKEN,
     FIELD_TOKEN,
@@ -26,6 +27,7 @@ from core.editor_log_tokens import (
     MENU_OPENED_TOKEN,
     MENU_TITLE_RECT_PATTERN,
     REFERENCE_ROW_TOKEN,
+    SCENE_BADGE_RECT_TOKEN,
     SCENE_RECT_PATTERN,
     TOOLBOX_CLICK_TOKEN,
     TOOLBOX_ITEM_PATTERN,
@@ -425,11 +427,61 @@ def inspector_add_rect(session: EditorSession) -> tuple:
 
 
 def latest_detail_entity(session: EditorSession) -> str:
-    """The entity the newest rows heartbeat reports as the Inspector's detail."""
-    details = re.findall(r'detail="([^"-][^"]*)"', session.text())
+    """The entity the newest rows heartbeat reports as the Inspector's detail.
+
+    The `detail` field is read only from the rows heartbeat's own line: a
+    hot-reload refusal logs a `detail=` field too, and an unanchored search
+    would hand back that message as if it were an entity handle.
+    """
+    details = re.findall(
+        log_layout.message_then_fields_pattern(
+            re.escape(EGUI_ROWS_TOKEN), r'[^\n]*detail="(?!-)([^"]+)"'
+        ),
+        session.text(),
+    )
     if not details:
         raise AssertionError("no rows heartbeat reported a selected entity")
     return details[-1]
+
+
+# How many times the badge step clicks a chip before it reports a failure: the
+# chips follow the scene camera, which eases for a few frames after a splitter
+# drag, and the newest rectangle a click can be aimed at is still a frame old.
+BADGE_CLICK_ATTEMPTS = 3
+
+# One `[editor] scene badge rect` line, in the fields' rendered order.
+SCENE_BADGE_RECT_PATTERN = (
+    log_layout.message_then_fields_pattern(
+        re.escape(SCENE_BADGE_RECT_TOKEN),
+        r"\s+view=\d+\s+entity=(\S+)\s+min_x=(-?[\d.]+)\s+min_y=(-?[\d.]+)",
+    )
+    + r"\s+max_x=(-?[\d.]+)\s+max_y=(-?[\d.]+)"
+)
+
+
+def newest_badge_rect(session: EditorSession, entity: str, start: int) -> tuple:
+    """`(min_x, min_y, max_x, max_y)` of the badge's newest reported rectangle.
+
+    A badge reports its rectangle whenever it moves, so the newest report is
+    where the chip is now; the first one is where it was when the step began
+    reading, which is not the same place after the camera has eased.
+    """
+    rects = [
+        match
+        for match in re.finditer(SCENE_BADGE_RECT_PATTERN, session.read_since(start))
+        if match.group(1) == entity
+    ]
+    if not rects:
+        raise AssertionError(
+            "no scene badge rect for {} since the step began".format(entity)
+        )
+    newest = rects[-1]
+    return (
+        float(newest.group(2)),
+        float(newest.group(3)),
+        float(newest.group(4)),
+        float(newest.group(5)),
+    )
 
 
 def inspector_rows(session: EditorSession, component_suffix: str) -> list:
@@ -448,7 +500,12 @@ def inspector_rows(session: EditorSession, component_suffix: str) -> list:
 
 def latest_detail_components(session: EditorSession) -> int:
     """How many components the newest rows heartbeat sees on the detail entity."""
-    counts = re.findall(r"detail_components=(\d+)", session.text())
+    counts = re.findall(
+        log_layout.message_then_fields_pattern(
+            re.escape(EGUI_ROWS_TOKEN), r"[^\n]*detail_components=(\d+)"
+        ),
+        session.text(),
+    )
     if not counts:
         raise AssertionError("no rows heartbeat reported a component count")
     return int(counts[-1])

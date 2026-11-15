@@ -275,7 +275,13 @@ impl PanelRegistrations {
     }
 }
 
-impl Resource for PanelRegistrations {}
+impl Resource for PanelRegistrations {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// Every panel a module registered, live or not.
 #[derive(Debug, Default)]
@@ -374,7 +380,13 @@ impl PanelRegistry {
     }
 }
 
-impl Resource for PanelRegistry {}
+impl Resource for PanelRegistry {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 /// The commands this frame's panels asked for, applied by the executable at
 /// the frame boundary.
@@ -401,7 +413,13 @@ impl PanelCommands {
     }
 }
 
-impl Resource for PanelCommands {}
+impl Resource for PanelCommands {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -91,7 +91,7 @@ impl World {
     /// Returns the archetype and row that hold a live entity, or `None` when
     /// the entity is not alive.
     pub(super) fn entity_row_location(&self, entity: Entity) -> Option<(ArchetypeId, usize)> {
-        let location = self.entity_locations.get(&entity)?;
+        let location = self.storage.entity_locations.get(&entity)?;
         Some((location.archetype_id, location.index_in_archetype))
     }
 
@@ -167,6 +167,7 @@ impl World {
         component_name: &str,
     ) -> Result<&ComponentColumn, ComponentFieldError> {
         let column = self
+            .storage
             .archetypes
             .get(&archetype_id)
             .ok_or(ComponentFieldError::EntityNotFound)?
@@ -192,6 +193,7 @@ impl World {
         component_name: &str,
     ) -> Result<&mut ComponentColumn, ComponentFieldError> {
         let column = self
+            .storage
             .archetypes
             .get_mut(&archetype_id)
             .ok_or(ComponentFieldError::EntityNotFound)?

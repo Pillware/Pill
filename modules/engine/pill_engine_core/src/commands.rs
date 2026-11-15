@@ -607,9 +607,10 @@ impl CommandQueue {
         }
         // Step 2: Reject components the entity already carries.
         let already_present = world
+            .storage
             .entity_locations
             .get(&entity)
-            .and_then(|location| world.archetypes.get(&location.archetype_id))
+            .and_then(|location| world.storage.archetypes.get(&location.archetype_id))
             .is_some_and(|archetype| archetype.component_types.contains(&component_id));
         if already_present {
             errors.push(CommandError::ComponentAlreadyExists {
@@ -983,17 +984,21 @@ mod tests {
             .build();
 
         assert_eq!(
-            world.entity_locations.len(),
+            world.storage.entity_locations.len(),
             0,
             "Entity should not exist yet"
         );
 
         queue.execute_queued_commands(&mut world, false).unwrap();
 
-        assert_eq!(world.entity_locations.len(), 1, "Entity should be created");
-        assert_eq!(world.archetypes.len(), 1, "Should have 1 archetype");
+        assert_eq!(
+            world.storage.entity_locations.len(),
+            1,
+            "Entity should be created"
+        );
+        assert_eq!(world.storage.archetypes.len(), 1, "Should have 1 archetype");
 
-        let archetype = world.archetypes.values().next().unwrap();
+        let archetype = world.storage.archetypes.values().next().unwrap();
         assert_eq!(
             archetype.entities.len(),
             1,
@@ -1023,14 +1028,18 @@ mod tests {
             .build();
 
         assert_eq!(
-            world.entity_locations.len(),
+            world.storage.entity_locations.len(),
             0,
             "Entity should not exist yet"
         );
 
         queue.execute_queued_commands(&mut world, false).unwrap();
 
-        assert_eq!(world.entity_locations.len(), 1, "Entity should be created");
+        assert_eq!(
+            world.storage.entity_locations.len(),
+            1,
+            "Entity should be created"
+        );
     }
 
     #[test]
@@ -1139,7 +1148,7 @@ mod tests {
         let mut world = World::new();
         world.register_component::<Position>();
         let entity = world.reserve_entity();
-        let archetype_count_before = world.archetypes.len();
+        let archetype_count_before = world.storage.archetypes.len();
 
         let mut queue = CommandQueue::new();
         queue.create_mixed_entity(
@@ -1158,11 +1167,11 @@ mod tests {
         ));
 
         assert!(
-            !world.entity_locations.contains_key(&entity),
+            !world.storage.entity_locations.contains_key(&entity),
             "a refused creation leaves no entity behind"
         );
         assert_eq!(
-            world.archetypes.len(),
+            world.storage.archetypes.len(),
             archetype_count_before,
             "no archetype was created for the refused set"
         );
@@ -1285,15 +1294,19 @@ mod tests {
         }
 
         assert_eq!(
-            world.entity_locations.len(),
+            world.storage.entity_locations.len(),
             0,
             "Entity should not exist yet"
         );
 
         queue.execute_queued_commands(&mut world, false).unwrap();
 
-        assert_eq!(world.entity_locations.len(), 1, "Entity should be created");
-        let archetype = world.archetypes.values().next().unwrap();
+        assert_eq!(
+            world.storage.entity_locations.len(),
+            1,
+            "Entity should be created"
+        );
+        let archetype = world.storage.archetypes.values().next().unwrap();
         assert!(
             archetype
                 .component_types
@@ -1307,16 +1320,20 @@ mod tests {
             "Archetype should contain Velocity component"
         );
 
-        let entity = *world.entity_locations.keys().next().unwrap();
+        let entity = *world.storage.entity_locations.keys().next().unwrap();
         {
             let mut commands = Commands::new(&mut queue, &mut world);
             commands.remove_component_from_entity::<Velocity>(entity);
         }
 
         queue.execute_queued_commands(&mut world, false).unwrap();
-        assert_eq!(world.entity_locations.len(), 1, "Entity should still exist");
+        assert_eq!(
+            world.storage.entity_locations.len(),
+            1,
+            "Entity should still exist"
+        );
 
-        let archetype = world.archetypes.values().next().unwrap();
+        let archetype = world.storage.archetypes.values().next().unwrap();
         assert!(
             !archetype
                 .component_types
@@ -1356,9 +1373,13 @@ mod tests {
 
         queue.execute_queued_commands(&mut world, false).unwrap();
 
-        assert_eq!(world.entity_locations.len(), 3, "Should have 3 entities");
         assert_eq!(
-            world.archetypes.len(),
+            world.storage.entity_locations.len(),
+            3,
+            "Should have 3 entities"
+        );
+        assert_eq!(
+            world.storage.archetypes.len(),
             3,
             "Should have 3 different archetypes"
         );
@@ -1402,6 +1423,7 @@ mod tests {
         // Simulate a reload that was only partly applied: the archetype keeps
         // the component in `component_types` but loses its storage column.
         world
+            .storage
             .archetypes
             .values_mut()
             .next()
@@ -1469,6 +1491,7 @@ mod tests {
         // Simulate the out-of-sync state: the descriptor column disappears from
         // the archetype while its `component_types` entry survives.
         world
+            .storage
             .archetypes
             .values_mut()
             .next()
@@ -1490,7 +1513,7 @@ mod tests {
             "the removed component is gone from the entity"
         );
         assert_eq!(
-            world.archetypes.len(),
+            world.storage.archetypes.len(),
             1,
             "the archetype whose column vanished was emptied and retired"
         );
@@ -1543,6 +1566,7 @@ mod tests {
         // to carry: removing `descriptor_b` leaves `descriptor_a` to travel, and
         // it has no column to travel from.
         world
+            .storage
             .archetypes
             .values_mut()
             .next()
@@ -1636,7 +1660,7 @@ mod tests {
                 if *component_id == ComponentId::of::<Position>()
         ));
         assert!(
-            !world.entity_locations.contains_key(&entity),
+            !world.storage.entity_locations.contains_key(&entity),
             "a refused creation leaves no entity behind"
         );
         let recycled = world.allocate_entity();

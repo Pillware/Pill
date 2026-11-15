@@ -495,6 +495,12 @@ impl Default for DebugDraw {
 }
 
 impl Resource for DebugDraw {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+
     fn shared_name() -> Option<&'static str> {
         Some("pill_engine::debug_draw::DebugDraw")
     }

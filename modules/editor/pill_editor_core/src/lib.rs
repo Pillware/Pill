@@ -118,6 +118,8 @@ pub mod notices;
 /// that says whether their module is still loaded, and the dock tab slot they
 /// fill.
 pub mod panels;
+/// The editor state a play session keeps aside and puts back at Stop.
+pub mod play_session;
 /// The Preferences tab's shared vocabulary: the file's editable keys and their
 /// parsing.
 pub mod preferences;

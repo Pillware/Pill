@@ -220,55 +220,71 @@ impl World {
     /// a superseded generation's rows would otherwise survive the registration
     /// purge that `forget_component_type` runs for all of them.
     pub fn drop_forgotten_components(&mut self, type_names: &[String]) -> usize {
-        let mut dropped_entities = 0;
-        for type_name in type_names {
-            // Step 1: Keep the native registrations of this name. A managed
-            // (foreign-language) component has a type-erased column, which
-            // this path does not cover, while a shared component is native
-            // and is covered. If no id is native, the name belongs to a live
-            // peer rather than to a forgotten type, and the whole name is
-            // skipped, name-keyed entries included.
-            let native_ids: Vec<ComponentId> = self
-                .component_registry
-                .registered_components()
-                .filter(|(_, _, name)| *name == type_name)
-                .map(|(component_id, _, _)| component_id)
-                .filter(|component_id| component_id.is_native_storage())
-                .collect();
-            if native_ids.is_empty() {
-                continue;
-            }
-
-            for component_id in native_ids {
-                // Step 2: Remove the component from every entity that carries
-                // it. The entities are collected first, because removing one
-                // needs a mutable world while the search holds shared
-                // borrows.
-                let entities: Vec<Entity> = self
-                    .entity_locations
-                    .iter()
-                    .filter(|(_, location)| {
-                        self.archetypes
-                            .get(&location.archetype_id)
-                            .is_some_and(|archetype| {
-                                archetype.component_types.contains(&component_id)
-                            })
-                    })
-                    .map(|(entity, _)| *entity)
+        // Step 1: Keep the native registrations of each name. A managed
+        // (foreign-language) component has a type-erased column, which this
+        // path does not cover, while a shared component is native and is
+        // covered. If no id is native, the name belongs to a live peer rather
+        // than to a forgotten type, and the whole name is skipped, name-keyed
+        // entries included.
+        let native_ids_by_name: Vec<(&String, Vec<ComponentId>)> = type_names
+            .iter()
+            .map(|type_name| {
+                let native_ids: Vec<ComponentId> = self
+                    .component_registry
+                    .registered_components()
+                    .filter(|(_, _, name)| *name == type_name.as_str())
+                    .map(|(component_id, _, _)| component_id)
+                    .filter(|component_id| component_id.is_native_storage())
                     .collect();
+                (type_name, native_ids)
+            })
+            .filter(|(_, native_ids)| !native_ids.is_empty())
+            .collect();
 
-                for entity in entities {
-                    if self.remove_component_by_id(entity, component_id).is_ok() {
-                        dropped_entities += 1;
-                    }
+        // Step 2: Remove each forgotten component from every entity that
+        // carries it, in the live storage and in the held one.
+        let mut dropped_entities = 0;
+        self.run_on_every_entity_storage(|world| {
+            for (_, native_ids) in &native_ids_by_name {
+                for component_id in native_ids {
+                    dropped_entities += world.remove_component_from_every_entity(*component_id);
                 }
             }
+        });
 
-            // Step 3: Forget the name: retire every registration under it and
-            // drop its name-keyed entries.
+        // Step 3: Forget each name that named a native type: retire every
+        // registration under it and drop its name-keyed entries.
+        for (type_name, _) in &native_ids_by_name {
             self.forget_component_type(type_name);
         }
         dropped_entities
+    }
+
+    /// Removes `component_id` from every entity carrying it, returning how
+    /// many entities lost a row.
+    ///
+    /// The entities are collected first, because removing one needs a mutable
+    /// world while the search holds shared borrows.
+    fn remove_component_from_every_entity(&mut self, component_id: ComponentId) -> usize {
+        let entities: Vec<Entity> = self
+            .storage
+            .entity_locations
+            .iter()
+            .filter(|(_, location)| {
+                self.storage
+                    .archetypes
+                    .get(&location.archetype_id)
+                    .is_some_and(|archetype| archetype.component_types.contains(&component_id))
+            })
+            .map(|(entity, _)| *entity)
+            .collect();
+        let mut removed = 0;
+        for entity in entities {
+            if self.remove_component_by_id(entity, component_id).is_ok() {
+                removed += 1;
+            }
+        }
+        removed
     }
 
     /// Removes the given components from every entity that carries them and
@@ -303,10 +319,12 @@ impl World {
             // The entities are collected first, because removing one needs a
             // mutable world while the search holds shared borrows.
             let entities: Vec<Entity> = self
+                .storage
                 .entity_locations
                 .iter()
                 .filter(|(_, location)| {
-                    self.archetypes
+                    self.storage
+                        .archetypes
                         .get(&location.archetype_id)
                         .is_some_and(|archetype| archetype.component_types.contains(&component_id))
                 })
@@ -351,7 +369,7 @@ impl World {
     pub(crate) fn retire_registration(&mut self, component_id: ComponentId) {
         let bit = self.component_registry.get_bit(&component_id);
         let rows_still_reference_bit = bit.is_some_and(|bit| {
-            self.archetypes.values().any(|archetype| {
+            self.storage.archetypes.values().any(|archetype| {
                 archetype.component_mask.has_bit(bit) && !archetype.entities.is_empty()
             })
         });
@@ -361,7 +379,8 @@ impl World {
         );
         if !rows_still_reference_bit {
             if let Some(bit) = bit {
-                self.archetypes
+                self.storage
+                    .archetypes
                     .retain(|_, archetype| !archetype.component_mask.has_bit(bit));
             }
             self.component_registry.remove(&component_id);
@@ -427,7 +446,7 @@ impl World {
     #[cfg(feature = "development")]
     pub fn capture_live_entities(&self) -> HashSet<Entity> {
         let mut entities: HashSet<Entity> = HashSet::new();
-        for archetype in self.archetypes.values() {
+        for archetype in self.storage.archetypes.values() {
             entities.extend(archetype.entities.iter().copied());
         }
         entities

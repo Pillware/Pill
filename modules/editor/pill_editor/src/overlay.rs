@@ -69,6 +69,7 @@ pub type OverlayError = String;
 pub enum OverlayMode {
     /// The composition visual above the scene: transparent where the shell
     /// drew nothing, so the scene shows through the UI's gaps.
+    #[cfg_attr(not(windows), allow(dead_code))]
     Composition,
     /// A window of the editor's own, drawn by the desktop above the scene's
     /// child windows and transparent where the shell drew nothing.
@@ -77,6 +78,7 @@ pub enum OverlayMode {
     /// DirectComposition: a Unix child window is always drawn *above* its
     /// parent, so UI drawn on the editor's own surface can never cover a
     /// scene viewport, while a window of its own can.
+    #[cfg_attr(windows, allow(dead_code))]
     Floating,
     /// The window's own surface, with no composition: `PILL_EDITOR_NO_OVERLAY`
     /// asked for it, or a failed overlay fell back to it. The UI is opaque,
@@ -306,7 +308,7 @@ impl OverlaySurface {
             .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
         {
             return Err(
-                "the floating surface does not offer premultiplied composition".to_string()
+                "the floating surface does not offer premultiplied composition".to_string(),
             );
         }
         let surface_configuration = wgpu::SurfaceConfiguration {

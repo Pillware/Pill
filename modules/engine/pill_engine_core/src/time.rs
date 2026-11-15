@@ -84,7 +84,13 @@ pub struct Time {
     frame_count: u64,
 }
 
-impl Resource for Time {}
+impl Resource for Time {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> crate::resource::PlayState {
+        crate::resource::PlayState::Keep
+    }
+}
 
 impl Time {
     /// Starts a clock with its origin at the current instant.

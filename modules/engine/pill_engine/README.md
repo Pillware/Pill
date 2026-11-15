@@ -234,6 +234,20 @@ process_frame()
 └─ Phase 2: execute_queued_commands() // apply all deferred structural changes
 ```
 
+### Run mode
+
+`Engine::run_mode()` says whether the frame is being edited or played. Every
+build but the editor's is always `Playing`, so the gate below changes nothing
+for a game. The editor starts in `Editing` and switches to `Playing` when the
+person presses Play; while editing, only the systems declared
+`#[system(..., edit_mode)]` run, and no script does.
+
+`Engine::enter_play()` copies the world - entity storage, component rows and the
+game-state resources - into a held slot, and `Engine::exit_play()` puts it back,
+bumps `World::restore_epoch()` and drops everything the game did. A resource
+says which side of that it is on with `Resource::play_state()`, and `AGENTS.md`
+("Play mode") documents the three classes.
+
 ## Running
 
 ```bash

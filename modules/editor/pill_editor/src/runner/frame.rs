@@ -210,11 +210,46 @@ impl EditorWindow {
         self.apply_clipboard();
     }
 
+    /// Copies the scene cameras when a play session starts and puts them back
+    /// when it stops.
+    ///
+    /// The engine restores the entities and the editor restores its own state;
+    /// a camera is neither, because it lives in this executable. A session that
+    /// moved a view therefore has to be undone here, or Stop would leave the
+    /// person looking from wherever the game left the camera.
+    pub(super) fn track_play_cameras(&mut self) {
+        let run_mode = self.host.host().engine().run_mode();
+        if self.last_run_mode == Some(run_mode) {
+            return;
+        }
+        self.last_run_mode = Some(run_mode);
+        match run_mode {
+            pill_engine_core::RunMode::Playing => {
+                self.play_cameras = Some(self.cameras.clone());
+            }
+            pill_engine_core::RunMode::Editing => {
+                if let Some(cameras) = self.play_cameras.take() {
+                    self.cameras = cameras;
+                    // The restored poses have to reach the renderer, which
+                    // reads them from the surface bindings.
+                    self.camera_dirty = vec![true; self.camera_dirty.len()];
+                    info!(
+                        target: telemetry_target::EDITOR,
+                        views = self.cameras.len(),
+                        "[editor] play restored the cameras"
+                    );
+                }
+            }
+        }
+    }
+
     /// Publishes the resources the frame reads, before it runs.
     pub(super) fn publish_frame_resources(&mut self) {
         // Step 4: the frame's snapshot for the shell's data tabs, when the
         // shell loaded and registered its resources.
         self.publish_snapshot();
+        // Step 4a: the cameras follow a play session, before the frame draws.
+        self.track_play_cameras();
         // Step 5: the world resources the frame draws and picks with,
         // published before it runs: the shared selection's outline set (one
         // write per change) and the gizmo handles for that selection.

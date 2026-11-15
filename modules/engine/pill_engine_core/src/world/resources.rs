@@ -97,6 +97,87 @@ impl World {
         self.insert_resource_with_table(resource, add_surface(base));
     }
 
+    /// The ids of the live resources whose play state is `play_state`.
+    ///
+    /// The stop half of a play session uses it to find the `Restore` resources
+    /// the game inserted, which have no copy to put back.
+    pub fn resource_ids_with_play_state(
+        &self,
+        play_state: crate::resource::PlayState,
+    ) -> Vec<crate::resource::ResourceId> {
+        self.resources
+            .keys()
+            .copied()
+            .filter(|resource_id| self.resource_play_states.get(resource_id) == Some(&play_state))
+            .collect()
+    }
+
+    /// Keeps `resource_copy` aside for the end of the play session that is
+    /// starting.
+    pub(crate) fn hold_resource_copy(&mut self, resource_copy: crate::world::ResourceCopy) {
+        self.held_resource_copy = Some(resource_copy);
+    }
+
+    /// Puts every copied `Restore` resource back and removes the ones the game
+    /// inserted.
+    ///
+    /// Returns whether a copy was held, which means a session was running. A
+    /// `Restore` resource with no copy was not in the world at Play, so its live
+    /// value belongs to the session and is removed; a `Keep` or `Rebuild`
+    /// resource is not in the copy and keeps whatever the game did to it.
+    pub(crate) fn restore_held_resources(&mut self) -> bool {
+        let Some(resource_copy) = self.held_resource_copy.take() else {
+            return false;
+        };
+        let mut copied_ids: Vec<crate::resource::ResourceId> =
+            resource_copy.values.keys().copied().collect();
+        copied_ids.extend(resource_copy.persisted_values.keys().copied());
+        for (resource_id, value) in resource_copy.values {
+            self.put_back_resource(resource_id, value);
+        }
+        // A copied resource whose type is not `Clone` comes back through its
+        // own deserializer, the same path a snapshot load takes.
+        for (resource_id, payload) in resource_copy.persisted_values {
+            let Some(type_name) = self.persist_resource_names.get(&resource_id).cloned() else {
+                continue;
+            };
+            let Some(restore) = self.persist_resource_restorers.get(&type_name).copied() else {
+                continue;
+            };
+            if !restore(self, &payload) {
+                pill_core::warn!(
+                    target: telemetry_target::ECS,
+                    resource = %type_name,
+                    "[engine] a restored resource could not be read back; its live value stays"
+                );
+            }
+        }
+        let play_inserted: Vec<crate::resource::ResourceId> = self
+            .resource_ids_with_play_state(crate::resource::PlayState::Restore)
+            .into_iter()
+            .filter(|resource_id| {
+                !copied_ids.contains(resource_id)
+                    && !resource_copy
+                        .dropped_by_reload
+                        .iter()
+                        .any(|(dropped_id, _)| dropped_id == resource_id)
+            })
+            .collect();
+        for resource_id in play_inserted {
+            self.remove_resource_value(resource_id);
+        }
+        // A reload that dropped a copy took the value it would have put back, so
+        // the session's live value stays and the person is told which one.
+        for (_, type_name) in resource_copy.dropped_by_reload {
+            pill_core::warn!(
+                target: telemetry_target::ECS,
+                resource = %type_name,
+                "[engine] a reload dropped this resource's held copy during the session; its live value stays"
+            );
+        }
+        true
+    }
+
     /// The storage half of every insert path, taking the per-type table the
     /// caller built.
     fn insert_resource_with_table<T: Resource>(&mut self, resource: T, table: ErasedResourceOps) {
@@ -119,6 +200,11 @@ impl World {
         self.note_resource_registration(id);
         self.resources.insert(id, ErasedResource::new(resource));
         self.resource_ticks.insert(id, ComponentTicks::new(tick));
+        // The value's play-mode class and its copy function: what a Play copy
+        // needs to know about it. The type itself answers the second one, since
+        // this insert is generic and cannot tell whether `T` is `Clone`.
+        self.resource_play_states.insert(id, T::play_state());
+        self.resource_clone_functions.insert(id, T::clone_erased);
         // Step 3: Record the table too, so a later reload can re-home this
         // value even if the next generation never inserts it again.
         let table = self.table_keeping_recorded_surface(id, table);
@@ -1015,6 +1101,20 @@ impl World {
                 resource.refresh_ops(resource_ops);
             }
         }
+        // A play session's copies are values of the same types, so they need the
+        // arriving generation's table exactly as the live values do.
+        if let Some(resource_copy) = &mut self.held_resource_copy {
+            for (id, value) in &mut resource_copy.values {
+                if value.is_foreign() {
+                    continue;
+                }
+                if let Some(&resource_ops) = self.resource_factories.get(id) {
+                    if !resource_ops.foreign {
+                        value.refresh_ops(resource_ops);
+                    }
+                }
+            }
+        }
     }
 
     /// Declares an asset type the calling generation owns.
@@ -1191,6 +1291,32 @@ impl World {
                 continue;
             }
             if self.resources.remove(id).is_some() {
+                dropped_resource_count += 1;
+            }
+            // A play session's copy of the same value came from that artifact
+            // too, so it must be released while the image is still mapped.
+            // Stop then has nothing to put back, so the type is remembered and
+            // named when the session ends.
+            let type_name = self
+                .resource_factories
+                .get(id)
+                .and_then(|ops| ops.declaring_type_name)
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("resource {id:?}"));
+            let held_dropped = self
+                .held_resource_copy
+                .as_mut()
+                .is_some_and(|resource_copy| {
+                    if resource_copy.values.remove(id).is_some() {
+                        resource_copy
+                            .dropped_by_reload
+                            .push((*id, type_name.clone()));
+                        true
+                    } else {
+                        false
+                    }
+                });
+            if held_dropped {
                 dropped_resource_count += 1;
             }
             // The id is unregistered now, so a later registration is a fresh

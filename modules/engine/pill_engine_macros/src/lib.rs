@@ -202,6 +202,20 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
             (&::pill_engine::component_registry::DefaultValueProbe::<#ident>::new())
                 .record_default_value(world);
         }
+        {
+            // A component that implements `Clone` records a row-cloning
+            // function, so a storage copy clones its rows; a type without
+            // `Clone` records nothing and is copied as bytes when its rows own
+            // no heap data. Method lookup decides, exactly as it does for the
+            // default value above.
+            #[allow(unused_imports)]
+            use ::pill_engine::component_registry::{
+                RecordCloneValue as _, SkipCloneValue as _,
+            };
+            #[allow(clippy::needless_borrow)]
+            (&::pill_engine::component_registry::CloneValueProbe::<#ident>::new())
+                .record_clone_value(world);
+        }
     };
     let type_name = quote! {
         ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident))
@@ -1921,6 +1935,10 @@ pub fn pill_mirror_object(attribute: TokenStream, item: TokenStream) -> TokenStr
 /// - mirrored functions can take it as `&T` or `&mut T`.
 ///
 /// The resource's bytes are never exposed to C#.
+///
+/// A mirrored resource is play-mode game state, so a type that derives `Clone`
+/// is copied at Play and put back at Stop, and one that does not refuses Play
+/// by name.
 #[proc_macro_attribute]
 pub fn pill_mirror_resource(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let annotated_item = parse_macro_input!(item as syn::Item);
@@ -2085,6 +2103,7 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let mut name_override: Option<String> = None;
     let mut order: i32 = 0;
     let mut post_update = false;
+    let mut edit_mode = false;
     if !attribute.is_empty() {
         let attribute = proc_macro2::TokenStream::from(attribute);
         let parser = syn::meta::parser(|meta| {
@@ -2102,9 +2121,13 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
                 post_update = true;
                 return Ok(());
             }
+            if meta.path.is_ident("edit_mode") {
+                edit_mode = true;
+                return Ok(());
+            }
             Err(meta.error(
                 "unknown `system` argument; expected `name = \"...\"`, \
-                 `order = <integer>` or `post_update`",
+                 `order = <integer>`, `post_update` or `edit_mode`",
             ))
         });
         if let Err(error) = syn::parse::Parser::parse2(parser, attribute) {
@@ -2143,10 +2166,13 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
         },
     };
     let register_ident = format_ident!("__pill_system_register_{}", fn_ident);
-    let register_call = if post_update {
-        quote! { engine.register_post_update_system(#name, #fn_ident); }
-    } else {
-        quote! { engine.register_system(#name, #fn_ident); }
+    let register_call = match (post_update, edit_mode) {
+        (true, true) => {
+            quote! { engine.register_post_update_system_in_edit_mode(#name, #fn_ident); }
+        }
+        (true, false) => quote! { engine.register_post_update_system(#name, #fn_ident); },
+        (false, true) => quote! { engine.register_system_in_edit_mode(#name, #fn_ident); },
+        (false, false) => quote! { engine.register_system(#name, #fn_ident); },
     };
     let expanded = quote! {
         #item_fn
@@ -2163,6 +2189,7 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
                 name: #name,
                 order: #order,
                 post_update: #post_update,
+                edit_mode: #edit_mode,
                 register: #register_ident,
             }
         }
@@ -2220,6 +2247,7 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
     let mut shared_name_override: Option<String> = None;
     let mut layout_sources: Option<Vec<String>> = None;
     let mut layout_dependencies: Option<Vec<String>> = None;
+    let mut play_state: Option<String> = None;
     for attribute in &input.attrs {
         if !attribute.path().is_ident("pill") {
             continue;
@@ -2263,9 +2291,22 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
                 layout_dependencies = Some(parse_string_list(meta.value()?)?);
                 return Ok(());
             }
+            if meta.path.is_ident("play_state") {
+                let literal: syn::LitStr = meta.value()?.parse()?;
+                let value = literal.value();
+                if value != "keep" && value != "rebuild" {
+                    return Err(syn::Error::new_spanned(
+                        &literal,
+                        "`play_state` is `keep` or `rebuild`; a resource that is restored on \
+                         Stop needs no attribute, because restoring is the default",
+                    ));
+                }
+                play_state = Some(value);
+                return Ok(());
+            }
             Err(meta.error(
-                "unknown `pill` attribute; expected `shared`, \
-                 `layout_sources` or `layout_dependencies`",
+                "unknown `pill` attribute; expected `shared`, `layout_sources`, \
+                 `layout_dependencies` or `play_state`",
             ))
         }) {
             return error.to_compile_error().into();
@@ -2312,12 +2353,45 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
     let layout_sources_impl = layout_field_impl("layout_sources", layout_sources.as_deref());
     let layout_dependencies_impl =
         layout_field_impl("layout_dependencies", layout_dependencies.as_deref());
+    let play_state_impl = match play_state.as_deref() {
+        Some("keep") => quote! {
+            fn play_state() -> ::pill_engine::resource::PlayState {
+                ::pill_engine::resource::PlayState::Keep
+            }
+        },
+        Some("rebuild") => quote! {
+            fn play_state() -> ::pill_engine::resource::PlayState {
+                ::pill_engine::resource::PlayState::Rebuild
+            }
+        },
+        // Restoring on Stop is the trait's default, so an unmarked resource
+        // emits nothing here.
+        _ => quote! {},
+    };
+    // The copy hook. The probe is resolved here, at the type's own site, where
+    // the compiler can see whether the type is `Clone`; a generic insert path
+    // could not.
+    let clone_erased_impl = quote! {
+        fn clone_erased(
+            value: &::pill_engine::resource::ErasedResource,
+        ) -> ::core::option::Option<::pill_engine::resource::ErasedResource> {
+            // The two probes only answer as methods, so their traits have to be
+            // in scope here; the calling module does not import them.
+            #[allow(unused_imports)]
+            use ::pill_engine::resource::{RecordResourceClone as _, SkipResourceClone as _};
+            (&&::pill_engine::resource::CloneResourceProbe::<Self>::new()).copy_value(value)
+        }
+    };
     let register_ident = format_ident!("__pill_register_resource_{}", ident);
     let register_call = quote! { world.register_resource::<#ident>(); };
 
     let expanded = quote! {
         impl ::pill_engine::Resource for #ident {
             #shared_impl
+
+            #clone_erased_impl
+
+            #play_state_impl
 
             #layout_sources_impl
 

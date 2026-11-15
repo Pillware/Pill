@@ -23,8 +23,8 @@ use crate::test_fixtures::{setup_world, Health, Position, Velocity};
 
 /// Returns the change-detection ticks of one entity's row for one component.
 fn ticks_of_row(world: &World, entity: Entity, component_id: ComponentId) -> ComponentTicks {
-    let location = world.entity_locations[&entity];
-    *world.archetypes[&location.archetype_id]
+    let location = world.storage.entity_locations[&entity];
+    *world.storage.archetypes[&location.archetype_id]
         .component_storages
         .get(component_id)
         .expect("the archetype owns the column")
@@ -147,11 +147,11 @@ fn relayout_migrates_rows_and_keeps_entities_in_their_rows() {
         .create_descriptor_entity(&[(component_id, two_u32_row(3, 4))])
         .unwrap();
 
-    let archetype_id = world.entity_locations[&first].archetype_id;
-    let first_row_index = world.entity_locations[&first].index_in_archetype;
-    let second_row_index = world.entity_locations[&second].index_in_archetype;
+    let archetype_id = world.storage.entity_locations[&first].archetype_id;
+    let first_row_index = world.storage.entity_locations[&first].index_in_archetype;
+    let second_row_index = world.storage.entity_locations[&second].index_in_archetype;
     assert_eq!(
-        world.entity_locations[&second].archetype_id, archetype_id,
+        world.storage.entity_locations[&second].archetype_id, archetype_id,
         "identical component sets share one archetype"
     );
 
@@ -216,15 +216,15 @@ fn relayout_migrates_rows_and_keeps_entities_in_their_rows() {
         expected_second.as_slice()
     );
     assert_eq!(
-        world.entity_locations[&first].archetype_id, archetype_id,
+        world.storage.entity_locations[&first].archetype_id, archetype_id,
         "a relayout moves no entity between archetypes"
     );
     assert_eq!(
-        world.entity_locations[&first].index_in_archetype,
+        world.storage.entity_locations[&first].index_in_archetype,
         first_row_index
     );
     assert_eq!(
-        world.entity_locations[&second].index_in_archetype,
+        world.storage.entity_locations[&second].index_in_archetype,
         second_row_index
     );
     assert_eq!(world.component_layout(component_id), Some((16, 8)));
@@ -251,8 +251,9 @@ fn relayout_leaves_change_ticks_alone() {
         .unwrap();
 
     let changed_tick = world.increment_change_tick();
-    let location = world.entity_locations[&entity];
+    let location = world.storage.entity_locations[&entity];
     world
+        .storage
         .archetypes
         .get_mut(&location.archetype_id)
         .unwrap()
@@ -735,7 +736,7 @@ fn relayout_reaches_an_archetype_that_lost_its_last_row() {
     let disposable = world
         .create_descriptor_entity(&[(component_id, two_u32_row(1, 2))])
         .unwrap();
-    let archetype_id = world.entity_locations[&disposable].archetype_id;
+    let archetype_id = world.storage.entity_locations[&disposable].archetype_id;
     assert!(world.destroy_entity(disposable));
 
     world
@@ -746,7 +747,7 @@ fn relayout_reaches_an_archetype_that_lost_its_last_row() {
         .create_descriptor_entity(&[(component_id, vec![7_u8; 16])])
         .unwrap();
     assert_eq!(
-        world.entity_locations[&entity].archetype_id, archetype_id,
+        world.storage.entity_locations[&entity].archetype_id, archetype_id,
         "the empty archetype is reused, so its column is the one being tested"
     );
     assert_eq!(
@@ -815,6 +816,7 @@ fn relayout_refuses_what_it_cannot_migrate() {
         .unwrap();
     let stripped = world.get_or_create_archetype(vec![component_id, ComponentId::of::<Position>()]);
     assert!(world
+        .storage
         .archetypes
         .get_mut(&stripped)
         .unwrap()
@@ -840,6 +842,7 @@ fn relayout_refuses_what_it_cannot_migrate() {
     // The mismatch is reported too, and the column keeps its shape instead of
     // being silently rewritten.
     world
+        .storage
         .archetypes
         .get_mut(&stripped)
         .unwrap()
@@ -855,8 +858,9 @@ fn relayout_refuses_what_it_cannot_migrate() {
             .expect("the drifted layout is still a valid allocation layout"),
         );
     {
-        let location = world.entity_locations[&holder];
+        let location = world.storage.entity_locations[&holder];
         let column = world
+            .storage
             .archetypes
             .get_mut(&location.archetype_id)
             .unwrap()
@@ -879,7 +883,7 @@ fn relayout_refuses_what_it_cannot_migrate() {
         Err(WorldError::ComponentColumnLayoutMismatch { .. })
     ));
     assert_eq!(
-        world.archetypes[&world.entity_locations[&holder].archetype_id]
+        world.storage.archetypes[&world.storage.entity_locations[&holder].archetype_id]
             .component_storages
             .get(component_id)
             .expect("column")
@@ -925,6 +929,7 @@ fn migration_failure_leaves_both_archetypes_untouched() {
     // purpose: it lists `second` without storing a column for it.
     let destination = world.get_or_create_archetype(vec![first, second]);
     assert!(world
+        .storage
         .archetypes
         .get_mut(&destination)
         .unwrap()
@@ -935,28 +940,28 @@ fn migration_failure_leaves_both_archetypes_untouched() {
     let entity = world
         .create_descriptor_entity(&[(first, 7_u32.to_ne_bytes().to_vec())])
         .unwrap();
-    let source = world.entity_locations[&entity].archetype_id;
-    let source_rows = world.archetypes[&source].entities.len();
-    let source_column = world.archetypes[&source]
+    let source = world.storage.entity_locations[&entity].archetype_id;
+    let source_rows = world.storage.archetypes[&source].entities.len();
+    let source_column = world.storage.archetypes[&source]
         .component_storages
         .get(first)
         .expect("column")
         .len();
-    let destination_rows = world.archetypes[&destination].entities.len();
+    let destination_rows = world.storage.archetypes[&destination].entities.len();
 
     assert!(matches!(
         world.add_descriptor_component_default(entity, second),
         Err(WorldError::DescriptorStorageMissing { .. })
     ));
 
-    assert_eq!(world.entity_locations[&entity].archetype_id, source);
+    assert_eq!(world.storage.entity_locations[&entity].archetype_id, source);
     assert_eq!(
-        world.archetypes[&source].entities.len(),
+        world.storage.archetypes[&source].entities.len(),
         source_rows,
         "the source kept its row while the destination refused the migration"
     );
     assert_eq!(
-        world.archetypes[&source]
+        world.storage.archetypes[&source]
             .component_storages
             .get(first)
             .expect("column")
@@ -964,7 +969,7 @@ fn migration_failure_leaves_both_archetypes_untouched() {
         source_column
     );
     assert_eq!(
-        world.archetypes[&destination].entities.len(),
+        world.storage.archetypes[&destination].entities.len(),
         destination_rows,
         "the destination never received the entity"
     );
@@ -975,8 +980,8 @@ fn migration_failure_leaves_both_archetypes_untouched() {
 #[test]
 fn descriptor_component_ticks_survive_archetype_migration() {
     fn ticks_for(world: &World, entity: Entity, component_id: ComponentId) -> ComponentTicks {
-        let location = world.entity_locations[&entity];
-        *world.archetypes[&location.archetype_id]
+        let location = world.storage.entity_locations[&entity];
+        *world.storage.archetypes[&location.archetype_id]
             .component_storages
             .get(component_id)
             .expect("the archetype owns the column")
@@ -1025,8 +1030,9 @@ fn descriptor_component_ticks_survive_archetype_migration() {
     let original_retained_ticks = ticks_for(&world, entity, retained_component_id);
     let original_removed_ticks = ticks_for(&world, entity, removed_component_id);
     let changed_tick = world.increment_change_tick();
-    let location = world.entity_locations[&entity];
+    let location = world.storage.entity_locations[&entity];
     world
+        .storage
         .archetypes
         .get_mut(&location.archetype_id)
         .unwrap()
@@ -1105,7 +1111,10 @@ fn native_component_chunk_mut_exposes_raw_rows() {
             chunk.ticks.len(),
         )
     };
-    assert_eq!(archetype_id, world.entity_locations[&entity].archetype_id);
+    assert_eq!(
+        archetype_id,
+        world.storage.entity_locations[&entity].archetype_id
+    );
     assert_eq!(row_count, 1);
     assert_eq!(element_size, std::mem::size_of::<Position>());
     assert_eq!(tick_count, 1);
@@ -1215,9 +1224,9 @@ fn a_column_whose_factory_vanished_is_dropped_before_eviction() {
         0,
         "no column without a function table survives the sweep"
     );
-    let location = world.entity_locations[&entity];
+    let location = world.storage.entity_locations[&entity];
     assert!(
-        !world.archetypes[&location.archetype_id]
+        !world.storage.archetypes[&location.archetype_id]
             .component_types
             .contains(&component_id),
         "the entity no longer lists the swept component"
@@ -1311,16 +1320,16 @@ fn test_create_entities_with_different_components() {
         .build()
         .unwrap();
 
-    assert_eq!(world.entity_locations.len(), 3);
-    assert_eq!(world.archetypes.len(), 3);
-    assert!(world.entity_locations.contains_key(&entity1));
-    assert!(world.entity_locations.contains_key(&entity2));
-    assert!(world.entity_locations.contains_key(&entity3));
+    assert_eq!(world.storage.entity_locations.len(), 3);
+    assert_eq!(world.storage.archetypes.len(), 3);
+    assert!(world.storage.entity_locations.contains_key(&entity1));
+    assert!(world.storage.entity_locations.contains_key(&entity2));
+    assert!(world.storage.entity_locations.contains_key(&entity3));
 
     world.print_archetypes();
 
     // Verify each archetype's component mask matches expected components
-    for (archetype_id, archetype) in world.archetypes.iter() {
+    for (archetype_id, archetype) in world.storage.archetypes.iter() {
         println!("\n--- Verifying Archetype {:?} ---", archetype_id);
 
         let comp_names: Vec<String> = archetype
@@ -1378,7 +1387,7 @@ fn test_add_component_to_entity() {
         .unwrap();
 
     assert_eq!(
-        world.archetypes.len(),
+        world.storage.archetypes.len(),
         1,
         "Should have 1 archetype initially"
     );
@@ -1386,12 +1395,12 @@ fn test_add_component_to_entity() {
     let add_result = world.add_component(entity, Health(50));
 
     assert!(add_result.is_ok(), "Should successfully add component");
-    assert!(world.entity_locations.contains_key(&entity));
+    assert!(world.storage.entity_locations.contains_key(&entity));
 
     // This is the only entity, so the archetype it leaves is empty and is
     // removed at once.
     assert_eq!(
-        world.archetypes.len(),
+        world.storage.archetypes.len(),
         1,
         "Should have 1 archetype after adding Health (old one auto-removed)"
     );
@@ -1477,16 +1486,20 @@ fn test_remove_component_from_entity() {
 
     let remove_result = world.remove_component::<Velocity>(entity);
 
-    assert_eq!(world.archetypes.len(), 1, "Should have 1 archetype");
+    assert_eq!(world.storage.archetypes.len(), 1, "Should have 1 archetype");
 
     assert!(
         remove_result.is_ok(),
         "Should successfully remove component"
     );
-    assert!(world.entity_locations.contains_key(&entity));
+    assert!(world.storage.entity_locations.contains_key(&entity));
 
-    let location = world.entity_locations.get(&entity).unwrap();
-    let archetype = world.archetypes.get(&location.archetype_id).unwrap();
+    let location = world.storage.entity_locations.get(&entity).unwrap();
+    let archetype = world
+        .storage
+        .archetypes
+        .get(&location.archetype_id)
+        .unwrap();
 
     assert_eq!(
         archetype.component_types.len(),
@@ -1544,7 +1557,7 @@ fn test_remove_last_component_destroys_entity() {
         .build()
         .unwrap();
 
-    assert_eq!(world.entity_locations.len(), 1);
+    assert_eq!(world.storage.entity_locations.len(), 1);
 
     // The component is the only one, so removing it destroys the entity.
     let remove_result = world.remove_component::<Position>(entity);
@@ -1554,13 +1567,16 @@ fn test_remove_last_component_destroys_entity() {
         "Should successfully remove component"
     );
     assert_eq!(
-        world.entity_locations.len(),
+        world.storage.entity_locations.len(),
         0,
         "Entity should be destroyed"
     );
-    assert!(!world.entity_locations.contains_key(&entity));
+    assert!(!world.storage.entity_locations.contains_key(&entity));
 
-    assert!(world.archetypes.is_empty(), "No archetypes should remain");
+    assert!(
+        world.storage.archetypes.is_empty(),
+        "No archetypes should remain"
+    );
 }
 
 /// Destroying one entity removes it from every tracking structure and leaves
@@ -1584,14 +1600,14 @@ fn test_destroy_entity() {
         .build()
         .unwrap();
 
-    assert_eq!(world.entity_locations.len(), 2);
+    assert_eq!(world.storage.entity_locations.len(), 2);
 
     let destroy_result = world.destroy_entity(entity1);
 
     assert!(destroy_result, "Should successfully destroy entity");
-    assert_eq!(world.entity_locations.len(), 1);
-    assert!(!world.entity_locations.contains_key(&entity1));
-    assert!(world.entity_locations.contains_key(&entity2));
+    assert_eq!(world.storage.entity_locations.len(), 1);
+    assert!(!world.storage.entity_locations.contains_key(&entity1));
+    assert!(world.storage.entity_locations.contains_key(&entity2));
 }
 
 /// Destroying a handle the world never handed out reports `false` instead of
@@ -1650,7 +1666,7 @@ fn test_cleanup_empty_archetypes() {
         .build()
         .unwrap();
 
-    let initial_archetypes = world.archetypes.len();
+    let initial_archetypes = world.storage.archetypes.len();
     assert_eq!(initial_archetypes, 2);
 
     // Destroy one entity, leaving one archetype empty
@@ -1658,8 +1674,8 @@ fn test_cleanup_empty_archetypes() {
 
     world.cleanup_empty_archetypes();
 
-    assert!(world.archetypes.len() < initial_archetypes);
-    assert!(world.entity_locations.contains_key(&entity2));
+    assert!(world.storage.archetypes.len() < initial_archetypes);
+    assert!(world.storage.entity_locations.contains_key(&entity2));
 }
 
 /// Each add and each remove moves the entity to a different archetype, and no
@@ -1676,12 +1692,12 @@ fn test_entity_archetype_migration() {
         .build()
         .unwrap();
 
-    let initial_location = *world.entity_locations.get(&entity).unwrap();
+    let initial_location = *world.storage.entity_locations.get(&entity).unwrap();
 
     // Adding Health moves the entity to an archetype that has it.
     world.add_component(entity, Health(100)).unwrap();
 
-    let after_add_location = *world.entity_locations.get(&entity).unwrap();
+    let after_add_location = *world.storage.entity_locations.get(&entity).unwrap();
     assert_ne!(
         initial_location.archetype_id, after_add_location.archetype_id,
         "Entity should be in different archetype after adding component"
@@ -1690,7 +1706,7 @@ fn test_entity_archetype_migration() {
     // Removing Velocity moves the entity again.
     world.remove_component::<Velocity>(entity).unwrap();
 
-    let after_remove_location = *world.entity_locations.get(&entity).unwrap();
+    let after_remove_location = *world.storage.entity_locations.get(&entity).unwrap();
     assert_ne!(
         after_add_location.archetype_id, after_remove_location.archetype_id,
         "Entity should be in different archetype after removing component"
@@ -1712,7 +1728,7 @@ fn test_automatic_empty_archetype_cleanup() {
         .unwrap();
 
     assert_eq!(
-        world.archetypes.len(),
+        world.storage.archetypes.len(),
         1,
         "Should have 1 archetype initially"
     );
@@ -1722,15 +1738,19 @@ fn test_automatic_empty_archetype_cleanup() {
     world.add_component(entity, Health(100)).unwrap();
 
     assert_eq!(
-        world.archetypes.len(),
+        world.storage.archetypes.len(),
         1,
         "Should still have 1 archetype after migration (old one auto-removed)"
     );
-    assert!(world.entity_locations.contains_key(&entity));
+    assert!(world.storage.entity_locations.contains_key(&entity));
 
     // Verify the entity is in the correct archetype with all 3 components
-    let location = world.entity_locations.get(&entity).unwrap();
-    let archetype = world.archetypes.get(&location.archetype_id).unwrap();
+    let location = world.storage.entity_locations.get(&entity).unwrap();
+    let archetype = world
+        .storage
+        .archetypes
+        .get(&location.archetype_id)
+        .unwrap();
     assert_eq!(
         archetype.component_types.len(),
         3,
@@ -1764,10 +1784,14 @@ fn test_archetype_print_info() {
 
     world.print_archetypes();
 
-    assert_eq!(world.entity_locations.len(), 2, "Should have 2 entities");
-    assert_eq!(world.archetypes.len(), 1, "Should have 1 archetype");
+    assert_eq!(
+        world.storage.entity_locations.len(),
+        2,
+        "Should have 2 entities"
+    );
+    assert_eq!(world.storage.archetypes.len(), 1, "Should have 1 archetype");
 
-    let archetype = world.archetypes.values().next().unwrap();
+    let archetype = world.storage.archetypes.values().next().unwrap();
     assert_eq!(
         archetype.entities.len(),
         2,
@@ -2016,7 +2040,7 @@ fn slot_at_generation_max_is_retired_not_wrapped() {
 
     // Seed the free list so the next create reuses id 7 at the
     // second-highest representable generation.
-    world.free_entity_ids.push((7, u32::MAX - 1));
+    world.storage.free_entity_ids.push((7, u32::MAX - 1));
 
     // Start the slot's first life with a real entity one generation below the
     // ceiling.
@@ -2030,7 +2054,7 @@ fn slot_at_generation_max_is_retired_not_wrapped() {
 
     // Destroying it recycles the slot one step closer to the ceiling.
     assert!(world.destroy_entity(stale));
-    assert_eq!(world.free_entity_ids.as_slice(), &[(7, u32::MAX)]);
+    assert_eq!(world.storage.free_entity_ids.as_slice(), &[(7, u32::MAX)]);
 
     // The slot's second life starts at the ceiling itself.
     let ceiling = world
@@ -2043,7 +2067,7 @@ fn slot_at_generation_max_is_retired_not_wrapped() {
     // Destroying at the ceiling retires the slot instead of wrapping to 0.
     assert!(world.destroy_entity(ceiling));
     assert!(
-        world.free_entity_ids.is_empty(),
+        world.storage.free_entity_ids.is_empty(),
         "the slot must be retired, not wrapped back to generation 0"
     );
 
@@ -2101,7 +2125,11 @@ fn test_generations_with_multiple_archetypes_and_component_removal() {
     assert_eq!(entity1.id, 0);
     assert_eq!(entity2.id, 1);
     assert_eq!(entity3.id, 2);
-    assert_eq!(world.archetypes.len(), 2, "Should have 2 archetypes");
+    assert_eq!(
+        world.storage.archetypes.len(),
+        2,
+        "Should have 2 archetypes"
+    );
 
     // Removing Velocity from entity1 moves it to the Position-only archetype.
     let old_entity1 = entity1;
@@ -2307,7 +2335,7 @@ fn test_component_cleanup_on_archetype_migration() {
         .unwrap();
 
     assert_eq!(
-        world.archetypes.len(),
+        world.storage.archetypes.len(),
         1,
         "Should have 1 archetype initially"
     );
@@ -2352,7 +2380,11 @@ fn test_component_cleanup_on_archetype_migration() {
         vel2.x
     );
 
-    assert_eq!(world.archetypes.len(), 2, "Should have 2 archetypes now");
+    assert_eq!(
+        world.storage.archetypes.len(),
+        2,
+        "Should have 2 archetypes now"
+    );
 
     // Remove Velocity from entity1, so it moves to the Position-only
     // archetype.
@@ -2824,15 +2856,15 @@ fn recycled_bit_does_not_alias_archetypes() {
     assert_eq!(world.live_row_count(health_id), 1);
     assert_eq!(world.live_row_count(ComponentId::of::<Position>()), 2);
     assert_eq!(
-        world.archetypes.len(),
+        world.storage.archetypes.len(),
         2,
         "position-only and position+health are two archetypes"
     );
-    let location = world.entity_locations[&health_entity];
-    let archetype = &world.archetypes[&location.archetype_id];
+    let location = world.storage.entity_locations[&health_entity];
+    let archetype = &world.storage.archetypes[&location.archetype_id];
     assert!(archetype.component_types.contains(&health_id));
     assert!(!archetype.component_types.contains(&velocity_id));
-    assert!(world.entity_locations.contains_key(&kept_entity));
+    assert!(world.storage.entity_locations.contains_key(&kept_entity));
 }
 
 /// A re-registration updates the id's stamp instead of adding an entry. The
@@ -2968,6 +3000,7 @@ fn relayout_moves_the_factory_and_the_column_together() {
         "the readers that ask for a component's storage shape see the new one"
     );
     let column = world
+        .storage
         .archetypes
         .values()
         .find_map(|archetype| archetype.component_storages.get(component_id))
@@ -3366,6 +3399,7 @@ fn a_zero_sized_component_lives_a_full_life() {
     // declare one, so both rows have to be in the column the filter reads.
     let marker_id = ComponentId::of::<Enemy>();
     let row_count: usize = world
+        .storage
         .archetypes
         .values()
         .filter_map(|archetype| archetype.component_storages.get(marker_id))
@@ -4000,4 +4034,89 @@ fn a_shared_resource_registered_again_with_a_changed_schema_is_refused() {
         error,
         WorldError::SharedResourceSchemaMismatch { .. }
     ));
+}
+
+/// The reload passes that walk archetypes reach the held storage too.
+///
+/// A held storage is a second set of columns whose function tables point into
+/// the image that created them, so a reload that visits only the live storage
+/// would leave code calls into memory the reload has unmapped. This puts one
+/// entity in each storage and checks that one name-keyed drop removes both
+/// rows.
+#[test]
+fn a_reload_pass_that_walks_archetypes_reaches_the_held_storage() {
+    // A component declared by hand carries no field layout, and a copy without
+    // one is refused because nothing would say the rows hold no heap data. This
+    // test is about the reload pass, not the refusal, so it declares the two
+    // `f32` fields exactly as the derive would.
+    static POSITION_FIELDS: &[crate::component_registry::ComponentFieldDescriptor] = &[
+        crate::component_registry::ComponentFieldDescriptor {
+            name: "x",
+            type_tag: "f32",
+            offset: 0,
+            size: 4,
+            align: 4,
+            element_count: 0,
+            decorators: std::borrow::Cow::Borrowed(&[]),
+        },
+        crate::component_registry::ComponentFieldDescriptor {
+            name: "y",
+            type_tag: "f32",
+            offset: 4,
+            size: 4,
+            align: 4,
+            element_count: 0,
+            decorators: std::borrow::Cow::Borrowed(&[]),
+        },
+    ];
+
+    let mut world = World::new();
+    world.register_component::<Position>();
+    world.record_component_field_layout(ComponentId::of::<Position>(), POSITION_FIELDS);
+    let position_name = world
+        .component_registry
+        .registered_components()
+        .find(|(component_id, _, _)| *component_id == ComponentId::of::<Position>())
+        .map(|(_, _, name)| name.to_string())
+        .expect("the component is registered under a name");
+    world
+        .create_entity()
+        .with(Position { x: 1.0, y: 2.0 })
+        .build()
+        .expect("the first entity");
+
+    // Copy the storage that entity lives in and hold the copy, exactly as a
+    // play session does, then put a second entity into the live storage.
+    let held_storage = world
+        .copy_entity_storage()
+        .expect("the storage copies: `Position` is plain data");
+    world.hold_entity_storage(held_storage);
+    world
+        .create_entity()
+        .with(Position { x: 3.0, y: 4.0 })
+        .build()
+        .expect("the second entity");
+    assert_eq!(world.entity_count(), 2);
+    assert_eq!(
+        world
+            .held_entity_storage
+            .as_ref()
+            .expect("the world holds a storage")
+            .entity_count(),
+        1
+    );
+
+    let dropped = world.drop_forgotten_components(&[position_name]);
+
+    assert_eq!(dropped, 3, "every entity lost its row in its own storage");
+    assert_eq!(world.entity_count(), 0, "the live storage kept its rows");
+    assert_eq!(
+        world
+            .held_entity_storage
+            .as_ref()
+            .expect("the world still holds the storage")
+            .entity_count(),
+        0,
+        "the held storage was never visited"
+    );
 }

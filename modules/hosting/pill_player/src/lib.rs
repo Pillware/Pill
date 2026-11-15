@@ -83,8 +83,8 @@ pub use runtime::WindowedFrameDriver;
 
 /// The static-link contract a shipping bundle passes in.
 pub use static_project::{
-    ProjectBackend, StaticLogging, StaticModule, StaticProject, StaticProjectBackend,
-    StaticRenderer, StaticRendererAttachFn,
+    no_project_registration, ProjectBackend, StaticLogging, StaticModule, StaticProject,
+    StaticProjectBackend, StaticRenderer, StaticRendererAttachFn,
 };
 
 /// The telemetry stack, the logging settings a project applies to it, and

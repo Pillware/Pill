@@ -380,22 +380,26 @@ impl<'w, Q: QueryTarget, F: QueryFilter> Query<'w, Q, F> {
 
         // Step 2: Keep the cached list while the world's archetype generation
         // is unchanged since the last fill; scan again when it moved.
-        if self.cached_generation != Some(self.world.archetype_generation) {
+        if self.cached_generation != Some(self.world.storage.archetype_generation) {
             // Step 3: Scan every archetype and keep the ones that match the
             // target mask and the filter pairs.
             let _zone = crate::profile_scope!(
                 "find matching archetypes",
                 [
-                    ("All archetypes in world: {}", self.world.archetypes.len()),
+                    (
+                        "All archetypes in world: {}",
+                        self.world.storage.archetypes.len()
+                    ),
                     ("Cached archetype generation: {:?}", self.cached_generation),
                     (
                         "Current archetype generation: {}",
-                        self.world.archetype_generation
+                        self.world.storage.archetype_generation
                     )
                 ]
             );
             let mut matching_archetype_ids: Vec<ArchetypeId> = self
                 .world
+                .storage
                 .archetypes
                 .iter()
                 .filter(|(_, archetype)| {
@@ -408,14 +412,14 @@ impl<'w, Q: QueryTarget, F: QueryFilter> Query<'w, Q, F> {
             crate::profile_message!(
                 "query archetype cache miss: generation {:?} -> {}, rescanned {} archetypes -> {} matched for this query",
                 self.cached_generation,
-                self.world.archetype_generation,
-                self.world.archetypes.len(),
+                self.world.storage.archetype_generation,
+                self.world.storage.archetypes.len(),
                 matching_archetype_ids.len(),
             );
 
             // Step 4: Store the new list and the generation it was built from.
             self.cached_matches = matching_archetype_ids;
-            self.cached_generation = Some(self.world.archetype_generation);
+            self.cached_generation = Some(self.world.storage.archetype_generation);
         }
         &self.cached_matches
     }
@@ -464,6 +468,7 @@ impl<'w, Q: QueryTarget, F: QueryFilter> Query<'w, Q, F> {
         let matching_archetype_ids = self.matching_archetype_ids().to_vec();
         matching_archetype_ids.into_iter().find(|archetype_id| {
             self.world
+                .storage
                 .archetypes
                 .get(archetype_id)
                 .is_some_and(|archetype| !archetype.is_empty())
@@ -478,7 +483,7 @@ impl<'w, Q: QueryTarget, F: QueryFilter> Query<'w, Q, F> {
         let matching_archetype_ids = self.matching_archetype_ids().to_vec();
         matching_archetype_ids
             .iter()
-            .filter_map(|archetype_id| self.world.archetypes.get(archetype_id))
+            .filter_map(|archetype_id| self.world.storage.archetypes.get(archetype_id))
             .map(|archetype| archetype.len())
             .sum()
     }
@@ -499,7 +504,7 @@ impl<'w, Q: QueryTarget, F: QueryFilter> Query<'w, Q, F> {
         if F::ACCEPTS_ALL {
             let this_run = self.world.increment_change_tick();
             let archetype_id = self.first_non_empty_matching_archetype()?;
-            let archetype = self.world.archetypes.get_mut(&archetype_id)?;
+            let archetype = self.world.storage.archetypes.get_mut(&archetype_id)?;
             let state = Q::init_state(archetype, this_run);
             return Some(Q::fetch_with_state(&state, 0));
         }
@@ -596,7 +601,7 @@ impl<'w, Q: QueryTarget, F: QueryFilter> Query<'w, Q, F> {
                     // `init_state` takes, so a reborrow is enough. The filter
                     // call runs after it, one at a time, so no raw pointer and
                     // no SAFETY comment is needed here.
-                    self.world.archetypes.get_mut(id).map(|archetype| {
+                    self.world.storage.archetypes.get_mut(id).map(|archetype| {
                         let target_state = Q::init_state(archetype, this_run);
                         let filter_state = F::init_state(archetype, last_run, this_run);
                         FilteredArchetypeRange {
