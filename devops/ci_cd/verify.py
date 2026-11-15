@@ -51,17 +51,20 @@ DESCRIPTION
 
 USAGE
   python devops/ci_cd/verify.py [--quick] [--only NAME ...] [--skip NAME ...]
-                                [--keep-going] [--list]
+                                [--keep-going] [--failed] [--list]
 
     --quick          run only the steps marked quick
     --only NAME ...  run only the named steps (see --list)
     --skip NAME ...  run every selected step except these
     --keep-going     run the remaining steps after a failure
+    --failed         rerun the steps that failed in the last run, plus the
+                     quick steps (the outcome file is local/ci/verify-last-run.json)
     --list           print the steps and their commands, then exit
 
 EXAMPLE USAGE
   python devops/ci_cd/verify.py
   python devops/ci_cd/verify.py --quick
+  python devops/ci_cd/verify.py --failed
   python devops/ci_cd/verify.py --only clippy test
   python devops/ci_cd/verify.py --skip wasm-clippy --keep-going
 
@@ -80,6 +83,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -130,6 +134,13 @@ NEXTEST = shutil.which("cargo-nextest")
 # `modules/.config/nextest.toml`, so a local run of this gate and a CI run
 # execute the tests with the same settings.
 NEXTEST_PROFILE = "ci"
+
+# The last run's step outcomes: what `--failed` reads to rerun just the red
+# steps (plus the quick ones). The environment override lets a test, or a CI
+# job with a read-only tree, point at its own file.
+LAST_RUN_DIRECTORY = REPOSITORY_ROOT / "local" / "ci"
+LAST_RUN_FILENAME = "verify-last-run.json"
+LAST_RUN_PATH_ENVIRONMENT = "VERIFY_LAST_RUN_PATH"
 
 
 @dataclass
@@ -513,6 +524,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="continue after a failure (a failing quick step still ends the run)")
     parser.add_argument("--changed", action="store_true",
                         help="skip steps whose paths no changed file matches")
+    parser.add_argument("--failed", action="store_true",
+                        help="rerun the steps that failed in the last run, plus the quick steps")
     parser.add_argument("--list", action="store_true", help="print the steps and exit")
     # Internal: the body of the `default-lane-features` step.
     parser.add_argument("--assert-default-lane-features", action="store_true", help=argparse.SUPPRESS)
@@ -557,12 +570,75 @@ def select_steps(arguments: argparse.Namespace) -> Optional[List[Step]]:
         print(f"Known steps: {', '.join(step.name for step in STEPS)}", file=sys.stderr)
         return None
 
+    if arguments.failed:
+        failed_names = last_failed_steps()
+        if failed_names is None:
+            print(f"ERROR: no recorded run at {last_run_path()}: run the gate once first", file=sys.stderr)
+            return None
+        if not failed_names:
+            print("the last recorded run had no failed step; nothing to rerun", flush=True)
+            return []
+        selected = failed_selection(failed_names)
+        print(f"rerun (last failed + quick): {', '.join(step.name for step in selected)}", flush=True)
+        return [step for step in selected if step.name not in arguments.skip]
+
     selected = STEPS
     if arguments.only:
         selected = [step for step in selected if step.name in arguments.only]
     elif arguments.quick:
         selected = [step for step in selected if step.quick]
     return [step for step in selected if step.name not in arguments.skip]
+
+
+def last_run_path() -> Path:
+    """Where the gate records its step results and `--failed` reads them.
+
+    The environment override exists for a test (and a CI job whose tree is
+    read-only) to point at its own file instead of the working copy's.
+    """
+    override = os.environ.get(LAST_RUN_PATH_ENVIRONMENT)
+    return Path(override) if override else LAST_RUN_DIRECTORY / LAST_RUN_FILENAME
+
+
+def write_last_run(results: List[tuple]) -> None:
+    """Record the selected steps' outcomes for the next `--failed` run.
+
+    Written per step as the run goes, so a run stopped by a Ctrl+C still
+    leaves the failures it already saw for `--failed` to pick up.
+    """
+    path = last_run_path()
+    steps = [{"name": step.name, "state": {"PASS": "passed", "FAIL": "failed", "SKIP": "skipped"}[outcome]}
+             for step, outcome, _ in results]
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"finished": datetime.now().astimezone().isoformat(timespec="seconds"), "steps": steps}
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as error:
+        print(f"warning: {path.name} was not written: {error}", file=sys.stderr)
+
+
+def last_failed_steps() -> Optional[List[str]]:
+    """The steps that failed in the last recorded run; None when there is no record."""
+    try:
+        data = json.loads(last_run_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    steps = data.get("steps") if isinstance(data, dict) else None
+    if not isinstance(steps, list):
+        return None
+    return [str(step.get("name")) for step in steps
+            if isinstance(step, dict) and step.get("state") == "failed"]
+
+
+def failed_selection(failed_names: List[str]) -> List[Step]:
+    """The failed steps plus every quick step, in declaration order.
+
+    The quick steps come along because a red gate stops at its first quick
+    failure: the steps after it were never run, and the inner loop is what
+    says whether the fix holds. A name the gate no longer has is dropped.
+    """
+    wanted = set(failed_names) | {step.name for step in STEPS if step.quick}
+    return [step for step in STEPS if step.name in wanted]
 
 
 def changed_paths() -> List[str]:
@@ -654,6 +730,9 @@ def main() -> int:
                 print(f"    {format_command(command)}")
             for command in step.cleanup:
                 print(f"    (always) {format_command(command)}")
+        if arguments.failed:
+            # The selection has already been printed; listing must not run it.
+            print(f"\n--failed would run: {', '.join(step.name for step in steps)}")
         return 0
 
     if arguments.changed:
@@ -690,12 +769,17 @@ def main() -> int:
                 print(f"{step.name} is a quick step and failed: the run ends here even with --keep-going "
                       "(fix it, then run again)", flush=True)
         write_timings(results)
+        write_last_run(results)
 
     print("\n=== Summary ===")
     for step, outcome, seconds in results:
         duration = f"{seconds:7.1f}s" if outcome != "SKIP" else "        "
         print(f"  {outcome}  {duration}  {step.name}")
     write_job_summary(results)
+    # An empty selection (nothing failed last time) writes nothing: the record
+    # of the run that did fail is the one `--failed` needs.
+    if results:
+        write_last_run(results)
     return 1 if failed else 0
 
 
