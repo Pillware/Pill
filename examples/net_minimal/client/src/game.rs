@@ -61,28 +61,11 @@ impl PillGame for Game {
         engine.add_system("ConnectivitySimulation", connectivity_simulation_system)?;
 
         // Add meshes
-        let pill_mesh = Mesh::new("Pill", "models/pill.obj".into());
+        let pill_mesh = Mesh::cube("Pill", 2.0);
         let pill_mesh_handle = engine.add_resource(pill_mesh)?;
 
-        // Add textures
-        let pill_color_texture = Texture::new(
-            "pill_color",
-            TextureType::Color,
-            ResourceLoader::Path("textures/pill_color.png".into()),
-        );
-        let pill_color_texture_handle = engine.add_resource::<Texture>(pill_color_texture)?;
-        let pill_normal_texture = Texture::new(
-            "pill_normal",
-            TextureType::Normal,
-            ResourceLoader::Path("textures/pill_normal.png".into()),
-        );
-        let pill_normal_texture_handle = engine.add_resource::<Texture>(pill_normal_texture)?;
-
-        // Add materials
-        let pill_material = Material::new("pill")
-            .albedo_texture(pill_color_texture_handle)
-            .normal_texture(pill_normal_texture_handle)
-            .roughness(0.5);
+        // Add materials (untextured, default white albedo)
+        let pill_material = Material::new("pill").roughness(0.5);
         let pill_material_handle = engine.add_resource::<Material>(pill_material)?;
 
         // Create camera entity
@@ -279,7 +262,7 @@ fn spawn_player(
         //    Err(_) => engine.add_resource(Mesh::new("Truck", "models/Truck.obj".into()))?,
         let mesh: MeshHandle = match engine.get_resource_handle::<Mesh>("pill") {
             Ok(h) => h,
-            Err(_) => engine.add_resource(Mesh::new("pill", "models/pill.obj".into()))?,
+            Err(_) => engine.add_resource(Mesh::cube("pill", 2.0))?,
         };
 
         let mat = match engine.get_resource_handle::<Material>("pill_other") {

@@ -139,10 +139,8 @@ impl PillGame for Game {
 
         // TODO: later add variable materials and colours
         // Ball mesh and material
-        let ball_mesh_handle = engine.add_resource::<Mesh>(Mesh::from_cooked_mesh_bytes(
-            "Ball",
-            include_bytes!("../res/models/ball.cooked_mesh"),
-        )?)?;
+        // Built-in cube sized so its faces match the sphere collider (half-extent 2.0 scaled by ball_radius)
+        let ball_mesh_handle = engine.add_resource::<Mesh>(Mesh::cube("Ball", 4.0))?;
 
         let ball_material_handle = engine.add_resource::<Material>(
             Material::new("Ball")
