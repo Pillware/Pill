@@ -155,6 +155,8 @@ pub struct ToolboxState<'a> {
     pub gizmo: GizmoSettings,
     /// Whether the scene grid is on.
     pub grid: bool,
+    /// Whether the engine's component gizmos draw.
+    pub gizmos: bool,
     /// The name of the tool frame the gizmo is in, when the active tool offers
     /// one and the space row has reached it.
     pub frame: Option<&'a str>,
@@ -176,16 +178,19 @@ pub enum ToolboxItem {
     Snap,
     /// The scene grid's switch row.
     Grid,
+    /// The component gizmos' switch row.
+    Gizmos,
 }
 
 /// Every row, in the order the panel stacks them.
-pub const TOOLBOX_ITEMS: [ToolboxItem; 6] = [
+pub const TOOLBOX_ITEMS: [ToolboxItem; 7] = [
     ToolboxItem::Translate,
     ToolboxItem::Rotate,
     ToolboxItem::Scale,
     ToolboxItem::Space,
     ToolboxItem::Snap,
     ToolboxItem::Grid,
+    ToolboxItem::Gizmos,
 ];
 
 /// The three tools in the order the viewport menu and the Preferences tab
@@ -243,6 +248,7 @@ impl ToolboxItem {
             ToolboxItem::Space => "space",
             ToolboxItem::Snap => "snap",
             ToolboxItem::Grid => "grid",
+            ToolboxItem::Gizmos => "gizmos",
         }
     }
 
@@ -261,6 +267,7 @@ impl ToolboxItem {
             },
             ToolboxItem::Snap => Icon::Magnet,
             ToolboxItem::Grid => Icon::GridFour,
+            ToolboxItem::Gizmos => Icon::Cube,
         }
     }
 
@@ -279,6 +286,7 @@ impl ToolboxItem {
             },
             ToolboxItem::Snap => "Snap",
             ToolboxItem::Grid => "Grid",
+            ToolboxItem::Gizmos => "Gizmos",
         }
     }
 
@@ -293,6 +301,7 @@ impl ToolboxItem {
             ToolboxItem::Space => state.gizmo.space == GizmoSpace::Local || state.frame.is_some(),
             ToolboxItem::Snap => state.gizmo.snap,
             ToolboxItem::Grid => state.grid,
+            ToolboxItem::Gizmos => state.gizmos,
         }
     }
 
@@ -308,6 +317,7 @@ impl ToolboxItem {
             ToolboxItem::Space => "Space",
             ToolboxItem::Snap => "Snapping",
             ToolboxItem::Grid => "Grid",
+            ToolboxItem::Gizmos => "Gizmos",
         }
     }
 
@@ -343,6 +353,9 @@ impl ToolboxItem {
             },
             ToolboxItem::Grid => EditorCommand::SetGrid {
                 enabled: !state.grid,
+            },
+            ToolboxItem::Gizmos => EditorCommand::SetGizmos {
+                enabled: !state.gizmos,
             },
         }
     }
@@ -405,7 +418,7 @@ mod tests {
             previous_bottom = rect.bottom() + TOOLBOX_ITEM_GAP;
         }
         // The last row ends exactly where the bottom inset begins.
-        let last = item_rect(ToolboxItem::Grid, origin);
+        let last = item_rect(TOOLBOX_ITEMS[TOOLBOX_ITEMS.len() - 1], origin);
         assert_eq!(panel.bottom(), last.bottom() + TOOLBOX_PADDING);
     }
 
@@ -451,11 +464,13 @@ mod tests {
         let framed = ToolboxState {
             gizmo: state.gizmo,
             grid: false,
+            gizmos: true,
             frame: Some("Fixture"),
         };
         assert_eq!(ToolboxItem::Space.label(&framed), "Fixture");
         assert_eq!(ToolboxItem::Snap.label(&state), "Snap");
         assert_eq!(ToolboxItem::Grid.label(&state), "Grid");
+        assert_eq!(ToolboxItem::Gizmos.label(&state), "Gizmos");
     }
 
     /// Every row has its own icon; the space row's follows the space the
@@ -471,10 +486,12 @@ mod tests {
         assert_eq!(ToolboxItem::Space.icon(&state), Icon::MapPin);
         assert_eq!(ToolboxItem::Snap.icon(&state), Icon::Magnet);
         assert_eq!(ToolboxItem::Grid.icon(&state), Icon::GridFour);
+        assert_eq!(ToolboxItem::Gizmos.icon(&state), Icon::Cube);
         // A tool frame wears the map pin too: it is the object's own space.
         let framed = ToolboxState {
             gizmo: GizmoSettings::default(),
             grid: false,
+            gizmos: true,
             frame: Some("Fixture"),
         };
         assert_eq!(ToolboxItem::Space.icon(&framed), Icon::MapPin);
@@ -490,12 +507,14 @@ mod tests {
                 ..GizmoSettings::default()
             },
             grid: true,
+            gizmos: true,
             frame: None,
         };
         assert!(ToolboxItem::Scale.active(&state));
         assert!(ToolboxItem::Space.active(&state));
         assert!(ToolboxItem::Snap.active(&state));
         assert!(ToolboxItem::Grid.active(&state));
+        assert!(ToolboxItem::Gizmos.active(&state));
         assert!(!ToolboxItem::Translate.active(&state));
         // A tool frame reads as active even from the world space.
         let framed = ToolboxState {
@@ -504,9 +523,11 @@ mod tests {
                 ..GizmoSettings::default()
             },
             grid: true,
+            gizmos: false,
             frame: Some("Fixture"),
         };
         assert!(ToolboxItem::Space.active(&framed));
+        assert!(!ToolboxItem::Gizmos.active(&framed));
         state.grid = false;
         state.gizmo = GizmoSettings::default();
         assert!(ToolboxItem::Translate.active(&state));
@@ -544,6 +565,10 @@ mod tests {
             ToolboxItem::Grid.command(&state),
             EditorCommand::SetGrid { enabled: true }
         );
+        assert_eq!(
+            ToolboxItem::Gizmos.command(&state),
+            EditorCommand::SetGizmos { enabled: true }
+        );
         // Each toggle queues the opposite of the state it shows.
         let flipped = ToolboxState {
             gizmo: GizmoSettings {
@@ -552,6 +577,7 @@ mod tests {
                 ..state.gizmo
             },
             grid: true,
+            gizmos: true,
             frame: None,
         };
         assert_eq!(
@@ -570,6 +596,10 @@ mod tests {
         assert_eq!(
             ToolboxItem::Grid.command(&flipped),
             EditorCommand::SetGrid { enabled: false }
+        );
+        assert_eq!(
+            ToolboxItem::Gizmos.command(&flipped),
+            EditorCommand::SetGizmos { enabled: false }
         );
     }
 
@@ -591,6 +621,7 @@ mod tests {
                     ..GizmoSettings::default()
                 },
                 grid: false,
+                gizmos: true,
                 frame: None,
             };
             assert_eq!(ToolboxItem::Space.label(&state), row.short);

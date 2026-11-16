@@ -135,10 +135,12 @@ impl std::default::Default for RigidBodyComponent {
 /// touching something.
 ///
 /// A body has no collision without a collider, so the manager simulates the
-/// entities that carry both components.
+/// entities that carry both components. The component also declares the gizmo
+/// that outlines it: the engine draws it wherever a gizmo pass is installed,
+/// and the settings document's `debug_draw` switch decides whether it draws.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared)]
+#[pill(persistable, shared, gizmo = crate::debug_draw::draw_collider_outline)]
 pub struct ColliderComponent {
     /// The shape the dimensions are read as.
     pub shape: ColliderShape,

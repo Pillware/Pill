@@ -66,7 +66,7 @@ pub mod sync;
 // The module that declares a type is an implementation detail. A caller names
 // `pill_physics::RigidBodyComponent` wherever the type's file lives.
 pub use components::{BodyKind, ColliderComponent, ColliderShape, RigidBodyComponent};
-pub use debug_draw::physics_debug_draw;
+pub use debug_draw::draw_collider_outline;
 pub use events::{CollisionStarted, CollisionStopped, ContactForce, PhysicsEvents};
 pub use manager::{
     PhysicsManager, PhysicsStatistics, DEFAULT_FIXED_TIMESTEP_SECONDS, DEFAULT_GRAVITY,

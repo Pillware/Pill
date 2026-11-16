@@ -59,6 +59,12 @@ pub const KEYMAP_PRESET_KEY: &str = "keymap_preset";
 /// The preference key the gizmo's hit radius lives under.
 pub const GIZMO_HIT_RADIUS_KEY: &str = "editor.gizmo_hit_radius";
 
+/// The preference key the hidden component gizmo types live under.
+///
+/// The value is an array of registered component type names. A type named here
+/// draws no gizmo, which is the per-type switch the Preferences tab offers.
+pub const GIZMO_HIDDEN_TYPES_KEY: &str = "gizmo.hidden_types";
+
 /// The hit radius used when the file says nothing: about the width the overlay
 /// draws a gizmo line with.
 pub const GIZMO_HIT_RADIUS_DEFAULT: f32 = 0.07;
@@ -285,6 +291,23 @@ pub fn gizmo_hit_radius(document: &Map<String, Value>) -> f32 {
         .filter(|radius| radius.is_finite())
         .unwrap_or(GIZMO_HIT_RADIUS_DEFAULT)
         .clamp(GIZMO_HIT_RADIUS_RANGE.0, GIZMO_HIT_RADIUS_RANGE.1)
+}
+
+/// Returns the component gizmo types the file hides.
+///
+/// The value under [`GIZMO_HIDDEN_TYPES_KEY`] is an array of registered
+/// component type names. Entries that are not strings are skipped, and a key
+/// holding something other than an array hides nothing: a file the editor
+/// cannot read that way leaves every gizmo drawing.
+pub fn hidden_gizmo_types(document: &Map<String, Value>) -> Vec<String> {
+    let Some(Value::Array(entries)) = lookup(document, GIZMO_HIDDEN_TYPES_KEY) else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| entry.as_str())
+        .map(str::to_string)
+        .collect()
 }
 
 /// Returns the scene badges' icon size the file asks for, in points.

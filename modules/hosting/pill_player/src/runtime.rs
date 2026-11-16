@@ -632,6 +632,13 @@ pub fn insert_debug_resources(world: &mut World, debug_draw_enabled: bool) {
     if !world.has_resource::<pill_engine::DebugDraw>() {
         world.insert_resource(pill_engine::DebugDraw::new(debug_draw_enabled));
     }
+    // The registry the engine's gizmo pass walks. It is inserted here, before
+    // any artifact registers, so it belongs to the host rather than to a
+    // module: a reload never drops it, and the entries a module published keep
+    // their place until that module publishes again.
+    if !world.has_resource::<pill_engine::gizmos::GizmoRegistry>() {
+        world.insert_resource(pill_engine::gizmos::GizmoRegistry::default());
+    }
     if !world.has_resource::<pill_renderer_api::SelectionOutlines>() {
         world.insert_resource(pill_renderer_api::SelectionOutlines::default());
     }

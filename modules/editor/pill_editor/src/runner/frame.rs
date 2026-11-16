@@ -194,6 +194,7 @@ impl EditorWindow {
         // console history takes the new lines from the log ring buffer and
         // applies the Console tab's filters to them.
         self.persist_gizmo_settings();
+        self.persist_gizmo_visibility();
         self.watch_preferences();
         self.watch_theme();
         self.watch_keybindings();
@@ -256,9 +257,11 @@ impl EditorWindow {
         self.track_play_cameras();
         // Step 5: the world resources the frame draws and picks with,
         // published before it runs: the shared selection's outline set (one
-        // write per change), the gizmo handles for that selection and the
-        // active tool's element handles beside them.
+        // write per change), the same selection as the engine's gizmo pass sees
+        // it, the gizmo handles for that selection and the active tool's
+        // element handles beside them.
         self.publish_selection_outline();
+        self.publish_gizmo_selection();
         self.publish_gizmo_geometry();
         self.publish_element_handles();
     }

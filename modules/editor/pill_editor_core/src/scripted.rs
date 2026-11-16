@@ -401,6 +401,9 @@ pub enum Dump {
     Viewport,
     /// `dump grid` - the scene grid's switch and the surfaces it draws on.
     Grid,
+    /// `dump gizmos` - every component gizmo the world registered, whether an
+    /// editor hid its type, and how many entities it drew last frame.
+    Gizmos,
     /// `dump play` - the run mode, the pause flag and the world's restore
     /// epoch.
     Play,
@@ -1072,6 +1075,7 @@ fn dump(cursor: &mut Cursor<'_>) -> Result<Dump, ParseError> {
         "scenes" => Dump::Scenes,
         "viewport" => Dump::Viewport,
         "grid" => Dump::Grid,
+        "gizmos" => Dump::Gizmos,
         "play" => Dump::Play,
         "assets" => Dump::Assets,
         "engine-assets" => Dump::EngineAssets,
@@ -2036,6 +2040,10 @@ mod tests {
             Accept {
                 line: "dump grid",
                 command: ScriptedCommand::Dump(Dump::Grid),
+            },
+            Accept {
+                line: "dump gizmos",
+                command: ScriptedCommand::Dump(Dump::Gizmos),
             },
             Accept {
                 line: "dump play",

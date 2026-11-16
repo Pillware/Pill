@@ -957,6 +957,13 @@ pub struct EditorSnapshot {
     /// Whether the scene grid is on. The toolbox's grid row and the Scene tab's
     /// menu check it against the renderer's switch.
     pub grid_enabled: bool,
+    /// Whether the engine's component gizmos draw. The toolbox's gizmos row
+    /// checks it against the registry's switch.
+    pub gizmos_enabled: bool,
+    /// One row per registered component gizmo: the type, the package that
+    /// declared it and whether an editor hid it. The Preferences tab draws a
+    /// switch for each of them.
+    pub gizmo_types: Vec<GizmoTypeView>,
     /// The preferences file's values and the current project's remembered
     /// entry. The Preferences tab's rows read them.
     pub preferences: crate::preferences::PreferencesView,
@@ -1011,6 +1018,18 @@ pub struct ResourceView {
     pub label: String,
     /// The editable fields, in row order.
     pub fields: Vec<ResourceFieldView>,
+}
+
+/// One registered component gizmo, as the Preferences tab lists it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GizmoTypeView {
+    /// The component's registered type name, the key a visibility write
+    /// addresses.
+    pub type_name: String,
+    /// The package that declared the component, which the row groups by.
+    pub owner: String,
+    /// Whether the type's gizmo draws.
+    pub visible: bool,
 }
 
 /// One editable field of a resource.
@@ -1083,6 +1102,26 @@ impl EditorSnapshot {
                 .get_resource::<pill_renderer_api::SurfaceCameras>()
                 .map(|cameras| cameras.grid.enabled)
                 .unwrap_or(false),
+            gizmos_enabled: engine
+                .world()
+                .get_resource::<pill_engine::gizmos::GizmoRegistry>()
+                .map(pill_engine::gizmos::GizmoRegistry::is_enabled)
+                .unwrap_or(false),
+            gizmo_types: engine
+                .world()
+                .get_resource::<pill_engine::gizmos::GizmoRegistry>()
+                .map(|registry| {
+                    registry
+                        .entries()
+                        .iter()
+                        .map(|entry| GizmoTypeView {
+                            type_name: entry.type_name.to_string(),
+                            owner: entry.owner.to_string(),
+                            visible: registry.is_type_visible(entry.type_name),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             preferences: crate::preferences::PreferencesView::default(),
             // The code default, until the executable resolves its layers. This
             // way every posture's first frame paints the editor's own look
@@ -1224,6 +1263,12 @@ impl EditorSnapshot {
         }
         if previous.grid_enabled != current.grid_enabled {
             changed.push("grid_enabled");
+        }
+        if previous.gizmos_enabled != current.gizmos_enabled {
+            changed.push("gizmos_enabled");
+        }
+        if previous.gizmo_types != current.gizmo_types {
+            changed.push("gizmo_types");
         }
         if previous.preferences != current.preferences {
             changed.push("preferences");

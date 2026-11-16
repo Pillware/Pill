@@ -27,6 +27,7 @@ use pill_engine::{
     pill_project, script, tracing, CreateInfo, DestroyInfo, Engine, Entity, PillComponent,
     ScriptComponent, ScriptContext, StartInfo, StopInfo, World,
 };
+use pill_master_renderer_data::TransformComponent;
 use serde::{Deserialize, Serialize};
 
 mod asset_loading;
@@ -77,9 +78,11 @@ pub const SHOWCASE_POINTS: usize = 2;
 ///
 /// Not persistable, and it carries nothing serialised: the point is the field's
 /// *kind*, which the Inspector turns into a row naming the referenced entity,
-/// with a picker, a scene pick and a drop target.
+/// with a picker, a scene pick and a drop target. Its gizmo draws the reference
+/// as a line, which is the editor suites' witness for the engine's gizmo pass.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[pill(gizmo = crate::draw_showcase_reference_gizmo)]
 pub struct ShowcaseReferenceComponent {
     /// The entity this one points at.
     #[pill(tooltip("The entity this one points at"))]
@@ -87,6 +90,33 @@ pub struct ShowcaseReferenceComponent {
     /// A weight beside the reference, so the section has two rows.
     #[pill(range(0.0, 1.0))]
     pub weight: f32,
+}
+
+/// The colour the reference line is drawn in.
+const REFERENCE_GIZMO_COLOR: [f32; 4] = [0.35, 0.8, 1.0, 1.0];
+
+/// Draws the reference as a line from this entity to the one it names, with
+/// the weight on a label.
+///
+/// The engine's gizmo pass calls this once per entity that carries a
+/// [`ShowcaseReferenceComponent`], in every editor view and in no game view. A
+/// cleared reference draws a short spike in place, so the row the Inspector
+/// shows as empty is visible in the scene too.
+pub fn draw_showcase_reference_gizmo(
+    reference: &ShowcaseReferenceComponent,
+    context: &pill_engine::GizmoContext<'_>,
+    draw: &mut pill_engine::GizmoDraw,
+) {
+    let origin = context.translation();
+    let followed = context
+        .get_component_of::<TransformComponent>(reference.follow)
+        .map_or(origin, |transform| transform.translation);
+    draw.line(origin, followed, REFERENCE_GIZMO_COLOR);
+    draw.label(
+        origin,
+        format!("follow {:.2}", reference.weight),
+        REFERENCE_GIZMO_COLOR,
+    );
 }
 
 /// One element of [`ShowcaseComponent::points`]: a value type with a declared

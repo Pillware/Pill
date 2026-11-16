@@ -1414,6 +1414,35 @@ impl Engine {
         self.push_system(name.into(), options, system_access, Box::new(system));
     }
 
+    /// Registers a system the engine itself owns: it belongs to
+    /// [`SystemOwner::ENGINE`], so no reload retires it, and it declares
+    /// exclusive world access.
+    ///
+    /// This is the registration for a pass the engine runs on behalf of a host -
+    /// one that reads the whole world rather than a declared set of columns, so
+    /// no per-component access pattern describes it.
+    pub(crate) fn register_engine_owned_system<F>(
+        &mut self,
+        name: impl Into<String>,
+        options: SystemOptions,
+        system: F,
+    ) where
+        F: FnMut(&mut World, &mut CommandQueue) -> Result<(), SystemError> + Send + 'static,
+    {
+        // Command access is how a system states that it touches everything,
+        // which keeps the scheduler from running it beside anything else.
+        let mut system_access = SystemAccess::new();
+        system_access.set_uses_commands(true);
+        let previous_owner = self.active_owner;
+        self.active_owner = SystemOwner::ENGINE;
+        // SAFETY: the access declared above is exclusive world access, which
+        // covers everything such a system may touch.
+        unsafe {
+            self.register_system_with_access_and_options(name, options, system_access, system);
+        }
+        self.active_owner = previous_owner;
+    }
+
     /// Adds one system to the list and marks the scheduler out of date.
     ///
     /// Every registration entry point ends here, so they all set the owner,

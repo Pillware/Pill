@@ -951,6 +951,9 @@ pub struct GizmoPreferences {
     /// Whether dragging snapped, when the toggle was used.
     #[serde(default)]
     pub snap: Option<bool>,
+    /// The component gizmo types the editor hides.
+    #[serde(default)]
+    pub hidden_types: Vec<String>,
     /// Per-project overrides, by project directory name.
     #[serde(default)]
     pub projects: BTreeMap<String, GizmoProjectPreferences>,
@@ -1077,6 +1080,40 @@ pub fn write_gizmo_preferences(
             }),
         );
         gizmo.insert("projects".to_string(), serde_json::Value::Object(projects));
+        document.insert("gizmo".to_string(), serde_json::Value::Object(gizmo));
+        Ok(())
+    })
+}
+
+/// Writes the component gizmo types the editor hides into the preferences
+/// file.
+///
+/// This reads the document, changes only the `gizmo.hidden_types` key and
+/// writes it back, so every other key survives. The list is what a reload and
+/// the next session start from, which is why the executable owns the write.
+///
+/// # Errors
+///
+/// Returns a message when the file cannot be read, is not a YAML mapping, or
+/// cannot be written back.
+pub fn write_gizmo_hidden_types(
+    directory: &std::path::Path,
+    hidden_types: &[String],
+) -> Result<(), String> {
+    crate::preferences::update(directory, |document| {
+        let mut gizmo = document
+            .get("gizmo")
+            .and_then(|value| value.as_object().cloned())
+            .unwrap_or_default();
+        gizmo.insert(
+            "hidden_types".to_string(),
+            serde_json::Value::Array(
+                hidden_types
+                    .iter()
+                    .map(|type_name| serde_json::Value::String(type_name.clone()))
+                    .collect(),
+            ),
+        );
         document.insert("gizmo".to_string(), serde_json::Value::Object(gizmo));
         Ok(())
     })

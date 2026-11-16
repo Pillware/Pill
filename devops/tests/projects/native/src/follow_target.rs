@@ -5,6 +5,8 @@
 //! - Declare [`FollowTarget`], a component whose field names another entity.
 //! - Read that reference in a system, which is what makes it live data rather
 //!   than a stored number the engine never uses.
+//! - Draw the reference as a line, as the component's own gizmo, so the
+//!   editor's gizmo pass has a subject in this project.
 //!
 //! The component exists as the editor's test subject for entity references
 //! (W-0048 Stage 6): it is the only field in the example that holds an
@@ -13,13 +15,18 @@
 use pill_engine::*;
 use pill_master_renderer_data::TransformComponent;
 
+/// The colour the follow line is drawn in.
+const FOLLOW_COLOR: [f32; 4] = [1.0, 0.85, 0.25, 1.0];
+
 /// Follows the entity it names: the camera drifts a fraction of the way to the
 /// target's transform every frame.
 ///
 /// `#[repr(C)]` because the host copies the row across hot-reload generations,
-/// and the field layout the derive registers is what the Inspector draws.
+/// and the field layout the derive registers is what the Inspector draws. The
+/// gizmo draws a line to the entity the reference names.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[pill(gizmo = crate::follow_target::draw_follow_target_gizmo)]
 pub struct FollowTarget {
     /// The entity this one follows.
     ///
@@ -39,6 +46,25 @@ pub struct FollowTarget {
 /// storage alone would leave the component an opaque blob to the Inspector.
 pub(crate) fn register(world: &mut World) {
     __pill_register_FollowTarget(world);
+}
+
+/// Draws the follow reference: a line from the follower to the entity it names.
+///
+/// The engine's gizmo pass calls this once per entity that carries a
+/// [`FollowTarget`]. A target that does not exist draws a short spike in the
+/// follower's own position, so a cleared reference is visible rather than
+/// silent.
+pub fn draw_follow_target_gizmo(
+    follow: &FollowTarget,
+    context: &GizmoContext<'_>,
+    draw: &mut GizmoDraw,
+) {
+    let origin = context.translation();
+    let target = context
+        .get_component_of::<TransformComponent>(follow.target)
+        .map_or(origin, |transform| transform.translation);
+    draw.line(origin, target, FOLLOW_COLOR);
+    draw.label(origin, format!("follow {:.2}", follow.weight), FOLLOW_COLOR);
 }
 
 /// Drifts every follower toward the transform its target carries.

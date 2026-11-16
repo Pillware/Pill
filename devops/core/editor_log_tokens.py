@@ -315,6 +315,12 @@ TOOLBOX_MOVED_TOKEN = "[editor] toolbox moved"
 POINTER_DRAG_TOKEN = "[editor] pointer drag injected"
 SCENE_GRID_TOKEN = "[test] scene grid"
 SCENE_GRID_STATE_TOKEN = "[editor] scene grid"
+GIZMOS_TOKEN = "[test] gizmos"
+GIZMO_TOKEN = "[test] gizmo"
+GIZMOS_STATE_TOKEN = "[editor] gizmos"
+GIZMO_TYPE_STATE_TOKEN = "[editor] gizmo type"
+GIZMO_VISIBILITY_WRITTEN_TOKEN = "[editor] gizmo visibility written"
+GIZMO_SELECTION_TOKEN = "[editor] gizmo selection"
 HOT_PATCH_TOKEN = "[hot]"
 KEY_INJECTED_TOKEN = "[editor] key injected"
 TOAST_TOKEN = "[editor] toast"
@@ -426,6 +432,19 @@ INSPECTOR_ROW_PATTERN = log_layout.message_then_fields_pattern(
 # while it is off).
 SCENE_GRID_PATTERN = (
     log_layout.message_then_fields_pattern(re.escape(SCENE_GRID_TOKEN), r"\s+enabled=(true|false)\s+cell=([0-9.]+)\s+surfaces=(\S*)")
+)
+# A `dump gizmos` summary: how many gizmos are registered, how many types an
+# editor hides, whether the pass draws, and the surfaces that show its drawing
+# (the frame's editor views, never the game's surface).
+GIZMOS_PATTERN = log_layout.message_then_fields_pattern(
+    re.escape(GIZMOS_TOKEN),
+    r"\s+count=(\d+)\s+hidden=(\d+)\s+enabled=(true|false)\s+surfaces=(\S*)",
+)
+# One registered gizmo: its type, the package that declared it, when it draws,
+# whether an editor hid it, and how many entities it drew last frame.
+GIZMO_PATTERN = log_layout.message_then_fields_pattern(
+    re.escape(GIZMO_TOKEN),
+    r'\s+gizmo_type="?([^"\s]+)"?\s+owner="?([^"\s]+)"?\s+when=(\w+)\s+visible=(true|false)\s+drew=(\d+)',
 )
 # The two answers a scripted scene click can produce, as full patterns.
 PICK_ENTITY_PATTERN = log_layout.message_then_fields_pattern(re.escape(SCENE_PICK_ENTITY_TOKEN), r"\s+entity=(\S+)")

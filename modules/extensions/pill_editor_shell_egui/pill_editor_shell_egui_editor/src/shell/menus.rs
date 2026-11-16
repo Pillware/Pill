@@ -72,6 +72,7 @@ pub fn scene_context_menu(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui) {
     let state = toolbox::ToolboxState {
         gizmo: settings,
         grid: viewer.snapshot.grid_enabled,
+        gizmos: viewer.snapshot.gizmos_enabled,
         frame: viewer.snapshot.gizmo_frame.as_deref(),
     };
     let pending = &mut viewer.pending;

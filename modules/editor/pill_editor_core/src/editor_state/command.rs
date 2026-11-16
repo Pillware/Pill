@@ -186,6 +186,23 @@ pub enum EditorCommand {
         /// The grid's new state.
         enabled: bool,
     },
+    /// Turn the engine's component gizmos on or off. Every component that
+    /// declares a gizmo stops drawing while this is off, which is the toolbox
+    /// row's switch.
+    SetGizmos {
+        /// The gizmos' new state.
+        enabled: bool,
+    },
+    /// Show or hide one component type's gizmo, which is a row in the
+    /// Preferences tab. The choice is written to the preferences file, so it
+    /// survives a reload.
+    SetGizmoTypeVisible {
+        /// The component's registered type name, as the gizmo registry holds
+        /// it.
+        type_name: String,
+        /// Whether its gizmo draws.
+        visible: bool,
+    },
     /// Switch the gizmo's space to the next one available to it.
     ///
     /// The cycle is World, Local, then each frame the active tool offers, then
@@ -535,6 +552,8 @@ impl EditorCommand {
             | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
+            | EditorCommand::SetGizmos { .. }
+            | EditorCommand::SetGizmoTypeVisible { .. }
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce
             | EditorCommand::SetPreferences { .. }
@@ -631,6 +650,8 @@ impl EditorCommand {
             | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
+            | EditorCommand::SetGizmos { .. }
+            | EditorCommand::SetGizmoTypeVisible { .. }
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::RunElementMenu { .. }
             | EditorCommand::StepOnce
@@ -680,6 +701,8 @@ impl EditorCommand {
             | EditorCommand::SetPaused { .. }
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
+            | EditorCommand::SetGizmos { .. }
+            | EditorCommand::SetGizmoTypeVisible { .. }
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::RunElementMenu { .. }
             | EditorCommand::StepOnce

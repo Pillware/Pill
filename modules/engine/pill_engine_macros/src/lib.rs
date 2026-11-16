@@ -98,6 +98,9 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
     let mut persistable = false;
     let mut shared = false;
     let mut shared_name_override: Option<String> = None;
+    let mut gizmo_path: Option<syn::Path> = None;
+    let mut gizmo_selected_only = false;
+    let mut gizmo_when_declared = false;
     for attribute in &input.attrs {
         if attribute.path().is_ident("pill") {
             if let Err(error) = attribute.parse_nested_meta(|meta| {
@@ -141,13 +144,53 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
                         shared_name_override = Some(name);
                     }
                     Ok(())
+                } else if meta.path.is_ident("gizmo") {
+                    // The function the engine calls to draw this component in
+                    // an editor's views. Declared once.
+                    if gizmo_path.is_some() {
+                        return Err(meta.error("`gizmo` is declared once"));
+                    }
+                    let path: syn::Path = meta.value()?.parse()?;
+                    gizmo_path = Some(path);
+                    Ok(())
+                } else if meta.path.is_ident("gizmo_when") {
+                    let literal: syn::LitStr = meta.value()?.parse()?;
+                    gizmo_when_declared = true;
+                    gizmo_selected_only = match literal.value().as_str() {
+                        "always" => false,
+                        "selected" => true,
+                        other => {
+                            return Err(syn::Error::new(
+                                literal.span(),
+                                format!(
+                                    "unknown `gizmo_when` value `{other}`; expected \
+                                     \"always\" or \"selected\""
+                                ),
+                            ));
+                        }
+                    };
+                    Ok(())
                 } else {
-                    Err(meta.error("unknown `pill` attribute; expected `persistable` or `shared`"))
+                    Err(meta.error(
+                        "unknown `pill` attribute; expected `persistable`, `shared`, \
+                         `gizmo` or `gizmo_when`",
+                    ))
                 }
             }) {
                 return error.to_compile_error().into();
             }
         }
+    }
+    // A switch with nothing to switch would read as a declaration that draws
+    // something, so it is refused here instead of being silently ignored.
+    if gizmo_when_declared && gizmo_path.is_none() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`gizmo_when` states when the gizmo `gizmo = <path>` draws, so the two are \
+             declared together",
+        )
+        .to_compile_error()
+        .into();
     }
 
     // Step 2: Reject a generic component: the engine registers concrete types
@@ -252,6 +295,66 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
         quote! {}
     };
 
+    // Step 5: a type that declared a gizmo gets a wrapper that walks its own
+    // entities. The walk belongs here, in the declaring artifact, because only
+    // this expansion knows the concrete component type; the engine's pass only
+    // calls the wrapper. Every generation regenerates it, so a reload replaces
+    // the pointer before the old image is unmapped.
+    let (gizmo_wrapper, gizmo_descriptor) = match &gizmo_path {
+        Some(gizmo_fn) => {
+            let wrapper_fn_name = format_ident!("__pill_gizmo_{}", ident);
+            let wrapper = quote! {
+                /// Draws this component's gizmo for every entity that carries
+                /// it, generated from the type's `#[pill(gizmo = ...)]`
+                /// declaration.
+                #[allow(non_snake_case)]
+                fn #wrapper_fn_name(
+                    world: &::pill_engine::World,
+                    frame: &::pill_engine::gizmos::GizmoFrame,
+                    draw: &mut ::pill_engine::gizmos::GizmoDraw,
+                ) -> usize {
+                    let mut drawn = 0;
+                    for archetype in world.archetypes_iter() {
+                        if !archetype.has_component::<#ident>() {
+                            continue;
+                        }
+                        for &entity in &archetype.entities {
+                            let ::core::option::Option::Some(component) =
+                                world.get_component::<#ident>(entity)
+                            else {
+                                continue;
+                            };
+                            let context = frame.context(world, entity);
+                            // A `gizmo_when = "selected"` declaration draws
+                            // only what the editor has selected.
+                            if #gizmo_selected_only && !context.selected {
+                                continue;
+                            }
+                            #gizmo_fn(component, &context, draw);
+                            drawn += 1;
+                        }
+                    }
+                    drawn
+                }
+            };
+            let when = if gizmo_selected_only {
+                quote! { ::pill_engine::gizmos::GizmoWhen::ForSelected }
+            } else {
+                quote! { ::pill_engine::gizmos::GizmoWhen::Always }
+            };
+            let descriptor = quote! {
+                ::core::option::Option::Some(::pill_engine::gizmos::GizmoDeclaration {
+                    type_name: #type_name,
+                    owner: ::core::env!("CARGO_PKG_NAME"),
+                    when: #when,
+                    draw: #wrapper_fn_name,
+                })
+            };
+            (wrapper, descriptor)
+        }
+        None => (quote! {}, quote! { ::core::option::Option::None }),
+    };
+
     let expanded = quote! {
         impl ::pill_engine::Component for #ident {
             #shared_name_impl
@@ -271,6 +374,8 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
 
         #field_accessors
 
+        #gizmo_wrapper
+
         /// Registers this component into the world; used by the artifact-wide
         /// registration loop generated for the module/project entry point.
         #[allow(non_snake_case)]
@@ -285,6 +390,7 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
                 persistable: #persistable,
                 fields: #layout_reference,
                 register: #register_fn_name,
+                gizmo: #gizmo_descriptor,
             }
         }
     };

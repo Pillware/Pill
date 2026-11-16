@@ -7,7 +7,8 @@
 //!   ([`time`]), and the keys, buttons and gamepads the frame was given
 //!   ([`input`]).
 //! - Hold the outputs a system draws with: immediate debug drawing
-//!   ([`debug_draw`]) and the periodic ECS report ([`diagnostics`]).
+//!   ([`debug_draw`]), the gizmo pass that draws on a component's behalf
+//!   ([`gizmos`]) and the periodic ECS report ([`diagnostics`]).
 //! - Re-export the profiling API ([`profiling`]).
 //!
 //! # Design
@@ -28,6 +29,10 @@ pub mod debug_draw;
 /// A periodic report of ECS state, switched on with
 /// `Engine::set_ecs_diagnostics_interval` and printed at that interval.
 pub mod diagnostics;
+
+/// The pass that draws every component's own gizmo, together with the registry
+/// it walks and the selection it draws for.
+pub mod gizmos;
 
 /// Keyboard, mouse and gamepad state maintained by the engine and read through
 /// `Res<Input>`.

@@ -35,6 +35,7 @@ use std::hash::{Hash, Hasher};
 
 // External crates
 use pill_core::telemetry::telemetry_target;
+use pill_engine_core::gizmos::{GizmoDeclaration, GizmoRegistry};
 /// Field layouts, the layout trait and the value-type resolver, which are the
 /// same for every DLL.
 pub use pill_engine_core::reflection::component_registry::*;
@@ -58,6 +59,12 @@ pub struct PillComponentDescriptor {
     pub fields: &'static [ComponentFieldDescriptor],
     /// Registers the component into a world.
     pub register: fn(&mut World),
+    /// The gizmo the type declared with `#[pill(gizmo = ...)]`, if any.
+    ///
+    /// Registration publishes every declaration into the world's
+    /// [`GizmoRegistry`], so the engine's gizmo pass never reads an artifact's
+    /// inventory itself.
+    pub gizmo: Option<GizmoDeclaration>,
 }
 
 /// A plain value type (not a component) declared with `#[derive(PillMirror)]`
@@ -381,8 +388,24 @@ pub fn register_all_components(world: &mut World) -> Result<(), WorldError> {
         .into_iter()
         .collect();
     descriptors.truncate(descriptors.len().saturating_sub(baseline));
+    let mut gizmo_declarations: Vec<GizmoDeclaration> = Vec::new();
     for descriptor in descriptors {
         (descriptor.register)(world);
+        if let Some(declaration) = descriptor.gizmo {
+            gizmo_declarations.push(declaration);
+        }
+    }
+    // Step 2b: hand the declared gizmos to the world. The registry is declared
+    // by every generation, so a reload that declares no gizmo at all still
+    // claims it and the host keeps the value the last generation published.
+    world.register_resource::<GizmoRegistry>();
+    if !gizmo_declarations.is_empty() {
+        if !world.has_resource::<GizmoRegistry>() {
+            world.insert_resource(GizmoRegistry::default());
+        }
+        if let Some(registry) = world.get_resource_mut::<GizmoRegistry>() {
+            registry.publish(&gizmo_declarations);
+        }
     }
     // Step 3: put the previous resolver back and report the first error a
     // registration recorded.
@@ -705,6 +728,7 @@ mod tests {
             persistable: true,
             fields: &[],
             register: register_test_persistable,
+            gizmo: None,
         }
     }
     inventory::submit! {
@@ -713,6 +737,7 @@ mod tests {
             persistable: false,
             fields: &[],
             register: register_test_plain,
+            gizmo: None,
         }
     }
 

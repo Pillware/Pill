@@ -44,9 +44,9 @@ use pill_editor_core::cadence::{Cadence, FrameDemand, FrameWake};
 use pill_editor_core::camera::{self, CameraButton, CameraNavigation, Modifiers, OrbitCamera};
 use pill_editor_core::clipboard::{self, ClipboardAction, ClipboardRequest, EditorClipboard};
 use pill_editor_core::commands::{
-    ensure_command_resources, read_gizmo_settings, write_gizmo_preferences, CommandRegistry,
-    EditorPreferences, KeybindingsFile, KeymapPreset, PendingEditorCommands, KEYBINDINGS_FILE,
-    PREFERENCES_FILE,
+    ensure_command_resources, read_gizmo_settings, write_gizmo_hidden_types,
+    write_gizmo_preferences, CommandRegistry, EditorPreferences, KeybindingsFile, KeymapPreset,
+    PendingEditorCommands, KEYBINDINGS_FILE, PREFERENCES_FILE,
 };
 use pill_editor_core::console::{ConsoleChannel, ConsoleLine, ConsoleState};
 use pill_editor_core::drain::{self, HistoryDirection};
@@ -85,6 +85,7 @@ use pill_editor_core::systems;
 use pill_editor_core::tools;
 use pill_engine_core::common_components::TRANSFORM_SHARED_NAME;
 use pill_engine_core::debug_draw::{DebugDraw, DebugStyle};
+use pill_engine_core::gizmos::{GizmoRegistry, GizmoSelection};
 use pill_engine_core::input::{ButtonState, KeyCode, Modifiers as EngineModifiers, MouseButton};
 use pill_engine_core::Entity;
 use pill_engine_core::FieldValue;
@@ -1609,6 +1610,34 @@ impl EditorWindow {
         }
     }
 
+    /// Publish the shared selection as the entity set the engine's gizmo pass
+    /// draws for: what a component's own gizmo sees as selected, whether the
+    /// Entities tab or a scene pick moved the selection. One resource write per
+    /// change, before the frame that draws it.
+    fn publish_gizmo_selection(&mut self) {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let selected: Vec<Entity> = world
+            .get_resource::<EditorSelection>()
+            .map(|selection| selection.entities().to_vec())
+            .unwrap_or_default();
+        if world.get_resource::<GizmoSelection>().is_none() {
+            world.insert_resource(GizmoSelection::default());
+        }
+        // The pointer's entity is not tracked yet, so a gizmo sees no hovered
+        // entity: the field exists for the pick that fills it.
+        let changed = world
+            .get_resource_mut::<GizmoSelection>()
+            .map(|selection| selection.replace(selected.clone(), None))
+            .unwrap_or(false);
+        if changed {
+            info!(
+                target: telemetry_target::EDITOR,
+                count = selected.len(),
+                "[editor] gizmo selection"
+            );
+        }
+    }
+
     /// Run the command the active keymap binds to a chord, if any, and report
     /// whether a command was bound.
     ///
@@ -2369,6 +2398,54 @@ impl EditorWindow {
         }
     }
 
+    /// Write the component gizmo types the editor hides to the preferences
+    /// file when the list moved.
+    ///
+    /// The list is what a reload and the next session start from, so the
+    /// executable owns the write: a module reload replaces the registry's
+    /// entries but not its switches, and a restart reads this file back.
+    fn persist_gizmo_visibility(&mut self) {
+        let hidden_types = self
+            .host
+            .host_mut()
+            .engine_mut()
+            .world()
+            .get_resource::<pill_engine_core::gizmos::GizmoRegistry>()
+            .map(|registry| {
+                registry
+                    .hidden_types()
+                    .map(str::to_string)
+                    .collect::<Vec<String>>()
+            });
+        let Some(hidden_types) = hidden_types else {
+            return;
+        };
+        if self.gizmo_hidden_persisted.as_ref() == Some(&hidden_types) {
+            return;
+        }
+        let first_read = self.gizmo_hidden_persisted.is_none();
+        self.gizmo_hidden_persisted = Some(hidden_types.clone());
+        // The first observation is the empty registry the session starts with,
+        // before `watch_preferences` applied the file; writing it back would
+        // erase the list the file holds.
+        if first_read && hidden_types.is_empty() {
+            return;
+        }
+        let directory = layout_directory();
+        match write_gizmo_hidden_types(&directory, &hidden_types) {
+            Ok(()) => info!(
+                target: telemetry_target::EDITOR,
+                hidden = hidden_types.len(),
+                "[editor] gizmo visibility written"
+            ),
+            Err(error) => warn!(
+                target: telemetry_target::EDITOR,
+                error = error.as_str(),
+                "[editor] gizmo visibility write failed"
+            ),
+        }
+    }
+
     /// Read the preferences file and apply its settings whenever its text
     /// changes.
     ///
@@ -2501,6 +2578,38 @@ impl EditorWindow {
             state.settings.translate_step = steps.translation;
             state.settings.rotate_step_degrees = steps.rotation_degrees;
             state.settings.scale_step = steps.scale;
+        }
+        // Step 4: the component gizmo types the file hides. Applying the list
+        // here is what brings a hidden type back hidden after a reload, and
+        // what a restart reads first.
+        let hidden_types = preferences::hidden_gizmo_types(&self.preferences_document);
+        if self.gizmo_hidden_persisted.as_ref() != Some(&hidden_types) {
+            if let Some(gizmo_registry) = world.get_resource_mut::<GizmoRegistry>() {
+                // Step 1: read the registered types first, so the loops below
+                // do not borrow the registry while it changes.
+                let registered: Vec<&'static str> = gizmo_registry
+                    .entries()
+                    .iter()
+                    .map(|entry| entry.type_name)
+                    .collect();
+                // Step 2: every registered type takes the file's answer, which
+                // also clears a hide the file no longer holds. Each real change
+                // logs the same line the Preferences tab's own switch does.
+                for type_name in registered {
+                    let visible = !hidden_types.iter().any(|hidden| hidden == type_name);
+                    if gizmo_registry.is_type_visible(type_name) == visible {
+                        continue;
+                    }
+                    gizmo_registry.set_type_visible(type_name, visible);
+                    info!(
+                        target: telemetry_target::EDITOR,
+                        gizmo_type = type_name,
+                        visible,
+                        "[editor] gizmo type"
+                    );
+                }
+            }
+            self.gizmo_hidden_persisted = Some(hidden_types);
         }
     }
 

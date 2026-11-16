@@ -178,7 +178,7 @@ pub use assets::{
 // `crate::settings::SettingsOutcome`) and only the sibling modules need an
 // alias here.
 pub use scene::{saved_references, startup_scene};
-pub use services::{debug_draw, diagnostics, input, profiling, time};
+pub use services::{debug_draw, diagnostics, gizmos, input, profiling, time};
 pub use settings::manager_settings;
 
 // The hot_reload group's modules, under the names callers have always used.
@@ -216,6 +216,10 @@ pub use scene::startup_scene::{apply_startup_scene, queue_startup_scene, Startup
 pub use services::debug_draw::{
     DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
     GizmoPoint, GizmoPointShape, GizmoTriangle, LabelAnchor,
+};
+pub use services::gizmos::{
+    GizmoChrome, GizmoContext, GizmoDeclaration, GizmoDraw, GizmoDrawEntry, GizmoEntry, GizmoFrame,
+    GizmoRegistry, GizmoSelection, GizmoWhen,
 };
 pub use services::input::{
     ButtonState, GamepadAxis, GamepadButton, Input, InputEvent, KeyCode, Modifiers, MouseButton,

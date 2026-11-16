@@ -517,6 +517,8 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
             | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
+            | EditorCommand::SetGizmos { .. }
+            | EditorCommand::SetGizmoTypeVisible { .. }
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce => 0,
             // An element move carries one transform per element: sixteen

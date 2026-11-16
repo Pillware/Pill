@@ -1507,6 +1507,17 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
     // Debug drawing is always on in the development host; the settings'
     // `debug_draw:` key is what a shipping build starts with.
     pill_player::insert_debug_resources(runtime.engine_mut().world_mut(), true);
+    // The pass that draws what a component declares as its own gizmo. An
+    // editor's views show it as chrome, which a game surface never draws; a
+    // game window shows it as plain debug drawing.
+    pill_engine::gizmos::install(
+        runtime.engine_mut(),
+        if host_config.load_editor_crates {
+            pill_engine::gizmos::GizmoChrome::Editor
+        } else {
+            pill_engine::gizmos::GizmoChrome::Game
+        },
+    );
     let engine_api = EngineApi::new(runtime.engine_mut());
 
     // Announce every module this start builds, in build order: the

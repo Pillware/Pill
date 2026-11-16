@@ -253,6 +253,11 @@ pub(super) struct EditorWindow {
     /// The gizmo settings last written to the preferences file, so an
     /// unchanged tool writes nothing.
     pub(super) gizmo_persisted: Option<GizmoSettings>,
+    /// The hidden component gizmo types last written to the preferences file,
+    /// so an unchanged list writes nothing. `None` means the file has not been
+    /// read yet, which is how the first frame knows not to write its empty
+    /// list over the file's.
+    pub(super) gizmo_hidden_persisted: Option<Vec<String>>,
     /// Whether the main window currently has focus.
     pub(super) focused: bool,
     /// The screen position and size the floating overlay window was last
@@ -749,6 +754,7 @@ impl EditorWindow {
             fallback_theme_generation: 1,
             gizmo_project,
             gizmo_persisted: None,
+            gizmo_hidden_persisted: None,
             focused: true,
             overlay_placement: None,
             size,

@@ -172,6 +172,7 @@ pub fn preferences_tab(
             let state = toolbox::ToolboxState {
                 gizmo: snapshot.gizmo,
                 grid: snapshot.grid_enabled,
+                gizmos: snapshot.gizmos_enabled,
                 frame: snapshot.gizmo_frame.as_deref(),
             };
             for item in toolbox::TOOL_ROWS {
@@ -199,5 +200,45 @@ pub fn preferences_tab(
                 pending.push(vec![toolbox::ToolboxItem::Snap.command(&state)]);
             }
         });
+        // Step 4: One switch per registered component gizmo. The choice is a
+        // preference, so the executable writes it to the file and applies it
+        // again after a reload.
+        ui.separator();
+        ui.heading("Gizmos");
+        value_row_in(
+            ui,
+            WIDE_ROW_LABEL_WIDTH,
+            "gizmos",
+            if snapshot.gizmos_enabled { "on" } else { "off" },
+        );
+        if snapshot.gizmo_types.is_empty() {
+            row_in(ui, WIDE_ROW_LABEL_WIDTH, "types", None, &mut |ui| {
+                ui.weak("none - no loaded module declares a component gizmo.");
+            });
+            return;
+        }
+        for gizmo_type in &snapshot.gizmo_types {
+            row_in(
+                ui,
+                WIDE_ROW_LABEL_WIDTH,
+                &gizmo_type.type_name,
+                None,
+                &mut |ui| {
+                    let mut visible = gizmo_type.visible;
+                    if ui.checkbox(&mut visible, "").changed() {
+                        pending.push(vec![EditorCommand::SetGizmoTypeVisible {
+                            type_name: gizmo_type.type_name.clone(),
+                            visible,
+                        }]);
+                        pill_core::info!(
+                            target: telemetry_target::EDITOR,
+                            gizmo_type = gizmo_type.type_name.as_str(),
+                            visible,
+                            "[editor] gizmo type row"
+                        );
+                    }
+                },
+            );
+        }
     });
 }

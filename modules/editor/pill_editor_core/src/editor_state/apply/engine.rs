@@ -19,6 +19,7 @@
 
 // External crates
 use pill_core::telemetry::telemetry_target;
+use pill_engine::gizmos::GizmoRegistry;
 use pill_engine::Engine;
 
 // Current crate
@@ -186,6 +187,43 @@ pub(super) fn apply(
                     target: telemetry_target::EDITOR,
                     enabled = *enabled,
                     "[editor] scene grid"
+                );
+            }
+            Ok(CommandOutcome::plain())
+        }
+
+        EditorCommand::SetGizmos { enabled } => {
+            let world = engine.world_mut();
+            let Some(gizmo_registry) = world.get_resource_mut::<GizmoRegistry>() else {
+                // No component declared a gizmo, so there is nothing to switch
+                // and nothing to report.
+                return Ok(CommandOutcome::plain());
+            };
+            // Log only a real change, so sending the current state again adds
+            // no line.
+            if gizmo_registry.is_enabled() != *enabled {
+                gizmo_registry.set_enabled(*enabled);
+                pill_core::info!(
+                    target: telemetry_target::EDITOR,
+                    enabled = *enabled,
+                    "[editor] gizmos"
+                );
+            }
+            Ok(CommandOutcome::plain())
+        }
+
+        EditorCommand::SetGizmoTypeVisible { type_name, visible } => {
+            let world = engine.world_mut();
+            let Some(gizmo_registry) = world.get_resource_mut::<GizmoRegistry>() else {
+                return Ok(CommandOutcome::plain());
+            };
+            if gizmo_registry.is_type_visible(type_name) != *visible {
+                gizmo_registry.set_type_visible(type_name, *visible);
+                pill_core::info!(
+                    target: telemetry_target::EDITOR,
+                    gizmo_type = type_name.as_str(),
+                    visible = *visible,
+                    "[editor] gizmo type"
                 );
             }
             Ok(CommandOutcome::plain())

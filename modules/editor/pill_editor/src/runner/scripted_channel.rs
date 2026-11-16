@@ -27,6 +27,7 @@
 // Current crate
 use super::*;
 use pill_editor_core::tools;
+use pill_engine_core::gizmos::GizmoRegistry;
 
 // =============================================================================
 // Scripted Refusals
@@ -369,6 +370,56 @@ impl EditorWindow {
             surfaces = %surface_ids_text,
             "[test] scene grid"
         );
+    }
+
+    /// Logs every registered component gizmo: its type, when it draws, whether
+    /// an editor hid it, and how many entities it drew in the last frame.
+    ///
+    /// The line also names the surfaces that show the drawing: the frame's
+    /// editor views, which are the surfaces the renderer draws chrome on. A
+    /// game's own surface never is one, so the game view never shows a gizmo.
+    pub(super) fn dump_gizmos(&mut self) {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let surface_ids_text = world
+            .get_resource::<SurfaceCameras>()
+            .map(|cameras| {
+                editor_view_surfaces(cameras)
+                    .iter()
+                    .map(|surface| surface.0.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default();
+        let Some(registry) = world.get_resource::<GizmoRegistry>() else {
+            info!(
+                target: telemetry_target::EDITOR,
+                count = 0,
+                hidden = 0,
+                enabled = false,
+                surfaces = %surface_ids_text,
+                "[test] gizmos"
+            );
+            return;
+        };
+        info!(
+            target: telemetry_target::EDITOR,
+            count = registry.len(),
+            hidden = registry.hidden_types().count(),
+            enabled = registry.is_enabled(),
+            surfaces = %surface_ids_text,
+            "[test] gizmos"
+        );
+        for entry in registry.entries() {
+            info!(
+                target: telemetry_target::EDITOR,
+                gizmo_type = %entry.type_name,
+                owner = %entry.owner,
+                when = %entry.when.label(),
+                visible = registry.is_type_visible(entry.type_name),
+                drew = entry.drew_last_frame(),
+                "[test] gizmo"
+            );
+        }
     }
 
     /// Logs the play session's state: the run mode, the pause flag and the
@@ -1162,6 +1213,7 @@ impl EditorWindow {
                 Dump::Scenes => self.dump_scenes(),
                 Dump::Viewport => self.dump_viewport(),
                 Dump::Grid => self.dump_grid(),
+                Dump::Gizmos => self.dump_gizmos(),
                 Dump::Play => self.dump_play(),
                 Dump::Assets => self.dump_assets(),
                 Dump::EngineAssets => self.dump_engine_assets(),
