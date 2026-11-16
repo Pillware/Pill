@@ -6,9 +6,9 @@ namespace TracyLive;
 /// </summary>
 /// <remarks>
 /// The values are the engine enum's discriminants, in that list's declaration
-/// order (<c>pill_engine_core/src/input.rs</c>, the <c>key_codes!</c> table);
-/// the input slots cross a key as this number. A comment on a member is the
-/// W3C <c>KeyboardEvent.code</c> name where it differs from the identifier.
+/// order (<c>pill_engine_core/src/services/input.rs</c>, the <c>key_codes!</c>
+/// table); the input slots cross a key as this number. A comment on a member is
+/// the W3C <c>KeyboardEvent.code</c> name where it differs from the identifier.
 /// Keep the table and this mirror in step: reordering one without the other
 /// silently swaps keys.
 /// </remarks>
