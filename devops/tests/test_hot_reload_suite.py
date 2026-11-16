@@ -273,7 +273,7 @@ pub fn register(engine: &mut Engine) -> u32 {
 SPLINE_DERIVE_ORIGINAL = """\
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared)]
+#[pill(persistable, shared, gizmo = draw_spline_gizmo)]
 pub struct Spline {"""
 
 SPLINE_DERIVE_STUB_NO_REGISTRATION = """\
@@ -308,6 +308,19 @@ pub fn register(engine: &mut Engine) -> u32 {
         "pill_spline module registered (suite stub, Spline NOT registered)"
     );
     0
+}"""
+
+# The crate's one-type registration path calls the symbol the derive writes, so
+# the stubbed generation has to stop calling it too - the function stays (other
+# crates name it) and registers nothing.
+SPLINE_REGISTER_COMPONENT_ORIGINAL = """\
+pub fn register_component(world: &mut World) {
+    __pill_register_Spline(world);
+}"""
+
+SPLINE_REGISTER_COMPONENT_STUB_NO_REGISTRATION = """\
+pub fn register_component(world: &mut World) {
+    let _ = world;
 }"""
 
 SPLINE_REGISTER_STUB_INIT_FAILURE = """\
@@ -541,6 +554,10 @@ SESSION_A_SCENARIOS = [
                             (
                                 SPLINE_DERIVE_ORIGINAL,
                                 SPLINE_DERIVE_STUB_NO_REGISTRATION,
+                            ),
+                            (
+                                SPLINE_REGISTER_COMPONENT_ORIGINAL,
+                                SPLINE_REGISTER_COMPONENT_STUB_NO_REGISTRATION,
                             ),
                         ],
                     )
