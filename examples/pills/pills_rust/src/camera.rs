@@ -43,8 +43,7 @@ const FIELD_OF_VIEW_DEGREES_PER_SECOND: f32 = 100.0;
 ///
 /// Returns `Ok` and moves nothing while the frame's `Input` or `Time` resource
 /// is missing; the system never fails.
-#[pill_hot]
-#[system(name = "camera", order = 10)]
+#[system(name = "camera", order = 510)]
 pub(crate) fn camera_system(
     input: Res<Input>,
     game_ui: Res<GameUi>,

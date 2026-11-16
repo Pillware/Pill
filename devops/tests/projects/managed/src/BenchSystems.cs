@@ -24,7 +24,7 @@
 using System.Diagnostics;
 
 // The engine's managed surface - Query, Read, Write, Commands and the
-// [EcsSystem] attribute - lives in this namespace.
+// [System] attribute - lives in this namespace.
 using TracyLive;
 
 namespace ManagedTestProject;
@@ -189,7 +189,7 @@ internal static class BenchState
 /// </remarks>
 public static class BenchSpawnSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(Query<Read<BenchPosition>> query, Commands commands)
     {
         if (!BenchConfig.Enabled)
@@ -239,7 +239,7 @@ public static class BenchSpawnSystem
 /// </remarks>
 public static class BenchIterUnfilteredSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(Query<Read<BenchPosition>, Read<BenchVelocity>> query)
     {
         if (!BenchConfig.Enabled)
@@ -272,7 +272,7 @@ public static class BenchIterUnfilteredSystem
 /// </remarks>
 public static class BenchIterMutableSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(Query<Write<BenchPosition>, Read<BenchVelocity>> query)
     {
         if (!BenchConfig.Enabled)
@@ -304,7 +304,7 @@ public static class BenchIterMutableSystem
 /// </remarks>
 public static class BenchIterMultiComponentSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(
         Query<Read<BenchPosition>, Read<BenchVelocity>, Read<BenchHealth>> query)
     {

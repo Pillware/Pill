@@ -200,10 +200,44 @@ impl<T: Component + Sync> QueryTarget for &T {
 }
 
 // =============================================================================
-// MutFetchState
+// ReadOnlyQueryTarget
 // =============================================================================
 
-/// The state a mutable component query keeps for one archetype. It holds a
+/// A query target that only ever reads, so a
+/// [`run_if`](crate::SystemOptions::run_if) condition may query it.
+///
+/// The tuples whose members all implement this trait implement it themselves,
+/// so `(Entity, &Transform)` is a valid condition parameter. `&mut T` has no
+/// implementation on purpose: a condition that could change the world it gates
+/// would make the skip decision depend on the order it ran in.
+#[diagnostic::on_unimplemented(
+    message = "a `run_if` condition may only read, and `{Self}` writes through the world",
+    label = "this query target writes",
+    note = "take `Res<T>`, `&T` or `Entity`, and leave writing to the system the condition gates"
+)]
+pub trait ReadOnlyQueryTarget: QueryTarget {}
+
+impl ReadOnlyQueryTarget for Entity {}
+
+impl<T: Component + Sync> ReadOnlyQueryTarget for &T {}
+
+/// Implements [`ReadOnlyQueryTarget`] for tuples whose members all read, so a
+/// condition can query several things at once.
+macro_rules! impl_read_only_query_target_tuple {
+    ($($T:ident),*) => {
+        impl<$($T: ReadOnlyQueryTarget),*> ReadOnlyQueryTarget for ($($T,)*) {}
+    };
+}
+
+impl_read_only_query_target_tuple!(A);
+impl_read_only_query_target_tuple!(A, B);
+impl_read_only_query_target_tuple!(A, B, C);
+impl_read_only_query_target_tuple!(A, B, C, D);
+impl_read_only_query_target_tuple!(A, B, C, D, E);
+
+// =============================================================================
+// MutFetchState
+// =============================================================================/// The state a mutable component query keeps for one archetype. It holds a
 /// pointer to the component column, so a row fetch does not look the column up
 /// again.
 pub struct MutFetchState<T: Component> {

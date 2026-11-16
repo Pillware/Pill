@@ -38,7 +38,7 @@ use std::collections::HashSet;
 
 // External crates
 use pill_core::math::Vector2f;
-use pill_engine::{DebugFrame, Entity, LabelAnchor};
+use pill_engine::{DebugFrame, Entity, GizmoPoint, GizmoPointShape, LabelAnchor};
 use pill_master_renderer_data::color_space::linear_to_srgb;
 use pill_renderer_api::{PickHit, PickRequest, PickResult, PICK_HANDLE_BIT};
 use pill_ui_frame::{Color, DrawList, Rect};
@@ -98,6 +98,8 @@ const TRIANGLE_FEATHER: f32 = 1.0;
 /// The smallest sine of a corner's half-angle the expansion accepts. At a
 /// sharper corner the vertex would be pushed out without limit.
 const MINIMUM_MITER_SINE: f32 = 0.02;
+/// How far past a gizmo point's drawn size its pick quad reaches, in pixels.
+const PICK_POINT_SLACK: f32 = 1.0;
 
 // =============================================================================
 // Vertex and Uniform Types
@@ -123,6 +125,20 @@ struct TriangleVertex {
     clip_position: [f32; 4],
     color: [f32; 4],
     barycentric: [f32; 3],
+}
+
+/// A gizmo-point vertex after projection: the corner of the screen-aligned
+/// quad, its colour, the corner's offset from the point's centre in pixels,
+/// the point's half size in pixels, and the silhouette it draws as. The
+/// fragment shader tests each pixel sample against the shape.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct PointVertex {
+    clip_position: [f32; 4],
+    color: [f32; 4],
+    offset_pixels: [f32; 2],
+    half_size_pixels: f32,
+    shape: u32,
 }
 
 /// A gizmo line vertex in the pick buffer: the corner of the line's quad and
@@ -228,6 +244,7 @@ pub(crate) struct Overlay {
     depth_tested_lines_pipeline: wgpu::RenderPipeline,
     on_top_lines_pipeline: wgpu::RenderPipeline,
     on_top_triangles_pipeline: wgpu::RenderPipeline,
+    on_top_points_pipeline: wgpu::RenderPipeline,
     outline_edge_pipeline: wgpu::RenderPipeline,
     outline_mask_pipeline: wgpu::RenderPipeline,
     mesh_pick_pipeline: wgpu::RenderPipeline,
@@ -241,6 +258,7 @@ pub(crate) struct Overlay {
     tested_lines_buffer: StreamBuffer,
     on_top_lines_buffer: StreamBuffer,
     triangles_buffer: StreamBuffer,
+    points_buffer: StreamBuffer,
     handle_lines_buffer: StreamBuffer,
     handle_triangles_buffer: StreamBuffer,
     readback: picking::PickReadback,
@@ -389,6 +407,13 @@ impl Overlay {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: attributes![0 => Float32x4, 1 => Float32x4, 2 => Float32x3],
         };
+        let point_vertex = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<PointVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: attributes![
+                0 => Float32x4, 1 => Float32x4, 2 => Float32x2, 3 => Float32, 4 => Uint32
+            ],
+        };
         let handle_vertex = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<HandleVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -487,6 +512,7 @@ impl Overlay {
         };
         let line_buffers = std::slice::from_ref(&line_vertex);
         let triangle_buffers = std::slice::from_ref(&triangle_vertex);
+        let point_buffers = std::slice::from_ref(&point_vertex);
         let handle_buffers = std::slice::from_ref(&handle_vertex);
         let handle_line_buffers = std::slice::from_ref(&handle_line_vertex);
         Self {
@@ -513,6 +539,15 @@ impl Overlay {
                 "triangle_vertex",
                 "triangle_fragment",
                 triangle_buffers,
+                wgpu::PrimitiveTopology::TriangleList,
+                blended.clone(),
+                Some(on_top.clone()),
+            )),
+            on_top_points_pipeline: pipeline(world(
+                "overlay_points_on_top",
+                "point_vertex",
+                "point_fragment",
+                point_buffers,
                 wgpu::PrimitiveTopology::TriangleList,
                 blended.clone(),
                 Some(on_top.clone()),
@@ -588,6 +623,7 @@ impl Overlay {
                 wgpu::BufferUsages::VERTEX,
             ),
             triangles_buffer: StreamBuffer::new("overlay_triangles", wgpu::BufferUsages::VERTEX),
+            points_buffer: StreamBuffer::new("overlay_points", wgpu::BufferUsages::VERTEX),
             handle_lines_buffer: StreamBuffer::new(
                 "overlay_handle_lines",
                 wgpu::BufferUsages::VERTEX,
@@ -717,9 +753,11 @@ impl Overlay {
             line_vertices(&frame.debug, view_projection, viewport_size, editor_view);
         let triangles =
             triangle_vertices(&frame.debug, view_projection, viewport_size, editor_view);
+        let points = point_vertices(&frame.debug, view_projection, viewport_size, editor_view);
         let tested_count = tested.len() as u32;
         let on_top_count = on_top.len() as u32;
         let triangle_count = triangles.len() as u32;
+        let point_count = points.len() as u32;
         let tested_buffer = self
             .tested_lines_buffer
             .write(device, queue, bytemuck::cast_slice(&tested))
@@ -732,11 +770,16 @@ impl Overlay {
             .triangles_buffer
             .write(device, queue, bytemuck::cast_slice(&triangles))
             .cloned();
+        let points_buffer = self
+            .points_buffer
+            .write(device, queue, bytemuck::cast_slice(&points))
+            .cloned();
 
         let draws_into_surface = !outlined_positions.is_empty()
             || tested_buffer.is_some()
             || on_top_buffer.is_some()
             || triangles_buffer.is_some()
+            || points_buffer.is_some()
             || grid.is_some();
         if let Some(grid_cell_size) = grid {
             let parameters = GridParameters {
@@ -808,6 +851,7 @@ impl Overlay {
                     &triangles_buffer,
                     triangle_count,
                 ),
+                (&self.on_top_points_pipeline, &points_buffer, point_count),
             ];
             for (pipeline, buffer, count) in world_draws {
                 if let Some(buffer) = buffer {
@@ -1379,6 +1423,88 @@ fn triangle_vertices(
     vertices
 }
 
+/// The frame's gizmo points as screen-aligned quads of the requested pixel
+/// size, each corner carrying its offset from the point's centre so the
+/// fragment shader can test the silhouette per sample. Returns an empty list
+/// when `editor_view` is false; see [`line_vertices`].
+fn point_vertices(
+    debug_frame: &DebugFrame,
+    view_projection: &pill_core::math::Matrix4f,
+    viewport_size: (f32, f32),
+    editor_view: bool,
+) -> Vec<PointVertex> {
+    if !editor_view {
+        return Vec::new();
+    }
+    let mut vertices = Vec::new();
+    for point in &debug_frame.gizmo_points {
+        let Some(quad) = point_quad(point, view_projection, viewport_size, 0.0) else {
+            continue;
+        };
+        let half_size_pixels = point.size_pixels.max(1.0) * 0.5;
+        // The quad's corners in order, as offsets from the centre: two
+        // triangles sharing the diagonal.
+        let corners = [
+            [-half_size_pixels, -half_size_pixels],
+            [half_size_pixels, -half_size_pixels],
+            [half_size_pixels, half_size_pixels],
+            [-half_size_pixels, -half_size_pixels],
+            [half_size_pixels, half_size_pixels],
+            [-half_size_pixels, half_size_pixels],
+        ];
+        let shape = match point.shape {
+            GizmoPointShape::Circle => 0,
+            GizmoPointShape::Square => 1,
+            GizmoPointShape::Diamond => 2,
+        };
+        for (clip_position, offset_pixels) in quad.into_iter().zip(corners) {
+            vertices.push(PointVertex {
+                clip_position,
+                color: point.color,
+                offset_pixels,
+                half_size_pixels,
+                shape,
+            });
+        }
+    }
+    vertices
+}
+
+/// The six clip-space corners of a point's screen-aligned quad around its
+/// projected centre, its half extent being its half size plus
+/// `extra_pixels`. `None` when the point is behind the camera.
+fn point_quad(
+    point: &GizmoPoint,
+    view_projection: &pill_core::math::Matrix4f,
+    viewport_size: (f32, f32),
+    extra_pixels: f32,
+) -> Option<[[f32; 4]; 6]> {
+    let clip = (*view_projection
+        * glam::Vec4::new(point.position[0], point.position[1], point.position[2], 1.0))
+    .to_array();
+    if clip[3] < NEAR_CLIP_DEPTH {
+        return None;
+    }
+    let centre = to_pixels(clip, viewport_size);
+    let half = point.size_pixels.max(1.0) * 0.5 + extra_pixels;
+    let corner = |x: f32, y: f32| {
+        from_pixels(
+            (centre.0 + x * half, centre.1 + y * half),
+            viewport_size,
+            clip[2],
+            clip[3],
+        )
+    };
+    Some([
+        corner(-1.0, -1.0),
+        corner(1.0, -1.0),
+        corner(1.0, 1.0),
+        corner(-1.0, -1.0),
+        corner(1.0, 1.0),
+        corner(-1.0, 1.0),
+    ])
+}
+
 /// Moves every vertex of a projected polygon `offset` pixels away from its two
 /// edges. A straight corner moves along the edge normal; a sharp corner moves
 /// farther, so both edges clear the original shape by `offset` and the
@@ -1450,9 +1576,9 @@ fn expand_polygon(
     expanded
 }
 
-/// The gizmo lines as the pick buffer draws them. Each is the same quad as the
-/// drawn line, widened to the band the editor's hover test accepts, so a pick
-/// covers the handle the pointer highlights.
+/// The gizmo lines and point quads as the pick buffer draws them. Each is the
+/// same geometry as the drawn handle, widened to the band the editor's hover
+/// test accepts, so a pick covers the handle the pointer highlights.
 fn handle_line_vertices(
     debug_frame: &DebugFrame,
     view_projection: &pill_core::math::Matrix4f,
@@ -1468,6 +1594,16 @@ fn handle_line_vertices(
             viewport_size,
             PICK_LINE_HALF_WIDTH,
         ) else {
+            continue;
+        };
+        vertices.extend(quad.map(|clip_position| HandleLineVertex {
+            clip_position,
+            handle_value: value,
+        }));
+    }
+    for point in &debug_frame.gizmo_points {
+        let value = PICK_HANDLE_BIT | point.handle;
+        let Some(quad) = point_quad(point, view_projection, viewport_size, PICK_POINT_SLACK) else {
             continue;
         };
         vertices.extend(quad.map(|clip_position| HandleLineVertex {
@@ -1727,6 +1863,62 @@ mod tests {
         );
         let behind = behind.collect_frame(0.016);
         assert!(triangle_vertices(&behind, &projection, (100.0, 100.0), true).is_empty());
+    }
+
+    /// A point keeps its pixel size in every view: the drawn quad covers the
+    /// same number of pixels at two viewport sizes, and a game view draws
+    /// none of it.
+    #[test]
+    fn points_keep_their_pixel_size_in_every_view() {
+        let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
+        let mut draw = pill_engine::DebugDraw::new(true);
+        draw.gizmo_point([0.0, 0.0, -5.0], 12.0, GizmoPointShape::Square, [1.0; 4], 3);
+        let frame = draw.collect_frame(0.016);
+        for viewport_size in [(200.0, 100.0), (800.0, 600.0)] {
+            let vertices = point_vertices(&frame, &projection, viewport_size, true);
+            assert_eq!(vertices.len(), 6);
+            let pixels: Vec<(f32, f32)> = vertices
+                .iter()
+                .map(|vertex| to_pixels(vertex.clip_position, viewport_size))
+                .collect();
+            let min_x = pixels.iter().map(|at| at.0).fold(f32::INFINITY, f32::min);
+            let max_x = pixels
+                .iter()
+                .map(|at| at.0)
+                .fold(f32::NEG_INFINITY, f32::max);
+            assert!(
+                (max_x - min_x - 12.0).abs() < 1e-3,
+                "{viewport_size:?}: {} pixels wide",
+                max_x - min_x
+            );
+        }
+        assert!(point_vertices(&frame, &projection, (200.0, 100.0), false).is_empty());
+    }
+
+    /// A pick on a point answers with the handle it carries, and a point the
+    /// camera is behind is not pickable.
+    #[test]
+    fn a_pick_on_a_point_carries_its_handle() {
+        let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
+        let mut draw = pill_engine::DebugDraw::new(true);
+        draw.gizmo_point(
+            [0.0, 0.0, -5.0],
+            10.0,
+            GizmoPointShape::Circle,
+            [1.0; 4],
+            21,
+        );
+        let frame = draw.collect_frame(0.016);
+        let vertices = handle_line_vertices(&frame, &projection, (100.0, 100.0));
+        assert_eq!(vertices.len(), 6);
+        assert!(vertices
+            .iter()
+            .all(|vertex| vertex.handle_value == PICK_HANDLE_BIT | 21));
+
+        let mut behind = pill_engine::DebugDraw::new(true);
+        behind.gizmo_point([0.0, 0.0, 5.0], 10.0, GizmoPointShape::Circle, [1.0; 4], 21);
+        let behind = behind.collect_frame(0.016);
+        assert!(handle_line_vertices(&behind, &projection, (100.0, 100.0)).is_empty());
     }
 
     /// A device and queue without a surface, forcing the platform's fallback

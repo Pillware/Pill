@@ -134,6 +134,24 @@ impl SystemAccess {
         self.resource_writes.insert(resource_id);
     }
 
+    /// Folds another access pattern into this one.
+    ///
+    /// The engine uses it once per registration to add a `run_if` condition's
+    /// reads to the access its system declares, so the batches also respect
+    /// what the conditions read. After it returns, the two patterns are
+    /// indistinguishable: only the merged sets are kept.
+    pub fn merge(&mut self, other: &SystemAccess) {
+        self.component_reads
+            .extend(other.component_reads.iter().copied());
+        self.component_writes
+            .extend(other.component_writes.iter().copied());
+        self.uses_commands |= other.uses_commands;
+        self.resource_reads
+            .extend(other.resource_reads.iter().copied());
+        self.resource_writes
+            .extend(other.resource_writes.iter().copied());
+    }
+
     /// How many components this system reads.
     ///
     /// Reporting only: the ids stay private, so nothing outside this type can
@@ -205,83 +223,79 @@ impl SystemAccess {
 }
 
 // =============================================================================
+// RunPhase
+// =============================================================================
+
+/// The phase of the frame a system runs in.
+///
+/// A frame runs the phases in this order: [`PreProject`](RunPhase::PreProject),
+/// then the first deferred-command flush, then
+/// [`Project`](RunPhase::Project) - the game's own frame work - then the second
+/// flush, then [`PostProject`](RunPhase::PostProject). The first two phases
+/// dispatch parallel batches; `PostProject` runs on the calling thread, because
+/// it is where presentation systems draw the frame they have just finished
+/// computing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RunPhase {
+    /// Runs before the first command flush, so the commands it queues are
+    /// applied before the project phase reads the world.
+    PreProject,
+    /// The game's own frame work. What a declaration that names no phase gets.
+    #[default]
+    Project,
+    /// Runs after the second command flush, sequentially.
+    PostProject,
+}
+
+impl RunPhase {
+    /// Every phase a schedule can hold, in frame order.
+    pub const ALL: [Self; 3] = [Self::PreProject, Self::Project, Self::PostProject];
+
+    /// The phases that dispatch parallel batches, in frame order.
+    pub const BATCHED: [Self; 2] = [Self::PreProject, Self::Project];
+
+    /// The spelling a `run_phase = "..."` declaration uses.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::PreProject => "pre_project",
+            Self::Project => "project",
+            Self::PostProject => "post_project",
+        }
+    }
+
+    /// Whether the phase's systems run in parallel batches.
+    pub fn is_batched(self) -> bool {
+        matches!(self, Self::PreProject | Self::Project)
+    }
+}
+
+// =============================================================================
 // SystemScheduler
 // =============================================================================
 
-/// The conflict matrix and the parallel batches, for the registered systems.
+/// The conflict matrix and the parallel batches of one batched phase.
 ///
-/// The matrix depends only on the access patterns it was built from, and the
-/// batches depend only on the matrix. Both are rebuilt together by
-/// [`ensure_execution_graph`](SystemScheduler::ensure_execution_graph) after
-/// [`invalidate`](SystemScheduler::invalidate), so a single flag says whether
-/// the graph is current and no caller has to work that out.
-pub struct SystemScheduler {
-    /// `conflict_matrix[i][j]` is true when system `i` conflicts with system
-    /// `j`. Rebuilt from scratch from the access patterns, never edited in
-    /// place.
+/// The matrix depends only on the phase's access patterns, and the batches
+/// depend only on the matrix. Both are rebuilt together, from scratch, by
+/// [`SystemScheduler::ensure_execution_graph`].
+#[derive(Default)]
+struct PhaseGraph {
+    /// `conflict_matrix[i][j]` is true when the phase's system `i` conflicts
+    /// with its system `j`, both being positions in the phase's own list.
+    /// Never edited in place.
     conflict_matrix: Vec<Vec<bool>>,
-    /// Batches of system indices. No two systems in one batch conflict, so a
-    /// batch can run in parallel.
-    execution_graph: Vec<Vec<usize>>,
-    /// Whether the matrix and the graph are older than the current system set.
-    ///
-    /// Starts true: a fresh scheduler has built nothing yet.
-    needs_rebuild: bool,
+    /// Batches of indices into the engine's whole system list. No two systems
+    /// in one batch conflict, so a batch can run in parallel.
+    batches: Vec<Vec<usize>>,
 }
 
-impl SystemScheduler {
-    /// Creates an empty scheduler that builds its first graph on demand.
-    pub fn new() -> Self {
-        Self {
-            conflict_matrix: Vec::new(),
-            execution_graph: Vec::new(),
-            needs_rebuild: true,
-        }
-    }
-
-    /// Marks the conflict matrix and the batches stale.
+impl PhaseGraph {
+    /// Rebuilds the matrix and the batches from the phase's access patterns.
     ///
-    /// Registrations and removals call this. Removing every system calls
-    /// [`clear`](SystemScheduler::clear) instead, which marks the graph stale
-    /// the same way. The rebuild itself happens once, in
-    /// [`ensure_execution_graph`](SystemScheduler::ensure_execution_graph),
-    /// so a module that registers many systems in its `init` pays for one
-    /// rebuild, not one per registration.
-    ///
-    /// Enabled state is not conflict data: a disabled system stays in the batch
-    /// it was given and is skipped at dispatch.
-    pub fn invalidate(&mut self) {
-        self.needs_rebuild = true;
-    }
-
-    /// Rebuilds the conflict matrix and the execution graph when they are
-    /// stale.
-    ///
-    /// `accesses` must yield every registered system's access pattern in
-    /// registration order, and its length must be the number of registered
-    /// systems, because the graph's indices are positions in that list. The
-    /// call does nothing when nothing was invalidated since the last build.
-    ///
-    /// Batches are filled first-fit (each system takes the first batch it can
-    /// join): a system joins the earliest batch that holds nothing it conflicts
-    /// with, and opens a new batch at the end when no batch fits. Registration
-    /// order is the only ordering signal the engine offers (there is no
-    /// `before`/`after`), so it decides which of two conflicting systems runs
-    /// first. A later system can never join a batch that holds a system it
-    /// conflicts with.
-    pub fn ensure_execution_graph<'a>(
-        &mut self,
-        accesses: impl ExactSizeIterator<Item = &'a SystemAccess>,
-    ) {
-        if !self.needs_rebuild {
-            return;
-        }
-        let _zone = crate::profile_scope!(
-            "build execution graph",
-            [("Number of systems to schedule: {}", accesses.len())]
-        );
-        let accesses: Vec<&SystemAccess> = accesses.collect();
-
+    /// `accesses` are the phase's systems in registration order and `indices`
+    /// are their positions in the engine's whole system list, so a batch holds
+    /// indices the engine can dispatch with directly.
+    fn rebuild(&mut self, accesses: &[&SystemAccess], indices: &[usize]) {
         // Step 1: Build the conflict matrix from the access list. Each unordered
         // pair is compared once and the answer is written to both cells, so the
         // matrix stays symmetric.
@@ -294,44 +308,176 @@ impl SystemScheduler {
             }
         }
 
-        // Step 2: Fill the batches first-fit in registration order. The previous
-        // graph is taken out first so the loop can push into a plain local while
-        // it reads the conflict matrix; a batch's members are decided by the
-        // systems already in it, never by the ones still to come.
-        let mut batches = std::mem::take(&mut self.execution_graph);
+        // Step 2: Give each system the level one past the latest conflicting
+        // system before it, then collect the systems of one level into one
+        // batch. Levels are contiguous from zero - a level can only appear
+        // after every lower one exists - so the batch vector only ever grows by
+        // one at the end.
+        let mut batches = std::mem::take(&mut self.batches);
         batches.clear();
-        for system_index in 0..accesses.len() {
-            let target_batch_index = batches.iter().position(|batch| {
-                !batch
-                    .iter()
-                    .any(|&other| self.conflict_matrix[system_index][other])
-            });
-            match target_batch_index {
-                Some(batch_index) => batches[batch_index].push(system_index),
-                None => batches.push(vec![system_index]),
+        let mut levels: Vec<usize> = Vec::with_capacity(accesses.len());
+        for (system_index, &global_index) in indices.iter().enumerate() {
+            let level = (0..system_index)
+                .filter(|&earlier| self.conflict_matrix[system_index][earlier])
+                .map(|earlier| levels[earlier] + 1)
+                .max()
+                .unwrap_or(0);
+            levels.push(level);
+            if batches.len() == level {
+                batches.push(Vec::new());
             }
+            batches[level].push(global_index);
         }
-        self.execution_graph = batches;
+        self.batches = batches;
+    }
+}
+
+/// The conflict matrices and the parallel batches, one graph per batched phase.
+///
+/// The graphs depend only on the access patterns they were built from, and the
+/// batches depend only on the matrices. Both are rebuilt together by
+/// [`ensure_execution_graph`](SystemScheduler::ensure_execution_graph) after
+/// [`invalidate`](SystemScheduler::invalidate), so a single flag says whether
+/// the graphs are current and no caller has to work that out.
+///
+/// Each phase gets its own graph rather than one graph over every system: a
+/// phase's systems never run beside another phase's, so a conflict across
+/// phases must not cost a batch inside either of them.
+pub struct SystemScheduler {
+    /// The graph of systems that run before the first command flush.
+    pre_project: PhaseGraph,
+    /// The graph of the game's own frame work.
+    project: PhaseGraph,
+    /// Whether the matrices and the graphs are older than the current system
+    /// set.
+    ///
+    /// Starts true: a fresh scheduler has built nothing yet.
+    needs_rebuild: bool,
+}
+
+impl SystemScheduler {
+    /// Creates an empty scheduler that builds its first graphs on demand.
+    pub fn new() -> Self {
+        Self {
+            pre_project: PhaseGraph::default(),
+            project: PhaseGraph::default(),
+            needs_rebuild: true,
+        }
+    }
+
+    /// Marks the conflict matrices and the batches stale.
+    ///
+    /// Registrations and removals call this. Removing every system calls
+    /// [`clear`](SystemScheduler::clear) instead, which marks the graphs stale
+    /// the same way. The rebuild itself happens once, in
+    /// [`ensure_execution_graph`](SystemScheduler::ensure_execution_graph),
+    /// so a module that registers many systems in its `init` pays for one
+    /// rebuild, not one per registration.
+    ///
+    /// Enabled state is not conflict data: a disabled system stays in the batch
+    /// it was given and is skipped at dispatch.
+    pub fn invalidate(&mut self) {
+        self.needs_rebuild = true;
+    }
+
+    /// Rebuilds the conflict matrices and the execution graphs when they are
+    /// stale.
+    ///
+    /// `accesses` must yield every registered system's access pattern with its
+    /// phase, in registration order, and its length must be the number of
+    /// registered systems, because the graph's indices are positions in that
+    /// list. The call does nothing when nothing was invalidated since the last
+    /// build.
+    ///
+    /// Within a phase, a system's batch is one past the latest batch of the
+    /// systems registered before it that it conflicts with, and zero when there
+    /// is none. Because a conflicting predecessor always sits in a strictly
+    /// earlier batch, no batch can hold two systems that conflict, and a later
+    /// system can never run before an earlier one it conflicts with -
+    /// registration order is the only ordering signal the engine offers (there
+    /// is no `before`/`after`), and this keeps it. Filling batches first-fit
+    /// instead would let a later system join an earlier batch than a
+    /// conflicting predecessor whenever a third system happened to separate
+    /// them.
+    pub fn ensure_execution_graphs<'a>(
+        &mut self,
+        accesses: impl Iterator<Item = (&'a SystemAccess, RunPhase)>,
+    ) {
+        if !self.needs_rebuild {
+            return;
+        }
+        let accesses: Vec<(&SystemAccess, RunPhase)> = accesses.collect();
+        let _zone = crate::profile_scope!(
+            "build execution graph",
+            [("Number of systems to schedule: {}", accesses.len())]
+        );
+
+        for phase in RunPhase::BATCHED {
+            // The phase's systems in registration order, with their positions
+            // in the engine's whole list so a batch can dispatch them directly.
+            let indices: Vec<usize> = accesses
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, entry_phase))| *entry_phase == phase)
+                .map(|(index, _)| index)
+                .collect();
+            let phase_accesses: Vec<&SystemAccess> =
+                indices.iter().map(|&index| accesses[index].0).collect();
+            let graph = match phase {
+                RunPhase::PreProject => &mut self.pre_project,
+                _ => &mut self.project,
+            };
+            graph.rebuild(&phase_accesses, &indices);
+        }
         self.needs_rebuild = false;
     }
 
-    /// Returns the batches of system indices that can run in parallel.
+    /// Rebuilds the graphs with every system in the project phase.
     ///
-    /// The result is only current after
-    /// [`ensure_execution_graph`](SystemScheduler::ensure_execution_graph); the
-    /// engine calls that before it dispatches a frame.
-    pub fn execution_graph(&self) -> &[Vec<usize>] {
-        &self.execution_graph
+    /// The form for a caller whose systems all run in the phase a bare
+    /// registration puts them in; [`ensure_execution_graphs`] is the
+    /// phase-aware one.
+    ///
+    /// [`ensure_execution_graphs`]: SystemScheduler::ensure_execution_graphs
+    pub fn ensure_execution_graph<'a>(
+        &mut self,
+        accesses: impl ExactSizeIterator<Item = &'a SystemAccess>,
+    ) {
+        self.ensure_execution_graphs(accesses.map(|access| (access, RunPhase::Project)));
     }
 
-    /// Clears the conflict matrix and the graph.
+    /// Returns the batches of system indices that can run in parallel in one
+    /// phase.
+    ///
+    /// The result is only current after
+    /// [`ensure_execution_graphs`](SystemScheduler::ensure_execution_graphs);
+    /// the engine calls that before it dispatches a frame. A phase that runs
+    /// sequentially has no batches and answers an empty slice.
+    pub fn execution_graph_of(&self, phase: RunPhase) -> &[Vec<usize>] {
+        match phase {
+            RunPhase::PreProject => &self.pre_project.batches,
+            RunPhase::Project => &self.project.batches,
+            RunPhase::PostProject => &[],
+        }
+    }
+
+    /// Returns the project phase's batches, the phase a bare registration puts
+    /// a system in.
+    ///
+    /// A caller that schedules other phases uses
+    /// [`execution_graph_of`](SystemScheduler::execution_graph_of).
+    pub fn execution_graph(&self) -> &[Vec<usize>] {
+        &self.project.batches
+    }
+
+    /// Clears the conflict matrices and the graphs.
     ///
     /// The engine calls this when it removes every system at once. The next
     /// [`ensure_execution_graph`](SystemScheduler::ensure_execution_graph)
     /// rebuilds from whatever is registered then.
     pub fn clear(&mut self) {
-        self.conflict_matrix.clear();
-        self.execution_graph.clear();
+        self.pre_project = PhaseGraph::default();
+        self.project = PhaseGraph::default();
         self.needs_rebuild = true;
     }
 }
@@ -553,6 +699,37 @@ mod tests {
         }
         for (system_index, &was_scheduled) in scheduled.iter().enumerate() {
             assert!(was_scheduled, "System {} was not scheduled", system_index);
+        }
+    }
+
+    /// Checks that a system never runs before an earlier one it conflicts with.
+    ///
+    /// The batch of a conflicting pair must strictly increase with registration
+    /// order, which is the ordering guarantee the engine's systems rely on.
+    fn assert_batches_follow_registration_order(
+        scheduler: &SystemScheduler,
+        accesses: &[SystemAccess],
+    ) {
+        let mut batch_of = vec![usize::MAX; accesses.len()];
+        for (batch_index, batch) in scheduler.execution_graph().iter().enumerate() {
+            for &system_index in batch {
+                batch_of[system_index] = batch_index;
+            }
+        }
+        for later in 0..accesses.len() {
+            for earlier in 0..later {
+                if accesses[later].conflicts_with(&accesses[earlier]) {
+                    assert!(
+                        batch_of[later] > batch_of[earlier],
+                        "System {} (batch {}) conflicts with earlier system {} (batch {}) \
+                         but does not run after it",
+                        later,
+                        batch_of[later],
+                        earlier,
+                        batch_of[earlier]
+                    );
+                }
+            }
         }
     }
 
@@ -833,10 +1010,9 @@ mod tests {
         assert_eq!(scheduler.execution_graph()[0].len(), 1);
     }
 
-    /// A chain of read-write dependencies (A → B → C) batches only the systems
-    /// that do not disagree.
+    /// A chain of read-write dependencies (A → B → C) gets one batch per link.
     #[test]
-    fn a_three_system_chain_batches_only_the_systems_that_do_not_disagree() {
+    fn a_three_system_chain_gets_one_batch_per_link() {
         // The chain: write A, then read A and write B, then read B and write C.
         let mut writes_a = SystemAccess::new();
         writes_a.add_write(ComponentId::of::<TestComponentA>());
@@ -854,13 +1030,114 @@ mod tests {
 
         assert_no_batch_conflicts(&scheduler, &accesses);
         assert_all_systems_scheduled(&scheduler, 3);
+        assert_batches_follow_registration_order(&scheduler, &accesses);
 
-        // The first-fit fill gives [0, 2], [1]: system 2 conflicts with system
-        // 1 (both touch B) but not with system 0, so it joins the first batch.
-        // The assertion stays loose on purpose - the batch count is a
-        // scheduling detail, not the property under test.
-        assert!(scheduler.execution_graph().len() >= 2);
-        assert!(scheduler.execution_graph().len() <= 3);
+        // Each system conflicts with the one before it, so each link needs its
+        // own batch. First-fit would have let the third system join the first
+        // batch and run before the second, which reads B and so must come first.
+        assert_eq!(
+            scheduler.execution_graph().to_vec(),
+            vec![vec![0], vec![1], vec![2]],
+            "every link of the chain runs after the one it depends on"
+        );
+    }
+
+    /// A later system never runs before an earlier one it conflicts with, even
+    /// when the two touch no component in common and a third system sits
+    /// between them.
+    #[test]
+    fn a_later_system_never_lands_before_an_earlier_conflicting_system() {
+        // System 0 writes X and touches nothing else.
+        let mut writes_x = SystemAccess::new();
+        writes_x.add_write(ComponentId::of::<TestComponentA>());
+
+        // System 1 reads X and writes Y: it conflicts with 0 through X.
+        let mut reads_x_writes_y = SystemAccess::new();
+        reads_x_writes_y.add_read(ComponentId::of::<TestComponentA>());
+        reads_x_writes_y.add_write(ComponentId::of::<TestComponentB>());
+
+        // System 2 reads Y: it conflicts with 1 through Y, and with 0 through
+        // nothing, which is exactly the pair first-fit used to reorder.
+        let mut reads_y = SystemAccess::new();
+        reads_y.add_read(ComponentId::of::<TestComponentB>());
+
+        let accesses = vec![writes_x, reads_x_writes_y, reads_y];
+        let scheduler = scheduler_for(&accesses);
+
+        assert_no_batch_conflicts(&scheduler, &accesses);
+        assert_all_systems_scheduled(&scheduler, 3);
+        assert_batches_follow_registration_order(&scheduler, &accesses);
+
+        assert_eq!(
+            scheduler.execution_graph().to_vec(),
+            vec![vec![0], vec![1], vec![2]],
+            "the Y reader runs after the Y writer, not beside the X writer"
+        );
+    }
+
+    /// Each batched phase gets its own graph: a conflict across phases costs no
+    /// batch inside either of them, because the two never run beside each other.
+    #[test]
+    fn a_conflict_across_phases_costs_no_batch() {
+        // The pre-project system writes A; the project system reads it. They
+        // conflict, but the phases run one after the other.
+        let mut writes_a = SystemAccess::new();
+        writes_a.add_write(ComponentId::of::<TestComponentA>());
+        let mut reads_a = SystemAccess::new();
+        reads_a.add_read(ComponentId::of::<TestComponentA>());
+
+        let entries = [
+            (&writes_a, RunPhase::PreProject),
+            (&reads_a, RunPhase::Project),
+        ];
+        let mut scheduler = SystemScheduler::new();
+        scheduler.ensure_execution_graphs(entries.into_iter());
+
+        assert_eq!(
+            scheduler.execution_graph_of(RunPhase::PreProject).to_vec(),
+            vec![vec![0]],
+            "the pre-project phase holds its own system in one batch"
+        );
+        assert_eq!(
+            scheduler.execution_graph_of(RunPhase::Project).to_vec(),
+            vec![vec![1]],
+            "the project phase is not split by the earlier phase's conflict"
+        );
+        assert!(
+            scheduler
+                .execution_graph_of(RunPhase::PostProject)
+                .is_empty(),
+            "the post-project phase runs sequentially and has no batches"
+        );
+    }
+
+    /// A condition's reads, merged into its system's access, conflict exactly
+    /// like the system's own: a writer of what the condition reads must not
+    /// share a batch with it.
+    #[test]
+    fn a_merged_condition_access_conflicts_like_the_system_own() {
+        // The system writes B and reads nothing; its condition reads A.
+        let mut system_access = SystemAccess::new();
+        system_access.add_write(ComponentId::of::<TestComponentB>());
+        let mut condition_access = SystemAccess::new();
+        condition_access.add_read(ComponentId::of::<TestComponentA>());
+        system_access.merge(&condition_access);
+
+        // A writer of A is now a conflict through the condition's read.
+        let mut writes_a = SystemAccess::new();
+        writes_a.add_write(ComponentId::of::<TestComponentA>());
+        assert!(
+            system_access.conflicts_with(&writes_a),
+            "the condition's read has to count for batching"
+        );
+
+        // A reader of A is not, and the system's own write still conflicts.
+        let mut reads_a = SystemAccess::new();
+        reads_a.add_read(ComponentId::of::<TestComponentA>());
+        assert!(!system_access.conflicts_with(&reads_a));
+        let mut writes_b = SystemAccess::new();
+        writes_b.add_write(ComponentId::of::<TestComponentB>());
+        assert!(system_access.conflicts_with(&writes_b));
     }
 
     /// Five systems writing five different components form one batch.
@@ -1066,11 +1343,13 @@ mod tests {
     ///
     /// With 10 access kinds, one to six systems give 1,111,110 inputs
     /// (10 + 100 + 1,000 + 10,000 + 100,000 + 1,000,000). Each one is scheduled
-    /// and checked for two properties:
+    /// and checked for three properties:
     ///
     /// 1. No batch holds two systems that conflict (the safety guarantee).
     /// 2. Every system appears in exactly one batch, so none is dropped or
     ///    scheduled twice.
+    /// 3. A conflicting pair keeps registration order: the later system runs in
+    ///    a strictly later batch than the earlier one.
     ///
     /// The combinations are counted in base 10: counter 0 is [None, None, ...],
     /// counter 1 is [ReadA, None, ...], and so on. Every combination is covered,
@@ -1114,9 +1393,10 @@ mod tests {
                     .collect();
                 let scheduler = scheduler_for(&accesses);
 
-                // Check the two properties above.
+                // Check the properties above.
                 assert_no_batch_conflicts(&scheduler, &accesses);
                 assert_all_systems_scheduled(&scheduler, system_count as usize);
+                assert_batches_follow_registration_order(&scheduler, &accesses);
             }
         }
     }
@@ -1171,9 +1451,10 @@ mod tests {
                 .collect();
             let scheduler = scheduler_for(&accesses);
 
-            // Check the same two properties as the exhaustive test.
+            // Check the same three properties as the exhaustive test.
             assert_no_batch_conflicts(&scheduler, &accesses);
             assert_all_systems_scheduled(&scheduler, system_count);
+            assert_batches_follow_registration_order(&scheduler, &accesses);
         }
     }
 } // mod tests

@@ -40,7 +40,7 @@ use pill_editor_core::editor_state::{EditorSelection, EditorSnapshot};
 use pill_editor_core::notices::EditorNotices;
 use pill_editor_core::panels::{PanelCommands, PanelRegistrations, PanelRegistry, PanelRequest};
 use pill_editor_core::session::EguiShellState;
-use pill_engine::{pill_hot, pill_module, system, Engine, Res, ResMut};
+use pill_engine::{pill_module, system, Engine, Res, ResMut};
 
 // Current crate
 // The shell's public items, re-exported so a patch crate's
@@ -178,8 +178,11 @@ pub fn init(engine: &mut Engine) -> u32 {
 /// [`EguiShellInput`]: geometry, focus and the events of the editor's own
 /// windows. After it, it drains [`EguiShellFrame`].
 #[allow(clippy::type_complexity)]
-#[pill_hot]
-#[system(name = "egui_shell", post_update, edit_mode)]
+#[system(
+    name = "egui_shell",
+    run_phase = "post_project",
+    run_in_edit_mode = true
+)]
 pub fn egui_shell_update(
     resources: (
         ResMut<EguiShellState>,

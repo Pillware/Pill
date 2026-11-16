@@ -275,8 +275,7 @@ fn scatter_between(seed: u64, minimum: f32, maximum: f32) -> f32 {
 /// The overlay gets the keyboard first. While it wants it - a text field has
 /// focus or a widget listens for keys - the tuning keys belong to the UI.
 /// Typing in the overlay then does not also retune the field.
-#[pill_hot]
-#[system(name = "demo_control", order = 30)]
+#[system(name = "demo_control", order = 530)]
 pub(crate) fn demo_control_system(
     input: Res<Input>,
     game_ui: Res<GameUi>,

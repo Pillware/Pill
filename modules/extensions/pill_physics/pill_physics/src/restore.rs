@@ -36,7 +36,7 @@ use crate::manager::PhysicsManager;
 ///
 /// Returns [`SystemError::MissingResource`] when the physics manager is absent,
 /// which only happens in a world this module was not registered in.
-#[system(name = "physics_restore", order = 899, edit_mode)]
+#[system(name = "physics_restore", order = 899, run_in_edit_mode = true)]
 pub fn physics_restore(
     restore_epoch: Res<RestoreEpoch>,
     mut manager: ResMut<PhysicsManager>,

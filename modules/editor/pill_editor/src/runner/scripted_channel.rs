@@ -26,6 +26,7 @@
 
 // Current crate
 use super::*;
+use pill_editor_core::tools;
 
 // =============================================================================
 // Scripted Refusals
@@ -528,13 +529,20 @@ impl EditorWindow {
         }
     }
 
-    /// Logs the selected entities, primary last, and the selected asset
-    /// (`dump selection`).
+    /// Logs the selected entities, primary last, the selected asset and the
+    /// selected elements (`dump selection`).
     pub(super) fn dump_selection(&mut self) {
         let world = self.host.host_mut().engine_mut().world_mut();
-        let (entities, asset) = world
+        let (entities, asset, element_kind, elements) = world
             .get_resource::<EditorSelection>()
-            .map(|selection| (selection.entities().to_vec(), selection.asset.clone()))
+            .map(|selection| {
+                (
+                    selection.entities().to_vec(),
+                    selection.asset.clone(),
+                    selection.elements().kind().to_string(),
+                    selection.elements().elements().to_vec(),
+                )
+            })
             .unwrap_or_default();
         info!(
             target: telemetry_target::EDITOR,
@@ -545,6 +553,7 @@ impl EditorWindow {
                 .map(|entity| entity.to_string())
                 .unwrap_or_else(|| "none".to_string())
                 .as_str(),
+            elements = elements.len(),
             "[test] selection"
         );
         for entity in &entities {
@@ -552,6 +561,15 @@ impl EditorWindow {
                 target: telemetry_target::EDITOR,
                 entity = %entity,
                 "[test] selected entity"
+            );
+        }
+        for element in &elements {
+            info!(
+                target: telemetry_target::EDITOR,
+                entity = %element.entity,
+                id = element.id,
+                kind = element_kind.as_str(),
+                "[test] selected element"
             );
         }
     }
@@ -1090,6 +1108,7 @@ impl EditorWindow {
                 Dump::Browser => self.dump_browser(),
                 Dump::StandaloneTypes => self.dump_standalone_types(),
                 Dump::Systems => self.dump_systems(),
+                Dump::Tools => self.dump_tools(),
                 Dump::Preferences => self.dump_preferences(),
                 Dump::Theme => self.dump_theme(),
                 Dump::Console => self.dump_console(),
@@ -1132,6 +1151,10 @@ impl EditorWindow {
                 self.scripted_select_extend(&entity_text, SelectionClick::Range),
             ),
             ScriptedCommand::SelectResource(name) => self.scripted_select_resource(&name),
+            ScriptedCommand::Tool(name) => reject_on_failure(line, self.scripted_tool(name)),
+            ScriptedCommand::SelectElement { ids, add } => {
+                reject_on_failure(line, self.scripted_select_elements(ids, add))
+            }
             ScriptedCommand::EditResource {
                 resource,
                 field,
@@ -2296,6 +2319,133 @@ impl EditorWindow {
             "[editor] selection changed"
         );
         Ok(())
+    }
+
+    /// Runs `select element <ids>` / `select element add <id>`: the recorded
+    /// element selection a tool's own click makes.
+    ///
+    /// The elements belong to the primary entity, because a tool edits the
+    /// elements of the entity it was entered on. The kind is the one the
+    /// current element selection carries, or `element` when nothing is
+    /// selected yet: until the tools stage reports kinds, the editor records
+    /// the one name the scripted channel can state.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when no entity is selected to own the elements.
+    pub(super) fn scripted_select_elements(
+        &mut self,
+        ids: Vec<u64>,
+        add: bool,
+    ) -> Result<(), String> {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let Some(selection) = world.get_resource::<EditorSelection>() else {
+            return Ok(());
+        };
+        let Some(owner) = selection.primary() else {
+            return Err("select element needs a selected entity to own the elements".to_string());
+        };
+        let kind = if selection.elements().kind().is_empty() {
+            "element".to_string()
+        } else {
+            selection.elements().kind().to_string()
+        };
+        let mut elements: Vec<ElementRef> = if add {
+            selection.elements().elements().to_vec()
+        } else {
+            Vec::new()
+        };
+        for id in &ids {
+            let element = ElementRef {
+                entity: owner,
+                id: *id,
+            };
+            if !elements.contains(&element) {
+                elements.push(element);
+            }
+        }
+        let count = elements.len();
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push_recorded(
+                vec![EditorCommand::SetElementSelection { kind, elements }],
+                "select elements",
+                Some("editor.elements".to_string()),
+            );
+        }
+        info!(
+            target: telemetry_target::EDITOR,
+            entity = %owner,
+            count,
+            "[editor] element selection queued"
+        );
+        Ok(())
+    }
+
+    /// Runs `tool <name>` / `tool none`: the recorded activation a toolbox row
+    /// makes.
+    ///
+    /// A built-in's name also queues the gizmo-mode command its row would, so
+    /// the scripted channel, the toolbox and the shortcuts all end in the same
+    /// place. An unknown name is refused with the tools that exist, which is
+    /// what the grammar's own line says.
+    ///
+    /// # Errors
+    ///
+    /// Returns the registry's refusal when no tool has that name.
+    pub(super) fn scripted_tool(&mut self, name: Option<String>) -> Result<(), String> {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        tools::tool_registry_mut(world).set_active(name.as_deref())?;
+        let active = tools::tool_registry_mut(world).active().map(str::to_string);
+        // A built-in tool is a gizmo mode, so activating one queues the same
+        // command its toolbox row does. Any other tool's effect arrives with
+        // the stage that gives tools something to do.
+        if let Some(mode) = active
+            .as_deref()
+            .and_then(tools::BuiltinTool::from_name)
+            .map(tools::BuiltinTool::gizmo_mode)
+        {
+            if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+                pending.push_recorded(
+                    vec![EditorCommand::SetGizmoTool {
+                        mode: Some(mode),
+                        space: None,
+                        snap: None,
+                    }],
+                    format!("tool {}", tools::BuiltinTool::from(mode).name()),
+                    Some("editor.tool".to_string()),
+                );
+            }
+        }
+        info!(
+            target: telemetry_target::EDITOR,
+            tool = active.as_deref().unwrap_or("none"),
+            "[editor] tool activated"
+        );
+        Ok(())
+    }
+
+    /// Logs the registered tools and which one is active (`dump tools`).
+    pub(super) fn dump_tools(&mut self) {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let registry = tools::tool_registry_mut(world).clone();
+        let active = registry.active().map(str::to_string);
+        info!(
+            target: telemetry_target::EDITOR,
+            count = registry.tools().len(),
+            active = active.as_deref().unwrap_or("none"),
+            "[test] tools"
+        );
+        for tool in registry.tools() {
+            info!(
+                target: telemetry_target::EDITOR,
+                name = tool.name.as_str(),
+                label = tool.label.as_str(),
+                shortcut = tool.shortcut.as_deref().unwrap_or("none"),
+                global = tool.global,
+                active = active.as_deref() == Some(tool.name.as_str()),
+                "[test] tool"
+            );
+        }
     }
 
     /// Runs `select resource <name>`: the recorded selection a resource row

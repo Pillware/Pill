@@ -199,8 +199,7 @@ fn step_pill(
 }
 
 /// Moves every pill one frame through the field, in parallel.
-#[pill_hot]
-#[system(name = "curl_noise", order = 20)]
+#[system(name = "curl_noise", order = 520)]
 pub(crate) fn curl_noise_system(
     time: Res<Time>,
     demo_state: Res<DemoState>,

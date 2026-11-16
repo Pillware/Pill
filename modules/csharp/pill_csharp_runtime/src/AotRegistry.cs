@@ -5,7 +5,7 @@
 // `Activator.CreateInstance` / `MethodInfo.Invoke` are not generated. When a
 // project is published with `PublishAot=true`, the
 // `PillCSharpRuntimeMacros.EcsAotRegistryGenerator` source generator emits one
-// static runner per `[EcsSystem]` / `[EcsStartup]` method into the project
+// static runner per `[System]` / `[Startup]` method into the project
 // assembly and installs them here through a module initializer. `ProjectHost`'s
 // AOT branch reads these arrays instead of reflecting over a loaded assembly.
 // In ordinary JIT builds the arrays stay empty and this type is unused.
@@ -36,6 +36,21 @@ public readonly struct AotSystemRegistration
     /// </summary>
     public ResourceAccessRegistration[] ResourceAccesses { get; }
 
+    /// <summary>Declared sort key within the phase; lower runs first.</summary>
+    public int Order { get; }
+
+    /// <summary>Declared frame phase, the same values as the Rust `RunPhase`.</summary>
+    public RunPhase RunPhase { get; }
+
+    /// <summary>
+    /// Whether the system also runs while the editor edits and the engine is
+    /// paused.
+    /// </summary>
+    public bool RunInEditMode { get; }
+
+    /// <summary>Declared `RunIf` conditions, in evaluation order; empty for none.</summary>
+    public ManagedCondition[] Conditions { get; }
+
     /// <summary>Direct, reflection-free runner for the Rust scheduler.</summary>
     public Action Run { get; }
 
@@ -50,13 +65,48 @@ public readonly struct AotSystemRegistration
     public AotSystemRegistration(
         string name, QueryDescriptor?[] queries, string[] queryNames, bool usesCommands,
         ResourceAccessRegistration[] resourceAccesses, Action run)
+        : this(name, queries, queryNames, usesCommands, resourceAccesses, 0, RunPhase.Project, false, [], run)
+    {
+    }
+
+    /// <summary>Describe one generated system registration, schedule included.</summary>
+    public AotSystemRegistration(
+        string name, QueryDescriptor?[] queries, string[] queryNames, bool usesCommands,
+        ResourceAccessRegistration[] resourceAccesses, int order, RunPhase runPhase,
+        bool runInEditMode, ManagedCondition[] conditions, Action run)
     {
         Name = name;
         Queries = queries;
         QueryNames = queryNames;
         UsesCommands = usesCommands;
         ResourceAccesses = resourceAccesses;
+        Order = order;
+        RunPhase = runPhase;
+        RunInEditMode = runInEditMode;
+        Conditions = conditions;
         Run = run;
+    }
+}
+
+/// <summary>One `[System(RunIf = ...)]` condition, as declared.</summary>
+/// <remarks>
+/// The name is the method's, and the declaring type is the one the lookup runs
+/// on: the system's own type, or the type `RunIfType` names. Resolution and
+/// validation happen in the runner; this value is the declaration only.
+/// </remarks>
+public readonly struct ManagedCondition
+{
+    /// <summary>The condition method's name, as `nameof(...)` declared it.</summary>
+    public string Name { get; }
+
+    /// <summary>The type the condition method is declared on.</summary>
+    public Type DeclaringType { get; }
+
+    /// <summary>Describe one declared condition.</summary>
+    public ManagedCondition(string name, Type declaringType)
+    {
+        Name = name;
+        DeclaringType = declaringType;
     }
 }
 

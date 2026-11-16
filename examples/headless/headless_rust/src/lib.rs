@@ -86,7 +86,6 @@ pub fn init(engine: &mut Engine) -> u32 {
 ///
 /// Missing `Time` or a missing report timer only means no report is logged;
 /// the tickers still advance.
-#[pill_hot]
 #[system(name = "tick")]
 fn tick_system(
     time: Res<Time>,

@@ -26,6 +26,7 @@
 //!   not take back.
 
 // Standard library
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 // External crates
@@ -523,6 +524,38 @@ impl AssetDetail {
     }
 }
 
+/// Why an element click could not become a selection.
+///
+/// Both variants are refusals the editor logs by name: the click changes
+/// nothing, and the person is told which kinds or entities it would have
+/// mixed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ElementClickRefusal {
+    /// An extend or range click named a kind the selection does not hold.
+    KindMismatch {
+        /// The kind the selection holds.
+        selected: String,
+        /// The kind the clicked element belongs to.
+        clicked: String,
+    },
+    /// The click would have put two entities in one element selection.
+    OtherEntity,
+}
+
+impl fmt::Display for ElementClickRefusal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ElementClickRefusal::KindMismatch { selected, clicked } => write!(
+                formatter,
+                "the selection holds {selected}s; a click cannot extend it with a {clicked}"
+            ),
+            ElementClickRefusal::OtherEntity => {
+                write!(formatter, "an element selection belongs to one entity")
+            }
+        }
+    }
+}
+
 /// What a click on an entity row means.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SelectionClick {
@@ -545,6 +578,11 @@ pub enum SelectionClick {
 /// one the gizmo acts on, the one the scene outlines most brightly and the one
 /// the Inspector edits first. Ctrl extends the set, Shift extends it over the
 /// Entities list's range, and a plain click replaces it.
+///
+/// The element slot is the sub-entity counterpart a tool fills, and it stands
+/// apart from the other three on purpose: it names one entity's elements of
+/// one kind (see [`ElementSelection`]), and an entity or resource pick clears
+/// it because a new entity means a new set of elements.
 #[derive(Clone, Default)]
 pub struct EditorSelection {
     /// The selected entities, in the order they were selected. The last one is
@@ -556,6 +594,95 @@ pub struct EditorSelection {
     /// resource selection excludes the other two, because the Inspector shows
     /// one thing at a time.
     pub resource: Option<String>,
+    /// The selected elements of one entity, when a tool has them selected.
+    elements: ElementSelection,
+}
+
+/// One element of one entity: what a tool reports and the selection stores.
+///
+/// The id is the tool's own and stays valid while the component it belongs to
+/// is unchanged; the entity is part of the key because element ids are only
+/// unique within one entity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ElementRef {
+    /// The entity the element belongs to.
+    pub entity: Entity,
+    /// The tool's own id for the element.
+    pub id: u64,
+}
+
+/// The editor's element slot: the selected elements of one entity, all of one
+/// kind.
+///
+/// The kind lives beside the elements rather than inside each one, so "one kind
+/// per selection" is a property of the value: a caller that tries to mix two
+/// kinds is refused by [`EditorSelection::set_elements`], which is the only way
+/// to fill the slot.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ElementSelection {
+    /// The kind every element in [`Self::elements`] belongs to. Empty when
+    /// nothing is selected.
+    kind: String,
+    /// The selected elements, in the order they were selected.
+    elements: Vec<ElementRef>,
+}
+
+impl ElementSelection {
+    /// The kind the selection is limited to, or `""` when nothing is selected.
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    /// The selected elements, in the order they were selected.
+    pub fn elements(&self) -> &[ElementRef] {
+        &self.elements
+    }
+
+    /// The selected elements, so a restore can follow them to a fresh entity
+    /// handle.
+    pub fn elements_mut(&mut self) -> &mut [ElementRef] {
+        &mut self.elements
+    }
+
+    /// Whether no element is selected.
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
+    /// The entity every selected element belongs to, when anything is selected.
+    pub fn owner(&self) -> Option<Entity> {
+        self.elements.first().map(|element| element.entity)
+    }
+
+    /// Whether `id` on `entity` is selected.
+    pub fn contains(&self, entity: Entity, id: u64) -> bool {
+        self.elements
+            .iter()
+            .any(|element| element.entity == entity && element.id == id)
+    }
+
+    /// Replaces the slot with `elements` of one kind.
+    ///
+    /// Returns `false` and changes nothing when the elements name more than one
+    /// entity: element ids are only unique within one entity, so a mixed set
+    /// could not be read back. The caller reports the refusal.
+    pub fn set(&mut self, kind: String, elements: Vec<ElementRef>) -> bool {
+        let mut owners = elements.iter().map(|element| element.entity);
+        if let Some(first) = owners.next() {
+            if owners.any(|entity| entity != first) {
+                return false;
+            }
+        }
+        self.kind = kind;
+        self.elements = elements;
+        true
+    }
+
+    /// Drops every selected element and the kind with them.
+    pub fn clear(&mut self) {
+        self.kind.clear();
+        self.elements.clear();
+    }
 }
 
 impl EditorSelection {
@@ -607,6 +734,84 @@ impl EditorSelection {
         self.entities.last().copied()
     }
 
+    /// Returns the element set a click produces, given the tool's report
+    /// order.
+    ///
+    /// The rule is the entity click's rule with the kind restriction added: a
+    /// plain click replaces the selection whatever kind it held, while an
+    /// extend or a range click only works inside the selection's kind - that
+    /// refusal is how "control points and tangents never select together" is
+    /// enforced. A range needs the last selected element and the clicked one
+    /// in `reported`, and falls back to a plain click without them, exactly as
+    /// [`Self::clicked`] does for rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ElementClickRefusal::KindMismatch`] when an extend or range
+    /// click names a kind the selection does not hold, and
+    /// [`ElementClickRefusal::OtherEntity`] when it would mix two entities.
+    pub fn clicked_elements(
+        &self,
+        click: SelectionClick,
+        target: ElementRef,
+        kind: &str,
+        reported: &[ElementRef],
+    ) -> Result<ElementSelection, ElementClickRefusal> {
+        let current = self.elements();
+        if click != SelectionClick::Reset && !current.kind().is_empty() {
+            if current.kind() != kind {
+                return Err(ElementClickRefusal::KindMismatch {
+                    selected: current.kind().to_string(),
+                    clicked: kind.to_string(),
+                });
+            }
+            if current
+                .elements()
+                .iter()
+                .any(|element| element.entity != target.entity)
+            {
+                return Err(ElementClickRefusal::OtherEntity);
+            }
+        }
+        let mut next = ElementSelection::default();
+        let elements = match click {
+            SelectionClick::Reset => vec![target],
+            SelectionClick::Add => {
+                let mut elements: Vec<ElementRef> = current
+                    .elements()
+                    .iter()
+                    .filter(|element| element.id != target.id)
+                    .copied()
+                    .collect();
+                elements.push(target);
+                elements
+            }
+            SelectionClick::Range => {
+                let anchor = current.elements().last().map(|element| element.id);
+                let span = anchor
+                    .and_then(|anchor| {
+                        reported
+                            .iter()
+                            .position(|element| element.id == anchor)
+                            .zip(reported.iter().position(|element| element.id == target.id))
+                    })
+                    .map(|(anchor_index, target_index)| {
+                        let (first, last) = if anchor_index <= target_index {
+                            (anchor_index, target_index)
+                        } else {
+                            (target_index, anchor_index)
+                        };
+                        reported[first..=last].to_vec()
+                    });
+                span.unwrap_or_else(|| vec![target])
+            }
+        };
+        if !next.set(kind.to_string(), elements) {
+            return Err(ElementClickRefusal::OtherEntity);
+        }
+        Ok(next)
+    }
+
     /// Returns every selected entity, in selection order.
     pub fn entities(&self) -> &[Entity] {
         &self.entities
@@ -645,6 +850,27 @@ impl EditorSelection {
     /// Drops the entity selection.
     pub fn clear_entities(&mut self) {
         self.entities.clear();
+    }
+
+    /// The selected elements of one entity, when a tool has them selected.
+    pub fn elements(&self) -> &ElementSelection {
+        &self.elements
+    }
+
+    /// Replaces the element slot, refusing a set that names more than one
+    /// entity.
+    ///
+    /// Returns `false` and leaves the slot alone on a refusal, which the caller
+    /// reports: a tool that reports elements of two entities at once is a tool
+    /// bug, not a selection the editor can store.
+    pub fn set_elements(&mut self, kind: String, elements: Vec<ElementRef>) -> bool {
+        self.elements.set(kind, elements)
+    }
+
+    /// Drops the element selection. The entity slot is left alone: the elements
+    /// belong to an entity that is usually still selected.
+    pub fn clear_elements(&mut self) {
+        self.elements.clear();
     }
 }
 
@@ -1388,6 +1614,101 @@ mod tests {
         );
     }
 
+    /// An element click replaces across kinds, extends only within the
+    /// selection's kind (refusing and naming both kinds otherwise), and takes
+    /// a range over the tool's report order.
+    #[test]
+    fn element_clicks_replace_extend_and_range_within_one_kind() {
+        let owner = Entity::from_raw(1, 0);
+        let other = Entity::from_raw(2, 0);
+        let reported: Vec<ElementRef> = (0..4).map(|id| ElementRef { entity: owner, id }).collect();
+        let target = reported[2];
+
+        // A plain click replaces whatever kind the selection held.
+        let mut selection = EditorSelection::default();
+        assert!(selection.set_elements(
+            "tangent".to_string(),
+            vec![ElementRef {
+                entity: owner,
+                id: 9
+            }]
+        ));
+        let next = selection
+            .clicked_elements(SelectionClick::Reset, target, "point", &reported)
+            .expect("a plain click always applies");
+        assert_eq!(next.kind(), "point");
+        assert_eq!(next.elements(), &[target]);
+
+        // Ctrl-clicking the same kind extends, and re-clicking an element
+        // already selected only makes it last.
+        selection.set_elements("point".to_string(), vec![reported[0]]);
+        let next = selection
+            .clicked_elements(SelectionClick::Add, target, "point", &reported)
+            .expect("the kinds agree");
+        assert_eq!(next.elements(), &[reported[0], target]);
+        selection.set_elements("point".to_string(), vec![reported[0], target]);
+        let next = selection
+            .clicked_elements(SelectionClick::Add, reported[0], "point", &reported)
+            .expect("the kinds agree");
+        assert_eq!(
+            next.elements(),
+            &[target, reported[0]],
+            "an element already selected moves to the end, it is not duplicated"
+        );
+
+        // A Ctrl-click naming another kind is refused, and the refusal names
+        // both kinds.
+        let refusal = selection
+            .clicked_elements(SelectionClick::Add, target, "tangent", &reported)
+            .expect_err("a tangent cannot extend a point selection");
+        assert_eq!(
+            refusal,
+            ElementClickRefusal::KindMismatch {
+                selected: "point".to_string(),
+                clicked: "tangent".to_string(),
+            }
+        );
+        assert!(refusal.to_string().contains("points"), "{refusal}");
+        assert!(selection
+            .clicked_elements(SelectionClick::Range, target, "tangent", &reported)
+            .is_err());
+
+        // Shift covers the report order between the anchor and the click.
+        selection.set_elements("point".to_string(), vec![reported[0]]);
+        let next = selection
+            .clicked_elements(SelectionClick::Range, target, "point", &reported)
+            .expect("the kinds agree");
+        assert_eq!(next.elements(), &reported[0..=2]);
+
+        // A range whose anchor the report no longer holds is a plain click.
+        selection.set_elements(
+            "point".to_string(),
+            vec![ElementRef {
+                entity: owner,
+                id: 77,
+            }],
+        );
+        let next = selection
+            .clicked_elements(SelectionClick::Range, target, "point", &reported)
+            .expect("the kinds agree");
+        assert_eq!(next.elements(), &[target]);
+
+        // An extend that would mix two entities is refused by name.
+        selection.set_elements(
+            "point".to_string(),
+            vec![ElementRef {
+                entity: other,
+                id: 0,
+            }],
+        );
+        assert_eq!(
+            selection
+                .clicked_elements(SelectionClick::Add, target, "point", &reported)
+                .expect_err("two entities cannot share one element selection"),
+            ElementClickRefusal::OtherEntity
+        );
+    }
+
     /// A plain component with a field layout, so entity create and field
     /// writes have something to target.
     #[repr(C)]
@@ -2036,6 +2357,119 @@ mod tests {
         // Controls never enter the history as steps.
         assert!(!recorded.fully_invertible);
         assert!(recorded.inverses.is_empty());
+    }
+
+    #[test]
+    fn an_element_selection_holds_one_entity_and_one_kind() {
+        let mut selection = EditorSelection::default();
+        let first = Entity::from_raw(1, 0);
+        let second = Entity::from_raw(2, 0);
+
+        // Two elements of one entity are a legal selection.
+        assert!(selection.set_elements(
+            "control point".to_string(),
+            vec![
+                ElementRef {
+                    entity: first,
+                    id: 0,
+                },
+                ElementRef {
+                    entity: first,
+                    id: 2,
+                },
+            ],
+        ));
+        assert_eq!(selection.elements().kind(), "control point");
+        assert_eq!(selection.elements().owner(), Some(first));
+        assert!(selection.elements().contains(first, 2));
+
+        // A set that names two entities is refused and changes nothing.
+        let before = selection.elements().clone();
+        assert!(!selection.set_elements(
+            "control point".to_string(),
+            vec![
+                ElementRef {
+                    entity: first,
+                    id: 0,
+                },
+                ElementRef {
+                    entity: second,
+                    id: 0,
+                },
+            ],
+        ));
+        assert_eq!(
+            selection.elements(),
+            &before,
+            "a refused set leaves the selection as it was"
+        );
+
+        selection.clear_elements();
+        assert!(selection.elements().is_empty());
+        assert_eq!(selection.elements().kind(), "");
+    }
+
+    #[test]
+    fn an_entity_pick_clears_the_elements_and_its_undo_brings_them_back() {
+        let mut engine = demo_engine();
+        let entity = engine
+            .world_mut()
+            .create_entity()
+            .with(DemoComponent {
+                strength: 1.0,
+                enabled: true,
+            })
+            .build()
+            .expect("entity builds");
+
+        // A tool had two elements of that entity selected.
+        let recorded = EditorCommand::apply_recorded(
+            &mut engine,
+            &[EditorCommand::SetElementSelection {
+                kind: "control point".to_string(),
+                elements: vec![ElementRef { entity, id: 0 }, ElementRef { entity, id: 1 }],
+            }],
+        );
+        assert!(recorded.failures.is_empty(), "{:?}", recorded.failures);
+        assert!(
+            recorded.fully_invertible,
+            "an element pick is one undo step"
+        );
+
+        // Picking the entity again replaces the entity slot and drops the
+        // elements, which belonged to the selection it replaced.
+        let pick = EditorCommand::apply_recorded(
+            &mut engine,
+            &[EditorCommand::SetSelection {
+                entities: vec![entity],
+                asset: None,
+            }],
+        );
+        assert!(pick.failures.is_empty(), "{:?}", pick.failures);
+        let selection = engine
+            .world()
+            .get_resource::<EditorSelection>()
+            .expect("the pick wrote the selection");
+        assert!(
+            selection.elements().is_empty(),
+            "an entity pick clears the element slot"
+        );
+
+        // Its undo puts the elements back, and leaves the entity slot as the
+        // pick found it: nothing was selected there before the pick.
+        let undo = EditorCommand::apply_recorded(&mut engine, &pick.inverses);
+        assert!(undo.failures.is_empty(), "{:?}", undo.failures);
+        let selection = engine
+            .world()
+            .get_resource::<EditorSelection>()
+            .expect("the undo wrote the selection");
+        assert_eq!(selection.elements().elements().len(), 2);
+        assert_eq!(selection.elements().kind(), "control point");
+        assert_eq!(
+            selection.primary(),
+            None,
+            "the entity slot held nothing before the pick, so the undo clears it"
+        );
     }
 
     #[test]

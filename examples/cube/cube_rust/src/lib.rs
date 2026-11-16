@@ -169,7 +169,6 @@ fn create_scene(
 ///
 /// The rotation is scaled by the time the frame took, so the spin speed does
 /// not depend on the frame rate.
-#[pill_hot]
 #[system(name = "spin_cube")]
 fn spin_cube_system(
     time_resource: Res<Time>,

@@ -19,6 +19,7 @@
 
 // External crates
 use pill_core::telemetry::telemetry_target;
+use pill_engine::ChangeOrigin;
 use pill_engine::Engine;
 
 // Current crate
@@ -28,6 +29,19 @@ use super::*;
 // =============================================================================
 // Free Functions
 // =============================================================================
+
+/// The origin an editor change reports.
+///
+/// An enclosing scope wins: an undo or a redo replays a batch inside a
+/// `HistoryRestore` scope, and the arms it delegates to must not relabel that
+/// as an authored change. With no enclosing scope the editor's own value is
+/// used, which is what a change a person made reports.
+fn editor_origin(engine: &Engine, editor_default: ChangeOrigin) -> ChangeOrigin {
+    match engine.world().change_origin() {
+        ChangeOrigin::Simulation => editor_default,
+        enclosing => enclosing,
+    }
+}
 
 /// Applies one world command.
 ///
@@ -89,11 +103,18 @@ pub(super) fn apply(
             // The inverse can then name it directly: no shared cell, no
             // lock, and no lookup that could fail.
             let assigned = engine.world_mut().reserve_entity();
-            engine.queue_deferred_commands(move |_world, queue| {
-                queue.create_mixed_entity(assigned, native_components, descriptor_components);
-            });
+            let origin = editor_origin(engine, ChangeOrigin::Authoring);
             engine
-                .flush_deferred_commands()
+                .with_change_origin(origin, move |engine| {
+                    engine.queue_deferred_commands(move |_world, queue| {
+                        queue.create_mixed_entity(
+                            assigned,
+                            native_components,
+                            descriptor_components,
+                        );
+                    });
+                    engine.flush_deferred_commands()
+                })
                 .map_err(|errors| format!("{command:?}: {errors:?}"))?;
             Ok(CommandOutcome::inverse(EditorCommand::DestroyEntity {
                 entity: assigned,
@@ -104,14 +125,23 @@ pub(super) fn apply(
             // Capture the component values before the destroy: the restore
             // re-creates the entity from them.
             let seeds = super::EditorCommand::capture_seeds(engine, *entity)?;
-            if engine.world_mut().destroy_entity(*entity) {
-                Ok(CommandOutcome::inverse(EditorCommand::RestoreEntity {
-                    previous: *entity,
-                    components: seeds,
-                }))
-            } else {
-                Err(format!("{command:?}: entity was already gone"))
-            }
+            // The destroy goes through the command queue, so the scripts on the
+            // entity hear that it stops existing before it goes. A capture
+            // above already refused an entity that was gone.
+            let destroyed_entity = *entity;
+            let origin = editor_origin(engine, ChangeOrigin::Authoring);
+            engine
+                .with_change_origin(origin, move |engine| {
+                    engine.queue_deferred_commands(move |_world, queue| {
+                        queue.destroy_entity(destroyed_entity);
+                    });
+                    engine.flush_deferred_commands()
+                })
+                .map_err(|errors| format!("{command:?}: {errors:?}"))?;
+            Ok(CommandOutcome::inverse(EditorCommand::RestoreEntity {
+                previous: destroyed_entity,
+                components: seeds,
+            }))
         }
 
         EditorCommand::AddComponent { entity, component } => {
@@ -137,25 +167,28 @@ pub(super) fn apply(
                 .resolve_component_id_by_name_any(component)
                 .map_err(|error| format!("{command:?}: {error}"))?
                 .ok_or_else(|| format!("{command:?}: `{component}` is not registered"))?;
-            engine.queue_deferred_commands(move |_world, queue| {
-                if component_id.is_native_storage() {
-                    queue.add_component_adder_to_entity(
-                        *entity,
-                        Box::new(pill_engine::commands::ByteComponentAdder::new(
-                            component_id,
-                            component_image,
-                        )),
-                    );
-                } else {
-                    queue.add_descriptor_component_to_entity(
-                        *entity,
-                        component_id,
-                        component_image,
-                    );
-                }
-            });
+            let origin = editor_origin(engine, ChangeOrigin::Authoring);
             engine
-                .flush_deferred_commands()
+                .with_change_origin(origin, move |engine| {
+                    engine.queue_deferred_commands(move |_world, queue| {
+                        if component_id.is_native_storage() {
+                            queue.add_component_adder_to_entity(
+                                *entity,
+                                Box::new(pill_engine::commands::ByteComponentAdder::new(
+                                    component_id,
+                                    component_image,
+                                )),
+                            );
+                        } else {
+                            queue.add_descriptor_component_to_entity(
+                                *entity,
+                                component_id,
+                                component_image,
+                            );
+                        }
+                    });
+                    engine.flush_deferred_commands()
+                })
                 .map_err(|errors| format!("{command:?}: {errors:?}"))?;
             Ok(CommandOutcome::inverse(EditorCommand::RemoveComponent {
                 entity: *entity,
@@ -195,11 +228,15 @@ pub(super) fn apply(
                         .collect::<Vec<(String, FieldValue)>>(),
                 )
             };
-            engine.queue_deferred_commands(move |_world, queue| {
-                queue.remove_component_by_id(*entity, component_id);
-            });
+            let removing_entity = *entity;
+            let origin = editor_origin(engine, ChangeOrigin::Authoring);
             engine
-                .flush_deferred_commands()
+                .with_change_origin(origin, move |engine| {
+                    engine.queue_deferred_commands(move |_world, queue| {
+                        queue.remove_component_by_id(removing_entity, component_id);
+                    });
+                    engine.flush_deferred_commands()
+                })
                 .map_err(|errors| format!("{command:?}: {errors:?}"))?;
             Ok(match captured_fields {
                 Some(fields) => CommandOutcome::inverse(EditorCommand::RestoreComponent {
@@ -222,7 +259,10 @@ pub(super) fn apply(
             let create_command = EditorCommand::CreateEntity {
                 components: components.clone(),
             };
-            let create_outcome = super::EditorCommand::apply_one(engine, &create_command)?;
+            let create_outcome = engine
+                .with_change_origin(ChangeOrigin::HistoryRestore, |engine| {
+                    super::EditorCommand::apply_one(engine, &create_command)
+                })?;
             let Some(EditorCommand::DestroyEntity { entity: assigned }) = create_outcome.inverse
             else {
                 return Err(format!("{command:?}: the restore reserved no handle"));
@@ -245,7 +285,9 @@ pub(super) fn apply(
                 entity: *entity,
                 component: component.clone(),
             };
-            super::EditorCommand::apply_one(engine, &add_component_command)?;
+            engine.with_change_origin(ChangeOrigin::HistoryRestore, |engine| {
+                super::EditorCommand::apply_one(engine, &add_component_command)
+            })?;
             for (field, value) in fields {
                 let set_field_command = EditorCommand::SetField {
                     entity: *entity,

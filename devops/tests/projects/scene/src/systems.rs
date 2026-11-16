@@ -5,12 +5,11 @@
 //! - Spin tagged models around their local Y axis each frame.
 
 use crate::TagAlphaComponent;
-use pill_engine::{pill_hot, system, Query, Res, SystemError, Time};
+use pill_engine::{system, Query, Res, SystemError, Time};
 use pill_master_renderer_data::TransformComponent;
 
 /// Rotates each tagged model around its local Y axis at 90 degrees per second.
-#[pill_hot]
-#[system(name = "scene_rotation", order = 10)]
+#[system(name = "scene_rotation", order = 510)]
 pub(crate) fn rotation_system(
     time: Res<Time>,
     mut models: Query<(&mut TransformComponent, &TagAlphaComponent)>,

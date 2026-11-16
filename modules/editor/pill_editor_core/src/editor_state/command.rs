@@ -314,6 +314,18 @@ pub enum EditorCommand {
         /// The selected asset's path, when an asset is selected.
         asset: Option<String>,
     },
+    /// Select the elements of one entity, all of one kind.
+    ///
+    /// The editor's tool layer records this; the ids are the tool's own and
+    /// mean nothing to the core. The entity slot is left alone, because the
+    /// elements belong to whichever entity is selected. The inverse puts the
+    /// previous elements back.
+    SetElementSelection {
+        /// The kind every element belongs to, as the tool named it.
+        kind: String,
+        /// The elements to select, in selection order; empty clears the slot.
+        elements: Vec<ElementRef>,
+    },
     /// Select one world resource for the Inspector.
     ///
     /// This is its own command rather than a third field of
@@ -324,11 +336,11 @@ pub enum EditorCommand {
         /// The resource's stable name, `None` to clear the selection.
         resource: Option<String>,
     },
-    /// Restore all three selection slots as one recorded step.
+    /// Restore all four selection slots as one recorded step.
     ///
     /// This is the inverse that undoing a resource pick applies: picking a
-    /// resource clears the entity and asset slots, so the undo has to bring
-    /// them back instead of leaving the Inspector pointing at nothing.
+    /// resource clears the entity, asset and element slots, so the undo has to
+    /// bring them back instead of leaving the Inspector pointing at nothing.
     RestoreSelection {
         /// The entity slots to restore.
         entities: Vec<Entity>,
@@ -336,6 +348,8 @@ pub enum EditorCommand {
         asset: Option<String>,
         /// The resource slot to restore.
         resource: Option<String>,
+        /// The element slot to restore.
+        elements: ElementSelection,
     },
     /// Write values to the preferences file: one `(key, text)` pair per edited
     /// row. The apply reads the document, changes only those keys and writes it
@@ -405,6 +419,7 @@ impl EditorCommand {
                 | EditorCommand::SetAssetSettings { .. }
                 | EditorCommand::SetResourceField { .. }
                 | EditorCommand::SetSelection { .. }
+                | EditorCommand::SetElementSelection { .. }
                 | EditorCommand::SelectResource { .. }
                 | EditorCommand::RestoreSelection { .. }
         )
@@ -469,6 +484,7 @@ impl EditorCommand {
             | EditorCommand::SetAssetSettings { .. }
             | EditorCommand::SetResourceField { .. }
             | EditorCommand::SetSelection { .. }
+            | EditorCommand::SetElementSelection { .. }
             | EditorCommand::SelectResource { .. }
             | EditorCommand::RestoreSelection { .. }
             | EditorCommand::SceneNew
@@ -507,11 +523,33 @@ impl EditorCommand {
                     *carried_previous = assigned;
                 }
             }
-            EditorCommand::SetSelection { entities, .. }
-            | EditorCommand::RestoreSelection { entities, .. } => {
+            EditorCommand::SetSelection { entities, .. } => {
                 for entity in entities.iter_mut() {
                     if *entity == previous {
                         *entity = assigned;
+                    }
+                }
+            }
+            EditorCommand::SetElementSelection { elements, .. } => {
+                for element in elements.iter_mut() {
+                    if element.entity == previous {
+                        element.entity = assigned;
+                    }
+                }
+            }
+            EditorCommand::RestoreSelection {
+                elements, entities, ..
+            } => {
+                // Both slots of a restore follow the entity: a re-created
+                // entity carries its elements with it.
+                for entity in entities.iter_mut() {
+                    if *entity == previous {
+                        *entity = assigned;
+                    }
+                }
+                for element in elements.elements_mut() {
+                    if element.entity == previous {
+                        element.entity = assigned;
                     }
                 }
             }
@@ -570,6 +608,7 @@ impl EditorCommand {
             | EditorCommand::EnterPlay
             | EditorCommand::ExitPlay => CommandFamily::Engine,
             EditorCommand::SetSelection { .. }
+            | EditorCommand::SetElementSelection { .. }
             | EditorCommand::SelectResource { .. }
             | EditorCommand::RestoreSelection { .. }
             | EditorCommand::ArmEntityPick { .. } => CommandFamily::Selection,

@@ -83,7 +83,7 @@ const SPLINE_REPORT_INTERVAL: Duration = Duration::from_millis(250);
 ///
 /// Returns [`SystemError::MissingResource`] when the resource is absent, which
 /// means the project module and host disagree about initialization.
-#[system(name = "spline_probe", order = 50)]
+#[system(name = "spline_probe", order = 550)]
 pub(crate) fn spline_probe_system(
     mut state: ResMut<SplineProbeState>,
     mut splines: Query<&mut Spline>,

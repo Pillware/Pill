@@ -127,14 +127,78 @@ fn triangle_fragment(input: TriangleOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(input.color.rgb, input.color.a * covered);
 }
 
+// A gizmo point vertex: the corner of the screen-aligned quad, its colour,
+// the corner's offset from the point's centre in pixels, the point's half
+// size in pixels, and the silhouette it draws as.
+struct PointInput {
+    @location(0) clip: vec4<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) offset: vec2<f32>,
+    @location(3) half_size: f32,
+    @location(4) shape: u32,
+};
+
+struct PointOutput {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) @interpolate(linear) offset: vec2<f32>,
+    @location(2) @interpolate(flat) half_size: f32,
+    @location(3) @interpolate(flat) shape: u32,
+};
+
+// The silhouettes a gizmo point draws as; the renderer sends the number.
+const POINT_SHAPE_SQUARE: u32 = 1;
+const POINT_SHAPE_DIAMOND: u32 = 2;
+
+@vertex
+fn point_vertex(input: PointInput) -> PointOutput {
+    var output: PointOutput;
+    output.clip = input.clip;
+    output.color = input.color;
+    output.offset = input.offset;
+    output.half_size = input.half_size;
+    output.shape = input.shape;
+    return output;
+}
+
+// Whether a sample, given as an offset from the centre divided by the half
+// size, lies inside the point's silhouette.
+fn point_shape_contains(offset: vec2<f32>, shape: u32) -> bool {
+    if shape == POINT_SHAPE_SQUARE {
+        return max(abs(offset.x), abs(offset.y)) <= 1.0;
+    }
+    if shape == POINT_SHAPE_DIAMOND {
+        return abs(offset.x) + abs(offset.y) <= 1.0;
+    }
+    return dot(offset, offset) <= 1.0;
+}
+
+// Coverage by the same eight samples a triangle takes. A point's corners carry
+// offsets in pixels, so the samples need no gradients.
+@fragment
+fn point_fragment(input: PointOutput) -> @location(0) vec4<f32> {
+    let half_size = max(input.half_size, 0.5);
+    var covered = 0.0;
+    for (var index = 0; index < 8; index += 1) {
+        let sampled = (input.offset + TRIANGLE_SAMPLES[index]) / half_size;
+        if point_shape_contains(sampled, input.shape) {
+            covered += 0.125;
+        }
+    }
+    if covered <= 0.0 {
+        discard;
+    }
+    return vec4<f32>(input.color.rgb, input.color.a * covered);
+}
+
 // What the pick buffer holds at a pixel.
 struct ValueOutput {
     @builtin(position) clip: vec4<f32>,
     @location(0) @interpolate(flat) value: u32,
 };
 
-// Gizmo lines in the pick buffer: the value is the handle with its top bit
-// set, over the same quad the line is drawn with.
+// Gizmo lines and point quads in the pick buffer: the value is the handle
+// with its top bit set, over the same geometry the handle is drawn with.
 @vertex
 fn handle_clip_vertex(@location(0) clip: vec4<f32>, @location(1) value: u32) -> ValueOutput {
     var output: ValueOutput;

@@ -23,7 +23,10 @@
 //! numbers written down here.
 
 // External crates
-use pill_engine::{pill_project, Engine, Entity, PillComponent};
+use pill_engine::{
+    pill_project, script, tracing, CreateInfo, DestroyInfo, Engine, Entity, PillComponent,
+    ScriptComponent, ScriptContext, StartInfo, StopInfo, World,
+};
 use serde::{Deserialize, Serialize};
 
 mod asset_loading;
@@ -102,6 +105,80 @@ pill_engine::pill_value_type! {
     }
 }
 
+/// A script the editor suites watch run: one log line per lifecycle hook.
+///
+/// The probe is the end-to-end observation point for the script lifecycle: a
+/// suite plays the scene, removes the component, adds it back and stops, then
+/// reads these lines to check which hook ran, in which order and why. Every
+/// value it logs is an engine-core type, so the probe never learns that an
+/// editor exists, and the entity it prints is the handle the scripted channel
+/// spells.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PillComponent)]
+pub struct LifecycleProbe {
+    /// How many frames the probe's update has run for.
+    pub updates: u32,
+}
+
+/// Registers the component together with its field layout.
+fn register_lifecycle_probe(world: &mut World) {
+    __pill_register_LifecycleProbe(world);
+}
+
+#[script]
+impl ScriptComponent for LifecycleProbe {
+    fn on_create(&mut self, script_context: &mut ScriptContext, create_info: &CreateInfo) {
+        tracing::info!(
+            target: "project",
+            cause = ?create_info.cause,
+            mode = ?create_info.mode,
+            entity = %script_context.get_owning_entity(),
+            "[probe] create"
+        );
+        // A fresh copy counts from zero: the play snapshot holds a copy of the
+        // component, so a session that reused the count would report the
+        // previous one's frames.
+        self.updates = 0;
+    }
+
+    fn on_start(&mut self, script_context: &mut ScriptContext, start_info: &StartInfo) {
+        tracing::info!(
+            target: "project",
+            cause = ?start_info.cause,
+            entity = %script_context.get_owning_entity(),
+            "[probe] start"
+        );
+    }
+
+    fn on_update(&mut self, script_context: &mut ScriptContext) {
+        tracing::info!(
+            target: "project",
+            entity = %script_context.get_owning_entity(),
+            updates = self.updates,
+            "[probe] update"
+        );
+        self.updates = self.updates.saturating_add(1);
+    }
+
+    fn on_stop(&mut self, script_context: &mut ScriptContext, stop_info: &StopInfo) {
+        tracing::info!(
+            target: "project",
+            cause = ?stop_info.cause,
+            entity = %script_context.get_owning_entity(),
+            "[probe] stop"
+        );
+    }
+
+    fn on_destroy(&mut self, script_context: &mut ScriptContext, destroy_info: &DestroyInfo) {
+        tracing::info!(
+            target: "project",
+            cause = ?destroy_info.cause,
+            entity = %script_context.get_owning_entity(),
+            "[probe] destroy"
+        );
+    }
+}
+
 /// Registers the renderer, loads the bundled assets, and creates the scene.
 #[pill_project]
 pub fn init(engine: &mut Engine) -> u32 {
@@ -115,6 +192,7 @@ pub fn init(engine: &mut Engine) -> u32 {
     __pill_register_TagAlphaComponent(engine.world_mut());
     __pill_register_ShowcaseComponent(engine.world_mut());
     __pill_register_ShowcaseReferenceComponent(engine.world_mut());
+    register_lifecycle_probe(engine.world_mut());
 
     let assets = match asset_loading::load(engine.world_mut()) {
         Ok(assets) => assets,
@@ -173,6 +251,7 @@ mod tests {
         __pill_register_TagAlphaComponent(engine.world_mut());
         __pill_register_ShowcaseComponent(engine.world_mut());
         __pill_register_ShowcaseReferenceComponent(engine.world_mut());
+        register_lifecycle_probe(engine.world_mut());
         let world = engine.world_mut();
         let assets = SceneAssets {
             mesh: Handle::INVALID,

@@ -139,6 +139,12 @@ modules:
 
 # --- Suite-specific output tokens --------------------------------------------
 
+# The development host names the project it runs before its own configuration
+# line, so a start log says which project it belongs to before any build
+# output. The suite pins both the text and that order.
+HOST_WELCOME_TOKEN = "welcome to the Pill engine"
+HOST_STARTING_TOKEN = "ECS host starting"
+
 PROJECT_FORGOTTEN_WARN_TOKEN = "no longer registered by the project"
 MODULE_FORGOTTEN_WARN_TOKEN = "no longer registered by this module"
 # The reload layer's own record of the columns it removed for a forgotten
@@ -782,6 +788,19 @@ def verify_clean_restart(
         terminate_process(process, monitor)
 
 
+def session_project_name(settings_content: str) -> str:
+    """The display name the session's `project_settings.yaml` declares.
+
+    The host reads the name from that file and prints it in its welcome line,
+    so the startup assertion derives the expected value from the same text the
+    suite writes instead of repeating the literal.
+    """
+    match = re.search(r'^name:\s*"([^"]+)"', settings_content, re.MULTILINE)
+    if match is None:
+        raise RuntimeError("the session settings declare no project name")
+    return match.group(1)
+
+
 def run_session(
     name: str,
     project_root: Path,
@@ -828,6 +847,37 @@ def run_session(
             print("  [FAIL] Crash signals during startup.")
             print(f"  Output tail:\n{startup_output[-1600:]}")
             return False
+
+        # The welcome line comes before the host's own configuration line and
+        # names the project the settings declare, so a start log says which
+        # project it belongs to before any build output.
+        welcome_line = next(
+            (line for line in startup_output.splitlines() if HOST_WELCOME_TOKEN in line),
+            None,
+        )
+        if welcome_line is None:
+            print(f"  [FAIL] Missing startup line: {HOST_WELCOME_TOKEN!r}")
+            print(f"  Output tail:\n{startup_output[-1600:]}")
+            return False
+        welcome_index = startup_output.find(HOST_WELCOME_TOKEN)
+        host_starting_index = startup_output.find(HOST_STARTING_TOKEN)
+        if host_starting_index < 0 or welcome_index > host_starting_index:
+            print("  [FAIL] The welcome line must come before 'ECS host starting'.")
+            print(f"  Output tail:\n{startup_output[-1600:]}")
+            return False
+        expected_fragments = (
+            f'project="{session_project_name(settings_content)}"',
+            "directory=",
+            'backend="native"',
+        )
+        missing_fragments = [
+            fragment for fragment in expected_fragments if fragment not in welcome_line
+        ]
+        if missing_fragments:
+            print(f"  [FAIL] The welcome line is missing {missing_fragments}: {welcome_line!r}")
+            return False
+        print("  [OK] The welcome line names the project before the host starts.")
+
         print("  [OK] Startup complete: module loaded and analytics report printed.")
 
         scenarios = build_scenarios(monitor)

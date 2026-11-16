@@ -1,8 +1,11 @@
-//! Script components that change the world only through deferred commands.
+//! Script components, their lifecycle hooks and the declaration behind them.
 //!
 //! # Responsibilities
 //!
-//! - Defines [`ScriptComponent`] - a component trait with an `update()` method.
+//! - Defines [`ScriptComponent`] - the five hooks the engine calls, and the
+//!   information each one receives about why it ran.
+//! - Defines [`ScriptDeclaration`] and [`ScriptDeclarationData`], what
+//!   `#[script]` reads from an implementation block.
 //! - Provides [`ScriptContext`] - a restricted view of the ECS that queues
 //!   every structural change.
 //!
@@ -13,6 +16,19 @@
 //! except by queueing the command. So a script cannot move its own row out of
 //! the storage its `&mut self` points into, which would leave that reference
 //! dangling.
+//!
+//! A script declares its hooks instead of announcing them at registration:
+//! `#[script]` on the implementation block reads which hooks the block defines,
+//! each hook's `#[order(n)]`, and whether the script also runs while editing,
+//! and writes them into [`ScriptDeclaration::DECLARATION`]. The world reads
+//! that value once per registration, so a reload points every hook at the
+//! arriving image.
+//!
+//! Every hook has a no-op default, so a script implements only the ones it
+//! needs. The engine calls `on_create` when the component starts existing,
+//! `on_start` when the script starts running, `on_update` once per frame while
+//! it runs, `on_stop` when it stops running, and `on_destroy` when the
+//! component stops existing.
 
 // Standard library
 
@@ -21,6 +37,7 @@
 // Current crate
 use crate::commands::CommandQueue;
 use crate::component::Component;
+use crate::engine::RunMode;
 use crate::entity::Entity;
 use crate::world::World;
 use crate::Resource;
@@ -181,32 +198,257 @@ impl<'a> ScriptContext<'a> {
 }
 
 // =============================================================================
+// Hook Information
+// =============================================================================
+
+/// Everything [`ScriptComponent::on_create`] is told about why it ran.
+///
+/// The editor, the scene loader and the play session all produce the same
+/// hook; only [`CreateInfo::cause`] says which one did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CreateInfo {
+    /// What made the component start existing.
+    pub cause: CreateCause,
+    /// The mode the engine was in: a script can be created while editing a
+    /// scene and while playing one.
+    pub mode: RunMode,
+    /// For a copied component, the entity it was copied from, when the caller
+    /// knows which entity that was.
+    pub duplicated_from: Option<Entity>,
+}
+
+/// What made a script component start existing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CreateCause {
+    /// Game code added it, through the frame's command queue or the eager
+    /// world API.
+    Spawned,
+    /// Play started, so every script the edit world held started running.
+    PlayStarted,
+    /// Code outside the simulation added it: the editor, a tool, a test.
+    Authored,
+    /// Loading a scene attached it.
+    SceneLoaded,
+    /// An undo or a redo restored it.
+    HistoryRestored,
+    /// Stopping play restored the edit world's copy of it.
+    PlayStopRestored,
+    /// A paste or a duplicate copied it from another entity.
+    Duplicated,
+}
+
+/// Everything [`ScriptComponent::on_start`] is told about why it ran.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct StartInfo {
+    /// What made the script start running.
+    pub cause: StartCause,
+}
+
+/// What made a script start running.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StartCause {
+    /// Play was pressed, so a script the edit world already held started
+    /// running.
+    PlayEntered,
+    /// The component was added while the game was running, so it starts on the
+    /// frame it appears.
+    SpawnedDuringPlay,
+}
+
+/// Everything [`ScriptComponent::on_stop`] is told about why it ran.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct StopInfo {
+    /// What made the script stop running.
+    pub cause: StopCause,
+}
+
+/// What made a script stop running.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StopCause {
+    /// Play was stopped, so every running script stopped.
+    PlayExited,
+    /// The component was removed while the game was running.
+    Removed,
+}
+
+/// Everything [`ScriptComponent::on_destroy`] is told about why it ran.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct DestroyInfo {
+    /// What made the component stop existing.
+    pub cause: DestroyCause,
+}
+
+/// What made a script component stop existing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DestroyCause {
+    /// Game code removed it or destroyed its entity.
+    Despawned,
+    /// Code outside the simulation removed it: the editor, a tool, a test.
+    Authored,
+    /// Unloading a scene removed it.
+    SceneUnloaded,
+    /// An undo or a redo removed it.
+    HistoryRestored,
+    /// Stopping play discarded the running copy of it.
+    PlayStopRestored,
+}
+
+// =============================================================================
+// ScriptDeclaration
+// =============================================================================
+
+/// What one `#[script]` implementation block declares.
+///
+/// The engine reads this once per registration: which hooks the block defines,
+/// the order each one runs in, and whether the script also runs while editing.
+/// A hook that is not implemented has no order the engine would ever read.
+///
+/// `#[script]` writes the value; a hand-written implementation is only for the
+/// engine's own tests, which cannot reach the facade the attribute expands
+/// against. The builders below keep such an implementation short.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScriptDeclarationData {
+    /// Whether the block implements `on_create`.
+    pub implements_on_create: bool,
+    /// Whether the block implements `on_start`.
+    pub implements_on_start: bool,
+    /// Whether the block implements `on_update`.
+    pub implements_on_update: bool,
+    /// Whether the block implements `on_stop`.
+    pub implements_on_stop: bool,
+    /// Whether the block implements `on_destroy`.
+    pub implements_on_destroy: bool,
+    /// The `#[order(n)]` value of `on_create`.
+    pub on_create_order: i32,
+    /// The `#[order(n)]` value of `on_start`.
+    pub on_start_order: i32,
+    /// The `#[order(n)]` value of `on_update`.
+    pub on_update_order: i32,
+    /// The `#[order(n)]` value of `on_stop`.
+    pub on_stop_order: i32,
+    /// The `#[order(n)]` value of `on_destroy`.
+    pub on_destroy_order: i32,
+    /// Whether the script runs while the editor edits as well as while it
+    /// plays.
+    pub run_in_edit_mode: bool,
+}
+
+impl ScriptDeclarationData {
+    /// A declaration that defines no hook and runs only while playing.
+    pub const NONE: Self = Self {
+        implements_on_create: false,
+        implements_on_start: false,
+        implements_on_update: false,
+        implements_on_stop: false,
+        implements_on_destroy: false,
+        on_create_order: 0,
+        on_start_order: 0,
+        on_update_order: 0,
+        on_stop_order: 0,
+        on_destroy_order: 0,
+        run_in_edit_mode: false,
+    };
+
+    /// Declares an `on_create` that runs in `order`.
+    #[must_use]
+    pub const fn with_on_create(mut self, order: i32) -> Self {
+        self.implements_on_create = true;
+        self.on_create_order = order;
+        self
+    }
+
+    /// Declares an `on_start` that runs in `order`.
+    #[must_use]
+    pub const fn with_on_start(mut self, order: i32) -> Self {
+        self.implements_on_start = true;
+        self.on_start_order = order;
+        self
+    }
+
+    /// Declares an `on_update` that runs in `order`.
+    #[must_use]
+    pub const fn with_on_update(mut self, order: i32) -> Self {
+        self.implements_on_update = true;
+        self.on_update_order = order;
+        self
+    }
+
+    /// Declares an `on_stop` that runs in `order`.
+    #[must_use]
+    pub const fn with_on_stop(mut self, order: i32) -> Self {
+        self.implements_on_stop = true;
+        self.on_stop_order = order;
+        self
+    }
+
+    /// Declares an `on_destroy` that runs in `order`.
+    #[must_use]
+    pub const fn with_on_destroy(mut self, order: i32) -> Self {
+        self.implements_on_destroy = true;
+        self.on_destroy_order = order;
+        self
+    }
+
+    /// Declares that the script also runs while the editor edits.
+    #[must_use]
+    pub const fn with_edit_mode(mut self) -> Self {
+        self.run_in_edit_mode = true;
+        self
+    }
+}
+
+/// The declaration every script component carries.
+///
+/// `#[script]` implements this for the `impl ScriptComponent for ...` block it
+/// is attached to, which is why a script component cannot be written without
+/// it: [`ScriptComponent`] requires this trait, and nothing else implements it
+/// for a type the attribute did not see.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is a script component without a `#[script]` declaration",
+    label = "add `#[script]` above this implementation",
+    note = "the engine takes the hooks, their orders and the edit-mode flag from \
+            that declaration, so a script cannot leave them implicit"
+)]
+pub trait ScriptDeclaration {
+    /// Everything the `#[script]` attribute read from the implementation
+    /// block.
+    const DECLARATION: ScriptDeclarationData;
+}
+
+// =============================================================================
 // ScriptComponent
 // =============================================================================
 
-/// A component that runs its own update logic every frame.
+/// A component the engine runs as a script, with a hook for each step of its
+/// life.
 ///
-/// The engine calls `update` once per frame for every entity that carries the
-/// component. The call gets a [`ScriptContext`], which offers:
-/// - read access to components and resources;
-/// - a mutable borrow of a component;
-/// - structural commands that are queued.
-///
-/// Adding or removing a component and destroying an entity all happen after
-/// every script in the frame has returned.
-///
-/// # Examples
+/// Every hook has a no-op default, so an implementation defines only the ones
+/// it needs, and each one is ordered by its own `#[order(n)]`:
 ///
 /// ```ignore
+/// #[derive(PillComponent)]
 /// struct PlayerController {
 ///     speed: f32,
 /// }
 ///
+/// #[script]
 /// impl ScriptComponent for PlayerController {
-///     fn update(&mut self, script_context: &mut ScriptContext) {
+///     fn on_update(&mut self, script_context: &mut ScriptContext) {
 ///         // Read a component through the context.
-///         if let Some(position) = script_context.get_component::<Position>(script_context.get_owning_entity()) {
-///             println!("Player at {:?}", position);
+///         if let Some(position) = script_context
+///             .get_component::<Position>(script_context.get_owning_entity())
+///         {
+///             println!("player at {position:?}");
 ///         }
 ///
 ///         // Structural changes are only queued.
@@ -214,16 +456,69 @@ impl<'a> ScriptContext<'a> {
 ///             script_context.destroy_entity(script_context.get_owning_entity());
 ///         }
 ///
-///         // The script's own fields stay directly usable.
 ///         self.speed += 1.0;
 ///     }
 /// }
 /// ```
-pub trait ScriptComponent: Component {
-    /// Updates this script component.
+///
+/// The hooks mirror Unity's `MonoBehaviour` messages:
+/// [`on_create`](ScriptComponent::on_create) is `Awake`,
+/// [`on_start`](ScriptComponent::on_start) is `Start`,
+/// [`on_update`](ScriptComponent::on_update) is `Update`,
+/// [`on_stop`](ScriptComponent::on_stop) has no Unity equivalent, and
+/// [`on_destroy`](ScriptComponent::on_destroy) is `OnDestroy`.
+///
+/// Every hook receives a [`ScriptContext`], which offers read access to
+/// components and resources, a mutable borrow of a component, and structural
+/// commands that are queued. Adding or removing a component and destroying an
+/// entity all happen after every script in the frame has returned.
+///
+/// A script component needs the `#[script]` attribute: without it the type
+/// does not implement [`ScriptDeclaration`], and implementing this trait
+/// therefore does not compile.
+pub trait ScriptComponent: Component + ScriptDeclaration {
+    /// Runs when the component starts existing.
     ///
-    /// The engine calls it once per frame for every entity that carries this
-    /// component. `script_context.get_owning_entity()` returns the entity the
-    /// script is attached to.
-    fn update(&mut self, script_context: &mut ScriptContext);
+    /// This is Unity's `Awake`. It fires when the component is added to an
+    /// entity - by game code, by the editor, by a scene load, by an undo or by
+    /// the stop of a play session - and once for every script in the world
+    /// when play starts. [`CreateInfo::cause`] says which of those happened.
+    ///
+    /// It fires only where the script runs: always while playing, and while
+    /// editing only for a script declared with `#[script(edit_mode)]`.
+    fn on_create(&mut self, _script_context: &mut ScriptContext, _create_info: &CreateInfo) {}
+
+    /// Runs once, right before the script's first
+    /// [`on_update`](ScriptComponent::on_update).
+    ///
+    /// This is Unity's `Start`. It fires when play starts, for every script
+    /// the world already held, and for a component added while the game is
+    /// running. It never fires while the editor edits, and never again after a
+    /// reload or a hot patch.
+    fn on_start(&mut self, _script_context: &mut ScriptContext, _start_info: &StartInfo) {}
+
+    /// Runs once per frame while the script is running.
+    ///
+    /// This is Unity's `Update`. It runs while the game plays, and while the
+    /// editor edits only for a script declared with `#[script(edit_mode)]`.
+    fn on_update(&mut self, _script_context: &mut ScriptContext) {}
+
+    /// Runs when the script stops running, before
+    /// [`on_destroy`](ScriptComponent::on_destroy).
+    ///
+    /// It fires when play stops, for every running script, and when a running
+    /// script's component is removed while the game plays. Releasing external
+    /// resources here is what keeps a stopped session from leaking them.
+    fn on_stop(&mut self, _script_context: &mut ScriptContext, _stop_info: &StopInfo) {}
+
+    /// Runs when the component stops existing.
+    ///
+    /// This is Unity's `OnDestroy`. It fires for a removal or a destroy the
+    /// command queue applies - which is every removal game code, a script and
+    /// the editor make - and for the running copy a play session discards when
+    /// it stops. A direct [`crate::World::remove_component`] or
+    /// [`crate::World::destroy_entity`] call is the tooling path and reports
+    /// nothing, because there is no command queue to hand the hook. The
+    /// component is still readable during the call.
+    fn on_destroy(&mut self, _script_context: &mut ScriptContext, _destroy_info: &DestroyInfo) {}
 }

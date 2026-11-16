@@ -1097,6 +1097,43 @@ pub(crate) fn record_patch(
     });
 }
 
+/// Record one managed assembly swap in the same shape as a module reload.
+///
+/// The phase mapping follows `record_patch`'s rule of naming what each phase
+/// really is here. `stage` is everything that precedes the build - the
+/// watcher's debounce plus the wait for the frame loop to start building - and
+/// `build` is the assembly rebuild. `load` is the loader's swap. `init` and
+/// `migrate` are zero because the loader has no separate activation or schema
+/// step, and the artifact size is zero because the host is never told the
+/// assembly's size; the report prints that as `size=-`.
+///
+/// A swap whose timing was never armed records zeros, which is what the report
+/// says for a phase that did not run: an assembly this host did not build has
+/// no measured build to report.
+pub(crate) fn record_managed_reload(name: &str, stage_ms: f64, build_ms: f64, load_ms: f64) {
+    let mut collector = analytics()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    collector.reload_events += 1;
+    let reload_count = collector.reload_events;
+    collector.pending_reload_events.push(ReloadEvent {
+        kind: EventKind::Reload,
+        route: None,
+        name: name.to_string(),
+        // A `NaN` build (no timed assembly) rounds to 0, the report's value for
+        // a phase that did not run.
+        build_ms: build_ms.round() as u64,
+        stage_ms,
+        load_ms,
+        init_ms: 0.0,
+        migrate_ms: 0.0,
+        artifact_bytes: 0,
+        reload_count,
+        // No cargo invocation ran, so there is no per-crate breakdown to show.
+        cargo_crates: Vec::new(),
+    });
+}
+
 /// Record that the fast path declined a change and fell through to a reload.
 pub(crate) fn record_patch_refusal(code: &str, detail: &str) {
     let mut collector = analytics()
@@ -1595,7 +1632,7 @@ fn wrap_list(items: &[&str], width: usize) -> Vec<String> {
 /// number of reload events reported.
 ///
 /// The `Hot reload finished ...` and `crates rebuilt by cargo:` lines keep the
-/// exact text the suites and `devops/benchmarks/hot_reload_harness.py` parse.
+/// exact text the suites and the benchmark harness's line parser read.
 /// Their colors reach an interactive terminal only (see `log_block_colored`).
 pub(crate) fn print_reload_events(reload_started: Instant) -> usize {
     let events = drain_reload_events();
@@ -1894,10 +1931,9 @@ const CONCURRENCY_DATA = [
     }
 
     /// The labels are the harness's vocabulary, so they are pinned rather than
-    /// left free to drift. `RELOAD_LINE_RE` in
-    /// `devops/benchmarks/hot_reload_harness.py` matches `route=([\w+-]+)` and
-    /// accepts these joined by `+`; its `PROVABLE_ROUTES` names the two slot
-    /// routes among them.
+    /// left free to drift. The benchmark harness's line parser matches
+    /// `route=([\w+-]+)` and accepts these joined by `+`; its
+    /// `PROVABLE_ROUTES` names the two slot routes among them.
     #[test]
     fn route_labels_match_what_the_harness_parses() {
         assert_eq!(PatchRoute::EngineSlot.label(), "engine-slot");
@@ -1940,6 +1976,48 @@ const CONCURRENCY_DATA = [
         };
         assert!(event.route.is_none());
         assert_eq!(event.kind.label(), "reload");
+    }
+
+    /// A managed swap records one reload event with the loader's phases: no
+    /// route, no cargo crates, and no artifact size to report.
+    #[test]
+    fn a_managed_swap_records_a_reload_event() {
+        record_managed_reload("test_managed_project", 5.0, 120.4, 2.5);
+        let collector = analytics()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let event = collector
+            .pending_reload_events
+            .iter()
+            .find(|event| event.name == "test_managed_project")
+            .expect("the swap recorded an event");
+
+        assert_eq!(event.kind, EventKind::Reload);
+        assert!(event.route.is_none(), "a reload has no route");
+        assert_eq!(event.build_ms, 120, "the build is rounded to milliseconds");
+        assert_eq!(event.stage_ms, 5.0);
+        assert_eq!(event.load_ms, 2.5);
+        assert_eq!(event.init_ms, 0.0, "the loader has no activation phase");
+        assert_eq!(event.migrate_ms, 0.0, "the loader has no schema phase");
+        assert_eq!(event.artifact_bytes, 0, "the assembly's size is unknown");
+        assert!(event.cargo_crates.is_empty(), "no cargo invocation ran");
+    }
+
+    /// A managed swap with no timed build records zeros rather than a made-up
+    /// number.
+    #[test]
+    fn an_untimed_managed_swap_records_zeros() {
+        record_managed_reload("test_untimed_managed_project", 0.0, f64::NAN, 0.0);
+        let collector = analytics()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let event = collector
+            .pending_reload_events
+            .iter()
+            .find(|event| event.name == "test_untimed_managed_project")
+            .expect("the swap recorded an event");
+
+        assert_eq!(event.build_ms, 0, "a NaN build reports zero");
     }
 
     /// A patch and a reload in one session take consecutive numbers from one

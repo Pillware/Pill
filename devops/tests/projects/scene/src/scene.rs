@@ -21,8 +21,8 @@ use pill_master_renderer_data::{CameraComponent, MeshRendererComponent, Transfor
 
 // Current crate
 use crate::{
-    asset_loading::SceneAssets, ShowcaseComponent, ShowcasePoint, ShowcaseReferenceComponent,
-    TagAlphaComponent,
+    asset_loading::SceneAssets, LifecycleProbe, ShowcaseComponent, ShowcasePoint,
+    ShowcaseReferenceComponent, TagAlphaComponent,
 };
 
 /// Scale every model draws at: the bundled mesh spans six world units, and the
@@ -59,6 +59,9 @@ pub(crate) fn create(world: &mut World, assets: SceneAssets) -> Result<(), Strin
         .next()
         .is_none()
     {
+        // The camera carries the lifecycle probe the editor suites watch: it is
+        // the one entity with no mesh, so a script on it changes neither the
+        // viewport's picks nor any model's Inspector sections.
         world
             .create_entity()
             .with(CameraComponent::default())
@@ -66,6 +69,7 @@ pub(crate) fn create(world: &mut World, assets: SceneAssets) -> Result<(), Strin
                 translation: [0.0, 0.0, CAMERA_DISTANCE],
                 ..Default::default()
             })
+            .with(LifecycleProbe::default())
             .build()
             .map_err(|error| error.to_string())?;
     }

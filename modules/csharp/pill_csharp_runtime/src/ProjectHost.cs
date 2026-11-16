@@ -2,7 +2,7 @@
 //
 // Responsibilities:
 // - Loads project assemblies without locking their build output.
-// - Discovers and deterministically orders methods marked with EcsSystem.
+// - Discovers and deterministically orders methods marked with System.
 // - Derives scheduler access from every query parameter a method declares.
 // - Reloads method bodies, parks a changed component manifest, and lets the
 //   host re-register a changed system set. Only the startup set is refused.
@@ -16,6 +16,11 @@
 //   until the host applies it (`PollStatus.ManifestPending`), a changed system
 //   set is re-registered by the host from the arriving assembly, and only the
 //   startup set is pinned - startup methods do not run again on reload.
+// - Once the bridge is bound, every line about a load or a reload goes through
+//   `Log`, so it carries the engine's timestamp, level and target. `Console` is
+//   only for failures that happen before anything is bound - the startup path
+//   in this file and in `LoaderInterop` - because `Log` reaches the engine
+//   through the bridge and has nowhere to go yet.
 
 using System.Linq.Expressions;
 using System.Reflection;
@@ -55,18 +60,28 @@ internal readonly record struct ManagedAccess(
 /// upgrading a shared declaration. The host consumes exactly this list for
 /// scheduling, access checks, and reload verification, so query grouping
 /// never crosses the native ABI. `Queries` preserves the grouping for
-/// iteration and for the reload signature.
+/// iteration and for the reload signature. `Order`, `Phase`, `RunInEditMode`
+/// and `Conditions` are the `[System]` declaration's schedule values, which
+/// both discovery postures fill the same way.
 /// </remarks>
 internal sealed record ManagedSystem(
     string Name, ManagedAccess[] Accesses, QueryDescriptor?[] Queries,
-    bool UsesCommands, Action Run)
+    bool UsesCommands, int Order, RunPhase Phase, bool RunInEditMode,
+    ManagedCondition[] Conditions, Action Run)
 {
     internal string Signature
     {
         get
         {
             var builder = new System.Text.StringBuilder(Name);
-            builder.Append(":commands=").Append(UsesCommands);
+            // A changed schedule changes where the system runs, so it belongs
+            // to the signature the reload compares: a changed value has to
+            // re-register the system, not keep a schedule the source no
+            // longer describes.
+            builder.Append(":order=").Append(Order)
+                .Append(":phase=").Append((byte)Phase)
+                .Append(":edit=").Append(RunInEditMode)
+                .Append(":commands=").Append(UsesCommands);
             // One separator per query keeps a grouping change visible even
             // when the merged access list happens to be identical.
             foreach (QueryDescriptor? query in Queries)
@@ -135,7 +150,7 @@ internal enum PollStatus : byte
 
 /// <summary>
 /// Loads the collectible gameplay assembly and discovers methods marked with
-/// <see cref="EcsSystemAttribute"/>. Every query parameter is both an
+/// <see cref="SystemAttribute"/>. Every query parameter is both an
 /// executable iterator and part of the authoritative scheduler access list;
 /// the merged list is what the host registers.
 /// </summary>
@@ -254,6 +269,15 @@ internal sealed class ProjectHost
     public int GetAccessCount(int systemIndex) => _systems[systemIndex].Accesses.Length;
     public bool UsesCommands(int systemIndex) => _systems[systemIndex].UsesCommands;
 
+    /// <summary>Return one system's declared order within its phase.</summary>
+    public int GetSystemOrder(int systemIndex) => _systems[systemIndex].Order;
+
+    /// <summary>Return one system's declared frame phase (0, 1 or 2).</summary>
+    public byte GetSystemRunPhase(int systemIndex) => (byte)_systems[systemIndex].Phase;
+
+    /// <summary>Return whether one system also runs while the editor edits.</summary>
+    public bool RunsInEditMode(int systemIndex) => _systems[systemIndex].RunInEditMode;
+
     /// <summary>Load the initial project version (reflection or AOT registry).</summary>
     public void Init()
     {
@@ -291,6 +315,10 @@ internal sealed class ProjectHost
                     accesses,
                     queries,
                     registration.UsesCommands,
+                    registration.Order,
+                    registration.RunPhase,
+                    registration.RunInEditMode,
+                    registration.Conditions ?? [],
                     registration.Run);
             })
             .ToArray();
@@ -299,7 +327,7 @@ internal sealed class ProjectHost
             .ToArray();
         if (systems.Length == 0)
             throw new InvalidOperationException(
-                "No [EcsSystem] methods were generated for the AOT build.");
+                "No [System] methods were generated for the AOT build.");
         _systems = systems;
         _startups = startups;
         _componentManifest = ProjectManifestBuilder.Build(
@@ -462,20 +490,20 @@ internal sealed class ProjectHost
         {
             if (Load(isReload: true, written) == PollStatus.ManifestPending)
             {
-                Console.WriteLine(
+                Log.Info(
                     "[csharp_runtime] " +
                     $"{Path.GetFileName(_assemblyPath)} changed its component manifest; " +
                     "awaiting the host's verdict");
                 return (byte)PollStatus.ManifestPending;
             }
-            Console.WriteLine(
+            Log.Info(
                 $"[csharp_runtime] reloaded {Path.GetFileName(_assemblyPath)} " +
                 $"(retired {_retiredCount}, collected {_collectedCount})");
             return (byte)PollStatus.Reloaded;
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"[csharp_runtime] reload failed: {e}");
+            Log.Error($"[csharp_runtime] reload failed: {e}");
             // Remember the rejected build too. Without this the same bytes are
             // re-examined every poll interval for as long as the source stays
             // broken - reading the whole assembly, creating a collectible
@@ -531,7 +559,7 @@ internal sealed class ProjectHost
         }
         if (survivors > 0)
         {
-            Console.Error.WriteLine(
+            Log.Warn(
                 $"[csharp_runtime] {survivors} retired version(s) of " +
                 $"{Path.GetFileName(_assemblyPath)} are still loaded after " +
                 $"{_collectedCount} of {_retiredCount} reloads; something in the " +
@@ -597,7 +625,7 @@ internal sealed class ProjectHost
             var startups = DiscoverStartups(assembly);
             if (systems.Length == 0)
                 throw new InvalidOperationException(
-                    "No [EcsSystem] methods with a supported query parameter were found.");
+                    "No [System] methods with a supported query parameter were found.");
 
             byte[] manifest = ProjectManifestBuilder.Build(systems, assembly);
 
@@ -680,7 +708,7 @@ internal sealed class ProjectHost
         // reaching this point - an ordinary swap and a manifest the host
         // applied first - are one event to anything watching the log, and the
         // suites wait on this line.
-        Console.WriteLine(
+        Log.Info(
             $"[csharp_runtime] reloaded {Path.GetFileName(_assemblyPath)} " +
             $"(retired {_retiredCount}, collected {_collectedCount})");
     }
@@ -713,7 +741,7 @@ internal sealed class ProjectHost
         return assembly.GetTypes()
             .SelectMany(type => type.GetMethods(
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-            .Where(method => method.GetCustomAttribute<EcsSystemAttribute>() is not null)
+            .Where(method => method.GetCustomAttribute<SystemAttribute>() is not null)
             .OrderBy(method => method.DeclaringType?.FullName, StringComparer.Ordinal)
             .ThenBy(method => method.Name, StringComparer.Ordinal)
             .Select(CreateSystem)
@@ -724,7 +752,7 @@ internal sealed class ProjectHost
     /// Name attributed instance methods, which discovery cannot register.
     /// </summary>
     /// <remarks>
-    /// Discovery looks for static methods only, so an <c>[EcsSystem]</c> on an
+    /// Discovery looks for static methods only, so an <c>[System]</c> on an
     /// instance method is not merely rejected - it is invisible. The system
     /// never runs and nothing says why, which is the one declaration mistake
     /// here that produces no symptom at all. One extra reflection pass over an
@@ -738,8 +766,8 @@ internal sealed class ProjectHost
                          BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
                 bool attributed =
-                    method.GetCustomAttribute<EcsSystemAttribute>() is not null ||
-                    method.GetCustomAttribute<EcsStartupAttribute>() is not null;
+                    method.GetCustomAttribute<SystemAttribute>() is not null ||
+                    method.GetCustomAttribute<StartupAttribute>() is not null;
                 if (attributed)
                     Console.Error.WriteLine(
                         $"[csharp_runtime] {type.FullName}.{method.Name} carries an ECS attribute " +
@@ -756,6 +784,25 @@ internal sealed class ProjectHost
     /// </remarks>
     internal const int MaxSystemParameters = 6;
 
+    /// <summary>One method's bound parameters, as `CreateSystem` and its conditions read them.</summary>
+    private sealed class MethodBinding
+    {
+        /// <summary>Call arguments in declared parameter order.</summary>
+        internal List<Expression> Arguments { get; } = new();
+
+        /// <summary>Query descriptors in parameter order, one per query parameter.</summary>
+        internal List<QueryDescriptor?> Queries { get; } = new();
+
+        /// <summary>Query parameter names, aligned with <see cref="Queries"/>.</summary>
+        internal List<string?> QueryNames { get; } = new();
+
+        /// <summary>Resource declarations keyed by identity, so a repeat is caught.</summary>
+        internal Dictionary<(ulong Low, ulong High), ManagedAccess> ResourceAccesses { get; } = new();
+
+        /// <summary>Whether the method declared a Commands parameter.</summary>
+        internal bool UsesCommands { get; set; }
+    }
+
     /// <summary>
     /// Validate one managed method, derive component access from every query
     /// parameter it declares, and compile a parameterless runner for the Rust
@@ -765,15 +812,106 @@ internal sealed class ProjectHost
     /// A system may declare any number of query parameters plus at most one
     /// `Commands`, within the parameter budget. Each query keeps its own
     /// iteration, exactly like a native system that takes several query
-    /// parameters.
+    /// parameters. Its `RunIf` conditions are compiled ahead of the body, so
+    /// one runner invocation evaluates all of them and the body: a skipped
+    /// system still costs one native-to-managed transition.
     /// </remarks>
     internal static ManagedSystem CreateSystem(MethodInfo method)
     {
         if (method.ReturnType != typeof(void))
             throw new InvalidOperationException($"{method} must return void.");
 
-        var parameters = method.GetParameters();
-        if (parameters.Length == 0)
+        // The declaration is read here, the one place both discovery paths
+        // share, so a system's schedule cannot differ between postures.
+        SystemAttribute? declaration = method.GetCustomAttribute<SystemAttribute>();
+        string name = string.IsNullOrEmpty(declaration?.Name)
+            ? $"{method.DeclaringType?.FullName}.{method.Name}"
+            : declaration.Name;
+        ManagedCondition[] conditions = (declaration?.RunIf ?? [])
+            .Select(condition => new ManagedCondition(
+                condition,
+                declaration?.RunIfType ?? method.DeclaringType
+                    ?? throw new InvalidOperationException(
+                        $"{method} declares RunIf but has no declaring type to resolve it on.")))
+            .ToArray();
+
+        MethodBinding body = BindParameters(method, readOnly: false);
+        QueryDescriptor?[] queryArray = body.Queries.ToArray();
+        ValidateQueries(method.ToString() ?? method.Name, queryArray, body.QueryNames);
+        Action bodyRunner = Expression.Lambda<Action>(
+            Expression.Call(method, body.Arguments)).Compile();
+
+        List<Func<bool>> conditionRunners = new(conditions.Length);
+        List<ManagedAccess> conditionAccesses = new();
+        foreach (ManagedCondition condition in conditions)
+        {
+            MethodInfo conditionMethod = ResolveCondition(method, condition);
+            MethodBinding bound = BindParameters(conditionMethod, readOnly: true);
+            QueryDescriptor?[] conditionQueries = bound.Queries.ToArray();
+            ValidateQueries(
+                conditionMethod.ToString() ?? conditionMethod.Name,
+                conditionQueries,
+                bound.QueryNames);
+            conditionRunners.Add(Expression.Lambda<Func<bool>>(
+                Expression.Call(conditionMethod, bound.Arguments)).Compile());
+            conditionAccesses.AddRange(MergeAccesses(conditionQueries));
+            conditionAccesses.AddRange(bound.ResourceAccesses.Values
+                .OrderBy(access => access.ComponentKeyHigh)
+                .ThenBy(access => access.ComponentKey));
+        }
+        Action runner = bodyRunner;
+        if (conditionRunners.Count > 0)
+        {
+            runner = () =>
+            {
+                foreach (Func<bool> condition in conditionRunners)
+                {
+                    if (!condition())
+                        return;
+                }
+                bodyRunner();
+            };
+        }
+
+        // Component and resource accesses go to the scheduler in one list,
+        // distinguished by kind: the native side derives one SystemAccess from
+        // it, and a system's whole declaration has to arrive together for the
+        // scheduler to order it against its peers. A condition's reads are part
+        // of that declaration, so the scheduler never batches a writer of what
+        // a condition reads beside the system.
+        List<ManagedAccess> accesses = new();
+        foreach (ManagedAccess access in MergeAccesses(queryArray))
+            AddAccess(accesses, access);
+        foreach (ManagedAccess access in body.ResourceAccesses.Values
+                     .OrderBy(entry => entry.ComponentKeyHigh)
+                     .ThenBy(entry => entry.ComponentKey))
+            AddAccess(accesses, access);
+        foreach (ManagedAccess access in conditionAccesses)
+            AddAccess(accesses, access);
+
+        return new ManagedSystem(
+            name, accesses.ToArray(), queryArray, body.UsesCommands,
+            declaration?.Order ?? 0,
+            declaration?.RunPhase ?? RunPhase.Project,
+            declaration?.RunInEditMode ?? false,
+            conditions, runner);
+    }
+
+    /// <summary>
+    /// Bind one method's parameters and enforce the access contract.
+    /// </summary>
+    /// <remarks>
+    /// The body and every condition go through this one path: a condition is
+    /// the read-only half of a system's parameter contract, so it is refused
+    /// `Commands`, a `ResMut&lt;T&gt;` and a query that declares a write, and the
+    /// refusal names the method.
+    /// </remarks>
+    private static MethodBinding BindParameters(MethodInfo method, bool readOnly)
+    {
+        ParameterInfo[] parameters = method.GetParameters();
+        // A system must reach something; a condition may be a plain global
+        // flag with no parameters at all.
+        if (!readOnly && parameters.Length == 0)
             throw new InvalidOperationException(
                 $"{method} must declare at least one parameter: queries, Commands, or both.");
         if (parameters.Length > MaxSystemParameters)
@@ -781,35 +919,35 @@ internal sealed class ProjectHost
                 $"{method} declares {parameters.Length} parameters; managed systems support at " +
                 $"most {MaxSystemParameters}, matching the native system parameter arity.");
 
-        var queries = new List<QueryDescriptor?>(parameters.Length);
-        var queryNames = new List<string?>(parameters.Length);
-        // Keyed by resource identity rather than by whole access, so a second
-        // declaration is caught whatever its mode. Two entries for one resource
-        // would tell the scheduler nothing new, and a Res<T> beside a ResMut<T>
-        // would hand the same bytes out as readable and writable at once - the
-        // aliasing ValidateQueries refuses between two query parameters.
-        var resourceAccesses = new Dictionary<(ulong Low, ulong High), ManagedAccess>();
-        bool usesCommands = false;
-        var arguments = new List<Expression>(parameters.Length);
+        var binding = new MethodBinding();
         foreach (ParameterInfo parameter in parameters)
         {
             Type parameterType = parameter.ParameterType;
             if (parameterType == typeof(Commands))
             {
-                if (usesCommands)
+                if (readOnly)
+                    throw new InvalidOperationException(
+                        $"{method} is a [System] condition and cannot take Commands; " +
+                        "conditions are read-only.");
+                if (binding.UsesCommands)
                     throw new InvalidOperationException($"{method} declares Commands more than once.");
-                usesCommands = true;
-                arguments.Add(Expression.Default(typeof(Commands)));
+                binding.UsesCommands = true;
+                binding.Arguments.Add(Expression.Default(typeof(Commands)));
                 continue;
             }
             if (TryDescribeResourceParameter(parameterType, out ManagedAccess resourceAccess))
             {
+                if (readOnly && resourceAccess.Mode != 0)
+                    throw new InvalidOperationException(
+                        $"{method} is a [System] condition and takes " +
+                        $"ResMut<{parameterType.GetGenericArguments()[0].Name}>; " +
+                        "conditions are read-only.");
                 var key = (resourceAccess.ComponentKey, resourceAccess.ComponentKeyHigh);
-                if (!resourceAccesses.TryAdd(key, resourceAccess))
+                if (!binding.ResourceAccesses.TryAdd(key, resourceAccess))
                     throw new InvalidOperationException(
                         $"{method} declares resource {parameterType.GetGenericArguments()[0].FullName} " +
                         "more than once; one Res<T> or ResMut<T> parameter per resource.");
-                arguments.Add(Expression.Default(parameterType));
+                binding.Arguments.Add(Expression.Default(parameterType));
                 continue;
             }
             if (!typeof(IQueryDescriptor).IsAssignableFrom(parameterType))
@@ -826,26 +964,63 @@ internal sealed class ProjectHost
                     $"Invalid query parameter on {method}: {exception.InnerException.Message}",
                     exception.InnerException);
             }
-            queries.Add(((IQueryDescriptor)query).Descriptor);
-            queryNames.Add(parameter.Name);
-            arguments.Add(Expression.Constant(query, parameterType));
+            QueryDescriptor descriptor = ((IQueryDescriptor)query).Descriptor;
+            if (readOnly)
+            {
+                foreach (QueryTermDescriptor term in descriptor.Terms)
+                {
+                    if (!term.IsEntity && term.Access == QueryAccess.Write)
+                        throw new InvalidOperationException(
+                            $"{method} is a [System] condition and its query writes " +
+                            $"{term.ComponentType?.FullName ?? "a component"}; " +
+                            "conditions are read-only.");
+                }
+            }
+            binding.Queries.Add(descriptor);
+            binding.QueryNames.Add(parameter.Name);
+            binding.Arguments.Add(Expression.Constant(query, parameterType));
         }
+        return binding;
+    }
 
-        QueryDescriptor?[] queryArray = queries.ToArray();
-        ValidateQueries(method.ToString() ?? method.Name, queryArray, queryNames);
-        var call = Expression.Call(method, arguments);
-        Action runner = Expression.Lambda<Action>(call).Compile();
-        string name = $"{method.DeclaringType?.FullName}.{method.Name}";
-        // Component and resource accesses go to the scheduler in one list,
-        // distinguished by kind: the native side derives one SystemAccess from
-        // it, and a system's whole declaration has to arrive together for the
-        // scheduler to order it against its peers.
-        ManagedAccess[] accesses = MergeAccesses(queryArray)
-            .Concat(resourceAccesses.Values
-                .OrderBy(access => access.ComponentKeyHigh)
-                .ThenBy(access => access.ComponentKey))
-            .ToArray();
-        return new ManagedSystem(name, accesses, queryArray, usesCommands, runner);
+    /// <summary>Resolve one declared condition to the method that evaluates it.</summary>
+    /// <remarks>
+    /// A condition is a static method by name on the declaring type (or the
+    /// type `RunIfType` names), returning `bool`. A missing method or a
+    /// non-bool return refuses here, by name, before anything registers.
+    /// </remarks>
+    private static MethodInfo ResolveCondition(MethodInfo system, ManagedCondition condition)
+    {
+        MethodInfo? resolved = condition.DeclaringType.GetMethod(
+            condition.Name,
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+        if (resolved is null)
+            throw new InvalidOperationException(
+                $"{system} declares the [System] condition '{condition.Name}', but " +
+                $"{condition.DeclaringType.FullName} declares no static method by that name.");
+        if (resolved.ReturnType != typeof(bool))
+            throw new InvalidOperationException(
+                $"[System] condition {condition.DeclaringType.FullName}.{condition.Name} must return " +
+                $"bool, not {resolved.ReturnType.Name}.");
+        return resolved;
+    }
+
+    /// <summary>Add one access unless an equivalent or stronger one is present.</summary>
+    private static void AddAccess(List<ManagedAccess> accesses, ManagedAccess access)
+    {
+        for (int index = 0; index < accesses.Count; index++)
+        {
+            ManagedAccess existing = accesses[index];
+            if (existing.ComponentKey == access.ComponentKey &&
+                existing.ComponentKeyHigh == access.ComponentKeyHigh &&
+                existing.Kind == access.Kind)
+            {
+                if (access.Mode > existing.Mode)
+                    accesses[index] = existing with { Mode = access.Mode };
+                return;
+            }
+        }
+        accesses.Add(access);
     }
 
     /// <summary>
@@ -966,7 +1141,7 @@ internal sealed class ProjectHost
     internal static ManagedStartup[] DiscoverStartups(Assembly assembly) => assembly.GetTypes()
         .SelectMany(type => type.GetMethods(
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-        .Where(method => method.GetCustomAttribute<EcsStartupAttribute>() is not null)
+        .Where(method => method.GetCustomAttribute<StartupAttribute>() is not null)
         .OrderBy(method => method.DeclaringType?.FullName, StringComparer.Ordinal)
         .ThenBy(method => method.Name, StringComparer.Ordinal)
         .Select(CreateStartup)

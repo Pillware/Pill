@@ -11,6 +11,9 @@
 //!   it (engine types, host-linked extensions).
 //! - [`pill_value_type!`]: the layout of a foreign value type, with offsets
 //!   taken from the compiler.
+//! - [`script`]: the declaration a script component's implementation states -
+//!   which lifecycle hooks it defines, their orders and its edit-mode flag -
+//!   plus the descriptor the artifact entry point registers the script from.
 //! - [`pill_module`] / [`pill_project`]: the loadable-artifact exports
 //!   (`pill_module_init`, `pill_module_abi_version`, the descriptor copies, the
 //!   project's schema fingerprint), behind the panic guard and engine-pointer
@@ -2072,10 +2075,13 @@ pub fn pill_hot(attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// #[system]
 /// fn movement(query: Query<(&mut Position, &Velocity)>) { }
 ///
-/// #[system(name = "ball_physics", order = 10)]
+/// #[system(name = "spin_cube")]
+/// fn spin_cube(query: Query<&mut TransformComponent>) { }
+///
+/// #[system(name = "physics", order = 900)]
 /// fn physics_system(query: Query<&mut PhysicsState>) { }
 ///
-/// #[system(name = "rendering", post_update)]
+/// #[system(name = "rendering", run_phase = "post_project", run_in_edit_mode = true)]
 /// fn rendering_system(commands: Commands) { }
 /// ```
 ///
@@ -2083,17 +2089,25 @@ pub fn pill_hot(attribute: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// - `name = "..."` - the display name logs, the editor's Systems tab and a
 ///   hot patch use. Defaults to `module_path!()` plus the function's name, the
-///   same identity `#[pill_hot]` uses.
-/// - `order = <integer>` - where this system sits among the artifact's
-///   declared systems: a lower value registers first, and equal values are
-///   ordered by name. The engine runs conflicting systems in registration
-///   order, so this is how a declaration states that one system must precede
-///   another.
-/// - `post_update` - run in the post-update stage, after the command flush,
-///   like `Engine::register_post_update_system`.
+///   same identity a patch uses.
+/// - `order = <integer>` - the sort key within the phase. The engine orders
+///   every system of a phase by this value across every artifact, and equal
+///   values keep registration order, so this is how a declaration states that
+///   one system must precede another. `AGENTS.md` documents the range each
+///   area uses.
+/// - `run_phase = "pre_project" | "project" | "post_project"` - which phase of
+///   the frame the system runs in: before the first command flush, after it
+///   (the game's own frame work, the default), or after the second flush.
+/// - `run_in_edit_mode = true | false` - whether the system also runs while
+///   the editor is editing, and while the engine is paused. `false` keeps the
+///   game's behaviour under Play and Stop.
+/// - `run_if = <path>` - repeatable. A condition `fn(...) -> bool`; the system
+///   runs only while every one of them holds. A condition takes the same
+///   parameters a system does but only the read-only ones, so one that could
+///   write does not compile. A skipped system keeps its place in the schedule.
 ///
 /// An artifact can still register a system by call, in its `register` half;
-/// such a system runs after every declared one.
+/// such a system takes its place by the same `(phase, order)`.
 #[proc_macro_attribute]
 pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
     let item_fn = parse_macro_input!(item as ItemFn);
@@ -2102,8 +2116,9 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
     // Step 1: Read the optional arguments.
     let mut name_override: Option<String> = None;
     let mut order: i32 = 0;
-    let mut post_update = false;
-    let mut edit_mode = false;
+    let mut phase = quote! { ::pill_engine::RunPhase::Project };
+    let mut run_in_edit_mode = false;
+    let mut conditions: Vec<syn::Path> = Vec::new();
     if !attribute.is_empty() {
         let attribute = proc_macro2::TokenStream::from(attribute);
         let parser = syn::meta::parser(|meta| {
@@ -2117,17 +2132,39 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
                 order = order_literal.base10_parse()?;
                 return Ok(());
             }
-            if meta.path.is_ident("post_update") {
-                post_update = true;
+            if meta.path.is_ident("run_phase") {
+                let phase_literal: syn::LitStr = meta.value()?.parse()?;
+                phase = match phase_literal.value().as_str() {
+                    "pre_project" => quote! { ::pill_engine::RunPhase::PreProject },
+                    "project" => quote! { ::pill_engine::RunPhase::Project },
+                    "post_project" => quote! { ::pill_engine::RunPhase::PostProject },
+                    other => {
+                        return Err(syn::Error::new(
+                            phase_literal.span(),
+                            format!(
+                                "unknown `run_phase` value `{other}`; expected \
+                                 \"pre_project\", \"project\" or \"post_project\""
+                            ),
+                        ));
+                    }
+                };
                 return Ok(());
             }
-            if meta.path.is_ident("edit_mode") {
-                edit_mode = true;
+            if meta.path.is_ident("run_in_edit_mode") {
+                let flag_literal: syn::LitBool = meta.value()?.parse()?;
+                run_in_edit_mode = flag_literal.value();
+                return Ok(());
+            }
+            if meta.path.is_ident("run_if") {
+                // Repeatable: every condition must hold for the system to run.
+                let condition: syn::Path = meta.value()?.parse()?;
+                conditions.push(condition);
                 return Ok(());
             }
             Err(meta.error(
                 "unknown `system` argument; expected `name = \"...\"`, \
-                 `order = <integer>`, `post_update` or `edit_mode`",
+                 `order = <integer>`, `run_phase = \"...\"`, \
+                 `run_in_edit_mode = true|false` or `run_if = <path>`",
             ))
         });
         if let Err(error) = syn::parse::Parser::parse2(parser, attribute) {
@@ -2166,14 +2203,8 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
         },
     };
     let register_ident = format_ident!("__pill_system_register_{}", fn_ident);
-    let register_call = match (post_update, edit_mode) {
-        (true, true) => {
-            quote! { engine.register_post_update_system_in_edit_mode(#name, #fn_ident); }
-        }
-        (true, false) => quote! { engine.register_post_update_system(#name, #fn_ident); },
-        (false, true) => quote! { engine.register_system_in_edit_mode(#name, #fn_ident); },
-        (false, false) => quote! { engine.register_system(#name, #fn_ident); },
-    };
+    // The options the helper builds and the descriptor the entry point sorts
+    // come from the same parsed values, so the two cannot disagree.
     let expanded = quote! {
         #item_fn
 
@@ -2181,20 +2212,261 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
         /// entry point.
         #[doc(hidden)]
         fn #register_ident(engine: &mut ::pill_engine::Engine) {
-            #register_call
+            let options = ::pill_engine::SystemOptions::new(#phase, #order)
+                .with_run_in_edit_mode(#run_in_edit_mode)
+                #( .run_if(#conditions) )*;
+            engine.register_system_with_options(#name, options, #fn_ident);
         }
 
         ::pill_engine::submit! {
             ::pill_engine::declarations::PillSystemDescriptor {
                 name: #name,
                 order: #order,
-                post_update: #post_update,
-                edit_mode: #edit_mode,
+                phase: #phase,
                 register: #register_ident,
             }
         }
     };
     expanded.into()
+}
+
+/// Declares a script component, so the engine registers its lifecycle hooks
+/// without a call.
+///
+/// The attribute goes on the `impl ScriptComponent for ...` block. It reads
+/// which hooks the block defines, each hook's `#[order(n)]`, and whether the
+/// script also runs while the editor edits, and turns all of it into the
+/// declaration the engine takes the hooks from. The artifact entry point
+/// registers every declared script before its own `register` and `init` run,
+/// for a first load, every reload and a statically linked build alike.
+///
+/// ```ignore
+/// #[script]
+/// impl ScriptComponent for Spin {
+///     fn on_update(&mut self, script_context: &mut ScriptContext) { }
+/// }
+///
+/// #[script(edit_mode)]
+/// impl ScriptComponent for EditorSpin {
+///     #[order(5)]
+///     fn on_create(&mut self, script_context: &mut ScriptContext, create_info: &CreateInfo) { }
+///
+///     fn on_update(&mut self, script_context: &mut ScriptContext) { }
+/// }
+/// ```
+///
+/// # Arguments
+///
+/// - `edit_mode` - the script also runs while the editor edits, not only while
+///   the game plays.
+///
+/// Every hook takes its own `#[order(n)]` marker on its method, default `0`.
+/// Lower values run first within the same pass, and equal values run in type
+/// name order. An `#[order]` on a method that is not one of the five hooks is
+/// refused, because nothing would read it.
+///
+/// A script component cannot be written without this attribute: the trait
+/// requires a declaration that only the attribute implements, so leaving it
+/// out is a compile error rather than a script the engine never runs.
+#[proc_macro_attribute]
+pub fn script(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let mut item_impl = parse_macro_input!(item as syn::ItemImpl);
+
+    // Step 1: Read the optional `edit_mode` flag.
+    let mut edit_mode = false;
+    if !attribute.is_empty() {
+        let attribute = proc_macro2::TokenStream::from(attribute);
+        let parser = syn::meta::parser(|meta| {
+            if meta.path.is_ident("edit_mode") {
+                edit_mode = true;
+                return Ok(());
+            }
+            Err(meta.error("unknown `script` argument; expected `edit_mode`"))
+        });
+        if let Err(error) = syn::parse::Parser::parse2(parser, attribute) {
+            return error.to_compile_error().into();
+        }
+    }
+
+    // Step 2: Refuse the shapes the declaration cannot carry. The block has to
+    // implement `ScriptComponent`, and a generic block has no single concrete
+    // type for the engine to register.
+    let implements_script_component = item_impl
+        .trait_
+        .as_ref()
+        .and_then(|(_, trait_path, _)| trait_path.segments.last())
+        .is_some_and(|segment| segment.ident == "ScriptComponent");
+    if !implements_script_component {
+        return syn::Error::new_spanned(
+            &item_impl.self_ty,
+            "`#[script]` applies to an `impl ScriptComponent for ...` block",
+        )
+        .to_compile_error()
+        .into();
+    }
+    if !item_impl.generics.params.is_empty() {
+        return syn::Error::new_spanned(
+            &item_impl.generics,
+            "`#[script]` cannot be applied to a generic implementation: the \
+             engine registers one concrete script type",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    // Step 3: Record which hooks the block defines and the `#[order(n)]` each
+    // one carries, then strip those markers so the emitted block holds only
+    // what the trait declares.
+    let mut hooks = ScriptHookOrders::default();
+    for item in &mut item_impl.items {
+        let syn::ImplItem::Fn(method) = item else {
+            continue;
+        };
+        let method_name = method.sig.ident.to_string();
+        let order_attributes = method
+            .attrs
+            .iter()
+            .filter(|attribute| attribute.path().is_ident("order"))
+            .count();
+        let Some(order_slot) = hooks.order_slot_mut(&method_name) else {
+            if order_attributes > 0 {
+                return syn::Error::new_spanned(
+                    &method.sig.ident,
+                    format!(
+                        "`#[order(n)]` applies to a script hook; `{method_name}` is \
+                         not one (expected `on_create`, `on_start`, `on_update`, \
+                         `on_stop` or `on_destroy`)"
+                    ),
+                )
+                .to_compile_error()
+                .into();
+            }
+            continue;
+        };
+        if order_attributes > 1 {
+            return syn::Error::new_spanned(&method.sig.ident, "a hook takes one `#[order(n)]`")
+                .to_compile_error()
+                .into();
+        }
+        let order = match method
+            .attrs
+            .iter()
+            .position(|attribute| attribute.path().is_ident("order"))
+        {
+            Some(position) => match method.attrs[position].parse_args::<syn::LitInt>() {
+                Ok(order_literal) => match order_literal.base10_parse::<i32>() {
+                    Ok(order) => order,
+                    Err(error) => return error.to_compile_error().into(),
+                },
+                Err(error) => return error.to_compile_error().into(),
+            },
+            // A hook without the marker still counts: it runs in order 0.
+            None => 0,
+        };
+        *order_slot = Some(order);
+        method
+            .attrs
+            .retain(|attribute| !attribute.path().is_ident("order"));
+    }
+
+    // Step 4: Emit the block unchanged, the registration helper and the
+    // declaration the engine reads the hooks from.
+    let Some(type_ident) = self_type_ident(&item_impl.self_ty) else {
+        return syn::Error::new_spanned(
+            &item_impl.self_ty,
+            "`#[script]` needs a named type to register",
+        )
+        .to_compile_error()
+        .into();
+    };
+    let self_ty = &item_impl.self_ty;
+    let register_ident = format_ident!("__pill_script_register_{}", type_ident);
+    let implements_on_create = hooks.on_create.is_some();
+    let implements_on_start = hooks.on_start.is_some();
+    let implements_on_update = hooks.on_update.is_some();
+    let implements_on_stop = hooks.on_stop.is_some();
+    let implements_on_destroy = hooks.on_destroy.is_some();
+    let on_create_order = hooks.on_create.unwrap_or(0);
+    let on_start_order = hooks.on_start.unwrap_or(0);
+    let on_update_order = hooks.on_update.unwrap_or(0);
+    let on_stop_order = hooks.on_stop.unwrap_or(0);
+    let on_destroy_order = hooks.on_destroy.unwrap_or(0);
+
+    let expanded = quote! {
+        #item_impl
+
+        /// Registers this script with the engine; called by the artifact
+        /// entry point.
+        #[doc(hidden)]
+        #[allow(non_snake_case)]
+        fn #register_ident(world: &mut ::pill_engine::World) {
+            world.register_script_component::<#self_ty>();
+        }
+
+        impl ::pill_engine::ScriptDeclaration for #self_ty {
+            const DECLARATION: ::pill_engine::ScriptDeclarationData =
+                ::pill_engine::ScriptDeclarationData {
+                    implements_on_create: #implements_on_create,
+                    implements_on_start: #implements_on_start,
+                    implements_on_update: #implements_on_update,
+                    implements_on_stop: #implements_on_stop,
+                    implements_on_destroy: #implements_on_destroy,
+                    on_create_order: #on_create_order,
+                    on_start_order: #on_start_order,
+                    on_update_order: #on_update_order,
+                    on_stop_order: #on_stop_order,
+                    on_destroy_order: #on_destroy_order,
+                    run_in_edit_mode: #edit_mode,
+                };
+        }
+
+        ::pill_engine::submit! {
+            ::pill_engine::declarations::PillScriptDescriptor {
+                register: #register_ident,
+            }
+        }
+    };
+    expanded.into()
+}
+
+/// The hooks one `#[script]` block declares, each with its order when the
+/// block defines it.
+#[derive(Default)]
+struct ScriptHookOrders {
+    /// The `on_create` order, or `None` when the block does not define it.
+    on_create: Option<i32>,
+    /// The `on_start` order, or `None` when the block does not define it.
+    on_start: Option<i32>,
+    /// The `on_update` order, or `None` when the block does not define it.
+    on_update: Option<i32>,
+    /// The `on_stop` order, or `None` when the block does not define it.
+    on_stop: Option<i32>,
+    /// The `on_destroy` order, or `None` when the block does not define it.
+    on_destroy: Option<i32>,
+}
+
+impl ScriptHookOrders {
+    /// The slot for the hook called `method_name`, or `None` when the name is
+    /// not a hook.
+    fn order_slot_mut(&mut self, method_name: &str) -> Option<&mut Option<i32>> {
+        match method_name {
+            "on_create" => Some(&mut self.on_create),
+            "on_start" => Some(&mut self.on_start),
+            "on_update" => Some(&mut self.on_update),
+            "on_stop" => Some(&mut self.on_stop),
+            "on_destroy" => Some(&mut self.on_destroy),
+            _ => None,
+        }
+    }
+}
+
+/// The identifier a block's self type registers under, or `None` for a type
+/// with no name of its own.
+fn self_type_ident(self_type: &syn::Type) -> Option<&syn::Ident> {
+    match self_type {
+        syn::Type::Path(type_path) => type_path.path.segments.last().map(|segment| &segment.ident),
+        _ => None,
+    }
 }
 
 /// Declares an ECS resource, so the artifact declares its type without a call.

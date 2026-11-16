@@ -81,7 +81,7 @@ pub use iter::{BatchStats, ParQueryIter, QueryIterMut};
 // Core query type and resource accessors.
 pub use query::Query;
 pub use resource::{Res, ResMut};
-pub use target::QueryTarget;
+pub use target::{QueryTarget, ReadOnlyQueryTarget};
 
 // =============================================================================
 // Types
@@ -106,4 +106,4 @@ pub(crate) struct FilteredArchetypeRange<TargetState, FilterState> {
 // =============================================================================
 
 #[cfg(test)]
-mod tests;
+mod query_tests;

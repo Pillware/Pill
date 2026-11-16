@@ -15,7 +15,7 @@
 //! written here, in the project, because that is what proves the event reached
 //! the world rather than the frontend's own log.
 
-use pill_engine::{pill_hot, system, Input, MouseButton, Query, Res, SystemError};
+use pill_engine::{system, Input, MouseButton, Query, Res, SystemError};
 use pill_master_renderer_data::{CameraComponent, TransformComponent};
 
 /// How far one wheel line moves the camera, in world units.
@@ -35,8 +35,7 @@ const MINIMUM_DISTANCE: f32 = 1.5;
 const MAXIMUM_DISTANCE: f32 = 24.0;
 
 /// Logs the keys and mouse buttons that went down since the previous frame.
-#[pill_hot]
-#[system(name = "input_echo", order = 20)]
+#[system(name = "input_echo", order = 520)]
 pub(crate) fn input_echo_system(input: Res<Input>) -> Result<(), SystemError> {
     let Some(input) = input.get() else {
         return Ok(());
@@ -57,8 +56,7 @@ pub(crate) fn input_echo_system(input: Res<Input>) -> Result<(), SystemError> {
 /// The distance is the camera's translation along Z, which is the axis the
 /// camera looks down: the scene's camera is placed by its Z and rotated only
 /// afterwards by whatever tool the editor uses.
-#[pill_hot]
-#[system(name = "camera_zoom", order = 30)]
+#[system(name = "camera_zoom", order = 530)]
 pub(crate) fn camera_zoom_system(
     input: Res<Input>,
     mut cameras: Query<(&mut TransformComponent, &CameraComponent)>,

@@ -99,6 +99,8 @@ COMMITTED_MIRROR_BYTES = None
 # The suite's own probe file. Written before the host starts and removed in the
 # suite's cleanup, so the example project carries no test-only code and this
 # suite does not depend on demo text a project edit can silently change.
+# It carries the schedule probes too: their counters are probe state, and the
+# scenario that edits a declared order edits this file.
 MANAGED_PROJECT_PROBE_CS = MANAGED_PROJECT_BRIDGE_PROBE_CS
 
 # The C# project plus a component-less dummy module: the dummy exercises the
@@ -142,7 +144,7 @@ namespace TracyLive;
 /// <summary>Startup renamed by the suite to prove startup changes are refused.</summary>
 public static class BridgeProbeStartup
 {
-    [EcsStartup]
+    [Startup]
     public static void Start(Commands commands)
     {
         _ = commands;
@@ -163,7 +165,7 @@ public static class ModuleSplineBridgeDemo
     private static long _lastReport;
 #pragma warning restore PILL0301
 
-    [EcsSystem]
+    [System]
     public static void Run(Query<Read<global::pill_spline.Spline>> query, Commands commands)
     {
         if (!_seeded)
@@ -217,6 +219,125 @@ public static class ModuleSplineBridgeDemo
             $"omo=({omo.X},{omo.Y}) sum={omoSum} a={omoA} b={omoB} alpha={alpha}");
     }
 }
+
+/// <summary>One row the schedule probes create and count.</summary>
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+public struct ScheduleMarker
+{
+    /// <summary>Assembly load that queued this row, so earlier loads are not counted.</summary>
+    public long Pass;
+
+    /// <summary>The frame that queued this row.</summary>
+    public int Frame;
+}
+
+/// <summary>The declared orders, named so one edit moves the attribute and the log.</summary>
+internal static class ScheduleProbeOrders
+{
+    /// <summary>The suite edits this value to prove a changed order re-registers.</summary>
+    internal const int First = 480;
+
+    internal const int Second = 520;
+
+    internal const int PostProject = 900;
+}
+
+/// <summary>Counters shared by the schedule probes; a reload resets them with the assembly.</summary>
+internal static class ScheduleProbeState
+{
+    /// <summary>Unique per assembly load, so rows from earlier loads are not counted.</summary>
+    internal static readonly long Stamp = System.Diagnostics.Stopwatch.GetTimestamp();
+
+    internal static int OrderedSteps;
+    internal static int ProjectFrames;
+    internal static int PostFrames;
+}
+
+/// <summary>Runs first by its declared order although its type name sorts last.</summary>
+/// <remarks>
+/// It declares a write on the marker column the second probe reads, so the two
+/// land in successive batches instead of one parallel one; their type names
+/// sort the opposite way to their Order values, so only the declaration can
+/// produce the logged sequence.
+/// </remarks>
+public static class ZScheduleOrderFirstProbe
+{
+    [System(Name = "schedule_order_first", Order = ScheduleProbeOrders.First)]
+    public static void Run(Query<Write<ScheduleMarker>> markers)
+    {
+        _ = markers;
+        if (ScheduleProbeState.OrderedSteps >= 2)
+            return;
+        ScheduleProbeState.OrderedSteps++;
+        Console.WriteLine(
+            $"[probe] schedule step={ScheduleProbeState.OrderedSteps} order={ScheduleProbeOrders.First}");
+    }
+}
+
+/// <summary>Runs second by its declared order although its type name sorts first.</summary>
+public static class AScheduleOrderSecondProbe
+{
+    [System(Name = "schedule_order_second", Order = ScheduleProbeOrders.Second)]
+    public static void Run(Query<Read<ScheduleMarker>> markers)
+    {
+        _ = markers;
+        if (ScheduleProbeState.OrderedSteps >= 2)
+            return;
+        ScheduleProbeState.OrderedSteps++;
+        Console.WriteLine(
+            $"[probe] schedule step={ScheduleProbeState.OrderedSteps} order={ScheduleProbeOrders.Second}");
+    }
+}
+
+/// <summary>Queues one marker row each frame, for the first two frames.</summary>
+public static class ScheduleProjectProbe
+{
+    [System(Name = "schedule_project_probe", Order = 500)]
+    public static void Run(Commands commands)
+    {
+        if (ScheduleProbeState.ProjectFrames >= 2)
+            return;
+        ScheduleProbeState.ProjectFrames++;
+        commands.CreateEntity()
+            .With(new ScheduleMarker
+            {
+                Pass = ScheduleProbeState.Stamp,
+                Frame = ScheduleProbeState.ProjectFrames,
+            })
+            .Build();
+        Console.WriteLine($"[probe] schedule project frame={ScheduleProbeState.ProjectFrames}");
+    }
+}
+
+/// <summary>
+/// Counts the marker rows after the project phase's flush; the count equals the
+/// frame number only when this ran in the post-project phase.
+/// </summary>
+public static class SchedulePostProjectProbe
+{
+    [System(
+        Name = "schedule_post_project_probe",
+        Order = ScheduleProbeOrders.PostProject,
+        RunPhase = RunPhase.PostProject)]
+    public static void Run(Query<Read<ScheduleMarker>> markers)
+    {
+        if (ScheduleProbeState.PostFrames >= 2)
+            return;
+        ScheduleProbeState.PostFrames++;
+        int count = 0;
+        foreach (var row in markers.Rows())
+        {
+            // Only this load's row counts: the world keeps every earlier
+            // generation's rows, and the probe must not read them as flushed
+            // work of this frame.
+            if (row.ScheduleMarker.Pass == ScheduleProbeState.Stamp &&
+                row.ScheduleMarker.Frame == ScheduleProbeState.PostFrames)
+                count++;
+        }
+        Console.WriteLine(
+            $"[probe] schedule post_project frame={ScheduleProbeState.PostFrames} markers={count}");
+    }
+}
 '''
 
 # --- C# / bridge specific output tokens ---------------------------------------
@@ -236,6 +357,10 @@ CSHARP_RELOAD_LEDGER_PATTERN = re.compile(
 # identity is unchanged (behavior-only reload).
 CSHARP_RELOAD_COMPLETE_TOKEN = "C# hot reload complete"
 CSHARP_RELOAD_REJECTED_TOKEN = "C# reload rejected"
+
+# The shared reload report: a managed swap records one event in it, so the same
+# block a Rust reload prints carries the managed reload.
+CSHARP_RELOAD_REPORT_TOKEN = "Hot reload finished"
 
 # The managed loader prints the SPECIFIC reason to stderr before the Rust side
 # prints its single generic line. Asserting on these is what tells a developer
@@ -497,8 +622,8 @@ COMPONENT_DEFAULT_FIELD_EDIT = (
 # body-only print line: neither touches a system's query signature, so the
 # swap stays legal while the manifest change rides the parked path.
 SYSTEM_EXTRA_LATCH_EDIT = (
-    "public static class SplinePathSystem\n{\n    [EcsSystem]",
-    "public static class SplinePathSystem\n{\n    // Written by devops/tests/test_csharp_bridge.py while the suite runs:\n    // reports the migrated field default once per assembly.\n#pragma warning disable PILL0301\n    private static bool extraLogged;\n#pragma warning restore PILL0301\n\n    [EcsSystem]",
+    "public static class SplinePathSystem\n{\n    [System]",
+    "public static class SplinePathSystem\n{\n    // Written by devops/tests/test_csharp_bridge.py while the suite runs:\n    // reports the migrated field default once per assembly.\n#pragma warning disable PILL0301\n    private static bool extraLogged;\n#pragma warning restore PILL0301\n\n    [System]",
 )
 SYSTEM_EXTRA_PRINT_EDIT = (
     "                ref var sample = ref sampleRow.SplineSample;",
@@ -548,7 +673,7 @@ MARKERS_SEEDED_TOKEN = "probe retirement markers seeded"
 COMPONENT_RETIREMENT_TOKEN = 'kind="component" entries=1 touched=3'
 RESOURCE_RETIREMENT_TOKEN = 'kind="resource" entries=1 touched=1'
 
-# Renames an [EcsSystem] method of the probe file. Rust builds its execution
+# Renames an [System] method of the probe file. Rust builds its execution
 # graph once at startup from these names, so the set has to stay stable until a
 # restart.
 SYSTEM_NAME_EDIT = (
@@ -562,7 +687,7 @@ CSHARP_SYSTEMS_REREGISTERED_TOKEN = (
     "re-registered the project's managed systems after a signature change"
 )
 
-# Renames an [EcsStartup] method. Startups are not re-run on reload, so a change
+# Renames an [Startup] method. Startups are not re-run on reload, so a change
 # to the set is refused rather than silently ignored.
 STARTUP_NAME_EDIT = (
     "public static void Start(Commands commands)",
@@ -582,6 +707,91 @@ BRIDGE_PROBE_V3_TO_V4_EDIT = (
 
 BRIDGE_PROBE_V3_PREFIX = "cs spline bridge v3: sees"
 BRIDGE_PROBE_V4_PREFIX = "cs spline bridge v4: sees"
+
+# The schedule probes (ScheduleProbes.cs). The ordered pair shares a step
+# counter and their type names sort the opposite way to their Order values, so
+# the logged sequence can only come from the declared order; the post-project
+# probe counts the marker rows the project-phase probe queued in the same
+# frame, which only the second flush and the declared phase make equal to the
+# frame number.
+CSHARP_SCHEDULE_ORDER_TOKEN = "[probe] schedule step=1 order=480"
+CSHARP_SCHEDULE_ORDER_SECOND_TOKEN = "[probe] schedule step=2 order=520"
+CSHARP_SCHEDULE_POST_PROJECT_TOKEN = "[probe] schedule post_project frame=2 markers=1"
+# The same ordered pair after the suite moves the first system's order past the
+# second's, which also proves an edited order reaches the scheduler through a
+# re-registration rather than being ignored by the reload signature.
+CSHARP_SCHEDULE_REORDERED_TOKEN = "[probe] schedule step=2 order=999"
+
+# A behaviour-only change to the probe file, so the scenario gets a fresh
+# generation that logs the schedule probes with their declared order before the
+# order is edited.
+SCHEDULE_PROBE_NOOP_EDIT = (
+    "/// <summary>Runs first by its declared order although its type name sorts last.</summary>",
+    "/// <summary>Runs first by its declared order, although its type name sorts last.</summary>",
+)
+
+# Moves the first system's declared order past the second one's. The constant
+# feeds both the attribute and the probe's log text, so one edit changes the
+# declaration and what the output says about it.
+SCHEDULE_ORDER_EDIT = (
+    "internal const int First = 480;",
+    "internal const int First = 999;",
+)
+
+
+def verify_managed_reload_report(scenario_name: str, output: str) -> bool:
+    """Asserts a managed swap printed the shared reload report block.
+
+    The block has to name the project and carry the managed phase mapping:
+    `kind=reload` (it is a reload of the project subject) with zero `init` and
+    `migrate`, which are the two phases the loader has no equivalent of. A
+    block that only appears for a module reload does not prove anything.
+    """
+    lines = [line for line in output.splitlines() if CSHARP_RELOAD_REPORT_TOKEN in line]
+    if not lines:
+        print(f"  [FAIL] {scenario_name}: no {CSHARP_RELOAD_REPORT_TOKEN!r} line")
+        return False
+    matching = [
+        line
+        for line in lines
+        if "kind=reload" in line and "init=0.0" in line and "migrate=0.0" in line
+    ]
+    if not matching:
+        print(
+            f"  [FAIL] {scenario_name}: the reload report does not describe the "
+            "managed swap (expected kind=reload with init=0.0 and migrate=0.0):"
+        )
+        for line in lines:
+            print(f"    {line}")
+        return False
+    print(f"  [OK] {scenario_name}: the managed swap is in the shared reload report.")
+    return True
+
+
+# The engine formatter's line prefix: the local time in brackets, to the
+# millisecond. A bare console write carries no such prefix.
+ENGINE_LINE_PREFIX = re.compile(r"^\[\d{2}:\d{2}:\d{2}:\d{3}\]")
+
+
+def verify_loader_lines_are_engine_lines(scenario_name: str, output: str) -> bool:
+    """Asserts the loader's reload lines came through the engine formatter.
+
+    The text is the same either way; the prefix is not. A line without the
+    engine's timestamp came straight from `Console`, which is what put the
+    loader's reload reporting outside the one log the host writes.
+    """
+    lines = [line for line in output.splitlines() if CSHARP_RELOADED_TOKEN in line]
+    if not lines:
+        print(f"  [FAIL] {scenario_name}: no {CSHARP_RELOADED_TOKEN!r} line")
+        return False
+    bare = [line for line in lines if not ENGINE_LINE_PREFIX.match(line)]
+    if bare:
+        print(f"  [FAIL] {scenario_name}: loader lines written outside the engine log:")
+        for line in bare:
+            print(f"    {line}")
+        return False
+    print(f"  [OK] {scenario_name}: the loader's reload lines carry the engine prefix.")
+    return True
 
 
 def rejection_scenario(name, path, edit, reason, still_running_prefix):
@@ -627,9 +837,17 @@ SESSION_SCENARIOS = [
                 required_tokens=[
                     CSHARP_RELOADED_TOKEN,
                     CSHARP_RELOAD_COMPLETE_TOKEN,
+                    # The swap is recorded in the shared report, in the same
+                    # block and grammar a Rust reload prints.
+                    CSHARP_RELOAD_REPORT_TOKEN,
                 ],
                 forbidden_tokens=[
                     CSHARP_RELOAD_REJECTED_TOKEN,
+                    # The private timing line the shared report replaced. It is
+                    # written inline rather than as a `*_TOKEN`: the log
+                    # contract requires every declared token to exist in Rust,
+                    # and this one must not exist anywhere.
+                    "C# hot reload timing",
                     PANIC_TOKEN,
                     ACCESS_VIOLATION_TOKEN,
                 ],
@@ -641,6 +859,7 @@ SESSION_SCENARIOS = [
                 ],
             )
         ],
+        validators=[verify_managed_reload_report, verify_loader_lines_are_engine_lines],
         restore_after=[MANAGED_PROJECT_PROBE_CS],
     ),
     # Reloading repeatedly in one session. Each phase is a distinct edit to the
@@ -880,6 +1099,48 @@ SESSION_SCENARIOS = [
         STARTUP_NAME_EDIT,
         CSHARP_REJECT_STARTUP_REASON,
         BRIDGE_PROBE_PREFIX,
+    ),
+    # The [System] schedule values reach the engine: the declared order
+    # sequences the conflicting probe pair (their type names sort the opposite
+    # way), the post-project probe sees the marker queued in the same frame
+    # (only the second flush and the declared phase give it that), and an
+    # edited order re-registers the systems and moves the pair.
+    Scenario(
+        name="csharp_schedule_values",
+        phases=[
+            # A behaviour-only reload gets a fresh generation, which logs the
+            # declared schedule: the conflicting pair's sequence and the
+            # post-project count the project phase's flush.
+            ScenarioPhase(
+                edits=[(MANAGED_PROJECT_PROBE_CS, [SCHEDULE_PROBE_NOOP_EDIT])],
+                wait_token=CSHARP_RELOAD_COMPLETE_TOKEN,
+                required_tokens=[
+                    CSHARP_SCHEDULE_ORDER_TOKEN,
+                    CSHARP_SCHEDULE_ORDER_SECOND_TOKEN,
+                    CSHARP_SCHEDULE_POST_PROJECT_TOKEN,
+                ],
+                forbidden_tokens=[
+                    CSHARP_RELOAD_REJECTED_TOKEN,
+                    PANIC_TOKEN,
+                    ACCESS_VIOLATION_TOKEN,
+                ],
+            ),
+            # A changed order is a changed schedule, so the reload re-registers
+            # the systems and the pair moves.
+            ScenarioPhase(
+                edits=[(MANAGED_PROJECT_PROBE_CS, [SCHEDULE_ORDER_EDIT])],
+                wait_token=CSHARP_SYSTEMS_REREGISTERED_TOKEN,
+                required_tokens=[CSHARP_SYSTEMS_REREGISTERED_TOKEN],
+                wait_after=[(CSHARP_SCHEDULE_REORDERED_TOKEN, PROBE_TIMEOUT)],
+                forbidden_tokens=[
+                    CSHARP_RELOAD_REJECTED_TOKEN,
+                    PANIC_TOKEN,
+                    ACCESS_VIOLATION_TOKEN,
+                ],
+                alive_tokens=[(BRIDGE_PROBE_PREFIX, PROBE_TIMEOUT)],
+            ),
+        ],
+        restore_after=[MANAGED_PROJECT_PROBE_CS],
     ),
     # Adding a mirrored method to a module WHILE the host runs must reach C#
     # without a restart: the module reload regenerates the mirror file, queues

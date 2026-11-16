@@ -57,7 +57,7 @@ public struct NativeSystemAccess
 // =============================================================================
 
 /// <summary>
-/// Captures any continuation an <c>[EcsSystem]</c> method tries to schedule.
+/// Captures any continuation an <c>[System]</c> method tries to schedule.
 /// </summary>
 /// <remarks>
 /// A system runs inside a scheduled scope that ends when it returns. An
@@ -124,7 +124,7 @@ public static unsafe class LoaderInterop
     /// version-and-size check instead of misreading every slot after a new one.
     /// New slots go at the end of the table; no existing slot moves.
     /// </remarks>
-    public const uint InteropContractVersion = 18;
+    public const uint InteropContractVersion = 19;
 
     /// <summary>Return the unmanaged ABI contract version for host validation.</summary>
 #if !PILL_AOT
@@ -152,7 +152,7 @@ public static unsafe class LoaderInterop
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"[csharp_runtime] NotifyAssemblyReplaced failed: {e}");
+            Log.Error($"[csharp_runtime] NotifyAssemblyReplaced failed: {e}");
         }
     }
 
@@ -281,6 +281,66 @@ public static unsafe class LoaderInterop
         catch (Exception e)
         {
             Console.Error.WriteLine($"[csharp_runtime] SystemUsesCommands failed: {e}");
+            return 0;
+        }
+    }
+
+    /// <summary>Return a system's declared order within its phase.</summary>
+    /// <remarks>
+    /// A failed read answers <see cref="int.MinValue"/>, which the host refuses
+    /// rather than using as a sort key: a system silently placed at the front
+    /// of its phase would be a schedule nobody declared.
+    /// </remarks>
+#if !PILL_AOT
+    [UnmanagedCallersOnly(EntryPoint = "pill_system_order")]
+#endif
+    [ShippedExport("pill_system_order")]
+    public static int SystemOrder(uint systemIndex)
+    {
+        try
+        {
+            return _host?.GetSystemOrder(checked((int)systemIndex)) ?? 0;
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"[csharp_runtime] SystemOrder failed: {e}");
+            return int.MinValue;
+        }
+    }
+
+    /// <summary>Return a system's declared frame phase (0 pre-project, 1 project, 2 post-project).</summary>
+    /// <remarks>A failed read answers `0xFF`, which the host refuses by number.</remarks>
+#if !PILL_AOT
+    [UnmanagedCallersOnly(EntryPoint = "pill_system_run_phase")]
+#endif
+    [ShippedExport("pill_system_run_phase")]
+    public static byte SystemRunPhase(uint systemIndex)
+    {
+        try
+        {
+            return _host?.GetSystemRunPhase(checked((int)systemIndex)) ?? 1;
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"[csharp_runtime] SystemRunPhase failed: {e}");
+            return 0xFF;
+        }
+    }
+
+    /// <summary>Return whether a system also runs while the editor edits.</summary>
+#if !PILL_AOT
+    [UnmanagedCallersOnly(EntryPoint = "pill_system_run_in_edit_mode")]
+#endif
+    [ShippedExport("pill_system_run_in_edit_mode")]
+    public static byte SystemRunInEditMode(uint systemIndex)
+    {
+        try
+        {
+            return _host?.RunsInEditMode(checked((int)systemIndex)) == true ? (byte)1 : (byte)0;
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"[csharp_runtime] SystemRunInEditMode failed: {e}");
             return 0;
         }
     }
@@ -572,7 +632,7 @@ public static unsafe class LoaderInterop
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"[csharp_runtime] CommitReload failed: {e}");
+            Log.Error($"[csharp_runtime] CommitReload failed: {e}");
             return 0;
         }
     }
@@ -593,7 +653,7 @@ public static unsafe class LoaderInterop
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"[csharp_runtime] AbortReload failed: {e}");
+            Log.Error($"[csharp_runtime] AbortReload failed: {e}");
             return 0;
         }
     }
@@ -619,7 +679,7 @@ public static unsafe class LoaderInterop
         }
         catch (Exception e)
         {
-            Console.Error.WriteLine($"[csharp_runtime] PollReload failed: {e}");
+            Log.Error($"[csharp_runtime] PollReload failed: {e}");
             return (byte)PollStatus.Rejected;
         }
     }

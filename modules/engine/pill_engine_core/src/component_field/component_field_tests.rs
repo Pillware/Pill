@@ -355,7 +355,7 @@ fn nested_fields_expand_into_editable_rows() {
         .build()
         .expect("entity builds");
 
-    let component_name = "pill_engine::component_field::tests::NestedOuter";
+    let component_name = crate::type_names::stable_type_name::<NestedOuter>();
     assert_eq!(
         world
             .read_component_field(entity, component_name, "inner.b")
@@ -730,36 +730,21 @@ fn round_trip_every_scalar_field() {
         .build()
         .expect("entity builds");
 
+    let component_name = crate::type_names::stable_type_name::<SampleComponent>();
     assert_eq!(
-        world.read_component_field(
-            entity,
-            "pill_engine::component_field::tests::SampleComponent",
-            "a_float"
-        ),
+        world.read_component_field(entity, component_name, "a_float"),
         Ok(FieldValue::F32(1.5))
     );
     assert_eq!(
-        world.read_component_field(
-            entity,
-            "pill_engine::component_field::tests::SampleComponent",
-            "an_int"
-        ),
+        world.read_component_field(entity, component_name, "an_int"),
         Ok(FieldValue::U32(7))
     );
     assert_eq!(
-        world.read_component_field(
-            entity,
-            "pill_engine::component_field::tests::SampleComponent",
-            "a_bool"
-        ),
+        world.read_component_field(entity, component_name, "a_bool"),
         Ok(FieldValue::Bool(true))
     );
     assert_eq!(
-        world.read_component_field(
-            entity,
-            "pill_engine::component_field::tests::SampleComponent",
-            "an_array"
-        ),
+        world.read_component_field(entity, component_name, "an_array"),
         Ok(FieldValue::Array(vec![
             FieldValue::I16(1),
             FieldValue::I16(2),
@@ -768,21 +753,10 @@ fn round_trip_every_scalar_field() {
     );
 
     world
-        .write_component_field(
-            entity,
-            "pill_engine::component_field::tests::SampleComponent",
-            "a_float",
-            FieldValue::F32(9.25),
-        )
+        .write_component_field(entity, component_name, "a_float", FieldValue::F32(9.25))
         .expect("write succeeds");
     world
-        .write_component_array_element(
-            entity,
-            "pill_engine::component_field::tests::SampleComponent",
-            "an_array",
-            1,
-            FieldValue::I16(-5),
-        )
+        .write_component_array_element(entity, component_name, "an_array", 1, FieldValue::I16(-5))
         .expect("element write succeeds");
 
     let component = world
@@ -800,7 +774,7 @@ fn refusing_errors_leave_state_untouched() {
         .with(sample_component())
         .build()
         .expect("entity builds");
-    let component_name = "pill_engine::component_field::tests::SampleComponent";
+    let component_name = crate::type_names::stable_type_name::<SampleComponent>();
 
     assert_eq!(
         world.write_component_field(entity, component_name, "an_int", FieldValue::F32(1.0)),
@@ -852,7 +826,7 @@ fn dead_entity_and_unknown_component_and_field() {
         .with(sample_component())
         .build()
         .expect("entity builds");
-    let component_name = "pill_engine::component_field::tests::SampleComponent";
+    let component_name = crate::type_names::stable_type_name::<SampleComponent>();
 
     let _ = world.destroy_entity(entity);
     assert_eq!(
@@ -894,7 +868,7 @@ fn every_entry_point_reports_the_same_misses() {
         .with(sample_component())
         .build()
         .expect("entity builds");
-    let component_name = "pill_engine::component_field::tests::SampleComponent";
+    let component_name = crate::type_names::stable_type_name::<SampleComponent>();
 
     // One probe per entry point, for each kind of miss.
     for (component, field) in [
@@ -998,7 +972,7 @@ fn reads_do_not_stamp_but_writes_do() {
         .with(sample_component())
         .build()
         .expect("entity builds");
-    let component_name = "pill_engine::component_field::tests::SampleComponent";
+    let component_name = crate::type_names::stable_type_name::<SampleComponent>();
     let baseline_tick = world.change_tick();
 
     let component_id = ComponentId::of::<SampleComponent>();
@@ -1043,7 +1017,7 @@ fn changed_filter_observes_a_field_edit() {
         .with(sample_component())
         .build()
         .expect("entity builds");
-    let component_name = "pill_engine::component_field::tests::SampleComponent";
+    let component_name = crate::type_names::stable_type_name::<SampleComponent>();
 
     // Step 1: set the baseline to now, so the entity's creation already counts
     // as seen and only the edit below is new.

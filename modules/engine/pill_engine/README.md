@@ -6,15 +6,15 @@ scriptable components.
 
 ## Features
 
-| Feature                     | Description                                                                                                                                                    |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Feature                 | Description                                                                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Archetype storage       | Components of the same type stored contiguously (Structure-of-Arrays) for cache-friendly bulk iteration                                                        |
-| Bevy-style systems      | `fn my_system(q: Query<(&mut Transform, &Velocity)>, time: Res<ProjectTime>)` - parameters resolved automatically                                                 |
+| Bevy-style systems      | `fn my_system(q: Query<(&mut Transform, &Velocity)>, time: Res<ProjectTime>)` - parameters resolved automatically                                              |
 | Automatic parallelism   | Scheduler builds a dependency graph from component/resource access patterns; systems with disjoint access run concurrently via Rayon                           |
 | Change detection        | `Changed<T>` and `Added<T>` filters skip entities whose data hasn't changed since the system last ran                                                          |
 | Deferred commands       | Structural changes (create/destroy entities, add/remove components) are queued during system execution and applied at the frame boundary - no mid-iteration UB |
 | Script components       | Components with an `update()` method called every frame with safe, deferred-command-only World access                                                          |
-| Resources               | Global singleton data (`ProjectTime`, `InputState`, `AssetStore`) accessed via `Res<T>` / `ResMut<T>` with scheduler-tracked access                               |
+| Resources               | Global singleton data (`ProjectTime`, `InputState`, `AssetStore`) accessed via `Res<T>` / `ResMut<T>` with scheduler-tracked access                            |
 | Deterministic iteration | Queries and scripts iterate entities in a stable, sorted order regardless of HashMap layout                                                                    |
 
 ## Quick Start
@@ -240,7 +240,7 @@ process_frame()
 build but the editor's is always `Playing`, so the gate below changes nothing
 for a game. The editor starts in `Editing` and switches to `Playing` when the
 person presses Play; while editing, only the systems declared
-`#[system(..., edit_mode)]` run, and no script does.
+`#[system(..., run_in_edit_mode = true)]` run, and no script does.
 
 `Engine::enter_play()` copies the world - entity storage, component rows and the
 game-state resources - into a held slot, and `Engine::exit_play()` puts it back,

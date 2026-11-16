@@ -53,7 +53,7 @@ use pill_editor_core::drain::{self, HistoryDirection};
 use pill_editor_core::editor_files;
 use pill_editor_core::editor_state::{
     AssetDetail, AssetKind, AssetListing, AssetReferenceField, EditorCommand, EditorSelection,
-    EditorSnapshot, EntityPickRequest, SelectionClick, StandaloneTypeInfo,
+    EditorSnapshot, ElementRef, EntityPickRequest, SelectionClick, StandaloneTypeInfo,
 };
 use pill_editor_core::egui;
 use pill_editor_core::entities;

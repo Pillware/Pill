@@ -35,8 +35,7 @@ use pill_project_ui::{egui, GameUi, InputFrame, UiFrameSlot, PRIMARY_SURFACE};
 use pills_rust::{DemoState, PILL_COUNT};
 
 /// Draws the tuning panel: the FPS, the curl noise values and the reset button.
-#[pill_hot]
-#[system(name = "tuning_overlay", order = 40)]
+#[system(name = "tuning_overlay", order = 540)]
 pub(crate) fn tuning_overlay_system(
     mut game_ui: ResMut<GameUi>,
     input: Res<Input>,
@@ -109,8 +108,7 @@ pub(crate) fn tuning_overlay_system(
 
 /// Draws the field's bounds, the world axes and the tuning values, and toggles
 /// debug drawing with F3.
-#[pill_hot]
-#[system(name = "debug_overlay", order = 50)]
+#[system(name = "debug_overlay", order = 550)]
 pub(crate) fn debug_overlay_system(
     input: Res<Input>,
     mut debug_draw: ResMut<DebugDraw>,

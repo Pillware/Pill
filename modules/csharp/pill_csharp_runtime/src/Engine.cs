@@ -114,7 +114,7 @@ public static unsafe class Engine
             (current == 0
                 ? ", and no ECS system is running on this thread now."
                 : $", but invocation {current} is running now.") +
-            " Chunks are valid only inside the [EcsSystem] call that produced them; " +
+            " Chunks are valid only inside the [System] call that produced them; " +
             "copy the value out, or re-run the query.");
     }
 
@@ -182,7 +182,7 @@ public static unsafe class Engine
             (current == 0
                 ? ", and no ECS system is running on this thread now."
                 : $", but invocation {current} is running now.") +
-            " A resource reference is valid only inside the [EcsSystem] call that " +
+            " A resource reference is valid only inside the [System] call that " +
             "produced it; read it again, or copy the value out.");
     }
 

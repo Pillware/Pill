@@ -115,7 +115,7 @@ pub fn register(_engine: &mut Engine) -> u32 {
 // =============================================================================
 
 /// Logs once, on the first frame a source reports that it is playing.
-#[system(name = "audio_example_report", order = 10)]
+#[system(name = "audio_example_report", order = 110)]
 fn report_playback(mut sources: Query<&AudioSourceComponent>) {
     if PLAYBACK_REPORTED.load(Ordering::Relaxed) {
         return;

@@ -153,6 +153,18 @@ EXTERNALLY_PRODUCED: Dict[str, str] = {
     "[csharp_runtime] reload failed:":
         "Printed by the managed loader (pill_csharp_runtime, C#), whose source "
         "is C# rather than Rust.",
+    "[probe] schedule step=1 order=480":
+        "Printed by the C# ScheduleProbes.cs fixture, which composes the step "
+        "counter and the declared order into the line.",
+    "[probe] schedule step=2 order=520":
+        "Printed by the C# ScheduleProbes.cs fixture, which composes the step "
+        "counter and the declared order into the line.",
+    "[probe] schedule post_project frame=2 markers=1":
+        "Printed by the C# ScheduleProbes fixture, which composes the frame "
+        "counter and the marker count into the line.",
+    "[probe] schedule step=2 order=999":
+        "Printed by the C# ScheduleProbes.cs fixture after the suite edits the "
+        "declared order, with the edited value composed in.",
     "are still loaded after":
         "Emitted by the .NET bridge (ProjectHost.cs), whose source is C# "
         "rather than Rust.",

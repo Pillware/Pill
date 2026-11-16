@@ -64,18 +64,25 @@ fn first_system(mut run_log: ResMut<RunLog>) {
     record(&mut run_log, "first");
 }
 
-/// Declares a post-update system whose order value is lower than every update
-/// system's, so the stage flag is the only thing that can put it last.
-#[system(name = "after_flush", order = 5, post_update)]
+/// Declares a post-project system whose order value is lower than every
+/// project system's, so the phase is the only thing that can put it last.
+#[system(name = "after_flush", order = 5, run_phase = "post_project")]
 fn after_flush_system(mut run_log: ResMut<RunLog>) {
     record(&mut run_log, "after_flush");
 }
 
 /// Declares a system that opts in to edit mode, so it runs while the editor
 /// edits and pauses with the rest of the game's work.
-#[system(name = "editing_only", order = 30, edit_mode)]
+#[system(name = "editing_only", order = 30, run_in_edit_mode = true)]
 fn editing_only_system(mut run_log: ResMut<RunLog>) {
     record(&mut run_log, "editing_only");
+}
+
+/// Declares a pre-project system, so the phase a declaration names decides
+/// where it runs, not only its order number.
+#[system(name = "pre_flush", order = 40, run_phase = "pre_project")]
+fn pre_flush_system(mut run_log: ResMut<RunLog>) {
+    record(&mut run_log, "pre_flush");
 }
 
 /// The attribute marks the declaration, and the engine runs that system while
@@ -118,16 +125,20 @@ fn declared_systems_are_registered_by_the_entry_point() {
         .into_iter()
         .map(|snapshot| snapshot.name)
         .collect();
+    // The list spans the phases: the pre-project declaration first, then the
+    // project systems in (order, name) order, then the post-project one
+    // whatever its order number is.
     assert_eq!(
         names,
         [
+            String::from("pre_flush"),
             String::from(concat!(module_path!(), "::unnamed_system")),
-            String::from("after_flush"),
             String::from("first"),
             String::from("second"),
             String::from("editing_only"),
+            String::from("after_flush"),
         ],
-        "declared systems register in (order, name) order"
+        "declared systems register in (phase, order) order"
     );
 }
 
@@ -149,7 +160,14 @@ fn declared_systems_run_in_their_declared_order() {
         .clone();
     assert_eq!(
         entries,
-        ["unnamed", "first", "second", "editing_only", "after_flush"]
+        [
+            "pre_flush",
+            "unnamed",
+            "first",
+            "second",
+            "editing_only",
+            "after_flush"
+        ]
     );
 }
 
@@ -176,7 +194,7 @@ fn a_load_baseline_leaves_the_declarations_taken_before_it_alone() {
     component_registry::run_artifact_registration(&mut engine, component_registry::no_registration);
     assert_eq!(
         engine.system_snapshots().len(),
-        5,
+        6,
         "without a baseline the declarations register"
     );
 }

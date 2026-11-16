@@ -32,11 +32,13 @@ load it. Should the two ever diverge anyway, the host names both dylibs rather
 than letting the loader report it as "The specified procedure could not be  
 found".
 
-Live per-function hot patching is on by default in dev builds: a body-only  
-edit to a `#[pill_hot]` system is compiled on its own and swapped into the  
-running engine at the next frame, instead of a full module reload. Everything  
-a patch cannot express (signature or type changes, new components, constants)  
-falls back to the normal reload. To run the pure reload path without the patch  
+Live per-function hot patching is on by default in dev builds: a body-only
+edit to any `#[system]` is compiled on its own and swapped into the
+running engine at the next frame, instead of a full module reload. The engine
+gives every system a dispatch slot, so no marker of its own is needed;
+`#[pill_hot_fn]` marks a plain function a system calls. Everything
+a patch cannot express (signature or type changes, new components, constants)
+falls back to the normal reload. To run the pure reload path without the patch
 machinery - e.g. when measuring reload performance - build the host with  
 `--no-default-features --features development` instead.
 

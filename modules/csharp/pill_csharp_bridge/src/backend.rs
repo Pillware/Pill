@@ -40,7 +40,7 @@ use pill_core::{error, info, warn};
 use pill_engine::commands::CommandQueue;
 #[cfg(feature = "hot_reload")]
 use pill_engine::SystemOwner;
-use pill_engine::{Engine, SystemAccess, SystemError, World};
+use pill_engine::{Engine, RunPhase, SystemAccess, SystemError, SystemOptions, World};
 
 // Current crate
 use super::abi::{CsEngineApi, NativeSystemAccess};
@@ -123,7 +123,7 @@ pub(super) const MAX_ACCESSES_PER_SYSTEM: u32 = 1024;
 /// loading, in the host's `resolve_unmanaged_function_pointer`, and the error
 /// names the export it could not find. A numeric kind would instead dispatch
 /// wrongly at run time, on a live ABI that AOT projects forward by hand.
-pub const INTEROP_CONTRACT_VERSION: u32 = 18;
+pub const INTEROP_CONTRACT_VERSION: u32 = 19;
 
 // =============================================================================
 // Types + Impls
@@ -139,6 +139,12 @@ type SystemCountFn = extern "system" fn() -> u32;
 type StartupCountFn = extern "system" fn() -> u32;
 /// Signature reporting whether one system declares a Commands parameter.
 type SystemUsesCommandsFn = extern "system" fn(u32) -> u8;
+/// Signature returning one system's declared order within its phase.
+type SystemOrderFn = extern "system" fn(u32) -> i32;
+/// Signature returning one system's declared frame phase (0, 1 or 2).
+type SystemRunPhaseFn = extern "system" fn(u32) -> u8;
+/// Signature reporting whether one system also runs in edit mode.
+type SystemRunInEditModeFn = extern "system" fn(u32) -> u8;
 /// Signature executing one managed startup method by index.
 type RunStartupFn = extern "system" fn(u32) -> u8;
 /// Signature returning the serialized component manifest byte length.
@@ -197,6 +203,12 @@ struct ManagedSystemSnapshot {
     accesses: Box<[NativeSystemAccess]>,
     /// Whether the managed system declared a Commands parameter.
     uses_commands: bool,
+    /// The system's declared order within its phase.
+    order: i32,
+    /// The system's declared frame phase.
+    phase: RunPhase,
+    /// Whether the system also runs in edit mode.
+    run_in_edit_mode: bool,
     /// The name the system was registered under, after the synthetic fallback.
     ///
     /// Recorded because a rename changes nothing else a reload can see: not
@@ -237,7 +249,7 @@ pub struct CSharpRuntime {
     poll_reload: PollReloadFn,
     /// The project assembly this runtime hosts, as configured.
     ///
-    /// Carried so a refusal on the reload path - "declares no `[EcsSystem]`
+    /// Carried so a refusal on the reload path - "declares no `[System]`
     /// methods" is the one that needs it - names the artifact that failed
     /// rather than a fixed project name.
     subject: String,
@@ -260,7 +272,14 @@ pub struct CSharpRuntime {
     /// arriving assembly, and so the comparison and the re-registration read
     /// the same descriptors.
     exports: SystemExports,
-    /// Outcome of the most recent reload poll, for one-shot rejection logging.
+    /// Loader answer of the most recent reload poll, for one-shot rejection
+    /// logging.
+    ///
+    /// Every path of `poll_reload` records it, so the rejection check never
+    /// compares against a stale answer. The stopped guard records
+    /// `POLL_REJECTED` without polling, and a manifest-pending answer stays
+    /// recorded as the loader's answer even when the host then aborts the
+    /// swap.
     #[cfg(feature = "hot_reload")]
     last_poll_status: u8,
     /// Set once the world has taken a manifest whose assembly never loaded.
@@ -301,7 +320,7 @@ pub struct CSharpRuntime {
 ///
 /// Collected instead of passed one by one: the pass has two callers - the
 /// startup and the reload that re-registers a changed system set - and both
-/// read the same nine function pointers.
+/// read the same twelve function pointers.
 #[derive(Clone, Copy)]
 struct SystemExports {
     /// Reports how many systems the assembly registered.
@@ -312,6 +331,12 @@ struct SystemExports {
     get_access: GetSystemAccessFn,
     /// Reports whether one system declares a Commands parameter.
     system_uses_commands: SystemUsesCommandsFn,
+    /// Reports one system's declared order within its phase.
+    system_order: SystemOrderFn,
+    /// Reports one system's declared frame phase (0, 1 or 2).
+    system_run_phase: SystemRunPhaseFn,
+    /// Reports whether one system also runs in edit mode.
+    system_run_in_edit_mode: SystemRunInEditModeFn,
     /// Invokes one system for a frame.
     run_system: RunSystemFn,
     /// Byte length of one system's reflected name.
@@ -342,6 +367,12 @@ struct PreparedManagedSystem {
     managed_access: Box<[NativeSystemAccess]>,
     /// Whether the managed system declared a `Commands` parameter.
     uses_commands: bool,
+    /// Declared order within the phase.
+    order: i32,
+    /// Declared frame phase.
+    phase: RunPhase,
+    /// Whether the system also runs in edit mode.
+    run_in_edit_mode: bool,
     /// Managed discovery index this system is dispatched by.
     system_index: u32,
     /// Metadata a later reload compares to tell a behaviour swap from a
@@ -409,6 +440,19 @@ fn prepare_managed_systems(
         debug_assert_eq!(managed_access.len(), system_access_count as usize);
 
         let uses_commands = (exports.system_uses_commands)(system_index) != 0;
+        // The schedule values are read beside the access list, so one
+        // registration pass describes the whole declaration. An unknown phase
+        // is refused by number: running a system in a phase its declaration
+        // never named is a schedule nobody asked for.
+        let order = (exports.system_order)(system_index);
+        let reported_phase = (exports.system_run_phase)(system_index);
+        let Some(phase) = run_phase_from_export(reported_phase) else {
+            return Err(CSharpError::UnknownRunPhase {
+                system: system_index,
+                phase: reported_phase,
+            });
+        };
+        let run_in_edit_mode = (exports.system_run_in_edit_mode)(system_index) != 0;
         let mut access = derive_system_access(&managed_access, &bindings.read())?;
         access.set_uses_commands(uses_commands);
         // Prefer the reflected managed name (type and method) so profiling and
@@ -426,6 +470,9 @@ fn prepare_managed_systems(
         let snapshot = ManagedSystemSnapshot {
             accesses: managed_access.clone().into_boxed_slice(),
             uses_commands,
+            order,
+            phase,
+            run_in_edit_mode,
             name: name.as_str().into(),
         };
         prepared_systems.push(PreparedManagedSystem {
@@ -433,6 +480,9 @@ fn prepare_managed_systems(
             access,
             managed_access: managed_access.into_boxed_slice(),
             uses_commands,
+            order,
+            phase,
+            run_in_edit_mode,
             system_index,
             snapshot,
         });
@@ -458,6 +508,9 @@ fn commit_managed_systems(
             access,
             managed_access,
             uses_commands,
+            order,
+            phase,
+            run_in_edit_mode,
             system_index,
             snapshot,
         } = system;
@@ -466,13 +519,19 @@ fn commit_managed_systems(
         let run_system = exports.run_system;
         let system_error_length = exports.system_error_length;
         let copy_system_error = exports.copy_system_error;
+        // The declaration's schedule reaches the engine through the same
+        // options the Rust `#[system]` attribute fills, so a managed system
+        // takes its place in the one `(phase, order)` list beside every other
+        // artifact's.
+        let options = SystemOptions::new(phase, order).with_run_in_edit_mode(run_in_edit_mode);
         // SAFETY: `access` was built by `derive_system_access` from the same
         // `managed_access` list the closure gives `ActiveSystemGuard`, so the
         // declaration covers every component and resource the closure can
         // reach.
         unsafe {
-            engine.register_system_with_access(
+            engine.register_system_with_access_and_options(
                 name,
+                options,
                 access,
                 move |world: &mut World, queue: &mut CommandQueue| -> Result<(), SystemError> {
                     // Every managed callback needs an active scope, so a
@@ -574,6 +633,12 @@ struct ManagedExports {
     startup_count: StartupCountFn,
     /// Whether one system declares a Commands parameter.
     system_uses_commands: SystemUsesCommandsFn,
+    /// Declared order of one system within its phase.
+    system_order: SystemOrderFn,
+    /// Declared frame phase of one system (0, 1 or 2).
+    system_run_phase: SystemRunPhaseFn,
+    /// Whether one system also runs in edit mode.
+    system_run_in_edit_mode: SystemRunInEditModeFn,
     /// Executes one managed startup method by index.
     run_startup: RunStartupFn,
     /// Byte length of the serialized component manifest.
@@ -654,6 +719,22 @@ impl ManagedExports {
                     assembly,
                     type_name,
                     "SystemUsesCommands",
+                )?,
+            system_order: runtime.resolve_unmanaged_function_pointer::<SystemOrderFn>(
+                assembly,
+                type_name,
+                "SystemOrder",
+            )?,
+            system_run_phase: runtime.resolve_unmanaged_function_pointer::<SystemRunPhaseFn>(
+                assembly,
+                type_name,
+                "SystemRunPhase",
+            )?,
+            system_run_in_edit_mode: runtime
+                .resolve_unmanaged_function_pointer::<SystemRunInEditModeFn>(
+                    assembly,
+                    type_name,
+                    "SystemRunInEditMode",
                 )?,
             run_startup: runtime.resolve_unmanaged_function_pointer::<RunStartupFn>(
                 assembly,
@@ -773,6 +854,14 @@ impl ManagedExports {
             system_uses_commands: runtime
                 .resolve_unmanaged_function_pointer::<SystemUsesCommandsFn>(
                     "pill_system_uses_commands",
+                )?,
+            system_order: runtime
+                .resolve_unmanaged_function_pointer::<SystemOrderFn>("pill_system_order")?,
+            system_run_phase: runtime
+                .resolve_unmanaged_function_pointer::<SystemRunPhaseFn>("pill_system_run_phase")?,
+            system_run_in_edit_mode: runtime
+                .resolve_unmanaged_function_pointer::<SystemRunInEditModeFn>(
+                    "pill_system_run_in_edit_mode",
                 )?,
             run_startup: runtime
                 .resolve_unmanaged_function_pointer::<RunStartupFn>("pill_run_startup")?,
@@ -1017,6 +1106,9 @@ impl CSharpRuntime {
             access_count: exports.access_count,
             get_access: exports.get_access,
             system_uses_commands: exports.system_uses_commands,
+            system_order: exports.system_order,
+            system_run_phase: exports.system_run_phase,
+            system_run_in_edit_mode: exports.system_run_in_edit_mode,
             run_system: exports.run_system,
             system_name_length: exports.system_name_length,
             copy_system_name: exports.copy_system_name,
@@ -1113,9 +1205,14 @@ impl CSharpRuntime {
 
     /// Polls the collectible loader and reports the outcome of any swap attempt.
     ///
-    /// The managed loader checks the rebuilt assembly's component manifest and
-    /// system signatures before it swaps anything. A rejection is logged once
-    /// per attempt, so the poll that runs every frame cannot flood the terminal.
+    /// The loader swaps a behaviour-compatible assembly by itself. A version
+    /// whose component manifest changed is held back
+    /// ([`POLL_MANIFEST_PENDING`]) until the host applies the manifest and
+    /// commits or aborts, and a changed system set is re-registered from the
+    /// arriving assembly rather than refused. Only a changed startup method
+    /// set or an assembly that cannot be loaded is refused. A rejection is
+    /// logged once per attempt, so the poll that runs every frame cannot
+    /// flood the terminal.
     ///
     /// # Errors
     ///
@@ -1131,6 +1228,9 @@ impl CSharpRuntime {
         // repaired by another poll: the mismatch is already in the world's
         // layouts.
         if self.manifest_applied_without_assembly {
+            // The guard answers without polling, so it records the rejection
+            // it reports like every other path.
+            record_poll_answer(&mut self.last_poll_status, POLL_REJECTED);
             return Ok(POLL_REJECTED);
         }
         // Step 2: Poll the loader, and refuse a status this host cannot read.
@@ -1150,11 +1250,13 @@ impl CSharpRuntime {
         }
         // Step 3: Act on the outcome. A pending manifest is applied and then
         // committed or aborted here; a swap has to have its system metadata
-        // checked.
-        if status == POLL_REJECTED && self.last_poll_status != POLL_REJECTED {
+        // checked. The answer is recorded before it is acted on: the rejection
+        // check reads the previous answer, and the manifest handshake below
+        // keeps the loader's answer even when the host then aborts the swap.
+        if record_poll_answer(&mut self.last_poll_status, status) {
             error!(
                 target: telemetry_target::HOT_RELOAD,
-                "C# reload rejected: component or system signatures changed; restart the host to rebuild the native component registry and scheduler"
+                "C# reload rejected: the managed loader refused the new assembly (its startup method set changed, or it failed to load); the running assembly stays loaded"
             );
         }
         if status == POLL_MANIFEST_PENDING {
@@ -1183,7 +1285,6 @@ impl CSharpRuntime {
             // systems run, so a migrated row is in place before the new
             // generation reads it.
         }
-        self.last_poll_status = status;
         Ok(status)
     }
 
@@ -1364,6 +1465,18 @@ impl CSharpRuntime {
             if ((self.exports.system_uses_commands)(system_index) != 0) != snapshot.uses_commands {
                 return false;
             }
+            // The schedule belongs to the signature: a changed order, phase or
+            // edit-mode gate changes where the system runs, so the reload has
+            // to re-register it instead of keeping a schedule the source no
+            // longer describes.
+            if (self.exports.system_order)(system_index) != snapshot.order
+                || run_phase_from_export((self.exports.system_run_phase)(system_index))
+                    != Some(snapshot.phase)
+                || ((self.exports.system_run_in_edit_mode)(system_index) != 0)
+                    != snapshot.run_in_edit_mode
+            {
+                return false;
+            }
             // Resolved the same way registration resolves it, fallback
             // included, so an assembly that exposes no name export compares
             // equal instead of re-registering on every single poll.
@@ -1394,6 +1507,35 @@ pub(super) fn poll_status_is_known(status: u8) -> bool {
         status,
         POLL_NO_CHANGE | POLL_RELOADED | POLL_REJECTED | POLL_MANIFEST_PENDING
     )
+}
+
+/// Maps a managed system's exported phase number to the engine's phase.
+///
+/// The managed side sends the enum's value: `0` pre-project, `1` project and
+/// `2` post-project. `None` is an unknown value, which the caller refuses by
+/// number rather than guessing, because running a system in a phase its
+/// declaration never named is a schedule nobody asked for.
+pub(super) fn run_phase_from_export(phase: u8) -> Option<RunPhase> {
+    match phase {
+        0 => Some(RunPhase::PreProject),
+        1 => Some(RunPhase::Project),
+        2 => Some(RunPhase::PostProject),
+        _ => None,
+    }
+}
+
+/// Records a loader poll answer and answers whether it is a new rejection.
+///
+/// The poll runs every frame, so a loader that keeps refusing the same
+/// assembly is named once; any other answer ends that attempt, and the next
+/// rejection is named again. Recording the answer on every path keeps the
+/// comparison current instead of comparing against a stale one. The helper is
+/// a free function so a test can pin the rule without a live .NET runtime.
+#[cfg(feature = "hot_reload")]
+pub(super) fn record_poll_answer(last_poll_status: &mut u8, status: u8) -> bool {
+    let rejection_is_new = status == POLL_REJECTED && *last_poll_status != POLL_REJECTED;
+    *last_poll_status = status;
+    rejection_is_new
 }
 
 /// Reads the pending version's component manifest and logs why it could not be

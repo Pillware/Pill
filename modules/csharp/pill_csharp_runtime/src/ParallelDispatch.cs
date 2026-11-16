@@ -69,7 +69,7 @@ internal static unsafe class ParallelDispatch
                     break;
                 case NoScope:
                     throw new InvalidOperationException(
-                        "ForEachParallel requires a scheduled [EcsSystem] on the calling " +
+                        "ForEachParallel requires a scheduled [System] on the calling " +
                         "thread; no managed invocation is active.");
                 case Nested:
                     throw new InvalidOperationException(

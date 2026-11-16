@@ -61,7 +61,7 @@ public static class ParallelRows
         if (Engine.CurrentScopeToken == 0)
         {
             throw new InvalidOperationException(
-                "ForEachParallel requires a scheduled [EcsSystem] on the calling " +
+                "ForEachParallel requires a scheduled [System] on the calling " +
                 "thread; no managed invocation is active.");
         }
         _passDepth++;

@@ -3,12 +3,12 @@
 //!
 //! # Responsibilities
 //!
-//! - Declare the descriptor types the `#[system]` attribute and the
-//!   `#[derive(PillResource)]`/`#[derive(PillAsset)]` derives submit into
-//!   [`inventory`], and the collections themselves.
-//! - Turn those collections into registered systems, declared resources and
-//!   declared asset types at the artifact's entry point, in a deterministic
-//!   order.
+//! - Declare the descriptor types the `#[system]` attribute, the `#[script]`
+//!   attribute and the `#[derive(PillResource)]`/`#[derive(PillAsset)]`
+//!   derives submit into [`inventory`], and the collections themselves.
+//! - Turn those collections into registered systems, registered scripts,
+//!   declared resources and declared asset types at the artifact's entry
+//!   point, in a deterministic order.
 //!
 //! # Design
 //!
@@ -27,17 +27,57 @@
 //!
 //! Registration order decides the order conflicting systems run in, and
 //! `inventory` order is link order rather than source order. The system
-//! descriptor therefore carries an explicit order key and a name to break
-//! ties, so the schedule a project gets is the schedule its declarations
+//! descriptor therefore carries an explicit order key, the phase and a name to
+//! break ties, so the schedule a project gets is the schedule its declarations
 //! describe. Resources and asset types have no execution order; they are
 //! declared sorted by type name so the claim order is the same in every build.
+//!
+//! # Refused declarations
+//!
+//! The attribute refuses an argument it cannot honour, and names the ones it
+//! accepts. An unknown phase spelling is refused that way rather than guessed:
+//!
+//! ```compile_fail
+//! use pill_engine::*;
+//!
+//! #[system(name = "bad_phase", run_phase = "pre_frame")]
+//! fn bad_phase() {}
+//! ```
+//!
+//! A script component carries its declaration in `#[script]`, so leaving the
+//! attribute out is a compile error that names the missing declaration rather
+//! than a script the engine silently never runs:
+//!
+//! ```compile_fail
+//! use pill_engine::*;
+//!
+//! #[derive(Debug)]
+//! struct NoDeclaration;
+//!
+//! impl Component for NoDeclaration {}
+//!
+//! impl ScriptComponent for NoDeclaration {}
+//! ```
+//!
+//! The attribute reads hooks out of a `ScriptComponent` block, so a block that
+//! implements something else is refused instead of registering nothing:
+//!
+//! ```compile_fail
+//! use pill_engine::*;
+//!
+//! #[derive(Debug)]
+//! struct NotAScript;
+//!
+//! #[script]
+//! impl Component for NotAScript {}
+//! ```
 
 // Standard library
 use std::cell::Cell;
 
 // Current crate
 use crate::component_registry::PillComponentDescriptor;
-use crate::{Engine, World};
+use crate::{Engine, RunPhase, World};
 
 // =============================================================================
 // Declaration Baseline
@@ -58,6 +98,8 @@ pub struct DeclarationBaseline {
     pub components: usize,
     /// Systems declared before the image was mapped.
     pub systems: usize,
+    /// Script components declared before the image was mapped.
+    pub scripts: usize,
     /// Resources declared before the image was mapped.
     pub resources: usize,
     /// Asset types declared before the image was mapped.
@@ -72,6 +114,7 @@ impl DeclarationBaseline {
                 .into_iter()
                 .count(),
             systems: inventory::iter::<PillSystemDescriptor>.into_iter().count(),
+            scripts: inventory::iter::<PillScriptDescriptor>.into_iter().count(),
             resources: inventory::iter::<PillResourceDescriptor>
                 .into_iter()
                 .count(),
@@ -117,29 +160,36 @@ pub struct PillSystemDescriptor {
     /// Name the system is registered under, which is what logs, the editor's
     /// Systems tab and a hot patch all use to find it.
     pub name: &'static str,
-    /// Sort key; a lower value registers first. Equal values are ordered by
-    /// [`Self::name`].
+    /// Sort key within the phase; a lower value registers first. Equal values
+    /// are ordered by [`Self::name`] here, and by registration across
+    /// artifacts.
     pub order: i32,
-    /// Whether the system runs in the post-update stage, after the command
-    /// flush.
-    pub post_update: bool,
-    /// Whether the system also runs while the editor is editing, and while the
-    /// engine is paused.
+    /// The phase of the frame the system runs in.
     ///
-    /// The editor's own systems and the renderer opt in; a game system leaves
-    /// it false, which is what makes Play stop the game rather than only
-    /// painting it differently.
-    pub edit_mode: bool,
+    /// The walk sorts by it first, so a post-project declaration is registered
+    /// after every project one whatever its order number is.
+    pub phase: RunPhase,
     /// Registers the system with the engine.
     ///
     /// A function pointer rather than the system itself: the attribute emits
     /// the call, so the system's parameter tuple is inferred at its own
-    /// declaration site, exactly as a hand-written `register_system` call
-    /// would do.
+    /// declaration site, exactly as a hand-written
+    /// `register_system_with_options` call would do.
     pub register: fn(&mut Engine),
 }
 
 inventory::collect!(PillSystemDescriptor);
+
+/// One script component declared with `#[script]`.
+pub struct PillScriptDescriptor {
+    /// Registers the script with a world.
+    ///
+    /// A function pointer rather than the type itself: the attribute emits the
+    /// call, so the component type is named at its own declaration site.
+    pub register: fn(&mut World),
+}
+
+inventory::collect!(PillScriptDescriptor);
 
 /// One ECS resource declared with `#[derive(PillResource)]`.
 pub struct PillResourceDescriptor {
@@ -181,10 +231,10 @@ inventory::collect!(PillAssetDescriptor);
 /// runs, so the same declarations reach a first load, every reload and a
 /// statically linked build.
 ///
-/// Systems are registered in `(order, name)` order. The engine appends each
-/// one to its list and the scheduler batches by that order, so this is what
-/// keeps the execution order of conflicting systems stable across builds
-/// instead of following the linker.
+/// Systems are registered in `(phase, order, name)` order. The engine keeps
+/// its whole list sorted by `(phase, order)` and equal pairs in registration
+/// order, so this walk only has to make equal orders deterministic within one
+/// artifact; across artifacts the engine's insertion order decides.
 pub fn register_all_systems(engine: &mut Engine) {
     // Step 1: Collect this image's declarations - the entries in front of the
     // baseline, because the registry lists the newest submission first - and
@@ -196,13 +246,39 @@ pub fn register_all_systems(engine: &mut Engine) {
             .collect();
     descriptors.truncate(descriptors.len().saturating_sub(baseline));
     descriptors.sort_by(|left, right| {
-        left.order
-            .cmp(&right.order)
+        left.phase
+            .cmp(&right.phase)
+            .then_with(|| left.order.cmp(&right.order))
             .then_with(|| left.name.cmp(right.name))
     });
     // Step 2: Register each one through the function the attribute emitted.
     for descriptor in descriptors {
         (descriptor.register)(engine);
+    }
+}
+
+/// Registers every script component this artifact declares.
+///
+/// Called by the artifact entry points after [`register_all_systems`]. A
+/// script's registration also registers its component type, and records the
+/// hooks its `#[script]` declaration states, so a first load, every reload and
+/// a statically linked build all point the hook table at the image that is
+/// running.
+///
+/// The walk's order does not matter: the update pass reads each hook's own
+/// order from the registration, and equal orders are broken by type name rather
+/// than by registration order.
+pub fn register_all_scripts(world: &mut World) {
+    // Step 1: Collect this image's declarations.
+    let baseline = declaration_baseline().scripts;
+    let mut descriptors: Vec<&'static PillScriptDescriptor> =
+        inventory::iter::<PillScriptDescriptor>
+            .into_iter()
+            .collect();
+    descriptors.truncate(descriptors.len().saturating_sub(baseline));
+    // Step 2: Register each one through the function the attribute emitted.
+    for descriptor in descriptors {
+        (descriptor.register)(world);
     }
 }
 

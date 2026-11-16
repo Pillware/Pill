@@ -71,6 +71,26 @@ namespace PillScriptAnalyzers
             "The budget matches the native system parameter arity, so a system ported between " +
             "Rust and C# can keep the same signature.");
 
+        internal static readonly DiagnosticDescriptor WritableCondition = Rule(
+            "PILL0104",
+            "A [System] condition must be read-only and return bool",
+            "'{0}' cannot gate a system: it {1}",
+            DeclarationCategory,
+            DiagnosticSeverity.Error,
+            "A condition decides whether its system runs, so it must not change the world it " +
+            "gates: it returns bool and takes only the read-only half of a system's parameters " +
+            "(Res<T> and read queries). Discovery refuses the same declarations by name.");
+
+        internal static readonly DiagnosticDescriptor UnknownCondition = Rule(
+            "PILL0105",
+            "A [System] RunIf condition names no method",
+            "'{0}' is named by [System(RunIf = ...)], but {1} declares no static method by that name",
+            DeclarationCategory,
+            DiagnosticSeverity.Error,
+            "A condition is resolved by name on the declaring type (or the type RunIfType names). " +
+            "A name that resolves to nothing would otherwise refuse the whole assembly at load " +
+            "time with a less specific message.");
+
         // ------------------------------------------------------------------
         // 02xx - frame and thread scope
         // ------------------------------------------------------------------

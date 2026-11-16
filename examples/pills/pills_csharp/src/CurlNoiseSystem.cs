@@ -22,7 +22,7 @@ namespace Pills;
 /// <summary>Animates every pill through the curl noise field, one frame at a time.</summary>
 public static class CurlNoiseSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(
         ResMut<DemoState> demoState,
         Query<Write<TransformComponent>, Write<CurlNoiseComponent>> pills)

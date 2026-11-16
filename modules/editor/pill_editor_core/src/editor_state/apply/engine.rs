@@ -21,6 +21,7 @@ use pill_engine::Engine;
 // Current crate
 use super::CommandOutcome;
 use super::*;
+use crate::tools::BuiltinTool;
 
 // =============================================================================
 // Free Functions
@@ -87,6 +88,13 @@ pub(super) fn apply(
             }
             if let Some(snap) = snap {
                 gizmo_state.settings.snap = *snap;
+            }
+            // A built-in tool's row *is* a gizmo mode, so the registry's active
+            // tool follows the mode the row set. `None` (a space or snapping
+            // row) says nothing about the tool and leaves it alone.
+            if let Some(mode) = mode {
+                let tool_name = BuiltinTool::from(*mode).name();
+                let _ = crate::tools::tool_registry_mut(world).set_active(Some(tool_name));
             }
             Ok(CommandOutcome::plain())
         }

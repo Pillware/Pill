@@ -466,21 +466,22 @@ impl Drop for ValueTypeLayoutScope {
 ///
 /// 1. this artifact's value types become the world's field-layout resolver;
 /// 2. every component the artifact declares is registered;
-/// 3. every system the artifact declares is registered, in `(order, name)`
-///    order;
-/// 4. every resource the artifact declares is declared, so a `register` half
+/// 3. every system the artifact declares is registered, in `(phase, order,
+///    name)` order;
+/// 4. every script component the artifact declares is registered, with the
+///    hooks its `#[script]` declaration states;
+/// 5. every resource the artifact declares is declared, so a `register` half
 ///    that stores a value finds the declaration already in place;
-/// 5. every asset type the artifact declares is declared, so the import
+/// 6. every asset type the artifact declares is declared, so the import
 ///    registry points its entry points at this image;
-/// 6. `before_init` runs - a project loads the startup scene it queued here,
+/// 7. `before_init` runs - a project loads the startup scene it queued here,
 ///    because the component types exist and the project has not yet seeded its
 ///    own entities over them;
-/// 7. the artifact's `register` runs - the half a later generation repeats, so
+/// 8. the artifact's `register` runs - the half a later generation repeats, so
 ///    the systems it registers belong to the image that is running;
-/// 8. the user's one-time `init` runs;
-/// 9. the registration-error slot is read once more, because `before_init`, the
-///    registration or the user's `init` can record an error after the drain in
-///    step 2 already looked at it.
+/// 9. the user's one-time `init` runs;
+/// 10. the registration-error slot is read once more, for an error recorded
+///     after the drain in step 2 looked at it.
 ///
 /// The resolver is held for the whole entry point - a `struct:`-tagged field (a
 /// value type, or an array of one) only expands into editable rows while one is
@@ -495,12 +496,13 @@ pub fn run_artifact_entry(
     // Step 1: install this artifact's value types as the world's layout
     // resolver.
     let scope = ValueTypeLayoutScope::install(engine);
-    // Steps 2-7: register the components, the declared systems, resources and
-    // asset types, load what `before_init` queued, run the artifact's
-    // registration, then its one-time `init`.
+    // Steps 2-7: register the components, the declared systems, scripts,
+    // resources and asset types, load what `before_init` queued, run the
+    // artifact's registration, then its one-time `init`.
     let mut status = match register_all_components(engine.world_mut()) {
         Ok(()) => {
             crate::declarations::register_all_systems(engine);
+            crate::declarations::register_all_scripts(engine.world_mut());
             crate::declarations::register_all_resources(engine.world_mut());
             crate::declarations::register_all_assets(engine.world_mut());
             before_init(engine);
@@ -544,6 +546,7 @@ pub fn run_artifact_registration(engine: &mut Engine, register: fn(&mut Engine) 
     let mut status = match register_all_components(engine.world_mut()) {
         Ok(()) => {
             crate::declarations::register_all_systems(engine);
+            crate::declarations::register_all_scripts(engine.world_mut());
             crate::declarations::register_all_resources(engine.world_mut());
             crate::declarations::register_all_assets(engine.world_mut());
             register(engine)

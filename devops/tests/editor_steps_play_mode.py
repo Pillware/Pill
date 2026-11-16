@@ -9,6 +9,7 @@ import re
 
 from core import log_layout
 from core.editor_log_tokens import (
+    ENGINE_COMMANDS_APPLIED_TOKEN,
     PAUSE_TOGGLED_TOKEN,
     PLAY_DUMP_TOKEN,
     PLAY_ENTERED_TOKEN,
@@ -17,6 +18,11 @@ from core.editor_log_tokens import (
     PLAY_RESTORED_TAB_TOKEN,
     PLAY_TOGGLED_TOKEN,
     PLAY_TOOLBAR_RECT_TOKEN,
+    PROBE_CREATE_TOKEN,
+    PROBE_DESTROY_TOKEN,
+    PROBE_START_TOKEN,
+    PROBE_STOP_TOKEN,
+    PROBE_UPDATE_TOKEN,
     PROJECT_RELOAD_TOKEN,
     STEP_QUEUED_TOKEN,
 )
@@ -24,9 +30,14 @@ from editor_step_areas import StepArea, StepContext
 from editor_step_support import (
     StepState,
     entity_count,
+    occurrence_count,
     print_ok,
+    wait_applied,
     wait_for_entity_count,
 )
+
+# The scene project's lifecycle probe, and the scripted channel's spelling of it.
+PROBE_COMPONENT = "LifecycleProbe"
 
 
 def run_play_mode_steps(state: StepState) -> None:
@@ -82,6 +93,86 @@ def run_play_mode_steps(state: StepState) -> None:
     dump = play_dump(session, "the playing run mode")
     assert 'mode="playing"' in dump, "Play did not switch the run mode: {}".format(dump)
     print_ok("play mode: Play copies the world, switches the mode and focuses the Game tab")
+
+    # Step 3b: the lifecycle probe the scene project seeds. Play started it, so
+    # the engine attached it (PlayStarted), started it (PlayEntered) and runs
+    # its update every frame. The probe reports the handle the scripted channel
+    # spells, which the next steps reuse.
+    probe_entity = wait_for_probe(
+        session, PROBE_CREATE_TOKEN, r"cause=PlayStarted mode=Playing", begin
+    )
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_START_TOKEN), r"\s+cause=PlayEntered\s+entity="
+        ),
+        60,
+        "the probe started",
+        begin,
+    )
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_UPDATE_TOKEN), r"\s+entity=\S+\s+updates=0"
+        ),
+        60,
+        "the probe updated",
+        begin,
+    )
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_UPDATE_TOKEN), r"\s+entity=\S+\s+updates=1"
+        ),
+        60,
+        "the probe updated again",
+        begin,
+    )
+    print_ok("play mode: Play creates, starts and updates the scene's script component")
+
+    # Step 3c: a removal during the session stops the script before it is
+    # destroyed, and re-adding it creates and starts it again - the running
+    # world's copy, whose start cause says it appeared mid-session.
+    begin = session.length()
+    applied_before = occurrence_count(session, re.escape(ENGINE_COMMANDS_APPLIED_TOKEN))
+    session.send("edit remove {} {}".format(probe_entity, PROBE_COMPONENT))
+    wait_applied(session, applied_before, "the probe removal applied")
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_STOP_TOKEN), rf"\s+cause=Removed\s+entity={re.escape(probe_entity)}"
+        ),
+        60,
+        "the probe stopped before it was destroyed",
+        begin,
+    )
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_DESTROY_TOKEN), r"\s+cause=Authored\s+entity="
+        ),
+        60,
+        "the probe was destroyed",
+        begin,
+    )
+    begin = session.length()
+    applied_before = occurrence_count(session, re.escape(ENGINE_COMMANDS_APPLIED_TOKEN))
+    session.send("edit add {} {}".format(probe_entity, PROBE_COMPONENT))
+    wait_applied(session, applied_before, "the probe re-attach applied")
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_CREATE_TOKEN), r"\s+cause=Authored\s+mode=Playing\s+entity="
+        ),
+        60,
+        "the probe was created during the session",
+        begin,
+    )
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_START_TOKEN), r"\s+cause=SpawnedDuringPlay\s+entity="
+        ),
+        60,
+        "the probe started during the session",
+        begin,
+    )
+    print_ok(
+        "play mode: removing a script stops it before destroying it, and re-adding starts the new copy"
+    )
 
     # Step 4: an edit made during the session. It must not survive Stop, and it
     # must not reach the document's history.
@@ -154,6 +245,27 @@ def run_play_mode_steps(state: StepState) -> None:
     wait_for_entity_count(session, entities_before, "the edit world's entities")
     print_ok("play mode: Stop restores the world, the epoch and the tab")
 
+    # Step 5b: the script the session held stopped and was destroyed by the
+    # restore, which is what releases what it took from the runtime.
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_STOP_TOKEN),
+            rf"\s+cause=PlayExited\s+entity={re.escape(probe_entity)}",
+        ),
+        60,
+        "the probe stopped with the session",
+        begin,
+    )
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROBE_DESTROY_TOKEN), r"\s+cause=PlayStopRestored\s+entity="
+        ),
+        60,
+        "the probe was destroyed by the restore",
+        begin,
+    )
+    print_ok("play mode: Stop stops every running script and destroys the session's copies")
+
     # Step 6: the history is the document's own. A session records into an
     # empty stack and drops it, so the depth is what it was.
     undo_after = play_undo_depth(dump)
@@ -193,6 +305,21 @@ def run_play_mode_steps(state: StepState) -> None:
         begin,
     )
     print_ok("play mode: pause, resume and step reach the engine")
+
+
+def wait_for_probe(session, token: str, fields: str, since: int) -> str:
+    """Waits for one probe line in the slice `since` opened, and answers the
+    entity handle it carried."""
+    pattern = (
+        "{}".format(re.escape(token))
+        + log_layout.SEPARATOR_PATTERN
+        + "{}".format(fields)
+        + r"\s+entity=(\S+)"
+    )
+    session.wait(pattern, 60, "the probe reported {}".format(token), since)
+    match = re.search(pattern, session.read_since(since))
+    assert match is not None, "the probe line named no entity: {}".format(token)
+    return match.group(1)
 
 
 def play_dump(session, label: str) -> str:

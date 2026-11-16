@@ -67,9 +67,9 @@ pub enum HostNotice {
         /// The module that swapped: an extension crate's name, or the
         /// project's.
         module: String,
-        /// The last cargo build's wall time. `0` when the host has no cargo
-        /// build time for this swap: a shader-only reload, or a managed
-        /// assembly swap.
+        /// The last cargo build's wall time, or the managed assembly's build
+        /// time. `0` when the swap was not timed: a shader-only reload, or an
+        /// assembly this host did not build.
         build_ms: u64,
     },
     /// A function's body was replaced in the running game without a reload.

@@ -299,9 +299,19 @@ def is_associated_without_receiver(
 
 
 def declaration_is_annotated(source: str, body_start: int) -> bool:
-    """Whether the declaration owning this body carries a hot-patch attribute."""
+    """Whether the declaration owning this body carries a hot-patch attribute.
+
+    `#[system]` counts as one: the engine gives every declared system a
+    dispatch slot in a development build, so its body is patchable without a
+    marker of its own.
+    """
     window = source[max(0, body_start - 400) : body_start]
-    return "#[pill_hot]" in window or "#[pill_hot_fn]" in window
+    return (
+        "#[pill_hot]" in window
+        or "#[pill_hot_fn]" in window
+        or "#[system]" in window
+        or "#[system(" in window
+    )
 
 
 def runtime_code_end(source: str) -> int:

@@ -6,7 +6,7 @@
 //! - Keep what systems ask to see, for one frame or for a set time, in
 //!   [`DebugDraw`], a world resource: line segments, shapes turned into line
 //!   segments, text labels placed in the world or on the screen, and gizmo
-//!   lines and triangles that carry a handle id.
+//!   lines, triangles and points that carry a handle id.
 //! - Count down how long each item stays and return one frame of plain data
 //!   for the renderer. [`DebugDraw::collect_frame`] builds a [`DebugFrame`].
 //! - Turn everything off. While drawing is disabled, no drawing call records
@@ -18,9 +18,9 @@
 //! game, an extension or an editor crate can draw without depending on one.
 //! Every renderer that implements the contract draws the same frame. Shapes
 //! are line segments by the time they leave here, so a renderer only has to
-//! draw a line, a triangle and a text label. Label text is owned (`String`)
-//! rather than borrowed from the module that drew it, so a reload cannot
-//! leave a label pointing into memory that was unloaded.
+//! draw a line, a triangle, a point and a text label. Label text is owned
+//! (`String`) rather than borrowed from the module that drew it, so a reload
+//! cannot leave a label pointing into memory that was unloaded.
 
 // Current crate
 use crate::resource::Resource;
@@ -183,6 +183,46 @@ pub struct GizmoTriangle {
 }
 
 // =============================================================================
+// GizmoPointShape
+// =============================================================================
+
+/// The silhouette a [`GizmoPoint`] is drawn as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GizmoPointShape {
+    /// A filled circle - the default, for a round handle.
+    #[default]
+    Circle,
+    /// A filled square, its sides level with the view.
+    Square,
+    /// A filled diamond, a square turned a quarter turn.
+    Diamond,
+}
+
+// =============================================================================
+// GizmoPoint
+// =============================================================================
+
+/// One gizmo point handle: a mark drawn on top of everything, pickable by its
+/// handle id, whose size is given in pixels rather than in world units.
+///
+/// A handle that keeps its size on screen stays as easy to hit in a small
+/// viewport as in a large one, which is why the size is pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GizmoPoint {
+    /// Where it sits, in world space.
+    pub position: [f32; 3],
+    /// How wide it draws, in pixels, in every view.
+    pub size_pixels: f32,
+    /// The silhouette it draws as.
+    pub shape: GizmoPointShape,
+    /// Its colour.
+    pub color: DebugColor,
+    /// The id a pick of this point reports. It must fit in the low 31 bits,
+    /// because a pick sets the top bit to mark a handle.
+    pub handle: u32,
+}
+
+// =============================================================================
 // DebugFrame
 // =============================================================================
 
@@ -197,6 +237,8 @@ pub struct DebugFrame {
     pub gizmo_lines: Vec<GizmoLine>,
     /// Gizmo handle triangles.
     pub gizmo_triangles: Vec<GizmoTriangle>,
+    /// Gizmo handle points.
+    pub gizmo_points: Vec<GizmoPoint>,
 }
 
 impl DebugFrame {
@@ -206,6 +248,7 @@ impl DebugFrame {
             && self.labels.is_empty()
             && self.gizmo_lines.is_empty()
             && self.gizmo_triangles.is_empty()
+            && self.gizmo_points.is_empty()
     }
 }
 
@@ -238,6 +281,7 @@ pub struct DebugDraw {
     labels: Vec<Timed<DebugLabel>>,
     gizmo_lines: Vec<GizmoLine>,
     gizmo_triangles: Vec<GizmoTriangle>,
+    gizmo_points: Vec<GizmoPoint>,
 }
 
 impl DebugDraw {
@@ -249,6 +293,7 @@ impl DebugDraw {
             labels: Vec::new(),
             gizmo_lines: Vec::new(),
             gizmo_triangles: Vec::new(),
+            gizmo_points: Vec::new(),
         }
     }
 
@@ -273,6 +318,7 @@ impl DebugDraw {
         self.labels.clear();
         self.gizmo_lines.clear();
         self.gizmo_triangles.clear();
+        self.gizmo_points.clear();
     }
 
     /// Draws a line segment from `start` to `end`.
@@ -462,6 +508,29 @@ impl DebugDraw {
         self
     }
 
+    /// Draws a gizmo point on top for the next frame, pickable by `handle`.
+    ///
+    /// `size_pixels` is the point's width on screen, the same in every view.
+    pub fn gizmo_point(
+        &mut self,
+        position: [f32; 3],
+        size_pixels: f32,
+        shape: GizmoPointShape,
+        color: DebugColor,
+        handle: u32,
+    ) -> &mut Self {
+        if self.enabled {
+            self.gizmo_points.push(GizmoPoint {
+                position,
+                size_pixels,
+                shape,
+                color,
+                handle,
+            });
+        }
+        self
+    }
+
     /// Returns the items to draw this frame and counts the lifetime of the
     /// others down by `delta_seconds`.
     ///
@@ -478,6 +547,7 @@ impl DebugDraw {
             labels: self.labels.iter().map(|timed| timed.item.clone()).collect(),
             gizmo_lines: std::mem::take(&mut self.gizmo_lines),
             gizmo_triangles: std::mem::take(&mut self.gizmo_triangles),
+            gizmo_points: std::mem::take(&mut self.gizmo_points),
         };
         // Step 2: age the items that stay, which drops the one-frame ones.
         age_timed_items(&mut self.lines, delta_seconds);
@@ -588,8 +658,25 @@ mod tests {
         let mut draw = DebugDraw::new(false);
         draw.line([0.0; 3], [1.0; 3], DebugStyle::default())
             .label_world([0.0; 3], "x", DebugStyle::default())
-            .gizmo_line([0.0; 3], [1.0; 3], [1.0; 4], 1);
+            .gizmo_line([0.0; 3], [1.0; 3], [1.0; 4], 1)
+            .gizmo_point([0.0; 3], 8.0, GizmoPointShape::Circle, [1.0; 4], 2);
         assert!(draw.collect_frame(0.016).is_empty());
+    }
+
+    /// A gizmo point keeps its pixel size and its handle, is drawn once, and
+    /// is the only reason the frame is non-empty.
+    #[test]
+    fn a_gizmo_point_carries_its_size_and_handle() {
+        let mut draw = DebugDraw::new(true);
+        draw.gizmo_point([1.0, 2.0, 3.0], 9.0, GizmoPointShape::Diamond, [0.5; 4], 12);
+        let frame = draw.collect_frame(0.0);
+        assert_eq!(frame.gizmo_points.len(), 1);
+        let point = frame.gizmo_points[0];
+        assert_eq!(point.position, [1.0, 2.0, 3.0]);
+        assert_eq!(point.size_pixels, 9.0);
+        assert_eq!(point.shape, GizmoPointShape::Diamond);
+        assert_eq!(point.handle, 12);
+        assert!(draw.collect_frame(0.0).is_empty());
     }
 
     /// One-frame items are drawn once, timed ones until their time runs out.
@@ -644,6 +731,7 @@ mod tests {
         let frame = draw.collect_frame(0.0);
         assert_eq!(frame.gizmo_triangles[0].handle, 7);
         assert!(draw.collect_frame(0.0).gizmo_triangles.is_empty());
+
         draw.line(
             [0.0; 3],
             [1.0; 3],

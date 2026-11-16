@@ -160,22 +160,14 @@ impl CSharpProject {
         });
     }
 
-    /// Records that an assembly rebuild finished at `finished_at`, and how it
-    /// was produced.
+    /// Records that an assembly rebuild finished at `finished_at`.
     ///
     /// The build worker reports the instant it finished, so a build that ran
-    /// between two frames still adds its own duration to the total instead of
-    /// the wait before the frame collected it.
-    pub(crate) fn record_assembly_rebuilt_at(
-        &mut self,
-        finished_at: Instant,
-        build_kind: &'static str,
-    ) {
+    /// between two frames still times the swap from its own end instead of the
+    /// wait before the frame collected it.
+    pub(crate) fn record_assembly_rebuilt_at(&mut self, finished_at: Instant) {
         if let Some(timing) = &mut self.reload_timing {
-            timing.rebuilt_assembly = Some(RebuiltAssembly {
-                finished_at,
-                build_kind,
-            });
+            timing.rebuilt_assembly = Some(RebuiltAssembly { finished_at });
         }
     }
 
@@ -250,9 +242,8 @@ impl CSharpProject {
     pub(crate) fn finish_reload_timing(&mut self) -> Option<ManagedReloadSummary> {
         let timing = self.reload_timing.take()?;
         let swapped_at = Instant::now();
-        let signal_ms = milliseconds(swapped_at.duration_since(timing.detected_at));
         let queue_ms = milliseconds(timing.triggered_at.duration_since(timing.detected_at));
-        let (build_ms, swap_ms, build_kind) = match timing.rebuilt_assembly {
+        let (build_ms, swap_ms) = match timing.rebuilt_assembly {
             Some(rebuilt_assembly) => (
                 milliseconds(
                     rebuilt_assembly
@@ -260,29 +251,17 @@ impl CSharpProject {
                         .duration_since(timing.triggered_at),
                 ),
                 milliseconds(swapped_at.duration_since(rebuilt_assembly.finished_at)),
-                rebuilt_assembly.build_kind,
             ),
             None => (
                 f64::NAN,
                 milliseconds(swapped_at.duration_since(timing.triggered_at)),
-                "unknown",
             ),
         };
-        // Measure from the edited file's own timestamp when the watcher could
-        // read one, and add the time since the signal. Without that delay,
-        // the signal span is all there is.
-        let total_ms = if timing.detection_delay_ms.is_finite() {
-            timing.detection_delay_ms + signal_ms
-        } else {
-            signal_ms
-        };
         Some(ManagedReloadSummary {
-            total_ms,
             detect_ms: timing.detection_delay_ms,
             queue_ms,
             build_ms,
             swap_ms,
-            build_kind,
         })
     }
 }
@@ -305,21 +284,14 @@ struct ManagedReloadTiming {
     rebuilt_assembly: Option<RebuiltAssembly>,
 }
 
-/// A finished assembly rebuild: when it was ready and what produced it.
+/// A finished assembly rebuild: when it was ready.
 struct RebuiltAssembly {
     /// Instant the rebuild returned.
     finished_at: Instant,
-    /// How the assembly was produced: `"roslyn"` in-process, `"msbuild"` the
-    /// full `dotnet build` fallback.
-    build_kind: &'static str,
 }
 
 /// A finished managed reload, broken down by phase, in milliseconds.
 pub(crate) struct ManagedReloadSummary {
-    /// Save to swap: the whole operation. Measured from the edited file's own
-    /// timestamp when the watcher could read one, and from the signal
-    /// otherwise; `detect_ms` is `NaN` in the second case.
-    pub(crate) total_ms: f64,
     /// Save to signal, the debounce wait included; `NaN` when the watcher
     /// could not measure it.
     pub(crate) detect_ms: f64,
@@ -330,9 +302,23 @@ pub(crate) struct ManagedReloadSummary {
     /// Rebuilt assembly to the loader's swap; measured from the signal when no
     /// build was recorded.
     pub(crate) swap_ms: f64,
-    /// What produced the assembly: `"roslyn"`, `"msbuild"`, or `"unknown"`
-    /// when no build was recorded.
-    pub(crate) build_kind: &'static str,
+}
+
+impl ManagedReloadSummary {
+    /// The report's `stage` phase: the watcher's debounce plus the wait for the
+    /// frame loop, which is everything that precedes the build here.
+    ///
+    /// The native report's `stage` is everything before its cargo build, so
+    /// adding the two waits is the honest mapping rather than two phases the
+    /// shared grammar has no name for. A `NaN` detect contributes nothing.
+    pub(crate) fn stage_ms(&self) -> f64 {
+        let detect_ms = if self.detect_ms.is_finite() {
+            self.detect_ms
+        } else {
+            0.0
+        };
+        detect_ms + self.queue_ms
+    }
 }
 
 // =============================================================================

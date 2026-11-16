@@ -61,7 +61,7 @@ public struct ReportSchedule
 public static class TickerSpawnSystem
 {
     /// <summary>Counts the tickers and creates the ones the world lacks.</summary>
-    [EcsSystem]
+    [System]
     public static void Run(Query<Read<TickCounter>> query, Commands commands)
     {
         int existing = 0;
@@ -80,7 +80,7 @@ public static class TickerSpawnSystem
 public static class TickSystem
 {
     /// <summary>Steps each ticker by one frame and logs on the report seconds.</summary>
-    [EcsSystem]
+    [System]
     public static void Run(Query<Write<TickCounter>> query, ResMut<ReportSchedule> report)
     {
         ulong total = 0;

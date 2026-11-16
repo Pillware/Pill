@@ -603,7 +603,7 @@ public unsafe ref struct MirrorCall
                 $"This system did not declare {access} access to {name}. Add a " +
                 $"{(access == QueryAccess.Write ? "ResMut" : "Res")}<{csharpName}> parameter."),
             NativeResourceStatus.NoInvocation => new InvalidOperationException(
-                $"{name} can only be reached from inside an [EcsSystem] or [EcsStartup] call."),
+                $"{name} can only be reached from inside an [System] or [Startup] call."),
             _ => new InvalidOperationException(
                 $"{name} could not be reached (status {status})."),
         };

@@ -58,7 +58,7 @@ use crate::entity::{Entity, EntityId};
 use crate::saved_references::{
     restore_asset_reference, saved_reference, SavedAssetReference, SavedEntityLinks, SavedReference,
 };
-use crate::world::World;
+use crate::world::{ChangeOrigin, World};
 
 // =============================================================================
 // The document
@@ -373,6 +373,19 @@ pub struct SceneLoad {
 /// skipped. A field the layout does not have, or a value the field layer
 /// refuses, is reported the same way.
 pub fn load_scene(
+    engine: &mut Engine,
+    database: &AssetDatabase,
+    document: &SceneDocument,
+) -> SceneLoad {
+    // Every attachment a load makes reports the load as its cause, whichever
+    // caller asked for it.
+    engine.with_change_origin(ChangeOrigin::SceneLoad, |engine| {
+        load_scene_in_current_origin(engine, database, document)
+    })
+}
+
+/// [`load_scene`], with the caller's change origin already in place.
+fn load_scene_in_current_origin(
     engine: &mut Engine,
     database: &AssetDatabase,
     document: &SceneDocument,

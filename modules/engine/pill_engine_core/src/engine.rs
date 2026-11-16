@@ -41,9 +41,11 @@ use crate::commands::{CommandError, CommandQueue};
 use crate::component::Tick;
 use crate::config::ParallelProcessingConfig;
 use crate::error::{SystemError, SystemFailure};
-use crate::scheduler::{SystemAccess, SystemScheduler};
-use crate::system::{IntoSystem, System, SystemParam};
-use crate::world::{set_per_thread_last_run_tick, set_per_thread_this_run_tick, World};
+use crate::scheduler::{RunPhase, SystemAccess, SystemScheduler};
+use crate::system::{IntoSystem, ReadOnlySystemParam, System, SystemParam};
+use crate::world::{
+    set_per_thread_last_run_tick, set_per_thread_this_run_tick, ChangeOrigin, World,
+};
 
 // =============================================================================
 // SystemOwner
@@ -135,9 +137,19 @@ impl std::fmt::Display for SystemOwner {
 /// it is enabled, and the per-frame timing data that the Tracy span and the
 /// utilization metrics read.
 struct RegisteredSystem {
-    /// Whether the system runs in the post-update phase: after the command
-    /// flush, and even while the engine is paused.
-    post_update: bool,
+    /// The phase of the frame this system runs in.
+    ///
+    /// A system in [`RunPhase::Project`] runs after the first command flush,
+    /// and one in [`RunPhase::PostProject`] after the second, even while the
+    /// engine is paused because it opted in to edit mode.
+    phase: RunPhase,
+    /// Sort key within the phase.
+    ///
+    /// Systems are kept sorted by `(phase, order)` across every registration,
+    /// and equal pairs keep the order their artifacts registered them in, so a
+    /// number an extension or a project picks orders its systems against every
+    /// other artifact's. See [`SystemOptions::order`].
+    order: i32,
     /// Whether the system also runs in edit mode, and while paused.
     ///
     /// A game system leaves this `false`: it runs only while the game is
@@ -175,6 +187,11 @@ struct RegisteredSystem {
     /// Execution time in nanoseconds from the most recent frame, used by the
     /// parallel-utilization metrics.
     last_duration: u64,
+    /// The `run_if` conditions, in declaration order.
+    ///
+    /// Empty for a plain system. A skipped system keeps its place in the
+    /// execution graph: the conditions decide whether it runs, never where.
+    conditions: Vec<SystemCondition>,
 }
 
 // =============================================================================
@@ -243,7 +260,7 @@ pub struct SystemSnapshot {
 /// The editor starts in [`RunMode::Editing`] and switches to `Playing` when the
 /// person presses Play, at which point the game systems and the scripts run
 /// again. A system that must keep running while editing opts in at
-/// registration; see [`Engine::register_system_in_edit_mode`].
+/// registration, through [`SystemOptions::run_in_edit_mode`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RunMode {
     /// The editor is being used. Only the systems that opted in to edit mode
@@ -300,13 +317,148 @@ impl std::fmt::Display for PlayRefusal {
     }
 }
 
+/// What a registration asks of the schedule, beside the system itself.
+///
+/// A `#[system]` declaration becomes one of these: the attribute parses it and
+/// the emitted registration passes it to
+/// [`Engine::register_system_with_options`]. A host that registers a system by
+/// call builds one the same way, so both paths order, phase, gate and condition
+/// their systems identically.
+///
+/// The default is the plain registration: order `0`, the
+/// [`Project`](RunPhase::Project) phase, a system that runs only while the game
+/// does, and no conditions.
+pub struct SystemOptions {
+    /// Sort key within the phase; a lower value runs first.
+    ///
+    /// The engine keeps its systems sorted by `(phase, order)` across every
+    /// artifact, so this number orders a system against every other one in its
+    /// phase, not only against its own artifact's. Equal values keep
+    /// registration order. `AGENTS.md` documents the number range each area
+    /// uses.
+    pub order: i32,
+    /// The phase of the frame the system runs in. Defaults to
+    /// [`RunPhase::Project`].
+    pub phase: RunPhase,
+    /// Whether the system also runs while the editor is editing, and while the
+    /// engine is paused.
+    ///
+    /// A game system leaves this `false`. A system the editor itself needs -
+    /// the renderer's frame build, the editor shell's pass, a debug overlay -
+    /// sets it, because a frozen editor with no picture would be unusable.
+    pub run_in_edit_mode: bool,
+    /// The `run_if` conditions; see [`Self::run_if`].
+    conditions: Vec<SystemCondition>,
+}
+
+/// A `run_if` condition once boxed: it evaluates against the world and the
+/// command queue and answers whether the gated system may run.
+type BoxedSystemCondition = Box<dyn FnMut(&mut World, &mut CommandQueue) -> bool + Send>;
+
+/// One `run_if` condition of a registered system.
+struct SystemCondition {
+    /// What the condition reads, merged into the system's own access when the
+    /// two are registered together.
+    access: SystemAccess,
+    /// Evaluates the condition against the world; `true` lets the system run.
+    run: BoxedSystemCondition,
+}
+
+impl Default for SystemOptions {
+    fn default() -> Self {
+        Self {
+            order: 0,
+            phase: RunPhase::Project,
+            run_in_edit_mode: false,
+            conditions: Vec::new(),
+        }
+    }
+}
+
+impl SystemOptions {
+    /// Options for a system in one phase at one order, running only while the
+    /// game runs.
+    pub fn new(phase: RunPhase, order: i32) -> Self {
+        Self {
+            phase,
+            order,
+            ..Self::default()
+        }
+    }
+
+    /// Marks the system as also running while the editor is editing and while
+    /// the engine is paused.
+    pub fn with_run_in_edit_mode(mut self, run_in_edit_mode: bool) -> Self {
+        self.run_in_edit_mode = run_in_edit_mode;
+        self
+    }
+
+    /// Adds a `run_if` condition: the system runs only while this returns
+    /// `true`.
+    ///
+    /// A condition takes the same parameters a system does, but only the
+    /// read-only ones: [`ReadOnlySystemParam`] is what enforces that, so a
+    /// condition taking `ResMut<T>`, `Commands` or a mutable query does not
+    /// compile. Its reads join the system's access, so the scheduler never
+    /// batches the system beside a writer of what its condition reads.
+    ///
+    /// Every condition of a system must hold. They are evaluated in the order
+    /// they were added, and the first false answer skips the system - which
+    /// stays in the execution graph, so adding a condition never reshuffles
+    /// the batches.
+    ///
+    /// A condition that could write is refused at compile time:
+    ///
+    /// ```compile_fail
+    /// use pill_engine_core::*;
+    ///
+    /// #[derive(Debug, Default)]
+    /// struct Gate {
+    ///     open: bool,
+    /// }
+    /// impl Resource for Gate {}
+    ///
+    /// fn gate_opens(mut gate: ResMut<Gate>) -> bool {
+    ///     gate.open = true;
+    ///     true
+    /// }
+    ///
+    /// // `ResMut<Gate>` is not a `ReadOnlySystemParam`, so this does not
+    /// // compile: a condition may decide whether the system runs, never
+    /// // change the world it gates.
+    /// let options = SystemOptions::default().run_if(gate_opens);
+    /// ```
+    pub fn run_if<C, Input>(mut self, mut condition: C) -> Self
+    where
+        C: FnMut(Input) -> bool + Send + 'static,
+        Input: ReadOnlySystemParam + 'static,
+    {
+        let mut access = SystemAccess::new();
+        Input::report_access(&mut access);
+        self.conditions.push(SystemCondition {
+            access,
+            run: Box::new(move |world: &mut World, command_queue: &mut CommandQueue| {
+                // SAFETY: the parameter tuple is read-only by the
+                // `ReadOnlySystemParam` bound, and it is fetched and dropped
+                // inside this call, so it cannot escape or alias another
+                // borrow. The caller passes the same exclusive world access a
+                // system gets.
+                let input = unsafe { Input::fetch(world, command_queue) };
+                condition(input)
+            }),
+        });
+        self
+    }
+}
+
 /// The main engine that drives the ECS.
 ///
 /// It owns the [`World`], the [`SystemScheduler`] and the [`CommandQueue`],
-/// and runs every frame: the update systems run in parallel batches when
-/// parallel execution is on, then the queued commands are applied, then the
-/// post-update systems run. Systems are registered by name and can be
-/// enabled or disabled while the game runs.
+/// and runs every frame: the systems of the pre-project phase run in parallel
+/// batches, the queued commands are applied, the project phase runs, the
+/// commands that phase queued are applied, and the post-project systems run.
+/// Systems are registered by name and can be enabled or disabled while the
+/// game runs.
 ///
 /// A project or module never calls [`Self::register_system`]. It declares its
 /// systems with `#[system]`, and the artifact entry point registers every
@@ -719,6 +871,10 @@ impl Engine {
         self.world.hold_resource_copy(resource_copy);
         self.run_mode = RunMode::Playing;
         self.systems_paused = false;
+        // Step 4: Every script the edit world holds starts existing for this
+        // session, so the first frames look like a scene load rather than a
+        // world that was already running.
+        self.world.queue_scripts_for_play_start();
         pill_core::info!(
             target: telemetry_target::ECS,
             entities = entity_count,
@@ -726,6 +882,25 @@ impl Engine {
             "[engine] play entered"
         );
         Ok(())
+    }
+
+    /// Runs `run` with `origin` as the world's change origin, and puts the
+    /// previous origin back afterwards.
+    ///
+    /// The editor applies a batch and flushes it inside one scope, so the
+    /// commands it queues are executed under the same origin they were queued
+    /// under. Game code never sets one, which is why its changes report
+    /// [`ChangeOrigin::Simulation`].
+    pub fn with_change_origin<R>(
+        &mut self,
+        origin: ChangeOrigin,
+        run: impl FnOnce(&mut Engine) -> R,
+    ) -> R {
+        let previous = self.world.change_origin();
+        self.world.set_change_origin(origin);
+        let result = run(self);
+        self.world.set_change_origin(previous);
+        result
     }
 
     /// Stops a play session: the edit world comes back and the game's changes
@@ -738,19 +913,33 @@ impl Engine {
     ///
     /// Returns whether a session was running.
     pub fn exit_play(&mut self) -> bool {
-        let restored = self.world.restore_held_entity_storage();
-        if !restored {
+        if self.world.held_entity_storage.is_none() {
             return false;
         }
-        // Step 1: Put every copied resource back, and remove the ones the game
+        // Step 1: Every running script stops and is told it is being destroyed.
+        // The restore discards the play rows, which is the one removal no
+        // command describes, so the session reports it here while the rows are
+        // still in place.
+        self.world
+            .run_play_stop_script_passes(&mut self.command_queue);
+        let restored = self.world.restore_held_entity_storage();
+        debug_assert!(
+            restored,
+            "a held entity storage was found before the restore"
+        );
+        // Step 2: Put every copied resource back, and remove the ones the game
         // inserted: a `Restore` resource with no copy was not there at Play.
         self.world.restore_held_resources();
-        // Step 2: Commands queued by the last play frame belong to that world,
-        // not to the restored one.
+        // Step 3: Commands queued by the last play frame - or by a hook of the
+        // stop passes - belong to that world, not to the restored one.
         self.command_queue.clear();
-        // Step 3: The session is over: back to editing, unpaused.
+        // Step 4: The session is over: back to editing, unpaused.
         self.run_mode = RunMode::Editing;
         self.systems_paused = false;
+        // Step 5: The edit world's scripts start existing again, which is what
+        // a restored script hears about. Nothing starts running: no script has
+        // begun a session.
+        self.world.queue_scripts_for_play_stop_restore();
         pill_core::info!(
             target: telemetry_target::ECS,
             restore_epoch = self.world.restore_epoch(),
@@ -925,32 +1114,36 @@ impl Engine {
     /// Rebuilds the batches first when the system set changed since the last
     /// frame, so the report matches what the next frame would dispatch.
     pub fn print_execution_graph(&mut self) {
-        self.scheduler.ensure_execution_graph(
-            self.systems
-                .iter()
-                .map(|registered_system| &registered_system.system_access),
+        self.scheduler.ensure_execution_graphs(
+            self.systems.iter().map(|registered_system| {
+                (&registered_system.system_access, registered_system.phase)
+            }),
         );
         let mut lines = Vec::new();
-        for (batch_index, batch) in self.scheduler.execution_graph().iter().enumerate() {
-            lines.push(format!(
-                "Batch {batch_index}: {} systems (parallel)",
-                batch.len()
-            ));
-            for &system_index in batch {
-                let Some(registered_system) = self.systems.get(system_index) else {
-                    lines.push(format!("  - <unknown system {system_index}>"));
-                    continue;
-                };
-                let system_access = &registered_system.system_access;
+        for phase in RunPhase::BATCHED {
+            lines.push(format!("Phase {}:", phase.label()));
+            for (batch_index, batch) in self.scheduler.execution_graph_of(phase).iter().enumerate()
+            {
                 lines.push(format!(
-                    "  - {} (reads: {}, writes: {}, res_reads: {}, res_writes: {}, commands: {})",
-                    registered_system.name,
-                    system_access.reads_count(),
-                    system_access.writes_count(),
-                    system_access.resource_reads_count(),
-                    system_access.resource_writes_count(),
-                    system_access.uses_commands
+                    "Batch {batch_index}: {} systems (parallel)",
+                    batch.len()
                 ));
+                for &system_index in batch {
+                    let Some(registered_system) = self.systems.get(system_index) else {
+                        lines.push(format!("  - <unknown system {system_index}>"));
+                        continue;
+                    };
+                    let system_access = &registered_system.system_access;
+                    lines.push(format!(
+                        "  - {} (reads: {}, writes: {}, res_reads: {}, res_writes: {}, commands: {})",
+                        registered_system.name,
+                        system_access.reads_count(),
+                        system_access.writes_count(),
+                        system_access.resource_reads_count(),
+                        system_access.resource_writes_count(),
+                        system_access.uses_commands
+                    ));
+                }
             }
         }
         pill_core::info!(
@@ -1033,51 +1226,27 @@ impl Engine {
         F: IntoSystem<Input>,
         Input: SystemParam,
     {
-        let (system_name, system_access, boxed_system) = self.prepare_system(name, system);
-        self.push_system(system_name, system_access, boxed_system, false, false);
+        self.register_system_with_options(name, SystemOptions::default(), system);
     }
 
-    /// Registers a system that runs after the command flush. The commands it
-    /// queues apply on the next frame.
+    /// Registers a system with the order, phase and edit-mode gate of
+    /// `options`.
     ///
-    /// Host-facing, like [`Self::register_system`]: an artifact declares a
-    /// post-update system with `#[system(post_update)]`.
-    pub fn register_post_update_system<F, Input>(&mut self, name: impl Into<String>, system: F)
-    where
-        F: IntoSystem<Input>,
-        Input: SystemParam,
-    {
-        let (system_name, system_access, boxed_system) = self.prepare_system(name, system);
-        self.push_system(system_name, system_access, boxed_system, true, false);
-    }
-
-    /// Registers an update system that also runs in edit mode and while the
-    /// engine is paused.
-    ///
-    /// The renderer, the editor's own systems and anything else the editor
-    /// needs to stay alive use this: a game system registered with
-    /// [`Self::register_system`] stops when the person is editing, which is the
-    /// point of play mode.
-    pub fn register_system_in_edit_mode<F, Input>(&mut self, name: impl Into<String>, system: F)
-    where
-        F: IntoSystem<Input>,
-        Input: SystemParam,
-    {
-        let (system_name, system_access, boxed_system) = self.prepare_system(name, system);
-        self.push_system(system_name, system_access, boxed_system, false, true);
-    }
-
-    /// Registers a post-update system that also runs in edit mode.
-    pub fn register_post_update_system_in_edit_mode<F, Input>(
+    /// This is the entry point every other registering method delegates to.
+    /// The system is placed in the frame by `(options.phase, options.order)`,
+    /// and the engine keeps that order across every artifact, so a number an
+    /// extension picks orders its systems against a project's.
+    pub fn register_system_with_options<F, Input>(
         &mut self,
         name: impl Into<String>,
+        options: SystemOptions,
         system: F,
     ) where
         F: IntoSystem<Input>,
         Input: SystemParam,
     {
         let (system_name, system_access, boxed_system) = self.prepare_system(name, system);
-        self.push_system(system_name, system_access, boxed_system, true, true);
+        self.push_system(system_name, options, system_access, boxed_system);
     }
 
     /// Derives a registration's access pattern and boxes its system.
@@ -1210,16 +1379,54 @@ impl Engine {
     ) where
         F: FnMut(&mut World, &mut CommandQueue) -> Result<(), SystemError> + Send + 'static,
     {
-        self.push_system(name.into(), system_access, Box::new(system), false, false);
+        // SAFETY: the caller of this unsafe function promised the same
+        // completeness this forwards, so the requirement is unchanged.
+        unsafe {
+            self.register_system_with_access_and_options(
+                name,
+                SystemOptions::default(),
+                system_access,
+                system,
+            )
+        }
+    }
+
+    /// Registers a hand-declared-access system with explicit options.
+    ///
+    /// The form a managed host uses: the order, phase and edit-mode gate come
+    /// from `options` and the access pattern was derived outside Rust's
+    /// [`SystemParam`] machinery.
+    ///
+    /// # Safety
+    ///
+    /// `system_access` must describe every component/resource the system may
+    /// touch. An incomplete declaration can make the scheduler run conflicting
+    /// systems concurrently and cause undefined behavior.
+    pub unsafe fn register_system_with_access_and_options<F>(
+        &mut self,
+        name: impl Into<String>,
+        options: SystemOptions,
+        system_access: SystemAccess,
+        system: F,
+    ) where
+        F: FnMut(&mut World, &mut CommandQueue) -> Result<(), SystemError> + Send + 'static,
+    {
+        self.push_system(name.into(), options, system_access, Box::new(system));
     }
 
     /// Adds one system to the list and marks the scheduler out of date.
     ///
     /// Every registration entry point ends here, so they all set the owner,
-    /// the phase and the enabled state the same way, and they all invalidate
-    /// the graph. `post_update` is passed in rather than written after the
-    /// push, so no record ever exists with a phase that disagrees with the
-    /// batches it was placed in.
+    /// the phase, the order and the enabled state the same way, and they all
+    /// invalidate the graph.
+    ///
+    /// The record is inserted where its `(phase, order)` belongs rather than
+    /// appended: the scheduler derives execution order from the list's
+    /// positions, and the list spans every artifact, so insertion is what makes
+    /// an `order` number global. Equal pairs keep insertion order, so a system
+    /// an artifact's `register` half adds after its declarations runs after
+    /// them, and a reload that re-registers a module's systems puts them back
+    /// where they were.
     ///
     /// The batches are not built here: the next frame rebuilds them once from
     /// the whole list, so a module that registers many systems pays for one
@@ -1227,14 +1434,26 @@ impl Engine {
     fn push_system(
         &mut self,
         name: String,
-        system_access: SystemAccess,
+        options: SystemOptions,
+        mut system_access: SystemAccess,
         system: Box<dyn System>,
-        post_update: bool,
-        edit_mode: bool,
     ) {
-        self.systems.push(RegisteredSystem {
-            post_update,
-            edit_mode,
+        // The conditions decide whether the system runs, so what they read has
+        // to be part of what the batches know about it: a condition and a
+        // writer of what it reads must not share a batch either.
+        let SystemOptions {
+            order,
+            phase,
+            run_in_edit_mode,
+            conditions,
+        } = options;
+        for condition in &conditions {
+            system_access.merge(&condition.access);
+        }
+        let registered_system = RegisteredSystem {
+            phase,
+            order,
+            edit_mode: run_in_edit_mode,
             name,
             system_owner: self.active_owner,
             system,
@@ -1245,7 +1464,21 @@ impl Engine {
             last_run_tick: 0,
             average_duration: 0,
             last_duration: 0,
-        });
+            conditions,
+        };
+        // Step 1: Find the first system that must run after this one - a later
+        // phase, or the same phase at a higher order - and insert before it.
+        // Stopping at the first such system leaves every equal pair in front,
+        // which is the registration-order tiebreak.
+        let insert_at = self
+            .systems
+            .iter()
+            .position(|existing| {
+                (existing.phase, existing.order)
+                    > (registered_system.phase, registered_system.order)
+            })
+            .unwrap_or(self.systems.len());
+        self.systems.insert(insert_at, registered_system);
         self.scheduler.invalidate();
     }
 
@@ -1423,29 +1656,34 @@ impl Engine {
         self.command_queue.clear();
     }
 
-    /// Runs one frame: the update systems, the command flush and the
-    /// post-update systems.
+    /// Runs one frame: the pre-project phase, the first command flush, the
+    /// project phase, the scripts, the second flush and the post-project phase.
     ///
     /// A frame goes like this:
-    /// 1. The update systems run, in parallel batches when that is enabled.
-    /// 2. While they run, systems queue commands (create, destroy, add a
-    ///    component and so on) instead of changing the world directly.
-    /// 3. After the update systems finish, the queued commands are applied and
-    ///    the post-update systems run on the result.
+    /// 1. The pre-project systems run, in parallel batches when that is
+    ///    enabled, and the commands they queued are applied.
+    /// 2. The project systems run on that result, then the scripts, and the
+    ///    commands both queued are applied.
+    /// 3. The post-project systems run, on the calling thread, on the frame's
+    ///    finished state.
     ///
-    /// Splitting the frame this way keeps structural changes from disturbing
-    /// systems that are still running.
+    /// While the systems run they queue commands (create, destroy, add a
+    /// component and so on) instead of changing the world directly. Splitting
+    /// the frame this way keeps structural changes from disturbing systems that
+    /// are still running.
     ///
     /// # Errors
     ///
     /// Returns `Err(Vec<CommandError>)` when [`should_exit_on_error`] is
     /// `true` and one or more deferred commands fail.  When the flag is
-    /// `false` (default), errors are logged and `Ok(())` is returned.
+    /// `false` (default), errors are logged and `Ok(())` is returned. A
+    /// failure in either flush is collected, so one frame never hides the
+    /// other's errors.
     ///
     /// [`should_exit_on_error`]: Engine::should_exit_on_error
     pub fn process_frame(&mut self) -> Result<(), Vec<CommandError>> {
         let frame_start = Instant::now();
-        let deferred_command_flush;
+        let mut deferred_command_flush: Result<(), Vec<CommandError>> = Ok(());
 
         {
             // Tracy zone: frame = actual work, not including sleep
@@ -1498,77 +1736,94 @@ impl Engine {
             // mode - or a pause - runs only the systems that opted in.
             self.runs_every_system_this_frame = self.runs_every_system();
 
-            // Step 2: Rebuild the execution graph when the system set changed
+            // Step 2: Rebuild the execution graphs when the system set changed
             // since the last frame, so parallel batches reflect the active
-            // set. Both the conflict matrix and the batches are derived here,
+            // set. Each batched phase's matrix and batches are derived here,
             // once per change, from the systems' own access patterns.
-            self.scheduler.ensure_execution_graph(
-                self.systems
-                    .iter()
-                    .map(|registered_system| &registered_system.system_access),
-            );
+            self.scheduler
+                .ensure_execution_graphs(self.systems.iter().map(|registered_system| {
+                    (&registered_system.system_access, registered_system.phase)
+                }));
 
             // Step 3: Emit per-archetype memory breakdowns when the archetype
             // set changed since the last frame.
             self.emit_archetype_memory_breakdown();
 
-            // Step 4: Run the update systems, in parallel batches or one after
-            // another.
+            // Step 4: Run the pre-project phase, in parallel batches or one
+            // after another.
             //
-            // The phase runs every frame, and the per-system gate above decides
-            // what in it runs: the game's systems run while it plays and is not
-            // paused, and a system that opted in to edit mode runs either way.
-            // A paused engine therefore keeps its opted-in update systems - the
-            // physics outlines among them - and stops the rest.
+            // Every phase runs every frame, and the per-system gate above
+            // decides what in it runs: the game's systems run while it plays
+            // and is not paused, and a system that opted in to edit mode runs
+            // either way. A paused engine therefore keeps its opted-in systems
+            // - the physics outlines among them - and stops the rest.
+            self.run_phase(RunPhase::PreProject);
+
+            // Step 5: Apply the commands the pre-project phase queued, so the
+            // project phase reads the world they produced.
+            if let Err(errors) = self.execute_deferred_commands() {
+                deferred_command_flush = Err(errors);
+            }
+
+            // Step 6: Run the project phase, the game's own frame work.
             //
             // A single step runs the systems once; clearing the pending flag
             // here is what pauses the engine again.
-            if self.parallel_execution_enabled && self.systems.len() > 1 {
-                self.run_systems_parallel();
-            } else {
-                self.run_systems_sequential(false);
-            }
+            self.run_phase(RunPhase::Project);
             self.single_step_pending = false;
 
             // Compute parallel-utilization metrics and emit Tracy plots.
             #[cfg(feature = "profiling")]
             if !self.systems.is_empty() {
                 let durations: Vec<u64> = self.systems.iter().map(|s| s.last_duration).collect();
+                // Both batched phases run beside each other, so one plot over
+                // their combined batches describes the frame's parallelism.
+                let mut parallel_batches: Vec<Vec<usize>> = self
+                    .scheduler
+                    .execution_graph_of(RunPhase::PreProject)
+                    .to_vec();
+                parallel_batches.extend(
+                    self.scheduler
+                        .execution_graph_of(RunPhase::Project)
+                        .iter()
+                        .cloned(),
+                );
                 crate::profiling::emit_parallel_utilization_plots(
                     &durations,
                     frame_start.elapsed().as_nanos() as u64,
                     rayon::current_num_threads(),
-                    self.scheduler.execution_graph(),
+                    &parallel_batches,
                 );
             }
 
             // Step 5: Update the scripts. Each script reads the world, changes
             // only its own component and queues its other changes as commands.
             //
-            // No script type has opted in to edit mode, so scripts follow the
-            // same gate as game systems: they run while the game runs, and not
-            // while it is edited or paused.
-            if self.runs_every_system_this_frame {
+            // A script runs while the game runs, and while the editor edits
+            // when its declaration opted in to edit mode. Pause and step keep
+            // their meaning: a paused game runs neither.
+            if self.runs_every_system_this_frame || self.run_mode == RunMode::Editing {
                 let _zone = crate::profile_scope!("update scripts");
-                self.world.update_scripts(&mut self.command_queue);
+                self.world
+                    .run_script_lifecycle_passes(&mut self.command_queue, self.run_mode);
+                self.world
+                    .update_scripts(&mut self.command_queue, self.run_mode);
             }
             crate::profile_secondary_frame_mark!("scripts");
 
             // Step 6: Execute all deferred commands (including those from scripts).
-            {
-                let _zone = crate::profile_scope!(
-                    "execute commands",
-                    [(
-                        "Commands queued this frame: {}",
-                        !self.command_queue.is_empty()
-                    )]
-                );
-                deferred_command_flush = self
-                    .command_queue
-                    .execute_queued_commands(&mut self.world, self.should_exit_on_error);
+            if let Err(errors) = self.execute_deferred_commands() {
+                match &mut deferred_command_flush {
+                    Ok(()) => deferred_command_flush = Err(errors),
+                    Err(collected) => collected.extend(errors),
+                }
             }
             crate::profile_secondary_frame_mark!("commands");
-            self.run_systems_sequential(true);
+
+            // Step 8: Run the post-project phase, on the calling thread after
+            // the frame's last flush: it is where the presentation systems
+            // draw the frame they have just finished computing.
+            self.run_systems_sequential(RunPhase::PostProject);
 
             // Step 7: Warn about duplicate parallel-iterator labels seen this
             // frame, then emit the per-frame plots and metrics.
@@ -1612,6 +1867,37 @@ impl Engine {
         deferred_command_flush
     }
 
+    /// Runs the systems of one phase.
+    ///
+    /// A batched phase uses the scheduler's parallel batches when parallel
+    /// execution is on; [`RunPhase::PostProject`] always runs sequentially, on
+    /// the calling thread, because it runs after the frame's last flush.
+    fn run_phase(&mut self, phase: RunPhase) {
+        let batches_itself = phase.is_batched() && self.parallel_execution_enabled;
+        if batches_itself && self.systems.len() > 1 {
+            self.run_systems_parallel(phase);
+        } else {
+            self.run_systems_sequential(phase);
+        }
+    }
+
+    /// Applies every command the systems queued so far.
+    ///
+    /// One frame flushes twice - after the pre-project phase, and after the
+    /// project phase with the scripts - so the profiling scope and the
+    /// error-on-failure rule live here rather than at both call sites.
+    fn execute_deferred_commands(&mut self) -> Result<(), Vec<CommandError>> {
+        let _zone = crate::profile_scope!(
+            "execute commands",
+            [(
+                "Commands queued this frame: {}",
+                !self.command_queue.is_empty()
+            )]
+        );
+        self.command_queue
+            .execute_queued_commands(&mut self.world, self.should_exit_on_error)
+    }
+
     /// Emits the per-frame Tracy plots and the metrics-reporter gauges.
     #[cfg_attr(not(feature = "profiling"), allow(unused_variables))]
     fn emit_frame_telemetry(&self, frame_start: Instant) {
@@ -1634,7 +1920,11 @@ impl Engine {
         crate::profile_plot!(registered_systems, self.systems.len() as f64);
         crate::profile_plot!(
             execution_batches,
-            self.scheduler.execution_graph().len() as f64
+            (self
+                .scheduler
+                .execution_graph_of(RunPhase::PreProject)
+                .len()
+                + self.scheduler.execution_graph_of(RunPhase::Project).len()) as f64
         );
         crate::profile_plot!(
             commands_executed,
@@ -1714,24 +2004,28 @@ impl Engine {
     // Internal: Sequential Execution
     // -------------------------------------------------------------------------
 
-    /// Runs systems one after another: when parallel execution is off, when
-    /// only one system is registered, and for the post-update phase, which
-    /// always runs on the calling thread after the command flush.
-    fn run_systems_sequential(&mut self, post_update: bool) {
+    /// Runs one phase's systems one after another: when parallel execution is
+    /// off, when the phase is not batched, and for
+    /// [`RunPhase::PostProject`], which always runs on the calling thread after
+    /// the frame's last command flush.
+    fn run_systems_sequential(&mut self, phase: RunPhase) {
         let _zone = crate::profile_scope!(
             "systems sequential",
-            [(
-                "{} enabled systems ({} total registered)",
-                self.systems.iter().filter(|s| s.enabled).count(),
-                self.systems.len()
-            )]
+            [
+                ("Phase: {}", phase.label()),
+                (
+                    "{} enabled systems ({} total registered)",
+                    self.systems.iter().filter(|s| s.enabled).count(),
+                    self.systems.len()
+                )
+            ]
         );
         let runs_every_system = self.runs_every_system_this_frame;
         let world = &mut self.world;
         let command_queue = &mut self.command_queue;
         let failures = &mut self.system_failures;
         for registered_system in &mut self.systems {
-            if !registered_system.enabled || registered_system.post_update != post_update {
+            if !registered_system.enabled || registered_system.phase != phase {
                 continue;
             }
             // In edit mode, and while paused, only the systems that opted in
@@ -1750,8 +2044,8 @@ impl Engine {
     // Internal: Parallel Execution
     // -------------------------------------------------------------------------
 
-    /// Runs the update systems in parallel batches, using the scheduler's
-    /// conflict analysis.
+    /// Runs one batched phase's systems in parallel batches, using the
+    /// scheduler's conflict analysis.
     ///
     /// The scheduler guarantees that the systems in one batch touch disjoint
     /// components and resources, so they can run at the same time on Rayon
@@ -1764,10 +2058,11 @@ impl Engine {
     /// from raw pointers. It is sound because of the scheduler's guarantees:
     /// systems in one batch access disjoint state, command-using systems run
     /// alone, and every batch index stays within the `systems` vector.
-    fn run_systems_parallel(&mut self) {
+    fn run_systems_parallel(&mut self, phase: RunPhase) {
         let _zone = crate::profile_scope!(
             "run systems parallel",
             [
+                ("Phase: {}", phase.label()),
                 (
                     "{} enabled systems ({} total)",
                     self.systems.iter().filter(|s| s.enabled).count(),
@@ -1775,13 +2070,15 @@ impl Engine {
                 ),
                 (
                     "{} parallel batches",
-                    self.scheduler.execution_graph().len()
+                    self.scheduler.execution_graph_of(phase).len()
                 )
             ]
         );
         // Execute each batch
-        let batch_count = self.scheduler.execution_graph().len();
-        for (batch_index, systems_batch) in self.scheduler.execution_graph().iter().enumerate() {
+        let batch_count = self.scheduler.execution_graph_of(phase).len();
+        for (batch_index, systems_batch) in
+            self.scheduler.execution_graph_of(phase).iter().enumerate()
+        {
             let batch_size = systems_batch.len();
             let _zone: crate::profiling::TracyZone = crate::profile_scope!(
                 "run systems batch {}/{} ({} systems)",
@@ -1795,11 +2092,9 @@ impl Engine {
                 let runs_every_system = self.runs_every_system_this_frame;
                 let runs = {
                     let registered_system = &self.systems[system_index];
-                    // The post-flush phase runs after the command flush, never
-                    // from a batch.
-                    registered_system.enabled
-                        && !registered_system.post_update
-                        && (runs_every_system || registered_system.edit_mode)
+                    // The graph holds this phase's systems alone, so the phase
+                    // needs no test here.
+                    registered_system.enabled && (runs_every_system || registered_system.edit_mode)
                 };
                 if runs {
                     let registered_system = &mut self.systems[system_index];
@@ -1844,7 +2139,6 @@ impl Engine {
                         name: registered_system.name.as_str(),
                         zone_color: system_zone_color(registered_system.system_owner),
                         runs: registered_system.enabled
-                            && !registered_system.post_update
                             && (self.runs_every_system_this_frame || registered_system.edit_mode),
                     });
                 }
@@ -1893,6 +2187,27 @@ impl Engine {
                     crate::profile_thread!("parallel worker");
 
                     if !member.runs {
+                        return;
+                    }
+
+                    // A `run_if` condition decides whether the system runs at
+                    // all, so it is evaluated before the zone and the ticks; a
+                    // skipped member leaves the thread-locals untouched.
+                    let runs_conditions = {
+                        // SAFETY: the same three pointers the system body uses
+                        // below, rebuilt while `&mut self` is held for the whole
+                        // batch. The conditions are read-only by
+                        // `ReadOnlySystemParam`, and the scheduler guarantees no
+                        // other member of this batch touches what they read.
+                        unsafe {
+                            let world = &mut *world_ptr.as_ptr();
+                            let command_queue = &mut *command_queue_ptr.as_ptr();
+                            let registered_system =
+                                &mut *systems_ptr.as_ptr().add(member.system_index);
+                            conditions_hold(registered_system, world, command_queue)
+                        }
+                    };
+                    if !runs_conditions {
                         return;
                     }
 
@@ -2019,6 +2334,13 @@ fn run_registered_system(
     failures: &mut Vec<SystemFailure>,
     registered_system: &mut RegisteredSystem,
 ) {
+    // A condition decides whether the system runs at all, so it is evaluated
+    // before the zone, the change-detection baseline and the timing: a skipped
+    // system leaves every one of them untouched, as if the frame had not
+    // reached it.
+    if !conditions_hold(registered_system, world, command_queue) {
+        return;
+    }
     let _tracy_sys = crate::profile_scope!(
         color = system_zone_color(registered_system.system_owner),
         "system: {}",
@@ -2041,6 +2363,23 @@ fn run_registered_system(
         started_at_tick,
         system_start.elapsed().as_nanos() as u64,
     );
+}
+
+/// Whether every `run_if` condition of a system holds.
+///
+/// A system without conditions always holds. The conditions run in the order
+/// the registration added them, and the first false answer stops the check, so
+/// a later condition cannot observe a world an earlier one only pretended to
+/// accept.
+fn conditions_hold(
+    registered_system: &mut RegisteredSystem,
+    world: &mut World,
+    command_queue: &mut CommandQueue,
+) -> bool {
+    registered_system
+        .conditions
+        .iter_mut()
+        .all(|condition| (condition.run)(world, command_queue))
 }
 
 /// Records what every dispatch path owes a system that just ran.
@@ -2226,31 +2565,36 @@ mod tests {
             .any(|failure| failure.system == "second_failure"));
     }
 
-    /// A post-update system runs after the update phase and the command flush,
-    /// even when it was registered before the system whose work it follows.
+    /// A post-project system runs after the project phase and the command
+    /// flush, even when it was registered before the system whose work it
+    /// follows.
     ///
     /// The phase is a property of the registration, not of its position: a
-    /// post-update system registered first would run first if registration
+    /// post-project system registered first would run first if registration
     /// order decided, and the command flush would then happen after it.
     #[test]
-    fn post_update_systems_run_after_the_update_phase_whatever_their_order() {
+    fn post_project_systems_run_after_the_project_phase_whatever_their_order() {
         let order: Arc<std::sync::Mutex<Vec<&'static str>>> =
             Arc::new(std::sync::Mutex::new(Vec::new()));
 
         let mut engine = Engine::new();
-        let post_update_order = Arc::clone(&order);
-        engine.register_post_update_system("after_flush", move || {
-            post_update_order
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push("post_update");
-        });
-        let update_order = Arc::clone(&order);
+        let post_project_order = Arc::clone(&order);
+        engine.register_system_with_options(
+            "after_flush",
+            SystemOptions::new(RunPhase::PostProject, 0),
+            move || {
+                post_project_order
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push("post_project");
+            },
+        );
+        let project_order = Arc::clone(&order);
         engine.register_system("before_flush", move || {
-            update_order
+            project_order
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push("update");
+                .push("project");
         });
 
         engine.process_frame().unwrap();
@@ -2260,8 +2604,127 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         assert_eq!(
             *order,
-            vec!["update", "post_update"],
-            "the post-update phase follows the update phase and the command flush"
+            vec!["project", "post_project"],
+            "the post-project phase follows the project phase and the command flush"
+        );
+    }
+
+    /// A frame runs its three phases in frame order, whatever order the systems
+    /// were registered in.
+    #[test]
+    fn a_frame_runs_the_three_phases_in_order() {
+        let order: Arc<std::sync::Mutex<Vec<&'static str>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        let mut engine = Engine::new();
+        // Out of frame order on purpose: the phase decides, not the
+        // registration.
+        for (phase, label) in [
+            (RunPhase::PostProject, "post_project"),
+            (RunPhase::Project, "project"),
+            (RunPhase::PreProject, "pre_project"),
+        ] {
+            let order = Arc::clone(&order);
+            engine.register_system_with_options(label, SystemOptions::new(phase, 0), move || {
+                order
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(label);
+            });
+        }
+
+        engine.process_frame().unwrap();
+
+        let order = order
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert_eq!(
+            *order,
+            vec!["pre_project", "project", "post_project"],
+            "the three phases run in the order a frame documents"
+        );
+    }
+
+    /// A command a pre-project system queues is applied before the project
+    /// phase runs, so a project system sees the change it made.
+    #[test]
+    fn a_pre_project_command_is_applied_before_the_project_phase() {
+        let observed = Arc::new(AtomicUsize::new(0));
+
+        let mut engine = Engine::new();
+        engine
+            .world_mut()
+            .register_component::<crate::test_fixtures::Position>();
+
+        engine.register_system_with_options(
+            "spawn_in_pre_project",
+            SystemOptions::new(RunPhase::PreProject, 0),
+            |mut commands: crate::Commands| {
+                commands
+                    .create_entity()
+                    .with(crate::test_fixtures::Position { x: 0.0, y: 0.0 })
+                    .build();
+            },
+        );
+        let observed_in_project = Arc::clone(&observed);
+        engine.register_system_with_options(
+            "count_in_project",
+            SystemOptions::new(RunPhase::Project, 0),
+            move |mut positions: crate::Query<&crate::test_fixtures::Position>| {
+                observed_in_project.store(positions.entity_count(), AtomicOrdering::SeqCst);
+            },
+        );
+
+        engine.process_frame().unwrap();
+
+        assert_eq!(
+            observed.load(AtomicOrdering::SeqCst),
+            1,
+            "the project phase sees the entity the pre-project phase queued"
+        );
+    }
+
+    /// The system list is ordered by `(phase, order)` across every
+    /// registration, and an equal pair keeps the order its registrations came
+    /// in.
+    #[test]
+    fn systems_are_listed_by_phase_then_order_then_registration() {
+        let mut engine = Engine::new();
+        engine.register_system_with_options(
+            "second",
+            SystemOptions::new(RunPhase::Project, 20),
+            || {},
+        );
+        engine.register_system_with_options(
+            "first",
+            SystemOptions::new(RunPhase::Project, 10),
+            || {},
+        );
+        engine.register_system_with_options(
+            "tied_after_second",
+            SystemOptions::new(RunPhase::Project, 20),
+            || {},
+        );
+        engine.register_system_with_options(
+            "post",
+            SystemOptions::new(RunPhase::PostProject, 0),
+            || {},
+        );
+        engine.register_system_with_options(
+            "pre",
+            SystemOptions::new(RunPhase::PreProject, 50),
+            || {},
+        );
+
+        let names: Vec<String> = engine
+            .system_snapshots()
+            .into_iter()
+            .map(|snapshot| snapshot.name)
+            .collect();
+        assert_eq!(
+            names,
+            ["pre", "first", "second", "tied_after_second", "post"],
+            "the list is sorted by phase, then order, then registration"
         );
     }
 

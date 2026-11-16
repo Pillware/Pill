@@ -1473,6 +1473,11 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
     // so it does not depend on the directory the process was launched from.
     let workspace_root = crate::config::engine_workspace_root()?;
 
+    print_welcome(
+        &host_config.name,
+        host_config.project_directory.as_deref(),
+        &project_module_config,
+    );
     print_startup_configuration(&workspace_root, &project_module_config);
     // Which watchers this run may start, read once: a hard case to debug when
     // it is silent, so every start says it out loud.
@@ -2663,11 +2668,11 @@ fn finish_managed_build(host: &mut DevHost, report: BuildReport) {
             info!(
                 target: telemetry_target::HOT_RELOAD,
                 module = host.project_module_config.name.as_str(),
-                compile_ms = format!("{milliseconds:.1}").as_str(),
+                compile_ms = milliseconds,
                 "C# compiled in-process"
             );
             host.loaded_project
-                .record_assembly_rebuilt_at(report.finished_at, "roslyn");
+                .record_assembly_rebuilt_at(report.finished_at);
             host.loaded_project.notify_assembly_replaced();
             info!(
                 target: telemetry_target::HOT_RELOAD,
@@ -2698,7 +2703,7 @@ fn finish_managed_build(host: &mut DevHost, report: BuildReport) {
         }
         BuildOutcome::Full(Ok(())) => {
             host.loaded_project
-                .record_assembly_rebuilt_at(report.finished_at, "msbuild");
+                .record_assembly_rebuilt_at(report.finished_at);
             info!(
                 target: telemetry_target::HOT_RELOAD,
                 "C# build complete; polling managed loader"
@@ -2710,7 +2715,7 @@ fn finish_managed_build(host: &mut DevHost, report: BuildReport) {
         BuildOutcome::Full(Err(message)) => {
             warn!(
                 target: telemetry_target::HOT_RELOAD,
-                error = message.as_str(),
+                error = %message,
                 "C# build failed; keeping the currently loaded C# project assembly"
             );
             notices::push(HostNotice::ModuleFailed {
@@ -2741,11 +2746,30 @@ fn finish_managed_build(host: &mut DevHost, report: BuildReport) {
 /// wait outlived Step 5.
 fn note_managed_swap(host: &mut DevHost) {
     forget_prologue_records(host);
-    // The editor's side of the swap, mirroring the extension reload's: a
-    // toast and a cleared problem list for the project.
+    // The swap ends the reload, so its timing is finished here, at the one
+    // place both swap sites reach. A swap with no armed timing - an assembly
+    // this host did not build - records zeros, which is what the report says
+    // for a phase that did not run.
+    let summary = host.loaded_project.finish_managed_reload_timing();
+    let (stage_ms, build_ms, load_ms) = match &summary {
+        Some(summary) => (summary.stage_ms(), summary.build_ms, summary.swap_ms),
+        None => (0.0, 0.0, 0.0),
+    };
+    analytics::record_managed_reload(
+        &host.project_module_config.name,
+        stage_ms,
+        build_ms,
+        load_ms,
+    );
+    // The editor's side of the swap, mirroring the extension reload's: a toast
+    // carrying the measured build and a cleared problem list for the project.
     notices::push(HostNotice::Reloaded {
         module: host.project_module_config.name.clone(),
-        build_ms: 0,
+        build_ms: if build_ms.is_finite() {
+            build_ms.round() as u64
+        } else {
+            0
+        },
     });
     resync_patch_baselines(host, true, &[]);
     host.bump_editor_revision();
@@ -3968,7 +3992,7 @@ fn report_patch_outcome(outcome: crate::hot_patch::PatchOutcome) -> bool {
                 )
             );
             // Recorded in the same shape a module reload is, so one parser in
-            // `devops/benchmarks/hot_reload_harness.py` reads both.
+            // the benchmark harness reads both.
             analytics::record_patch(
                 &function,
                 stages.classify + stages.generate + stages.flags,
@@ -4025,22 +4049,48 @@ fn report_patch_outcome(outcome: crate::hot_patch::PatchOutcome) -> bool {
     }
 }
 
+/// Announce the project this start runs, before any build output starts
+/// streaming.
+///
+/// The display name alone can repeat between projects, so the line also
+/// carries the directory the configuration resolved it from. A configuration
+/// built from a module alone has no directory, and the line then omits that
+/// field rather than printing an empty one.
+fn print_welcome(
+    project_name: &str,
+    project_directory: Option<&Path>,
+    project_module_config: &ProjectModuleConfig,
+) {
+    let backend = project_module_config.backend.kind_name();
+    match project_directory {
+        Some(directory) => info!(
+            target: telemetry_target::ENGINE,
+            project = project_name,
+            directory = %directory.display(),
+            backend,
+            "welcome to the Pill engine"
+        ),
+        None => info!(
+            target: telemetry_target::ENGINE,
+            project = project_name,
+            backend,
+            "welcome to the Pill engine"
+        ),
+    }
+}
+
 /// Print the selected backend before any build output starts streaming.
 ///
 /// The backend is logged as its kind, the library it loads and the directory
 /// that library is built into, so the line carries plain values.
 fn print_startup_configuration(workspace_root: &Path, project_module_config: &ProjectModuleConfig) {
-    let (backend, library, output_directory) = match &project_module_config.backend {
+    let backend = project_module_config.backend.kind_name();
+    let (library, output_directory) = match &project_module_config.backend {
         crate::config::ProjectModuleBackend::NativeLibrary {
             library_name,
             output_subdirectory,
-        } => (
-            "native",
-            library_name.as_str(),
-            output_subdirectory.as_str(),
-        ),
+        } => (library_name.as_str(), output_subdirectory.as_str()),
         crate::config::ProjectModuleBackend::CSharp(csharp_module_config) => (
-            "csharp",
             csharp_module_config.project_assembly_name.as_str(),
             csharp_module_config.project_output_subdirectory.as_str(),
         ),

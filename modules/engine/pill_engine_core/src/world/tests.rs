@@ -19,6 +19,8 @@
 use super::*;
 #[cfg(feature = "development")]
 use crate::archetype::{FieldSource, LayoutField};
+use crate::engine::RunMode;
+use crate::scripting::{ScriptDeclaration, ScriptDeclarationData};
 use crate::test_fixtures::{setup_world, Health, Position, Velocity};
 
 /// Returns the change-detection ticks of one entity's row for one component.
@@ -3879,11 +3881,124 @@ struct CountingScript {
 
 impl Component for CountingScript {}
 
+impl ScriptDeclaration for CountingScript {
+    const DECLARATION: ScriptDeclarationData = ScriptDeclarationData::NONE.with_on_update(0);
+}
+
 impl ScriptComponent for CountingScript {
-    fn update(&mut self, _script_context: &mut ScriptContext) {
+    fn on_update(&mut self, _script_context: &mut ScriptContext) {
         self.dispatches += 1;
     }
 }
+
+/// The sequence of script runs the ordering tests read.
+#[derive(Debug, Default)]
+struct ScriptRunLog {
+    /// One entry per run, in the order the runs happened.
+    entries: Vec<&'static str>,
+}
+
+impl Component for ScriptRunLog {}
+
+/// Appends `name` to the run log, which lives on an entity of its own so the
+/// borrow is never the running script's own row.
+fn append_run_log_entry(
+    log_entity: Entity,
+    script_context: &mut ScriptContext,
+    name: &'static str,
+) {
+    if let Some(run_log) = script_context.get_component_mut::<ScriptRunLog>(log_entity) {
+        run_log.entries.push(name);
+    }
+}
+
+/// A script that declares a late update order.
+#[derive(Debug)]
+struct LateScript {
+    /// The entity holding the run log.
+    log_entity: Entity,
+}
+
+impl Component for LateScript {}
+
+impl ScriptDeclaration for LateScript {
+    const DECLARATION: ScriptDeclarationData = ScriptDeclarationData::NONE.with_on_update(20);
+}
+
+impl ScriptComponent for LateScript {
+    fn on_update(&mut self, script_context: &mut ScriptContext) {
+        append_run_log_entry(self.log_entity, script_context, "late");
+    }
+}
+
+/// A script that declares an early update order.
+#[derive(Debug)]
+struct EarlyScript {
+    /// The entity holding the run log.
+    log_entity: Entity,
+}
+
+impl Component for EarlyScript {}
+
+impl ScriptDeclaration for EarlyScript {
+    const DECLARATION: ScriptDeclarationData = ScriptDeclarationData::NONE.with_on_update(10);
+}
+
+impl ScriptComponent for EarlyScript {
+    fn on_update(&mut self, script_context: &mut ScriptContext) {
+        append_run_log_entry(self.log_entity, script_context, "early");
+    }
+}
+
+/// A script whose update order ties with [`ZuluScript`]'s.
+#[derive(Debug)]
+struct AlphaScript {
+    /// The entity holding the run log.
+    log_entity: Entity,
+}
+
+impl Component for AlphaScript {}
+
+impl ScriptDeclaration for AlphaScript {
+    const DECLARATION: ScriptDeclarationData = ScriptDeclarationData::NONE.with_on_update(5);
+}
+
+impl ScriptComponent for AlphaScript {
+    fn on_update(&mut self, script_context: &mut ScriptContext) {
+        append_run_log_entry(self.log_entity, script_context, "alpha");
+    }
+}
+
+/// A script whose update order ties with [`AlphaScript`]'s.
+#[derive(Debug)]
+struct ZuluScript {
+    /// The entity holding the run log.
+    log_entity: Entity,
+}
+
+impl Component for ZuluScript {}
+
+impl ScriptDeclaration for ZuluScript {
+    const DECLARATION: ScriptDeclarationData = ScriptDeclarationData::NONE.with_on_update(5);
+}
+
+impl ScriptComponent for ZuluScript {
+    fn on_update(&mut self, script_context: &mut ScriptContext) {
+        append_run_log_entry(self.log_entity, script_context, "zulu");
+    }
+}
+
+/// A script that declares no update hook at all.
+#[derive(Debug)]
+struct CreateOnlyScript;
+
+impl Component for CreateOnlyScript {}
+
+impl ScriptDeclaration for CreateOnlyScript {
+    const DECLARATION: ScriptDeclarationData = ScriptDeclarationData::NONE.with_on_create(0);
+}
+
+impl ScriptComponent for CreateOnlyScript {}
 
 /// Returns the counting script's dispatch count as the world holds it.
 fn dispatches_of(world: &World, entity: Entity) -> u32 {
@@ -3907,7 +4022,7 @@ fn registering_a_script_component_twice_dispatches_it_once_per_frame() {
         .expect("the script attaches");
 
     let mut commands = CommandQueue::new();
-    world.update_scripts(&mut commands);
+    world.update_scripts(&mut commands, RunMode::Playing);
 
     assert_eq!(
         dispatches_of(&world, entity),
@@ -3931,12 +4046,111 @@ fn a_re_registered_script_component_dispatches_on_its_new_bit() {
         .expect("the script attaches");
 
     let mut commands = CommandQueue::new();
-    world.update_scripts(&mut commands);
+    world.update_scripts(&mut commands, RunMode::Playing);
 
     assert_eq!(
         dispatches_of(&world, entity),
         1,
         "a re-registered script type must dispatch through its current bit"
+    );
+}
+
+/// Two script types run in their declared order, whatever order they were
+/// registered in.
+#[test]
+fn script_types_update_in_their_declared_order() {
+    let mut world = World::new();
+    world.register_script_component::<LateScript>();
+    world.register_script_component::<EarlyScript>();
+    world.register_component::<ScriptRunLog>();
+
+    let log_entity = world
+        .create_entity()
+        .build()
+        .expect("the log entity builds");
+    world
+        .add_component(log_entity, ScriptRunLog::default())
+        .expect("the log attaches");
+    let entity = world.create_entity().build().expect("the entity builds");
+    world
+        .add_component(entity, LateScript { log_entity })
+        .expect("the late script attaches");
+    world
+        .add_component(entity, EarlyScript { log_entity })
+        .expect("the early script attaches");
+
+    let mut commands = CommandQueue::new();
+    world.update_scripts(&mut commands, RunMode::Playing);
+
+    let entries = world
+        .get_component::<ScriptRunLog>(log_entity)
+        .expect("the run log is on its entity")
+        .entries
+        .clone();
+    assert_eq!(
+        entries,
+        ["early", "late"],
+        "the lower declared order runs first, not the earlier registration"
+    );
+}
+
+/// Two script types whose orders are equal run in type name order, so a frame
+/// with no ordering information still runs the same way every time.
+#[test]
+fn script_types_with_equal_orders_update_in_type_name_order() {
+    let mut world = World::new();
+    world.register_script_component::<ZuluScript>();
+    world.register_script_component::<AlphaScript>();
+    world.register_component::<ScriptRunLog>();
+
+    let log_entity = world
+        .create_entity()
+        .build()
+        .expect("the log entity builds");
+    world
+        .add_component(log_entity, ScriptRunLog::default())
+        .expect("the log attaches");
+    let entity = world.create_entity().build().expect("the entity builds");
+    world
+        .add_component(entity, ZuluScript { log_entity })
+        .expect("the zulu script attaches");
+    world
+        .add_component(entity, AlphaScript { log_entity })
+        .expect("the alpha script attaches");
+
+    let mut commands = CommandQueue::new();
+    world.update_scripts(&mut commands, RunMode::Playing);
+
+    let entries = world
+        .get_component::<ScriptRunLog>(log_entity)
+        .expect("the run log is on its entity")
+        .entries
+        .clone();
+    assert_eq!(
+        entries,
+        ["alpha", "zulu"],
+        "equal orders fall back to the type name"
+    );
+}
+
+/// A script that declares no `on_update` is registered but left out of the
+/// update pass.
+#[test]
+fn a_script_without_on_update_is_left_out_of_the_update_pass() {
+    let mut world = World::new();
+    world.register_script_component::<CountingScript>();
+    world.register_script_component::<CreateOnlyScript>();
+
+    let order = world.build_script_update_order();
+
+    assert_eq!(
+        order.len(),
+        1,
+        "only the type that implements on_update is walked"
+    );
+    assert!(
+        order[0].ends_with("CountingScript"),
+        "the walked type is the one that declared on_update, not {order:?}"
     );
 }
 

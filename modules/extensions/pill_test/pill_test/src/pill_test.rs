@@ -80,7 +80,7 @@ pub struct ModuleTest {
 /// Registered under the name `module_test_processor`. The scheduler derives
 /// the system's access pattern from the query signature, so it places the
 /// system among the project's systems automatically.
-#[system(name = "module_test_processor", order = 10)]
+#[system(name = "module_test_processor", order = 110)]
 fn module_test_processor(mut query: Query<&mut ModuleTest>) -> Result<(), SystemError> {
     for mut state in query.iter_mut() {
         state.processed_frame_count += 1;

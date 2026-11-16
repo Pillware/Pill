@@ -24,7 +24,8 @@ use std::sync::Arc;
 // Current crate
 use crate::component::Component;
 use crate::engine::{Engine, RunMode};
-use crate::scripting::{ScriptComponent, ScriptContext};
+use crate::scheduler::RunPhase;
+use crate::scripting::{ScriptComponent, ScriptContext, ScriptDeclaration, ScriptDeclarationData};
 use crate::world::World;
 
 // =============================================================================
@@ -56,17 +57,29 @@ fn register_phase_systems(engine: &mut Engine) -> PhaseCounters {
         update_play_only.fetch_add(1, Ordering::SeqCst);
     });
     let update_edit_mode = Arc::clone(&counters.update_edit_mode);
-    engine.register_system_in_edit_mode("update_edit_mode", move || {
-        update_edit_mode.fetch_add(1, Ordering::SeqCst);
-    });
+    engine.register_system_with_options(
+        "update_edit_mode",
+        crate::engine::SystemOptions::default().with_run_in_edit_mode(true),
+        move || {
+            update_edit_mode.fetch_add(1, Ordering::SeqCst);
+        },
+    );
     let post_update_play_only = Arc::clone(&counters.post_update_play_only);
-    engine.register_post_update_system("post_update_play_only", move || {
-        post_update_play_only.fetch_add(1, Ordering::SeqCst);
-    });
+    engine.register_system_with_options(
+        "post_update_play_only",
+        crate::engine::SystemOptions::new(RunPhase::PostProject, 0),
+        move || {
+            post_update_play_only.fetch_add(1, Ordering::SeqCst);
+        },
+    );
     let post_update_edit_mode = Arc::clone(&counters.post_update_edit_mode);
-    engine.register_post_update_system_in_edit_mode("post_update_edit_mode", move || {
-        post_update_edit_mode.fetch_add(1, Ordering::SeqCst);
-    });
+    engine.register_system_with_options(
+        "post_update_edit_mode",
+        crate::engine::SystemOptions::new(RunPhase::PostProject, 0).with_run_in_edit_mode(true),
+        move || {
+            post_update_edit_mode.fetch_add(1, Ordering::SeqCst);
+        },
+    );
     counters
 }
 
@@ -84,15 +97,40 @@ struct CountingScript {
 
 impl Component for CountingScript {}
 
+impl ScriptDeclaration for CountingScript {
+    const DECLARATION: ScriptDeclarationData = ScriptDeclarationData::NONE.with_on_update(0);
+}
+
 impl ScriptComponent for CountingScript {
-    fn update(&mut self, _script_context: &mut ScriptContext) {
+    fn on_update(&mut self, _script_context: &mut ScriptContext) {
+        self.dispatches += 1;
+    }
+}
+
+/// A script component that opted in to edit mode, so it runs while the editor
+/// edits as well as while it plays.
+#[derive(Debug, Default)]
+struct EditModeScript {
+    /// How many times the engine ran it.
+    dispatches: u32,
+}
+
+impl Component for EditModeScript {}
+
+impl ScriptDeclaration for EditModeScript {
+    const DECLARATION: ScriptDeclarationData = ScriptDeclarationData::NONE
+        .with_on_update(0)
+        .with_edit_mode();
+}
+
+impl ScriptComponent for EditModeScript {
+    fn on_update(&mut self, _script_context: &mut ScriptContext) {
         self.dispatches += 1;
     }
 }
 
 /// A component that owns heap data and is not `Clone`, so a play session cannot
-/// copy it.
-#[derive(Debug)]
+/// copy it.#[derive(Debug)]
 struct UncopyableProbe {
     /// The reason it cannot be copied: its own buffer.
     #[allow(dead_code)]
@@ -118,6 +156,15 @@ fn script_dispatches(engine: &Engine, entity: crate::entity::Entity) -> u32 {
     engine
         .world()
         .get_component::<CountingScript>(entity)
+        .expect("the entity carries the script")
+        .dispatches
+}
+
+/// Returns the dispatch count of the edit-mode script on `entity`.
+fn edit_mode_dispatches(engine: &Engine, entity: crate::entity::Entity) -> u32 {
+    engine
+        .world()
+        .get_component::<EditModeScript>(entity)
         .expect("the entity carries the script")
         .dispatches
 }
@@ -197,8 +244,8 @@ fn a_step_runs_every_system_exactly_once() {
     assert_eq!(count(&counters.update_edit_mode), 2);
 }
 
-/// A script runs only while the game does: editing and pausing both leave it
-/// alone, and a step runs it once.
+/// A script runs only while the game does unless its declaration opted in to
+/// edit mode: editing and pausing both leave it alone, and a step runs it once.
 #[test]
 fn a_script_runs_only_while_the_game_runs() {
     let (mut engine, entity) = engine_with_a_script();
@@ -218,6 +265,37 @@ fn a_script_runs_only_while_the_game_runs() {
     engine.request_single_step();
     engine.process_frame().expect("the frame runs");
     assert_eq!(script_dispatches(&engine, entity), 2);
+}
+
+/// A script whose declaration opted in to edit mode runs while the editor
+/// edits, beside a plain script that stays out of it.
+#[test]
+fn an_edit_mode_script_runs_while_the_editor_edits() {
+    let mut engine = Engine::new();
+    let world: &mut World = engine.world_mut();
+    world.register_script_component::<CountingScript>();
+    world.register_script_component::<EditModeScript>();
+    let entity = world.create_entity().build().expect("the entity builds");
+    world
+        .add_component(entity, CountingScript::default())
+        .expect("the plain script attaches");
+    world
+        .add_component(entity, EditModeScript::default())
+        .expect("the edit-mode script attaches");
+
+    engine.set_run_mode(RunMode::Editing);
+    engine.process_frame().expect("the frame runs");
+
+    assert_eq!(
+        edit_mode_dispatches(&engine, entity),
+        1,
+        "the opted-in script runs while the editor edits"
+    );
+    assert_eq!(
+        script_dispatches(&engine, entity),
+        0,
+        "a script that did not opt in stays out of edit mode"
+    );
 }
 
 // =============================================================================

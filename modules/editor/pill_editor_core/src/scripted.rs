@@ -116,6 +116,9 @@ pub enum ScriptedCommand {
     GizmoRelease,
     /// `gizmo <translate|rotate|scale>` - switch the active tool.
     GizmoTool(GizmoMode),
+    /// `tool <name>` / `tool none` - activate a registered tool, or leave every
+    /// tool with none active.
+    Tool(Option<String>),
     /// `key <chord>` - inject a keyboard chord.
     Key(KeyChord),
     /// `dump <target>` - log one piece of editor state.
@@ -166,6 +169,20 @@ pub enum ScriptedCommand {
     /// `select resource <name>` - move the shared selection onto an editable
     /// world resource.
     SelectResource(String),
+    /// `select element <id>[,<id>…]` / `select element add <id>` - select
+    /// elements of the primary entity, replacing the element selection or
+    /// extending it.
+    ///
+    /// The ids are the tool's own. Until the tool layer reports a kind (the
+    /// tools stage), the editor records them under the `element` kind, so the
+    /// "one kind per selection" rule has something to hold.
+    SelectElement {
+        /// The element ids to select, in selection order.
+        ids: Vec<u64>,
+        /// Whether to extend the current element selection instead of
+        /// replacing it.
+        add: bool,
+    },
     /// `panel field <component> <field> <value>` - queue the component-field
     /// write a module panel's own row would queue, against the selected
     /// entity.
@@ -384,6 +401,8 @@ pub enum Dump {
     StandaloneTypes,
     /// `dump systems` - the registered systems and their state.
     Systems,
+    /// `dump tools` - the registered tools and the active one.
+    Tools,
     /// `dump preferences` - the preferences document and the live halves.
     Preferences,
     /// `dump theme` - the theme the editor paints with, the layers it was
@@ -818,12 +837,49 @@ impl ScriptedCommand {
                     cursor.finish(verb)?;
                     Ok(ScriptedCommand::SelectResource(name.to_string()))
                 }
+                Some("element") => {
+                    let next = cursor
+                        .word()
+                        .ok_or_else(|| ParseError::new("select element needs ids"))?;
+                    let (add, list) = if next == "add" {
+                        (
+                            true,
+                            cursor.word().ok_or_else(|| {
+                                ParseError::new("select element add needs an id")
+                            })?,
+                        )
+                    } else {
+                        (false, next)
+                    };
+                    cursor.finish(verb)?;
+                    let ids = list
+                        .split(',')
+                        .map(|id| {
+                            id.trim().parse::<u64>().map_err(|_| {
+                                ParseError::new("select element takes element ids, as numbers")
+                            })
+                        })
+                        .collect::<Result<Vec<u64>, ParseError>>()?;
+                    Ok(ScriptedCommand::SelectElement { ids, add })
+                }
                 _ => Err(ParseError::new("unknown select target")),
             },
             "toolbar" => {
                 let action = toolbar_action(&mut cursor)?;
                 cursor.finish(verb)?;
                 Ok(ScriptedCommand::Toolbar(action))
+            }
+            "tool" => {
+                let name = cursor.word().ok_or_else(|| {
+                    ParseError::new("tool needs a name, or `none` to clear it")
+                })?;
+                cursor.finish(verb)?;
+                let target = if name.eq_ignore_ascii_case("none") {
+                    None
+                } else {
+                    Some(name.to_string())
+                };
+                Ok(ScriptedCommand::Tool(target))
             }
             "dialog" => dialog(&mut cursor),
             "edit" => edit(&mut cursor),
@@ -978,6 +1034,7 @@ fn dump(cursor: &mut Cursor<'_>) -> Result<Dump, ParseError> {
         "browser" => Dump::Browser,
         "standalone-types" => Dump::StandaloneTypes,
         "systems" => Dump::Systems,
+        "tools" => Dump::Tools,
         "preferences" => Dump::Preferences,
         "theme" => Dump::Theme,
         "console" => Dump::Console,
@@ -2116,6 +2173,20 @@ mod tests {
                 command: ScriptedCommand::SelectAdd("3v2".to_string()),
             },
             Accept {
+                line: "select element 0,2",
+                command: ScriptedCommand::SelectElement {
+                    ids: vec![0, 2],
+                    add: false,
+                },
+            },
+            Accept {
+                line: "select element add 7",
+                command: ScriptedCommand::SelectElement {
+                    ids: vec![7],
+                    add: true,
+                },
+            },
+            Accept {
                 // Reserved for the shell's Entities list. The native runner
                 // answers it, the browser editor refuses it by name, and no
                 // suite drives it, so this table is the only place it runs.
@@ -2335,6 +2406,18 @@ mod tests {
             Accept {
                 line: "command editor.tool_scale",
                 command: ScriptedCommand::GizmoTool(GizmoMode::Scale),
+            },
+            Accept {
+                line: "tool translate",
+                command: ScriptedCommand::Tool(Some("translate".to_string())),
+            },
+            Accept {
+                line: "tool none",
+                command: ScriptedCommand::Tool(None),
+            },
+            Accept {
+                line: "dump tools",
+                command: ScriptedCommand::Dump(Dump::Tools),
             },
             Accept {
                 line: "command editor.tool_snap_toggle",

@@ -476,13 +476,31 @@ pub fn hot_functions(source: &str) -> Vec<HotFunction> {
 ///
 /// Building both scans the whole file, so the all-functions scan - which needs
 /// the annotated set too - passes its own rather than paying for them twice.
+///
+/// Two attributes mark a function, and they are not the ones a person writes
+/// for the same reason: `#[pill_hot]`/`#[pill_hot_fn]` say "patch this", and
+/// `#[system]` says "this is a system", which the engine gives a dispatch slot
+/// in every development build. A `#[system]` body is therefore patchable with
+/// no marker of its own.
 fn hot_functions_in(source: &str, mask: &[bool], blocks: &[ImplBlock]) -> Vec<HotFunction> {
     let bytes = source.as_bytes();
     let mut found_functions: Vec<HotFunction> = Vec::new();
     let mut index = 0usize;
 
-    while let Some(offset) = source[index..].find("#[pill_hot") {
-        let attribute_start = index + offset;
+    while index < bytes.len() {
+        // Whichever of the two attribute spellings comes first in the rest of
+        // the file is the one this pass looks at.
+        let next_pill_hot = source[index..]
+            .find("#[pill_hot")
+            .map(|offset| index + offset);
+        let next_system = source[index..]
+            .find("#[system")
+            .map(|offset| index + offset);
+        let attribute_start = match (next_pill_hot, next_system) {
+            (Some(left), Some(right)) => left.min(right),
+            (Some(offset), None) | (None, Some(offset)) => offset,
+            (None, None) => break,
+        };
         if !mask[attribute_start] {
             index = attribute_start + 1;
             continue;
@@ -492,6 +510,15 @@ fn hot_functions_in(source: &str, mask: &[bool], blocks: &[ImplBlock]) -> Vec<Ho
         // `#[pill_hot(name = "...")]` override, for instance) is a system.
         let kind = if source[attribute_start..].starts_with("#[pill_hot_fn") {
             HotFunctionKind::PlainFunction
+        } else if source[attribute_start..].starts_with("#[system") {
+            // The name has to end at the attribute, or a longer identifier such
+            // as `#[systematic]` would classify as a declaration.
+            let after_attribute_name = &source[attribute_start + "#[system".len()..];
+            if !after_attribute_name.starts_with(']') && !after_attribute_name.starts_with('(') {
+                index = attribute_start + 1;
+                continue;
+            }
+            HotFunctionKind::System
         } else {
             HotFunctionKind::System
         };
@@ -1432,6 +1459,90 @@ fn write_inventory(path: &Path, contents: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `#[system]` declaration is hot without a marker of its own: the engine
+    /// gives every system a dispatch slot in a development build, so a body
+    /// edit is a patch and not a reload.
+    #[test]
+    fn a_system_declaration_is_classified_without_a_marker() {
+        let source = "\
+#[system(name = \"physics\", order = 900)]
+fn physics_system(mut query: Query<&mut PhysicsState>) {}
+
+#[system]
+fn unnamed(id: Entity) {}
+
+#[system(
+    name = \"rendering\",
+    run_phase = \"post_project\",
+    run_in_edit_mode = true
+)]
+fn rendering_system() {}
+";
+        let functions = hot_functions(source);
+        let names: Vec<&str> = functions
+            .iter()
+            .map(|function| function.name.as_str())
+            .collect();
+        assert_eq!(names, ["physics_system", "unnamed", "rendering_system"]);
+        assert!(
+            functions
+                .iter()
+                .all(|function| function.kind == HotFunctionKind::System),
+            "a declared system takes the system route"
+        );
+
+        let all = all_functions(source);
+        assert!(
+            all.iter()
+                .filter(|function| names.contains(&function.name.as_str()))
+                .all(|function| function.is_annotated),
+            "a declared system has a dispatch slot, so it counts as annotated"
+        );
+    }
+
+    /// An attribute whose name only starts with `system` is not a declaration.
+    #[test]
+    fn an_attribute_named_like_a_system_but_longer_is_ignored() {
+        let source = "\
+#[systematic]
+fn not_a_system() {}
+";
+        assert!(
+            hot_functions(source).is_empty(),
+            "only `#[system]` and `#[system(...)]` mark a declaration"
+        );
+    }
+
+    /// A hook's `#[order(n)]` marker sits outside every function body, so
+    /// stripping the bodies leaves the edit visible and classification refuses
+    /// it as a reload. The engine reads the order at registration, which is what
+    /// makes a changed value something only a reload can apply.
+    #[test]
+    fn an_order_marker_survives_body_stripping() {
+        let before = "\
+#[script]
+impl ScriptComponent for Spin {
+    #[order(10)]
+    fn on_update(&mut self, _script_context: &mut ScriptContext) {
+        self.spin();
+    }
+}
+";
+        let after = before.replace("#[order(10)]", "#[order(20)]");
+        let names: HashSet<String> = std::iter::once(String::from("on_update")).collect();
+
+        assert_ne!(
+            strip_function_bodies(before, &names),
+            strip_function_bodies(&after, &names),
+            "an edited order must show up outside the stripped bodies"
+        );
+        assert_eq!(
+            strip_function_bodies(before, &names),
+            strip_function_bodies(before, &names),
+            "the same source strips to the same text"
+        );
+    }
 
     const SAMPLE: &str = r#"
 use pill_engine::*;

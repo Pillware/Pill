@@ -668,7 +668,7 @@ fn seed_migration_entities(world: &mut World) {
 
 /// Increments the counter every frame. When it reaches the threshold,
 /// resets and logs `counter tick`, the suites' liveness signal.
-#[system(name = "counter", order = 60)]
+#[system(name = "counter", order = 560)]
 fn counter_system(mut query: Query<&mut FrameCounter>) {
     const THRESHOLD: u64 = 200;
 
@@ -684,7 +684,7 @@ fn counter_system(mut query: Query<&mut FrameCounter>) {
 }
 
 /// Logs every `SpatialPosition` value once per module generation.
-#[system(name = "position_witness", order = 70)]
+#[system(name = "position_witness", order = 570)]
 fn position_witness_system(mut query: Query<&SpatialPosition>) {
     if POSITION_WITNESS_PRINTED.swap(true, Ordering::Relaxed) {
         return;
@@ -701,7 +701,7 @@ fn position_witness_system(mut query: Query<&SpatialPosition>) {
 /// Logs every `MarkerTrail` value once per module generation, including the
 /// heap contents migration must carry across (element count, sum, text, and
 /// the engine-owned buffer's length and last element).
-#[system(name = "trail_witness", order = 80)]
+#[system(name = "trail_witness", order = 580)]
 fn trail_witness_system(mut query: Query<&MarkerTrail>) {
     if TRAIL_WITNESS_PRINTED.swap(true, Ordering::Relaxed) {
         return;

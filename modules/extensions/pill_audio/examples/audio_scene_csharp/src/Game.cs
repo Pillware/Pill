@@ -32,7 +32,7 @@ public static class AudioSceneStartup
     private const string SoundPath = "audio/blip.wav";
 
     /// <summary>Imports the sound and spawns the listener and the emitter.</summary>
-    [EcsStartup]
+    [Startup]
     public static void Start(Commands commands, ResMut<AssetManager> assets)
     {
         Handle<Sound> sound = assets.Load<Sound>(SoundPath);
@@ -72,7 +72,7 @@ public struct PlaybackReportState
 public static class PlaybackReport
 {
     /// <summary>Logs the frame a source reports playback, so a headless run can be checked.</summary>
-    [EcsSystem]
+    [System]
     public static void Run(
         ResMut<PlaybackReportState> report,
         Query<Read<AudioSourceComponent>> query)

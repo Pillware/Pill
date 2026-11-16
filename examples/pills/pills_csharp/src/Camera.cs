@@ -59,7 +59,7 @@ public static class FpsCameraSystem
     /// <summary>Degrees the field of view changes per second while T or G is held.</summary>
     private const float FovDegreesPerSecond = 100.0f;
 
-    [EcsSystem]
+    [System]
     public static void Run(
         Query<Write<TransformComponent>, Write<CameraComponent>, Write<CameraMovementComponent>> cameras)
     {

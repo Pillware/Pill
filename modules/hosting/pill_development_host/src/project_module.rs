@@ -46,7 +46,7 @@ mod loaded {
     use crate::build_runner::build_project_module;
     use crate::csharp::{
         BuildCollection, BuildOutcome, BuildReport, CSharpProject, FastCompileOutcome,
-        FastCompiler, POLL_REJECTED, POLL_RELOADED,
+        FastCompiler, ManagedReloadSummary, POLL_REJECTED, POLL_RELOADED,
     };
     use crate::native_library::NativeLibrary;
     use crate::watchers::SourceTrigger;
@@ -343,15 +343,22 @@ mod loaded {
             }
         }
 
+        /// Finishes the managed backend's armed reload timing at the swap.
+        ///
+        /// A native project has no managed reload to time, so it returns
+        /// `None`; the caller records the swap with zeros.
+        pub(crate) fn finish_managed_reload_timing(&mut self) -> Option<ManagedReloadSummary> {
+            if let Self::CSharp(project) = self {
+                return project.finish_reload_timing();
+            }
+            None
+        }
+
         /// Records a managed assembly rebuild that finished at `finished_at`,
         /// and what produced it.
-        pub(crate) fn record_assembly_rebuilt_at(
-            &mut self,
-            finished_at: Instant,
-            build_kind: &'static str,
-        ) {
+        pub(crate) fn record_assembly_rebuilt_at(&mut self, finished_at: Instant) {
             if let Self::CSharp(project) = self {
-                project.record_assembly_rebuilt_at(finished_at, build_kind);
+                project.record_assembly_rebuilt_at(finished_at);
             }
         }
 
@@ -443,25 +450,10 @@ mod loaded {
     /// available here, so the error is logged loudly.
     fn poll_managed_assembly_swap(project: &mut CSharpProject, engine: &mut Engine) -> bool {
         match project.poll_reload(engine) {
-            Ok(status) if status == POLL_RELOADED => {
-                // The swap ends the reload, so report the whole span in
-                // phases: from the save's timestamp when the watcher could
-                // time it, otherwise from the reload signal, up to this
-                // instant.
-                if let Some(summary) = project.finish_reload_timing() {
-                    info!(
-                        target: telemetry_target::HOT_RELOAD,
-                        total_ms = format!("{:.1}", summary.total_ms).as_str(),
-                        detect_ms = format!("{:.1}", summary.detect_ms).as_str(),
-                        queue_ms = format!("{:.1}", summary.queue_ms).as_str(),
-                        build_ms = format!("{:.1}", summary.build_ms).as_str(),
-                        swap_ms = format!("{:.1}", summary.swap_ms).as_str(),
-                        build = summary.build_kind,
-                        "C# hot reload timing"
-                    );
-                }
-                true
-            }
+            // A swap is reported by `note_managed_swap`, which is the one place
+            // that finishes the timing and records the reload in the shared
+            // report, whichever site saw the swap.
+            Ok(status) if status == POLL_RELOADED => true,
             Ok(status) => {
                 if status == POLL_REJECTED {
                     // The loader refused the arriving assembly, so this

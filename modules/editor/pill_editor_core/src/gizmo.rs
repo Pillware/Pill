@@ -27,7 +27,7 @@
 //! renderer never needs to know what a handle means.
 
 // External crates
-use pill_engine::FieldValue;
+use pill_engine::{Entity, FieldValue};
 use serde::{Deserialize, Serialize};
 
 // =============================================================================
@@ -305,6 +305,18 @@ pub enum GizmoMode {
     Scale,
 }
 
+impl From<GizmoMode> for crate::tools::BuiltinTool {
+    /// The built-in tool a gizmo mode belongs to: the three modes and the three
+    /// built-in tools are the same thing under two names.
+    fn from(mode: GizmoMode) -> crate::tools::BuiltinTool {
+        match mode {
+            GizmoMode::Translate => crate::tools::BuiltinTool::Translate,
+            GizmoMode::Rotate => crate::tools::BuiltinTool::Rotate,
+            GizmoMode::Scale => crate::tools::BuiltinTool::Scale,
+        }
+    }
+}
+
 /// What "the axes" mean: the world's, or the entity's own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -483,6 +495,99 @@ pub fn handle_kind(handle: u32) -> Option<HandleKind> {
 /// issues, or for a plane handle.
 pub fn handle_axis(handle: u32) -> Option<(GizmoMode, usize)> {
     handle_kind(handle).and_then(HandleKind::axis)
+}
+
+// =============================================================================
+// Element handles
+// =============================================================================
+
+/// The first handle id an element handle may occupy.
+///
+/// The transform gizmo owns `1..=23`, and a pick answers with only the id it
+/// was drawn with, so the element band starts well above them: no element can
+/// ever be read as a gizmo handle, and no gizmo handle as an element.
+pub const ELEMENT_HANDLE_BASE: u32 = 1000;
+
+/// How many element handles one frame may address.
+pub const ELEMENT_HANDLE_LIMIT: u32 = 4096;
+
+/// The handle id the element in slot `index` of a frame's map is pickable by.
+pub const fn element_handle(index: u32) -> u32 {
+    ELEMENT_HANDLE_BASE + index
+}
+
+/// The slot a handle id addresses, or `None` when the id is not an element
+/// handle.
+pub fn element_handle_slot(handle: u32) -> Option<usize> {
+    if !(ELEMENT_HANDLE_BASE..ELEMENT_HANDLE_BASE + ELEMENT_HANDLE_LIMIT).contains(&handle) {
+        return None;
+    }
+    Some((handle - ELEMENT_HANDLE_BASE) as usize)
+}
+
+/// What one element handle of a frame points at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ElementHandleTarget {
+    /// The entity the element belongs to.
+    pub entity: Entity,
+    /// The tool's own id for the element.
+    pub element: u64,
+    /// The kind's name, as the tool reported it.
+    pub kind: String,
+}
+
+/// One frame's element handles: the slot in this list a handle's id was built
+/// from answers what the handle points at.
+///
+/// The editor rebuilds it every frame from the active tool's report, so a
+/// handle can never outlive the element it was drawn for.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ElementHandleMap {
+    targets: Vec<ElementHandleTarget>,
+}
+
+impl ElementHandleMap {
+    /// An empty map, ready for a frame's handles.
+    pub fn new() -> ElementHandleMap {
+        ElementHandleMap::default()
+    }
+
+    /// Records `target` as the next handle and answers with its id.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a frame reports more than [`ELEMENT_HANDLE_LIMIT`]
+    /// elements; the limit is far above what a tool on one entity reports.
+    pub fn push(&mut self, target: ElementHandleTarget) -> u32 {
+        assert!(
+            (self.targets.len() as u32) < ELEMENT_HANDLE_LIMIT,
+            "a frame cannot address more than {ELEMENT_HANDLE_LIMIT} element handles"
+        );
+        let handle = element_handle(self.targets.len() as u32);
+        self.targets.push(target);
+        handle
+    }
+
+    /// What `handle` points at, or `None` when it is not one of this frame's
+    /// element handles.
+    pub fn target(&self, handle: u32) -> Option<&ElementHandleTarget> {
+        self.targets.get(element_handle_slot(handle)?)
+    }
+
+    /// The recorded handles in slot order.
+    pub fn targets(&self) -> &[ElementHandleTarget] {
+        &self.targets
+    }
+
+    /// Whether the frame reported no elements.
+    pub fn is_empty(&self) -> bool {
+        self.targets.is_empty()
+    }
+
+    /// How many elements the frame reported.
+    pub fn len(&self) -> usize {
+        self.targets.len()
+    }
 }
 
 // =============================================================================
@@ -1496,6 +1601,72 @@ mod tests {
         assert_eq!(
             handle_kind(2).and_then(HandleKind::axis),
             Some((GizmoMode::Translate, 1))
+        );
+    }
+
+    /// The element band and the gizmo's own ids never overlap, in either
+    /// direction: a picked id can only mean one thing.
+    #[test]
+    fn element_handles_and_gizmo_handles_never_overlap() {
+        for handle in [1_u32, 2, 3, 4, 5, 6, 11, 12, 13, 21, 22, 23] {
+            assert!(handle_kind(handle).is_some(), "{handle} is a gizmo handle");
+            assert_eq!(
+                element_handle_slot(handle),
+                None,
+                "{handle} must not read as an element handle"
+            );
+        }
+        for index in [0_u32, 1, 41, ELEMENT_HANDLE_LIMIT - 1] {
+            let handle = element_handle(index);
+            assert_eq!(element_handle_slot(handle), Some(index as usize));
+            assert_eq!(
+                handle_kind(handle),
+                None,
+                "{handle} must not read as a gizmo handle"
+            );
+        }
+        assert_eq!(element_handle_slot(ELEMENT_HANDLE_BASE - 1), None);
+        assert_eq!(
+            element_handle_slot(ELEMENT_HANDLE_BASE + ELEMENT_HANDLE_LIMIT),
+            None
+        );
+    }
+
+    /// The frame's map answers the handles it handed out and nothing else.
+    #[test]
+    fn the_element_map_answers_its_own_handles() {
+        let mut world = pill_engine::World::default();
+        let first = world.create_entity().build().expect("entity builds");
+        let second = world.create_entity().build().expect("entity builds");
+        let mut map = ElementHandleMap::new();
+        assert!(map.is_empty());
+        let first_handle = map.push(ElementHandleTarget {
+            entity: first,
+            element: 4,
+            kind: "point".to_string(),
+        });
+        let second_handle = map.push(ElementHandleTarget {
+            entity: second,
+            element: 9,
+            kind: "roll".to_string(),
+        });
+        assert_eq!(first_handle, ELEMENT_HANDLE_BASE);
+        assert_eq!(second_handle, ELEMENT_HANDLE_BASE + 1);
+        assert_eq!(map.len(), 2);
+        assert_eq!(
+            map.target(first_handle)
+                .map(|target| (target.entity, target.element)),
+            Some((first, 4))
+        );
+        assert_eq!(
+            map.target(second_handle).map(|target| target.kind.as_str()),
+            Some("roll")
+        );
+        assert_eq!(map.target(7), None, "a gizmo id is not an element handle");
+        assert_eq!(
+            map.target(second_handle + 1),
+            None,
+            "a slot past the frame's report is empty"
         );
     }
 

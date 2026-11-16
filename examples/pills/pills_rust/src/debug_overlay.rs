@@ -8,7 +8,7 @@
 //! - Let F3 turn debug drawing on and off at runtime, in any build.
 
 // External crates
-use pill_engine::{pill_hot, DebugDraw, DebugStyle, Input, KeyCode, Res, ResMut, SystemError};
+use pill_engine::{pill_hot_fn, DebugDraw, DebugStyle, Input, KeyCode, Res, ResMut, SystemError};
 
 // Current crate
 use crate::game::DemoState;
@@ -26,7 +26,7 @@ const AXIS_LENGTH_WORLD_UNITS: f32 = 3.0;
 
 /// Draws the field's bounds, the world axes and the tuning values, and lets F3
 /// turn debug drawing on and off.
-#[pill_hot]
+#[pill_hot_fn]
 pub(crate) fn debug_overlay_system(
     input: Res<Input>,
     mut debug_draw: ResMut<DebugDraw>,

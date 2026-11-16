@@ -8,8 +8,9 @@
 //!
 //! # Design
 //!
-//! The overlay is ordinary project code: a `#[pill_hot]` system, so an edit to
-//! this function live-patches the running demo. It deliberately has no
+//! The overlay is ordinary project code: a `#[pill_hot_fn]` function behind an
+//! annotated system, so an edit to this function live-patches the running demo.
+//! It deliberately has no
 //! `crate::` imports and no file-level constants. A generated fast patch
 //! replays the file's imports into a synthetic crate and copies only the
 //! function, so either shape would fail to compile there and cost the edit a
@@ -31,7 +32,7 @@
 
 // External crates
 use pill_core::math::Vector2f;
-use pill_engine::{pill_hot, Input, Res, ResMut, SystemError, Time};
+use pill_engine::{pill_hot_fn, Input, Res, ResMut, SystemError, Time};
 // The egui version this engine pins, named through the crate that owns it. A
 // project never depends on egui directly, so every artifact shares the one
 // copy.
@@ -44,7 +45,7 @@ use pill_project_ui::{egui, GameUi, InputFrame, UiFrameSlot, PRIMARY_SURFACE};
 use pills_rust::{DemoState, PILL_COUNT};
 
 /// Draws the tuning overlay for this frame.
-#[pill_hot]
+#[pill_hot_fn]
 pub(crate) fn tuning_overlay_system(
     mut game_ui: ResMut<GameUi>,
     input: Res<Input>,

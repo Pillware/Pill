@@ -217,17 +217,6 @@ pub mod type_names;
 pub mod world;
 
 // =============================================================================
-// Test Fixtures
-// =============================================================================
-
-/// The components the crate's unit tests build worlds out of.
-#[cfg(test)]
-mod test_fixtures;
-
-#[cfg(test)]
-mod engine_mode_tests;
-
-// =============================================================================
 // Public Re-exports
 // =============================================================================
 
@@ -256,9 +245,9 @@ pub use component::{Component, ComponentId, ComponentTicks, Tick};
 pub use component_field::{parse_enum_tag, ComponentFieldError, EnumFieldTag, FieldValue};
 pub use debug_draw::{
     DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
-    GizmoTriangle, LabelAnchor,
+    GizmoPoint, GizmoPointShape, GizmoTriangle, LabelAnchor,
 };
-pub use engine::{Engine, PlayRefusal, RunMode, SystemOwner, SystemSnapshot};
+pub use engine::{Engine, PlayRefusal, RunMode, SystemOptions, SystemOwner, SystemSnapshot};
 pub use entity::{Entity, EntityId};
 pub use error::{EngineError, SystemError, SystemFailure};
 pub use hot_patch::{HotPatchError, HotPatchRegistry, HotSlot, PlainSlot};
@@ -273,7 +262,8 @@ pub use manager_settings::{
 pub use persistence::{PersistResourceManifestEntry, ResourceSnapshot};
 pub use pill_core::DynamicBuffer;
 pub use query::{
-    Added, BatchStats, Changed, Or, Query, QueryFilter, QueryTarget, Res, ResMut, With, Without,
+    Added, BatchStats, Changed, Or, Query, QueryFilter, QueryTarget, ReadOnlyQueryTarget, Res,
+    ResMut, With, Without,
 };
 pub use resource::{
     KeptLayoutDeclaration, PlayState, ResHandle, Resource, ResourceId, RestoreEpoch,
@@ -283,8 +273,11 @@ pub use saved_references::{
     SavedEntityLinks, SavedReference,
 };
 pub use scene::{load_scene, save_scene, Scene, SceneDocument, SceneEntity, SceneLoad, SceneSave};
-pub use scheduler::{SystemAccess, SystemScheduler, TypeKey};
-pub use scripting::{ScriptComponent, ScriptContext};
+pub use scheduler::{RunPhase, SystemAccess, SystemScheduler, TypeKey};
+pub use scripting::{
+    CreateCause, CreateInfo, DestroyCause, DestroyInfo, ScriptComponent, ScriptContext,
+    ScriptDeclaration, ScriptDeclarationData, StartCause, StartInfo, StopCause, StopInfo,
+};
 pub use settings::{SettingsAssetManager, SettingsAssetOps, SettingsOutcome};
 pub use startup_scene::{apply_startup_scene, queue_startup_scene, StartupScene};
 pub use time::Time;
@@ -306,14 +299,14 @@ pub use tracing;
 // re-exported by the facade, which owns the registries.
 pub use pill_engine_macros::{
     pill_hot, pill_hot_fn, pill_hot_resolver, pill_mirror_fn, pill_mirror_impl, pill_mirror_method,
-    pill_mirror_object, pill_mirror_resource, pill_module, pill_project, pill_value_type, system,
-    PillAsset, PillComponent, PillLayout, PillMirror, PillResource,
+    pill_mirror_object, pill_mirror_resource, pill_module, pill_project, pill_value_type, script,
+    system, PillAsset, PillComponent, PillLayout, PillMirror, PillResource,
 };
 
 // World container and its entity-builder and error types.
 pub use world::{
-    AddComponentError, BuildError, ColumnChunk, EntityBuilder, EntityRow, RemoveComponentError,
-    World,
+    AddComponentError, BuildError, ChangeOrigin, ColumnChunk, EntityBuilder, EntityRow,
+    RemoveComponentError, World,
 };
 
 // =============================================================================
@@ -329,3 +322,14 @@ pub use pill_core::{
     profile_plot, profile_plot_config, profile_scope, profile_scope_detail, profile_scope_fine,
     profile_secondary_frame_mark, profile_thread, profile_warn,
 };
+
+// =============================================================================
+// Test Fixtures
+// =============================================================================
+
+/// The components the crate's unit tests build worlds out of.
+#[cfg(test)]
+mod test_fixtures;
+
+#[cfg(test)]
+mod engine_mode_tests;

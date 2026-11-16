@@ -6,7 +6,7 @@
 // - Spin the cube with a per-frame delta carried in an engine resource.
 //
 // Design
-// `[EcsStartup]` runs once for the life of the host, where a Rust project's
+// `[Startup]` runs once for the life of the host, where a Rust project's
 // `init` runs again on every hot reload; nothing here needs the "already
 // built" guards the Rust twin keeps. The material file is imported after the
 // renderer's data crate has installed the PBR chain it names by guid - that
@@ -57,7 +57,7 @@ public struct FrameClock
 public static class CubeStartup
 {
     /// <summary>Imports both assets and spawns the camera and the cube.</summary>
-    [EcsStartup]
+    [Startup]
     public static void Start(Commands commands, ResMut<AssetManager> assets)
     {
         Handle<Mesh> mesh = assets.Import<Mesh>(CubePaths.Mesh, MetadataPolicy.CreateIfMissing).Handle;
@@ -87,7 +87,7 @@ public static class SpinSystem
     /// The delta is clamped because a breakpoint or a slow reload can stretch
     /// one frame far enough to look like a jump rather than a spin.
     /// </remarks>
-    [EcsSystem]
+    [System]
     public static void Run(
         ResMut<FrameClock> clock,
         Query<Write<TransformComponent>, Read<MeshRendererComponent>> query)

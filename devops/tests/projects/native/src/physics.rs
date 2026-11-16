@@ -63,8 +63,7 @@ pub fn simulate_ball(state: &mut PhysicsState) {
 /// # Errors
 ///
 /// Returns [`SystemError::MissingResource`] when `SimulationTime` is absent.
-#[pill_hot]
-#[system(name = "ball_physics", order = 20)]
+#[system(name = "ball_physics", order = 520)]
 pub(crate) fn physics_system(
     mut time: ResMut<SimulationTime>,
     mut query: Query<(&mut PhysicsState, &mut TransformComponent)>,

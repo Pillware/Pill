@@ -519,4 +519,4 @@ pub(crate) fn is_entity_tag(type_tag: &str) -> bool {
 // =============================================================================
 
 #[cfg(test)]
-mod tests;
+mod component_field_tests;

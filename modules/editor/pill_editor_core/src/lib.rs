@@ -148,6 +148,9 @@ pub mod style;
 pub mod systems;
 /// The floating viewport toolbox: rows, geometry and the edits its rows queue.
 pub mod toolbox;
+/// The tool layer: the modes a scene view can be in, the registry that holds
+/// them and which one is active.
+pub mod tools;
 
 // =============================================================================
 // Test Support

@@ -705,6 +705,20 @@ pub enum CSharpError {
     #[message("the managed loader reported unknown reload status ", value(status))]
     UnknownPollStatus { status: u8 },
 
+    /// A managed system's exported frame phase is not one the host knows.
+    ///
+    /// The export names the phase by number (`0` pre-project, `1` project,
+    /// `2` post-project), so an unknown value means the ABI drifted or the
+    /// managed side has a bug. Guessing `project` would run the system in a
+    /// phase its declaration never named.
+    #[message(
+        "managed system ",
+        value(system),
+        " declares unknown run phase ",
+        value(phase)
+    )]
+    UnknownRunPhase { system: u32, phase: u8 },
+
     /// The manifest buffer could not be allocated.
     #[message("out of memory allocating the component manifest buffer")]
     ManifestAllocationFailed,
@@ -733,11 +747,7 @@ pub enum CSharpError {
     StartupCommandsFailed { details: String },
 
     /// The managed assembly contains no schedulable systems.
-    #[message(
-        "C# assembly ",
-        name_style(subject),
-        " declares no [EcsSystem] methods"
-    )]
+    #[message("C# assembly ", name_style(subject), " declares no [System] methods")]
     NoSystems {
         /// The assembly the host inspected, so the message names the artifact
         /// that failed instead of a fixed example project.

@@ -19,6 +19,7 @@
 //   single declaration needs, so the analyzer stays cheap enough to run on
 //   every keystroke.
 
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -33,8 +34,8 @@ namespace PillScriptAnalyzers
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public sealed class PillSystemAnalyzer : DiagnosticAnalyzer
     {
-        private const string EcsSystemAttribute = "TracyLive.EcsSystemAttribute";
-        private const string EcsStartupAttribute = "TracyLive.EcsStartupAttribute";
+        private const string SystemAttributeName = "TracyLive.SystemAttribute";
+        private const string StartupAttributeName = "TracyLive.StartupAttribute";
 
         /// <summary>The managed Commands type; a body may not reference it.</summary>
         private const string CommandsType = "TracyLive.Commands";
@@ -67,6 +68,8 @@ namespace PillScriptAnalyzers
                 PillDiagnostics.MustBeStatic,
                 PillDiagnostics.MustReturnVoid,
                 PillDiagnostics.ParameterBudget,
+                PillDiagnostics.WritableCondition,
+                PillDiagnostics.UnknownCondition,
                 PillDiagnostics.NoAsyncSystem,
                 PillDiagnostics.NoEngineCallsInParallelBody,
                 PillDiagnostics.MutableStaticState,
@@ -119,6 +122,22 @@ namespace PillScriptAnalyzers
             if (attributeName is null)
                 return;
 
+            // A [System]'s RunIf conditions are part of its declaration: a name
+            // that resolves to nothing, or a method that could write or does
+            // not return bool, is refused at the keystroke. Discovery makes the
+            // same refusals at load time.
+            if (attributeName == SystemAttributeName)
+            {
+                foreach (AttributeData declaration in method.GetAttributes())
+                {
+                    if (declaration.AttributeClass?.ToDisplayString() == SystemAttributeName)
+                    {
+                        AnalyzeConditions(context, method, declaration);
+                        break;
+                    }
+                }
+            }
+
             if (!method.IsStatic)
             {
                 context.ReportDiagnostic(Diagnostic.Create(
@@ -149,7 +168,7 @@ namespace PillScriptAnalyzers
 
             // Only systems have a parameter budget the scheduler enforces; a
             // startup's Commands and Res/ResMut parameters are checked at load.
-            if (attributeName == EcsSystemAttribute &&
+            if (attributeName == SystemAttributeName &&
                 (method.Parameters.Length == 0 || method.Parameters.Length > MaxSystemParameters))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
@@ -167,13 +186,13 @@ namespace PillScriptAnalyzers
             foreach (AttributeData attribute in method.GetAttributes())
             {
                 string? name = attribute.AttributeClass?.ToDisplayString();
-                if (name == EcsSystemAttribute || name == EcsStartupAttribute)
+                if (name == SystemAttributeName || name == StartupAttributeName)
                     return name;
             }
             return null;
         }
 
-        /// <summary>`TracyLive.EcsSystemAttribute` renders as `EcsSystem`.</summary>
+        /// <summary>`TracyLive.SystemAttribute` renders as `System`.</summary>
         private static string ShortAttributeName(string fullName)
         {
             int lastDot = fullName.LastIndexOf('.');
@@ -253,6 +272,89 @@ namespace PillScriptAnalyzers
             }
         }
 
+        /// <summary>Check one [System] declaration's RunIf conditions.</summary>
+        private static void AnalyzeConditions(
+            SymbolAnalysisContext context, IMethodSymbol method, AttributeData declaration)
+        {
+            TypedConstant? runIf = null;
+            TypedConstant? runIfType = null;
+            foreach (KeyValuePair<string, TypedConstant> argument in declaration.NamedArguments)
+            {
+                if (argument.Key == "RunIf")
+                    runIf = argument.Value;
+                else if (argument.Key == "RunIfType")
+                    runIfType = argument.Value;
+            }
+            if (runIf is not { Kind: TypedConstantKind.Array } array || array.IsNull)
+                return;
+            ITypeSymbol owner = runIfType?.Value is ITypeSymbol declared
+                ? declared
+                : method.ContainingType;
+            foreach (TypedConstant entry in array.Values)
+            {
+                if (entry.Value is not string name)
+                    continue;
+                IMethodSymbol? condition = owner.GetMembers(name)
+                    .OfType<IMethodSymbol>()
+                    .FirstOrDefault(candidate =>
+                        candidate.IsStatic && candidate.MethodKind == MethodKind.Ordinary);
+                if (condition is null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        PillDiagnostics.UnknownCondition,
+                        method.Locations.FirstOrDefault(),
+                        name,
+                        owner.Name));
+                    continue;
+                }
+                string? reason = ConditionRefusal(condition);
+                if (reason is not null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        PillDiagnostics.WritableCondition,
+                        method.Locations.FirstOrDefault(),
+                        name,
+                        reason));
+                }
+            }
+        }
+
+        /// <summary>Why one condition cannot be a read-only gate, or null.</summary>
+        private static string? ConditionRefusal(IMethodSymbol condition)
+        {
+            if (condition.ReturnType.SpecialType != SpecialType.System_Boolean)
+                return $"returns {condition.ReturnType.ToDisplayString()} instead of bool";
+            if (condition.Parameters.Length > MaxSystemParameters)
+                return $"declares {condition.Parameters.Length} parameters, over the " +
+                    $"{MaxSystemParameters}-parameter limit";
+            foreach (IParameterSymbol parameter in condition.Parameters)
+            {
+                if (parameter.Type.ToDisplayString() == CommandsType)
+                    return "takes Commands";
+                if (parameter.Type.ToDisplayString().StartsWith(
+                        "TracyLive.ResMut<", StringComparison.Ordinal))
+                    return "takes a ResMut<T>";
+                if (QueryDeclaresWrite(parameter.Type))
+                    return "takes a query that writes a component";
+            }
+            return null;
+        }
+
+        /// <summary>Whether a query type declares any write term, nested ones included.</summary>
+        private static bool QueryDeclaresWrite(ITypeSymbol type)
+        {
+            if (type is not INamedTypeSymbol named)
+                return false;
+            if (named.ToDisplayString().StartsWith("TracyLive.Write<", StringComparison.Ordinal))
+                return true;
+            foreach (ITypeSymbol argument in named.TypeArguments)
+            {
+                if (QueryDeclaresWrite(argument))
+                    return true;
+            }
+            return false;
+        }
+
         // ------------------------------------------------------------------
         // Static state and unloadability
         // ------------------------------------------------------------------
@@ -268,7 +370,7 @@ namespace PillScriptAnalyzers
             // so a readonly List or array is reported too.
             if (field.IsReadOnly && !IsMutableThroughReadOnly(field.Type))
                 return;
-            if (!DeclaresEcsSystems(field.ContainingType))
+            if (!DeclaresSystems(field.ContainingType))
                 return;
             context.ReportDiagnostic(Diagnostic.Create(
                 PillDiagnostics.MutableStaticState,
@@ -282,7 +384,7 @@ namespace PillScriptAnalyzers
             var property = (IPropertySymbol)context.Symbol;
             if (!property.IsStatic || property.SetMethod is null)
                 return;
-            if (!DeclaresEcsSystems(property.ContainingType))
+            if (!DeclaresSystems(property.ContainingType))
                 return;
             context.ReportDiagnostic(Diagnostic.Create(
                 PillDiagnostics.MutableStaticState,
@@ -340,7 +442,7 @@ namespace PillScriptAnalyzers
         }
 
         /// <summary>Whether a type declares at least one attributed ECS method.</summary>
-        private static bool DeclaresEcsSystems(INamedTypeSymbol? type)
+        private static bool DeclaresSystems(INamedTypeSymbol? type)
         {
             if (type is null)
                 return false;

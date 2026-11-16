@@ -161,7 +161,9 @@ PUBLIC_ITEM_PATTERN = re.compile(
     r"^pub(\s*\((crate|super)\))?(\s+unsafe)?\s+"
     r"(fn|struct|enum|trait|const|static|type|mod)([^A-Za-z0-9_]|$)"
 )
-TESTS_MODULE_PATTERN = re.compile(r"^\s*mod tests(\s|;)")
+TESTS_MODULE_PATTERN = re.compile(
+    r"^\s*(?:pub\s+)?mod (?:tests|[A-Za-z0-9_]+_tests)(\s|;)"
+)
 TOP_LEVEL_SECTION_PATTERN = re.compile(r"^// ====")
 
 IMPORT_GROUP_HEADERS = (
@@ -199,6 +201,29 @@ SHADER_SUFFIXES = (".wgsl", ".hlsl")
 
 # A `mod tests` inside a file this short is not worth flagging.
 TESTS_PLACEMENT_MINIMUM_LINES = 20
+
+# An outline test module is named after its parent (`<parent>_tests`); the bare
+# file-backed `mod tests;` is refused. Three crates still declare the bare
+# form, and each rename lands with its crate's next change - a path leaves this
+# tuple with its rename.
+OUTLINE_TEST_LEGACY_PATHS = (
+    "modules/csharp/pill_csharp_bridge/src/lib.rs",
+    "modules/extensions/pill_editor_shell_egui/pill_editor_shell_egui_editor/src/shell.rs",
+    "modules/hosting/pill_development_host/src/hot_patch/mod.rs",
+)
+
+# A file-backed module declaration, and the attribute that marks a test module.
+OUTLINE_MODULE_PATTERN = re.compile(r"^\s*(?:pub\s+)?mod\s+([A-Za-z0-9_]+)\s*;")
+CFG_TEST_ATTRIBUTE_PATTERN = re.compile(r"^\s*#\[cfg\(test\)\]\s*$")
+
+# The two shapes the placement rule treats as a test module: an inline
+# `mod tests { … }` block, and a file-backed declaration of either name. An
+# inline subject-named block (`mod round_trip_tests { … }`) is not looked for,
+# and a `pub mod` declaration is left to the name rule.
+INLINE_TESTS_BLOCK_PATTERN = re.compile(r"^\s*mod tests(\s|$)")
+FILE_TESTS_DECLARATION_PATTERN = re.compile(
+    r"^\s*(?:pub\s+)?mod (?:tests|[A-Za-z0-9_]+_tests)\s*;"
+)
 
 # Comment text that describes the work that produced the code rather than the
 # code itself. Mirrors `devops/tools/comment_audit.py`; keep the two in step.
@@ -871,19 +896,26 @@ def check_import_group_order(
 def check_tests_at_bottom(
     lines: List[str], text: str, display_path: str, collector: ViolationCollector
 ) -> None:
-    """Requires that no new top-level section follows `mod tests`.
+    """Requires that no new top-level section follows a test module.
 
-    A column-0 `// ====` separator after the tests module means another
-    section starts below it. Content inside `mod tests { }` is indented, so a
-    large test module that is still last passes.
+    A column-0 `// ====` separator after the test module means another section
+    starts below it. Content inside `mod tests { }` is indented, so a large
+    test module that is still last passes. Both declaration shapes count:
+    an inline `mod tests { … }` block and a file-backed
+    `mod <parent>_tests;`.
     """
     # Newline count, matching `wc -l` in the shell version.
     if text.count("\n") < TESTS_PLACEMENT_MINIMUM_LINES:
         return
 
+    if display_path.replace("\\", "/") in OUTLINE_TEST_LEGACY_PATHS:
+        return
+
     tests_line: Optional[int] = None
     for line_number, line in enumerate(lines, start=1):
-        if TESTS_MODULE_PATTERN.search(line):
+        if INLINE_TESTS_BLOCK_PATTERN.search(
+            line
+        ) or FILE_TESTS_DECLARATION_PATTERN.search(line):
             tests_line = line_number
             break
     if tests_line is None:
@@ -900,6 +932,40 @@ def check_tests_at_bottom(
                 f"the tests module at line {tests_line}",
             )
             return
+
+
+# Flags a file-backed `mod tests;`; see `OUTLINE_TEST_LEGACY_PATHS`.
+def check_outline_test_module_name(
+    lines: List[str], display_path: str, collector: ViolationCollector
+) -> None:
+    """Requires a file-backed test module to be named after its parent.
+
+    The form is `mod <parent>_tests;`. An inline `mod tests { … }` keeps its
+    name - it is not a file. The name says which module the tests belong to
+    even after the subject moves to another file, and it keeps a test module
+    apart from a helper module a test declares.
+    """
+    if display_path.replace("\\", "/") in OUTLINE_TEST_LEGACY_PATHS:
+        return
+    for index, line in enumerate(lines):
+        if not CFG_TEST_ATTRIBUTE_PATTERN.match(line):
+            continue
+        # A doc comment or another attribute may sit between the marker and
+        # the declaration.
+        for following_index in range(index + 1, min(index + 6, len(lines))):
+            following = lines[following_index]
+            stripped = following.strip()
+            if stripped.startswith("///") or stripped.startswith("#["):
+                continue
+            module = OUTLINE_MODULE_PATTERN.match(following)
+            if module is not None and module.group(1) == "tests":
+                collector.record(
+                    display_path,
+                    "tests module name",
+                    f"line {following_index + 1}: a file-backed `mod tests;`; "
+                    "name the module after its parent (`<parent>_tests`)",
+                )
+            break
 
 
 # Flags a shell module that cannot compile as a patch crate; see
@@ -1119,9 +1185,20 @@ PRINT_ALLOWED_PATH_FRAGMENTS = (
     "_macros/src/",
     "modules/frontends/pill_standalone/src/main.rs",
     "modules/editor/pill_editor/src/main.rs",
-    "/tests.rs",
-    "/tests/",
 )
+
+
+def is_test_source_path(display_path: str) -> bool:
+    """Whether the path is a Rust test source.
+
+    Three shapes count: an integration test under a `tests/` folder, a file
+    named `tests.rs`, and the outline test module form `<parent>_tests.rs`.
+    """
+    normalized = display_path.replace("\\", "/")
+    if "/tests/" in normalized:
+        return True
+    file_name = normalized.rsplit("/", 1)[-1]
+    return file_name == "tests.rs" or file_name.endswith("_tests.rs")
 
 
 def iterate_macro_calls(text: str, pattern) -> List[Tuple[int, re.Match, str]]:
@@ -1199,7 +1276,11 @@ def split_top_level_arguments(arguments: str) -> List[str]:
 
 
 def test_code_start(lines: List[str]) -> int:
-    """The 1-based line where the file's `#[cfg(test)] mod tests` starts, or 0."""
+    """The 1-based line where the file's test module starts, or 0.
+
+    Both forms count: an inline `mod tests { … }` and a file-backed
+    `mod <parent>_tests;`.
+    """
     for index, line in enumerate(lines):
         if TESTS_MODULE_PATTERN.match(line):
             return index + 1
@@ -1273,6 +1354,8 @@ def check_log_calls(
                     "happened and put the value in a field",
                 )
     if any(fragment in display_path for fragment in PRINT_ALLOWED_PATH_FRAGMENTS):
+        return
+    if is_test_source_path(display_path):
         return
     for line_number, match, arguments in iterate_macro_calls(text, PRINT_MACRO_PATTERN):
         if tests_from and line_number >= tests_from:
@@ -2211,6 +2294,109 @@ def self_test() -> int:
         outcome = "PASS" if collector.violation_count == expected else "FAIL"
         passed &= outcome == "PASS"
         print(f"  {outcome}  {description}")
+
+    # Outline test modules: a file-backed `mod tests;` is refused, and the
+    # name says which module the tests belong to.
+    outline_test_cases = (
+        (
+            "a file-backed `mod tests;` fails",
+            "modules/engine/acme/src/widget.rs",
+            "/// A widget.\n#[cfg(test)]\nmod tests;\n",
+            1,
+        ),
+        (
+            "a parent-named test module passes",
+            "modules/engine/acme/src/widget.rs",
+            "/// A widget.\n#[cfg(test)]\nmod widget_tests;\n",
+            0,
+        ),
+        (
+            "a public parent-named test module passes",
+            "modules/extensions/acme/src/lib.rs",
+            "#[cfg(test)]\npub mod acme_tests;\n",
+            0,
+        ),
+        (
+            "an inline tests block keeps its name",
+            "modules/engine/acme/src/widget.rs",
+            "#[cfg(test)]\nmod tests {\n    fn probe() {}\n}\n",
+            0,
+        ),
+        (
+            "a doc comment between the marker and the declaration still fails",
+            "modules/engine/acme/src/widget.rs",
+            "#[cfg(test)]\n/// The tests.\nmod tests;\n",
+            1,
+        ),
+        (
+            "a parked crate's bare declaration passes",
+            "modules/csharp/pill_csharp_bridge/src/lib.rs",
+            "#[cfg(test)]\nmod tests;\n",
+            0,
+        ),
+        (
+            "a bare declaration outside the parked set fails",
+            "modules/hosting/other/src/lib.rs",
+            "#[cfg(test)]\nmod tests;\n",
+            1,
+        ),
+        (
+            "a helper module under cfg(test) keeps its name",
+            "modules/engine/acme/src/lib.rs",
+            "#[cfg(test)]\nmod test_fixtures;\n",
+            0,
+        ),
+    )
+    for description, display_path, source, expected in outline_test_cases:
+        collector = SilentCollector()
+        check_outline_test_module_name(source.splitlines(), display_path, collector)
+        outcome = "PASS" if collector.violation_count == expected else "FAIL"
+        passed &= outcome == "PASS"
+        print(f"  {outcome}  {description}")
+
+    # Tests-at-bottom placement sees the `_tests` form as well.
+    placement_cases = (
+        (
+            "a section below a parent-named test module fails",
+            "modules/engine/acme/src/widget.rs",
+            "fn real() {}\n" * 16
+            + "\n#[cfg(test)]\nmod widget_tests;\n\n// ====\n// Section\n",
+            1,
+        ),
+        (
+            "a parent-named test module last passes",
+            "modules/engine/acme/src/widget.rs",
+            "// ====\n// Section\n\nfn real() {}\n" * 5
+            + "\n#[cfg(test)]\nmod widget_tests;\n",
+            0,
+        ),
+        (
+            "an inline tests block below a section is placed late",
+            "modules/engine/acme/src/widget.rs",
+            "#[cfg(test)]\nmod tests {\n    fn probe() {}\n}\n\n// ====\n// Section\n"
+            + "fn real() {}\n" * 16,
+            1,
+        ),
+        (
+            "an inline subject-named block is outside placement",
+            "modules/engine/acme/src/widget.rs",
+            "#[cfg(test)]\nmod round_trip_tests {\n}\n\n// ====\n// Section\n"
+            + "fn real() {}\n" * 16,
+            0,
+        ),
+        (
+            "a parked crate's declaration is outside placement",
+            "modules/csharp/pill_csharp_bridge/src/lib.rs",
+            "#[cfg(test)]\nmod tests;\n\n// ====\n// Section\n" + "fn real() {}\n" * 16,
+            0,
+        ),
+    )
+    for description, display_path, source, expected in placement_cases:
+        collector = SilentCollector()
+        check_tests_at_bottom(source.splitlines(), source, display_path, collector)
+        outcome = "PASS" if collector.violation_count == expected else "FAIL"
+        passed &= outcome == "PASS"
+        print(f"  {outcome}  {description}")
     return 0 if passed else 1
 
 
@@ -2395,6 +2581,7 @@ def main() -> int:
     section("(5/12) Tests at the bottom")
     for _, display_path, lines, text in sources:
         check_tests_at_bottom(lines, text, display_path, collector)
+        check_outline_test_module_name(lines, display_path, collector)
 
     section("(6/12) egui state (reloadable crates)")
     for _, display_path, lines, _text in sources:

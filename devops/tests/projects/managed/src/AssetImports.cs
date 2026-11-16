@@ -31,7 +31,7 @@ public static class AssetImportStartup
     internal const string CubeMesh = "models/cube.obj";
 
     /// <summary>Imports both assets and logs their guids.</summary>
-    [EcsStartup]
+    [Startup]
     public static void Start(ResMut<AssetManager> assets)
     {
         ImportedAsset<Texture> texture = assets.Import<Texture>(CheckerTexture, MetadataPolicy.CreateIfMissing);

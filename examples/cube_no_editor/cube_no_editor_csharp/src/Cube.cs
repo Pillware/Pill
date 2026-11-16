@@ -70,7 +70,7 @@ public struct FrameClock
 public static class CubeStartup
 {
     /// <summary>Stores the mesh and material, then spawns the camera and cube.</summary>
-    [EcsStartup]
+    [Startup]
     public static void Start(Commands commands, ResMut<AssetManager> assets)
     {
         // `ReadIfPresent` is the point of this project: the source decodes under
@@ -114,7 +114,7 @@ public static class SpinSystem
     /// The delta is clamped because a breakpoint or a slow reload can stretch
     /// one frame far enough to look like a jump rather than a spin.
     /// </remarks>
-    [EcsSystem]
+    [System]
     public static void Run(
         ResMut<FrameClock> clock,
         Query<Write<TransformComponent>, Read<MeshRendererComponent>> query)

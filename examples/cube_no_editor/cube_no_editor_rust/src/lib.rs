@@ -201,7 +201,6 @@ fn create_scene(
 
 /// Spins every drawn entity around the X, Y and Z axes. Each step is scaled by
 /// the frame's delta time, so the spin speed does not depend on the frame rate.
-#[pill_hot]
 #[system(name = "rotate_cubes")]
 fn rotate_cubes_system(
     time: Res<Time>,

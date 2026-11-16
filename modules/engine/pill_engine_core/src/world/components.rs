@@ -1311,7 +1311,13 @@ impl World {
 
         // Step 5: Migrate the entity. Existing components are carried by the
         // move; the only thing left to write is the component being added.
-        self.move_entity_to_archetype(entity, new_component_ids, attach)
+        self.move_entity_to_archetype(entity, new_component_ids, attach)?;
+
+        // Step 6: A script type hears that it started existing at the next
+        // lifecycle dispatch point, once every other script in this frame has
+        // run.
+        self.record_script_attachment(entity, component_id);
+        Ok(())
     }
 
     /// Removes a component the world addresses by [`ComponentId`], migrating

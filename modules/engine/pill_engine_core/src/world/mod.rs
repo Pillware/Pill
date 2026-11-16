@@ -48,13 +48,17 @@ use crate::resource::KeptLayoutDeclaration;
 use crate::resource::{ErasedResource, ErasedResourceOps, Resource, ResourceId};
 use crate::scripting::{ScriptComponent, ScriptContext};
 
+pub use change_origin::ChangeOrigin;
+
 // =============================================================================
 // Module Tree
 // =============================================================================
 //
 // Each job has its own file; the module header above explains the split.
 
+mod change_origin;
 mod components;
+mod lifecycle;
 mod reflection;
 mod resources;
 mod scripting;
@@ -297,8 +301,18 @@ pub struct World {
     /// saves the outgoing table here, so the migration can restore it for the
     /// removal that drops those rows.
     pub(crate) retired_native_storage_ops: HashMap<ComponentId, crate::archetype::ColumnOps>,
-    /// Updaters that call `update()` on each script component.
-    script_updaters: HashMap<ComponentId, scripting::ScriptUpdater>,
+    /// Every registered script component type, keyed by the type name its
+    /// declaration was registered under.
+    script_registrations: HashMap<String, scripting::ScriptRegistration>,
+    /// The script types the update pass walks, in `(order, type name)` order.
+    ///
+    /// Cached because a frame does not change it: only a registration does,
+    /// and that clears it. Rebuilding costs one sort of the registered types.
+    script_update_order: Option<Vec<String>>,
+    /// The script components that started existing and have not been told yet.
+    pending_script_events: Vec<lifecycle::PendingScriptEvent>,
+    /// Who is changing the world right now; see [`ChangeOrigin`].
+    change_origin: ChangeOrigin,
     // --- Component registry ---
     /// Component registry for bit indices and names
     pub(crate) component_registry: ComponentRegistry,
@@ -563,7 +577,10 @@ impl World {
             held_resource_copy: None,
             storage_factories: HashMap::new(),
             retired_native_storage_ops: HashMap::new(),
-            script_updaters: HashMap::new(),
+            script_registrations: HashMap::new(),
+            script_update_order: None,
+            pending_script_events: Vec::new(),
+            change_origin: ChangeOrigin::default(),
             component_registry: ComponentRegistry::new(),
             resources: HashMap::new(),
             resource_ticks: HashMap::new(),
@@ -1055,6 +1072,20 @@ impl World {
         let stable_id = stable_id.unwrap_or_else(|| self.mint_entity_id());
         self.storage.entity_ids.insert(entity, stable_id);
         self.storage.entity_handles.insert(stable_id, entity);
+
+        // Step 7: Tell any script component the entity arrived with that it
+        // started existing. Creation is the point where a component appears
+        // with the entity, so the deferred add path is not the only one that
+        // needs the event.
+        if !self.script_registrations.is_empty() {
+            let mut script_component_ids: Vec<ComponentId> = Vec::new();
+            if let Some(archetype) = self.storage.archetypes.get(&archetype_id) {
+                script_component_ids.extend(archetype.component_types.iter().copied());
+            }
+            for component_id in script_component_ids {
+                self.record_script_attachment(entity, component_id);
+            }
+        }
     }
 
     /// Moves an entity to another archetype, keeping every component it keeps.
@@ -1813,7 +1844,10 @@ mod layout_tests {
 }
 
 #[cfg(test)]
-mod tests;
+mod world_tests;
 
 #[cfg(test)]
 mod copy_tests;
+
+#[cfg(test)]
+mod lifecycle_tests;

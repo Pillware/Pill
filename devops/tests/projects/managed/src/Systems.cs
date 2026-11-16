@@ -171,7 +171,7 @@ public static class BallPhysicsSystem
         }
     }
 
-    [EcsSystem]
+    [System]
     public static void Run(
         ResMut<SimulationTime> time,
         Query<Write<PhysicsState>, Write<TransformComponent>> query)
@@ -249,7 +249,7 @@ internal static class SplinePath
 /// </remarks>
 public static class SplinePathSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(
         Query<Read<PhysicsState>> balls,
         Query<Write<Spline>> splines,
@@ -340,7 +340,7 @@ internal static class WorldSetup
 /// </remarks>
 public static class BallSpawnSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(Query<Read<PhysicsState>> query, Commands commands)
     {
         int existing = 0;
@@ -372,7 +372,7 @@ public static class BallSpawnSystem
 /// </remarks>
 public static class SplineSpawnSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(Query<Read<Spline>> query, Commands commands)
     {
         foreach (var row in query.Rows())
@@ -394,7 +394,7 @@ public static class SplineSpawnSystem
 /// </remarks>
 public static class SplineSampleSpawnSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(Query<Read<SplineSample>> query, Commands commands)
     {
         int existing = 0;
@@ -426,7 +426,7 @@ public static class SplineSampleSpawnSystem
 /// <summary>One camera looking down -Z at the mesh scene.</summary>
 public static class CameraSpawnSystem
 {
-    [EcsSystem]
+    [System]
     public static void Run(Query<Read<CameraComponent>> cameras, Commands commands)
     {
         foreach (var row in cameras.Rows()) { return; }

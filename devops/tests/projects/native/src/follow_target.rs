@@ -46,7 +46,7 @@ pub(crate) fn register(world: &mut World) {
 /// A target that has been destroyed leaves the follower where it is: the
 /// reference is a handle, and a handle to nothing is a no-op rather than an
 /// error the frame would report.
-#[system(name = "follow_target", order = 40)]
+#[system(name = "follow_target", order = 540)]
 pub(crate) fn follow_target_system(
     mut followers: Query<(&FollowTarget, &mut TransformComponent)>,
     mut targets: Query<(&TransformComponent, Entity)>,

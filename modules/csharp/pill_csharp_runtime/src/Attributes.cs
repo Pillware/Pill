@@ -1,7 +1,7 @@
 // The declarations a gameplay assembly marks its ECS members with.
 //
 // Responsibilities:
-// - Declares the attributes system discovery reads: [EcsSystem], [EcsStartup],
+// - Declares the attributes system discovery reads: [System], [Startup],
 //   [EcsSharedComponent], [EcsComponentAlias] and [EcsFieldDefault].
 //
 // Design:
@@ -16,13 +16,77 @@ namespace TracyLive;
 // System Declaration
 // =============================================================================
 
-/// <summary>Marks a static method for automatic ECS system discovery.</summary>
+/// <summary>
+/// Marks a static method as an ECS system and states where it runs.
+/// </summary>
+/// <remarks>
+/// The properties mirror the Rust `#[system]` attribute, so a system written in
+/// either language takes its place in the one schedule by the same rules:
+/// `(phase, order)` across every artifact, and equal values keep registration
+/// order. Every value is optional; the defaults describe an ordinary
+/// project-phase system that runs only while the game plays.
+/// </remarks>
 [AttributeUsage(AttributeTargets.Method)]
-public sealed class EcsSystemAttribute : Attribute;
+public sealed class SystemAttribute : Attribute
+{
+    /// <summary>
+    /// Display name, which is the system's identity in the reload signature,
+    /// in the editor and in every log line. Defaults to `Type.Method`.
+    /// </summary>
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// Sort key within the phase. Lower runs first, and the value orders this
+    /// system against every other artifact's, Rust or managed.
+    /// </summary>
+    public int Order { get; set; }
+
+    /// <summary>Which phase of the frame the system runs in.</summary>
+    public RunPhase RunPhase { get; set; } = RunPhase.Project;
+
+    /// <summary>
+    /// Whether the system also runs while the editor edits, and while the
+    /// engine is paused. The default keeps the game's behaviour under Play and
+    /// Stop.
+    /// </summary>
+    public bool RunInEditMode { get; set; }
+
+    /// <summary>
+    /// Conditions that must all hold for the system to run, named with
+    /// `nameof(...)`.
+    /// </summary>
+    /// <remarks>
+    /// A condition is a static method that takes the read-only subset of a
+    /// system's parameters and returns `bool`. It is evaluated in the managed
+    /// runner before the body, so a skipped system still costs one transition.
+    /// </remarks>
+    public string[]? RunIf { get; set; }
+
+    /// <summary>
+    /// The type <see cref="RunIf"/> names its conditions on, when they are not
+    /// declared on the system's own type.
+    /// </summary>
+    public Type? RunIfType { get; set; }
+}
+
+/// <summary>
+/// The phase of the frame a <see cref="SystemAttribute"/> declares.
+/// </summary>
+public enum RunPhase
+{
+    /// <summary>Before the first deferred-command flush.</summary>
+    PreProject = 0,
+
+    /// <summary>The game's own frame work: after the first flush, before the second.</summary>
+    Project = 1,
+
+    /// <summary>After the second flush, where the frame's last structural changes are in.</summary>
+    PostProject = 2,
+}
 
 /// <summary>Marks a one-shot method run before the first ECS frame.</summary>
 [AttributeUsage(AttributeTargets.Method)]
-public sealed class EcsStartupAttribute : Attribute;
+public sealed class StartupAttribute : Attribute;
 
 /// <summary>
 /// Marks a component whose layout the native host already knows and binds

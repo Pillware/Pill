@@ -21,8 +21,7 @@ use pill_spline::Spline;
 /// scheduler is free to batch it either side of this system. A centre can
 /// therefore be one frame old by the time it becomes a control point, which is
 /// invisible at 60 Hz and keeps the spline out of the physics step.
-#[pill_hot]
-#[system(name = "spline_path", order = 30)]
+#[system(name = "spline_path", order = 530)]
 pub(crate) fn spline_path_system(
     mut balls: Query<&PhysicsState>,
     mut splines: Query<&mut Spline>,

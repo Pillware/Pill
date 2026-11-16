@@ -333,9 +333,10 @@ impl World {
         // The recycled-id free list, at its reserved capacity.
         total_bytes += self.storage.free_entity_ids.capacity() * 12;
 
-        // Storage factories and script updaters.
+        // Storage factories and the registered scripts, whose record is a
+        // component id, an optional adapter and an order.
         total_bytes += self.storage_factories.len() * 128;
-        total_bytes += self.script_updaters.len() * 32;
+        total_bytes += self.script_registrations.len() * 64;
 
         total_bytes
     }

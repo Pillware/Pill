@@ -72,6 +72,8 @@ EXPECTED_RULES = (
     "PILL0101",  # an ECS system must be static
     "PILL0102",  # unsupported parameter list
     "PILL0103",  # must return void
+    "PILL0104",  # a [System] condition must be read-only and return bool
+    "PILL0105",  # a [System] RunIf condition names no method
     "PILL0201",  # may not be async
     "PILL0202",  # engine state inside a parallel row body
     "PILL0301",  # mutable static state in a system-declaring type
@@ -128,7 +130,7 @@ internal class ProbeSystems
     internal static int MutableCounter;                  // PILL0301
     internal static event Action? Ticked;                // PILL0302
 
-    [EcsSystem]
+    [System]
     internal async void InstanceAsyncSystem(             // PILL0101 + PILL0201
         Query<Read<ProbeRow>> query)
     {
@@ -136,17 +138,17 @@ internal class ProbeSystems
         await Task.Yield();
     }
 
-    [EcsSystem]
+    [System]
     internal static int WrongReturnSystem(Query<Read<ProbeRow>> query)   // PILL0103
     {
         _ = query;
         return 0;
     }
 
-    [EcsSystem]
+    [System]
     internal static void NoParameterSystem() { }         // PILL0102
 
-    [EcsSystem]
+    [System]
     internal static void StartsBackgroundWork(Query<Read<ProbeRow>> query)
     {
         _ = query;
@@ -155,7 +157,7 @@ internal class ProbeSystems
         Ticked?.Invoke();
     }
 
-    [EcsSystem]
+    [System]
     internal static void ParallelBodyTouchesEngine(
         Query<Write<ProbeRow>> query, Commands commands)
     {
@@ -165,6 +167,28 @@ internal class ProbeSystems
             _ = Engine.Time;                             // PILL0202
             _ = commands;
         });
+    }
+
+    // A condition that declares a write, so the read-only half of the
+    // condition contract is violated exactly once.
+    internal static bool WritesGate(Query<Write<ProbeRow>> query)
+    {
+        _ = query;
+        return true;
+    }
+
+    [System(RunIf = new[] { nameof(WritesGate) })]
+    internal static void GatedByWritingCondition(        // PILL0104
+        Query<Read<ProbeRow>> query)
+    {
+        _ = query;
+    }
+
+    [System(RunIf = new[] { "MissingGate" })]
+    internal static void GatedByMissingCondition(        // PILL0105
+        Query<Read<ProbeRow>> query)
+    {
+        _ = query;
     }
 }
 
@@ -187,7 +211,7 @@ internal struct ProbeRow
 
 internal static class CleanParallelProbeSystem
 {
-    [EcsSystem]
+    [System]
     internal static void ParallelBodyTouchesOnlyItsRows(
         Query<Write<ProbeRow>> query)
     {

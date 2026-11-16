@@ -715,6 +715,47 @@ internal static class Program
         Console.WriteLine($"pass: {name}");
     }
 
+    /// <summary>
+    /// Compile one probe source into a loadable assembly, optionally with the
+    /// AOT registry generator run over it, so a test can compare the two
+    /// discovery postures over exactly the same declarations.
+    /// </summary>
+    private static Assembly CompileProbe(string source, string assemblyName, bool withGeneratedRegistry)
+    {
+        MetadataReference[] references = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(assembly => !assembly.IsDynamic && !string.IsNullOrEmpty(assembly.Location))
+            .Select(assembly => MetadataReference.CreateFromFile(assembly.Location))
+            .ToArray();
+        CSharpCompilation compilation = CSharpCompilation.Create(
+            assemblyName,
+            [CSharpSyntaxTree.ParseText(source)],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
+        if (withGeneratedRegistry)
+        {
+            GeneratorDriver driver = CSharpGeneratorDriver.Create(
+                new PillCSharpRuntimeMacros.EcsAotRegistryGenerator().AsSourceGenerator());
+            GeneratorRunResult result = driver.RunGenerators(compilation).GetRunResult().Results.Single();
+            Diagnostic[] refusals = result.Diagnostics
+                .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+                .ToArray();
+            Assert(refusals.Length == 0, string.Join("; ", refusals.Select(refusal => refusal.ToString())));
+            // Only the registry tree: the export forwarders the generator also
+            // emits are for a NativeAOT publish, and they cannot be compiled
+            // into a dynamically loaded probe.
+            compilation = compilation.AddSyntaxTrees(
+                result.GeneratedSources
+                    .Where(entry => entry.HintName == "GeneratedAotRegistry.g.cs")
+                    .Select(entry => entry.SyntaxTree));
+        }
+        using var stream = new MemoryStream();
+        var emitted = compilation.Emit(stream);
+        Assert(emitted.Success, string.Join("; ", emitted.Diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .Select(diagnostic => diagnostic.ToString())));
+        return Assembly.Load(stream.ToArray());
+    }
+
     public static unsafe int Main(string[] args)
     {
         // Benchmark mode times the query path instead of asserting on it, so
@@ -735,8 +776,9 @@ internal static class Program
                 var systems = ProjectHost.DiscoverSystems(typeof(BallPhysicsSystem).Assembly);
                 // The physics step, the three-query spline pass - the same
                 // system shape the Rust project uses - and the systems that
-                // fill the world up to the target counts.
-                Equal(systems.Length, 6, "unexpected project system count");
+                // fill the world up to the target counts, plus the four bench
+                // systems BenchSystems.cs declares for the benchmarks.
+                Equal(systems.Length, 10, "unexpected project system count");
                 Assert(systems.Any(system => system.Name == "TracyLive.BallPhysicsSystem.Run"),
                     "ball physics system was not discovered");
                 Assert(systems.Any(system => system.Name == "TracyLive.BallSpawnSystem.Run"),
@@ -755,13 +797,14 @@ internal static class Program
                 using var json = System.Text.Json.JsonDocument.Parse(
                     ProjectManifestBuilder.Build(systems, typeof(BallPhysicsSystem).Assembly));
                 var components = json.RootElement.EnumerateArray().ToArray();
-                // The project's own structs (PhysicsState, SplineSample) and
-                // resource (SimulationTime), plus the mirrors of the modules
-                // project_settings.yaml loads: the renderer data's components
-                // and its `MeshVertex` value type, and the spline extension's
-                // `Spline`, `Vector3f` and `OmoMO`. Only loaded modules are
-                // mirrored, so `pill_dummy_color`'s value types are absent.
-                Equal(components.Length, 11, "unexpected manifest component count: " +
+                // The project's own structs (PhysicsState, SplineSample), its
+                // resource (SimulationTime) and the three bench components
+                // (BenchPosition, BenchVelocity, BenchHealth), plus the mirrors
+                // of the modules the project loads: the renderer data's
+                // components and its `MeshVertex` value type, the spline
+                // extension's `Spline`, `Vector3f` and `OmoMO`, and the
+                // pill_dummy_color extension's `Tint` and `TestStruct`.
+                Equal(components.Length, 17, "unexpected manifest component count: " +
                     string.Join(" | ", components.Select(component =>
                         component.GetProperty("full_name").GetString())));
                 var transform = components.Single(component =>
@@ -1567,7 +1610,7 @@ internal static class Program
                         scopeMessage = error.Message;
                     }
                     MockNativeWorld.ScopeTokenValue = 1;
-                    Assert(scopeMessage.Contains("requires a scheduled [EcsSystem]"),
+                    Assert(scopeMessage.Contains("requires a scheduled [System]"),
                         "an off-scope pass must be refused with the scope message");
                     Equal(attemptedRows, 0, "no row may run for a refused pass");
                 }
@@ -1981,8 +2024,8 @@ internal static class Program
                     (delegate* unmanaged<uint, uint>)&LoaderInterop.SystemErrorMessageLength;
 
                 Equal(init((IntPtr)(&api)), 1, "loader init failed");
-                // BallPhysicsSystem, the three-query spline pass, and the spawn systems.
-                Equal(systemCount(), 6u, "unexpected managed system count");
+                // The project's six systems and its four bench systems.
+                Equal(systemCount(), 10u, "unexpected managed system count");
                 Equal(runSystem(1), 1, "healthy system reported failure");
                 Equal(errorLength(1), 0u,
                     "healthy system carries a stale error message");
@@ -2409,7 +2452,7 @@ internal static class Program
                             (byte)NativeResourceStatus.AccessNotDeclared).Message.Contains("did not declare Write access"),
                     "an undeclared access must be named");
                 Assert(MirrorCall.NativeResourceFailure("SimulationTime", nameof(SimulationTime), QueryAccess.Read,
-                            (byte)NativeResourceStatus.NoInvocation).Message.Contains("inside an [EcsSystem] or [EcsStartup] call"),
+                            (byte)NativeResourceStatus.NoInvocation).Message.Contains("inside an [System] or [Startup] call"),
                     "an out-of-scope resource must be named");
                 Assert(MirrorCall.NativeResourceFailure("SimulationTime", nameof(SimulationTime), QueryAccess.Read, 9)
                         .Message.Contains("could not be reached (status 9)"),
@@ -2423,10 +2466,10 @@ internal static class Program
                     namespace Probe;
                     internal static class ProbeStartups
                     {
-                        [EcsStartup]
+                        [Startup]
                         public static void Supported(Commands commands, Res<SimulationTime> read, ResMut<SimulationTime> write) { }
 
-                        [EcsStartup]
+                        [Startup]
                         public static void Unsupported(string value) { }
                     }
                     """;
@@ -2455,6 +2498,268 @@ internal static class Program
                     "the supported startup must be registered");
                 Assert(!generated.Contains("Probe.ProbeStartups.Unsupported"),
                     "the refused startup must not be registered");
+            });
+
+            // One declaration that sets every [System] property, compiled from
+            // source so the reflection path and the AOT generator read the
+            // same source. It sits beside `using System;` on purpose: the
+            // attribute lookup must keep finding TracyLive.SystemAttribute.
+            const string probeDeclarations = """
+                using System;
+                using TracyLive;
+
+                namespace Probe;
+
+                internal static class Declarations
+                {
+                    [System(Name = "spin_cube", Order = 500, RunPhase = RunPhase.PostProject, RunInEditMode = true,
+                        RunIf = new[] { nameof(Rules.HasPlayer) }, RunIfType = typeof(Rules))]
+                    public static void Scheduled(Commands commands) { }
+
+                    [System]
+                    public static void Plain(Commands commands) { }
+
+                    internal static class Rules
+                    {
+                        public static bool HasPlayer() => true;
+                    }
+                }
+                """;
+
+            Test("a System declaration reports every schedule value through reflection", () =>
+            {
+                Assembly assembly = CompileProbe(
+                    probeDeclarations, "ProbeDeclarationsReflection", withGeneratedRegistry: false);
+                ManagedSystem[] systems = ProjectHost.DiscoverSystems(assembly);
+                Equal(systems.Length, 2, "both declared systems must be discovered");
+                ManagedSystem scheduled = systems.Single(system => system.Name == "spin_cube");
+                Equal(scheduled.Order, 500, "the declared order must reach ManagedSystem");
+                Assert(scheduled.Phase == RunPhase.PostProject,
+                    "the declared phase must reach ManagedSystem");
+                Assert(scheduled.RunInEditMode,
+                    "the declared edit-mode flag must reach ManagedSystem");
+                Equal(scheduled.Conditions.Length, 1, "the declared condition must reach ManagedSystem");
+                Equal(scheduled.Conditions[0].Name, "HasPlayer", "the condition keeps its name");
+                Assert(scheduled.Conditions[0].DeclaringType.FullName == "Probe.Declarations+Rules",
+                    "RunIfType names the condition's declaring type");
+                ManagedSystem plain = systems.Single(system => system.Name == "Probe.Declarations.Plain");
+                Assert(plain.Order == 0 && plain.Phase == RunPhase.Project && !plain.RunInEditMode &&
+                    plain.Conditions.Length == 0,
+                    "an undeclared schedule keeps the attribute's defaults");
+            });
+
+            Test("reflection and the AOT generator agree on every declared value", () =>
+            {
+                Assembly reflectionProbe = CompileProbe(
+                    probeDeclarations, "ProbeDeclarationsReflection", withGeneratedRegistry: false);
+                Assembly generatedProbe = CompileProbe(
+                    probeDeclarations, "ProbeDeclarationsGenerated", withGeneratedRegistry: true);
+                ManagedSystem[] reflected = ProjectHost.DiscoverSystems(reflectionProbe);
+                Type registry = generatedProbe.GetType("TracyLive.Loader.GeneratedAotRegistry")
+                    ?? throw new InvalidOperationException("the generator must emit GeneratedAotRegistry");
+                FieldInfo systemsField = registry.GetField("Systems", BindingFlags.NonPublic | BindingFlags.Static)
+                    ?? throw new InvalidOperationException("GeneratedAotRegistry must hold Systems");
+                var generated = (IReadOnlyList<AotSystemRegistration>)systemsField.GetValue(null)!;
+                Equal(generated.Count, reflected.Length, "both postures discover the same systems");
+                for (int index = 0; index < reflected.Length; index++)
+                {
+                    ManagedSystem reflection = reflected[index];
+                    AotSystemRegistration registration = generated[index];
+                    Equal(registration.Name, reflection.Name, $"system {index} name");
+                    Equal(registration.Order, reflection.Order, $"system {index} order");
+                    Assert(registration.RunPhase == reflection.Phase, $"system {index} phase");
+                    Assert(registration.RunInEditMode == reflection.RunInEditMode,
+                        $"system {index} edit-mode flag");
+                    Equal(registration.Conditions.Length, reflection.Conditions.Length,
+                        $"system {index} condition count");
+                    for (int condition = 0; condition < reflection.Conditions.Length; condition++)
+                    {
+                        Equal(registration.Conditions[condition].Name, reflection.Conditions[condition].Name,
+                            $"system {index} condition {condition} name");
+                        Assert(registration.Conditions[condition].DeclaringType.FullName ==
+                            reflection.Conditions[condition].DeclaringType.FullName,
+                            $"system {index} condition {condition} declaring type");
+                    }
+                }
+            });
+
+            // A gated system over a shared counter: one true and one false
+            // condition must skip the body without failing the frame, and two
+            // true conditions must run it.
+            const string conditionProbe = """
+                using TracyLive;
+
+                namespace Probe;
+
+                public struct Marker
+                {
+                    public int Value;
+                }
+
+                internal static class Gates
+                {
+                    internal static bool First;
+                    internal static bool Second;
+
+                    public static bool FirstOpen() => First;
+                    public static bool SecondOpen() => Second;
+                    public static bool HasMarker(Query<Read<Marker>> query)
+                    {
+                        _ = query;
+                        return true;
+                    }
+                }
+
+                internal static class ConditionRunState
+                {
+                    internal static int Runs;
+                }
+
+                public static class GatedSystem
+                {
+                    [System(RunIf = new[] { nameof(Gates.FirstOpen), nameof(Gates.SecondOpen) },
+                        RunIfType = typeof(Gates))]
+                    public static void Run(Commands commands)
+                    {
+                        _ = commands;
+                        ConditionRunState.Runs++;
+                    }
+
+                    [System(RunIf = new[] { nameof(Gates.HasMarker) }, RunIfType = typeof(Gates))]
+                    public static void ReadsMarker(Commands commands)
+                    {
+                        _ = commands;
+                    }
+                }
+                """;
+
+            // One probe per refusal the loader must make, each naming the
+            // condition or the reason so the message can be asserted.
+            const string conditionRefusals = """
+                using TracyLive;
+
+                namespace Probe;
+
+                public struct RefusalMarker
+                {
+                    public int Value;
+                }
+
+                internal static class BadGates
+                {
+                    public static int Number() => 1;
+                    public static bool Writable(ResMut<SimulationTime> time)
+                    {
+                        _ = time;
+                        return true;
+                    }
+                    public static bool TakesCommands(Commands commands)
+                    {
+                        _ = commands;
+                        return true;
+                    }
+                    public static bool Writes(Query<Write<RefusalMarker>> query)
+                    {
+                        _ = query;
+                        return true;
+                    }
+                }
+
+                public static class UnknownGateSystem
+                {
+                    [System(RunIf = new[] { "Missing" }, RunIfType = typeof(BadGates))]
+                    public static void Run(Commands commands)
+                    {
+                        _ = commands;
+                    }
+                }
+
+                public static class NonBoolGateSystem
+                {
+                    [System(RunIf = new[] { nameof(BadGates.Number) }, RunIfType = typeof(BadGates))]
+                    public static void Run(Commands commands)
+                    {
+                        _ = commands;
+                    }
+                }
+
+                public static class MutResourceGateSystem
+                {
+                    [System(RunIf = new[] { nameof(BadGates.Writable) }, RunIfType = typeof(BadGates))]
+                    public static void Run(Commands commands)
+                    {
+                        _ = commands;
+                    }
+                }
+
+                public static class CommandsGateSystem
+                {
+                    [System(RunIf = new[] { nameof(BadGates.TakesCommands) }, RunIfType = typeof(BadGates))]
+                    public static void Run(Commands commands)
+                    {
+                        _ = commands;
+                    }
+                }
+
+                public static class WriteQueryGateSystem
+                {
+                    [System(RunIf = new[] { nameof(BadGates.Writes) }, RunIfType = typeof(BadGates))]
+                    public static void Run(Commands commands)
+                    {
+                        _ = commands;
+                    }
+                }
+                """;
+
+            Test("a false condition skips the system and a true one runs it", () =>
+            {
+                Assembly assembly = CompileProbe(
+                    conditionProbe, "ConditionProbeRun", withGeneratedRegistry: false);
+                ManagedSystem system = ProjectHost.DiscoverSystems(assembly)
+                    .Single(entry => entry.Name == "Probe.GatedSystem.Run");
+                const BindingFlags ProbeField = BindingFlags.NonPublic | BindingFlags.Static;
+                FieldInfo first = assembly.GetType("Probe.Gates")!.GetField("First", ProbeField)!;
+                FieldInfo second = assembly.GetType("Probe.Gates")!.GetField("Second", ProbeField)!;
+                FieldInfo runs = assembly.GetType("Probe.ConditionRunState")!.GetField("Runs", ProbeField)!;
+
+                first.SetValue(null, true);
+                second.SetValue(null, false);
+                system.Run();
+                Equal(Convert.ToInt32(runs.GetValue(null)), 0,
+                    "a false condition must skip the body without failing the frame");
+
+                second.SetValue(null, true);
+                system.Run();
+                Equal(Convert.ToInt32(runs.GetValue(null)), 1,
+                    "both conditions hold, so the body must run");
+            });
+
+            Test("a condition's read joins the system's declared access", () =>
+            {
+                Assembly assembly = CompileProbe(
+                    conditionProbe, "ConditionProbeAccess", withGeneratedRegistry: false);
+                ManagedSystem gated = ProjectHost.DiscoverSystems(assembly)
+                    .Single(system => system.Name == "Probe.GatedSystem.ReadsMarker");
+                Equal(gated.Accesses.Length, 1,
+                    "the condition's component read must be one access row");
+                Equal(gated.Accesses[0].Mode, (byte)0, "a condition read must stay a read");
+            });
+
+            Test("a condition the loader cannot evaluate is refused by name", () =>
+            {
+                Assembly assembly = CompileProbe(
+                    conditionRefusals, "ConditionProbeRefusals", withGeneratedRegistry: false);
+                MethodInfo System(string type) => assembly.GetType(type)!.GetMethod("Run")!;
+                Refused(() => ProjectHost.CreateSystem(System("Probe.UnknownGateSystem")),
+                    "Missing", "an unknown condition must be named");
+                Refused(() => ProjectHost.CreateSystem(System("Probe.NonBoolGateSystem")),
+                    "must return bool", "a non-bool condition must be refused");
+                Refused(() => ProjectHost.CreateSystem(System("Probe.MutResourceGateSystem")),
+                    "read-only", "a writable resource condition must be refused");
+                Refused(() => ProjectHost.CreateSystem(System("Probe.CommandsGateSystem")),
+                    "cannot take Commands", "a Commands condition must be refused");
+                Refused(() => ProjectHost.CreateSystem(System("Probe.WriteQueryGateSystem")),
+                    "query writes", "a writing query condition must be refused");
             });
 
             Test("an object is moved once and dropped once", () =>

@@ -53,7 +53,7 @@ internal static class ProjectConstants
 /// <summary>Loads the scene's assets and builds it, once.</summary>
 public static class SceneStartup
 {
-    [EcsStartup]
+    [Startup]
     public static void Start(
         Commands commands,
         ResMut<AssetManager> assets)
@@ -155,7 +155,7 @@ public static class DemoControlSystem
     private const float DampingStep = 0.01f;
     private const float EpsilonStep = 0.001f;
 
-    [EcsSystem]
+    [System]
     public static void Run(ResMut<DemoState> demoState)
     {
         ref DemoState demo = ref demoState.Value;

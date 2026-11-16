@@ -277,6 +277,16 @@ pub enum ProjectModuleBackend {
     CSharp(CSharpModuleConfig),
 }
 
+impl ProjectModuleBackend {
+    /// The backend's kind as the startup lines spell it: `native` or `csharp`.
+    pub(crate) fn kind_name(&self) -> &'static str {
+        match self {
+            Self::NativeLibrary { .. } => "native",
+            Self::CSharp(_) => "csharp",
+        }
+    }
+}
+
 /// Configuration for a hot-reloadable project module.
 ///
 /// Describes how to build the module, where to find its output, and which
@@ -437,6 +447,11 @@ pub struct HostConfig {
     /// The project's display name from `project_settings.yaml`; used as the
     /// window title.
     pub name: String,
+
+    /// The project directory the configuration was read from, resolved
+    /// against the workspace root and canonicalized when it exists; `None`
+    /// when the configuration was not read from a project directory.
+    pub project_directory: Option<PathBuf>,
 
     /// The artifact file base from `project_settings.yaml`; letters, digits
     /// and underscores only, so it is safe as a file name.
@@ -621,6 +636,7 @@ impl HostConfig {
         // reported as such, not masked as a missing field.
         let workspace_root = engine_workspace_root()?;
         let project_root = workspace_root.join(&project_path);
+        let project_directory = resolved_project_directory(&workspace_root, &project_path);
         let settings_path = project_root.join(PROJECT_SETTINGS_FILE);
         let project_settings = read_project_settings_file(&project_root)?.ok_or(
             ConfigError::ProjectSettingsFileMissing {
@@ -720,6 +736,7 @@ impl HostConfig {
         )?;
         Ok(Self {
             name: project_name,
+            project_directory: Some(project_directory),
             build_binary_name,
             project,
             extensions,
@@ -1016,6 +1033,7 @@ impl From<ProjectModuleConfig> for HostConfig {
     fn from(project: ProjectModuleConfig) -> Self {
         Self {
             name: project.name.clone(),
+            project_directory: None,
             build_binary_name: project.name.clone(),
             project,
             extensions: Vec::new(),
@@ -1405,6 +1423,17 @@ fn canonicalize_plain(path: &Path) -> Option<PathBuf> {
     let text = canonical.to_string_lossy();
     let plain_text = text.strip_prefix(r"\\?\").unwrap_or(&text);
     Some(PathBuf::from(plain_text))
+}
+
+/// The project directory a start reports: the path joined onto the workspace
+/// root, canonicalized when it exists so `..` segments and symlinks do not
+/// reach the log.
+///
+/// A directory that does not resolve keeps the joined path, which is still
+/// absolute because the workspace root is.
+fn resolved_project_directory(workspace_root: &Path, project_path: &str) -> PathBuf {
+    let joined = workspace_root.join(project_path);
+    canonicalize_plain(&joined).unwrap_or(joined)
 }
 
 /// Canonical path of the `dx` executable that launched this host, if any.
@@ -2605,6 +2634,47 @@ serde = { version = "1", features = ["derive"] }
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         assert!(read_project_settings_file(&directory).unwrap().is_none());
+    }
+
+    // =========================================================================
+    // host configuration identity
+    // =========================================================================
+
+    /// The backend kind is the spelling both startup lines print.
+    #[test]
+    fn the_backend_kind_is_spelled_as_the_startup_lines_print_it() {
+        assert_eq!(native_config(None).backend.kind_name(), "native");
+        assert_eq!(csharp_config().backend.kind_name(), "csharp");
+    }
+
+    /// The project directory a start reports is the joined path, canonical
+    /// once it exists so `..` segments never reach the log.
+    #[test]
+    fn the_project_directory_is_canonicalized_when_it_exists() {
+        let workspace = temp_root().join("project_directory");
+        let existing = workspace.join("project");
+        let _ = std::fs::remove_dir_all(&workspace);
+        std::fs::create_dir_all(&existing).unwrap();
+
+        assert_eq!(
+            resolved_project_directory(&workspace, "project"),
+            canonicalize_plain(&existing).expect("the created directory canonicalizes")
+        );
+
+        let missing = resolved_project_directory(&workspace, "missing_project");
+        assert!(missing.is_absolute());
+        assert!(missing.ends_with("missing_project"));
+
+        let _ = std::fs::remove_dir_all(&workspace);
+    }
+
+    /// A configuration built from a module alone has no project directory to
+    /// report.
+    #[test]
+    fn a_module_only_configuration_has_no_project_directory() {
+        let host_config = HostConfig::from(native_config(None));
+        assert_eq!(host_config.name, "project");
+        assert!(host_config.project_directory.is_none());
     }
 
     // =========================================================================

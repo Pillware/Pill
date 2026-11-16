@@ -338,6 +338,51 @@ impl_system_param_tuple!(A, B, C, D, E, F);
 impl_system_param_tuple!(A, B, C, D, E, F, G);
 
 // =============================================================================
+// ReadOnlySystemParam
+// =============================================================================
+
+/// A system parameter that only reads, so a
+/// [`run_if`](crate::SystemOptions::run_if) condition may take it.
+///
+/// Read-only is decided by the parameter type, which is why this is a marker
+/// trait rather than a runtime check: `Res<T>` reads a resource, a query of
+/// shared references reads components, and a tuple reads whatever its members
+/// do. `ResMut<T>`, `Commands` and a query containing `&mut T` change the
+/// world, so none of them implements it, and a condition that asks for one
+/// does not compile.
+#[diagnostic::on_unimplemented(
+    message = "a `run_if` condition may only read, and `{Self}` can change the world",
+    label = "this parameter can write",
+    note = "take `Res<T>` or a read-only query; leave `ResMut<T>`, `Commands` and mutable queries to the system the condition gates"
+)]
+pub trait ReadOnlySystemParam: SystemParam {}
+
+impl<T: Resource> ReadOnlySystemParam for Res<'static, T> {}
+
+impl<Q: crate::query::ReadOnlyQueryTarget + 'static, F: QueryFilter + 'static> ReadOnlySystemParam
+    for Query<'static, Q, F>
+{
+}
+
+impl ReadOnlySystemParam for () {}
+
+/// Implements [`ReadOnlySystemParam`] for tuples whose members all read, so a
+/// condition can take several read-only parameters.
+macro_rules! impl_read_only_system_param_tuple {
+    ($($T:ident),*) => {
+        impl<$($T: ReadOnlySystemParam),*> ReadOnlySystemParam for ($($T,)*) {}
+    };
+}
+
+impl_read_only_system_param_tuple!(A);
+impl_read_only_system_param_tuple!(A, B);
+impl_read_only_system_param_tuple!(A, B, C);
+impl_read_only_system_param_tuple!(A, B, C, D);
+impl_read_only_system_param_tuple!(A, B, C, D, E);
+impl_read_only_system_param_tuple!(A, B, C, D, E, F);
+impl_read_only_system_param_tuple!(A, B, C, D, E, F, G);
+
+// =============================================================================
 // SystemParamFunction
 // =============================================================================
 

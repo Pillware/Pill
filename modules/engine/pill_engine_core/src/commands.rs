@@ -392,10 +392,16 @@ impl CommandQueue {
         );
 
         // Step 2: Drain the queue and dispatch each command to its executor.
+        //
+        // The commands are taken out first, so the executors can hand this
+        // queue to a destruction hook: a component that is about to be removed
+        // tells its script, and that script may queue. What it queues lands in
+        // the now-empty queue and runs at the frame's next flush point.
+        let mut commands = std::mem::take(&mut self.commands);
         let mut errors = Vec::new();
         let mut succeeded_command_count = 0usize;
 
-        for command in self.commands.drain(..) {
+        for command in commands.drain(..) {
             // Every executor reports a failure by appending to `errors`, so a
             // command that appended nothing succeeded. Counting the vector
             // length keeps one source of truth. An unconditional
@@ -447,11 +453,11 @@ impl CommandQueue {
                     entity,
                     component_id,
                 } => {
-                    Self::execute_remove_component(world, entity, component_id, &mut errors);
+                    Self::execute_remove_component(world, self, entity, component_id, &mut errors);
                 }
 
                 DeferredCommand::DestroyEntity { entity } => {
-                    Self::execute_destroy_entity(world, entity, &mut errors);
+                    Self::execute_destroy_entity(world, self, entity, &mut errors);
                 }
             }
             if errors.len() == error_count_before {
@@ -670,13 +676,17 @@ impl CommandQueue {
     ///
     /// Moves the entity to a new archetype without the component, or destroys
     /// it when no components are left. It runs the same code as the eager
-    /// removal.
+    /// removal, with the script hooks the queued path owes: a script that is
+    /// running stops, and the component is told it is being destroyed, both
+    /// before the row goes.
     fn execute_remove_component(
         world: &mut World,
+        commands: &mut CommandQueue,
         entity: Entity,
         component_id: ComponentId,
         errors: &mut Vec<CommandError>,
     ) {
+        world.run_script_removal_passes(entity, Some(component_id), commands);
         if let Err(error) = world.try_remove_component_by_id(entity, component_id) {
             errors.push(Self::command_error_of(
                 entity,
@@ -690,8 +700,15 @@ impl CommandQueue {
     /// Executes a queued entity destruction.
     ///
     /// Records `CommandError::EntityNotFound` when the entity is already gone,
-    /// matching the behaviour of the other command executors.
-    fn execute_destroy_entity(world: &mut World, entity: Entity, errors: &mut Vec<CommandError>) {
+    /// matching the behaviour of the other command executors. Every script on
+    /// the entity stops and is destroyed first.
+    fn execute_destroy_entity(
+        world: &mut World,
+        commands: &mut CommandQueue,
+        entity: Entity,
+        errors: &mut Vec<CommandError>,
+    ) {
+        world.run_script_removal_passes(entity, None, commands);
         if !world.destroy_entity(entity) {
             errors.push(CommandError::EntityNotFound {
                 entity,

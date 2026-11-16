@@ -25,7 +25,8 @@ use std::sync::Mutex;
 use pill_core::error::EngineMessage;
 use pill_engine::component_registry::FieldDecorator;
 use pill_engine::{
-    ComponentId, ComponentTicks, Engine, Entity, SystemAccess, SystemError, SystemScheduler,
+    ComponentId, ComponentTicks, Engine, Entity, RunPhase, SystemAccess, SystemError,
+    SystemScheduler,
 };
 
 // Current crate
@@ -34,12 +35,13 @@ use super::abi::{
     NativeSystemAccess,
 };
 use super::backend::{
-    checked_access_count, checked_system_count, derive_system_access, MAX_ACCESSES_PER_SYSTEM,
-    MAX_COMPONENT_MANIFEST_BYTES, MAX_SYSTEMS_PER_ASSEMBLY,
+    checked_access_count, checked_system_count, derive_system_access, run_phase_from_export,
+    MAX_ACCESSES_PER_SYSTEM, MAX_COMPONENT_MANIFEST_BYTES, MAX_SYSTEMS_PER_ASSEMBLY,
 };
 #[cfg(feature = "hot_reload")]
 use super::backend::{
-    poll_status_is_known, POLL_MANIFEST_PENDING, POLL_NO_CHANGE, POLL_REJECTED, POLL_RELOADED,
+    poll_status_is_known, record_poll_answer, POLL_MANIFEST_PENDING, POLL_NO_CHANGE, POLL_REJECTED,
+    POLL_RELOADED,
 };
 use super::commands::{
     ffi_queue_add_component, ffi_queue_create, ffi_queue_destroy, ffi_queue_remove_component,
@@ -1758,6 +1760,51 @@ fn unknown_poll_status_is_a_typed_error() {
         error.to_string().contains('9'),
         "the message names the code: {error}"
     );
+}
+
+/// A loader refusal is named once per attempt, and the recorded answer never
+/// goes stale: a parked manifest stays this poll's answer even when the host
+/// then aborts the swap, and a refusal after any other answer is a new
+/// attempt that is named again.
+#[cfg(feature = "hot_reload")]
+#[test]
+fn a_rejection_is_recorded_once_until_the_next_answer() {
+    let mut last_poll_status = POLL_NO_CHANGE;
+
+    // The first refusal of an attempt is named.
+    assert!(record_poll_answer(&mut last_poll_status, POLL_REJECTED));
+    assert_eq!(last_poll_status, POLL_REJECTED);
+
+    // The same refusal on the next frame is not repeated.
+    assert!(!record_poll_answer(&mut last_poll_status, POLL_REJECTED));
+
+    // A parked manifest is what the loader answered, whatever the host
+    // decides about it afterwards, so that is what the field keeps.
+    assert!(!record_poll_answer(
+        &mut last_poll_status,
+        POLL_MANIFEST_PENDING
+    ));
+    assert_eq!(last_poll_status, POLL_MANIFEST_PENDING);
+
+    // A refusal after a parked version is a new attempt and is named.
+    assert!(record_poll_answer(&mut last_poll_status, POLL_REJECTED));
+
+    // Any ordinary answer ends the attempt.
+    assert!(!record_poll_answer(&mut last_poll_status, POLL_NO_CHANGE));
+    assert_eq!(last_poll_status, POLL_NO_CHANGE);
+    assert!(!record_poll_answer(&mut last_poll_status, POLL_RELOADED));
+    assert_eq!(last_poll_status, POLL_RELOADED);
+}
+
+/// The exported phase numbers are the managed `RunPhase` values, and an
+/// unknown number is refused instead of folded into the default phase.
+#[test]
+fn exported_phase_numbers_map_to_the_engine_phases() {
+    assert_eq!(run_phase_from_export(0), Some(RunPhase::PreProject));
+    assert_eq!(run_phase_from_export(1), Some(RunPhase::Project));
+    assert_eq!(run_phase_from_export(2), Some(RunPhase::PostProject));
+    assert_eq!(run_phase_from_export(3), None);
+    assert_eq!(run_phase_from_export(u8::MAX), None);
 }
 
 /// Verifies that managed-reported manifest lengths are bounded before any

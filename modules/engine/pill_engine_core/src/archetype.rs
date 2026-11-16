@@ -2157,4 +2157,4 @@ unsafe fn drop_range_of<T>(rows_ptr: *mut u8, row_count: usize) {
 // =============================================================================
 
 #[cfg(test)]
-mod tests;
+mod archetype_tests;

@@ -562,6 +562,9 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
             EditorCommand::SetSelection { entities, asset } => {
                 entities.len() * 16 + asset.as_ref().map(String::len).unwrap_or(0)
             }
+            EditorCommand::SetElementSelection { kind, elements } => {
+                kind.len() + elements.len() * 24
+            }
             EditorCommand::SelectResource { resource } => {
                 resource.as_ref().map(String::len).unwrap_or(0)
             }
@@ -569,10 +572,13 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
                 entities,
                 asset,
                 resource,
+                elements,
             } => {
                 entities.len() * 16
                     + asset.as_ref().map(String::len).unwrap_or(0)
                     + resource.as_ref().map(String::len).unwrap_or(0)
+                    + elements.kind().len()
+                    + elements.elements().len() * 24
             }
             // Opening and saving a scene is never recorded, so it costs
             // nothing; this arm exists only to cover the commands.

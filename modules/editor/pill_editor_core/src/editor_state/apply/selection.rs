@@ -5,9 +5,9 @@
 //!
 //! # Responsibilities
 //!
-//! - Apply the selection edits (`SetSelection`, `SelectResource`,
-//!   `RestoreSelection`), each answering with the inverse that puts the
-//!   previous selection back.
+//! - Apply the selection edits (`SetSelection`, `SetElementSelection`,
+//!   `SelectResource`, `RestoreSelection`), each answering with the inverse
+//!   that puts the previous selection back.
 //! - Arm the next scene click (`ArmEntityPick`) without recording anything.
 //!
 //! # Design
@@ -69,13 +69,59 @@ pub(super) fn apply(
             let Some(selection) = world.get_resource_mut::<EditorSelection>() else {
                 return Err(format!("{command:?}: the selection could not be claimed"));
             };
-            let previous_selection_command = EditorCommand::SetSelection {
+            // A new entity set means a new set of elements: the old ones belong
+            // to an entity the pick just deselected. The restore brings both
+            // slots back.
+            let previous_selection_command = EditorCommand::RestoreSelection {
                 entities: selection.entities().to_vec(),
                 asset: selection.asset.clone(),
+                resource: selection.resource.clone(),
+                elements: selection.elements().clone(),
             };
             selection.set_entities(existing_entities);
             selection.asset = asset.clone();
+            selection.clear_elements();
             Ok(CommandOutcome::inverse(previous_selection_command))
+        }
+
+        EditorCommand::SetElementSelection { kind, elements } => {
+            let world = engine.world_mut();
+            if world.get_resource::<EditorSelection>().is_none() {
+                world.insert_resource(EditorSelection::default());
+            }
+            // Only the elements of an entity the world still has are kept, the
+            // same rule the entity slot follows.
+            let existing: Vec<ElementRef> = elements
+                .iter()
+                .copied()
+                .filter(|element| world.is_entity_valid(element.entity))
+                .collect();
+            let Some(selection) = world.get_resource_mut::<EditorSelection>() else {
+                return Err(format!("{command:?}: the selection could not be claimed"));
+            };
+            let previous = EditorCommand::SetElementSelection {
+                kind: selection.elements().kind().to_string(),
+                elements: selection.elements().elements().to_vec(),
+            };
+            if !selection.set_elements(kind.clone(), existing) {
+                return Err(format!(
+                    "{command:?}: a selection cannot mix elements of more than one entity"
+                ));
+            }
+            // The suites read this line to see what a tool selected.
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                kind = kind.as_str(),
+                selected = selection.elements().elements().len(),
+                entity = selection
+                    .elements()
+                    .owner()
+                    .map(|entity| entity.to_string())
+                    .unwrap_or_else(|| "none".to_string())
+                    .as_str(),
+                "[editor] elements selected"
+            );
+            Ok(CommandOutcome::inverse(previous))
         }
 
         EditorCommand::SelectResource { resource } => {
@@ -88,15 +134,17 @@ pub(super) fn apply(
             };
             let previous_resource = selection.resource.clone();
             // The Inspector shows one thing at a time. Choosing a resource
-            // drops the entity and asset selections; the `RestoreSelection`
-            // inverse brings all three slots back on undo. Clearing the
-            // resource (`None`) leaves the other two slots alone.
+            // drops the entity, asset and element selections; the
+            // `RestoreSelection` inverse brings all four slots back on undo.
+            // Clearing the resource (`None`) leaves the other slots alone.
             let previous_entities = selection.entities().to_vec();
             let previous_asset = selection.asset.clone();
+            let previous_elements = selection.elements().clone();
             selection.resource = resource.clone();
             if resource.is_some() {
                 selection.clear_entities();
                 selection.asset = None;
+                selection.clear_elements();
             }
             // The egui editor's suite matches this line, so its token and
             // fields are a contract: it checks the selection a resource row
@@ -110,6 +158,7 @@ pub(super) fn apply(
                 entities: previous_entities,
                 asset: previous_asset,
                 resource: previous_resource,
+                elements: previous_elements,
             }))
         }
 
@@ -117,6 +166,7 @@ pub(super) fn apply(
             entities,
             asset,
             resource,
+            elements,
         } => {
             let world = engine.world_mut();
             if world.get_resource::<EditorSelection>().is_none() {
@@ -129,10 +179,13 @@ pub(super) fn apply(
                 entities: selection.entities().to_vec(),
                 asset: selection.asset.clone(),
                 resource: selection.resource.clone(),
+                elements: selection.elements().clone(),
             };
             selection.set_entities(entities.clone());
             selection.asset = asset.clone();
             selection.resource = resource.clone();
+            let _ =
+                selection.set_elements(elements.kind().to_string(), elements.elements().to_vec());
             // The egui editor's suite matches this line as well. After the
             // undo it requires an `entity` that is not `none`, because the
             // undo has to bring the entity slot back. Clearing only the
