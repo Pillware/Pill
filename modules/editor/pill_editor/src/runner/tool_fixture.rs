@@ -124,7 +124,17 @@ pub(super) struct FixtureElements {
     by_entity: HashMap<Entity, HashMap<u64, FixtureElement>>,
 }
 
-impl pill_engine_core::Resource for FixtureElements {}
+impl pill_engine_core::Resource for FixtureElements {
+    /// The fixture is the editor's own test double, and its elements mirror
+    /// entities rather than being game state: a play session leaves this value
+    /// alone instead of copying and restoring it. Without this the default
+    /// (`Restore`) asks the engine to copy a value with no copy function, and
+    /// Play is refused by name - a refusal a person would meet in a scripted
+    /// run for a reason that has nothing to do with their game.
+    fn play_state() -> pill_engine_core::resource::PlayState {
+        pill_engine_core::resource::PlayState::Keep
+    }
+}
 
 impl FixtureElements {
     /// The elements of `entity`, seeded with the fixture's layout the first

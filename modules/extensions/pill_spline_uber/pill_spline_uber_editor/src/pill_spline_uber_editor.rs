@@ -54,7 +54,10 @@ pub const ROLL_KIND: &str = "spline roll";
 pub const ROLL_ID_BASE: u64 = 200;
 
 /// The menu row that puts every selected point's roll back to zero.
-pub const MENU_RESET_ROLL: &str = "reset roll";
+///
+/// The id is one word because the scripted channel names a row with one; the
+/// label is what a reader sees.
+pub const MENU_RESET_ROLL: &str = "reset-roll";
 
 /// How far above its control point a roll handle sits, in spline units.
 const ROLL_HANDLE_LIFT: f32 = 2.0;

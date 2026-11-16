@@ -16,6 +16,10 @@
 //!   it ([`editor_state`]).
 //! - Own the clipboard documents ([`clipboard`]), the transform gizmos
 //!   ([`gizmo`]) and the floating viewport toolbox ([`toolbox`]).
+//! - Own the tools layer ([`tools`]): the element selection, the tool registry
+//!   and the chain of extensions that add to a tool another crate owns, so a
+//!   component tool reports its own elements, frames, menu rows and keys and
+//!   the editor draws, picks, drags and undoes them.
 //! - Declare the layout persistence failures ([`error`]).
 //!
 //! # Design

@@ -509,6 +509,10 @@ STEPS: List[Step] = [
             # resolution, and a narrower build in between re-splits them.
             ["cargo", "build", "-p", "pill_editor"],
             [PYTHON, "../devops/tests/run_all.py", "--only", "test_editor_egui.py"],
+            # The tools suite runs on the same build, after the areas: it starts
+            # its own sessions on extension projects, and one editor at a time
+            # is the harness's rule.
+            [PYTHON, "../devops/tests/run_all.py", "--only", "test_editor_tools.py"],
         ],
     ),
 ]

@@ -91,10 +91,13 @@ const POINT_COLOR: [f32; 4] = [0.95, 0.95, 0.95, 1.0];
 const TANGENT_COLOR: [f32; 4] = [0.35, 0.75, 0.95, 1.0];
 
 /// The menu row that appends a control point after the selection.
-pub const MENU_INSERT: &str = "insert point";
+///
+/// The id is one word because the scripted channel names a row with one: the
+/// label is what a reader sees.
+pub const MENU_INSERT: &str = "insert";
 
 /// The menu row that removes the selected control points.
-pub const MENU_DELETE: &str = "delete point";
+pub const MENU_DELETE: &str = "delete";
 
 /// The key that appends a control point after the selection.
 pub const KEY_INSERT: &str = "i";
