@@ -36,6 +36,27 @@ const CORE_CRATE_PREFIX: &str = "pill_engine_core::";
 /// The crate prefix a type is reported under outside the engine.
 const PUBLIC_CRATE_PREFIX: &str = "pill_engine::";
 
+/// The source groups a type's module may sit in, in the order a name is
+/// checked against them.
+///
+/// The crate's files are grouped by subject (`ecs/`, `systems/`, ...) while the
+/// public names stay flat: a caller has always said
+/// `pill_engine::common_components::TransformComponent`, and a component
+/// registers under that name, so a move between groups must not rename it.
+/// The strip happens after the crate prefix is written and only at that
+/// position, so a module genuinely named `ecs` deeper in a path is left alone.
+const SOURCE_GROUPS: [&str; 9] = [
+    "ecs::",
+    "systems::",
+    "reflection::",
+    "assets::",
+    "scene::",
+    "hot_reload::",
+    "abi::",
+    "settings::",
+    "services::",
+];
+
 // =============================================================================
 // Free Functions
 // =============================================================================
@@ -64,11 +85,14 @@ fn rewritten_type_name(type_name: &'static str) -> &'static str {
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     rewritten_names.entry(type_name).or_insert_with(|| {
-        Box::leak(
-            type_name
-                .replace(CORE_CRATE_PREFIX, PUBLIC_CRATE_PREFIX)
-                .into_boxed_str(),
-        )
+        let mut flat_name = type_name.replace(CORE_CRATE_PREFIX, PUBLIC_CRATE_PREFIX);
+        for group in SOURCE_GROUPS {
+            flat_name = flat_name.replace(
+                &format!("{PUBLIC_CRATE_PREFIX}{group}"),
+                PUBLIC_CRATE_PREFIX,
+            );
+        }
+        Box::leak(flat_name.into_boxed_str())
     })
 }
 
@@ -91,6 +115,17 @@ mod tests {
         assert_eq!(
             stable_type_name::<Vec<crate::TransformComponent>>(),
             "alloc::vec::Vec<pill_engine::common_components::TransformComponent>"
+        );
+        // The source grouping does not reach the name: a type inside `ecs/`
+        // reports the flat public path a caller has always used - as a plain
+        // type and inside a generic argument.
+        assert_eq!(
+            stable_type_name::<crate::ecs::component::ComponentId>(),
+            "pill_engine::component::ComponentId"
+        );
+        assert_eq!(
+            stable_type_name::<Vec<crate::ecs::entity::Entity>>(),
+            "alloc::vec::Vec<pill_engine::entity::Entity>"
         );
     }
 

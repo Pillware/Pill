@@ -62,9 +62,6 @@ static PROFILED_ALLOCATOR: tracy_client::ProfiledAllocator<std::alloc::System> =
 /// point.
 pub mod api;
 
-/// Archetype-based component storage with structure-of-arrays layout.
-pub mod archetype;
-
 /// Many-per-type asset storage addressed by generational handle.
 ///
 /// The counterpart to [`resource`] for data a world holds several of - meshes,
@@ -98,15 +95,6 @@ pub mod asset_standalone;
 /// Where an asset's bytes come from: mounted packs and the filesystem.
 pub mod asset_store;
 
-/// Deferred command queue for structural ECS mutations.
-pub mod commands;
-
-/// Components the engine defines because more than one consumer needs them.
-pub mod common_components;
-
-/// Component trait, type identification, and change-detection primitives.
-pub mod component;
-
 /// Generic type-erased component field access for editor-style tools.
 pub mod component_field;
 
@@ -135,12 +123,14 @@ pub mod dynamic_buffer {
     pub use pill_core::dynamic_buffer::*;
 }
 
+/// The ECS group: entities, components, resources, archetypes, the world and
+/// its queries. Its modules keep their old crate-root paths through the
+/// re-exports below.
+pub mod ecs;
+
 /// System registration, frame execution, and the parallel dispatch of
 /// systems.
 pub mod engine;
-
-/// Lightweight entity handles with generation-based invalidation.
-pub mod entity;
 
 /// Typed error system for the ECS engine.
 pub mod error;
@@ -165,12 +155,6 @@ pub mod persistence;
 
 /// Re-exports the profiling API from `pill_core`.
 pub mod profiling;
-
-/// Query system for efficient iteration over entities with specific components.
-pub mod query;
-
-/// Singleton resources stored in the [`World`], not attached to entities.
-pub mod resource;
 
 /// The saved form of asset and entity references: a guid and a stable id, plus
 /// what a later run needs to find the target again.
@@ -212,15 +196,14 @@ pub mod time;
 /// engine's own types.
 pub mod type_names;
 
-/// Central ECS state container - entities, archetypes, components, and
-/// resources.
-pub mod world;
-
 // =============================================================================
 // Public Re-exports
 // =============================================================================
 
 // Core engine types, re-exported so one `use` reaches them.
+//
+// The ECS group's modules also keep their old crate-root paths, so a caller
+// that names `crate::entity` or `pill_engine_core::world` still resolves.
 pub use api::EngineApi;
 pub use asset::{
     Asset, AssetBindingError, AssetBindingResult, AssetGuid, AssetLoadError, AssetLoadResult,
@@ -239,16 +222,24 @@ pub use asset_metadata::{
 };
 pub use asset_reference::AssetReference;
 pub use asset_standalone::{render_standalone, StandaloneAsset};
-pub use commands::{CommandError, Commands};
-pub use common_components::{register_transform_component, TransformComponent};
-pub use component::{Component, ComponentId, ComponentTicks, Tick};
 pub use component_field::{parse_enum_tag, ComponentFieldError, EnumFieldTag, FieldValue};
 pub use debug_draw::{
     DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
     GizmoPoint, GizmoPointShape, GizmoTriangle, LabelAnchor,
 };
+pub use ecs::commands::{CommandError, Commands};
+pub use ecs::common_components::{register_transform_component, TransformComponent};
+pub use ecs::component::{Component, ComponentId, ComponentTicks, Tick};
+pub use ecs::entity::{Entity, EntityId};
+pub use ecs::query::{
+    Added, BatchStats, Changed, Or, Query, QueryFilter, QueryTarget, ReadOnlyQueryTarget, Res,
+    ResMut, With, Without,
+};
+pub use ecs::resource::{
+    KeptLayoutDeclaration, PlayState, ResHandle, Resource, ResourceId, RestoreEpoch,
+};
+pub use ecs::{archetype, commands, common_components, component, entity, query, resource, world};
 pub use engine::{Engine, PlayRefusal, RunMode, SystemOptions, SystemOwner, SystemSnapshot};
-pub use entity::{Entity, EntityId};
 pub use error::{EngineError, SystemError, SystemFailure};
 pub use hot_patch::{HotPatchError, HotPatchRegistry, HotSlot, PlainSlot};
 pub use input::{
@@ -261,13 +252,6 @@ pub use manager_settings::{
 };
 pub use persistence::{PersistResourceManifestEntry, ResourceSnapshot};
 pub use pill_core::DynamicBuffer;
-pub use query::{
-    Added, BatchStats, Changed, Or, Query, QueryFilter, QueryTarget, ReadOnlyQueryTarget, Res,
-    ResMut, With, Without,
-};
-pub use resource::{
-    KeptLayoutDeclaration, PlayState, ResHandle, Resource, ResourceId, RestoreEpoch,
-};
 pub use saved_references::{
     restore_asset_reference, saved_reference, SavedAssetReference, SavedEntityLink,
     SavedEntityLinks, SavedReference,
@@ -304,7 +288,7 @@ pub use pill_engine_macros::{
 };
 
 // World container and its entity-builder and error types.
-pub use world::{
+pub use ecs::world::{
     AddComponentError, BuildError, ChangeOrigin, ColumnChunk, EntityBuilder, EntityRow,
     RemoveComponentError, World,
 };
