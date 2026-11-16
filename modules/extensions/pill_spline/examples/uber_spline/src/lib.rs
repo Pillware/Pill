@@ -68,7 +68,7 @@ pub fn register(engine: &mut Engine) -> u32 {
         query.iter_mut().count()
     };
     if existing > 0 {
-        tracing::info!("[uber_spline] ready points={existing} existing=1");
+        tracing::info!("[uber_spline] ready points={existing}");
         return 0;
     }
 
@@ -90,6 +90,6 @@ pub fn register(engine: &mut Engine) -> u32 {
         return 1;
     }
 
-    tracing::info!("[uber_spline] ready points={} existing=0", points.len());
+    tracing::info!("[uber_spline] ready points={}", points.len());
     0
 }

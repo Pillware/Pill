@@ -1,0 +1,29 @@
+[package]
+name = "pill_physics_editor"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The crate's build script emits the function-address inventory the host uses
+# to patch any function, annotated or not.
+[build-dependencies]
+pill_hot_scan = { path = "../../../hosting/pill_hot_scan" }
+
+[lib]
+# Named after the crate rather than `lib.rs`, like every extension crate.
+path = "src/pill_physics_editor.rs"
+# `rlib` only: the artifact an editor host loads is built by the generated
+# `host_module_pill_physics_editor` wrapper in this folder's `generated/`.
+crate-type = ["rlib"]
+
+# The physics extension's editor part: the tool that edits a collider's shape
+# by dragging its own handles, in the style of Unity's "Edit Collider". The
+# folder's runtime crate is `pill_physics`, which an editor host loads first and
+# this crate edits; no game build ever builds it.
+[dependencies]
+pill_core = { path = "../../../engine/pill_core" }
+pill_engine = { path = "../../../engine/pill_engine" }
+pill_editor_core = { path = "../../../editor/pill_editor_core" }
+pill_physics = { path = "../pill_physics", default-features = false }

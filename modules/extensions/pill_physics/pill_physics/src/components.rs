@@ -191,8 +191,10 @@ impl std::default::Default for ColliderComponent {
 /// Registers both components with the world, field layout included.
 ///
 /// The derive writes `__pill_register_<Type>` as a private item of this module,
-/// so [`crate::register`] reaches the two through here rather than by path.
-pub(crate) fn register(world: &mut pill_engine::World) {
+/// so [`crate::register`] reaches the two through here rather than by path - and
+/// so does a crate that links them without running the module entry point, such
+/// as the editor tool or a test world.
+pub fn register(world: &mut pill_engine::World) {
     __pill_register_RigidBodyComponent(world);
     __pill_register_ColliderComponent(world);
 }
