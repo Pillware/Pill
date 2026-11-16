@@ -1,10 +1,13 @@
 //! Applies the editor's engine controls: pause and step, the gizmo's tool,
-//! space and snapping, the scene grid's switch, and a system's on/off flag.
+//! space and snapping, the space cycle through the active tool's frames, the
+//! scene grid's switch, and a system's on/off flag.
 //!
 //! # Responsibilities
 //!
 //! - Apply those controls, and answer a system toggle with the inverse that
 //!   switches the system back.
+//! - Remember the space a tool was last on, so choosing another tool and
+//!   coming back finds it again.
 //!
 //! # Design
 //!
@@ -75,27 +78,88 @@ pub(super) fn apply(
             if world.get_resource::<crate::gizmo::GizmoState>().is_none() {
                 world.insert_resource(crate::gizmo::GizmoState::default());
             }
-            let Some(gizmo_state) = world.get_resource_mut::<crate::gizmo::GizmoState>() else {
+            // Step 1: write the settings this row names. A field the command
+            // leaves as `None` keeps its current value, so a row that changes
+            // one setting leaves the other two alone.
+            let mut chosen = None;
+            if let Some(gizmo_state) = world.get_resource_mut::<crate::gizmo::GizmoState>() {
+                if let Some(mode) = mode {
+                    gizmo_state.settings.mode = *mode;
+                }
+                if let Some(space) = space {
+                    gizmo_state.settings.space = *space;
+                    // A row that names World or Local asked for that space, so
+                    // it leaves whichever tool frame the cycle had reached.
+                    gizmo_state.tool_frame = None;
+                }
+                if let Some(snap) = snap {
+                    gizmo_state.settings.snap = *snap;
+                }
+            } else {
                 return Err(format!("{command:?}: the gizmo state could not be claimed"));
-            };
-            // A field the command leaves as `None` keeps its current value, so
-            // a row that changes one setting leaves the other two alone.
-            if let Some(mode) = mode {
-                gizmo_state.settings.mode = *mode;
             }
-            if let Some(space) = space {
-                gizmo_state.settings.space = *space;
-            }
-            if let Some(snap) = snap {
-                gizmo_state.settings.snap = *snap;
-            }
-            // A built-in tool's row *is* a gizmo mode, so the registry's active
-            // tool follows the mode the row set. `None` (a space or snapping
+            // Step 2: a built-in tool's row *is* a gizmo mode, so the
+            // registry's active tool follows the mode the row set, and with it
+            // the space that tool was last on. `None` (a space or snapping
             // row) says nothing about the tool and leaves it alone.
             if let Some(mode) = mode {
                 let tool_name = BuiltinTool::from(*mode).name();
-                let _ = crate::tools::tool_registry_mut(world).set_active(Some(tool_name));
+                let _ = crate::tools::activate_tool(world, Some(tool_name));
             }
+            // Step 3: the choice belongs to the tool that was active when it
+            // was made, so choosing another tool and coming back finds it
+            // again.
+            if let Some(gizmo_state) = world.get_resource::<crate::gizmo::GizmoState>() {
+                chosen = Some((gizmo_state.settings.space, gizmo_state.tool_frame));
+            }
+            if let Some((chosen_space, chosen_frame)) = chosen {
+                if space.is_some() || mode.is_some() {
+                    remember_active_space(world, chosen_space, chosen_frame);
+                }
+            }
+            Ok(CommandOutcome::plain())
+        }
+
+        EditorCommand::CycleGizmoSpace => {
+            let world = engine.world_mut();
+            if world.get_resource::<crate::gizmo::GizmoState>().is_none() {
+                world.insert_resource(crate::gizmo::GizmoState::default());
+            }
+            // Step 1: Ask the active tool which frames it offers for what the
+            // gizmo draws on.
+            let frames = crate::tools::selection_frames(world);
+            // Step 2: Walk the cycle one step and write both halves of the
+            // space the gizmo is in.
+            let Some(gizmo_state) = world.get_resource_mut::<crate::gizmo::GizmoState>() else {
+                return Err(format!("{command:?}: the gizmo state could not be claimed"));
+            };
+            let (space, tool_frame) = crate::gizmo::next_space(
+                gizmo_state.settings.space,
+                gizmo_state.tool_frame,
+                frames.len(),
+            );
+            let changed =
+                gizmo_state.settings.space != space || gizmo_state.tool_frame != tool_frame;
+            gizmo_state.settings.space = space;
+            gizmo_state.tool_frame = tool_frame;
+            let frame_name = tool_frame
+                .and_then(|index| frames.get(index as usize))
+                .map(|frame| frame.name.clone());
+            // Step 3: The row is only ever in one place, so a step that changes
+            // nothing logs nothing - pressing it again after a reload that
+            // rebuilt the frames stays quiet.
+            if changed {
+                let label = frame_name.as_deref().unwrap_or(match space {
+                    crate::gizmo::GizmoSpace::World => "world",
+                    crate::gizmo::GizmoSpace::Local => "local",
+                });
+                pill_core::info!(
+                    target: telemetry_target::EDITOR,
+                    space = label,
+                    "[editor] gizmo space"
+                );
+            }
+            remember_active_space(world, space, tool_frame);
             Ok(CommandOutcome::plain())
         }
 
@@ -195,4 +259,30 @@ fn push_play_refusal_notice(world: &mut pill_engine::World, reason: &str) {
         return;
     };
     notices.push_event(NoticeLevel::Error, format!("Play refused: {reason}"));
+}
+
+/// Records the gizmo's space as the active tool's own choice.
+///
+/// The space row, the menu rows and the chord all land here, so whichever
+/// tool was active when a space was chosen is the one that remembers it.
+fn remember_active_space(
+    world: &mut pill_engine::World,
+    space: crate::gizmo::GizmoSpace,
+    frame: Option<u8>,
+) {
+    let tool = crate::tools::tool_registry_mut(world)
+        .active()
+        .map(str::to_string);
+    let Some(tool) = tool else {
+        return;
+    };
+    if world
+        .get_resource::<crate::tools::ToolSpaceChoices>()
+        .is_none()
+    {
+        world.insert_resource(crate::tools::ToolSpaceChoices::default());
+    }
+    if let Some(choices) = world.get_resource_mut::<crate::tools::ToolSpaceChoices>() {
+        choices.remember(&tool, space, frame);
+    }
 }

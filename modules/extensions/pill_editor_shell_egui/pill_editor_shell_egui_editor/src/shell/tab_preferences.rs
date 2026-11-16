@@ -172,6 +172,7 @@ pub fn preferences_tab(
             let state = toolbox::ToolboxState {
                 gizmo: snapshot.gizmo,
                 grid: snapshot.grid_enabled,
+                frame: snapshot.gizmo_frame.as_deref(),
             };
             for item in toolbox::TOOL_ROWS {
                 let button = icons::IconButton::new(item.icon(&state), item.label(&state))

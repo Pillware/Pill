@@ -26,8 +26,9 @@
 //! Their numbers are the ones the shell draws with, so a row's click target,
 //! the region that must never become a scene pick and the drag's limit all
 //! come from here. A row queues the same edit the shortcuts, the viewport menu
-//! and the Preferences tab queue: `SetGizmoTool` for the tools, the space and
-//! the snapping, and `SetGrid` for the grid.
+//! and the Preferences tab queue: `SetGizmoTool` for the tools and the
+//! snapping, `CycleGizmoSpace` for the space row - which walks World, Local and
+//! then the active tool's own frames - and `SetGrid` for the grid.
 
 // External crates
 use egui::{Pos2, Rect, Vec2};
@@ -145,15 +146,18 @@ pub fn clamped_origin(requested_origin: Pos2, viewport: Rect) -> Pos2 {
 // Rows
 // =============================================================================
 
-/// What the toolbox's rows show: the gizmo's settings and the scene grid's
-/// switch. A row reads this, and the command a click queues changes it for the
-/// next frame.
+/// What the toolbox's rows show: the gizmo's settings, the tool frame it is
+/// in, and the scene grid's switch. A row reads this, and the command a click
+/// queues changes it for the next frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ToolboxState {
+pub struct ToolboxState<'a> {
     /// The gizmo's mode, space and snapping.
     pub gizmo: GizmoSettings,
     /// Whether the scene grid is on.
     pub grid: bool,
+    /// The name of the tool frame the gizmo is in, when the active tool offers
+    /// one and the space row has reached it.
+    pub frame: Option<&'a str>,
 }
 
 /// One row of the floating toolbox.
@@ -209,9 +213,10 @@ pub struct SpaceRow {
 }
 
 /// Both spaces, in the order the viewport menu and the Preferences tab list
-/// them. The panel's own space row switches between the two spaces, and its
-/// label and icon come from [`ToolboxItem::label`] and [`ToolboxItem::icon`],
-/// which repeat the short labels and icons below.
+/// them. The panel's own space row walks every space the gizmo has, these two
+/// and the active tool's frames, and its label and icon come from
+/// [`ToolboxItem::label`] and [`ToolboxItem::icon`], which repeat the short
+/// labels and icons below.
 pub const SPACE_ROWS: [SpaceRow; 2] = [
     SpaceRow {
         space: GizmoSpace::World,
@@ -249,8 +254,10 @@ impl ToolboxItem {
             ToolboxItem::Rotate => Icon::ArrowsClockwise,
             ToolboxItem::Scale => Icon::ArrowsOut,
             ToolboxItem::Space => match state.gizmo.space {
-                GizmoSpace::World => Icon::GlobeHemisphereWest,
-                GizmoSpace::Local => Icon::MapPin,
+                GizmoSpace::World if state.frame.is_none() => Icon::GlobeHemisphereWest,
+                // A tool frame is the object's own space, so it takes the map
+                // pin the local space uses.
+                GizmoSpace::World | GizmoSpace::Local => Icon::MapPin,
             },
             ToolboxItem::Snap => Icon::Magnet,
             ToolboxItem::Grid => Icon::GridFour,
@@ -259,15 +266,16 @@ impl ToolboxItem {
 
     /// Returns the label the row shows for the current state: a fixed word for
     /// the tools and the two toggles, and the space the gizmo is in for the
-    /// space row.
-    pub fn label(self, state: &ToolboxState) -> &'static str {
+    /// space row - the tool frame's own name when the row has reached one.
+    pub fn label<'a>(self, state: &ToolboxState<'a>) -> &'a str {
         match self {
             ToolboxItem::Translate => "Translate",
             ToolboxItem::Rotate => "Rotate",
             ToolboxItem::Scale => "Scale",
-            ToolboxItem::Space => match state.gizmo.space {
-                GizmoSpace::World => "World",
-                GizmoSpace::Local => "Local",
+            ToolboxItem::Space => match (state.frame, state.gizmo.space) {
+                (Some(frame), _) => frame,
+                (None, GizmoSpace::World) => "World",
+                (None, GizmoSpace::Local) => "Local",
             },
             ToolboxItem::Snap => "Snap",
             ToolboxItem::Grid => "Grid",
@@ -275,13 +283,14 @@ impl ToolboxItem {
     }
 
     /// Returns whether the row looks active: the selected tool, and each
-    /// toggle in its non-default state (local space, snapping on, grid on).
+    /// toggle in its non-default state (local space or a tool frame, snapping
+    /// on, grid on).
     pub fn active(self, state: &ToolboxState) -> bool {
         match self {
             ToolboxItem::Translate => state.gizmo.mode == GizmoMode::Translate,
             ToolboxItem::Rotate => state.gizmo.mode == GizmoMode::Rotate,
             ToolboxItem::Scale => state.gizmo.mode == GizmoMode::Scale,
-            ToolboxItem::Space => state.gizmo.space == GizmoSpace::Local,
+            ToolboxItem::Space => state.gizmo.space == GizmoSpace::Local || state.frame.is_some(),
             ToolboxItem::Snap => state.gizmo.snap,
             ToolboxItem::Grid => state.grid,
         }
@@ -303,8 +312,12 @@ impl ToolboxItem {
     }
 
     /// Returns the command a click queues: a tool row selects that tool, the
-    /// space row switches to the other space, and the snapping and grid rows
-    /// flip their switch.
+    /// space row walks to the next space, and the snapping and grid rows flip
+    /// their switch.
+    ///
+    /// The space row queues the cycle rather than one space, so it can reach a
+    /// frame the active tool offers; the viewport menu and the Preferences tab
+    /// still queue one named space through [`space_command`].
     pub fn command(self, state: &ToolboxState) -> EditorCommand {
         match self {
             ToolboxItem::Translate => EditorCommand::SetGizmoTool {
@@ -322,14 +335,7 @@ impl ToolboxItem {
                 space: None,
                 snap: None,
             },
-            ToolboxItem::Space => EditorCommand::SetGizmoTool {
-                mode: None,
-                space: Some(match state.gizmo.space {
-                    GizmoSpace::World => GizmoSpace::Local,
-                    GizmoSpace::Local => GizmoSpace::World,
-                }),
-                snap: None,
-            },
+            ToolboxItem::Space => EditorCommand::CycleGizmoSpace,
             ToolboxItem::Snap => EditorCommand::SetGizmoTool {
                 mode: None,
                 space: None,
@@ -441,6 +447,13 @@ mod tests {
         assert_eq!(ToolboxItem::Space.label(&state), "World");
         state.gizmo.space = GizmoSpace::Local;
         assert_eq!(ToolboxItem::Space.label(&state), "Local");
+        // A tool frame names itself, whichever settings space is behind it.
+        let framed = ToolboxState {
+            gizmo: state.gizmo,
+            grid: false,
+            frame: Some("Fixture"),
+        };
+        assert_eq!(ToolboxItem::Space.label(&framed), "Fixture");
         assert_eq!(ToolboxItem::Snap.label(&state), "Snap");
         assert_eq!(ToolboxItem::Grid.label(&state), "Grid");
     }
@@ -458,6 +471,13 @@ mod tests {
         assert_eq!(ToolboxItem::Space.icon(&state), Icon::MapPin);
         assert_eq!(ToolboxItem::Snap.icon(&state), Icon::Magnet);
         assert_eq!(ToolboxItem::Grid.icon(&state), Icon::GridFour);
+        // A tool frame wears the map pin too: it is the object's own space.
+        let framed = ToolboxState {
+            gizmo: GizmoSettings::default(),
+            grid: false,
+            frame: Some("Fixture"),
+        };
+        assert_eq!(ToolboxItem::Space.icon(&framed), Icon::MapPin);
     }
 
     #[test]
@@ -470,12 +490,23 @@ mod tests {
                 ..GizmoSettings::default()
             },
             grid: true,
+            frame: None,
         };
         assert!(ToolboxItem::Scale.active(&state));
         assert!(ToolboxItem::Space.active(&state));
         assert!(ToolboxItem::Snap.active(&state));
         assert!(ToolboxItem::Grid.active(&state));
         assert!(!ToolboxItem::Translate.active(&state));
+        // A tool frame reads as active even from the world space.
+        let framed = ToolboxState {
+            gizmo: GizmoSettings {
+                mode: GizmoMode::Scale,
+                ..GizmoSettings::default()
+            },
+            grid: true,
+            frame: Some("Fixture"),
+        };
+        assert!(ToolboxItem::Space.active(&framed));
         state.grid = false;
         state.gizmo = GizmoSettings::default();
         assert!(ToolboxItem::Translate.active(&state));
@@ -498,11 +529,8 @@ mod tests {
         );
         assert_eq!(
             ToolboxItem::Space.command(&state),
-            EditorCommand::SetGizmoTool {
-                mode: None,
-                space: Some(GizmoSpace::Local),
-                snap: None,
-            }
+            EditorCommand::CycleGizmoSpace,
+            "the space row walks the cycle, so it can reach a tool frame"
         );
         assert_eq!(
             ToolboxItem::Snap.command(&state),
@@ -524,14 +552,12 @@ mod tests {
                 ..state.gizmo
             },
             grid: true,
+            frame: None,
         };
         assert_eq!(
             ToolboxItem::Space.command(&flipped),
-            EditorCommand::SetGizmoTool {
-                mode: None,
-                space: Some(GizmoSpace::World),
-                snap: None,
-            }
+            EditorCommand::CycleGizmoSpace,
+            "the cycle leaves a tool frame for the world space"
         );
         assert_eq!(
             ToolboxItem::Snap.command(&flipped),
@@ -565,6 +591,7 @@ mod tests {
                     ..GizmoSettings::default()
                 },
                 grid: false,
+                frame: None,
             };
             assert_eq!(ToolboxItem::Space.label(&state), row.short);
             assert_eq!(ToolboxItem::Space.icon(&state), row.icon);

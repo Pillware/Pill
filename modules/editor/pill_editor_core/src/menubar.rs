@@ -273,6 +273,7 @@ fn menu_entry_for_command(command: &CommandView, view: &MenuView<'_>) -> Option<
     let toolbox_state = ToolboxState {
         gizmo: view.snapshot.gizmo,
         grid: view.snapshot.grid_enabled,
+        frame: view.snapshot.gizmo_frame.as_deref(),
     };
     let mut enabled = true;
     let mut checked = None;

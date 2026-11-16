@@ -517,7 +517,13 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
             | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
+            | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce => 0,
+            // An element move carries one transform per element: sixteen
+            // floats each, plus the kind's name.
+            EditorCommand::SetElementTransforms { kind, moves, .. } => {
+                kind.len() + moves.len() * std::mem::size_of::<crate::tools::ElementMove>()
+            }
             EditorCommand::SetPreferences { values } => values
                 .iter()
                 .map(|(key, text)| key.len() + text.len())

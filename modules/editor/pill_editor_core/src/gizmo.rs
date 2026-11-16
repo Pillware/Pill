@@ -30,6 +30,9 @@
 use pill_engine::{Entity, FieldValue};
 use serde::{Deserialize, Serialize};
 
+// Current crate
+use crate::tools::{ElementMove, ElementTransform};
+
 // =============================================================================
 // State
 // =============================================================================
@@ -45,6 +48,10 @@ use serde::{Deserialize, Serialize};
 pub struct GizmoState {
     /// What the tool edits, in which space, and how it snaps.
     pub settings: GizmoSettings,
+    /// The active tool's frame the gizmo draws in, when the space row is on
+    /// one. `None` means [`GizmoSettings::space`] decides, and a frame index
+    /// the tool no longer offers falls back to it as well.
+    pub tool_frame: Option<u8>,
 }
 
 impl pill_engine::Resource for GizmoState {
@@ -1086,6 +1093,231 @@ pub fn rotate_vector(quaternion: [f32; 4], vector: [f32; 3]) -> [f32; 3] {
     add(vector, scale(axis_cross_corrected, 2.0))
 }
 
+/// The `[x, y, z, w]` quaternion that applies `right` after `left`.
+///
+/// A drag's turn is composed onto the orientation the object had at the press,
+/// so the composition order is the one that keeps a local-space drag turning
+/// about the object's own axis.
+pub fn quaternion_product(left: [f32; 4], right: [f32; 4]) -> [f32; 4] {
+    let [lx, ly, lz, lw] = left;
+    let [rx, ry, rz, rw] = right;
+    [
+        lw * rx + lx * rw + ly * rz - lz * ry,
+        lw * ry - lx * rz + ly * rw + lz * rx,
+        lw * rz + lx * ry - ly * rx + lz * rw,
+        lw * rw - lx * rx - ly * ry - lz * rz,
+    ]
+}
+
+/// The three axes a rotation turns the world's X/Y/Z into, in axis order.
+///
+/// The gizmo draws and measures in these when the space is the object's own or
+/// one of the tool's frames.
+pub fn basis_from_rotation(rotation: [f32; 4]) -> [[f32; 3]; 3] {
+    [
+        rotate_vector(rotation, AXES[0]),
+        rotate_vector(rotation, AXES[1]),
+        rotate_vector(rotation, AXES[2]),
+    ]
+}
+
+// =============================================================================
+// Element drags
+// =============================================================================
+
+/// The value one drag move produced, before it becomes transforms.
+///
+/// A translate or scale drag measures a distance along its axis, a rotate drag
+/// an angle around it, and a plane drag two distances inside its plane. The
+/// caller takes the measurement; turning it into transforms is this module's
+/// job.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DragValue {
+    /// A distance along the dragged axis, in world units.
+    Distance(f32),
+    /// A turn around the dragged axis, in radians.
+    Angle(f32),
+    /// Two distances inside the dragged plane, along its first and second
+    /// axes.
+    Plane(f32, f32),
+}
+
+/// The world transform each of `elements` takes when one drag move is applied.
+///
+/// `origin` is the selection's pivot, so a turn and a scale both happen around
+/// it; `basis` is the frame the gizmo is drawn in, so a drag in a turned frame
+/// produces the world displacement that frame implies. `reference` is the
+/// handle length in world units, which a scale drag's distance is measured
+/// against - the same measure the entity drag uses.
+///
+/// A scale never turns negative: the factor stops at the smallest value that
+/// keeps a positive scale, so elements cannot cross the pivot into a mirror.
+pub fn moved_elements(
+    kind: HandleKind,
+    origin: [f32; 3],
+    basis: [[f32; 3]; 3],
+    reference: f32,
+    elements: &[(u64, ElementTransform)],
+    value: DragValue,
+) -> Vec<ElementMove> {
+    match (kind, value) {
+        (
+            HandleKind::Axis {
+                mode: GizmoMode::Translate,
+                axis,
+            },
+            DragValue::Distance(distance),
+        ) => {
+            let delta = scale(basis[axis], distance);
+            elements
+                .iter()
+                .map(|(element, transform)| ElementMove {
+                    element: *element,
+                    transform: ElementTransform {
+                        translation: add(transform.translation, delta),
+                        ..*transform
+                    },
+                })
+                .collect()
+        }
+        (
+            HandleKind::Axis {
+                mode: GizmoMode::Rotate,
+                axis,
+            },
+            DragValue::Angle(radians),
+        ) => {
+            let turn = axis_angle_quaternion(basis[axis], radians);
+            elements
+                .iter()
+                .map(|(element, transform)| {
+                    let offset = add(transform.translation, scale(origin, -1.0));
+                    ElementMove {
+                        element: *element,
+                        transform: ElementTransform {
+                            translation: add(origin, rotate_vector(turn, offset)),
+                            rotation: quaternion_product(turn, transform.rotation),
+                            scale: transform.scale,
+                        },
+                    }
+                })
+                .collect()
+        }
+        (
+            HandleKind::Axis {
+                mode: GizmoMode::Scale,
+                axis,
+            },
+            DragValue::Distance(distance),
+        ) => {
+            let factor = (1.0 + distance / reference.max(1e-4)).max(0.01);
+            elements
+                .iter()
+                .map(|(element, transform)| {
+                    let offset = add(transform.translation, scale(origin, -1.0));
+                    // The axis component of the offset grows with the factor;
+                    // the other two keep the element where it was across the
+                    // axis.
+                    let along = dot(offset, basis[axis]);
+                    let moved_offset = add(offset, scale(basis[axis], along * (factor - 1.0)));
+                    let mut moved_scale = transform.scale;
+                    moved_scale[axis] = (moved_scale[axis] * factor).max(0.01);
+                    ElementMove {
+                        element: *element,
+                        transform: ElementTransform {
+                            translation: add(origin, moved_offset),
+                            rotation: transform.rotation,
+                            scale: moved_scale,
+                        },
+                    }
+                })
+                .collect()
+        }
+        (HandleKind::Plane { first, second }, DragValue::Plane(first_value, second_value)) => {
+            let delta = add(
+                scale(basis[first], first_value),
+                scale(basis[second], second_value),
+            );
+            elements
+                .iter()
+                .map(|(element, transform)| ElementMove {
+                    element: *element,
+                    transform: ElementTransform {
+                        translation: add(transform.translation, delta),
+                        ..*transform
+                    },
+                })
+                .collect()
+        }
+        // A value that does not fit the handle type moves nothing: a plane
+        // drag never reports a distance, and an axis drag never reports two.
+        _ => Vec::new(),
+    }
+}
+
+/// The point the gizmo sits on for a set of elements: the average of their
+/// world translations, or `None` when the set is empty.
+pub fn selection_pivot(translations: &[[f32; 3]]) -> Option<[f32; 3]> {
+    if translations.is_empty() {
+        return None;
+    }
+    let mut sum = [0.0f32; 3];
+    for translation in translations {
+        sum = add(sum, *translation);
+    }
+    Some(scale(sum, 1.0 / translations.len() as f32))
+}
+
+// =============================================================================
+// Space
+// =============================================================================
+
+/// The space the gizmo's space row switches to next.
+///
+/// The cycle is World, Local, then each frame in the tool's own order, then
+/// World again. `tool_frame` is the frame in force - `None` while one of the
+/// settings' two spaces is - and `frame_count` is how many the active tool
+/// offers, so a tool with none leaves World and Local cycling into each other.
+pub fn next_space(
+    space: GizmoSpace,
+    tool_frame: Option<u8>,
+    frame_count: usize,
+) -> (GizmoSpace, Option<u8>) {
+    match tool_frame {
+        Some(index) if (index as usize) + 1 < frame_count => (space, Some(index + 1)),
+        Some(_) => (GizmoSpace::World, None),
+        None => match space {
+            GizmoSpace::World => (GizmoSpace::Local, None),
+            GizmoSpace::Local if frame_count > 0 => (GizmoSpace::Local, Some(0)),
+            GizmoSpace::Local => (GizmoSpace::World, None),
+        },
+    }
+}
+
+/// Puts the gizmo back on the space `tool` was last on, and answers whether
+/// that changed the state.
+///
+/// A tool that was never switched keeps the space that is in force: choosing a
+/// tool is not a space change on its own. A remembered frame the arriving tool
+/// no longer offers for this selection falls back to the remembered space, so
+/// a tool whose frame list shrank cannot strand the gizmo in a frame it cannot
+/// name.
+pub fn follow_tool(
+    state: &mut GizmoState,
+    choices: &crate::tools::ToolSpaceChoices,
+    tool: Option<&str>,
+    frame_count: usize,
+) -> bool {
+    let Some(choice) = tool.and_then(|tool| choices.choice(tool)) else {
+        return false;
+    };
+    let frame = choice.frame.filter(|index| (*index as usize) < frame_count);
+    let changed = state.settings.space != choice.space || state.tool_frame != frame;
+    state.settings.space = choice.space;
+    state.tool_frame = frame;
+    changed
+}
+
 // =============================================================================
 // Plane drags, scale handles and guides
 // =============================================================================
@@ -1880,5 +2112,239 @@ mod tests {
                 field_row.name
             );
         }
+    }
+
+    /// The space row walks World, Local and then the tool's own frames, and a
+    /// tool with no frames keeps walking the two settings' spaces.
+    #[test]
+    fn the_space_row_cycles_through_the_tools_frames() {
+        // No frames: World, Local, World.
+        let (space, frame) = next_space(GizmoSpace::World, None, 0);
+        assert_eq!((space, frame), (GizmoSpace::Local, None));
+        let (space, frame) = next_space(space, frame, 0);
+        assert_eq!((space, frame), (GizmoSpace::World, None));
+
+        // Two frames: World, Local, the first frame, the second, World.
+        let mut state = (GizmoSpace::World, None);
+        let mut visited = Vec::new();
+        for _ in 0..4 {
+            state = next_space(state.0, state.1, 2);
+            visited.push(state);
+        }
+        assert_eq!(
+            visited,
+            [
+                (GizmoSpace::Local, None),
+                (GizmoSpace::Local, Some(0)),
+                (GizmoSpace::Local, Some(1)),
+                (GizmoSpace::World, None),
+            ]
+        );
+    }
+
+    /// Choosing another tool puts the gizmo back where that tool left it, and a
+    /// frame the tool no longer offers is dropped.
+    #[test]
+    fn choosing_a_tool_returns_to_its_own_space() {
+        let mut choices = crate::tools::ToolSpaceChoices::default();
+        choices.remember("fixture", GizmoSpace::Local, Some(1));
+        choices.remember("spline", GizmoSpace::World, None);
+        let mut state = GizmoState::default();
+        state.settings.space = GizmoSpace::Local;
+        state.tool_frame = Some(0);
+
+        assert!(follow_tool(&mut state, &choices, Some("fixture"), 2));
+        assert_eq!(state.settings.space, GizmoSpace::Local);
+        assert_eq!(state.tool_frame, Some(1));
+
+        assert!(follow_tool(&mut state, &choices, Some("spline"), 2));
+        assert_eq!(state.settings.space, GizmoSpace::World);
+        assert_eq!(state.tool_frame, None);
+
+        // A tool nobody switched leaves the state as it is, and a remembered
+        // frame past the tool's current list falls back to its space.
+        assert!(!follow_tool(&mut state, &choices, Some("unknown"), 2));
+        assert!(follow_tool(&mut state, &choices, Some("fixture"), 0));
+        assert_eq!(state.settings.space, GizmoSpace::Local);
+        assert_eq!(state.tool_frame, None);
+    }
+
+    /// The elements a set of points turns into: one per id, in report order.
+    fn point_elements(points: &[(u64, [f32; 3])]) -> Vec<(u64, ElementTransform)> {
+        points
+            .iter()
+            .map(|(id, translation)| (*id, ElementTransform::at(*translation)))
+            .collect()
+    }
+
+    /// A translate drag in a turned frame moves the elements along that
+    /// frame's own axis, which is what makes a tool frame worth offering.
+    #[test]
+    fn a_drag_in_a_turned_frame_moves_along_the_turned_axis() {
+        // A frame turned a quarter turn around Y: its X axis points along -Z.
+        let quarter_turn = axis_angle_quaternion([0.0, 1.0, 0.0], std::f32::consts::FRAC_PI_2);
+        let basis = basis_from_rotation(quarter_turn);
+        let elements = point_elements(&[(0, [0.0, 0.0, 0.0]), (1, [1.0, 0.0, 0.0])]);
+        let moves = moved_elements(
+            HandleKind::Axis {
+                mode: GizmoMode::Translate,
+                axis: 0,
+            },
+            [0.0; 3],
+            basis,
+            1.0,
+            &elements,
+            DragValue::Distance(2.0),
+        );
+        assert_eq!(moves.len(), 2);
+        for (move_index, movement) in moves.iter().enumerate() {
+            let expected = if move_index == 0 {
+                [0.0, 0.0, -2.0]
+            } else {
+                [1.0, 0.0, -2.0]
+            };
+            assert!(
+                distance(movement.transform.translation, expected) < 1e-4,
+                "moved {move_index}: {:?}",
+                movement.transform.translation
+            );
+        }
+        // The identity basis is the world's, so the same drag goes along +X.
+        let world_moves = moved_elements(
+            HandleKind::Axis {
+                mode: GizmoMode::Translate,
+                axis: 0,
+            },
+            [0.0; 3],
+            basis_from_rotation([0.0, 0.0, 0.0, 1.0]),
+            1.0,
+            &elements,
+            DragValue::Distance(2.0),
+        );
+        assert!(distance(world_moves[0].transform.translation, [2.0, 0.0, 0.0]) < 1e-4);
+    }
+
+    /// A turn happens around the selection's pivot, and every element turns
+    /// with it.
+    #[test]
+    fn turning_carries_the_elements_around_the_pivot() {
+        let pivot = [10.0, 0.0, 0.0];
+        // Two points either side of the pivot: a quarter turn around Y moves
+        // one to +Z of the pivot and the other to -Z.
+        let elements = point_elements(&[(0, [11.0, 0.0, 0.0]), (1, [9.0, 0.0, 0.0])]);
+        let moves = moved_elements(
+            HandleKind::Axis {
+                mode: GizmoMode::Rotate,
+                axis: 1,
+            },
+            pivot,
+            AXES,
+            1.0,
+            &elements,
+            DragValue::Angle(std::f32::consts::FRAC_PI_2),
+        );
+        assert!(distance(moves[0].transform.translation, [10.0, 0.0, -1.0]) < 1e-4);
+        assert!(distance(moves[1].transform.translation, [10.0, 0.0, 1.0]) < 1e-4);
+        // The turn is composed onto each element's own orientation.
+        let start_rotation = [0.0, 0.0, 0.0, 1.0];
+        assert_eq!(elements[0].1.rotation, start_rotation);
+        let turned = moves[0].transform.rotation;
+        let expected = axis_angle_quaternion(AXES[1], std::f32::consts::FRAC_PI_2);
+        assert!(
+            (turned[1] - expected[1]).abs() < 1e-4 && (turned[3] - expected[3]).abs() < 1e-4,
+            "turned = {turned:?}"
+        );
+    }
+
+    /// A scale drag grows the offset from the pivot and the element's own
+    /// scale, and never crosses the pivot into a mirror.
+    #[test]
+    fn scaling_grows_the_offset_and_the_scale() {
+        let elements = point_elements(&[(0, [1.0, 0.0, 0.0])]);
+        let moves = moved_elements(
+            HandleKind::Axis {
+                mode: GizmoMode::Scale,
+                axis: 0,
+            },
+            [0.0; 3],
+            AXES,
+            2.0,
+            &elements,
+            DragValue::Distance(2.0),
+        );
+        assert!(distance(moves[0].transform.translation, [2.0, 0.0, 0.0]) < 1e-4);
+        assert!((moves[0].transform.scale[0] - 2.0).abs() < 1e-4);
+        assert!((moves[0].transform.scale[1] - 1.0).abs() < 1e-4);
+
+        // A distance far past the pivot keeps the smallest positive factor, so
+        // no element flips through it.
+        let shrunk = moved_elements(
+            HandleKind::Axis {
+                mode: GizmoMode::Scale,
+                axis: 0,
+            },
+            [0.0; 3],
+            AXES,
+            2.0,
+            &elements,
+            DragValue::Distance(-10.0),
+        );
+        assert!(shrunk[0].transform.scale[0] > 0.0, "scale stays positive");
+        assert!(shrunk[0].transform.translation[0] > 0.0);
+    }
+
+    /// A plane drag moves by both of its distances, along its own two axes.
+    #[test]
+    fn a_plane_drag_moves_by_both_distances() {
+        let turned = basis_from_rotation(axis_angle_quaternion(
+            [0.0, 1.0, 0.0],
+            std::f32::consts::FRAC_PI_2,
+        ));
+        let moves = moved_elements(
+            HandleKind::Plane {
+                first: 0,
+                second: 1,
+            },
+            [0.0; 3],
+            turned,
+            1.0,
+            &point_elements(&[(3, [0.0; 3])]),
+            DragValue::Plane(2.0, 3.0),
+        );
+        let expected = add(scale(turned[0], 2.0), scale(turned[1], 3.0));
+        assert!(distance(moves[0].transform.translation, expected) < 1e-4);
+        // A value that does not fit the handle type moves nothing.
+        assert!(moved_elements(
+            HandleKind::Plane {
+                first: 0,
+                second: 1
+            },
+            [0.0; 3],
+            AXES,
+            1.0,
+            &point_elements(&[(3, [0.0; 3])]),
+            DragValue::Distance(1.0),
+        )
+        .is_empty());
+    }
+
+    /// The pivot is the average of the elements, and an empty set has none.
+    #[test]
+    fn the_pivot_is_the_average_of_the_elements() {
+        assert_eq!(selection_pivot(&[]), None);
+        let pivot = selection_pivot(&[[0.0, 0.0, 0.0], [2.0, 4.0, 6.0], [4.0, 2.0, 0.0]])
+            .expect("three points have a pivot");
+        assert!(distance(pivot, [2.0, 2.0, 2.0]) < 1e-4, "pivot {pivot:?}");
+    }
+
+    /// A composed turn applies the right quaternion after the left one, and a
+    /// rotation's basis is the world's turned by it.
+    #[test]
+    fn turns_compose_and_build_a_basis() {
+        let quarter_turn = axis_angle_quaternion([0.0, 1.0, 0.0], std::f32::consts::FRAC_PI_2);
+        let half_turn = quaternion_product(quarter_turn, quarter_turn);
+        // A half turn around Y sends +X to -X.
+        assert!(distance(rotate_vector(half_turn, AXES[0]), [-1.0, 0.0, 0.0]) < 1e-4);
+        assert_eq!(basis_from_rotation([0.0, 0.0, 0.0, 1.0]), AXES);
     }
 }

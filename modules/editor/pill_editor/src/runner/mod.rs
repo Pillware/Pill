@@ -4015,15 +4015,11 @@ fn camera_binding(camera: &OrbitCamera) -> CameraBinding {
 }
 
 /// The Hamilton product of two `[x, y, z, w]` quaternions.
-fn quaternion_product(left: [f32; 4], right: [f32; 4]) -> [f32; 4] {
-    let [left_x, left_y, left_z, left_w] = left;
-    let [right_x, right_y, right_z, right_w] = right;
-    [
-        left_w * right_x + left_x * right_w + left_y * right_z - left_z * right_y,
-        left_w * right_y - left_x * right_z + left_y * right_w + left_z * right_x,
-        left_w * right_z + left_x * right_y - left_y * right_x + left_z * right_w,
-        left_w * right_w - left_x * right_x - left_y * right_y - left_z * right_z,
-    ]
+///
+/// A drag composes its turn onto the orientation the object had at the press,
+/// so the order matters: the turn applies first.
+fn rotate_by_turn(turn: [f32; 4], rotation: [f32; 4]) -> [f32; 4] {
+    gizmo::quaternion_product(turn, rotation)
 }
 
 /// A camera navigation drag in flight.
@@ -4159,6 +4155,99 @@ fn gizmo_basis(space: GizmoSpace, transform: &TransformComponent) -> [[f32; 3]; 
     ]
 }
 
+/// The frame the gizmo's axes are measured in, a tool's own frame included.
+///
+/// A frame the active tool offers for the selection wins over the settings, so
+/// the handles are drawn in the frame's axes and a drag along one of them
+/// produces the world displacement that frame implies.
+fn gizmo_frame_basis(
+    world: &pill_engine_core::World,
+    entity: Entity,
+    gizmo_state: GizmoState,
+    transform: &TransformComponent,
+) -> [[f32; 3]; 3] {
+    match active_tool_frame(world, entity, gizmo_state.tool_frame) {
+        Some(frame) => gizmo::basis_from_rotation(frame.rotation),
+        None => gizmo_basis(gizmo_state.settings.space, transform),
+    }
+}
+
+/// The tool frame the gizmo is in, when the active tool still offers it.
+///
+/// The frames belong to the current selection, so a frame index is resolved
+/// against the report rather than remembered here; a selection the tool no
+/// longer answers for leaves no frame, and the settings' own space applies.
+fn active_tool_frame(
+    world: &pill_engine_core::World,
+    entity: Entity,
+    tool_frame: Option<u8>,
+) -> Option<tools::CoordinateFrame> {
+    let index = tool_frame? as usize;
+    let registry = world.get_resource::<tools::ToolRegistry>()?;
+    let selector = world.get_resource::<EditorSelection>();
+    let (owner, selected) = match selector {
+        Some(selection) => (
+            selection.elements().owner().unwrap_or(entity),
+            selection
+                .elements()
+                .elements()
+                .iter()
+                .map(|element| element.id)
+                .collect::<Vec<u64>>(),
+        ),
+        None => (entity, Vec::new()),
+    };
+    registry
+        .active_frames(owner, &selected, world)
+        .into_iter()
+        .nth(index)
+}
+
+/// The elements a gizmo drag addresses, with the transforms they have now.
+///
+/// `None` when nothing is selected in the element slot, the selection belongs
+/// to another entity, the active tool writes no elements back, or it reports
+/// none of the selected ones.
+fn element_drag_elements(
+    world: &pill_engine_core::World,
+    entity: Entity,
+) -> Option<(String, Vec<(u64, tools::ElementTransform)>)> {
+    let selector = world.get_resource::<EditorSelection>()?;
+    let elements = selector.elements();
+    if elements.is_empty() || elements.owner() != Some(entity) {
+        return None;
+    }
+    let registry = world.get_resource::<tools::ToolRegistry>()?;
+    if !registry.active_moves_elements() {
+        return None;
+    }
+    let selected: Vec<u64> = elements
+        .elements()
+        .iter()
+        .map(|element| element.id)
+        .collect();
+    let press: Vec<(u64, tools::ElementTransform)> = registry
+        .active_elements(entity, world)
+        .into_iter()
+        .filter(|element| selected.contains(&element.id))
+        .map(|element| (element.id, element.transform))
+        .collect();
+    if press.is_empty() {
+        return None;
+    }
+    Some((elements.kind().to_string(), press))
+}
+
+/// The point a set of dragged elements is pivoted on: the average of their
+/// translations, or `fallback` when the set is empty.
+fn element_pivot(elements: &[(u64, tools::ElementTransform)], fallback: [f32; 3]) -> [f32; 3] {
+    let translations: Vec<[f32; 3]> = elements
+        .iter()
+        .map(|(_, transform)| transform.translation)
+        .collect();
+    gizmo::selection_pivot(&translations).unwrap_or(fallback)
+}
+
 /// The tangent of half the vertical field of view, and the aspect ratio.
 fn projection_terms(width: f32, height: f32) -> (f32, f32) {
     let vertical_fov_degrees = CameraComponent::default().vertical_fov.clamp(1.0, 179.0);
@@ -4267,6 +4356,7 @@ type FileStamp = pill_editor_core::state_watch::FileStamp;
 /// those recorded values, so nothing jumps on the first pixel. The start pivot
 /// stays fixed for the displacement line while the current pivot follows the
 /// object.
+#[derive(Clone, Debug)]
 struct GizmoDrag {
     /// The scene view the drag belongs to: every move re-reads that view's
     /// ray.
@@ -4280,8 +4370,9 @@ struct GizmoDrag {
     /// The transform at the press; every move is computed from it, so a
     /// snapped drag cannot accumulate rounding.
     original: TransformComponent,
-    /// The frame the handles were built in (the world axes, or the object's
-    /// rotated ones): a local-space drag follows these for its whole life.
+    /// The frame the handles were built in (the world axes, a tool's own
+    /// frame, or the object's rotated ones): a drag follows these for its
+    /// whole life.
     basis: [[f32; 3]; 3],
     /// The axis parameter (translate, scale) or ring angle (rotate) at the
     /// press; unused by a plane drag.
@@ -4301,6 +4392,30 @@ struct GizmoDrag {
     /// The transform field the last move wrote and the values it wrote there:
     /// the release turns these into one recorded step.
     written: Option<(&'static str, Vec<f32>)>,
+    /// Whether the drag moves the entity's transform or a tool's elements.
+    subject: DragSubject,
+}
+
+/// What a gizmo drag edits: the entity's own transform, or the elements the
+/// active tool reports for it.
+///
+/// A drag over an element selection moves those elements, and the tool writes
+/// them back; with no tool that writes elements, the same press moves the
+/// entity, exactly as it did before tools could own elements.
+#[derive(Clone, Debug)]
+enum DragSubject {
+    /// The entity's transform component.
+    Entity,
+    /// The active tool's elements of the selection.
+    Elements {
+        /// The kind the dragged elements belong to.
+        kind: String,
+        /// Every dragged element with the transform it had at the press, in
+        /// the tool's own order.
+        press: Vec<(u64, tools::ElementTransform)>,
+        /// The moves the latest pointer position produced, when one wrote.
+        moves: Option<Vec<tools::ElementMove>>,
+    },
 }
 
 /// The pick a scene press asked: the view and press pixel it happened at,

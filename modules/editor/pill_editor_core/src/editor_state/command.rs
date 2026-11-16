@@ -186,6 +186,30 @@ pub enum EditorCommand {
         /// The grid's new state.
         enabled: bool,
     },
+    /// Switch the gizmo's space to the next one available to it.
+    ///
+    /// The cycle is World, Local, then each frame the active tool offers, then
+    /// World again. It lives here rather than in the row that queues it, so the
+    /// toolbox, the View menu and the space chord all walk one order - and a
+    /// tool with no frames leaves the two settings' spaces cycling into each
+    /// other.
+    CycleGizmoSpace,
+    /// Move elements through the active tool: the world transforms a gizmo
+    /// drag produced.
+    ///
+    /// The tool writes its own component, so this command is the undo step:
+    /// applying it first captures the transforms the tool reports, then hands
+    /// the moves to the tool's write-back. The inverse is the same command
+    /// carrying those captured transforms, which is what makes a whole drag
+    /// one step.
+    SetElementTransforms {
+        /// The entity whose elements moved.
+        entity: Entity,
+        /// The kind the moved elements belong to.
+        kind: String,
+        /// The moved elements, each with the world transform it takes.
+        moves: Vec<crate::tools::ElementMove>,
+    },
     /// Run exactly one system phase on the next frame, then pause again.
     StepOnce,
     /// Start a play session: the edit world is copied aside and the game runs.
@@ -418,6 +442,7 @@ impl EditorCommand {
                 | EditorCommand::WriteAssetMeta { .. }
                 | EditorCommand::SetAssetSettings { .. }
                 | EditorCommand::SetResourceField { .. }
+                | EditorCommand::SetElementTransforms { .. }
                 | EditorCommand::SetSelection { .. }
                 | EditorCommand::SetElementSelection { .. }
                 | EditorCommand::SelectResource { .. }
@@ -472,6 +497,7 @@ impl EditorCommand {
             | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
+            | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce
             | EditorCommand::SetPreferences { .. }
             | EditorCommand::ImportFiles { .. }
@@ -487,6 +513,7 @@ impl EditorCommand {
             | EditorCommand::SetElementSelection { .. }
             | EditorCommand::SelectResource { .. }
             | EditorCommand::RestoreSelection { .. }
+            | EditorCommand::SetElementTransforms { .. }
             | EditorCommand::SceneNew
             | EditorCommand::SceneOpen { .. }
             | EditorCommand::SceneSave
@@ -510,6 +537,7 @@ impl EditorCommand {
             | EditorCommand::SetFieldAsset { entity, .. }
             | EditorCommand::SetFieldEntity { entity, .. }
             | EditorCommand::ArmEntityPick { entity, .. }
+            | EditorCommand::SetElementTransforms { entity, .. }
             | EditorCommand::SetArrayElement { entity, .. } => {
                 if *entity == previous {
                     *entity = assigned;
@@ -560,6 +588,7 @@ impl EditorCommand {
             | EditorCommand::ExitPlay
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
+            | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce
             | EditorCommand::SetPreferences { .. }
             | EditorCommand::ImportFiles { .. }
@@ -599,11 +628,13 @@ impl EditorCommand {
             | EditorCommand::SetFieldAsset { .. }
             | EditorCommand::SetFieldEntity { .. }
             | EditorCommand::SetArrayElement { .. }
-            | EditorCommand::SetResourceField { .. } => CommandFamily::World,
+            | EditorCommand::SetResourceField { .. }
+            | EditorCommand::SetElementTransforms { .. } => CommandFamily::World,
             EditorCommand::SetSystemEnabled { .. }
             | EditorCommand::SetPaused { .. }
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
+            | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce
             | EditorCommand::EnterPlay
             | EditorCommand::ExitPlay => CommandFamily::Engine,

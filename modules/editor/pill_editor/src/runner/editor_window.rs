@@ -167,7 +167,7 @@ pub(super) struct EditorWindow {
     pub(super) gizmo_guides: Option<bool>,
     /// The last logged gizmo anchor header (mode, space, x and y). The log
     /// line appears when it changes, and on the heartbeat.
-    pub(super) gizmo_logged: Option<(GizmoMode, GizmoSpace, i32, i32)>,
+    pub(super) gizmo_logged: Option<(GizmoMode, GizmoSpace, Option<String>, i32, i32)>,
     /// The pick ids a scripted gizmo grab requested. The first answer that
     /// names a handle starts the drag; an answer that misses every handle
     /// refuses it.
@@ -589,6 +589,7 @@ impl EditorWindow {
         if world.get_resource::<GizmoState>().is_none() {
             world.insert_resource(GizmoState {
                 settings: gizmo_settings,
+                tool_frame: None,
             });
         }
         // The command resources the assets actions and the scripted channel

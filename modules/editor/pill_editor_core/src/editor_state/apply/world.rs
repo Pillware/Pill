@@ -1,7 +1,8 @@
 //! The world family's applier.
 //!
 //! This module applies the world commands: component fields, array elements,
-//! entity and component lifecycle, and resource fields.
+//! entity and component lifecycle, resource fields, and the element transforms
+//! a tool writes back.
 //!
 //! # Responsibilities
 //!
@@ -9,6 +10,7 @@
 //!   when one exists.
 //! - Refuse a write the component registry cannot resolve, naming the
 //!   component or field.
+//! - Refuse an element move when no active tool writes element transforms.
 //!
 //! # Design
 //!
@@ -50,8 +52,8 @@ fn editor_origin(engine: &Engine, editor_default: ChangeOrigin) -> ChangeOrigin 
 /// Returns a message naming the command and the reason when a component name
 /// is unknown or ambiguous, a component has no field layout, a field is
 /// missing or its value is refused, the entity or the entity reference is
-/// gone, the resource or its field is not editable, or the queued world
-/// commands cannot be applied.
+/// gone, the resource or its field is not editable, an element move arrives
+/// with no tool to write it, or the queued world commands cannot be applied.
 ///
 /// # Panics
 ///
@@ -475,6 +477,54 @@ pub(super) fn apply(
                 field: field.clone(),
                 value: previous,
             }))
+        }
+
+        EditorCommand::SetElementTransforms {
+            entity,
+            kind,
+            moves,
+        } => {
+            let world = engine.world_mut();
+            // A copy of the registry, so the report and the write can read it
+            // while the tool sees the world mutably.
+            let registry = crate::tools::tool_registry_mut(world).clone();
+            // Step 1: Read what the tool reports for the moved elements now.
+            // That is what this command replaces, so it is also its inverse -
+            // and it is read before the write, so a tool that answers the
+            // report from its own state sees the older value.
+            let moved: Vec<u64> = moves.iter().map(|movement| movement.element).collect();
+            let previous = registry
+                .active_elements(*entity, world)
+                .into_iter()
+                .filter(|element| moved.contains(&element.id))
+                .map(|element| crate::tools::ElementMove {
+                    element: element.id,
+                    transform: element.transform,
+                })
+                .collect::<Vec<_>>();
+            // Step 2: Hand the moves to the tool, which owns the component
+            // they live in. The editor never guesses that component, so a tool
+            // that stopped taking moves refuses the step instead of writing
+            // somewhere nobody asked.
+            if !registry.active_set_transforms(*entity, moves, world) {
+                return Err(format!(
+                    "{command:?}: no active tool writes element transforms"
+                ));
+            }
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                entity = %entity,
+                kind = kind.as_str(),
+                elements = moves.len(),
+                "[editor] element transforms written"
+            );
+            Ok(CommandOutcome::inverse(
+                EditorCommand::SetElementTransforms {
+                    entity: *entity,
+                    kind: kind.clone(),
+                    moves: previous,
+                },
+            ))
         }
 
         other => unreachable!("{:?} is not a world command", other.family()),

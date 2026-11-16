@@ -565,6 +565,10 @@ impl EditorWindow {
 
     /// Logs the selected entities, primary last, the selected asset and the
     /// selected elements (`dump selection`).
+    ///
+    /// An element row carries the world translation the active tool reports for
+    /// it, which is how a suite reads what a drag wrote. An element no tool
+    /// reports has no transform to show, and its three numbers are `nan`.
     pub(super) fn dump_selection(&mut self) {
         let world = self.host.host_mut().engine_mut().world_mut();
         let (entities, asset, element_kind, elements) = world
@@ -578,6 +582,14 @@ impl EditorWindow {
                 )
             })
             .unwrap_or_default();
+        // A copy of the registry, so the report can read the world it lives in.
+        let reported: Vec<tools::ToolElement> = match (
+            world.get_resource::<tools::ToolRegistry>().cloned(),
+            elements.first(),
+        ) {
+            (Some(registry), Some(first)) => registry.active_elements(first.entity, world),
+            _ => Vec::new(),
+        };
         info!(
             target: telemetry_target::EDITOR,
             count = entities.len(),
@@ -598,11 +610,19 @@ impl EditorWindow {
             );
         }
         for element in &elements {
+            let translation = reported
+                .iter()
+                .find(|row| row.id == element.id)
+                .map(|row| row.transform.translation)
+                .unwrap_or([f32::NAN; 3]);
             info!(
                 target: telemetry_target::EDITOR,
                 entity = %element.entity,
                 id = element.id,
                 kind = element_kind.as_str(),
+                x = translation[0],
+                y = translation[1],
+                z = translation[2],
                 "[test] selected element"
             );
         }
@@ -1274,14 +1294,7 @@ impl EditorWindow {
                 let snap = self.gizmo_settings().snap;
                 self.scripted_gizmo_tool(None, None, Some(!snap))
             }
-            ScriptedCommand::SpaceToggle => {
-                let space = self.gizmo_settings().space;
-                let next_space = match space {
-                    GizmoSpace::World => GizmoSpace::Local,
-                    GizmoSpace::Local => GizmoSpace::World,
-                };
-                self.scripted_gizmo_tool(None, Some(next_space), None)
-            }
+            ScriptedCommand::SpaceToggle => self.scripted_space_cycle(),
         }
     }
 
@@ -1847,6 +1860,16 @@ impl EditorWindow {
         self.synthetic_gizmo_press = None;
         self.end_gizmo_drag();
         Ok(())
+    }
+
+    /// Runs `editor.tool_space_toggle` from the scripted channel: it queues the
+    /// same `CycleGizmoSpace` edit the toolbox's space row queues, so a suite
+    /// reaches a tool's own frame the way a click does.
+    pub(super) fn scripted_space_cycle(&mut self) {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push(vec![EditorCommand::CycleGizmoSpace]);
+        }
     }
 
     /// Runs `editor.tool_*` from the scripted channel: it queues the same
@@ -2500,7 +2523,7 @@ impl EditorWindow {
     /// Returns the registry's refusal when no tool has that name.
     pub(super) fn scripted_tool(&mut self, name: Option<String>) -> Result<(), String> {
         let world = self.host.host_mut().engine_mut().world_mut();
-        tools::tool_registry_mut(world).set_active(name.as_deref())?;
+        tools::activate_tool(world, name.as_deref())?;
         let active = tools::tool_registry_mut(world).active().map(str::to_string);
         // A built-in tool is a gizmo mode, so activating one queues the same
         // command its toolbox row does. Any other tool's effect is its element

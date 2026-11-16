@@ -20,8 +20,15 @@
 //! It is registered only when the scripted channel is on, like the channel
 //! itself: it exists to be driven by a scripted test, and a person's editor
 //! never sees it in the toolbox. The elements are reported from the entity's
-//! transform each frame, so a test that moves the entity moves its handles
-//! with it.
+//! transform plus an offset this module keeps per element, so a test that
+//! moves the entity moves its handles with it, and a drag that writes new
+//! world transforms back turns them into offsets again.
+
+// Standard library
+use std::collections::HashMap;
+
+// External crates
+use pill_engine_core::World;
 
 // Current crate
 use super::*;
@@ -55,6 +62,100 @@ pub(super) const FIXTURE_POINT_KIND: &str = "point";
 /// The kind the tangents report under.
 pub(super) const FIXTURE_TANGENT_KIND: &str = "tangent";
 
+/// The name of the one coordinate frame the fixture offers.
+///
+/// It is a quarter turn around X, so the frame's Y axis is the world's Z: a
+/// drag along that handle moves the elements along world Z, while the same
+/// handle without the frame moves them along world Y. A suite can tell the two
+/// apart by one number, and the frame's own grab points sit clear of every
+/// element the fixture reports.
+pub(super) const FIXTURE_FRAME_NAME: &str = "Fixture";
+
+// =============================================================================
+// Element Storage
+// =============================================================================
+
+/// One fixture element, as the fixture stores it.
+///
+/// The offset is what makes a drag stick: a move arrives as a world transform,
+/// and the offset is that transform measured from the entity it belongs to, so
+/// moving the entity afterwards still carries its elements.
+#[derive(Clone, Copy, Debug)]
+struct FixtureElement {
+    /// Where the element sits, relative to the entity's translation.
+    offset: [f32; 3],
+    /// The element's own orientation.
+    rotation: [f32; 4],
+    /// The element's own scale.
+    scale: [f32; 3],
+}
+
+/// The fixture's elements, per entity.
+///
+/// A world resource so the elements outlive a shell reload and ride the play
+/// session: the entities they belong to do.
+#[derive(Default)]
+pub(super) struct FixtureElements {
+    by_entity: HashMap<Entity, HashMap<u64, FixtureElement>>,
+}
+
+impl pill_engine_core::Resource for FixtureElements {}
+
+impl FixtureElements {
+    /// The elements of `entity`, seeded with the fixture's layout the first
+    /// time a move writes into it, so an element a drag never touched keeps
+    /// the place the layout put it in.
+    fn entities_elements(&mut self, entity: Entity) -> &mut HashMap<u64, FixtureElement> {
+        self.by_entity
+            .entry(entity)
+            .or_insert_with(|| fixture_layout().into_iter().collect())
+    }
+}
+
+/// One element at `offset`, unrotated and unscaled.
+fn fixture_element(offset: [f32; 3]) -> FixtureElement {
+    FixtureElement {
+        offset,
+        rotation: tools::ElementTransform::IDENTITY_ROTATION,
+        scale: tools::ElementTransform::UNIT_SCALE,
+    }
+}
+
+/// The fixture's layout: every element at its default offset, in id order.
+fn fixture_layout() -> Vec<(u64, FixtureElement)> {
+    let mut elements: Vec<(u64, FixtureElement)> = (0..FIXTURE_POINT_COUNT)
+        .map(|index| (index as u64, fixture_element(fixture_point_offset(index))))
+        .collect();
+    elements.extend((0..FIXTURE_TANGENT_COUNT).map(|index| {
+        (
+            FIXTURE_TANGENT_ID_BASE + index as u64,
+            fixture_element(fixture_tangent_offset(index)),
+        )
+    }));
+    elements
+}
+
+/// Where point `index` sits, relative to the entity's translation.
+fn fixture_point_offset(index: usize) -> [f32; 3] {
+    let centre = (FIXTURE_POINT_COUNT as f32 - 1.0) * 0.5;
+    [(index as f32 - centre) * FIXTURE_ELEMENT_SPACING, 0.0, 0.0]
+}
+
+/// Where tangent `index` sits, relative to the entity's translation.
+fn fixture_tangent_offset(index: usize) -> [f32; 3] {
+    let centre = (FIXTURE_TANGENT_COUNT as f32 - 1.0) * 0.5;
+    [
+        (index as f32 - centre) * FIXTURE_ELEMENT_SPACING,
+        FIXTURE_TANGENT_LIFT,
+        0.0,
+    ]
+}
+
+/// The rotation of the fixture's frame: a quarter turn around X.
+pub(super) fn fixture_frame_rotation() -> [f32; 4] {
+    gizmo::axis_angle_quaternion(gizmo::AXES[0], std::f32::consts::FRAC_PI_2)
+}
+
 // =============================================================================
 // The Tool
 // =============================================================================
@@ -85,12 +186,17 @@ impl tools::EditorTool for FixtureTool {
 /// A reload of any shell module re-runs nothing here: the fixture lives in
 /// this executable, which is never reloaded, and its hooks are the
 /// executable's own functions.
-pub(super) fn register(world: &mut pill_engine_core::World) {
+pub(super) fn register(world: &mut World) {
+    if world.get_resource::<FixtureElements>().is_none() {
+        world.insert_resource(FixtureElements::default());
+    }
     tools::tool_registry_mut(world).register_plugin(
         &FixtureTool,
         tools::ToolElementHooks {
             kinds: Some(fixture_kinds),
             elements: Some(fixture_elements),
+            set_transforms: Some(fixture_set_transforms),
+            frames: Some(fixture_frames),
         },
     );
 }
@@ -111,42 +217,90 @@ fn fixture_kinds(out: &mut Vec<tools::ElementKind>) {
     out.push(tangent);
 }
 
-/// Fills `out` with the fixture's elements for `entity`.
+/// The fixture's elements for `entity`, each placed at its stored offset from
+/// the entity's translation.
 ///
 /// An entity with no readable transform reports nothing, which is also the
 /// state a suite sees when it has no entity selected.
-fn fixture_elements(
-    entity: Entity,
-    world: &pill_engine_core::World,
-    out: &mut Vec<tools::ToolElement>,
-) {
+fn fixture_elements(entity: Entity, world: &World, out: &mut Vec<tools::ToolElement>) {
     let Some(transform) = read_transform(world, entity) else {
         return;
     };
-    let origin = transform.translation;
-    let centre = (FIXTURE_POINT_COUNT as f32 - 1.0) * 0.5;
-    for index in 0..FIXTURE_POINT_COUNT {
+    // A written layout wins; until the first move, the default one is
+    // reported, so a suite can hover and click before it drags anything.
+    let stored = world
+        .get_resource::<FixtureElements>()
+        .and_then(|storage| storage.by_entity.get(&entity));
+    let laid_out: Vec<(u64, FixtureElement)> = match stored {
+        Some(elements) => {
+            let mut ids: Vec<u64> = elements.keys().copied().collect();
+            ids.sort_unstable();
+            ids.into_iter()
+                .filter_map(|id| elements.get(&id).map(|element| (id, *element)))
+                .collect()
+        }
+        None => fixture_layout(),
+    };
+    for (id, element) in laid_out {
         out.push(tools::ToolElement {
-            id: index as u64,
-            kind: FIXTURE_POINT_KIND.to_string(),
-            position: [
-                origin[0] + (index as f32 - centre) * FIXTURE_ELEMENT_SPACING,
-                origin[1],
-                origin[2],
-            ],
+            id,
+            kind: fixture_kind_of(id).to_string(),
+            transform: tools::ElementTransform {
+                translation: gizmo::add(transform.translation, element.offset),
+                rotation: element.rotation,
+                scale: element.scale,
+            },
         });
     }
-    for index in 0..FIXTURE_TANGENT_COUNT {
-        out.push(tools::ToolElement {
-            id: FIXTURE_TANGENT_ID_BASE + index as u64,
-            kind: FIXTURE_TANGENT_KIND.to_string(),
-            position: [
-                origin[0]
-                    + (index as f32 - (FIXTURE_TANGENT_COUNT as f32 - 1.0) * 0.5)
-                        * FIXTURE_ELEMENT_SPACING,
-                origin[1] + FIXTURE_TANGENT_LIFT,
-                origin[2],
-            ],
-        });
+}
+
+/// The kind the element `id` belongs to.
+fn fixture_kind_of(id: u64) -> &'static str {
+    if id >= FIXTURE_TANGENT_ID_BASE {
+        FIXTURE_TANGENT_KIND
+    } else {
+        FIXTURE_POINT_KIND
     }
+}
+
+/// Writes the world transforms a drag produced back into the fixture's
+/// storage, as offsets from the entity they belong to.
+///
+/// This is the fixture's whole write-back: the editor hands it finished world
+/// transforms and it decides what that means for its own component, which is
+/// the contract every tool keeps.
+fn fixture_set_transforms(entity: Entity, moves: &[tools::ElementMove], world: &mut World) {
+    let Some(transform) = read_transform(world, entity) else {
+        return;
+    };
+    if world.get_resource::<FixtureElements>().is_none() {
+        world.insert_resource(FixtureElements::default());
+    }
+    let Some(storage) = world.get_resource_mut::<FixtureElements>() else {
+        return;
+    };
+    let elements = storage.entities_elements(entity);
+    for movement in moves {
+        let Some(element) = elements.get_mut(&movement.element) else {
+            continue;
+        };
+        element.offset = gizmo::sub(movement.transform.translation, transform.translation);
+        element.rotation = movement.transform.rotation;
+        element.scale = movement.transform.scale;
+    }
+}
+
+/// The one frame the fixture offers, so a suite can prove the space row
+/// reaches a tool's own frame and that a drag in it produces the world delta
+/// the frame implies.
+fn fixture_frames(
+    _entity: Entity,
+    _selected: &[u64],
+    _world: &World,
+    out: &mut Vec<tools::CoordinateFrame>,
+) {
+    out.push(tools::CoordinateFrame {
+        name: FIXTURE_FRAME_NAME.to_string(),
+        rotation: fixture_frame_rotation(),
+    });
 }

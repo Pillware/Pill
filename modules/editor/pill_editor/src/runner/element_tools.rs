@@ -95,6 +95,15 @@ impl EditorWindow {
             self.element_kinds.clear();
             self.element_map = gizmo::ElementHandleMap::new();
             self.element_logged = None;
+            // A hover that pointed at an element handle belongs to handles
+            // that are no longer drawn, so it is dropped with them: leaving it
+            // set would report an interaction nothing on screen owns.
+            if self
+                .hovered_handle
+                .is_some_and(|handle| gizmo::element_handle_slot(handle).is_some())
+            {
+                self.hovered_handle = None;
+            }
             return;
         };
         // Step 2: build the handles and hand them to the debug drawing the
@@ -112,7 +121,7 @@ impl EditorWindow {
             if let Some(debug_draw) = world.get_resource_mut::<DebugDraw>() {
                 for element in &handles {
                     debug_draw.gizmo_point(
-                        element.position,
+                        element.transform.translation,
                         element.size_pixels,
                         element.shape,
                         element.color,
@@ -129,7 +138,7 @@ impl EditorWindow {
             .iter()
             .map(|element| {
                 let (x, y) = self
-                    .project_to_screen_in(view, element.position)
+                    .project_to_screen_in(view, element.transform.translation)
                     .map(|(x, y)| (x.round() as i32, y.round() as i32))
                     .unwrap_or((-1, -1));
                 (element.element, x, y, element.selected)
@@ -164,6 +173,18 @@ impl EditorWindow {
         self.element_handles = handles;
         self.element_kinds = kinds;
         self.element_map = map;
+        // A hover on an element that this frame no longer reports is dropped
+        // with it, so the hover state names something that is on screen.
+        if let Some(handle) = self.hovered_handle {
+            if gizmo::element_handle_slot(handle).is_some()
+                && !self
+                    .element_handles
+                    .iter()
+                    .any(|element| element.handle == handle)
+            {
+                self.hovered_handle = None;
+            }
+        }
     }
 
     /// The element handle under one pixel of one scene view.
@@ -176,7 +197,7 @@ impl EditorWindow {
             .iter()
             .rev()
             .find(|element| {
-                self.project_to_screen_in(view, element.position)
+                self.project_to_screen_in(view, element.transform.translation)
                     .is_some_and(|centre| element.covers_pixel(x, y, centre))
             })
             .map(|element| element.handle)
@@ -328,7 +349,8 @@ impl EditorWindow {
     pub(super) fn apply_marquee(&mut self, drag: MarqueeDrag) {
         let mut projected = Vec::new();
         for element in &self.element_handles {
-            let Some((x, y)) = self.project_to_screen_in(drag.view, element.position) else {
+            let Some((x, y)) = self.project_to_screen_in(drag.view, element.transform.translation)
+            else {
                 continue;
             };
             projected.push(tools::ProjectedElement {

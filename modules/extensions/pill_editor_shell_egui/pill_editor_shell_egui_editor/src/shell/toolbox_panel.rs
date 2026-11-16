@@ -39,6 +39,7 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
     let state = toolbox::ToolboxState {
         gizmo: viewer.snapshot.gizmo,
         grid: viewer.snapshot.grid_enabled,
+        frame: viewer.snapshot.gizmo_frame.as_deref(),
     };
     let mut origin = toolbox::clamped_origin(
         viewer

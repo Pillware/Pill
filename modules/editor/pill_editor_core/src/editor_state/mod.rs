@@ -946,6 +946,10 @@ pub struct EditorSnapshot {
     /// The gizmo tool's settings: mode, space and snapping. The Scene tab's
     /// context menu checks its items against them.
     pub gizmo: crate::gizmo::GizmoSettings,
+    /// The name of the tool frame the gizmo is in, when the space row has
+    /// reached one of the active tool's frames. The toolbox's space row shows
+    /// the name.
+    pub gizmo_frame: Option<String>,
     /// Whether the scene grid is on. The toolbox's grid row and the Scene tab's
     /// menu check it against the renderer's switch.
     pub grid_enabled: bool,
@@ -1068,6 +1072,7 @@ impl EditorSnapshot {
                 .get_resource::<crate::gizmo::GizmoState>()
                 .map(|state| state.settings)
                 .unwrap_or_default(),
+            gizmo_frame: Self::capture_gizmo_frame(engine),
             grid_enabled: engine
                 .world()
                 .get_resource::<pill_renderer_api::SurfaceCameras>()
@@ -1115,6 +1120,24 @@ impl EditorSnapshot {
             errors,
             resources: Self::capture_resources(engine),
         }
+    }
+
+    /// The name of the tool frame the gizmo is in, when the space row has
+    /// reached one of the active tool's frames.
+    ///
+    /// The frames belong to the element selection's own entity, so a frame
+    /// index is resolved against the tool's report for that selection instead
+    /// of being trusted: a tool whose frames changed under it (a reload, a new
+    /// selection) simply stops naming one, and the settings' own space applies.
+    fn capture_gizmo_frame(engine: &Engine) -> Option<String> {
+        let world = engine.world();
+        let index = world
+            .get_resource::<crate::gizmo::GizmoState>()?
+            .tool_frame? as usize;
+        crate::tools::selection_frames(world)
+            .into_iter()
+            .nth(index)
+            .map(|frame| frame.name)
     }
 
     /// Returns the snapshot fields that differ from `previous`, comma-joined.
@@ -1172,6 +1195,9 @@ impl EditorSnapshot {
         }
         if previous.gizmo != current.gizmo {
             changed.push("gizmo");
+        }
+        if previous.gizmo_frame != current.gizmo_frame {
+            changed.push("gizmo_frame");
         }
         if previous.grid_enabled != current.grid_enabled {
             changed.push("grid_enabled");

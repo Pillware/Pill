@@ -18,9 +18,32 @@
 //! queues that step, because the recorded command takes its inverse from the
 //! world's current value. Without the write, the inverse would be the final
 //! value and the first undo would change nothing.
+//!
+//! A drag over an element selection takes the other path: the same measurement
+//! turns into one world transform per element, and the active tool writes them
+//! into whatever component it owns. The gizmo therefore never learns a tool's
+//! component, and a tool never does frame maths - it is handed the finished
+//! transforms.
 
 // Current crate
 use super::*;
+
+// =============================================================================
+// Free Functions
+// =============================================================================
+
+/// The four numbers a drag's last measurement reports, for its end log.
+fn drag_value_components(value: gizmo::DragValue) -> [f32; 4] {
+    match value {
+        gizmo::DragValue::Distance(distance) => [distance, 0.0, 0.0, 0.0],
+        gizmo::DragValue::Angle(radians) => [radians, 0.0, 0.0, 0.0],
+        gizmo::DragValue::Plane(first, second) => [first, second, 0.0, 0.0],
+    }
+}
+
+// =============================================================================
+// Editor Window
+// =============================================================================
 
 impl EditorWindow {
     /// Publishes the gizmo handles for the selection: their hover and drag
@@ -37,11 +60,11 @@ impl EditorWindow {
     pub(super) fn publish_gizmo_geometry(&mut self) {
         // Step 1: read the frame's inputs. The borrow of the world must end
         // before the camera helpers run, because those borrow `self`.
-        let (gizmo_settings, entity, transform) = {
+        let (gizmo_settings, entity, transform, basis, frame_name, element_press) = {
             let world = self.host.host_mut().engine_mut().world_mut();
-            let gizmo_settings = world
+            let gizmo_state = world
                 .get_resource::<GizmoState>()
-                .map(|state| state.settings)
+                .copied()
                 .unwrap_or_default();
             let selected_entity = world
                 .get_resource::<EditorSelection>()
@@ -49,7 +72,24 @@ impl EditorWindow {
             match selected_entity.and_then(|entity| {
                 read_transform(world, entity).map(|transform| (entity, transform))
             }) {
-                Some((entity, transform)) => (gizmo_settings, entity, transform),
+                Some((entity, transform)) => {
+                    // The handles are drawn in the frame a press would drag
+                    // in, so what is on screen and what a drag measures are
+                    // the same axes.
+                    let basis = gizmo_frame_basis(world, entity, gizmo_state, &transform);
+                    let frame_name = active_tool_frame(world, entity, gizmo_state.tool_frame)
+                        .map(|frame| frame.name);
+                    let element_press =
+                        element_drag_elements(world, entity).map(|(_, press)| press);
+                    (
+                        gizmo_state.settings,
+                        entity,
+                        transform,
+                        basis,
+                        frame_name,
+                        element_press,
+                    )
+                }
                 None => {
                     // No handles on screen. The next selection logs its
                     // anchor at once instead of waiting for the heartbeat.
@@ -62,9 +102,12 @@ impl EditorWindow {
             }
         };
         // Step 2: build the handles and hand them to the debug drawing the
-        // renderer reads.
-        let gizmo_origin = transform.translation;
-        let basis = gizmo_basis(gizmo_settings.space, &transform);
+        // renderer reads. A drag over an element selection pivots on the
+        // elements, so a turn and a scale carry all of them.
+        let gizmo_origin = match &element_press {
+            Some(press) => element_pivot(press, transform.translation),
+            None => transform.translation,
+        };
         let view = self.active_view;
         let handle_length = self.gizmo_length(view, gizmo_origin);
         let handle_states = HandleStates {
@@ -156,10 +199,11 @@ impl EditorWindow {
             let anchor_key = (
                 gizmo_settings.mode,
                 gizmo_settings.space,
+                frame_name.clone(),
                 x as i32,
                 y as i32,
             );
-            if self.gizmo_logged != Some(anchor_key)
+            if self.gizmo_logged.as_ref() != Some(&anchor_key)
                 || self.frame_index.is_multiple_of(GIZMO_HEARTBEAT_FRAMES)
             {
                 self.gizmo_logged = Some(anchor_key);
@@ -169,6 +213,7 @@ impl EditorWindow {
                     entity = %entity,
                     mode = gizmo_mode_name(gizmo_settings.mode),
                     space = gizmo_space_name(gizmo_settings.space),
+                    frame = frame_name.as_deref().unwrap_or("-"),
                     x,
                     y,
                     handles = geometry.lines.len() + geometry.triangles.len(),
@@ -321,11 +366,14 @@ impl EditorWindow {
             );
             return;
         };
-        let (gizmo_settings, entity, original) = {
+        // Step 1: read the press's inputs. The basis is resolved here, so a
+        // tool frame the handles were drawn in is the frame the drag measures
+        // its deltas in, and the subject decides what a move writes.
+        let (entity, original, basis, subject) = {
             let world = self.host.host_mut().engine_mut().world_mut();
-            let gizmo_settings = world
+            let gizmo_state = world
                 .get_resource::<GizmoState>()
-                .map(|state| state.settings)
+                .copied()
                 .unwrap_or_default();
             let selected_entity = world
                 .get_resource::<EditorSelection>()
@@ -336,13 +384,27 @@ impl EditorWindow {
             let Some(original) = read_transform(world, entity) else {
                 return;
             };
-            (gizmo_settings, entity, original)
+            let basis = gizmo_frame_basis(world, entity, gizmo_state, &original);
+            let subject = match element_drag_elements(world, entity) {
+                Some((kind, press)) => DragSubject::Elements {
+                    kind,
+                    press,
+                    moves: None,
+                },
+                None => DragSubject::Entity,
+            };
+            (entity, original, basis, subject)
         };
         let Some((ray_origin, ray_direction)) = self.scene_ray(view, press_x, press_y) else {
             return;
         };
-        let basis = gizmo_basis(gizmo_settings.space, &original);
-        let gizmo_origin = original.translation;
+        // Step 2: an element drag pivots on the selection's average position,
+        // so a turn or a scale carries every element around it; an entity drag
+        // pivots on the object's own origin.
+        let gizmo_origin = match &subject {
+            DragSubject::Elements { press, .. } => element_pivot(press, original.translation),
+            DragSubject::Entity => original.translation,
+        };
         let (start_value, start_plane) = match kind {
             HandleKind::Axis {
                 mode: GizmoMode::Rotate,
@@ -404,6 +466,7 @@ impl EditorWindow {
             reference,
             last_value: None,
             written: None,
+            subject,
         });
         // The grabbed handle is the active one from here on, so it draws
         // dimmed for as long as the drag runs.
@@ -437,7 +500,7 @@ impl EditorWindow {
     /// rounding errors. The drag also keeps the basis its handles were built
     /// in, so a local-space drag follows the object's own axes.
     pub(super) fn update_gizmo_drag(&mut self, cursor_x: f32, cursor_y: f32) {
-        let Some(drag) = self.gizmo_drag.as_ref() else {
+        let Some(drag) = self.gizmo_drag.clone() else {
             return;
         };
         let (view, kind, entity) = (drag.view, drag.kind, drag.entity);
@@ -448,7 +511,13 @@ impl EditorWindow {
             return;
         };
         let gizmo_settings = self.gizmo_settings();
-        let gizmo_origin = original.translation;
+        let gizmo_origin = drag.start_pivot;
+        // An element drag measures the same way and then hands the finished
+        // world transforms to the tool, so the tool never does frame maths.
+        if matches!(drag.subject, DragSubject::Elements { .. }) {
+            self.update_element_drag(&drag, ray_origin, ray_direction);
+            return;
+        }
         let (written, pivot) = match kind {
             HandleKind::Axis {
                 mode: GizmoMode::Rotate,
@@ -471,7 +540,7 @@ impl EditorWindow {
                 // drag turns around the object's axis and a world-mode drag
                 // around the world's.
                 let turn_rotation = gizmo::axis_angle_quaternion(basis[axis], degrees.to_radians());
-                let combined_rotation = quaternion_product(turn_rotation, original.rotation);
+                let combined_rotation = rotate_by_turn(turn_rotation, original.rotation);
                 let written = self.write_rotation(entity, combined_rotation);
                 (written.then_some(combined_rotation), gizmo_origin)
             }
@@ -558,6 +627,127 @@ impl EditorWindow {
                 drag.last_value = Some(written);
             }
             drag.current_pivot = pivot;
+        }
+    }
+
+    /// Applies one move of an element drag: measures this position against the
+    /// press the way the entity drag does, turns the measurement into world
+    /// transforms for every dragged element, and hands them to the active
+    /// tool's write-back.
+    ///
+    /// The tool owns the component the elements live in, so nothing here names
+    /// a field and a move records nothing. The release queues the one recorded
+    /// step, through the same write-back an undo replays.
+    fn update_element_drag(
+        &mut self,
+        drag: &GizmoDrag,
+        ray_origin: [f32; 3],
+        ray_direction: [f32; 3],
+    ) {
+        let DragSubject::Elements { kind, press, .. } = &drag.subject else {
+            return;
+        };
+        let gizmo_settings = self.gizmo_settings();
+        let (origin, basis, reference) = (drag.start_pivot, drag.basis, drag.reference);
+        let value = match drag.kind {
+            HandleKind::Axis {
+                mode: GizmoMode::Rotate,
+                axis,
+            } => {
+                let Some(point) =
+                    gizmo::ray_plane_point(origin, basis[axis], ray_origin, ray_direction)
+                else {
+                    return;
+                };
+                let delta = gizmo::wrap_angle(
+                    gizmo::plane_angle(origin, basis[axis], point) - drag.start_value,
+                );
+                let degrees = if gizmo_settings.snap {
+                    gizmo::snap_value(delta.to_degrees(), gizmo_settings.rotate_step_degrees)
+                } else {
+                    delta.to_degrees()
+                };
+                gizmo::DragValue::Angle(degrees.to_radians())
+            }
+            HandleKind::Axis {
+                mode: GizmoMode::Translate,
+                axis,
+            } => {
+                let Some(value) =
+                    gizmo::closest_axis_point(origin, basis[axis], ray_origin, ray_direction)
+                else {
+                    return;
+                };
+                let mut delta = value - drag.start_value;
+                if gizmo_settings.snap {
+                    delta = gizmo::snap_value(delta, gizmo_settings.translate_step);
+                }
+                gizmo::DragValue::Distance(delta)
+            }
+            HandleKind::Axis {
+                mode: GizmoMode::Scale,
+                axis,
+            } => {
+                let Some(value) =
+                    gizmo::closest_axis_point(origin, basis[axis], ray_origin, ray_direction)
+                else {
+                    return;
+                };
+                let mut factor = 1.0 + (value - drag.start_value) / reference.max(1e-4);
+                // Snapping rounds the factor, not each element's own scale, so
+                // every element grows by the same amount.
+                if gizmo_settings.snap {
+                    factor = gizmo::snap_value(factor, gizmo_settings.scale_step);
+                }
+                gizmo::DragValue::Distance((factor.max(0.01) - 1.0) * reference)
+            }
+            HandleKind::Plane { first, second } => {
+                let Some((start_first, start_second)) = drag.start_plane else {
+                    return;
+                };
+                let normal = basis[3 - first - second];
+                let Some(point) = gizmo::ray_plane_point(origin, normal, ray_origin, ray_direction)
+                else {
+                    return;
+                };
+                let (along_first, along_second) =
+                    gizmo::plane_coordinates(origin, basis[first], basis[second], point);
+                let (mut delta_first, mut delta_second) =
+                    (along_first - start_first, along_second - start_second);
+                if gizmo_settings.snap {
+                    delta_first = gizmo::snap_value(delta_first, gizmo_settings.translate_step);
+                    delta_second = gizmo::snap_value(delta_second, gizmo_settings.translate_step);
+                }
+                gizmo::DragValue::Plane(delta_first, delta_second)
+            }
+        };
+        let moves = gizmo::moved_elements(drag.kind, origin, basis, reference, press, value);
+        if moves.is_empty() {
+            return;
+        }
+        // Step 2: the tool writes the world transforms, live and unrecorded.
+        // A copy of the registry keeps the report and the write apart, since
+        // the write needs the world mutably.
+        let written = {
+            let world = self.host.host_mut().engine_mut().world_mut();
+            let registry = tools::tool_registry_mut(world).clone();
+            registry.active_set_transforms(drag.entity, &moves, world)
+        };
+        let moved: Vec<(u64, tools::ElementTransform)> = moves
+            .iter()
+            .map(|movement| (movement.element, movement.transform))
+            .collect();
+        let pivot = element_pivot(&moved, origin);
+        if let Some(active_drag) = self.gizmo_drag.as_mut() {
+            if written {
+                active_drag.subject = DragSubject::Elements {
+                    kind: kind.clone(),
+                    press: press.clone(),
+                    moves: Some(moves),
+                };
+                active_drag.last_value = Some(drag_value_components(value));
+            }
+            active_drag.current_pivot = pivot;
         }
     }
 
@@ -663,6 +853,44 @@ impl EditorWindow {
     /// write, the step would record the final value as its starting point,
     /// and the first undo would use up a history entry and change nothing.
     pub(super) fn record_gizmo_drag(&mut self, drag: &GizmoDrag, mode: GizmoMode) {
+        // An element drag records the moves the tool already took: the command
+        // carries the world transforms, and the applier reads the press's own
+        // transforms off the tool for its inverse.
+        if let DragSubject::Elements { kind, press, moves } = &drag.subject {
+            let Some(moves) = moves else {
+                return;
+            };
+            let restored: Vec<tools::ElementMove> = press
+                .iter()
+                .map(|(element, transform)| tools::ElementMove {
+                    element: *element,
+                    transform: *transform,
+                })
+                .collect();
+            let world = self.host.host_mut().engine_mut().world_mut();
+            // The same reason the entity path writes its press value back: the
+            // recorded command takes its inverse from the world's current
+            // value, which the drag has already overwritten.
+            let registry = tools::tool_registry_mut(world).clone();
+            registry.active_set_transforms(drag.entity, &restored, world);
+            let label = format!("gizmo {}", gizmo_mode_name(mode));
+            let command = EditorCommand::SetElementTransforms {
+                entity: drag.entity,
+                kind: kind.clone(),
+                moves: moves.clone(),
+            };
+            if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+                pending.push_recorded(vec![command], label, None);
+            }
+            info!(
+                target: telemetry_target::EDITOR,
+                entity = %drag.entity,
+                kind = kind.as_str(),
+                elements = moves.len(),
+                "[editor] element drag recorded"
+            );
+            return;
+        }
         let Some((transform_field, component_values)) = drag.written.as_ref() else {
             return;
         };
@@ -755,7 +983,24 @@ impl EditorWindow {
         let Some(drag) = self.gizmo_drag.take() else {
             return;
         };
-        let restored = self.restore_transform(drag.entity, &drag.original);
+        // An element drag is undone through the tool that wrote it, so the
+        // press's transforms come back the same way every other element write
+        // goes out.
+        let restored = match &drag.subject {
+            DragSubject::Elements { press, .. } => {
+                let press: Vec<tools::ElementMove> = press
+                    .iter()
+                    .map(|(element, transform)| tools::ElementMove {
+                        element: *element,
+                        transform: *transform,
+                    })
+                    .collect();
+                let world = self.host.host_mut().engine_mut().world_mut();
+                let registry = tools::tool_registry_mut(world).clone();
+                registry.active_set_transforms(drag.entity, &press, world)
+            }
+            DragSubject::Entity => self.restore_transform(drag.entity, &drag.original),
+        };
         if !restored {
             warn!(
                 target: telemetry_target::EDITOR,
@@ -818,11 +1063,11 @@ impl EditorWindow {
             );
             return;
         };
-        let (gizmo_settings, transform) = {
+        let (origin, basis) = {
             let world = self.host.host_mut().engine_mut().world_mut();
-            let gizmo_settings = world
+            let gizmo_state = world
                 .get_resource::<GizmoState>()
-                .map(|state| state.settings)
+                .copied()
                 .unwrap_or_default();
             let selected_entity = world
                 .get_resource::<EditorSelection>()
@@ -842,19 +1087,23 @@ impl EditorWindow {
                 );
                 return;
             };
-            (gizmo_settings, transform)
+            let basis = gizmo_frame_basis(world, entity, gizmo_state, &transform);
+            let origin = match element_drag_elements(world, entity) {
+                Some((_, press)) => element_pivot(&press, transform.translation),
+                None => transform.translation,
+            };
+            (origin, basis)
         };
         // Step 2: project the handle's own grab point into the view's pixels.
         // Each handle is grabbed where its geometry carries it. A rotation
         // ring is grabbed at its radius on the diagonal between two axes,
         // clear of the other two rings. A plane square is grabbed at its
         // centre, and a straight handle just short of its tip.
-        let basis = gizmo_basis(gizmo_settings.space, &transform);
-        let handle_length = self.gizmo_length(view, transform.translation);
+        let handle_length = self.gizmo_length(view, origin);
         let grab_point = match kind {
             HandleKind::Axis { axis, .. } => match gizmo_drag_mode(kind) {
                 GizmoMode::Rotate => gizmo::add(
-                    transform.translation,
+                    origin,
                     gizmo::scale(
                         gizmo::normalize(gizmo::add(basis[(axis + 1) % 3], basis[(axis + 2) % 3]))
                             .unwrap_or(basis[axis]),
@@ -862,12 +1111,12 @@ impl EditorWindow {
                     ),
                 ),
                 _ => gizmo::add(
-                    transform.translation,
+                    origin,
                     gizmo::scale(basis[axis], handle_length * GIZMO_PRESS_FRACTION),
                 ),
             },
             HandleKind::Plane { first, second } => gizmo::add(
-                transform.translation,
+                origin,
                 gizmo::add(
                     gizmo::scale(basis[first], handle_length * gizmo::PLANE_OFFSET),
                     gizmo::scale(basis[second], handle_length * gizmo::PLANE_OFFSET),

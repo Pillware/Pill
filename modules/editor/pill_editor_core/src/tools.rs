@@ -30,14 +30,17 @@
 //! reading by the scripted channel.
 
 // Standard library
+use std::collections::BTreeMap;
 use std::fmt;
 
 // External crates
 use pill_engine::{Engine, Entity, GizmoPointShape, World};
 
 // Current crate
-use crate::editor_state::{ElementRef, ElementSelection};
-use crate::gizmo::{styled_color, ElementHandleMap, ElementHandleTarget, HandleStates};
+use crate::editor_state::{EditorSelection, ElementRef, ElementSelection};
+use crate::gizmo::{
+    styled_color, ElementHandleMap, ElementHandleTarget, GizmoSpace, GizmoState, HandleStates,
+};
 
 // =============================================================================
 // Tools
@@ -238,6 +241,39 @@ impl ElementKind {
     }
 }
 
+/// Where one element is in the world, or where a drag moved it to.
+///
+/// The same three parts the engine's transform component holds, as plain
+/// arrays: a tool reads its component into this shape when it reports an
+/// element, and writes it back when the editor hands it a moved one. The
+/// editor never reads a component's layout itself - the tool owns the mapping
+/// between its data and these plain numbers.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ElementTransform {
+    /// The element's place, in world space.
+    pub translation: [f32; 3],
+    /// The element's orientation, a unit quaternion in `x y z w` order.
+    pub rotation: [f32; 4],
+    /// The element's scale.
+    pub scale: [f32; 3],
+}
+
+impl ElementTransform {
+    /// The rotation that turns nothing.
+    pub const IDENTITY_ROTATION: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+    /// The scale that resizes nothing.
+    pub const UNIT_SCALE: [f32; 3] = [1.0, 1.0, 1.0];
+
+    /// An unrotated, unscaled transform at `translation`.
+    pub fn at(translation: [f32; 3]) -> ElementTransform {
+        ElementTransform {
+            translation,
+            rotation: ElementTransform::IDENTITY_ROTATION,
+            scale: ElementTransform::UNIT_SCALE,
+        }
+    }
+}
+
 /// One element a tool reports for the entity it is editing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolElement {
@@ -247,7 +283,35 @@ pub struct ToolElement {
     /// mixes kinds is refused by name.
     pub kind: String,
     /// Where it sits, in world space.
-    pub position: [f32; 3],
+    pub transform: ElementTransform,
+}
+
+/// One element a drag moved, with the world transform it takes.
+///
+/// The editor works out where the drag puts each element and hands the whole
+/// set to the tool in one call, so a tool never does the frame or the gizmo
+/// maths itself.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ElementMove {
+    /// The tool's own id for the element.
+    pub element: u64,
+    /// The world transform the element ends up with.
+    pub transform: ElementTransform,
+}
+
+/// One space the active tool offers the gizmo's space toggle, named after
+/// what it aligns with.
+///
+/// A tool returns these for the current selection, so a frame may differ per
+/// point: a spline's frame is the curve's tangent and normal at the selected
+/// point, not a property of the entity.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CoordinateFrame {
+    /// The name the space row, the menus and the log show.
+    pub name: String,
+    /// The rotation its axes are turned by, a unit quaternion in `x y z w`
+    /// order, about the selection's pivot.
+    pub rotation: [f32; 4],
 }
 
 /// Fills `out` with the kinds a tool exposes.
@@ -255,6 +319,20 @@ pub type ToolKindReportFn = fn(out: &mut Vec<ElementKind>);
 
 /// Fills `out` with the elements `entity` has, as `world` describes it.
 pub type ToolElementReportFn = fn(entity: Entity, world: &World, out: &mut Vec<ToolElement>);
+
+/// Writes moved elements back into the tool's component.
+///
+/// The editor calls this with the world transforms a drag produced; the tool
+/// maps them onto whatever it stores, so the frame maths, the snapping and the
+/// undo step all stay the editor's.
+pub type ToolSetTransformsFn = fn(entity: Entity, moves: &[ElementMove], world: &mut World);
+
+/// Fills `out` with the frames the tool offers for the selection.
+///
+/// `selected` holds the ids the element selection is on, in selection order,
+/// which is what a frame computed at the pivot needs.
+pub type ToolFrameReportFn =
+    fn(entity: Entity, selected: &[u64], world: &World, out: &mut Vec<CoordinateFrame>);
 
 /// The optional element-reporting half of a tool.
 ///
@@ -267,12 +345,28 @@ pub struct ToolElementHooks {
     pub kinds: Option<ToolKindReportFn>,
     /// The elements the entity has, `None` when the tool reports none.
     pub elements: Option<ToolElementReportFn>,
+    /// The write-back a gizmo drag reaches, `None` when the tool's elements
+    /// cannot be moved.
+    pub set_transforms: Option<ToolSetTransformsFn>,
+    /// The extra spaces the gizmo's space toggle offers, `None` when the tool
+    /// brings none.
+    pub frames: Option<ToolFrameReportFn>,
 }
 
 impl ToolElementHooks {
     /// Whether the tool reports elements at all.
     pub fn reports_elements(self) -> bool {
         self.kinds.is_some() && self.elements.is_some()
+    }
+
+    /// Whether a drag can move the tool's elements.
+    pub fn moves_elements(self) -> bool {
+        self.set_transforms.is_some()
+    }
+
+    /// Whether the tool offers the gizmo a space of its own.
+    pub fn reports_frames(self) -> bool {
+        self.frames.is_some()
     }
 }
 
@@ -306,8 +400,9 @@ pub struct ElementHandle {
     pub element: u64,
     /// The kind's name, as the tool reported it.
     pub kind: String,
-    /// Where it sits, in world space.
-    pub position: [f32; 3],
+    /// Where it sits and which way it is turned, in world space: the press
+    /// capture a drag restores reads it from here.
+    pub transform: ElementTransform,
     /// The silhouette the handle draws as.
     pub shape: GizmoPointShape,
     /// How wide it draws, in pixels, in every view.
@@ -378,7 +473,7 @@ pub fn element_handles(
             entity,
             element: element.id,
             kind: kind.name,
-            position: element.position,
+            transform: element.transform,
             shape: kind.shape,
             size_pixels: kind.size_pixels,
             color: styled_color(base_color, handle, states),
@@ -566,6 +661,55 @@ impl ToolRegistry {
         elements
     }
 
+    /// Whether the active tool writes element transforms back.
+    ///
+    /// The editor asks this before it offers an element drag: a tool that
+    /// reports elements but takes no moves leaves the drag on the entity.
+    pub fn active_moves_elements(&self) -> bool {
+        self.active_record()
+            .is_some_and(|tool| tool.hooks.moves_elements())
+    }
+
+    /// Hands `moves` to the active tool's write-back, and answers whether a
+    /// tool took them.
+    ///
+    /// The editor's gizmo drag and its undo step both write through this one
+    /// call, so a tool sees no difference between a live drag and a restored
+    /// value.
+    pub fn active_set_transforms(
+        &self,
+        entity: Entity,
+        moves: &[ElementMove],
+        world: &mut World,
+    ) -> bool {
+        let Some(write) = self
+            .active_record()
+            .and_then(|tool| tool.hooks.set_transforms)
+        else {
+            return false;
+        };
+        write(entity, moves, world);
+        true
+    }
+
+    /// The extra spaces the active tool offers for `selected`, in its own
+    /// order.
+    ///
+    /// Empty when no tool is active, the tool brings no frames, or it has
+    /// nothing to say about this selection.
+    pub fn active_frames(
+        &self,
+        entity: Entity,
+        selected: &[u64],
+        world: &World,
+    ) -> Vec<CoordinateFrame> {
+        let mut frames = Vec::new();
+        if let Some(report) = self.active_record().and_then(|tool| tool.hooks.frames) {
+            report(entity, selected, world, &mut frames);
+        }
+        frames
+    }
+
     /// The registered tools, in registration order.
     pub fn tools(&self) -> &[RegisteredTool] {
         &self.tools
@@ -647,6 +791,59 @@ impl fmt::Display for ToolRegistry {
 }
 
 // =============================================================================
+// The space each tool remembers
+// =============================================================================
+
+/// The name [`ToolSpaceChoices`] registers under.
+pub const SPACE_CHOICES_RESOURCE_NAME: &str = "pill_editor_core::tools::ToolSpaceChoices";
+
+/// The gizmo space one tool was last on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpaceChoice {
+    /// The space setting that was in force.
+    pub space: GizmoSpace,
+    /// The tool frame it was in, when that was one of the tool's own frames.
+    pub frame: Option<u8>,
+}
+
+/// The tool frame each tool was last switched to, for the session.
+///
+/// The gizmo's space is a setting the preferences file keeps, so it can only
+/// name World or Local. A tool frame is session state: this resource remembers
+/// which frame a tool was on, so choosing another tool and coming back returns
+/// to it, while a tool that was never on a frame comes back on the setting.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ToolSpaceChoices {
+    by_tool: BTreeMap<String, SpaceChoice>,
+}
+
+impl ToolSpaceChoices {
+    /// What `tool` was last on, or `None` when it was never switched.
+    pub fn choice(&self, tool: &str) -> Option<SpaceChoice> {
+        self.by_tool.get(tool).copied()
+    }
+
+    /// Records that `tool` is now on `space`, in `frame` when that is one of
+    /// the tool's frames.
+    pub fn remember(&mut self, tool: &str, space: GizmoSpace, frame: Option<u8>) {
+        self.by_tool
+            .insert(tool.to_string(), SpaceChoice { space, frame });
+    }
+}
+
+impl pill_engine::Resource for ToolSpaceChoices {
+    /// Infrastructure, not game state: Play leaves this value alone and Stop
+    /// does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+
+    fn shared_name() -> Option<&'static str> {
+        Some(SPACE_CHOICES_RESOURCE_NAME)
+    }
+}
+
+// =============================================================================
 // World access
 // =============================================================================
 
@@ -663,6 +860,65 @@ pub fn tool_registry_mut(world: &mut World) -> &mut ToolRegistry {
     world
         .get_resource_mut::<ToolRegistry>()
         .expect("the registry was inserted just above")
+}
+
+/// The frames the active tool offers for what the gizmo draws on: the element
+/// selection's own entity, or the primary entity when no element is selected.
+///
+/// Every reader of a tool's frames resolves them here, so the space row, the
+/// snapshot and the per-tool memory all name one frame per index.
+pub fn selection_frames(world: &World) -> Vec<CoordinateFrame> {
+    let Some(registry) = world.get_resource::<ToolRegistry>() else {
+        return Vec::new();
+    };
+    let selector = world.get_resource::<EditorSelection>();
+    let (entity, selected) = match selector {
+        Some(selection) => (
+            selection.elements().owner().or_else(|| selection.primary()),
+            selection
+                .elements()
+                .elements()
+                .iter()
+                .map(|element| element.id)
+                .collect::<Vec<u64>>(),
+        ),
+        None => (None, Vec::new()),
+    };
+    match entity {
+        Some(entity) => registry.active_frames(entity, &selected, world),
+        None => Vec::new(),
+    }
+}
+
+/// Makes `tool` the active one, and puts the gizmo back on the space that tool
+/// was last on.
+///
+/// Choosing a tool is not a space change on its own: a tool nobody switched
+/// leaves the gizmo where it is, and a tool that was on a frame comes back on
+/// it, so switching between two tools with their own frames keeps each one's
+/// frame.
+///
+/// # Errors
+///
+/// Returns the registry's refusal when no tool has that name, and changes
+/// nothing then.
+pub fn activate_tool(world: &mut World, tool: Option<&str>) -> Result<(), String> {
+    tool_registry_mut(world).set_active(tool)?;
+    let frames = selection_frames(world);
+    if world.get_resource::<GizmoState>().is_none() {
+        world.insert_resource(GizmoState::default());
+    }
+    if world.get_resource::<ToolSpaceChoices>().is_none() {
+        world.insert_resource(ToolSpaceChoices::default());
+    }
+    let choices = world
+        .get_resource::<ToolSpaceChoices>()
+        .cloned()
+        .unwrap_or_default();
+    if let Some(state) = world.get_resource_mut::<GizmoState>() {
+        crate::gizmo::follow_tool(state, &choices, tool, frames.len());
+    }
+    Ok(())
 }
 
 /// Returns the active tool's name, or `None` when no tool is active.
@@ -795,7 +1051,7 @@ mod tests {
         out.push(ToolElement {
             id: 7,
             kind: "probe point".to_string(),
-            position: [1.0, 2.0, 3.0],
+            transform: ElementTransform::at([1.0, 2.0, 3.0]),
         });
     }
 
@@ -803,6 +1059,8 @@ mod tests {
         ToolElementHooks {
             kinds: Some(probe_kinds),
             elements: Some(probe_elements),
+            set_transforms: None,
+            frames: None,
         }
     }
 
@@ -838,7 +1096,7 @@ mod tests {
         let elements = registry.active_elements(entity, &world);
         assert_eq!(elements.len(), 1);
         assert_eq!(elements[0].id, 7);
-        assert_eq!(elements[0].position, [1.0, 2.0, 3.0]);
+        assert_eq!(elements[0].transform.translation, [1.0, 2.0, 3.0]);
 
         registry.register(&ElementProbeTool);
         assert!(
@@ -857,34 +1115,27 @@ mod tests {
         vec![point, tangent]
     }
 
-    /// Three points on a line and one tangent above them, as a tool reports
-    /// them for one entity.
+    /// Three points on a line and a tangent above them, plus an element of a
+    /// kind no kind describes, as a tool reports them for one entity.
     fn frame_report() -> Vec<ToolElement> {
+        let point = |id: u64, x: f32| ToolElement {
+            id,
+            kind: "point".to_string(),
+            transform: ElementTransform::at([x, 0.0, 0.0]),
+        };
         vec![
-            ToolElement {
-                id: 0,
-                kind: "point".to_string(),
-                position: [0.0, 0.0, 0.0],
-            },
-            ToolElement {
-                id: 1,
-                kind: "point".to_string(),
-                position: [1.0, 0.0, 0.0],
-            },
-            ToolElement {
-                id: 2,
-                kind: "point".to_string(),
-                position: [2.0, 0.0, 0.0],
-            },
+            point(0, 0.0),
+            point(1, 1.0),
+            point(2, 2.0),
             ToolElement {
                 id: 10,
                 kind: "tangent".to_string(),
-                position: [0.0, 1.0, 0.0],
+                transform: ElementTransform::at([0.0, 1.0, 0.0]),
             },
             ToolElement {
                 id: 11,
                 kind: "unknown".to_string(),
-                position: [0.0, 0.0, 1.0],
+                transform: ElementTransform::at([0.0, 0.0, 1.0]),
             },
         ]
     }
@@ -1024,5 +1275,122 @@ mod tests {
         assert_eq!(rect.max_y, 60.0);
         assert!(rect.contains(10.0, 20.0), "the edges are included");
         assert!(!rect.contains(9.0, 20.0));
+    }
+
+    /// The moves a probe tool's write-back was handed, so a test can read them
+    /// back out of the world.
+    #[derive(Clone, Debug, Default, PartialEq)]
+    struct ProbeWrites(Vec<ElementMove>);
+
+    impl pill_engine::Resource for ProbeWrites {}
+
+    /// A tool that takes element moves and answers with one frame of its own.
+    struct WritingProbeTool;
+
+    impl EditorTool for WritingProbeTool {
+        fn name(&self) -> &'static str {
+            "writing_probe"
+        }
+
+        fn label(&self) -> &'static str {
+            "Writing probe"
+        }
+
+        fn is_global(&self) -> bool {
+            false
+        }
+    }
+
+    fn probe_set_transforms(_entity: Entity, moves: &[ElementMove], world: &mut World) {
+        if world.get_resource::<ProbeWrites>().is_none() {
+            world.insert_resource(ProbeWrites::default());
+        }
+        if let Some(writes) = world.get_resource_mut::<ProbeWrites>() {
+            writes.0.extend_from_slice(moves);
+        }
+    }
+
+    fn probe_frames(
+        _entity: Entity,
+        _selected: &[u64],
+        _world: &World,
+        out: &mut Vec<CoordinateFrame>,
+    ) {
+        out.push(CoordinateFrame {
+            name: "probe frame".to_string(),
+            rotation: [0.0, 0.0, 0.0, 1.0],
+        });
+    }
+
+    /// The write-back and the frames report belong to the active tool: with no
+    /// tool active nothing takes a move and nothing reports a frame.
+    #[test]
+    fn the_active_tool_takes_moves_and_reports_frames() {
+        let mut world = World::default();
+        let entity = world.create_entity().build().expect("entity builds");
+        let mut registry = ToolRegistry::default();
+        registry.register_plugin(
+            &WritingProbeTool,
+            ToolElementHooks {
+                kinds: None,
+                elements: None,
+                set_transforms: Some(probe_set_transforms),
+                frames: Some(probe_frames),
+            },
+        );
+        let moves = vec![ElementMove {
+            element: 3,
+            transform: ElementTransform::at([4.0, 5.0, 6.0]),
+        }];
+        assert!(
+            !registry.active_set_transforms(entity, &moves, &mut world),
+            "no active tool takes a move"
+        );
+        assert!(registry.active_frames(entity, &[3], &world).is_empty());
+
+        registry
+            .set_active(Some("writing_probe"))
+            .expect("the probe is registered");
+        assert!(registry.active_set_transforms(entity, &moves, &mut world));
+        let writes = world
+            .get_resource::<ProbeWrites>()
+            .expect("the probe took the moves")
+            .clone();
+        assert_eq!(writes.0, moves);
+        let frames = registry.active_frames(entity, &[3], &world);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].name, "probe frame");
+    }
+
+    /// A space choice belongs to the tool it was made under: another tool's
+    /// choice leaves it alone, and choosing again replaces it.
+    #[test]
+    fn space_choices_remember_each_tool() {
+        let mut choices = ToolSpaceChoices::default();
+        assert!(choices.choice("fixture").is_none());
+        choices.remember("fixture", GizmoSpace::Local, Some(1));
+        choices.remember("other", GizmoSpace::Local, None);
+        assert_eq!(
+            choices.choice("fixture"),
+            Some(SpaceChoice {
+                space: GizmoSpace::Local,
+                frame: Some(1),
+            })
+        );
+        assert_eq!(
+            choices.choice("other"),
+            Some(SpaceChoice {
+                space: GizmoSpace::Local,
+                frame: None,
+            })
+        );
+        choices.remember("fixture", GizmoSpace::World, None);
+        assert_eq!(
+            choices.choice("fixture"),
+            Some(SpaceChoice {
+                space: GizmoSpace::World,
+                frame: None,
+            })
+        );
     }
 }

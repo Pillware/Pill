@@ -149,6 +149,12 @@ ELEMENT_CLICKED_TOKEN = "[editor] element clicked"
 ELEMENT_REFUSED_TOKEN = "[editor] element selection refused"
 SCENE_PICK_ELEMENT_TOKEN = "[editor] scene pick element"
 ELEMENT_MARQUEE_TOKEN = "[editor] element marquee"
+# The element drag: the space row's cycle (which names the space or the tool's
+# frame it reached), the write the tool takes for one drag move and the one
+# recorded step a finished drag queues.
+GIZMO_SPACE_TOKEN = "[editor] gizmo space"
+ELEMENT_TRANSFORMS_WRITTEN_TOKEN = "[editor] element transforms written"
+ELEMENT_DRAG_RECORDED_TOKEN = "[editor] element drag recorded"
 TOOL_ACTIVATED_TOKEN = "[editor] tool activated"
 TOOL_DUMP_TOKEN = "[test] tools"
 TOOL_ROW_TOKEN = "[test] tool"
