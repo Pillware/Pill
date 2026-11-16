@@ -53,7 +53,7 @@ import tempfile
 from pathlib import Path
 
 # The engine's table and the managed mirror, relative to the repository root.
-ENGINE_TABLE = "modules/engine/pill_engine_core/src/input.rs"
+ENGINE_TABLE = "modules/engine/pill_engine_core/src/services/input.rs"
 MIRROR_ENUM = "modules/csharp/pill_csharp_runtime/src/KeyCode.cs"
 
 # `Name => "code-name"` inside the `key_codes!` block.

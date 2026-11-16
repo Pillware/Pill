@@ -76,14 +76,6 @@ pub mod assets;
 /// The engine's tunable constants and the parallel-execution settings.
 pub mod config;
 
-/// Immediate debug drawing: lines, shapes, labels and gizmo handles. Any
-/// system can draw them, and every renderer draws them.
-pub mod debug_draw;
-
-/// A periodic report of ECS state, switched on with
-/// `Engine::set_ecs_diagnostics_interval` and printed at that interval.
-pub mod diagnostics;
-
 /// Engine-owned native dynamic buffer, re-exported from `pill_core`.
 ///
 /// The type lives beside the allocation service that owns its blocks, so a
@@ -109,10 +101,6 @@ pub mod error;
 /// Per-function hot patching: stable dispatch slots for registered systems.
 pub mod hot_patch;
 
-/// Keyboard, mouse and gamepad state maintained by the engine and read through
-/// `Res<Input>`.
-pub mod input;
-
 /// The C ABI a mirrored Rust function crosses to reach C#: argument slots,
 /// result encodings, and the channels that carry an error message or a
 /// returned string.
@@ -124,43 +112,30 @@ pub mod module_abi;
 /// Component persistence and schema migration for hot-reload.
 pub mod persistence;
 
-/// Re-exports the profiling API from `pill_core`.
-pub mod profiling;
-
 /// The reflection group: the field layouts the derive macros emit, the
 /// type-erased field access built on them, and the public type names. Its
 /// modules keep their old crate-root paths through the re-exports below.
 pub mod reflection;
 
-/// The saved form of asset and entity references: a guid and a stable id, plus
-/// what a later run needs to find the target again.
-pub mod saved_references;
-
-/// A scene: a world's entities, components and references as one standalone
-/// asset that loads back into a world.
+/// The scene group: a world saved as one file, the references inside it, and
+/// the startup scene a project loads first. Its modules keep their old
+/// crate-root paths through the re-exports below.
 pub mod scene;
 
-/// Settings assets that configure manager resources: the bindings that point a
-/// manager at one, the file a host creates when the project has none, and the
-/// change detection that re-applies an edited file.
-pub mod manager_settings;
+/// The services group: the clock and the input the frame was given, the debug
+/// drawing and the diagnostics a system reports with, and the profiling API.
+/// Its modules keep their old crate-root paths through the re-exports below.
+pub mod services;
 
-/// Manager settings: the settings asset a manager resource reads, its
-/// conventional path, and the applier that moves its document into the live
-/// value.
+/// The settings group: the settings asset a manager resource reads its tuning
+/// from, and the bindings that point it at one. Its modules keep their old
+/// crate-root paths through the re-exports below.
 pub mod settings;
-
-/// The startup scene: the `.scene` a project's settings name, loaded before
-/// the project's own `init` fills the world.
-pub mod startup_scene;
 
 /// The systems group: how a function becomes a system, how the frame orders
 /// and batches those systems, and the script hooks. Its modules keep their old
 /// crate-root paths through the re-exports below.
 pub mod systems;
-
-/// Frame timing maintained by the engine and read through `Res<Time>`.
-pub mod time;
 
 // =============================================================================
 // Public Re-exports
@@ -168,15 +143,12 @@ pub mod time;
 
 // Core engine types, re-exported so one `use` reaches them.
 //
-// The modules in the `ecs`, `systems`, `reflection` and `assets` groups also
-// keep their old crate-root paths, so a caller that names `crate::entity`,
-// `pill_engine_core::world`, `crate::scripting` or `crate::asset_store` still
-// resolves.
+// The modules in the `ecs`, `systems`, `reflection`, `assets`, `scene`,
+// `services` and `settings` groups also keep their old crate-root paths, so a
+// caller that names `crate::entity`, `pill_engine_core::world`,
+// `crate::scripting`, `crate::asset_store` or `crate::input` still resolves.
 pub use api::EngineApi;
 
-// The asset group's modules, under the names callers have always used:
-// `crate::asset` is `assets::storage`, `crate::asset_store` is `assets::store`,
-// and so on. No path or item name changes.
 pub use assets::database::{AssetDatabase, AssetRecord, GuidConflict};
 pub use assets::import_registry::AssetIdentity;
 pub use assets::import_registry::{
@@ -194,16 +166,25 @@ pub use assets::storage::{
     Asset, AssetBindingError, AssetBindingResult, AssetGuid, AssetLoadError, AssetLoadResult,
     AssetLoader, AssetManager, Handle,
 };
+// The assets group's modules, under the names callers have always used:
+// `crate::asset` is `assets::storage`, `crate::asset_store` is `assets::store`,
+// and so on. No path or item name changes.
 pub use assets::{
     database as asset_database, document as asset_document,
     import_registry as asset_import_registry, loading as asset_loading, metadata as asset_metadata,
     reference as asset_reference, standalone as asset_standalone, storage as asset,
     store as asset_store,
 };
-pub use debug_draw::{
-    DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
-    GizmoPoint, GizmoPointShape, GizmoTriangle, LabelAnchor,
-};
+
+// The scene, settings and services groups' modules, under the names callers
+// have always used. `scene::scene` and `settings::settings` share their group's
+// name, so each group re-exports its own module's items (`crate::scene::Scene`,
+// `crate::settings::SettingsOutcome`) and only the sibling modules need an
+// alias here.
+pub use scene::{saved_references, startup_scene};
+pub use services::{debug_draw, diagnostics, input, profiling, time};
+pub use settings::manager_settings;
+
 pub use ecs::commands::{CommandError, Commands};
 pub use ecs::common_components::{register_transform_component, TransformComponent};
 pub use ecs::component::{Component, ComponentId, ComponentTicks, Tick};
@@ -219,34 +200,40 @@ pub use ecs::{archetype, commands, common_components, component, entity, query, 
 pub use engine::{Engine, PlayRefusal, RunMode, SystemOptions, SystemOwner, SystemSnapshot};
 pub use error::{EngineError, SystemError, SystemFailure};
 pub use hot_patch::{HotPatchError, HotPatchRegistry, HotSlot, PlainSlot};
-pub use input::{
-    ButtonState, GamepadAxis, GamepadButton, Input, InputEvent, KeyCode, Modifiers, MouseButton,
-    PlayerId, RumbleRequest, ScrollDelta,
-};
-pub use manager_settings::{
-    ManagerSettingsApplied, ManagerSettingsFailure, ManagerSettingsReport, ManagerSettingsSurface,
-    MissingManagerSettings,
-};
 pub use persistence::{PersistResourceManifestEntry, ResourceSnapshot};
 pub use pill_core::DynamicBuffer;
 pub use reflection::component_field::{
     parse_enum_tag, ComponentFieldError, EnumFieldTag, FieldValue,
 };
 pub use reflection::{component_field, component_registry, type_names};
-pub use saved_references::{
+pub use scene::saved_references::{
     restore_asset_reference, saved_reference, SavedAssetReference, SavedEntityLink,
     SavedEntityLinks, SavedReference,
 };
-pub use scene::{load_scene, save_scene, Scene, SceneDocument, SceneEntity, SceneLoad, SceneSave};
-pub use settings::{SettingsAssetManager, SettingsAssetOps, SettingsOutcome};
-pub use startup_scene::{apply_startup_scene, queue_startup_scene, StartupScene};
+pub use scene::scene::{
+    load_scene, save_scene, Scene, SceneDocument, SceneEntity, SceneLoad, SceneSave,
+};
+pub use scene::startup_scene::{apply_startup_scene, queue_startup_scene, StartupScene};
+pub use services::debug_draw::{
+    DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
+    GizmoPoint, GizmoPointShape, GizmoTriangle, LabelAnchor,
+};
+pub use services::input::{
+    ButtonState, GamepadAxis, GamepadButton, Input, InputEvent, KeyCode, Modifiers, MouseButton,
+    PlayerId, RumbleRequest, ScrollDelta,
+};
+pub use services::time::Time;
+pub use settings::manager_settings::{
+    ManagerSettingsApplied, ManagerSettingsFailure, ManagerSettingsReport, ManagerSettingsSurface,
+    MissingManagerSettings,
+};
+pub use settings::settings::{SettingsAssetManager, SettingsAssetOps, SettingsOutcome};
 pub use systems::scheduler::{RunPhase, SystemAccess, SystemScheduler, TypeKey};
 pub use systems::scripting::{
     CreateCause, CreateInfo, DestroyCause, DestroyInfo, ScriptComponent, ScriptContext,
     ScriptDeclaration, ScriptDeclarationData, StartCause, StartInfo, StopCause, StopInfo,
 };
 pub use systems::{scheduler, scripting, system};
-pub use time::Time;
 
 // Serde derives re-exported so downstream components can derive serialization without a direct dependency.
 pub use serde::{Deserialize, Serialize};
