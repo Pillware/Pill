@@ -794,6 +794,11 @@ fn scripted_name(command: &ScriptedCommand) -> &'static str {
         ScriptedCommand::EntityDelete => "command editor.entity_delete",
         ScriptedCommand::SnapToggle => "command editor.tool_snap_toggle",
         ScriptedCommand::SpaceToggle => "command editor.tool_space_toggle",
+        // The element verbs run in the desktop editor only: a page draws no
+        // element handles, so there is nothing to nudge and no tool menu to
+        // open here yet.
+        ScriptedCommand::DragElement { .. } => "drag element",
+        ScriptedCommand::ElementMenu { .. } => "element menu",
         // The native-only verbs: a page has no OS clipboard, no OLE drag, a
         // single fixed scene view and no second OS window to move a tab into,
         // so these parse but cannot run here.

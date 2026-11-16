@@ -1144,6 +1144,12 @@ impl EditorWindow {
                     None => reject_scripted_command(line, "gizmo drag needs a known axis or plane"),
                 }
             }
+            ScriptedCommand::DragElement { id, delta } => {
+                reject_on_failure(line, self.scripted_drag_element(id, delta))
+            }
+            ScriptedCommand::ElementMenu { item } => {
+                reject_on_failure(line, self.scripted_element_menu(&item))
+            }
             ScriptedCommand::GizmoPress { target } => match self.scripted_gizmo_handle(&target) {
                 Some(handle) => self.start_synthetic_gizmo_drag(handle, None),
                 None => reject_scripted_command(line, "gizmo press needs a known axis or plane"),
@@ -1163,6 +1169,7 @@ impl EditorWindow {
                 Dump::StandaloneTypes => self.dump_standalone_types(),
                 Dump::Systems => self.dump_systems(),
                 Dump::Tools => self.dump_tools(),
+                Dump::Elements => self.dump_elements(),
                 Dump::Preferences => self.dump_preferences(),
                 Dump::Theme => self.dump_theme(),
                 Dump::Console => self.dump_console(),
@@ -1797,6 +1804,12 @@ impl EditorWindow {
     /// the destroy and the selection clear as one step. When the selection
     /// holds no entity, it logs a note and does nothing.
     pub(super) fn scripted_entity_delete(&mut self) {
+        // An element selection belongs to the active tool: Delete removes
+        // those elements through the tool and leaves the entity alone, which is
+        // what makes a point delete undoable as one step.
+        if self.delete_selected_elements() {
+            return;
+        }
         let (entity, asset) = {
             let world = self.host.host_mut().engine_mut().world_mut();
             world
@@ -1821,6 +1834,252 @@ impl EditorWindow {
             entity = %entity,
             "[editor] delete entity queued"
         );
+    }
+
+    /// Runs `drag element <id> <dx> <dy> <dz>`: a direct nudge of one element
+    /// by a world delta, queued as the recorded write a gizmo drag ends with.
+    ///
+    /// The element's new transform comes from the active tool's own report, so
+    /// the editor never guesses where a tool keeps its data, and the write goes
+    /// back through the same `set_element_transforms` hook a drag uses.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when nothing is selected, when the tool reports no
+    /// elements, or when it reports no element with that id.
+    pub(super) fn scripted_drag_element(&mut self, id: u64, delta: [f32; 3]) -> Result<(), String> {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let Some((entity, kind, _selected)) = tools::element_selection_subject(world) else {
+            return Err("drag element needs a selected entity to own the elements".to_string());
+        };
+        let registry = tools::tool_registry_mut(world).clone();
+        let reported = registry.active_elements(entity, world);
+        let Some(element) = reported.iter().find(|element| element.id == id) else {
+            return Err(format!("the active tool reports no element {id}"));
+        };
+        let moved = tools::ElementMove {
+            element: id,
+            transform: tools::ElementTransform {
+                translation: gizmo::add(element.transform.translation, delta),
+                ..element.transform
+            },
+        };
+        let translation = moved.transform.translation;
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push_recorded(
+                vec![EditorCommand::SetElementTransforms {
+                    entity,
+                    kind,
+                    moves: vec![moved],
+                }],
+                "nudge element",
+                None,
+            );
+        }
+        info!(
+            target: telemetry_target::EDITOR,
+            entity = %entity,
+            element = id,
+            x = translation[0],
+            y = translation[1],
+            z = translation[2],
+            "[editor] element nudge queued"
+        );
+        Ok(())
+    }
+
+    /// Runs `element menu <item>`: the row of the active tool's element context
+    /// menu a click on it queues.
+    ///
+    /// The row is checked against the tool's own report first, so a line that
+    /// names a row the tool does not offer is refused instead of queueing a
+    /// request nothing answers. The queued command is the same one the menu
+    /// draws, and the frame boundary asks the tool what it means.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when nothing is selected, when the tool adds no rows,
+    /// or when it does not offer that row.
+    pub(super) fn scripted_element_menu(&mut self, item: &str) -> Result<(), String> {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let Some((entity, kind, selected)) = tools::element_selection_subject(world) else {
+            return Err("element menu needs a selected entity to own the elements".to_string());
+        };
+        let registry = tools::tool_registry_mut(world).clone();
+        if !registry
+            .active_menu(entity, &kind, &selected, world)
+            .iter()
+            .any(|entry| entry.id == item)
+        {
+            return Err(format!(
+                "the active tool offers no menu row '{item}' for this selection"
+            ));
+        }
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push_recorded(
+                vec![EditorCommand::RunElementMenu {
+                    item: item.to_string(),
+                }],
+                format!("tool {item}"),
+                None,
+            );
+        }
+        info!(
+            target: telemetry_target::EDITOR,
+            entity = %entity,
+            item,
+            "[editor] element menu queued"
+        );
+        Ok(())
+    }
+
+    /// Logs what the active tool reports (`dump elements`): one line per
+    /// element with its world place, then one line per menu row it offers.
+    ///
+    /// A run with no selected entity or no reporting tool logs the count line
+    /// alone, so a suite can tell "nothing selected" from "the tool reports
+    /// nothing".
+    pub(super) fn dump_elements(&mut self) {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let subject = tools::element_selection_subject(world);
+        let Some((entity, kind, selected)) = subject else {
+            info!(
+                target: telemetry_target::EDITOR,
+                count = 0,
+                entity = "none",
+                "[test] elements"
+            );
+            return;
+        };
+        let registry = tools::tool_registry_mut(world).clone();
+        let reported = registry.active_elements(entity, world);
+        let kinds = registry.active_kinds();
+        info!(
+            target: telemetry_target::EDITOR,
+            entity = %entity,
+            count = reported.len(),
+            kinds = kinds.len(),
+            kind = kind.as_str(),
+            selected = selected.len(),
+            "[test] elements"
+        );
+        for element in &reported {
+            let translation = element.transform.translation;
+            info!(
+                target: telemetry_target::EDITOR,
+                entity = %entity,
+                id = element.id,
+                kind = element.kind.as_str(),
+                x = translation[0],
+                y = translation[1],
+                z = translation[2],
+                selected = selected.contains(&element.id),
+                "[test] element"
+            );
+        }
+        for entry in registry.active_menu(entity, &kind, &selected, world) {
+            info!(
+                target: telemetry_target::EDITOR,
+                item = entry.id.as_str(),
+                label = entry.label.as_str(),
+                "[test] element menu"
+            );
+        }
+    }
+
+    /// Queues the tool's recorded removal of the element selection, and
+    /// answers whether there was one to remove.
+    ///
+    /// The batch is the removal and then the slot's clear, in that order: the
+    /// undo runs the other way round, so it puts the full selection back first
+    /// and re-inserts the elements after it. A run with no element selection,
+    /// or a tool that cannot remove, answers `false` and leaves Delete to the
+    /// entity rule.
+    pub(super) fn delete_selected_elements(&mut self) -> bool {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let Some((entity, kind, selected)) = tools::element_selection_subject(world) else {
+            return false;
+        };
+        if selected.is_empty() {
+            return false;
+        }
+        let registry = tools::tool_registry_mut(world).clone();
+        if registry
+            .active_record()
+            .is_none_or(|tool| tool.hooks.remove.is_none())
+        {
+            return false;
+        }
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push_recorded(
+                vec![
+                    EditorCommand::RemoveElements {
+                        entity,
+                        kind: kind.clone(),
+                        elements: selected.clone(),
+                    },
+                    EditorCommand::SetElementSelection {
+                        kind: String::new(),
+                        elements: Vec::new(),
+                    },
+                ],
+                "delete elements",
+                None,
+            );
+        }
+        info!(
+            target: telemetry_target::EDITOR,
+            entity = %entity,
+            kind = kind.as_str(),
+            count = selected.len(),
+            "[editor] delete elements queued"
+        );
+        true
+    }
+
+    /// Offers one key press to the active tool's element selection, and
+    /// answers whether the tool took it.
+    ///
+    /// The tool hears the key before the keybindings do, so a component tool
+    /// can own a chord while its element selection is up; every other key - and
+    /// every key with no element selection - falls through to the editor.
+    pub(super) fn tool_element_key(&mut self, key: KeyCode) -> bool {
+        let name = pill_editor_core::scripted::key_code_name(key);
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let Some((entity, kind, selected)) = tools::element_selection_subject(world) else {
+            return false;
+        };
+        if selected.is_empty() {
+            return false;
+        }
+        let registry = tools::tool_registry_mut(world).clone();
+        let response = registry.active_key(entity, name, &selected, world);
+        match response {
+            tools::KeyResponse::Default => false,
+            tools::KeyResponse::Consume => {
+                info!(
+                    target: telemetry_target::EDITOR,
+                    entity = %entity,
+                    kind = kind.as_str(),
+                    key = name,
+                    "[editor] element key consumed"
+                );
+                true
+            }
+            tools::KeyResponse::Commands(commands) => {
+                let count = commands.len();
+                crate::runner::element_tools::queue_tool_commands(world, commands);
+                info!(
+                    target: telemetry_target::EDITOR,
+                    entity = %entity,
+                    kind = kind.as_str(),
+                    key = name,
+                    commands = count,
+                    "[editor] element key commands queued"
+                );
+                true
+            }
+        }
     }
 
     /// Resolves a scripted handle name to its handle id. `x`/`y`/`z` name the

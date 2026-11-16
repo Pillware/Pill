@@ -1626,6 +1626,12 @@ impl EditorWindow {
         if !self.keybindings_applied {
             return false;
         }
+        // A tool that owns an element selection hears the key before the
+        // keybindings do: it can take the chord or answer with recorded
+        // commands. Every other key falls through to the binding below.
+        if self.tool_element_key(key) {
+            return true;
+        }
         let world = self.host.host_mut().engine_mut().world_mut();
         CommandRegistry::ensure(world);
         let resolved_command_id = world

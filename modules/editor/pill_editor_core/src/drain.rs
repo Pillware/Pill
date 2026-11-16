@@ -73,8 +73,12 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
     };
     let mut drain_outcome = DrainOutcome::default();
     // Step 2: Apply each batch in order, then act on what it changed.
-    for batch in batches {
+    for mut batch in batches {
         drain_outcome.batches += 1;
+        // Step 2a: a tool's menu row is only a request. The tool decides what
+        // it means, so it is asked here and its commands run in the row's
+        // place, which makes one menu click one undo step.
+        expand_element_menu(engine, &mut batch);
         let recorded_apply = EditorCommand::apply_recorded(engine, &batch.commands);
         let failed_command_count = recorded_apply.failures.len();
         pill_core::info!(
@@ -187,8 +191,67 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
     drain_outcome
 }
 
-/// Moves the shared selection with the file a batch moved or deleted.
+/// Replaces every [`EditorCommand::RunElementMenu`] in `batch` with the
+/// commands the active tool's menu row asks for.
 ///
+/// A menu row is the tool's to define, so the drain asks it at the frame
+/// boundary and runs its answer in the row's place: the batch the shell queued
+/// then holds exactly the edit the row means, and the history records it as
+/// one step. A row the tool refuses keeps its command, whose apply reports the
+/// refusal like any other failed command.
+fn expand_element_menu(engine: &mut Engine, batch: &mut crate::commands::PendingCommandBatch) {
+    if !batch
+        .commands
+        .iter()
+        .any(|command| matches!(command, EditorCommand::RunElementMenu { .. }))
+    {
+        return;
+    }
+    let subject = crate::tools::element_selection_subject(engine.world());
+    let mut expanded: Vec<EditorCommand> = Vec::with_capacity(batch.commands.len());
+    for command in std::mem::take(&mut batch.commands) {
+        let EditorCommand::RunElementMenu { item } = &command else {
+            expanded.push(command);
+            continue;
+        };
+        let Some((entity, kind, selected)) = subject.clone() else {
+            pill_core::warn!(
+                target: telemetry_target::EDITOR,
+                item = item.as_str(),
+                error = "no element selection names a subject",
+                "[editor] element menu refused"
+            );
+            expanded.push(command);
+            continue;
+        };
+        let world = engine.world_mut();
+        let registry = crate::tools::tool_registry_mut(world).clone();
+        match registry.active_menu_run(entity, &kind, &selected, item, world) {
+            Ok(commands) => {
+                batch.label = format!("tool {item}");
+                pill_core::info!(
+                    target: telemetry_target::EDITOR,
+                    item = item.as_str(),
+                    commands = commands.len(),
+                    "[editor] element menu ran"
+                );
+                expanded.extend(commands);
+            }
+            Err(reason) => {
+                pill_core::warn!(
+                    target: telemetry_target::EDITOR,
+                    item = item.as_str(),
+                    error = reason.as_str(),
+                    "[editor] element menu refused"
+                );
+                expanded.push(command);
+            }
+        }
+    }
+    batch.commands = expanded;
+}
+
+/// Moves the shared selection with the file a batch moved or deleted.
 /// The selection follows the disk instead of being recorded as a step, so an
 /// undo never has to replay a selection change to keep the two in agreement.
 /// A command that failed is skipped: a move refused because its destination

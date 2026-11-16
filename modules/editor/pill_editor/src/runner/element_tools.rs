@@ -33,6 +33,42 @@
 use super::*;
 
 // =============================================================================
+// Free Functions
+// =============================================================================
+
+/// Queues one recorded element-selection step.
+///
+/// No coalesce key: every click, extend, tool answer and clear is its own undo
+/// step, which is the gesture rule the transform gizmo follows.
+pub(super) fn queue_element_selection(
+    world: &mut pill_engine_core::World,
+    kind: String,
+    elements: Vec<ElementRef>,
+) {
+    if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+        pending.push_recorded(
+            vec![EditorCommand::SetElementSelection { kind, elements }],
+            "select elements",
+            None,
+        );
+    }
+}
+
+/// Queues the commands a tool answered a press or a key with, as one recorded
+/// step.
+pub(super) fn queue_tool_commands(
+    world: &mut pill_engine_core::World,
+    commands: Vec<EditorCommand>,
+) {
+    if commands.is_empty() {
+        return;
+    }
+    if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+        pending.push_recorded(commands, "tool edit", None);
+    }
+}
+
+// =============================================================================
 // Constants
 // =============================================================================
 
@@ -233,7 +269,11 @@ impl EditorWindow {
     ///
     /// The pointer path passes this frame's handles; the scripted channel
     /// passes the report it just read, so neither has to depend on the other's
-    /// frame. A refusal changes nothing and logs why.
+    /// frame. The active tool is asked first: it may select what it likes, run
+    /// recorded commands, or swallow the press. Only an answer of
+    /// [`tools::PressResponse::Default`] reaches the editor's own rule, which
+    /// is what lets a component tool override a click without the editor
+    /// knowing anything about it. A refusal changes nothing and logs why.
     pub(super) fn apply_element_click_with(
         &mut self,
         target: gizmo::ElementHandleTarget,
@@ -245,6 +285,68 @@ impl EditorWindow {
             id: target.element,
         };
         let world = self.host.host_mut().engine_mut().world_mut();
+        // Step 1: offer the press to the tool, with what is selected now. The
+        // answer is taken before the editor's own rule runs, so a tool can
+        // select what it likes, queue recorded commands, or swallow the press.
+        let selected: Vec<u64> = world
+            .get_resource::<EditorSelection>()
+            .map(|selection| {
+                selection
+                    .elements()
+                    .elements()
+                    .iter()
+                    .map(|element| element.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let registry = tools::tool_registry_mut(world).clone();
+        let response =
+            registry.active_press(target.entity, target.element, click, &selected, world);
+        match response {
+            tools::PressResponse::Default => {}
+            tools::PressResponse::Consume => {
+                info!(
+                    target: telemetry_target::EDITOR,
+                    entity = %target.entity,
+                    element = target.element,
+                    "[editor] element press consumed"
+                );
+                return;
+            }
+            tools::PressResponse::Select(ids) => {
+                let elements: Vec<ElementRef> = ids
+                    .into_iter()
+                    .map(|id| ElementRef {
+                        entity: target.entity,
+                        id,
+                    })
+                    .collect();
+                let count = elements.len();
+                queue_element_selection(world, target.kind.clone(), elements);
+                info!(
+                    target: telemetry_target::EDITOR,
+                    entity = %target.entity,
+                    element = target.element,
+                    count,
+                    "[editor] element press selected"
+                );
+                return;
+            }
+            tools::PressResponse::Commands(commands) => {
+                let count = commands.len();
+                queue_tool_commands(world, commands);
+                info!(
+                    target: telemetry_target::EDITOR,
+                    entity = %target.entity,
+                    element = target.element,
+                    commands = count,
+                    "[editor] element press commands queued"
+                );
+                return;
+            }
+        }
+        // Step 2: the editor's own rule, which is the select / extend / range
+        // behaviour every click has when no tool overrides it.
         let Some(selection) = world.get_resource::<EditorSelection>() else {
             return;
         };
@@ -264,15 +366,7 @@ impl EditorWindow {
         let kind = next.kind().to_string();
         let elements = next.elements().to_vec();
         let count = elements.len();
-        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
-            // No coalesce key: every click and every extend is its own undo
-            // step, which is the gesture rule the transform gizmo follows.
-            pending.push_recorded(
-                vec![EditorCommand::SetElementSelection { kind, elements }],
-                "select elements",
-                None,
-            );
-        }
+        queue_element_selection(world, kind, elements);
         info!(
             target: telemetry_target::EDITOR,
             entity = %target.entity,

@@ -75,8 +75,39 @@ pub fn scene_context_menu(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui) {
         frame: viewer.snapshot.gizmo_frame.as_deref(),
     };
     let pending = &mut viewer.pending;
+    let element_menu = viewer.snapshot.element_menu.clone();
     let response = ui.allocate_response(ui.available_size_before_wrap(), egui::Sense::click());
     context_menu("scene", &response, &mut viewer.overlay_regions, &mut |ui| {
+        // Step 0: the rows the active tool adds for the element selection,
+        // before the editor's own rows: they act on the elements the menu was
+        // opened over. A row queues the same `RunElementMenu` request the
+        // scripted channel's `element menu` does, and the frame boundary asks
+        // the tool what it means.
+        if !element_menu.is_empty() {
+            for entry in &element_menu {
+                // The circled plus is the editor's "add something" mark, which
+                // reads correctly for the tool rows a suite drives; a tool
+                // that wants its own face can grow one when the menu reports
+                // icons.
+                if ui
+                    .add(icons::IconButton::new(
+                        icons::Icon::PlusCircle,
+                        &entry.label,
+                    ))
+                    .clicked()
+                {
+                    pending.push_recorded(
+                        vec![EditorCommand::RunElementMenu {
+                            item: entry.id.clone(),
+                        }],
+                        format!("tool {}", entry.id),
+                        None,
+                    );
+                    ui.close();
+                }
+            }
+            ui.separator();
+        }
         // Step 1: the three tool rows. They come from the toolbox's own list,
         // so a row here and on the panel share their icon, their active state
         // and the command a click queues. Each label comes from `menu_label`,

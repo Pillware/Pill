@@ -950,6 +950,10 @@ pub struct EditorSnapshot {
     /// reached one of the active tool's frames. The toolbox's space row shows
     /// the name.
     pub gizmo_frame: Option<String>,
+    /// The rows the active tool adds to the element context menu for the
+    /// current selection, in the tool's own order. The Scene tab's context
+    /// menu draws them and a click queues the row's `RunElementMenu`.
+    pub element_menu: Vec<crate::tools::ElementMenuEntry>,
     /// Whether the scene grid is on. The toolbox's grid row and the Scene tab's
     /// menu check it against the renderer's switch.
     pub grid_enabled: bool,
@@ -1073,6 +1077,7 @@ impl EditorSnapshot {
                 .map(|state| state.settings)
                 .unwrap_or_default(),
             gizmo_frame: Self::capture_gizmo_frame(engine),
+            element_menu: Self::capture_element_menu(engine),
             grid_enabled: engine
                 .world()
                 .get_resource::<pill_renderer_api::SurfaceCameras>()
@@ -1140,6 +1145,21 @@ impl EditorSnapshot {
             .map(|frame| frame.name)
     }
 
+    /// The menu rows the active tool adds for the current element selection.
+    ///
+    /// Empty when no tool is active or the tool adds none, which is what makes
+    /// an editor without a component tool's menu look exactly as it did.
+    fn capture_element_menu(engine: &Engine) -> Vec<crate::tools::ElementMenuEntry> {
+        let world = engine.world();
+        let Some((entity, kind, selected)) = crate::tools::element_selection_subject(world) else {
+            return Vec::new();
+        };
+        let Some(registry) = world.get_resource::<crate::tools::ToolRegistry>() else {
+            return Vec::new();
+        };
+        registry.active_menu(entity, &kind, &selected, world)
+    }
+
     /// Returns the snapshot fields that differ from `previous`, comma-joined.
     ///
     /// The redraw cadence treats any change as a reason to draw, so this
@@ -1198,6 +1218,9 @@ impl EditorSnapshot {
         }
         if previous.gizmo_frame != current.gizmo_frame {
             changed.push("gizmo_frame");
+        }
+        if previous.element_menu != current.element_menu {
+            changed.push("element_menu");
         }
         if previous.grid_enabled != current.grid_enabled {
             changed.push("grid_enabled");

@@ -527,6 +527,105 @@ pub(super) fn apply(
             ))
         }
 
+        EditorCommand::InsertElements {
+            entity,
+            kind,
+            elements,
+        } => {
+            let world = engine.world_mut();
+            let registry = crate::tools::tool_registry_mut(world).clone();
+            let mut inserted: Vec<u64> = Vec::with_capacity(elements.len());
+            let mut refused = None;
+            // Step 1: ask the tool for each element, keeping the ids it
+            // answers so the inverse can take exactly those away again.
+            for element in elements {
+                match registry.active_insert(
+                    *entity,
+                    kind,
+                    Some(element.element),
+                    element.transform,
+                    world,
+                ) {
+                    Some(id) => inserted.push(id),
+                    None => {
+                        refused = Some(element.element);
+                        break;
+                    }
+                }
+            }
+            // Step 2: an insert the tool refused puts back what this command
+            // already added, so a refused edit changes nothing.
+            if let Some(element) = refused {
+                if !inserted.is_empty() {
+                    registry.active_remove(*entity, kind, &inserted, world);
+                }
+                return Err(format!(
+                    "{command:?}: the tool could not insert element {element}"
+                ));
+            }
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                entity = %entity,
+                kind = kind.as_str(),
+                elements = inserted.len(),
+                "[editor] elements inserted"
+            );
+            Ok(CommandOutcome::inverse(EditorCommand::RemoveElements {
+                entity: *entity,
+                kind: kind.clone(),
+                elements: inserted,
+            }))
+        }
+
+        EditorCommand::RemoveElements {
+            entity,
+            kind,
+            elements,
+        } => {
+            let world = engine.world_mut();
+            let registry = crate::tools::tool_registry_mut(world).clone();
+            // Step 1: read where the named elements are now, so the undo can
+            // put the same elements back under the same ids.
+            let reported = registry.active_elements(*entity, world);
+            let removed: Vec<crate::tools::ElementMove> = elements
+                .iter()
+                .filter_map(|id| {
+                    reported
+                        .iter()
+                        .find(|element| element.id == *id)
+                        .map(|element| crate::tools::ElementMove {
+                            element: element.id,
+                            transform: element.transform,
+                        })
+                })
+                .collect();
+            if removed.is_empty() {
+                return Err(format!(
+                    "{command:?}: the tool reports none of the named elements"
+                ));
+            }
+            // Step 2: hand the ids to the tool, which owns the component.
+            let ids: Vec<u64> = removed.iter().map(|element| element.element).collect();
+            let Some(count) = registry.active_remove(*entity, kind, &ids, world) else {
+                return Err(format!("{command:?}: the active tool removes no elements"));
+            };
+            if count == 0 {
+                return Err(format!("{command:?}: the tool removed no element"));
+            }
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                entity = %entity,
+                kind = kind.as_str(),
+                elements = count,
+                "[editor] elements removed"
+            );
+            Ok(CommandOutcome::inverse(EditorCommand::InsertElements {
+                entity: *entity,
+                kind: kind.clone(),
+                elements: removed,
+            }))
+        }
+
         other => unreachable!("{:?} is not a world command", other.family()),
     }
 }

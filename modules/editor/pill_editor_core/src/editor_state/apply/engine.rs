@@ -191,6 +191,16 @@ pub(super) fn apply(
             Ok(CommandOutcome::plain())
         }
 
+        EditorCommand::RunElementMenu { item } => {
+            // The frame boundary asks the tool what the row means and applies
+            // those commands in this batch's place (`drain::apply_pending`),
+            // because only the tool knows. Reaching this arm means the command
+            // was applied straight through, so the row would run nothing.
+            Err(format!(
+                "{command:?}: '{item}' runs its tool's commands at the frame boundary, not here"
+            ))
+        }
+
         EditorCommand::StepOnce => {
             engine.request_single_step();
             Ok(CommandOutcome::plain())

@@ -116,6 +116,20 @@ pub enum ScriptedCommand {
     GizmoRelease,
     /// `gizmo <translate|rotate|scale>` - switch the active tool.
     GizmoTool(GizmoMode),
+    /// `drag element <id> <dx> <dy> <dz>` - nudge one element of the active
+    /// tool by a world delta, as a direct drag would.
+    DragElement {
+        /// The tool's own id for the element.
+        id: u64,
+        /// The world delta the element moves by.
+        delta: [f32; 3],
+    },
+    /// `element menu <item>` - run one row of the active tool's element
+    /// context menu by its id, as a click on the row does.
+    ElementMenu {
+        /// The row's id, as the tool reported it.
+        item: String,
+    },
     /// `tool <name>` / `tool none` - activate a registered tool, or leave every
     /// tool with none active.
     Tool(Option<String>),
@@ -403,6 +417,9 @@ pub enum Dump {
     Systems,
     /// `dump tools` - the registered tools and the active one.
     Tools,
+    /// `dump elements` - the active tool's report for the selected entity, as
+    /// the editor draws and picks it.
+    Elements,
     /// `dump preferences` - the preferences document and the live halves.
     Preferences,
     /// `dump theme` - the theme the editor paints with, the layers it was
@@ -629,15 +646,28 @@ impl ScriptedCommand {
             // `drag x1 y1 x2 y2` is a pointer gesture. `drag out <path>` hands
             // one file to the OS drag. No mouse button is held there, so the
             // drag ends at once and is safe to drive from the file.
+            // `drag element <id> <dx> <dy> <dz>` nudges one element instead.
             "drag" => {
                 let is_drag_out = {
                     let rest = cursor.rest();
                     rest == "out" || rest.starts_with("out ")
                 };
+                let is_element_drag = {
+                    let rest = cursor.rest();
+                    rest == "element" || rest.starts_with("element ")
+                };
                 if is_drag_out {
                     cursor.word();
                     let path = cursor.text("drag out needs a path")?;
                     Ok(ScriptedCommand::DragOut(path))
+                } else if is_element_drag {
+                    cursor.word();
+                    let id = number(&mut cursor, "drag element needs an id and three deltas")?;
+                    let x = number(&mut cursor, "drag element needs three deltas")?;
+                    let y = number(&mut cursor, "drag element needs three deltas")?;
+                    let z = number(&mut cursor, "drag element needs three deltas")?;
+                    cursor.finish(verb)?;
+                    Ok(ScriptedCommand::DragElement { id, delta: [x, y, z] })
                 } else {
                     let from = point(&mut cursor, "drag needs x1 y1 x2 y2")?;
                     let to = point(&mut cursor, "drag needs x1 y1 x2 y2")?;
@@ -645,6 +675,20 @@ impl ScriptedCommand {
                     Ok(ScriptedCommand::Drag { from, to })
                 }
             }
+            // `element menu <item>` runs one row of the active tool's element
+            // context menu by its id.
+            "element" => match cursor.word() {
+                Some("menu") => {
+                    let item = cursor
+                        .word()
+                        .ok_or_else(|| ParseError::new("element menu needs an item id"))?;
+                    cursor.finish("element menu")?;
+                    Ok(ScriptedCommand::ElementMenu {
+                        item: item.to_string(),
+                    })
+                }
+                _ => Err(ParseError::new("element needs `menu <item>`")),
+            },
             "gizmo" => gizmo(&mut cursor),
             // `console filter <level>` and `console search <text>` set the
             // Console tab's filters. The executable applies them next frame.
@@ -1035,6 +1079,7 @@ fn dump(cursor: &mut Cursor<'_>) -> Result<Dump, ParseError> {
         "standalone-types" => Dump::StandaloneTypes,
         "systems" => Dump::Systems,
         "tools" => Dump::Tools,
+        "elements" => Dump::Elements,
         "preferences" => Dump::Preferences,
         "theme" => Dump::Theme,
         "console" => Dump::Console,
@@ -1457,7 +1502,10 @@ fn key_code(name: &str) -> Option<KeyCode> {
 }
 
 /// The name a key prints as, for [`KeyChord::label`].
-fn key_code_name(key: KeyCode) -> &'static str {
+///
+/// The same names are what a tool's `on_key` hook is told, so a tool that
+/// names a key and a scripted line that spells one agree.
+pub fn key_code_name(key: KeyCode) -> &'static str {
     match key {
         KeyCode::KeyA => "a",
         KeyCode::KeyB => "b",

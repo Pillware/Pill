@@ -197,7 +197,255 @@ pub(super) fn register(world: &mut World) {
             elements: Some(fixture_elements),
             set_transforms: Some(fixture_set_transforms),
             frames: Some(fixture_frames),
+            menu: Some(fixture_menu),
+            menu_run: Some(fixture_menu_run),
+            insert: Some(fixture_insert),
+            remove: Some(fixture_remove),
+            press: Some(fixture_press),
+            key: Some(fixture_key),
+            selection_changed: Some(fixture_selection_changed),
         },
+    );
+}
+
+// =============================================================================
+// Menu, structure and overrides
+// =============================================================================
+
+/// The id of the menu row that adds a point after the last one.
+pub(super) const FIXTURE_MENU_INSERT: &str = "insert";
+
+/// The id of the menu row that puts every point back on its layout.
+pub(super) const FIXTURE_MENU_RESET: &str = "reset";
+
+/// The rows the fixture adds to the element context menu.
+///
+/// A suite reads these from `dump elements` and runs one with `element menu`,
+/// which is the same request a click on the row queues.
+fn fixture_menu(
+    _entity: Entity,
+    kind: &str,
+    selected: &[u64],
+    _world: &World,
+    out: &mut Vec<tools::ElementMenuEntry>,
+) {
+    if kind != FIXTURE_POINT_KIND {
+        return;
+    }
+    out.push(tools::ElementMenuEntry {
+        id: FIXTURE_MENU_INSERT.to_string(),
+        label: "Insert point".to_string(),
+    });
+    if !selected.is_empty() {
+        out.push(tools::ElementMenuEntry {
+            id: FIXTURE_MENU_RESET.to_string(),
+            label: "Reset points".to_string(),
+        });
+    }
+}
+
+/// Runs one of the fixture's menu rows, answering the commands it means.
+///
+/// The insert row adds a point a spacing past the last one; the reset row
+/// moves every point back onto the layout. Both are plain edits the editor
+/// records, so the row undoes as one step like any other.
+fn fixture_menu_run(
+    entity: Entity,
+    kind: &str,
+    selected: &[u64],
+    item: &str,
+    world: &World,
+) -> Result<Vec<EditorCommand>, String> {
+    if kind != FIXTURE_POINT_KIND {
+        return Err(format!(
+            "the fixture adds no '{item}' row for {kind} elements"
+        ));
+    }
+    match item {
+        FIXTURE_MENU_INSERT => {
+            let Some(transform) = read_transform(world, entity) else {
+                return Err("the entity has no transform".to_string());
+            };
+            let storage = world.get_resource::<FixtureElements>();
+            let next_id = storage
+                .and_then(|storage| storage.by_entity.get(&entity))
+                .map(|elements| elements.keys().copied().max().unwrap_or(0) + 1)
+                .unwrap_or(FIXTURE_POINT_COUNT as u64);
+            let last = fixture_layout()
+                .iter()
+                .filter(|(id, _)| *id < FIXTURE_TANGENT_ID_BASE)
+                .count() as f32
+                - 1.0;
+            let offset = [
+                (last + 1.0 - (FIXTURE_POINT_COUNT as f32 - 1.0) * 0.5) * FIXTURE_ELEMENT_SPACING,
+                0.0,
+                0.0,
+            ];
+            Ok(vec![EditorCommand::InsertElements {
+                entity,
+                kind: FIXTURE_POINT_KIND.to_string(),
+                elements: vec![tools::ElementMove {
+                    element: next_id,
+                    transform: tools::ElementTransform::at(gizmo::add(
+                        transform.translation,
+                        offset,
+                    )),
+                }],
+            }])
+        }
+        FIXTURE_MENU_RESET => {
+            let Some(transform) = read_transform(world, entity) else {
+                return Err("the entity has no transform".to_string());
+            };
+            let moves = fixture_layout()
+                .into_iter()
+                .filter(|(id, _)| selected.contains(id))
+                .map(|(id, element)| tools::ElementMove {
+                    element: id,
+                    transform: tools::ElementTransform {
+                        translation: gizmo::add(transform.translation, element.offset),
+                        ..tools::ElementTransform::at([0.0; 3])
+                    },
+                })
+                .collect::<Vec<_>>();
+            if moves.is_empty() {
+                return Err("no point is selected to reset".to_string());
+            }
+            Ok(vec![EditorCommand::SetElementTransforms {
+                entity,
+                kind: FIXTURE_POINT_KIND.to_string(),
+                moves,
+            }])
+        }
+        other => Err(format!("the fixture has no menu row '{other}'")),
+    }
+}
+
+/// Inserts one point into the fixture's storage, under `id` when that id is
+/// free.
+fn fixture_insert(
+    entity: Entity,
+    kind: &str,
+    id: Option<u64>,
+    transform: tools::ElementTransform,
+    world: &mut World,
+) -> Option<u64> {
+    if kind != FIXTURE_POINT_KIND {
+        return None;
+    }
+    let entity_transform = read_transform(world, entity)?;
+    let storage = world.get_resource_mut::<FixtureElements>()?;
+    let elements = storage.entities_elements(entity);
+    let assigned = match id {
+        Some(id) if !elements.contains_key(&id) => id,
+        Some(_) => return None,
+        None => elements.keys().copied().max().unwrap_or(0) + 1,
+    };
+    elements.insert(
+        assigned,
+        FixtureElement {
+            offset: gizmo::sub(transform.translation, entity_transform.translation),
+            rotation: transform.rotation,
+            scale: transform.scale,
+        },
+    );
+    Some(assigned)
+}
+
+/// Removes points from the fixture's storage, answering how many went.
+fn fixture_remove(entity: Entity, kind: &str, elements: &[u64], world: &mut World) -> usize {
+    if kind != FIXTURE_POINT_KIND {
+        return 0;
+    }
+    let Some(storage) = world.get_resource_mut::<FixtureElements>() else {
+        return 0;
+    };
+    let points = storage.entities_elements(entity);
+    elements
+        .iter()
+        .filter(|id| points.remove(id).is_some())
+        .count()
+}
+
+/// What a press on a fixture point means.
+///
+/// The fixture demonstrates both answers a tool can give about the editor's own
+/// click rule:
+///
+/// - a **plain press on a point that is already selected is taken over**: the
+///   fixture logs it and answers [`tools::PressResponse::Consume`], so the
+///   selection stays exactly as it was;
+/// - a **Ctrl press on a point that is already selected removes it**: the
+///   fixture answers [`tools::PressResponse::Select`] with the rest of the
+///   selection, which is the tool's own toggle rule rather than the editor's
+///   add-to-selection one.
+///
+/// Every other press is the editor's.
+fn fixture_press(
+    entity: Entity,
+    element: u64,
+    click: SelectionClick,
+    selected: &[u64],
+    _world: &World,
+) -> tools::PressResponse {
+    let _ = entity;
+    if !selected.contains(&element) {
+        return tools::PressResponse::Default;
+    }
+    match click {
+        SelectionClick::Add => tools::PressResponse::Select(
+            selected
+                .iter()
+                .copied()
+                .filter(|id| *id != element)
+                .collect(),
+        ),
+        SelectionClick::Reset => {
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                element,
+                selected = selected.len(),
+                "[editor] element press taken by the fixture"
+            );
+            tools::PressResponse::Consume
+        }
+        SelectionClick::Range => tools::PressResponse::Default,
+    }
+}
+
+/// The keys the fixture owns while its element selection is up.
+///
+/// `k` is consumed outright, which is how a suite proves the hook is asked
+/// before the keybindings; `i` answers with the insert the menu row means, so
+/// a key can run the same edit a menu click would.
+fn fixture_key(entity: Entity, key: &str, selected: &[u64], world: &World) -> tools::KeyResponse {
+    match key {
+        "k" => tools::KeyResponse::Consume,
+        "i" => match fixture_menu_run(
+            entity,
+            FIXTURE_POINT_KIND,
+            selected,
+            FIXTURE_MENU_INSERT,
+            world,
+        ) {
+            Ok(commands) => tools::KeyResponse::Commands(commands),
+            Err(_) => tools::KeyResponse::Default,
+        },
+        _ => tools::KeyResponse::Default,
+    }
+}
+
+/// Logs every element-selection change the fixture hears.
+///
+/// The line is the proof that the notification reaches a tool whatever changed
+/// the selection: a click, a marquee, an undo and a command all produce it.
+fn fixture_selection_changed(entity: Entity, previous: &[u64], current: &[u64], _world: &World) {
+    pill_core::info!(
+        target: telemetry_target::EDITOR,
+        entity = %entity,
+        before = previous.len(),
+        after = current.len(),
+        "[editor] fixture selection changed"
     );
 }
 

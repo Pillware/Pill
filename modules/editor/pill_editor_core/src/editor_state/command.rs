@@ -210,6 +210,42 @@ pub enum EditorCommand {
         /// The moved elements, each with the world transform it takes.
         moves: Vec<crate::tools::ElementMove>,
     },
+    /// Insert elements through the active tool.
+    ///
+    /// Each element names the id it asks for and the transform it starts with;
+    /// the tool answers the id the element ended up under, which is what the
+    /// inverse removes. An insert a tool refuses puts back the ones this
+    /// command already added, so a refused edit changes nothing.
+    InsertElements {
+        /// The entity whose elements grow.
+        entity: Entity,
+        /// The kind the new elements belong to.
+        kind: String,
+        /// The elements to add, with the transform each takes.
+        elements: Vec<crate::tools::ElementMove>,
+    },
+    /// Remove elements through the active tool.
+    ///
+    /// Applying it first reads the transforms the tool reports for those
+    /// elements, so the inverse is an insert that puts the same elements back
+    /// where they were, under the same ids.
+    RemoveElements {
+        /// The entity whose elements shrink.
+        entity: Entity,
+        /// The kind the removed elements belong to.
+        kind: String,
+        /// The tool's own ids for the elements to remove.
+        elements: Vec<u64>,
+    },
+    /// Run one row of the active tool's element context menu.
+    ///
+    /// The tool decides what the row does, so the command is only a request:
+    /// the frame boundary asks the tool for the commands it means and applies
+    /// those in the batch's place, which makes a menu row one undo step.
+    RunElementMenu {
+        /// The row's id, as the tool reported it.
+        item: String,
+    },
     /// Run exactly one system phase on the next frame, then pause again.
     StepOnce,
     /// Start a play session: the edit world is copied aside and the game runs.
@@ -443,6 +479,8 @@ impl EditorCommand {
                 | EditorCommand::SetAssetSettings { .. }
                 | EditorCommand::SetResourceField { .. }
                 | EditorCommand::SetElementTransforms { .. }
+                | EditorCommand::InsertElements { .. }
+                | EditorCommand::RemoveElements { .. }
                 | EditorCommand::SetSelection { .. }
                 | EditorCommand::SetElementSelection { .. }
                 | EditorCommand::SelectResource { .. }
@@ -514,6 +552,9 @@ impl EditorCommand {
             | EditorCommand::SelectResource { .. }
             | EditorCommand::RestoreSelection { .. }
             | EditorCommand::SetElementTransforms { .. }
+            | EditorCommand::InsertElements { .. }
+            | EditorCommand::RemoveElements { .. }
+            | EditorCommand::RunElementMenu { .. }
             | EditorCommand::SceneNew
             | EditorCommand::SceneOpen { .. }
             | EditorCommand::SceneSave
@@ -538,6 +579,8 @@ impl EditorCommand {
             | EditorCommand::SetFieldEntity { entity, .. }
             | EditorCommand::ArmEntityPick { entity, .. }
             | EditorCommand::SetElementTransforms { entity, .. }
+            | EditorCommand::InsertElements { entity, .. }
+            | EditorCommand::RemoveElements { entity, .. }
             | EditorCommand::SetArrayElement { entity, .. } => {
                 if *entity == previous {
                     *entity = assigned;
@@ -589,6 +632,7 @@ impl EditorCommand {
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::CycleGizmoSpace
+            | EditorCommand::RunElementMenu { .. }
             | EditorCommand::StepOnce
             | EditorCommand::SetPreferences { .. }
             | EditorCommand::ImportFiles { .. }
@@ -629,12 +673,15 @@ impl EditorCommand {
             | EditorCommand::SetFieldEntity { .. }
             | EditorCommand::SetArrayElement { .. }
             | EditorCommand::SetResourceField { .. }
-            | EditorCommand::SetElementTransforms { .. } => CommandFamily::World,
+            | EditorCommand::SetElementTransforms { .. }
+            | EditorCommand::InsertElements { .. }
+            | EditorCommand::RemoveElements { .. } => CommandFamily::World,
             EditorCommand::SetSystemEnabled { .. }
             | EditorCommand::SetPaused { .. }
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::CycleGizmoSpace
+            | EditorCommand::RunElementMenu { .. }
             | EditorCommand::StepOnce
             | EditorCommand::EnterPlay
             | EditorCommand::ExitPlay => CommandFamily::Engine,

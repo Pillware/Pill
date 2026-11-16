@@ -37,7 +37,9 @@ use std::fmt;
 use pill_engine::{Engine, Entity, GizmoPointShape, World};
 
 // Current crate
-use crate::editor_state::{EditorSelection, ElementRef, ElementSelection};
+use crate::editor_state::{
+    EditorCommand, EditorSelection, ElementRef, ElementSelection, SelectionClick,
+};
 use crate::gizmo::{
     styled_color, ElementHandleMap, ElementHandleTarget, GizmoSpace, GizmoState, HandleStates,
 };
@@ -316,7 +318,6 @@ pub struct CoordinateFrame {
 
 /// Fills `out` with the kinds a tool exposes.
 pub type ToolKindReportFn = fn(out: &mut Vec<ElementKind>);
-
 /// Fills `out` with the elements `entity` has, as `world` describes it.
 pub type ToolElementReportFn = fn(entity: Entity, world: &World, out: &mut Vec<ToolElement>);
 
@@ -351,6 +352,23 @@ pub struct ToolElementHooks {
     /// The extra spaces the gizmo's space toggle offers, `None` when the tool
     /// brings none.
     pub frames: Option<ToolFrameReportFn>,
+    /// The rows the tool adds to the element context menu, `None` when it adds
+    /// none.
+    pub menu: Option<ToolMenuReportFn>,
+    /// The action behind those rows, `None` when the tool's menu is empty.
+    pub menu_run: Option<ToolMenuRunFn>,
+    /// How the tool inserts an element, `None` when it cannot.
+    pub insert: Option<ToolInsertElementFn>,
+    /// How the tool removes elements, `None` when it cannot.
+    pub remove: Option<ToolRemoveElementsFn>,
+    /// What a press on one of the tool's elements means, `None` for the
+    /// editor's own rule.
+    pub press: Option<ToolPressFn>,
+    /// What a key means while the tool owns the element selection, `None` for
+    /// the editor's own rule.
+    pub key: Option<ToolKeyFn>,
+    /// The tool's own note of every selection change.
+    pub selection_changed: Option<ToolSelectionChangedFn>,
 }
 
 impl ToolElementHooks {
@@ -368,7 +386,125 @@ impl ToolElementHooks {
     pub fn reports_frames(self) -> bool {
         self.frames.is_some()
     }
+
+    /// Whether the tool adds rows to the element context menu and can run
+    /// them.
+    pub fn has_menu(self) -> bool {
+        self.menu.is_some() && self.menu_run.is_some()
+    }
+
+    /// Whether the tool inserts and removes elements.
+    pub fn edits_elements(self) -> bool {
+        self.insert.is_some() && self.remove.is_some()
+    }
 }
+
+// =============================================================================
+// What a tool does beside reporting
+// =============================================================================
+
+/// One row a tool adds to the element context menu.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ElementMenuEntry {
+    /// The id the menu spells and `element menu <item>` names.
+    pub id: String,
+    /// The label the row shows.
+    pub label: String,
+}
+
+/// Fills `out` with the menu rows the tool adds for the selection.
+///
+/// `selected` holds the ids the element selection is on, in selection order,
+/// so a row can depend on what is selected.
+pub type ToolMenuReportFn = fn(
+    entity: Entity,
+    kind: &str,
+    selected: &[u64],
+    world: &World,
+    out: &mut Vec<ElementMenuEntry>,
+);
+
+/// Runs one of the tool's menu rows, answering the commands it asks for.
+///
+/// The commands are the row's whole effect and run as one recorded batch, so a
+/// menu row undoes in one step. A row that changes nothing answers an empty
+/// list, and an id the tool does not know answers an error naming it.
+pub type ToolMenuRunFn = fn(
+    entity: Entity,
+    kind: &str,
+    selected: &[u64],
+    item: &str,
+    world: &World,
+) -> Result<Vec<EditorCommand>, String>;
+
+/// Inserts one element of the tool's component.
+///
+/// `id` is the id the caller asks the element to take, which is what an undo
+/// restoring a removed element needs; `None` lets the tool choose one. The
+/// answer is the id the element has now, or `None` when the tool cannot insert
+/// it.
+pub type ToolInsertElementFn = fn(
+    entity: Entity,
+    kind: &str,
+    id: Option<u64>,
+    transform: ElementTransform,
+    world: &mut World,
+) -> Option<u64>;
+
+/// Removes elements of the tool's component, answering how many it removed.
+pub type ToolRemoveElementsFn =
+    fn(entity: Entity, kind: &str, elements: &[u64], world: &mut World) -> usize;
+
+/// What a press on one element does.
+///
+/// The editor asks before it applies its own rule, so a tool can select what
+/// it wants, run recorded commands, or swallow the press entirely.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PressResponse {
+    /// The editor's own select, extend and gizmo rule.
+    Default,
+    /// Select exactly these elements, of the pressed element's kind.
+    Select(Vec<u64>),
+    /// Run these commands instead, as one recorded batch.
+    Commands(Vec<EditorCommand>),
+    /// Do nothing at all: the selection stays as it is and no drag starts.
+    Consume,
+}
+
+/// Answers one press on one element of the tool's own kind.
+///
+/// `click` is what the held modifiers mean, so a tool's rule can honour Shift
+/// and Ctrl the way the editor's does.
+pub type ToolPressFn = fn(
+    entity: Entity,
+    element: u64,
+    click: SelectionClick,
+    selected: &[u64],
+    world: &World,
+) -> PressResponse;
+
+/// What a key does while the tool owns an element selection.
+#[derive(Clone, Debug, PartialEq)]
+pub enum KeyResponse {
+    /// The editor's own rule, then the keybindings.
+    Default,
+    /// The tool took the key; nothing else sees it.
+    Consume,
+    /// Run these commands, as one recorded batch.
+    Commands(Vec<EditorCommand>),
+}
+
+/// Answers one key press while the tool owns an element selection.
+///
+/// `key` is the key's wire name, lower case: `delete`, `k`. The hook is asked
+/// only while an element selection exists and a tool is active, so a key the
+/// editor binds keeps working everywhere else.
+pub type ToolKeyFn = fn(entity: Entity, key: &str, selected: &[u64], world: &World) -> KeyResponse;
+
+/// Hears every element-selection change, whatever changed it: a click, a
+/// marquee, an undo, or a command that cleared the slot.
+pub type ToolSelectionChangedFn =
+    fn(entity: Entity, previous: &[u64], current: &[u64], world: &World);
 
 // =============================================================================
 // Element handles
@@ -710,6 +846,134 @@ impl ToolRegistry {
         frames
     }
 
+    /// The menu rows the active tool adds for `selected`, in its own order.
+    ///
+    /// Empty when no tool is active, the tool adds none, or it has nothing to
+    /// say about this selection.
+    pub fn active_menu(
+        &self,
+        entity: Entity,
+        kind: &str,
+        selected: &[u64],
+        world: &World,
+    ) -> Vec<ElementMenuEntry> {
+        let mut menu = Vec::new();
+        if let Some(report) = self.active_record().and_then(|tool| tool.hooks.menu) {
+            report(entity, kind, selected, world, &mut menu);
+        }
+        menu
+    }
+
+    /// Runs one of the active tool's menu rows, answering the commands it asks
+    /// for.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when no tool is active, when the active tool adds no
+    /// menu, or when the tool refuses `item` - which is how a menu row nobody
+    /// registered reads instead of running nothing silently.
+    pub fn active_menu_run(
+        &self,
+        entity: Entity,
+        kind: &str,
+        selected: &[u64],
+        item: &str,
+        world: &World,
+    ) -> Result<Vec<EditorCommand>, String> {
+        let Some(tool) = self.active_record() else {
+            return Err(format!("no tool is active, so '{item}' has no menu row"));
+        };
+        let Some(run) = tool.hooks.menu_run else {
+            return Err(format!("the tool '{}' adds no menu rows", tool.name));
+        };
+        run(entity, kind, selected, item, world)
+    }
+
+    /// Inserts one element through the active tool, answering its id.
+    ///
+    /// `None` when no tool is active or the tool cannot insert, which the
+    /// caller reports as a refused edit instead of writing nothing.
+    pub fn active_insert(
+        &self,
+        entity: Entity,
+        kind: &str,
+        id: Option<u64>,
+        transform: ElementTransform,
+        world: &mut World,
+    ) -> Option<u64> {
+        let insert = self.active_record().and_then(|tool| tool.hooks.insert)?;
+        insert(entity, kind, id, transform, world)
+    }
+
+    /// Removes elements through the active tool, answering how many went.
+    ///
+    /// `None` when no tool is active or it cannot remove.
+    pub fn active_remove(
+        &self,
+        entity: Entity,
+        kind: &str,
+        elements: &[u64],
+        world: &mut World,
+    ) -> Option<usize> {
+        let remove = self.active_record().and_then(|tool| tool.hooks.remove)?;
+        Some(remove(entity, kind, elements, world))
+    }
+
+    /// What the active tool makes of a press on one of its elements.
+    ///
+    /// [`PressResponse::Default`] when no tool is active or the tool lets the
+    /// editor's own rule run.
+    pub fn active_press(
+        &self,
+        entity: Entity,
+        element: u64,
+        click: SelectionClick,
+        selected: &[u64],
+        world: &World,
+    ) -> PressResponse {
+        match self.active_record().and_then(|tool| tool.hooks.press) {
+            Some(press) => press(entity, element, click, selected, world),
+            None => PressResponse::Default,
+        }
+    }
+
+    /// What the active tool makes of a key press over its element selection.
+    ///
+    /// [`KeyResponse::Default`] when no tool is active or the tool lets the
+    /// editor's own rule run.
+    pub fn active_key(
+        &self,
+        entity: Entity,
+        key: &str,
+        selected: &[u64],
+        world: &World,
+    ) -> KeyResponse {
+        match self.active_record().and_then(|tool| tool.hooks.key) {
+            Some(handle) => handle(entity, key, selected, world),
+            None => KeyResponse::Default,
+        }
+    }
+
+    /// Tells the active tool that the element selection changed.
+    ///
+    /// Called for every change whatever made it, so a tool that mirrors the
+    /// selection somewhere hears about an undo the same way it hears about a
+    /// click.
+    pub fn notify_element_selection_changed(
+        &self,
+        entity: Entity,
+        previous: &[u64],
+        current: &[u64],
+        world: &World,
+    ) {
+        if let Some(changed) = self
+            .active_record()
+            .and_then(|tool| tool.hooks.selection_changed)
+        {
+            changed(entity, previous, current, world);
+        }
+    }
+
     /// The registered tools, in registration order.
     pub fn tools(&self) -> &[RegisteredTool] {
         &self.tools
@@ -890,6 +1154,24 @@ pub fn selection_frames(world: &World) -> Vec<CoordinateFrame> {
     }
 }
 
+/// What a tool acts on: the entity the element selection belongs to (or the
+/// primary entity when nothing is selected yet), the kind the selection is on,
+/// and the selected ids in selection order.
+///
+/// One resolution serves the menu, the press hook, the key hook and the
+/// snapshot, so every hook is told about the same subject.
+pub fn element_selection_subject(world: &World) -> Option<(Entity, String, Vec<u64>)> {
+    let selection = world.get_resource::<EditorSelection>()?;
+    let elements = selection.elements();
+    let entity = elements.owner().or_else(|| selection.primary())?;
+    let ids = elements
+        .elements()
+        .iter()
+        .map(|element| element.id)
+        .collect::<Vec<u64>>();
+    Some((entity, elements.kind().to_string(), ids))
+}
+
 /// Makes `tool` the active one, and puts the gizmo back on the space that tool
 /// was last on.
 ///
@@ -1059,8 +1341,7 @@ mod tests {
         ToolElementHooks {
             kinds: Some(probe_kinds),
             elements: Some(probe_elements),
-            set_transforms: None,
-            frames: None,
+            ..ToolElementHooks::default()
         }
     }
 
@@ -1332,10 +1613,9 @@ mod tests {
         registry.register_plugin(
             &WritingProbeTool,
             ToolElementHooks {
-                kinds: None,
-                elements: None,
                 set_transforms: Some(probe_set_transforms),
                 frames: Some(probe_frames),
+                ..ToolElementHooks::default()
             },
         );
         let moves = vec![ElementMove {
@@ -1392,5 +1672,271 @@ mod tests {
                 frame: None,
             })
         );
+    }
+
+    /// What a probe tool's overrides and edits did, so a test can read them
+    /// back out of the world.
+    #[derive(Clone, Debug, Default, PartialEq)]
+    struct ProbeTrace {
+        /// The presses the tool answered, as `(element, extended)`.
+        presses: Vec<(u64, bool)>,
+        /// The keys it answered.
+        keys: Vec<String>,
+        /// The selection changes it heard, as `(before, after)` counts.
+        changes: Vec<(usize, usize)>,
+    }
+
+    impl pill_engine::Resource for ProbeTrace {}
+
+    /// A tool that overrides presses, takes keys, hears selection changes and
+    /// edits its element set.
+    struct OverridingProbeTool;
+
+    impl EditorTool for OverridingProbeTool {
+        fn name(&self) -> &'static str {
+            "overriding_probe"
+        }
+
+        fn label(&self) -> &'static str {
+            "Overriding probe"
+        }
+
+        fn is_global(&self) -> bool {
+            false
+        }
+    }
+
+    /// Fills the menu with one row per kind, so the test reads the kind and
+    /// the selection count back out of the row.
+    fn probe_menu(
+        _entity: Entity,
+        kind: &str,
+        selected: &[u64],
+        _world: &World,
+        out: &mut Vec<ElementMenuEntry>,
+    ) {
+        out.push(ElementMenuEntry {
+            id: format!("{kind} row"),
+            label: format!("{kind} row for {}", selected.len()),
+        });
+    }
+
+    fn probe_menu_run(
+        _entity: Entity,
+        kind: &str,
+        _selected: &[u64],
+        item: &str,
+        _world: &World,
+    ) -> Result<Vec<EditorCommand>, String> {
+        if item == "refuse" {
+            return Err(format!("{kind} refuses {item}"));
+        }
+        Ok(Vec::new())
+    }
+
+    fn probe_insert(
+        _entity: Entity,
+        _kind: &str,
+        id: Option<u64>,
+        _transform: ElementTransform,
+        _world: &mut World,
+    ) -> Option<u64> {
+        // An id the caller asks for is honoured, which is what a restored
+        // element needs; otherwise the tool chooses.
+        Some(id.unwrap_or(99))
+    }
+
+    fn probe_remove(_entity: Entity, _kind: &str, elements: &[u64], _world: &mut World) -> usize {
+        elements.len()
+    }
+
+    fn probe_press(
+        _entity: Entity,
+        element: u64,
+        click: SelectionClick,
+        _selected: &[u64],
+        world: &World,
+    ) -> PressResponse {
+        // The probe answers from what it can read, so the test proves the
+        // world reached the hook.
+        if world.get_resource::<ProbeTrace>().is_some() {
+            return PressResponse::Default;
+        }
+        if click == SelectionClick::Add {
+            PressResponse::Consume
+        } else {
+            PressResponse::Select(vec![element])
+        }
+    }
+
+    fn probe_key(_entity: Entity, key: &str, _selected: &[u64], _world: &World) -> KeyResponse {
+        match key {
+            "k" => KeyResponse::Consume,
+            "i" => KeyResponse::Commands(Vec::new()),
+            _ => KeyResponse::Default,
+        }
+    }
+
+    fn probe_selection_changed(_entity: Entity, previous: &[u64], current: &[u64], world: &World) {
+        let _ = (previous, current, world);
+    }
+
+    fn overriding_probe_hooks() -> ToolElementHooks {
+        ToolElementHooks {
+            menu: Some(probe_menu),
+            menu_run: Some(probe_menu_run),
+            insert: Some(probe_insert),
+            remove: Some(probe_remove),
+            press: Some(probe_press),
+            key: Some(probe_key),
+            selection_changed: Some(probe_selection_changed),
+            ..ToolElementHooks::default()
+        }
+    }
+
+    /// Every override the registry offers answers the active tool's, and a
+    /// registry with no tool active answers the editor's own defaults instead.
+    #[test]
+    fn the_active_tools_overrides_answer_and_leave_the_defaults_without_one() {
+        let world = World::default();
+        let entity = Entity::default();
+        let mut registry = ToolRegistry::default();
+        registry.register_plugin(&OverridingProbeTool, overriding_probe_hooks());
+
+        // No tool: the editor's own rules win everywhere.
+        assert!(registry
+            .active_menu(entity, "point", &[1], &world)
+            .is_empty());
+        assert!(registry
+            .active_menu_run(entity, "point", &[1], "point row", &world)
+            .is_err());
+        assert_eq!(
+            registry.active_press(entity, 1, SelectionClick::Reset, &[1], &world),
+            PressResponse::Default
+        );
+        assert_eq!(
+            registry.active_key(entity, "k", &[1], &world),
+            KeyResponse::Default
+        );
+
+        registry
+            .set_active(Some("overriding_probe"))
+            .expect("the probe is registered");
+        let menu = registry.active_menu(entity, "point", &[1, 2], &world);
+        assert_eq!(menu.len(), 1);
+        assert_eq!(menu[0].id, "point row");
+        assert_eq!(menu[0].label, "point row for 2");
+        assert!(registry
+            .active_menu_run(entity, "point", &[1], "point row", &world)
+            .is_ok());
+        assert!(registry
+            .active_menu_run(entity, "point", &[1], "refuse", &world)
+            .is_err());
+        assert_eq!(
+            registry.active_press(entity, 3, SelectionClick::Reset, &[], &world),
+            PressResponse::Select(vec![3])
+        );
+        assert_eq!(
+            registry.active_press(entity, 3, SelectionClick::Add, &[], &world),
+            PressResponse::Consume
+        );
+        assert_eq!(
+            registry.active_key(entity, "k", &[], &world),
+            KeyResponse::Consume
+        );
+        assert_eq!(
+            registry.active_key(entity, "i", &[], &world),
+            KeyResponse::Commands(Vec::new())
+        );
+        assert_eq!(
+            registry.active_key(entity, "q", &[], &world),
+            KeyResponse::Default
+        );
+    }
+
+    /// The edit hooks belong to the active tool too: inserting honours the id
+    /// a caller asks for and removing reports how many went.
+    #[test]
+    fn the_active_tools_edit_hooks_insert_and_remove() {
+        let mut world = World::default();
+        let entity = world.create_entity().build().expect("entity builds");
+        let mut registry = ToolRegistry::default();
+        assert!(registry
+            .active_insert(
+                entity,
+                "point",
+                Some(4),
+                ElementTransform::at([0.0; 3]),
+                &mut world
+            )
+            .is_none());
+        assert!(registry
+            .active_remove(entity, "point", &[4], &mut world)
+            .is_none());
+
+        registry.register_plugin(&OverridingProbeTool, overriding_probe_hooks());
+        registry
+            .set_active(Some("overriding_probe"))
+            .expect("the probe is registered");
+        assert_eq!(
+            registry.active_insert(
+                entity,
+                "point",
+                Some(4),
+                ElementTransform::at([0.0; 3]),
+                &mut world
+            ),
+            Some(4),
+            "an asked-for id is honoured"
+        );
+        assert_eq!(
+            registry.active_insert(
+                entity,
+                "point",
+                None,
+                ElementTransform::at([0.0; 3]),
+                &mut world
+            ),
+            Some(99),
+            "a free id is the tool's to choose"
+        );
+        assert_eq!(
+            registry.active_remove(entity, "point", &[4, 5], &mut world),
+            Some(2)
+        );
+        // The trace default is untouched by the edits: they are the tool's own
+        // writes, not the press path.
+        assert!(world.get_resource::<ProbeTrace>().is_none());
+    }
+
+    /// The subject a tool is told about is the element selection's own entity,
+    /// kind and ids; with nothing selected in the slot it is the primary
+    /// entity.
+    #[test]
+    fn the_element_subject_names_the_owner_kind_and_ids() {
+        let mut world = World::default();
+        let entity = world.create_entity().build().expect("entity builds");
+        assert!(element_selection_subject(&world).is_none());
+
+        let mut selection = EditorSelection::default();
+        selection.set_entities(vec![entity]);
+        world.insert_resource(selection);
+        let (owner, kind, ids) =
+            element_selection_subject(&world).expect("the primary entity is a subject");
+        assert_eq!(owner, entity);
+        assert_eq!(kind, "");
+        assert!(ids.is_empty());
+
+        let mut selection = EditorSelection::default();
+        selection.set_entities(vec![entity]);
+        assert!(selection.set_elements(
+            "point".to_string(),
+            vec![ElementRef { entity, id: 2 }, ElementRef { entity, id: 5 },]
+        ));
+        world.insert_resource(selection);
+        let (owner, kind, ids) = element_selection_subject(&world).expect("the slot is a subject");
+        assert_eq!(owner, entity);
+        assert_eq!(kind, "point");
+        assert_eq!(ids, vec![2, 5], "ids keep the selection's own order");
     }
 }

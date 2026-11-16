@@ -524,6 +524,14 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
             EditorCommand::SetElementTransforms { kind, moves, .. } => {
                 kind.len() + moves.len() * std::mem::size_of::<crate::tools::ElementMove>()
             }
+            // An insert carries the same per element; a remove only the ids.
+            EditorCommand::InsertElements { kind, elements, .. } => {
+                kind.len() + elements.len() * std::mem::size_of::<crate::tools::ElementMove>()
+            }
+            EditorCommand::RemoveElements { kind, elements, .. } => {
+                kind.len() + elements.len() * std::mem::size_of::<u64>()
+            }
+            EditorCommand::RunElementMenu { item } => item.len(),
             EditorCommand::SetPreferences { values } => values
                 .iter()
                 .map(|(key, text)| key.len() + text.len())

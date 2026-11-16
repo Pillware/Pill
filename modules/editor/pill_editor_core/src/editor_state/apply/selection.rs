@@ -78,9 +78,11 @@ pub(super) fn apply(
                 resource: selection.resource.clone(),
                 elements: selection.elements().clone(),
             };
+            let previous_elements = selection.elements().clone();
             selection.set_entities(existing_entities);
             selection.asset = asset.clone();
             selection.clear_elements();
+            notify_element_change(world, &previous_elements);
             Ok(CommandOutcome::inverse(previous_selection_command))
         }
 
@@ -103,6 +105,7 @@ pub(super) fn apply(
                 kind: selection.elements().kind().to_string(),
                 elements: selection.elements().elements().to_vec(),
             };
+            let previous_elements = selection.elements().clone();
             // An empty list is how a click on empty space clears the slot: the
             // kind goes with the elements, so nothing reads a kind nobody
             // selected.
@@ -126,6 +129,7 @@ pub(super) fn apply(
                     .as_str(),
                 "[editor] elements selected"
             );
+            notify_element_change(world, &previous_elements);
             Ok(CommandOutcome::inverse(previous))
         }
 
@@ -151,6 +155,7 @@ pub(super) fn apply(
                 selection.asset = None;
                 selection.clear_elements();
             }
+            notify_element_change(world, &previous_elements);
             // The egui editor's suite matches this line, so its token and
             // fields are a contract: it checks the selection a resource row
             // makes, and the one its undo restores.
@@ -186,6 +191,7 @@ pub(super) fn apply(
                 resource: selection.resource.clone(),
                 elements: selection.elements().clone(),
             };
+            let previous_elements = selection.elements().clone();
             selection.set_entities(entities.clone());
             selection.asset = asset.clone();
             selection.resource = resource.clone();
@@ -206,6 +212,7 @@ pub(super) fn apply(
                 entities = selection.entities().len(),
                 "[editor] selection restored"
             );
+            notify_element_change(world, &previous_elements);
             Ok(CommandOutcome::inverse(previous_selection_command))
         }
 
@@ -235,4 +242,36 @@ pub(super) fn apply(
 
         other => unreachable!("{:?} is not a selection command", other.family()),
     }
+}
+
+/// Tells the active tool that the element selection moved.
+///
+/// Every arm that can change the element slot calls this with the slot as it
+/// was, so a tool hears about an undo, a marquee and a scripted command the
+/// same way it hears about a click: one rule, whatever the source.
+fn notify_element_change(world: &pill_engine::World, previous: &ElementSelection) {
+    let current = world
+        .get_resource::<EditorSelection>()
+        .map(|selection| selection.elements().clone())
+        .unwrap_or_default();
+    let before: Vec<u64> = previous
+        .elements()
+        .iter()
+        .map(|element| element.id)
+        .collect();
+    let after: Vec<u64> = current
+        .elements()
+        .iter()
+        .map(|element| element.id)
+        .collect();
+    if before == after && previous.kind() == current.kind() {
+        return;
+    }
+    let Some(entity) = current.owner().or_else(|| previous.owner()) else {
+        return;
+    };
+    let Some(registry) = world.get_resource::<crate::tools::ToolRegistry>() else {
+        return;
+    };
+    registry.notify_element_selection_changed(entity, &before, &after, world);
 }
