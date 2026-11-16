@@ -2,17 +2,31 @@
 //!
 //! # Responsibilities
 //!
-//! - Defines the [`Spline`] component: an ordered set of control points.
+//! - Defines the [`Spline`] component: an ordered set of control points, with
+//!   one tangent per point for each side of it.
 //! - Samples a position anywhere along that path with [`Spline::get_location_at`].
+//! - Draws the curve, its points and its tangents through the engine's gizmo
+//!   pass.
 //! - Registers the component through the extension ABI when loaded.
 //!
 //! # Design
 //!
-//! The curve is a uniform Catmull-Rom spline. It passes exactly through every
-//! control point, which is what makes a hand-placed path behave the way it
-//! looks in an editor. The first and last control points also serve as the
-//! outer neighbours of the end segments, so the curve starts and ends exactly
-//! on them instead of overshooting past them.
+//! The curve is a uniform Catmull-Rom spline while its [`TangentMode`] is
+//! [`TangentMode::Auto`]. It passes exactly through every control point, which
+//! is what makes a hand-placed path behave the way it looks in an editor. The
+//! first and last control points also serve as the outer neighbours of the end
+//! segments, so the curve starts and ends exactly on them instead of
+//! overshooting past them.
+//!
+//! A spline whose mode is [`TangentMode::Aligned`] or [`TangentMode::Broken`]
+//! samples from the tangents it stores instead, one in-tangent and one
+//! out-tangent per point, as a cubic Hermite segment. `Aligned` keeps each
+//! point's two tangents collinear and `Broken` lets them part; the curve maths
+//! is the same for both, so a reader that only samples does not care which one
+//! it is - an editor tool does, because it is the rule it keeps while dragging.
+//! The stored tangents are always filled in by [`Spline::refit_tangents`], so
+//! switching a spline back to `Auto` and then to a stored mode finds the same
+//! curve it left.
 //!
 //! Control points live in a fixed-size array rather than a `Vec`. That keeps
 //! the component plain data across the module boundary: one library never
@@ -89,6 +103,41 @@ impl std::fmt::Display for TooManyControlPoints {
 impl std::error::Error for TooManyControlPoints {}
 
 // =============================================================================
+// TangentMode
+// =============================================================================
+
+/// How a spline decides the tangents its segments leave and arrive with.
+///
+/// [`TangentMode::Auto`] derives them from the neighbouring control points on
+/// every sample, which is the behaviour a spline had before it could store
+/// tangents at all: a mode of `Auto` samples exactly what it always did.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum TangentMode {
+    /// Each tangent follows the line between its neighbours, as the
+    /// Catmull-Rom curve does. Stored tangents are kept up to date but unused.
+    #[default]
+    Auto = 0,
+    /// The stored tangents are the curve, and a point's two stay collinear.
+    Aligned = 1,
+    /// The stored tangents are the curve, and a point's two may part: a corner
+    /// the curve does not round off.
+    Broken = 2,
+}
+
+impl TangentMode {
+    /// The mode a stored value names, defaulting to [`TangentMode::Auto`] for
+    /// a value no mode was written as.
+    pub fn from_stored(stored: u8) -> TangentMode {
+        match stored {
+            1 => TangentMode::Aligned,
+            2 => TangentMode::Broken,
+            _ => TangentMode::Auto,
+        }
+    }
+}
+
+// =============================================================================
 // Component
 // =============================================================================
 
@@ -107,7 +156,7 @@ impl std::error::Error for TooManyControlPoints {}
 /// registered first.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared)]
+#[pill(persistable, shared, gizmo = draw_spline_gizmo)]
 pub struct Spline {
     /// Control points the curve passes through, in order.
     pub control_points: [Vector3f; MAX_CONTROL_POINTS],
@@ -117,15 +166,34 @@ pub struct Spline {
     /// the C# test project copies the value so a spline built in managed code
     /// matches the Rust default.
     pub elo: f32,
+    /// The vector each active point arrives along, in the spline's own space.
+    ///
+    /// Read only while the mode is not [`TangentMode::Auto`];
+    /// [`Self::refit_tangents`] keeps it filled in either way, so an edit made
+    /// in `Auto` is not lost when the mode changes.
+    pub in_tangents: [Vector3f; MAX_CONTROL_POINTS],
+    /// The vector each active point leaves along, measured the same way.
+    pub out_tangents: [Vector3f; MAX_CONTROL_POINTS],
+    /// How the segments decide their tangents, as [`TangentMode`]'s value.
+    ///
+    /// Stored as the mode's own number rather than as the enum so the
+    /// component stays a blittable row for every ABI that carries it; read it
+    /// with [`Self::tangent_mode`] and write it with
+    /// [`Self::set_tangent_mode`].
+    pub tangent_mode: u8,
 }
 
 impl Default for Spline {
-    /// An empty spline, which samples to the origin everywhere.
+    /// An empty spline, which samples to the origin everywhere, with the
+    /// tangents the neighbours give it.
     fn default() -> Self {
         Self {
             control_points: [Vector3f::ZERO; MAX_CONTROL_POINTS],
             control_point_count: 0,
             elo: 30.0,
+            in_tangents: [Vector3f::ZERO; MAX_CONTROL_POINTS],
+            out_tangents: [Vector3f::ZERO; MAX_CONTROL_POINTS],
+            tangent_mode: TangentMode::Auto as u8,
         }
     }
 }
@@ -220,20 +288,28 @@ impl Spline {
 
                 let start = points[segment_index];
                 let end = points[segment_index + 1];
-                // The outermost segments have no neighbour beyond the endpoint.
-                // Duplicating the endpoint makes the curve begin and end exactly
-                // on the first and last control points.
-                let before_start = if segment_index == 0 {
-                    start
-                } else {
-                    points[segment_index - 1]
+                let sampled_position = match self.tangent_mode() {
+                    TangentMode::Auto => {
+                        // The outermost segments have no neighbour beyond the
+                        // endpoint. Duplicating the endpoint makes the curve begin
+                        // and end exactly on the first and last control points.
+                        let before_start = if segment_index == 0 {
+                            start
+                        } else {
+                            points[segment_index - 1]
+                        };
+                        let after_end = if segment_index + 2 < points.len() {
+                            points[segment_index + 2]
+                        } else {
+                            end
+                        };
+                        catmull_rom(before_start, start, end, after_end, local_t)
+                    }
+                    TangentMode::Aligned | TangentMode::Broken => {
+                        let (start_tangent, end_tangent) = self.segment_tangents(segment_index);
+                        hermite(start, end, start_tangent, end_tangent, local_t)
+                    }
                 };
-                let after_end = if segment_index + 2 < points.len() {
-                    points[segment_index + 2]
-                } else {
-                    end
-                };
-                let sampled_position = catmull_rom(before_start, start, end, after_end, local_t);
                 // A `test-hooks` build shifts the sampled height so a code
                 // change is observable through a cascade reload; a default
                 // build computes only the curve.
@@ -246,6 +322,109 @@ impl Spline {
                 sampled_position
             }
         }
+    }
+
+    /// The tangents segment `segment_index` leaves and arrives with.
+    ///
+    /// Segment `i` runs from point `i` to point `i + 1`, so its start tangent
+    /// is point `i`'s out-tangent and its end tangent is point `i + 1`'s
+    /// in-tangent. A segment past the last one answers zeroes rather than
+    /// panicking: a caller walking the segments reads [`Self::segment_count`]
+    /// first, and a zero tangent draws a straight line instead of failing.
+    pub fn segment_tangents(&self, segment_index: usize) -> (Vector3f, Vector3f) {
+        let start_point = segment_index;
+        let end_point = segment_index + 1;
+        if end_point >= self.control_points().len() {
+            return (Vector3f::ZERO, Vector3f::ZERO);
+        }
+        (self.out_tangents[start_point], self.in_tangents[end_point])
+    }
+
+    /// Fills the stored tangents from the control points, as a Catmull-Rom
+    /// curve would derive them.
+    ///
+    /// Every point's tangent is the line through its two neighbours, halved,
+    /// which is the slope the auto mode gives the curve there. The end points
+    /// have only one neighbour, so their tangent points at it. An `Aligned`
+    /// spline keeps the two halves equal, which is what it means for a point's
+    /// tangents to stay collinear; a `Broken` spline keeps whatever was stored
+    /// for the half a caller edited, so this function is what a spline calls
+    /// after its points moved and the mode is `Auto`.
+    pub fn refit_tangents(&mut self) {
+        let points: Vec<Vector3f> = self.control_points().to_vec();
+        let point_count = points.len();
+        for (index, point) in points.iter().enumerate() {
+            let before = if index == 0 {
+                *point
+            } else {
+                points[index - 1]
+            };
+            let after = if index + 1 == point_count {
+                *point
+            } else {
+                points[index + 1]
+            };
+            let tangent = (after - before) * 0.5;
+            self.in_tangents[index] = tangent;
+            self.out_tangents[index] = tangent;
+        }
+    }
+
+    /// The mode this spline samples with.
+    ///
+    /// The stored byte is [`TangentMode`]'s own value; an unknown value reads
+    /// as [`TangentMode::Auto`], which is the curve a spline had before it could
+    /// store tangents.
+    pub fn tangent_mode(&self) -> TangentMode {
+        TangentMode::from_stored(self.tangent_mode)
+    }
+
+    /// Sets the mode this spline samples with.
+    pub fn set_tangent_mode(&mut self, mode: TangentMode) {
+        self.tangent_mode = mode as u8;
+    }
+
+    /// Moves one control point, answering whether the index named a live point.
+    ///
+    /// The stored tangents are deliberately left alone: a caller that moved a
+    /// point in the auto mode calls [`Self::refit_tangents`] afterwards, and a
+    /// caller editing tangents by hand keeps the ones it set.
+    pub fn set_control_point(&mut self, index: usize, point: Vector3f) -> bool {
+        if index >= self.control_points().len() {
+            return false;
+        }
+        self.control_points[index] = point;
+        true
+    }
+
+    /// Inserts a control point at `index`, answering the index it took.
+    ///
+    /// `index` past the last live point appends, so a caller assembling a path
+    /// never has to clamp. `None` when the spline is full: the arrays are fixed
+    /// so the component stays plain data.
+    pub fn insert_control_point(&mut self, index: usize, point: Vector3f) -> Option<usize> {
+        let used = self.control_points().len();
+        if used >= MAX_CONTROL_POINTS {
+            return None;
+        }
+        let insert_at = index.min(used);
+        self.control_points
+            .copy_within(insert_at..used, insert_at + 1);
+        self.control_points[insert_at] = point;
+        self.control_point_count = used as u32 + 1;
+        Some(insert_at)
+    }
+
+    /// Removes one control point, shifting the later ones down, and answers
+    /// whether the index named a live point.
+    pub fn remove_control_point(&mut self, index: usize) -> bool {
+        let used = self.control_points().len();
+        if index >= used {
+            return false;
+        }
+        self.control_points.copy_within(index + 1..used, index);
+        self.control_point_count = used as u32 - 1;
+        true
     }
 
     /// A dummy alpha channel that forwards straight to `pill_dummy_color`.
@@ -403,6 +582,112 @@ pub fn catmull_rom(
     (constant_term + linear_term + quadratic_term + cubic_term) * 0.5
 }
 
+/// Evaluate one cubic Hermite segment from `start` to `end`.
+///
+/// `start_tangent` and `end_tangent` are the vectors the segment leaves and
+/// arrives along, the same length unit as the points; `local_t` runs from 0.0
+/// at `start` to 1.0 at `end`.
+pub fn hermite(
+    start: Vector3f,
+    end: Vector3f,
+    start_tangent: Vector3f,
+    end_tangent: Vector3f,
+    local_t: f32,
+) -> Vector3f {
+    // The four Hermite basis functions, written as weights on the two points
+    // and the two tangents.
+    let squared_t = local_t * local_t;
+    let cubed_t = squared_t * local_t;
+    let start_weight = 2.0 * cubed_t - 3.0 * squared_t + 1.0;
+    let start_tangent_weight = cubed_t - 2.0 * squared_t + local_t;
+    let end_weight = -2.0 * cubed_t + 3.0 * squared_t;
+    let end_tangent_weight = cubed_t - squared_t;
+    start * start_weight
+        + start_tangent * start_tangent_weight
+        + end * end_weight
+        + end_tangent * end_tangent_weight
+}
+
+// =============================================================================
+// Gizmo
+// =============================================================================
+
+/// The colour the curve is drawn in.
+const CURVE_COLOR: [f32; 4] = [0.95, 0.75, 0.2, 1.0];
+
+/// The colour the control points are drawn in.
+const POINT_COLOR: [f32; 4] = [0.95, 0.95, 0.95, 1.0];
+
+/// The colour the stored tangents are drawn in.
+const TANGENT_COLOR: [f32; 4] = [0.35, 0.75, 0.95, 1.0];
+
+/// How wide a control point is drawn, in pixels.
+const POINT_SIZE_PIXELS: f32 = 7.0;
+
+/// How many straight lines one curve segment is drawn with.
+const SEGMENTS_PER_CURVE_SEGMENT: usize = 16;
+
+/// Draws one spline: the curve, its control points and, when the spline stores
+/// them, the tangents each point leaves and arrives along.
+///
+/// The engine's gizmo pass calls this once per entity that carries a
+/// [`Spline`]; the points are in the spline's own space, so the entity's
+/// transform turns them into the place they are drawn.
+pub fn draw_spline_gizmo(spline: &Spline, context: &GizmoContext<'_>, draw: &mut GizmoDraw) {
+    // Step 1: a spline with fewer than two points is a point, not a path.
+    let point_count = spline.control_points().len();
+    if point_count < 2 {
+        return;
+    }
+    let to_world_matrix = context.to_world();
+    let to_world = |point: Vector3f| {
+        [
+            to_world_matrix[0][0] * point.x
+                + to_world_matrix[0][1] * point.y
+                + to_world_matrix[0][2] * point.z
+                + to_world_matrix[0][3],
+            to_world_matrix[1][0] * point.x
+                + to_world_matrix[1][1] * point.y
+                + to_world_matrix[1][2] * point.z
+                + to_world_matrix[1][3],
+            to_world_matrix[2][0] * point.x
+                + to_world_matrix[2][1] * point.y
+                + to_world_matrix[2][2] * point.z
+                + to_world_matrix[2][3],
+        ]
+    };
+
+    // Step 2: the curve, sampled densely enough that a segment reads as a
+    // curve rather than as a chain of straight lines.
+    let sample_count = spline.segment_count() * SEGMENTS_PER_CURVE_SEGMENT;
+    let curve: Vec<[f32; 3]> = (0..=sample_count)
+        .map(|step| to_world(spline.get_location_at(step as f32 / sample_count as f32)))
+        .collect();
+    draw.polyline(&curve, CURVE_COLOR);
+
+    // Step 3: one handle per control point, so a reader sees what the curve
+    // passes through.
+    for point in spline.control_points() {
+        draw.point(to_world(*point), POINT_SIZE_PIXELS, POINT_COLOR);
+    }
+
+    // Step 4: the stored tangents, as the arms a segment leaves and arrives
+    // along. An auto spline derives them per sample, so there is nothing stored
+    // to draw.
+    if spline.tangent_mode() == TangentMode::Auto {
+        return;
+    }
+    for (index, point) in spline.control_points().iter().enumerate() {
+        let arms = [
+            *point - spline.in_tangents[index],
+            *point + spline.out_tangents[index],
+        ];
+        for arm in arms {
+            draw.line(to_world(*point), to_world(arm), TANGENT_COLOR);
+        }
+    }
+}
+
 /// A demonstration path used to populate the world on first load.
 ///
 /// Like [`DEMO_SPLINE_COUNT`], this exists for the registration path, which
@@ -419,6 +704,15 @@ fn demo_spline() -> Spline {
 // =============================================================================
 // Registration
 // =============================================================================
+
+/// Registers the [`Spline`] component with `world`, field layout included.
+///
+/// The derive writes `__pill_register_Spline` as a private item, so this is the
+/// one path a crate that links the type uses to register it alone: a test
+/// world, or an artifact that runs no module entry point.
+pub fn register_component(world: &mut World) {
+    __pill_register_Spline(world);
+}
 
 /// Registers the module's components against the host engine and fills the
 /// world up to its spline count.
@@ -698,6 +992,140 @@ mod tests {
             spline.get_location_at(1.0).x,
             (MAX_CONTROL_POINTS - 1) as f32
         );
+    }
+
+    /// A spline built the way a scene document saved before tangents existed
+    /// describes it samples exactly the curve it did then.
+    ///
+    /// The four demo points are set field by field, with the tangent arrays and
+    /// the mode left at the default a document without them loads into, and two
+    /// mid-segment samples are compared against the Catmull-Rom values the old
+    /// curve produced for them.
+    #[test]
+    fn a_spline_without_stored_tangents_samples_the_original_curve() {
+        let mut spline = Spline::default();
+        let points = [
+            Vector3f::new(0.0, 0.0, 0.0),
+            Vector3f::new(100.0, 150.0, 0.0),
+            Vector3f::new(300.0, -50.0, 0.0),
+            Vector3f::new(500.0, 100.0, 0.0),
+        ];
+        for (index, point) in points.iter().enumerate() {
+            spline.control_points[index] = *point;
+        }
+        spline.control_point_count = points.len() as u32;
+        spline.elo = 30.0;
+
+        assert_eq!(spline.tangent_mode(), TangentMode::Auto);
+        assert_eq!(spline.in_tangents, [Vector3f::ZERO; MAX_CONTROL_POINTS]);
+        assert_eq!(spline.out_tangents, [Vector3f::ZERO; MAX_CONTROL_POINTS]);
+
+        // Two samples a hand-computed Catmull-Rom evaluation gives: the middle
+        // of the second segment, then the middle of the third.
+        let second_segment_middle = spline.get_location_at(1.5 / 3.0);
+        assert!(
+            second_segment_middle.abs_diff_eq(Vector3f::new(193.75, 50.0, 0.0), EPSILON),
+            "the second segment's middle sampled as {second_segment_middle:?}"
+        );
+        let third_segment_middle = spline.get_location_at(2.5 / 3.0);
+        assert!(
+            third_segment_middle.abs_diff_eq(Vector3f::new(412.5, 12.5, 0.0), EPSILON),
+            "the third segment's middle sampled as {third_segment_middle:?}"
+        );
+    }
+
+    /// The tangents an auto spline derives are the ones the Catmull-Rom curve
+    /// already has, so a stored-tangent segment starts and ends where the auto
+    /// curve does.
+    #[test]
+    fn refitted_tangents_keep_the_curve_at_its_points() {
+        let mut auto_spline = Spline::from_points(&[
+            Vector3f::new(0.0, 0.0, 0.0),
+            Vector3f::new(100.0, 150.0, 0.0),
+            Vector3f::new(300.0, -50.0, 0.0),
+            Vector3f::new(500.0, 100.0, 0.0),
+        ]);
+        auto_spline.refit_tangents();
+        let mut stored_spline = auto_spline;
+        stored_spline.set_tangent_mode(TangentMode::Aligned);
+
+        // A point's two tangents are the same vector, which is what collinear
+        // means here.
+        for index in 0..stored_spline.control_points().len() {
+            assert_eq!(
+                stored_spline.in_tangents[index], stored_spline.out_tangents[index],
+                "point {index} arrived and left along different vectors"
+            );
+        }
+        // Both modes pass through every control point, so no switch between
+        // them can move a point the reader placed.
+        for index in 0..4 {
+            let t = index as f32 / 3.0;
+            assert!(
+                auto_spline
+                    .get_location_at(t)
+                    .abs_diff_eq(stored_spline.get_location_at(t), EPSILON),
+                "control point {index} moved when its tangents were stored"
+            );
+        }
+    }
+
+    /// A stored tangent long enough to lift the curve does lift it, so a tool
+    /// that writes tangents changes what the path looks like.
+    #[test]
+    fn a_longer_tangent_lifts_the_segment() {
+        let mut spline = Spline::from_points(&[
+            Vector3f::new(0.0, 0.0, 0.0),
+            Vector3f::new(100.0, 0.0, 0.0),
+            Vector3f::new(200.0, 0.0, 0.0),
+        ]);
+        spline.refit_tangents();
+        let flat = spline.get_location_at(0.25 * 0.5);
+        spline.set_tangent_mode(TangentMode::Broken);
+        spline.out_tangents[0] = Vector3f::new(100.0, 300.0, 0.0);
+        let lifted = spline.get_location_at(0.25 * 0.5);
+
+        assert!(
+            lifted.y > flat.y + 1.0,
+            "the longer tangent left the curve flat: {flat:?} became {lifted:?}"
+        );
+        assert!(
+            lifted.abs_diff_eq(Vector3f::new(lifted.x, lifted.y, 0.0), EPSILON),
+            "the curve left the plane its points are in: {lifted:?}"
+        );
+    }
+
+    /// Inserting and removing control points shifts the later ones along, and
+    /// both answer so a caller knows what happened.
+    #[test]
+    fn inserting_and_removing_control_points_shifts_the_path() {
+        let mut spline = Spline::from_points(&[
+            Vector3f::new(0.0, 0.0, 0.0),
+            Vector3f::new(10.0, 0.0, 0.0),
+            Vector3f::new(20.0, 0.0, 0.0),
+        ]);
+
+        let inserted = spline.insert_control_point(1, Vector3f::new(5.0, 1.0, 0.0));
+        assert_eq!(inserted, Some(1), "the point lands where it was asked to");
+        assert_eq!(spline.control_points().len(), 4);
+        assert_eq!(spline.control_points[1], Vector3f::new(5.0, 1.0, 0.0));
+        assert_eq!(spline.control_points[3], Vector3f::new(20.0, 0.0, 0.0));
+
+        assert!(spline.remove_control_point(1));
+        assert_eq!(spline.control_points().len(), 3);
+        assert_eq!(spline.control_points[1], Vector3f::new(10.0, 0.0, 0.0));
+        assert!(
+            !spline.remove_control_point(3),
+            "a dead index removes nothing"
+        );
+    }
+
+    /// A full spline refuses an insert instead of overwriting a point.
+    #[test]
+    fn inserting_into_a_full_spline_is_refused() {
+        let mut spline = Spline::from_points(&[Vector3f::ZERO; MAX_CONTROL_POINTS]);
+        assert_eq!(spline.insert_control_point(0, Vector3f::ONE), None);
+        assert_eq!(spline.control_points().len(), MAX_CONTROL_POINTS);
     }
 
     /// Appending reports when the spline is full rather than silently dropping.

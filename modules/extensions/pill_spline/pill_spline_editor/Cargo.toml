@@ -1,0 +1,29 @@
+[package]
+name = "pill_spline_editor"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The crate's build script emits the function-address inventory the host uses
+# to patch any function, annotated or not.
+[build-dependencies]
+pill_hot_scan = { path = "../../../hosting/pill_hot_scan" }
+
+[lib]
+# Named after the crate rather than `lib.rs`, like every extension crate.
+path = "src/pill_spline_editor.rs"
+# `rlib` only: the artifact an editor host loads is built by the generated
+# `host_module_pill_spline_editor` wrapper in this folder's `generated/`.
+crate-type = ["rlib"]
+
+# The spline extension's editor part: the tool that edits a `Spline`'s points
+# and tangents. The folder's runtime crate is `pill_spline`, which an editor
+# host loads first and this crate extends; no game build ever builds it.
+[dependencies]
+pill_core = { path = "../../../engine/pill_core" }
+pill_engine = { path = "../../../engine/pill_engine" }
+# The tool trait, the registry and the element vocabulary this tool declares.
+pill_editor_core = { path = "../../../editor/pill_editor_core" }
+pill_spline = { path = "../pill_spline", default-features = false }

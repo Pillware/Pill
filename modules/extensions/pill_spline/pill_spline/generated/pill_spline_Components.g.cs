@@ -92,7 +92,7 @@ public partial struct OmoMO
 
 namespace pill_spline {
 
-[StructLayout(LayoutKind.Explicit, Size = 200)]
+[StructLayout(LayoutKind.Explicit, Size = 588)]
 public partial struct Spline
 {
     [FieldOffset(0)] public Vector3f ControlPoints0;
@@ -113,6 +113,39 @@ public partial struct Spline
     [FieldOffset(180)] public Vector3f ControlPoints15;
     [FieldOffset(192)] public uint ControlPointCount;
     [FieldOffset(196)] public float Elo;
+    [FieldOffset(200)] public Vector3f InTangents0;
+    [FieldOffset(212)] public Vector3f InTangents1;
+    [FieldOffset(224)] public Vector3f InTangents2;
+    [FieldOffset(236)] public Vector3f InTangents3;
+    [FieldOffset(248)] public Vector3f InTangents4;
+    [FieldOffset(260)] public Vector3f InTangents5;
+    [FieldOffset(272)] public Vector3f InTangents6;
+    [FieldOffset(284)] public Vector3f InTangents7;
+    [FieldOffset(296)] public Vector3f InTangents8;
+    [FieldOffset(308)] public Vector3f InTangents9;
+    [FieldOffset(320)] public Vector3f InTangents10;
+    [FieldOffset(332)] public Vector3f InTangents11;
+    [FieldOffset(344)] public Vector3f InTangents12;
+    [FieldOffset(356)] public Vector3f InTangents13;
+    [FieldOffset(368)] public Vector3f InTangents14;
+    [FieldOffset(380)] public Vector3f InTangents15;
+    [FieldOffset(392)] public Vector3f OutTangents0;
+    [FieldOffset(404)] public Vector3f OutTangents1;
+    [FieldOffset(416)] public Vector3f OutTangents2;
+    [FieldOffset(428)] public Vector3f OutTangents3;
+    [FieldOffset(440)] public Vector3f OutTangents4;
+    [FieldOffset(452)] public Vector3f OutTangents5;
+    [FieldOffset(464)] public Vector3f OutTangents6;
+    [FieldOffset(476)] public Vector3f OutTangents7;
+    [FieldOffset(488)] public Vector3f OutTangents8;
+    [FieldOffset(500)] public Vector3f OutTangents9;
+    [FieldOffset(512)] public Vector3f OutTangents10;
+    [FieldOffset(524)] public Vector3f OutTangents11;
+    [FieldOffset(536)] public Vector3f OutTangents12;
+    [FieldOffset(548)] public Vector3f OutTangents13;
+    [FieldOffset(560)] public Vector3f OutTangents14;
+    [FieldOffset(572)] public Vector3f OutTangents15;
+    [FieldOffset(584)] public byte TangentMode;
     /// Live ABI bytes of this component row (safe code).
     public readonly Span<byte> Raw =>
         MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref Unsafe.AsRef(in this), 1));

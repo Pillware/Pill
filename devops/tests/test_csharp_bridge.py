@@ -466,9 +466,16 @@ def verify_startup(
         [
             "namespace pill_spline {",
             "public partial struct Spline",
-            "Size = 200",
+            "Size = 588",
             "[FieldOffset(192)] public uint ControlPointCount;",
             "[FieldOffset(196)] public float Elo;",
+            # The stored tangents and the mode that reads them sit after the
+            # control points, so an older scene document still lands on the
+            # same first fields. The mode is a byte, which is what keeps the
+            # whole row blittable across the managed boundary.
+            "[FieldOffset(200)] public Vector3f InTangents0;",
+            "[FieldOffset(392)] public Vector3f OutTangents0;",
+            "[FieldOffset(584)] public byte TangentMode;",
             "[StructLayout(LayoutKind.Explicit, Size = 16)]\npublic partial struct OmoMO",
             "[FieldOffset(0)] public ulong X;",
             "[StructLayout(LayoutKind.Explicit, Size = 12)]\npublic partial struct Vector3f",
@@ -1364,9 +1371,12 @@ def verify_codegen_rebuild() -> bool:
             [
                 "namespace pill_spline {",
                 "public partial struct Spline",
-                "Size = 200",
+                "Size = 588",
                 "[FieldOffset(192)] public uint ControlPointCount;",
                 "[FieldOffset(196)] public float Elo;",
+                "[FieldOffset(200)] public Vector3f InTangents0;",
+                "[FieldOffset(392)] public Vector3f OutTangents0;",
+                "[FieldOffset(584)] public byte TangentMode;",
                 "[StructLayout(LayoutKind.Explicit, Size = 16)]\npublic partial struct OmoMO",
                 "public ulong GetSum()",
                 "var __call = global::TracyLive.MirrorCall.Begin(\"pill_spline::OmoMO\", \"get_sum\");",

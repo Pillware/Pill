@@ -1,0 +1,18 @@
+[package]
+name = "uber_spline"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# `cdylib` for a hot-reloading build, where the host loads this as a DLL, and
+# `rlib` so a shipping or web build can link the project into the binary.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pill_core = { path = "../../../../engine/pill_core" }
+pill_engine = { path = "../../../../engine/pill_engine" }
+pill_spline = { path = "../../pill_spline", default-features = false }
+
+# A project is not a Cargo workspace member: the host generates a
+# `host_project_uber_spline` crate and builds it against this manifest.
+[workspace]
