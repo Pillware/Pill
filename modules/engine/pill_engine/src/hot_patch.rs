@@ -5,8 +5,8 @@
 //! # Responsibilities
 //!
 //! - Re-export the engine core's hot-patch machinery
-//!   (`pill_engine_core::hot_patch`) under this path, so one import gives a
-//!   caller the core's slots and the registries declared here.
+//!   (`pill_engine_core::hot_reload::hot_patch`) under this path, so one import
+//!   gives a caller the core's slots and the registries declared here.
 //! - Declare the registries the macros and the build-script inventory submit
 //!   into ([`PillHotSlotDescriptor`], [`PillFunctionAddress`],
 //!   [`PillHotFunctionDescriptor`]) and the functions that read them.
@@ -27,7 +27,7 @@
 /// The core's hot-patch machinery, which is the same in every DLL: dispatch
 /// slots, the engine-owned patch registry, signature hashing, prologue
 /// patching, and the errors all of them report.
-pub use pill_engine_core::hot_patch::*;
+pub use pill_engine_core::hot_reload::hot_patch::*;
 
 // =============================================================================
 // Registry of `#[pill_hot_fn]` slots

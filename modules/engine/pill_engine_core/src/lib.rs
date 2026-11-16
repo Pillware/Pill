@@ -58,9 +58,10 @@ static PROFILED_ALLOCATOR: tracy_client::ProfiledAllocator<std::alloc::System> =
 // Public Modules
 // =============================================================================
 
-/// The engine API table a loaded project or module receives at its entry
-/// point.
-pub mod api;
+/// The ABI group: the API table a loaded DLL receives, the ABI revision both
+/// sides compare, and the C ABI mirrored functions cross. Its modules keep
+/// their old crate-root paths through the re-exports below.
+pub mod abi;
 
 /// Many-per-type asset storage addressed by generational handle.
 ///
@@ -98,19 +99,10 @@ pub mod engine;
 /// Typed error system for the ECS engine.
 pub mod error;
 
-/// Per-function hot patching: stable dispatch slots for registered systems.
-pub mod hot_patch;
-
-/// The C ABI a mirrored Rust function crosses to reach C#: argument slots,
-/// result encodings, and the channels that carry an error message or a
-/// returned string.
-pub mod mirror;
-
-/// The extension ABI revision the host and every module compare at load time.
-pub mod module_abi;
-
-/// Component persistence and schema migration for hot-reload.
-pub mod persistence;
+/// The hot-reload group: the dispatch slots a patch redirects, and the
+/// component persistence that keeps data readable across a swap. Its modules
+/// keep their old crate-root paths through the re-exports below.
+pub mod hot_reload;
 
 /// The reflection group: the field layouts the derive macros emit, the
 /// type-erased field access built on them, and the public type names. Its
@@ -147,7 +139,11 @@ pub mod systems;
 // `services` and `settings` groups also keep their old crate-root paths, so a
 // caller that names `crate::entity`, `pill_engine_core::world`,
 // `crate::scripting`, `crate::asset_store` or `crate::input` still resolves.
-pub use api::EngineApi;
+pub use abi::api::EngineApi;
+
+// The abi group's modules, under the names callers have always used:
+// `crate::api`, `crate::mirror` and `crate::module_abi`.
+pub use abi::{api, mirror, module_abi};
 
 pub use assets::database::{AssetDatabase, AssetRecord, GuidConflict};
 pub use assets::import_registry::AssetIdentity;
@@ -185,6 +181,9 @@ pub use scene::{saved_references, startup_scene};
 pub use services::{debug_draw, diagnostics, input, profiling, time};
 pub use settings::manager_settings;
 
+// The hot_reload group's modules, under the names callers have always used.
+pub use hot_reload::{hot_patch, persistence};
+
 pub use ecs::commands::{CommandError, Commands};
 pub use ecs::common_components::{register_transform_component, TransformComponent};
 pub use ecs::component::{Component, ComponentId, ComponentTicks, Tick};
@@ -199,8 +198,8 @@ pub use ecs::resource::{
 pub use ecs::{archetype, commands, common_components, component, entity, query, resource, world};
 pub use engine::{Engine, PlayRefusal, RunMode, SystemOptions, SystemOwner, SystemSnapshot};
 pub use error::{EngineError, SystemError, SystemFailure};
-pub use hot_patch::{HotPatchError, HotPatchRegistry, HotSlot, PlainSlot};
-pub use persistence::{PersistResourceManifestEntry, ResourceSnapshot};
+pub use hot_reload::hot_patch::{HotPatchError, HotPatchRegistry, HotSlot, PlainSlot};
+pub use hot_reload::persistence::{PersistResourceManifestEntry, ResourceSnapshot};
 pub use pill_core::DynamicBuffer;
 pub use reflection::component_field::{
     parse_enum_tag, ComponentFieldError, EnumFieldTag, FieldValue,

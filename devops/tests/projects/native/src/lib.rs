@@ -68,6 +68,12 @@ mod spline_probe;
 // Keep the public hot-patch helper available at its original crate-root path.
 pub use physics::simulate_ball;
 
+// The follow-target system's patch is compiled as its own crate, so the
+// component its body names has to be reachable from this crate's root: a patch
+// naming `native::follow_target::FollowTarget` would be refused because the
+// module is private.
+pub use follow_target::FollowTarget;
+
 use physics::ball_spawn_state;
 use settings::*;
 use spline_probe::SplineProbeState;
