@@ -70,11 +70,18 @@ impl EditorWindow {
     /// Advances a scripted drag by one frame: first the press, then the move,
     /// then the release. The line it logs on the release tells a suite that
     /// the drag is over and the pointer is free again.
+    ///
+    /// A drag that starts inside a scene viewport is a scene gesture as well
+    /// as a UI one: its press, move and release reach the viewport's own
+    /// handlers, which is how a suite drags a handle or a marquee. The
+    /// viewport is decided at the press and every later stage keeps it,
+    /// because the pointer may leave the viewport mid-drag.
     pub(super) fn advance_scripted_drag(&mut self) {
         let Some(drag) = self.scripted_drag.as_ref() else {
             return;
         };
         let (from, to, stage) = (drag.from, drag.to, drag.stage);
+        let scene_view = self.scripted_scene_view(from);
         match stage {
             ScriptedDragStage::Press => {
                 self.queue_input(InputEvent::CursorMoved {
@@ -84,6 +91,11 @@ impl EditorWindow {
                     button: MouseButton::Left,
                     state: ButtonState::Pressed,
                 });
+                if let Some(view) = scene_view {
+                    self.activate_view(view);
+                    let (origin_x, origin_y) = self.view_origin(view);
+                    self.press_scene(view, from.0 - origin_x, from.1 - origin_y);
+                }
                 if let Some(drag) = self.scripted_drag.as_mut() {
                     drag.stage = ScriptedDragStage::Move;
                 }
@@ -92,6 +104,10 @@ impl EditorWindow {
                 self.queue_input(InputEvent::CursorMoved {
                     position: pill_core::math::Vector2f::new(to.0, to.1),
                 });
+                if let Some(view) = scene_view {
+                    let (origin_x, origin_y) = self.view_origin(view);
+                    self.scene_pointer_moved(view, (to.0 - origin_x, to.1 - origin_y));
+                }
                 if let Some(drag) = self.scripted_drag.as_mut() {
                     drag.stage = ScriptedDragStage::Release;
                 }
@@ -101,6 +117,9 @@ impl EditorWindow {
                     button: MouseButton::Left,
                     state: ButtonState::Released,
                 });
+                if let Some(view) = scene_view {
+                    self.release_scene(view);
+                }
                 self.scripted_drag = None;
                 info!(
                     target: telemetry_target::EDITOR,
@@ -112,6 +131,21 @@ impl EditorWindow {
                 );
             }
         }
+    }
+
+    /// The scene view a scripted point in the main window falls in, when the
+    /// point is not also over the shell's own UI.
+    ///
+    /// A point over an overlay region belongs to the UI, exactly as it does
+    /// for a scripted click, so the drag is not a scene gesture there.
+    fn scripted_scene_view(&self, point: (f32, f32)) -> Option<usize> {
+        let view = self.scene_view_at(point.0, point.1)?;
+        let scale_factor = self.scale_factor;
+        let over_ui = self
+            .overlay_regions
+            .iter()
+            .any(|region| region.contains(point.0 / scale_factor, point.1 / scale_factor));
+        (!over_ui).then_some(view)
     }
 
     /// Logs the asset browser's rows: the count first, then one line per row
@@ -2324,26 +2358,98 @@ impl EditorWindow {
     /// Runs `select element <ids>` / `select element add <id>`: the recorded
     /// element selection a tool's own click makes.
     ///
-    /// The elements belong to the primary entity, because a tool edits the
-    /// elements of the entity it was entered on. The kind is the one the
-    /// current element selection carries, or `element` when nothing is
-    /// selected yet: until the tools stage reports kinds, the editor records
-    /// the one name the scripted channel can state.
+    /// While a tool reports elements, every id is resolved against its report
+    /// and applied through the same click rule a pointer press uses: the first
+    /// id is the click the verb names, the rest extend it, and a kind mismatch
+    /// logs the same refusal a Ctrl-click across kinds does. Without a
+    /// reporting tool the ids are taken as given, under the kind the current
+    /// selection carries.
     ///
     /// # Errors
     ///
-    /// Returns a message when no entity is selected to own the elements.
+    /// Returns a message when no entity is selected to own the elements, and
+    /// when a reporting tool does not report one of the ids.
     pub(super) fn scripted_select_elements(
         &mut self,
+        ids: Vec<u64>,
+        add: bool,
+    ) -> Result<(), String> {
+        // Step 1: the owner and the active tool's report, in one borrow. The
+        // element selection's own owner wins: a tool edits the elements of
+        // the entity it was entered on.
+        let (owner, reported) = {
+            let world = self.host.host_mut().engine_mut().world_mut();
+            let Some(selection) = world.get_resource::<EditorSelection>() else {
+                return Ok(());
+            };
+            let Some(owner) = selection.elements().owner().or_else(|| selection.primary()) else {
+                return Err(
+                    "select element needs a selected entity to own the elements".to_string()
+                );
+            };
+            let reported = match world.get_resource::<tools::ToolRegistry>() {
+                Some(registry)
+                    if registry
+                        .active_record()
+                        .is_some_and(|tool| tool.hooks.reports_elements()) =>
+                {
+                    registry.active_elements(owner, world)
+                }
+                _ => Vec::new(),
+            };
+            (owner, reported)
+        };
+        if reported.is_empty() {
+            return self.scripted_select_unreported_elements(owner, ids, add);
+        }
+        // Step 2: apply the ids in the order given, through the click rule.
+        // The report is the order a range reads, exactly as the pointer's own
+        // path passes it.
+        let report: Vec<ElementRef> = reported
+            .iter()
+            .map(|element| ElementRef {
+                entity: owner,
+                id: element.id,
+            })
+            .collect();
+        for (index, id) in ids.iter().enumerate() {
+            let Some(element) = reported.iter().find(|element| element.id == *id) else {
+                return Err(format!("the active tool reports no element {id}"));
+            };
+            let click = if add || index > 0 {
+                SelectionClick::Add
+            } else {
+                SelectionClick::Reset
+            };
+            self.apply_element_click_with(
+                gizmo::ElementHandleTarget {
+                    entity: owner,
+                    element: element.id,
+                    kind: element.kind.clone(),
+                },
+                click,
+                &report,
+            );
+        }
+        Ok(())
+    }
+
+    /// The element selection of a run with no reporting tool: the ids are
+    /// taken as given, under the kind the current selection names.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when the selection resource is missing; the owner has
+    /// already been resolved by the caller.
+    fn scripted_select_unreported_elements(
+        &mut self,
+        owner: Entity,
         ids: Vec<u64>,
         add: bool,
     ) -> Result<(), String> {
         let world = self.host.host_mut().engine_mut().world_mut();
         let Some(selection) = world.get_resource::<EditorSelection>() else {
             return Ok(());
-        };
-        let Some(owner) = selection.primary() else {
-            return Err("select element needs a selected entity to own the elements".to_string());
         };
         let kind = if selection.elements().kind().is_empty() {
             "element".to_string()
@@ -2397,8 +2503,8 @@ impl EditorWindow {
         tools::tool_registry_mut(world).set_active(name.as_deref())?;
         let active = tools::tool_registry_mut(world).active().map(str::to_string);
         // A built-in tool is a gizmo mode, so activating one queues the same
-        // command its toolbox row does. Any other tool's effect arrives with
-        // the stage that gives tools something to do.
+        // command its toolbox row does. Any other tool's effect is its element
+        // reporting, which the next frame's publish reads.
         if let Some(mode) = active
             .as_deref()
             .and_then(tools::BuiltinTool::from_name)

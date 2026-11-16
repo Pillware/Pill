@@ -418,6 +418,10 @@ impl WebEditorApplication {
                     // browser does not project entities into a scene view, so
                     // the list stays empty.
                     badges: Vec::new(),
+                    // The marquee is the desktop runner's too, for the same
+                    // reason: the browser editor does not run a scene
+                    // viewport's own pointer gestures yet.
+                    marquee: None,
                     // The page drives the editor through
                     // `window.pillEditor.command`, so the shell's row
                     // rectangles are logged for a suite to read.

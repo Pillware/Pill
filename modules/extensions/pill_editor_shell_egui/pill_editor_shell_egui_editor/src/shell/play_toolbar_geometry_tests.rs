@@ -101,6 +101,7 @@ fn toolbar_pass(
                 clipboard: &mut clipboard,
                 previews: &mut previews,
                 badges: &[],
+                marquee: None,
             };
             play_toolbar(ui, session, &mut viewer);
             group = viewer.overlay_regions.last().copied();
@@ -197,6 +198,7 @@ fn run_control(
         clipboard: &mut clipboard,
         previews: &mut previews,
         badges: &[],
+        marquee: None,
     };
     run_play_control(control, command, &mut viewer);
     assert_eq!(pending.batches.len(), 1, "one press queues one batch");

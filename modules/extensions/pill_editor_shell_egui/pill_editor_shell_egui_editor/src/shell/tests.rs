@@ -1208,6 +1208,7 @@ fn the_toolbox_rows_fill_their_width() {
                     clipboard: &mut pill_editor_core::clipboard::EditorClipboard::default(),
                     previews: &mut pill_editor_core::session::PreviewStates::default(),
                     badges: &[],
+                    marquee: None,
                 };
                 toolbox_overlay(&mut viewer, ui, 0);
                 *regions = std::mem::take(&mut viewer.overlay_regions);
@@ -1307,6 +1308,7 @@ fn the_toolbox_rows_fill_their_width() {
                     clipboard: &mut pill_editor_core::clipboard::EditorClipboard::default(),
                     previews: &mut pill_editor_core::session::PreviewStates::default(),
                     badges: &[],
+                    marquee: None,
                 };
                 toolbox_overlay(&mut viewer, ui, 0);
             });

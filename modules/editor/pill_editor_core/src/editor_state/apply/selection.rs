@@ -103,7 +103,12 @@ pub(super) fn apply(
                 kind: selection.elements().kind().to_string(),
                 elements: selection.elements().elements().to_vec(),
             };
-            if !selection.set_elements(kind.clone(), existing) {
+            // An empty list is how a click on empty space clears the slot: the
+            // kind goes with the elements, so nothing reads a kind nobody
+            // selected.
+            if existing.is_empty() {
+                selection.clear_elements();
+            } else if !selection.set_elements(kind.clone(), existing) {
                 return Err(format!(
                     "{command:?}: a selection cannot mix elements of more than one entity"
                 ));

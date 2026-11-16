@@ -134,6 +134,21 @@ pub(super) struct EditorWindow {
     /// The gizmo geometry drawn this frame. The hover test runs against these
     /// exact handles, so the highlight cannot disagree with what is on screen.
     pub(super) gizmo_geometry: GizmoGeometry,
+    /// The active tool's element handles drawn this frame, in the tool's own
+    /// report order. The hover, the press and the marquee all read them, so
+    /// nothing acts on an element that is no longer drawn.
+    pub(super) element_handles: Vec<tools::ElementHandle>,
+    /// The kinds the active tool described this frame, which the marquee reads
+    /// for its box-select rule.
+    pub(super) element_kinds: Vec<tools::ElementKind>,
+    /// What this frame's element handles point at, by handle id.
+    pub(super) element_map: gizmo::ElementHandleMap,
+    /// The last element handles the log reported: the view and each element's
+    /// screen position and selection. The lines appear on a change, not every
+    /// frame.
+    pub(super) element_logged: Option<ElementLogSignature>,
+    /// The marquee drag in flight, when one is.
+    pub(super) marquee: Option<MarqueeDrag>,
     /// The handle under the pointer, when one is.
     pub(super) hovered_handle: Option<u32>,
     /// How long the handles were when they were last built, in world units.
@@ -403,6 +418,27 @@ pub(super) enum ScriptedDragStage {
     Release,
 }
 
+/// What the element handle log last reported: the scene view the handles were
+/// projected in, then each element's id, its pixels in that view and whether
+/// the selection holds it. The rows are logged again only when this changes.
+pub(super) type ElementLogSignature = (usize, Vec<(u64, i32, i32, bool)>);
+
+/// A marquee drag in flight: where the press in empty space landed, where the
+/// pointer is now, and whether it has travelled far enough to be a drag.
+///
+/// A candidate that never becomes live is a click on empty space, so the
+/// release still asks the scene what is under the pixel.
+pub(super) struct MarqueeDrag {
+    /// The scene view the drag belongs to.
+    pub(super) view: usize,
+    /// The press position, in that view's own pixels.
+    pub(super) from: (f32, f32),
+    /// The pointer's latest position, in the same pixels.
+    pub(super) to: (f32, f32),
+    /// Whether the pointer has passed the drag threshold.
+    pub(super) live: bool,
+}
+
 impl EditorWindow {
     /// Create the window, the editor's device, the host and the views.
     ///
@@ -667,6 +703,11 @@ impl EditorWindow {
             overlay_regions: Vec::new(),
             gizmo_drag: None,
             gizmo_geometry: GizmoGeometry::default(),
+            element_handles: Vec::new(),
+            element_kinds: Vec::new(),
+            element_map: gizmo::ElementHandleMap::new(),
+            element_logged: None,
+            marquee: None,
             hovered_handle: None,
             gizmo_reference: 0.0,
             gizmo_hit_radius: GIZMO_HIT_RADIUS_DEFAULT,
@@ -752,6 +793,13 @@ impl EditorWindow {
             panel_requests: Vec::new(),
         };
         editor.place_views();
+        // A scripted run also gets the fixture tool the element framework's
+        // suites drive. It is registered like any other tool, through the
+        // registry, and a person's editor never sees it in the toolbox.
+        if editor.test_channel.is_some() {
+            let world = editor.host.host_mut().engine_mut().world_mut();
+            tool_fixture::register(world);
+        }
         info!(
             target: telemetry_target::EDITOR,
             width = size.0,

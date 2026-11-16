@@ -368,21 +368,7 @@ impl EditorWindow {
     pub(super) fn scene_window_event(&mut self, view: usize, event: &WindowEvent) {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                let point = (position.x as f32, position.y as f32);
-                self.scene_cursor[view] = Some(point);
-                if let Some(drag) = &self.camera_drag {
-                    if drag.view == view {
-                        self.update_camera_navigation(point);
-                        return;
-                    }
-                }
-                if let Some(drag) = &self.gizmo_drag {
-                    if drag.view == view {
-                        self.update_gizmo_drag(point.0, point.1);
-                    }
-                    return;
-                }
-                self.update_hover(view, point);
+                self.scene_pointer_moved(view, (position.x as f32, position.y as f32));
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let pressed = *state == winit::event::ElementState::Pressed;
@@ -441,6 +427,35 @@ impl EditorWindow {
             }
             _ => {}
         }
+    }
+
+    /// Routes one pointer move to the scene's own handlers, wherever it came
+    /// from: a real window event or the scripted channel's drag. A navigation,
+    /// a gizmo drag or a marquee in flight takes the move; otherwise the hover
+    /// follows the pointer.
+    ///
+    /// The gesture's owner keeps the pointer: winit reports a drag's moves to
+    /// the window whose press started it, and the scripted channel drives the
+    /// same methods, so a drag that crosses the viewport's edge carries on.
+    pub(super) fn scene_pointer_moved(&mut self, view: usize, point: (f32, f32)) {
+        self.scene_cursor[view] = Some(point);
+        if let Some(drag) = &self.camera_drag {
+            if drag.view == view {
+                self.update_camera_navigation(point);
+                return;
+            }
+        }
+        if let Some(drag) = &self.gizmo_drag {
+            if drag.view == view {
+                self.update_gizmo_drag(point.0, point.1);
+            }
+            return;
+        }
+        if self.marquee.as_ref().is_some_and(|drag| drag.view == view) {
+            self.update_marquee(view, point);
+            return;
+        }
+        self.update_hover(view, point);
     }
 
     /// Makes `view` the active viewport: the one that camera navigation, the

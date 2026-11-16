@@ -97,6 +97,12 @@ pub struct EguiShellInput {
     /// only it can say where an entity appears on screen. The shell owns the
     /// icon atlas and draws the badge on that point.
     pub badges: Vec<ShellBadge>,
+    /// The marquee a drag in a scene view is holding open, when one is.
+    ///
+    /// The executable owns the gesture and the pixels it covers; the shell
+    /// draws the rectangle over the viewport, which is the only surface the
+    /// composition overlay paints above a scene's child window.
+    pub marquee: Option<ShellMarquee>,
     /// Whether a scripted channel drives this run.
     ///
     /// The Inspector logs a rectangle for every row so a suite can drop an
@@ -120,6 +126,19 @@ pub struct ShellBadge {
     pub entity: pill_engine::Entity,
 }
 
+/// The rectangle a marquee drag covers, in one scene view.
+///
+/// The rectangle is in the main window's logical points, like a badge, because
+/// that is the space the shell lays its overlay out in. The executable converts
+/// the view's own pixels into it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShellMarquee {
+    /// The scene view the drag belongs to, as a view index.
+    pub view: usize,
+    /// The drag's rectangle, in the main window's logical points.
+    pub rect: ShellRect,
+}
+
 impl Resource for EguiShellInput {
     /// Infrastructure, not game state: Play leaves this value alone and
     /// Stop does not restore it.
@@ -140,6 +159,7 @@ impl Default for EguiShellInput {
             cursor: None,
             paste_text: None,
             badges: Vec::new(),
+            marquee: None,
             scripted: false,
         }
     }

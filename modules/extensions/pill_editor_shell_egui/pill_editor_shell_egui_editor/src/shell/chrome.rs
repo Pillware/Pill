@@ -114,14 +114,11 @@ pub use pill_editor_core::editor_state::SelectionClick;
 
 /// Returns what a click means with these modifiers held: Shift selects a
 /// range, Ctrl or Command adds to the selection, and a plain click resets it.
+///
+/// The rule itself is the core's ([`SelectionClick::from_modifiers`]), so a
+/// row click and a scene press cannot disagree about what a held key means.
 pub fn click_from_modifiers(modifiers: &egui::Modifiers) -> SelectionClick {
-    if modifiers.shift {
-        SelectionClick::Range
-    } else if modifiers.command || modifiers.ctrl {
-        SelectionClick::Add
-    } else {
-        SelectionClick::Reset
-    }
+    SelectionClick::from_modifiers(modifiers.shift, modifiers.command || modifiers.ctrl)
 }
 
 /// Moves the shared selection onto `entity` alone.

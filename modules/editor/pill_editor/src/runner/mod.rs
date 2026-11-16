@@ -37,8 +37,8 @@ use pill_core::{debug, info, warn};
 use pill_development_host::{take_notices, HostConfig, HostNotice, RenderingHost};
 use pill_editor_core::assets::{self, AssetDialog};
 use pill_editor_core::boundary::{
-    frame_from_output, EguiPopoutInputs, EguiShellFrame, EguiShellInput, ShellBadge, ShellRect,
-    DEFAULT_SCENE_VIEWS,
+    frame_from_output, EguiPopoutInputs, EguiShellFrame, EguiShellInput, ShellBadge, ShellMarquee,
+    ShellRect, DEFAULT_SCENE_VIEWS,
 };
 use pill_editor_core::cadence::{Cadence, FrameDemand, FrameWake};
 use pill_editor_core::camera::{self, CameraButton, CameraNavigation, Modifiers, OrbitCamera};
@@ -82,6 +82,7 @@ use pill_editor_core::style::{
     layers_text, merge_layers, ThemeLayer, ThemeLayerInfo, UserThemeSelection,
 };
 use pill_editor_core::systems;
+use pill_editor_core::tools;
 use pill_engine_core::common_components::TRANSFORM_SHARED_NAME;
 use pill_engine_core::debug_draw::{DebugDraw, DebugStyle};
 use pill_engine_core::input::{ButtonState, KeyCode, Modifiers as EngineModifiers, MouseButton};
@@ -114,17 +115,22 @@ use crate::overlay::OverlaySurface;
 use crate::test_channel::{self, TestChannel};
 // The window's state and the helper types its methods take, imported here so
 // the method modules read them through `use super::*`.
-use editor_window::{EditorWindow, FontSource, ScriptedDrag, ScriptedDragStage};
+use editor_window::{EditorWindow, FontSource, MarqueeDrag, ScriptedDrag, ScriptedDragStage};
 
 // One module per concern: the asset pipeline, the window's state, the frame,
 // the scripted channel, the transform gizmo and the windows. The window's
 // state itself stays in this file.
 mod assets_pipeline;
 mod editor_window;
+mod element_tools;
 mod frame;
 mod scripted_channel;
+mod tool_fixture;
 mod transform_gizmo;
 mod windows;
+
+// What this file's methods use from the module that owns the element half.
+use element_tools::SceneHandle;
 
 // =============================================================================
 // Constants
@@ -832,27 +838,76 @@ impl EditorWindow {
     }
 
     /// Handle a left press: a handle under the pointer starts its drag in this
-    /// same press, and only a miss queues the object pick.
+    /// same press, only a miss queues the object pick.
     ///
     /// The CPU hit test answers first because the pick's answer arrives a frame
     /// later. Without it, a handle highlighted under the pointer could lose the
     /// press to the pick, which would clear the selection. The hover and the
     /// press read the same hitbox, so the highlight and the grab always agree.
+    ///
+    /// An element handle under the press selects instead of dragging: the tool
+    /// layer's click rule applies, with the modifiers this press holds. A miss
+    /// starts a marquee candidate while the active tool offers a kind that
+    /// allows box select; a press that never moves is still a click, and its
+    /// release asks the pick what is under the pixel.
     fn press_scene(&mut self, view: usize, x: f32, y: f32) {
         if self.gizmo_drag.is_none() {
-            if let Some(handle) = self.handle_at(view, x, y) {
-                info!(
-                    target: telemetry_target::EDITOR,
-                    view,
-                    handle,
-                    path = "handle",
-                    "[editor] gizmo press"
-                );
-                self.set_hovered_handle(view, Some(handle));
-                self.begin_gizmo_drag(view, handle, x, y);
-                return;
+            match self.scene_handle_at(view, x, y) {
+                Some(SceneHandle::Element(handle)) => {
+                    self.press_element(view, handle);
+                    return;
+                }
+                Some(SceneHandle::Gizmo(handle)) => {
+                    info!(
+                        target: telemetry_target::EDITOR,
+                        view,
+                        handle,
+                        path = "handle",
+                        "[editor] gizmo press"
+                    );
+                    self.set_hovered_handle(view, Some(handle));
+                    self.begin_gizmo_drag(view, handle, x, y);
+                    return;
+                }
+                None => {}
             }
         }
+        if self.active_tool_boxes_select() {
+            self.begin_marquee(view, (x, y));
+            return;
+        }
+        self.request_scene_pick(view, x, y);
+    }
+
+    /// Selects the element one handle of the active tool stands for, with the
+    /// click the held modifiers name.
+    fn press_element(&mut self, view: usize, handle: u32) {
+        let Some(target) = self.element_map.target(handle).cloned() else {
+            warn!(
+                target: telemetry_target::EDITOR,
+                view,
+                handle,
+                "[editor] element press refused: the handle belongs to no element"
+            );
+            return;
+        };
+        self.set_hovered_handle(view, Some(handle));
+        let click = SelectionClick::from_modifiers(self.modifiers.shift, self.modifiers.control);
+        info!(
+            target: telemetry_target::EDITOR,
+            view,
+            element = target.element,
+            kind = target.kind.as_str(),
+            handle,
+            "[editor] element press"
+        );
+        self.apply_element_click(target, click);
+    }
+
+    /// Queues a pick at one pixel of one scene view. The answer arrives in
+    /// [`Self::drain_scene_picks`], which moves the selection or starts a
+    /// drag.
+    fn request_scene_pick(&mut self, view: usize, x: f32, y: f32) {
         let physical_x = x.max(0.0).round() as u32;
         let physical_y = y.max(0.0).round() as u32;
         let Some(id) = self.queue_scene_pick_at(view, physical_x, physical_y) else {
@@ -876,9 +931,18 @@ impl EditorWindow {
     }
 
     /// A left release in `view`: it ends the gizmo drag a press started -
-    /// the drag applied its moves all along - and does nothing when the
-    /// press became a selection.
+    /// the drag applied its moves all along - and finishes a marquee.
+    ///
+    /// A marquee that never became a drag is a click on empty space, so its
+    /// release queues the pick the press would have queued.
     fn release_scene(&mut self, view: usize) {
+        if let Some(marquee) = self.take_marquee(view) {
+            if marquee.live {
+                self.apply_marquee(marquee);
+                return;
+            }
+            self.request_scene_pick(view, marquee.from.0, marquee.from.1);
+        }
         if self
             .gizmo_drag
             .as_ref()
@@ -985,12 +1049,17 @@ impl EditorWindow {
     /// Update the hovered handle from the pointer's ray, tested against the
     /// handles the last frame drew. The radius follows the handle length, so it
     /// matches the drawn line rather than a fixed world distance, and the
-    /// preference scales it.
+    /// preference scales it. An element handle answers before the gizmo does,
+    /// because the points draw on top of it.
     fn update_hover(&mut self, view: usize, point: (f32, f32)) {
         if self.gizmo_drag.is_some() || self.camera_drag.is_some() {
             return;
         }
-        let hit = self.handle_at(view, point.0, point.1);
+        let hit = self
+            .scene_handle_at(view, point.0, point.1)
+            .map(|hit| match hit {
+                SceneHandle::Element(handle) | SceneHandle::Gizmo(handle) => handle,
+            });
         self.set_hovered_handle(view, hit);
     }
 
@@ -1010,17 +1079,34 @@ impl EditorWindow {
 
     /// Record the hovered handle, logging the change once - the suite's
     /// window into the feedback states.
+    ///
+    /// An element handle logs its own tokens, so a suite can tell the tool's
+    /// points from the transform gizmo's arms without decoding the id.
     fn set_hovered_handle(&mut self, view: usize, handle: Option<u32>) {
         if self.hovered_handle == handle {
             return;
         }
+        let previous = self.hovered_handle;
         self.hovered_handle = handle;
+        let was_element =
+            previous.is_some_and(|handle| gizmo::element_handle_slot(handle).is_some());
         match handle {
+            Some(handle) if gizmo::element_handle_slot(handle).is_some() => info!(
+                target: telemetry_target::EDITOR,
+                view,
+                handle,
+                "[editor] element hover handle"
+            ),
             Some(handle) => info!(
                 target: telemetry_target::EDITOR,
                 view,
                 handle,
                 "[editor] gizmo hover handle"
+            ),
+            None if was_element => info!(
+                target: telemetry_target::EDITOR,
+                view,
+                "[editor] element hover none"
             ),
             None => info!(
                 target: telemetry_target::EDITOR,
@@ -1134,6 +1220,9 @@ impl EditorWindow {
         // delta.
         type HandlePress = (usize, u32, f32, f32, Option<(f32, f32)>);
         let mut handle_press: Option<HandlePress> = None;
+        // An element handle's answer selects the element it names, and that
+        // also needs `&mut self`, so it is collected the same way.
+        let mut element_press: Option<gizmo::ElementHandleTarget> = None;
         for result in pick_results {
             // A scripted press accepts an answer from any pixel near it: the
             // first answer that names a handle starts the drag, and only an
@@ -1226,6 +1315,10 @@ impl EditorWindow {
                     } else if let Some(selection) = world.get_resource_mut::<EditorSelection>() {
                         if selection.primary() != Some(entity) || selection.entities().len() != 1 {
                             selection.select_only(entity);
+                            // A new entity means a new set of elements: the
+                            // old ones belonged to the entity this pick just
+                            // deselected.
+                            selection.clear_elements();
                             info!(
                                 target: telemetry_target::EDITOR,
                                 entity = %entity,
@@ -1241,9 +1334,25 @@ impl EditorWindow {
                     );
                     if let Some(selection) = world.get_resource_mut::<EditorSelection>() {
                         selection.clear_entities();
+                        selection.clear_elements();
                     }
                 }
                 PickHit::Handle(handle) => {
+                    // An element handle answers with its own band's id: the
+                    // press selects the element the tool reported instead of
+                    // starting a gizmo drag. The click is collected and applied
+                    // once the world borrow above ends.
+                    if let Some(target) = self.element_map.target(handle).cloned() {
+                        info!(
+                            target: telemetry_target::EDITOR,
+                            handle,
+                            element = target.element,
+                            kind = target.kind.as_str(),
+                            "[editor] scene pick element"
+                        );
+                        element_press = Some(target);
+                        continue;
+                    }
                     info!(
                         target: telemetry_target::EDITOR,
                         handle,
@@ -1265,6 +1374,12 @@ impl EditorWindow {
                     }
                 }
             }
+        }
+        if let Some(target) = element_press {
+            // A pick has no modifiers of its own: a press that reaches this
+            // far is the plain click the CPU test did not catch, so it resets
+            // the element selection.
+            self.apply_element_click(target, SelectionClick::Reset);
         }
         if let Some((view, handle, press_x, press_y, scripted)) = handle_press {
             self.begin_gizmo_drag(view, handle, press_x, press_y);

@@ -119,6 +119,9 @@ impl EditorWindow {
         // names the scene the session holds. The window's own title names the
         // project instead.
         self.report_scene_title();
+        // Step 2e: the marquee the shell draws over a viewport, read before the
+        // world borrow below takes `self` apart.
+        let marquee = self.shell_marquee();
         // Step 3: the shell boundary's input resource.
         if let Some(shell_input) = self
             .host
@@ -160,6 +163,7 @@ impl EditorWindow {
                 cursor: self.shell_cursor,
                 paste_text: paste_text.flatten(),
                 badges: self.badges.clone(),
+                marquee,
                 // Only the scripted channel needs the shell's row geometry
                 // logged, so a person's editor logs none of it.
                 scripted: self.test_channel.is_some(),
@@ -252,9 +256,11 @@ impl EditorWindow {
         self.track_play_cameras();
         // Step 5: the world resources the frame draws and picks with,
         // published before it runs: the shared selection's outline set (one
-        // write per change) and the gizmo handles for that selection.
+        // write per change), the gizmo handles for that selection and the
+        // active tool's element handles beside them.
         self.publish_selection_outline();
         self.publish_gizmo_geometry();
+        self.publish_element_handles();
     }
 
     /// Runs the world frame; the shell's egui pass runs inside it.

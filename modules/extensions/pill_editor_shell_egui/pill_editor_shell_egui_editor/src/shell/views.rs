@@ -8,6 +8,7 @@
 //! - The per-viewport overlay chip (the frame counter) and the region it marks.
 //! - The entity badges: the mark each entity gets, the shadow under it, and
 //!   the pick region it marks.
+//! - The marquee the executable holds open while a drag selects elements.
 //!
 //! The globs below are absolute paths: a generated patch crate replays this
 //! file's top-level `use` lines, so a `super::`-relative glob would not
@@ -72,6 +73,14 @@ pub const SCENE_BADGE_SHADOW_SAMPLES: [(f32, f32); 9] = [
     (0.5, -0.5),
 ];
 
+/// How much of its full strength the marquee's fill draws at. The border
+/// carries the rectangle; the fill only marks the area, so the points under it
+/// stay readable.
+pub const SCENE_MARQUEE_FILL_OPACITY: f32 = 0.14;
+
+/// The width of the marquee's border, in logical points.
+pub const SCENE_MARQUEE_STROKE_WIDTH: f32 = 1.0;
+
 // =============================================================================
 // Free Functions
 // =============================================================================
@@ -84,6 +93,31 @@ pub fn shell_rect(rect: egui::Rect) -> ShellRect {
         width: rect.width(),
         height: rect.height(),
     }
+}
+
+/// Draws the marquee a drag in `view` is holding open, when one is.
+///
+/// The rectangle is in the main window's logical points, the space the shell
+/// lays its overlay out in. It draws in the colour the scene already uses for
+/// a selected entity's badge, so a rectangle and the marks inside it read as
+/// one selection. It senses nothing: it is an indicator over a drag the
+/// executable owns, and that drag's release reaches the viewport's own press
+/// path.
+pub fn scene_marquee(ui: &egui::Ui, marquee: Option<&ShellMarquee>, view: usize) {
+    let Some(marquee) = marquee.filter(|marquee| marquee.view == view) else {
+        return;
+    };
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(marquee.rect.x, marquee.rect.y),
+        egui::vec2(marquee.rect.width, marquee.rect.height),
+    );
+    ui.painter().rect(
+        rect,
+        egui::CornerRadius::ZERO,
+        icons::with_alpha(style::danger(), SCENE_MARQUEE_FILL_OPACITY),
+        egui::Stroke::new(SCENE_MARQUEE_STROKE_WIDTH, style::danger()),
+        egui::StrokeKind::Inside,
+    );
 }
 
 /// Returns a scene tab's body rectangle in logical points.

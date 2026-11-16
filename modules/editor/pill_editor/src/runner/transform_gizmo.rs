@@ -783,6 +783,7 @@ impl EditorWindow {
             );
         }
         self.cancel_gizmo_drag();
+        self.cancel_marquee(reason);
         self.press_pick = None;
         self.left_down.fill(false);
         self.set_hovered_handle(self.active_view, None);

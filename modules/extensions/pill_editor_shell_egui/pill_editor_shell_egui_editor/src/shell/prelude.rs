@@ -18,8 +18,8 @@
 pub use pill_core::telemetry::telemetry_target;
 pub use pill_editor_core::assets::{self, AssetDialog};
 pub use pill_editor_core::boundary::{
-    frame_from_output, EguiShellFrame, EguiShellInput, ShellBadge, ShellRect, BADGES_PER_VIEW_MAX,
-    DEFAULT_SCENE_VIEWS, SCENE_VIEWS_MAX,
+    frame_from_output, EguiShellFrame, EguiShellInput, ShellBadge, ShellMarquee, ShellRect,
+    BADGES_PER_VIEW_MAX, DEFAULT_SCENE_VIEWS, SCENE_VIEWS_MAX,
 };
 pub use pill_editor_core::browser::{self, ProjectBrowser};
 pub use pill_editor_core::commands::{CommandView, PendingEditorCommands};

@@ -127,6 +127,7 @@ pub mod views;
 pub use views::frame_counter_rect;
 pub use views::scene_badges;
 pub use views::scene_body_rect;
+pub use views::scene_marquee;
 pub use views::scene_overlay;
 pub use views::shell_rect;
 pub use views::SCENE_COUNTER_HEIGHT;
@@ -419,6 +420,9 @@ pub struct EditorTabViewer<'a> {
     /// The entity badges the executable projected into this frame's scene
     /// views.
     pub badges: &'a [ShellBadge],
+    /// The marquee the executable is holding open over a scene viewport, when
+    /// it is.
+    pub marquee: Option<ShellMarquee>,
 }
 
 // The dock's tab methods, forwarded to the free functions below.
@@ -718,6 +722,7 @@ pub fn run_frame(
         deferred: &mut deferred,
         previews,
         badges: &shell_input.badges,
+        marquee: shell_input.marquee,
     };
     let output = context.run_ui(raw_input, |ui| {
         // The tabs and badges a pass draws are the ones their rectangle caches
@@ -1029,6 +1034,7 @@ pub fn tab_body(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, tab: Editor
             scene_overlay(ui, viewer.frames_per_second, &mut viewer.overlay_regions);
             toolbox_overlay(viewer, ui, view);
             scene_badges(viewer, ui, view);
+            scene_marquee(ui, viewer.marquee.as_ref(), view);
         }
         EditorTab::Game => {
             // The game viewport is the primary surface's child window: a hole,

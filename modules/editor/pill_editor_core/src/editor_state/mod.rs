@@ -567,6 +567,24 @@ pub enum SelectionClick {
     Range,
 }
 
+impl SelectionClick {
+    /// What a click means with these modifiers held: Shift selects a range,
+    /// Control adds to the selection, and a plain click resets it.
+    ///
+    /// Shift wins over Control because a range needs an anchor, and a set that
+    /// both extends and ranges has no meaning. The scene's element presses and
+    /// the shell's row clicks take their meaning from this one rule.
+    pub fn from_modifiers(shift: bool, control: bool) -> SelectionClick {
+        if shift {
+            SelectionClick::Range
+        } else if control {
+            SelectionClick::Add
+        } else {
+            SelectionClick::Reset
+        }
+    }
+}
+
 /// The editor's shared selection, read by every data panel and by the scene.
 ///
 /// It holds one entity set, one asset slot and one resource slot. The
@@ -1611,6 +1629,28 @@ mod tests {
         assert_eq!(
             empty.clicked(SelectionClick::Range, third, &rows),
             vec![third]
+        );
+    }
+
+    /// A held key means one thing everywhere: Shift ranges, Control adds, and
+    /// Shift wins when both are held.
+    #[test]
+    fn click_modifiers_map_to_one_rule() {
+        assert_eq!(
+            SelectionClick::from_modifiers(false, false),
+            SelectionClick::Reset
+        );
+        assert_eq!(
+            SelectionClick::from_modifiers(false, true),
+            SelectionClick::Add
+        );
+        assert_eq!(
+            SelectionClick::from_modifiers(true, false),
+            SelectionClick::Range
+        );
+        assert_eq!(
+            SelectionClick::from_modifiers(true, true),
+            SelectionClick::Range
         );
     }
 
