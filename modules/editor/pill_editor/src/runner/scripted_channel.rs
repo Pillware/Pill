@@ -415,7 +415,7 @@ impl EditorWindow {
                 gizmo_type = %entry.type_name,
                 owner = %entry.owner,
                 when = %entry.when.label(),
-                visible = registry.is_type_visible(entry.type_name),
+                visible = registry.is_type_visible(&entry.type_name),
                 drew = entry.drew_last_frame(),
                 "[test] gizmo"
             );

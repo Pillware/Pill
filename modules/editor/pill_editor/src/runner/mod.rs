@@ -2587,15 +2587,15 @@ impl EditorWindow {
             if let Some(gizmo_registry) = world.get_resource_mut::<GizmoRegistry>() {
                 // Step 1: read the registered types first, so the loops below
                 // do not borrow the registry while it changes.
-                let registered: Vec<&'static str> = gizmo_registry
+                let registered: Vec<String> = gizmo_registry
                     .entries()
                     .iter()
-                    .map(|entry| entry.type_name)
+                    .map(|entry| entry.type_name.clone())
                     .collect();
                 // Step 2: every registered type takes the file's answer, which
                 // also clears a hide the file no longer holds. Each real change
                 // logs the same line the Preferences tab's own switch does.
-                for type_name in registered {
+                for type_name in &registered {
                     let visible = !hidden_types.iter().any(|hidden| hidden == type_name);
                     if gizmo_registry.is_type_visible(type_name) == visible {
                         continue;
@@ -2603,7 +2603,7 @@ impl EditorWindow {
                     gizmo_registry.set_type_visible(type_name, visible);
                     info!(
                         target: telemetry_target::EDITOR,
-                        gizmo_type = type_name,
+                        gizmo_type = %type_name,
                         visible,
                         "[editor] gizmo type"
                     );

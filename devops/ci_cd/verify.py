@@ -513,6 +513,10 @@ STEPS: List[Step] = [
             # its own sessions on extension projects, and one editor at a time
             # is the harness's rule.
             [PYTHON, "../devops/tests/run_all.py", "--only", "test_editor_tools.py"],
+            # The reload-eviction suite drives four project reloads and then
+            # asserts the editor is still drawing, which is what a stale pointer
+            # into an unmapped generation breaks.
+            [PYTHON, "../devops/tests/run_all.py", "--only", "test_editor_reload_eviction.py"],
         ],
     ),
 ]

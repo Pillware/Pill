@@ -307,6 +307,12 @@ def area_checks(paths: Sequence[str]) -> List[Check]:
         selected.append(suite_check("test_hot_reload_suite.py", "engine core changed"))
         selected.append(suite_check("test_resource_layout_fingerprint.py", "engine resource path changed"))
         selected.append(suite_check("test_manager_settings.py", "engine settings path changed"))
+        # The gizmo registry survives a reload (`PlayState::Keep`) and is refilled
+        # by the image that loads, so a change to it is exactly what the editor's
+        # eviction suite watches: an entry that keeps text or a pointer from a
+        # generation the reload then unmaps.
+        selected.append(suite_check("test_editor_reload_eviction.py",
+                                    "the engine gizmo registry changed"))
 
     # The host: its unit tests and the reload suites that exercise the
     # development postures end to end.
@@ -320,6 +326,10 @@ def area_checks(paths: Sequence[str]) -> List[Check]:
         selected.append(suite_check("test_shader_recompile.py", "host shader reload path changed"))
         selected.append(suite_check("test_resource_layout_fingerprint.py", "host reload path changed"))
         selected.append(suite_check("test_manager_settings.py", "host settings path changed"))
+        # The graveyard's eviction rule lives here, which is the other half of
+        # the same guarantee: what the reload unmaps must be unreachable.
+        selected.append(suite_check("test_editor_reload_eviction.py",
+                                    "the host graveyard changed"))
     if has("modules/hosting/pill_player/**", "modules/rendering/pill_renderer_api/**"):
         # The shipping posture type-checks against a *generated* bundle, and the
         # tracked one is the project-agnostic stub that deliberately refuses to

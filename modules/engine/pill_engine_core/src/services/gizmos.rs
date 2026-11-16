@@ -523,12 +523,17 @@ pub struct GizmoDeclaration {
 }
 
 /// One registered gizmo, owned by the world rather than by an image.
-#[derive(Clone, Copy, Debug)]
+///
+/// Every name here is an owned copy. A declaration's strings live in the
+/// static of the image that declared them, and the reload unmaps a retired
+/// image once two younger generations exist, so keeping the borrowed text
+/// would leave the editor reading freed memory through it.
+#[derive(Clone, Debug)]
 pub struct GizmoEntry {
     /// Fully-qualified component type name, copied out of the declaring image.
-    pub type_name: &'static str,
+    pub type_name: String,
     /// The declaring package, copied out of the declaring image.
-    pub owner: &'static str,
+    pub owner: String,
     /// Which entities it draws for.
     pub when: GizmoWhen,
     /// The generated wrapper.
@@ -615,29 +620,34 @@ impl GizmoRegistry {
             .collect();
         // Step 1: drop the entries these packages published before, so a
         // reloaded image never leaves a pointer to code that is being unmapped.
-        self.entries
-            .retain(|entry| !owners.contains(entry.owner) || published.contains(entry.type_name));
+        self.entries.retain(|entry| {
+            !owners.contains(entry.owner.as_str()) || published.contains(entry.type_name.as_str())
+        });
         // Step 2: add the ones that are not there yet, keeping what a frame
-        // already counted.
+        // already counted. A kept entry takes the arriving image's text as
+        // well as its pointers: the text an earlier generation published lives
+        // in that generation's statics.
         for declaration in declarations {
             if let Some(existing) = self
                 .entries
                 .iter_mut()
                 .find(|entry| entry.type_name == declaration.type_name)
             {
+                existing.owner = declaration.owner.to_owned();
                 existing.draw = declaration.draw;
                 existing.when = declaration.when;
                 continue;
             }
             self.entries.push(GizmoEntry {
-                type_name: declaration.type_name,
-                owner: declaration.owner,
+                type_name: declaration.type_name.to_owned(),
+                owner: declaration.owner.to_owned(),
                 when: declaration.when,
                 draw: declaration.draw,
                 drew_last_frame: 0,
             });
         }
-        self.entries.sort_by_key(|entry| entry.type_name);
+        self.entries
+            .sort_by(|left, right| left.type_name.cmp(&right.type_name));
     }
 
     /// Every registered gizmo, sorted by type name.
@@ -786,7 +796,7 @@ fn run_pass(world: &mut World, chrome: GizmoChrome) -> Result<(), SystemError> {
         .entries()
         .iter()
         .enumerate()
-        .filter(|(_, entry)| gizmo_registry.is_type_visible(entry.type_name))
+        .filter(|(_, entry)| gizmo_registry.is_type_visible(&entry.type_name))
         .map(|(index, entry)| (index, entry.draw))
         .collect();
     let entry_count = gizmo_registry.len();
@@ -922,9 +932,30 @@ mod tests {
         let names: Vec<&str> = registry
             .entries()
             .iter()
-            .map(|entry| entry.type_name)
+            .map(|entry| entry.type_name.as_str())
             .collect();
         assert_eq!(names, ["other::Marker", "tests::Marker"]);
+    }
+
+    /// A kept entry takes the arriving declaration's text, not the text of the
+    /// image that published it first.
+    ///
+    /// The registry survives a reload, and the names a declaration carries are
+    /// pointers into the declaring image, which the reload unmaps. An entry
+    /// that kept the first generation's text would be read out of freed memory
+    /// by the next editor snapshot.
+    #[test]
+    fn publishing_replaces_the_text_a_previous_generation_published() {
+        let mut registry = GizmoRegistry::default();
+        registry.publish(&[marker_declaration(GizmoWhen::Always)]);
+        // A later generation's declaration, with different text for the same
+        // type: whatever it publishes is what the entry must answer with.
+        let mut arriving = marker_declaration(GizmoWhen::Always);
+        arriving.type_name = "tests::Marker";
+        arriving.owner = "arriving-package";
+        registry.publish(&[arriving]);
+        assert_eq!(registry.len(), 1, "the type is still one entry");
+        assert_eq!(registry.entries()[0].owner, "arriving-package");
     }
 
     /// Hiding a type keeps the entry registered but stops it drawing, and

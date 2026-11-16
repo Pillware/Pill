@@ -1115,9 +1115,9 @@ impl EditorSnapshot {
                         .entries()
                         .iter()
                         .map(|entry| GizmoTypeView {
-                            type_name: entry.type_name.to_string(),
-                            owner: entry.owner.to_string(),
-                            visible: registry.is_type_visible(entry.type_name),
+                            type_name: entry.type_name.clone(),
+                            owner: entry.owner.clone(),
+                            visible: registry.is_type_visible(&entry.type_name),
                         })
                         .collect()
                 })

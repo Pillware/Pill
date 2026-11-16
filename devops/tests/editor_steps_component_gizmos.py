@@ -14,6 +14,11 @@ to the entity the reference names:
 
 The log vocabulary comes from `editor_log_tokens`; the tokens' field order is
 the contract these patterns pin.
+
+The area runs inside the shared session, right after the scene views and
+toolboxes area: it clicks a viewport toolbox row, so it needs the panel and its
+logged rectangles as that area leaves them, and it reloads the project once,
+which the areas after it count from rather than assume.
 """
 
 import re
@@ -25,6 +30,7 @@ from core.editor_log_tokens import (
     GIZMOS_PATTERN,
     GIZMOS_STATE_TOKEN,
     PROJECT_RELOAD_TOKEN,
+    TAB_ACTIVATED_TOKEN,
 )
 from editor_step_areas import StepArea, StepContext
 from editor_step_support import (
@@ -53,6 +59,22 @@ def read_gizmos(session):
     assert summary, "the gizmo dump carried no summary: {}".format(dump[-500:])
     rows = {match.group(1): match for match in re.finditer(GIZMO_PATTERN, dump)}
     return summary, rows
+
+
+def front_view(session) -> None:
+    """Brings the first scene view's tab to the front, so its window takes clicks.
+
+    A scene view is a child window of its own, so only the frontmost one
+    receives a click at coordinates the panel logs in.
+    """
+    begin = session.length()
+    session.send("tab scene")
+    session.wait(
+        message_pattern(TAB_ACTIVATED_TOKEN, r'\s+tab="scene"'),
+        30,
+        "the first scene view's tab",
+        begin,
+    )
 
 
 def witness_row(rows, description):
@@ -94,7 +116,12 @@ def run_component_gizmo_steps(state: StepState) -> None:
     """The steps through: a declared gizmo draws, hides and comes back."""
     session = state.session
 
-    # Step 1: the pass drew the witness, and the surfaces it draws on are the
+    # Step 1: the first scene view is the one on top, so its toolbox is the one
+    # a click reaches. Every viewport has a child window of its own, and the tab
+    # an earlier area left in front covers the others.
+    front_view(session)
+
+    # Step 2: the pass drew the witness, and the surfaces it draws on are the
     # frame's editor views - never the game's surface, whose id is zero.
     summary, rows = read_gizmos(session)
     assert int(summary.group(1)) >= 1, "no component gizmo was registered at all"
@@ -125,7 +152,7 @@ def run_component_gizmo_steps(state: StepState) -> None:
         "surface is not one of them".format(drew_before, len(surfaces))
     )
 
-    # Step 2: the toolbox row switches the whole pass off, which the pass
+    # Step 3: the toolbox row switches the whole pass off, which the pass
     # reports by drawing nothing. Each anchor is taken before the click: the
     # click's own line and the switch's land in the same few milliseconds, so
     # an anchor taken after the click has already read past the switch.
@@ -153,7 +180,7 @@ def run_component_gizmo_steps(state: StepState) -> None:
     ), "a switched-on pass drew nothing"
     print_ok("the toolbox row switches the whole gizmo pass, and the drawing follows")
 
-    # Step 3: hiding the type through the preferences stops it. The scripted
+    # Step 4: hiding the type through the preferences stops it. The scripted
     # verb writes the same key the Preferences tab's switch writes, so the file
     # itself is the record the next session starts from.
     begin = session.length()
@@ -173,7 +200,7 @@ def run_component_gizmo_steps(state: StepState) -> None:
     assert int(witness.group(5)) == 0, "a hidden type still drew"
     print_ok("hiding the type in the preferences stops its gizmo and reaches the file")
 
-    # Step 4: a project reload re-registers the gizmo and keeps the switch, so
+    # Step 5: a project reload re-registers the gizmo and keeps the switch, so
     # the reloaded generation still draws nothing for the hidden type.
     project_text = state.project_source.read_bytes().decode("utf-8")
     reloads = occurrence_count(session, re.escape(PROJECT_RELOAD_TOKEN))
@@ -194,7 +221,7 @@ def run_component_gizmo_steps(state: StepState) -> None:
     assert int(witness.group(5)) == 0, "the reloaded generation drew the hidden type"
     print_ok("the hide survived the project reload")
 
-    # Step 5: showing it again brings the drawing back, so the switch is a
+    # Step 6: showing it again brings the drawing back, so the switch is a
     # switch and not a one-way edit.
     begin = session.length()
     session.send("edit preference gizmo.hidden_types []")
@@ -212,7 +239,7 @@ def _area_entry(context: "StepContext") -> None:
 
 AREA = StepArea(
     name="component_gizmos",
-    order=14.5,
+    order=9.5,
     run=_area_entry,
     needs=(),
     provides=(),
