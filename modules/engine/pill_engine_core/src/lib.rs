@@ -68,32 +68,10 @@ pub mod api;
 /// textures, materials - where the type alone does not name one value. The
 /// store is itself a resource, so it reaches systems through the `Res` /
 /// `ResMut` parameters.
-pub mod asset;
-
-/// Every asset of a project by guid and by path, loaded or not.
-pub mod asset_database;
-
-/// The YAML document format every asset file shares.
-pub mod asset_document;
-
-/// Importing assets by file extension, for code that does not know their type.
-pub mod asset_import_registry;
-
-/// Loading assets and scenes from game code by path.
-pub mod asset_loading;
-
-/// Metadata files beside an asset's source (`<source_file>.meta`).
-pub mod asset_metadata;
-
-/// Saved references to assets, by guid, that point at the asset in a later
-/// run.
-pub mod asset_reference;
-
-/// Assets stored as their own file in `res`, with no source file.
-pub mod asset_standalone;
-
-/// Where an asset's bytes come from: mounted packs and the filesystem.
-pub mod asset_store;
+///
+/// The asset pipeline as a whole - the database, the file formats, the loader
+/// and where bytes come from - lives with it in the [`assets`] group.
+pub mod assets;
 
 /// The engine's tunable constants and the parallel-execution settings.
 pub mod config;
@@ -190,27 +168,38 @@ pub mod time;
 
 // Core engine types, re-exported so one `use` reaches them.
 //
-// The modules in the `ecs`, `systems` and `reflection` groups also keep their
-// old crate-root paths, so a caller that names `crate::entity`,
-// `pill_engine_core::world` or `crate::scripting` still resolves.
+// The modules in the `ecs`, `systems`, `reflection` and `assets` groups also
+// keep their old crate-root paths, so a caller that names `crate::entity`,
+// `pill_engine_core::world`, `crate::scripting` or `crate::asset_store` still
+// resolves.
 pub use api::EngineApi;
-pub use asset::{
-    Asset, AssetBindingError, AssetBindingResult, AssetGuid, AssetLoadError, AssetLoadResult,
-    AssetLoader, AssetManager, Handle,
-};
-pub use asset_database::{AssetDatabase, AssetRecord, GuidConflict};
-pub use asset_import_registry::AssetIdentity;
-pub use asset_import_registry::{
+
+// The asset group's modules, under the names callers have always used:
+// `crate::asset` is `assets::storage`, `crate::asset_store` is `assets::store`,
+// and so on. No path or item name changes.
+pub use assets::database::{AssetDatabase, AssetRecord, GuidConflict};
+pub use assets::import_registry::AssetIdentity;
+pub use assets::import_registry::{
     ErasedImportError, ErasedImportOutcome, FieldDecorator, ImportRegistrationError,
     ImportRegistry, ScanReport,
 };
-pub use asset_loading::{import_scene_document, load_scene_asset, scene_database};
-pub use asset_metadata::{
+pub use assets::loading::{import_scene_document, load_scene_asset, scene_database};
+pub use assets::metadata::{
     AssetImport, AssetImportError, ImportOutcome, ImportedAsset, MetadataPolicy, MetadataSource,
     ReimportOutcome,
 };
-pub use asset_reference::AssetReference;
-pub use asset_standalone::{render_standalone, StandaloneAsset};
+pub use assets::reference::AssetReference;
+pub use assets::standalone::{render_standalone, StandaloneAsset};
+pub use assets::storage::{
+    Asset, AssetBindingError, AssetBindingResult, AssetGuid, AssetLoadError, AssetLoadResult,
+    AssetLoader, AssetManager, Handle,
+};
+pub use assets::{
+    database as asset_database, document as asset_document,
+    import_registry as asset_import_registry, loading as asset_loading, metadata as asset_metadata,
+    reference as asset_reference, standalone as asset_standalone, storage as asset,
+    store as asset_store,
+};
 pub use debug_draw::{
     DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
     GizmoPoint, GizmoPointShape, GizmoTriangle, LabelAnchor,

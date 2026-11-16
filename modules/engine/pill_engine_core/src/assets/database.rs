@@ -22,7 +22,7 @@
 //! not loaded yet needs a step from its guid to its path. The import registry
 //! takes that step ([`ImportRegistry::load_by_guid`]).
 //!
-//! The identity rules are the importer's (`asset_metadata.rs`): one path is
+//! The identity rules are the importer's (`metadata.rs`): one path is
 //! one asset, and the guid is the one its `.meta` holds (or, for a standalone
 //! file, the one in its own header). A guid that a second path claims is
 //! refused, not moved. The index takes only the identity out of a header -
@@ -799,8 +799,7 @@ mod tests {
     }
 
     /// Builds the bytes of a version-1 pack that holds `files`, laid out the
-    /// way the pack writer does (see the pack format section of
-    /// `asset_store.rs`).
+    /// way the pack writer does (see the pack format section of `store.rs`).
     fn pack(files: &[(&str, Vec<u8>)]) -> Vec<u8> {
         let mut index_length = 0usize;
         for (path, _) in files {
