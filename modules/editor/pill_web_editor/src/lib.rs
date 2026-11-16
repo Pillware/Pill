@@ -745,6 +745,9 @@ fn scripted_name(command: &ScriptedCommand) -> &'static str {
         ScriptedCommand::GizmoPress { .. } => "gizmo press",
         ScriptedCommand::GizmoRelease => "gizmo release",
         ScriptedCommand::GizmoTool(_) => "gizmo",
+        // The page drives the gizmo from its own rows and loads no tool
+        // layer, so a named tool has nothing to activate here.
+        ScriptedCommand::Tool(_) => "tool",
         ScriptedCommand::Key(_) => "key",
         ScriptedCommand::Dump(_) => "dump",
         ScriptedCommand::Browser(_) => "browser",
@@ -757,6 +760,9 @@ fn scripted_name(command: &ScriptedCommand) -> &'static str {
         ScriptedCommand::SelectAdd(_) => "select add",
         ScriptedCommand::SelectRange(_) => "select range",
         ScriptedCommand::SelectResource(_) => "select resource",
+        // Element ids are the tool layer's own, and the page has no tool layer
+        // to hand them out.
+        ScriptedCommand::SelectElement { .. } => "select element",
         ScriptedCommand::EditResource { .. } => "edit resource",
         ScriptedCommand::EditSelection { .. } => "edit selection",
         ScriptedCommand::Toolbar(_) => "toolbar",
