@@ -1265,6 +1265,7 @@ impl EditorWindow {
             ),
             ScriptedCommand::SelectResource(name) => self.scripted_select_resource(&name),
             ScriptedCommand::Tool(name) => reject_on_failure(line, self.scripted_tool(name)),
+            ScriptedCommand::Extensions { enabled } => self.scripted_extensions(enabled),
             ScriptedCommand::SelectElement { ids, add } => {
                 reject_on_failure(line, self.scripted_select_elements(ids, add))
             }
@@ -2005,7 +2006,7 @@ impl EditorWindow {
         };
         let registry = tools::tool_registry_mut(world).clone();
         let reported = registry.active_elements(entity, world);
-        let kinds = registry.active_kinds();
+        let kinds = registry.active_kinds(entity, world);
         info!(
             target: telemetry_target::EDITOR,
             entity = %entity,
@@ -2056,10 +2057,7 @@ impl EditorWindow {
             return false;
         }
         let registry = tools::tool_registry_mut(world).clone();
-        if registry
-            .active_record()
-            .is_none_or(|tool| tool.hooks.remove.is_none())
-        {
+        if !registry.active_removes_elements(entity, world) {
             return false;
         }
         if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
@@ -2105,7 +2103,7 @@ impl EditorWindow {
             return false;
         }
         let registry = tools::tool_registry_mut(world).clone();
-        let response = registry.active_key(entity, name, &selected, world);
+        let response = registry.active_key(entity, &kind, name, &selected, world);
         match response {
             tools::KeyResponse::Default => false,
             tools::KeyResponse::Consume => {
@@ -2722,11 +2720,7 @@ impl EditorWindow {
                 );
             };
             let reported = match world.get_resource::<tools::ToolRegistry>() {
-                Some(registry)
-                    if registry
-                        .active_record()
-                        .is_some_and(|tool| tool.hooks.reports_elements()) =>
-                {
+                Some(registry) if registry.active_reports_elements(owner, world) => {
                     registry.active_elements(owner, world)
                 }
                 _ => Vec::new(),
@@ -2865,14 +2859,22 @@ impl EditorWindow {
     }
 
     /// Logs the registered tools and which one is active (`dump tools`).
+    ///
+    /// Every extension follows the tool it extends, with the place it takes in
+    /// that tool's chain and whether it is attached to what is selected right
+    /// now. `attached` is what a reader compares between two entities: an
+    /// extension that requires a component is only attached to an entity that
+    /// carries it.
     pub(super) fn dump_tools(&mut self) {
         let world = self.host.host_mut().engine_mut().world_mut();
         let registry = tools::tool_registry_mut(world).clone();
         let active = registry.active().map(str::to_string);
+        let subject = tools::element_selection_subject(world);
         info!(
             target: telemetry_target::EDITOR,
             count = registry.tools().len(),
             active = active.as_deref().unwrap_or("none"),
+            extensions = registry.extensions().len(),
             "[test] tools"
         );
         for tool in registry.tools() {
@@ -2885,6 +2887,26 @@ impl EditorWindow {
                 active = active.as_deref() == Some(tool.name.as_str()),
                 "[test] tool"
             );
+            for extension in registry
+                .extensions()
+                .iter()
+                .filter(|extension| extension.base_tool.eq_ignore_ascii_case(&tool.name))
+            {
+                let attached = subject.as_ref().is_some_and(|(entity, _, _)| {
+                    registry.is_extension_attached(&extension.name, *entity, world)
+                });
+                info!(
+                    target: telemetry_target::EDITOR,
+                    name = extension.name.as_str(),
+                    base = extension.base_tool.as_str(),
+                    order = extension.order,
+                    requires = extension.requires_component.as_deref().unwrap_or("none"),
+                    kinds = extension.for_kinds.join(","),
+                    keys = extension.keys.join(","),
+                    attached,
+                    "[test] tool extension"
+                );
+            }
         }
     }
 
@@ -2917,6 +2939,25 @@ impl EditorWindow {
             pending.push(vec![EditorCommand::StepOnce]);
         }
         info!(target: telemetry_target::EDITOR, "[editor] step queued");
+    }
+
+    /// Runs `extensions on|off`: registers or drops the fixture tool's two
+    /// extensions.
+    ///
+    /// Every other suite area drives the plain fixture tool, so the extensions
+    /// arrive only when an area asks for them. The registration is the one a
+    /// module's editor crate makes at load time, which is why what it logs about
+    /// a chord clash is the same line.
+    pub(super) fn scripted_extensions(&mut self, enabled: bool) {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        crate::runner::tool_fixture::set_extensions(world, enabled);
+        let registered = tools::tool_registry_mut(world).extensions().len();
+        info!(
+            target: telemetry_target::EDITOR,
+            enabled,
+            extensions = registered,
+            "[editor] tool extensions"
+        );
     }
 
     /// Runs one Assets toolbar button from the scripted channel, through the

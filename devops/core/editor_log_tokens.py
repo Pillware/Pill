@@ -177,6 +177,13 @@ ELEMENT_MENU_ROW_TOKEN = "[test] element menu"
 TOOL_ACTIVATED_TOKEN = "[editor] tool activated"
 TOOL_DUMP_TOKEN = "[test] tools"
 TOOL_ROW_TOKEN = "[test] tool"
+# The extension chain: the registration switch a suite flips, the one line a
+# chord two extensions of a base both bind logs, and the dump row that names an
+# extension's base, its place in the chain, what attaches it and whether it is
+# attached to the selection right now.
+TOOL_EXTENSIONS_TOKEN = "[editor] tool extensions"
+TOOL_EXTENSION_KEY_CONFLICT_TOKEN = "[editor] tool extension key conflict"
+TOOL_EXTENSION_ROW_TOKEN = "[test] tool extension"
 MIXED_ROW_TOKEN = "[editor] inspector row kind=mixed"
 SELECTION_EDIT_TOKEN = "[editor] selection field edit queued"
 CLIPBOARD_WRITTEN_TOKEN = "[editor] clipboard written"

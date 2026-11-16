@@ -7,6 +7,10 @@
 //!   its optional shortcut.
 //! - Hold the registered tools and the active one in [`ToolRegistry`], and
 //!   name the three built-ins the editor always offers.
+//! - Declare [`ToolExtension`], what a crate adds to a tool another crate owns:
+//!   kinds, elements, frames, menu rows, chords and the press answer. The
+//!   registry merges an attached extension's additions into what the base tool
+//!   reports, and chains the hooks so the base always answers first.
 //! - Turn what a tool reports into what the editor draws and picks: the
 //!   element handles of one frame ([`element_handles`]) and the selection a
 //!   marquee produces ([`marquee_selection`]).
@@ -34,6 +38,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 // External crates
+use pill_core::telemetry::telemetry_target;
 use pill_engine::{Engine, Entity, GizmoPointShape, World};
 
 // Current crate
@@ -699,6 +704,199 @@ pub fn marquee_selection(
 }
 
 // =============================================================================
+// Extensions
+// =============================================================================
+
+/// The optional halves an extension adds to the tool it extends.
+///
+/// Every field is a plain function pointer, and `None` means the extension
+/// does not add that half. The registry records the pointers, so a reload
+/// registers the arriving image's in place of the old ones, exactly as
+/// [`ToolElementHooks`] does for a tool.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ToolExtensionHooks {
+    /// The element kinds it adds.
+    pub kinds: Option<ToolKindReportFn>,
+    /// The elements it reports for the entity, of its own kinds.
+    pub elements: Option<ToolElementReportFn>,
+    /// How a drag writes its elements back.
+    pub set_transforms: Option<ToolSetTransformsFn>,
+    /// The extra coordinate frames it offers.
+    pub frames: Option<ToolFrameReportFn>,
+    /// The rows it adds to the element context menu.
+    pub menu: Option<ToolMenuReportFn>,
+    /// The action behind those rows.
+    pub menu_run: Option<ToolMenuRunFn>,
+    /// How it inserts one of its elements.
+    pub insert: Option<ToolInsertElementFn>,
+    /// How it removes its elements.
+    pub remove: Option<ToolRemoveElementsFn>,
+    /// What a press on one of its elements means.
+    pub press: Option<ToolPressFn>,
+    /// What one of its chords means.
+    pub key: Option<ToolKeyFn>,
+}
+
+impl ToolExtensionHooks {
+    /// Whether the extension adds any half at all.
+    pub fn is_empty(self) -> bool {
+        self.kinds.is_none()
+            && self.elements.is_none()
+            && self.set_transforms.is_none()
+            && self.frames.is_none()
+            && self.menu.is_none()
+            && self.menu_run.is_none()
+            && self.insert.is_none()
+            && self.remove.is_none()
+            && self.press.is_none()
+            && self.key.is_none()
+    }
+}
+
+/// A crate's addition to a tool another crate owns.
+///
+/// There is no tool object and no `self` here on purpose. A registry record
+/// outlives the image that registered it, so the extension states its
+/// declaration and its hooks as associated items: the registry copies them
+/// into a [`RegisteredExtension`] and a reload registers the arriving image's
+/// hooks in place of the old ones.
+///
+/// An extension only ever **adds**. It cannot remove or rename what the base
+/// tool declares, and nothing it declares is visible while its base tool is
+/// not the active one.
+pub trait ToolExtension {
+    /// The extension's own name: what `dump tools` and the logs show.
+    fn name() -> &'static str;
+
+    /// The base tool it extends, by the name a command spells.
+    fn extends_tool() -> &'static str;
+
+    /// The kinds of the base tool its additions apply to.
+    ///
+    /// Empty, the default, means every kind the base tool reports. A non-empty
+    /// list keeps its menu rows, presses and keys out of the other kinds, so
+    /// an extension's rows never appear for an element they do not describe.
+    fn for_kinds() -> &'static [&'static str] {
+        &[]
+    }
+
+    /// The component an entity must carry for the extension to be attached.
+    ///
+    /// It is matched against the entity's component names by full name or by
+    /// `::` suffix, the way every other component name in the editor is. `None`
+    /// attaches the extension to every entity its base tool edits.
+    fn requires_component() -> Option<&'static str> {
+        None
+    }
+
+    /// Where the extension sorts against the others on the same base.
+    ///
+    /// Lower runs first: its menu rows come earlier and its chord wins a clash.
+    /// Equal values keep name order, so the chain never depends on the order
+    /// the crates happened to register in.
+    fn order() -> i32 {
+        0
+    }
+
+    /// The chords it answers, as the keys module spells them (`x`, `delete`).
+    fn keys() -> &'static [&'static str] {
+        &[]
+    }
+
+    /// What it adds to the tool. Every hook defaults to nothing.
+    fn hooks() -> ToolExtensionHooks {
+        ToolExtensionHooks::default()
+    }
+}
+
+/// One registered extension, as the registry keeps it.
+///
+/// Owned strings and function pointers only, for the same reason
+/// [`RegisteredTool`] is: the record must be readable after the image that
+/// registered it is gone.
+#[derive(Clone, Debug)]
+pub struct RegisteredExtension {
+    /// The extension's own name.
+    pub name: String,
+    /// The base tool's name.
+    pub base_tool: String,
+    /// The kinds its additions apply to; empty means every kind.
+    pub for_kinds: Vec<String>,
+    /// The component an entity must carry; `None` attaches to every entity.
+    pub requires_component: Option<String>,
+    /// Its place in the chain against the other extensions of one base.
+    pub order: i32,
+    /// The chords it answers.
+    pub keys: Vec<String>,
+    /// What it adds.
+    pub hooks: ToolExtensionHooks,
+}
+
+impl PartialEq for RegisteredExtension {
+    /// Compares what a reader sees. The hooks are code addresses a reload
+    /// replaces, so comparing them would report a difference no reader can act
+    /// on.
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.base_tool == other.base_tool
+            && self.for_kinds == other.for_kinds
+            && self.requires_component == other.requires_component
+            && self.order == other.order
+            && self.keys == other.keys
+    }
+}
+
+impl Eq for RegisteredExtension {}
+
+impl RegisteredExtension {
+    /// Records `E` as the registry keeps it.
+    pub fn of<E: ToolExtension>() -> RegisteredExtension {
+        RegisteredExtension {
+            name: E::name().to_string(),
+            base_tool: E::extends_tool().to_string(),
+            for_kinds: E::for_kinds().iter().map(|kind| kind.to_string()).collect(),
+            requires_component: E::requires_component().map(str::to_string),
+            order: E::order(),
+            keys: E::keys().iter().map(|key| key.to_string()).collect(),
+            hooks: E::hooks(),
+        }
+    }
+
+    /// Whether its additions apply to `kind`.
+    pub fn applies_to_kind(&self, kind: &str) -> bool {
+        self.for_kinds.is_empty()
+            || self
+                .for_kinds
+                .iter()
+                .any(|candidate| candidate.eq_ignore_ascii_case(kind))
+    }
+
+    /// Whether it answers `chord`.
+    pub fn binds_key(&self, chord: &str) -> bool {
+        self.keys
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(chord))
+    }
+
+    /// Whether `entity` carries the component the extension requires.
+    ///
+    /// An extension that requires none is always attached. A name is matched
+    /// against the entity's component names in full or by its `::` suffix, so a
+    /// crate can name its own component without spelling the module path.
+    pub fn requires_component_of(&self, entity: Entity, world: &World) -> bool {
+        let Some(required) = self.requires_component.as_deref() else {
+            return true;
+        };
+        let suffix = format!("::{required}");
+        world.entity_component_names(entity).is_some_and(|names| {
+            names
+                .iter()
+                .any(|name| name == required || name.ends_with(&suffix))
+        })
+    }
+}
+
+// =============================================================================
 // Registry
 // =============================================================================
 
@@ -715,6 +913,8 @@ pub const RESOURCE_NAME: &str = "pill_editor_core::tools::ToolRegistry";
 pub struct ToolRegistry {
     /// The registered tools, in registration order.
     tools: Vec<RegisteredTool>,
+    /// The registered extensions, sorted by `(order, name)`.
+    extensions: Vec<RegisteredExtension>,
     /// The active tool's name, or `None` when no tool is active.
     active: Option<String>,
 }
@@ -723,6 +923,7 @@ impl Default for ToolRegistry {
     fn default() -> Self {
         let mut registry = ToolRegistry {
             tools: Vec::new(),
+            extensions: Vec::new(),
             active: None,
         };
         for tool in BuiltinTool::ALL {
@@ -768,70 +969,265 @@ impl ToolRegistry {
             .find(|tool| tool.name.eq_ignore_ascii_case(active))
     }
 
-    /// The kinds the active tool exposes, in its own order.
+    // -------------------------------------------------------------------------
+    // Extensions
+    // -------------------------------------------------------------------------
+
+    /// Registers an extension of a tool another crate owns.
     ///
-    /// Empty when no tool is active or the tool reports no elements.
-    pub fn active_kinds(&self) -> Vec<ElementKind> {
+    /// Registration replaces the record with the same name, which is what a
+    /// reload relies on, and keeps the list sorted by `(order, name)` so the
+    /// chain never depends on the order the crates happened to load in.
+    ///
+    /// A chord two extensions of one base both bind is resolved by that order.
+    /// The clash is logged once, when the extension that creates it is first
+    /// registered: re-registering an extension a reload replaced does not log
+    /// it again.
+    pub fn register_extension<E: ToolExtension>(&mut self) {
+        let record = RegisteredExtension::of::<E>();
+        let is_new = !self
+            .extensions
+            .iter()
+            .any(|registered| registered.name == record.name);
+        match self
+            .extensions
+            .iter_mut()
+            .find(|registered| registered.name == record.name)
+        {
+            Some(existing) => *existing = record.clone(),
+            None => self.extensions.push(record.clone()),
+        }
+        self.extensions.sort_by(|left, right| {
+            left.order
+                .cmp(&right.order)
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        if is_new {
+            self.report_key_conflicts(&record);
+        }
+    }
+
+    /// Logs every chord `record` binds that another extension of its base binds
+    /// too, naming the extension that wins it.
+    fn report_key_conflicts(&self, record: &RegisteredExtension) {
+        for chord in &record.keys {
+            let mut binding_extensions: Vec<&RegisteredExtension> = self
+                .extensions
+                .iter()
+                .filter(|other| {
+                    other.base_tool.eq_ignore_ascii_case(&record.base_tool)
+                        && other.binds_key(chord)
+                })
+                .collect();
+            if binding_extensions.len() < 2 {
+                continue;
+            }
+            binding_extensions.sort_by(|left, right| {
+                left.order
+                    .cmp(&right.order)
+                    .then_with(|| left.name.cmp(&right.name))
+            });
+            let names = binding_extensions
+                .iter()
+                .map(|extension| extension.name.as_str())
+                .collect::<Vec<&str>>()
+                .join(",");
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                base = record.base_tool.as_str(),
+                chord = chord.as_str(),
+                extensions = names.as_str(),
+                winner = binding_extensions[0].name.as_str(),
+                "[editor] tool extension key conflict"
+            );
+        }
+    }
+
+    /// Every registered extension, sorted by `(order, name)`.
+    pub fn extensions(&self) -> &[RegisteredExtension] {
+        &self.extensions
+    }
+
+    /// Drops every registered extension.
+    ///
+    /// A host calls this when the images that declared them are gone - a module
+    /// unloaded for good, or a test that wants the plain tool back - so no
+    /// record is left pointing at code that is no longer mapped.
+    pub fn clear_extensions(&mut self) {
+        self.extensions.clear();
+    }
+
+    /// The extensions attached to the active tool for `entity`.
+    ///
+    /// Attached means: a tool is active, its name is the extension's base, and
+    /// the entity carries the component the extension requires. Empty when the
+    /// registry holds no extension, which is the case for an editor nobody
+    /// extended.
+    pub fn attached_extensions<'a>(
+        &'a self,
+        entity: Entity,
+        world: &World,
+    ) -> Vec<&'a RegisteredExtension> {
+        let Some(active) = self.active.as_deref() else {
+            return Vec::new();
+        };
+        self.extensions
+            .iter()
+            .filter(|extension| {
+                extension.base_tool.eq_ignore_ascii_case(active)
+                    && extension.requires_component_of(entity, world)
+            })
+            .collect()
+    }
+
+    /// Its name in the log and in `dump tools`.
+    pub fn is_extension_attached(&self, name: &str, entity: Entity, world: &World) -> bool {
+        self.attached_extensions(entity, world)
+            .iter()
+            .any(|extension| extension.name == name)
+    }
+
+    /// The kinds the active tool and its attached extensions expose, in their
+    /// own order.
+    ///
+    /// The base tool's kinds come first, then each attached extension's, so an
+    /// extension's kind is an addition the base has never heard of. A kind name
+    /// the base already declares is not replaced: the first declaration wins,
+    /// which is what keeps an extension from renaming what it extends.
+    ///
+    /// Empty when no tool is active or nothing reports elements.
+    pub fn active_kinds(&self, entity: Entity, world: &World) -> Vec<ElementKind> {
         let mut kinds = Vec::new();
         if let Some(report) = self.active_record().and_then(|tool| tool.hooks.kinds) {
             report(&mut kinds);
+        }
+        for extension in self.attached_extensions(entity, world) {
+            let Some(report) = extension.hooks.kinds else {
+                continue;
+            };
+            let mut added = Vec::new();
+            report(&mut added);
+            for kind in added {
+                if kinds.iter().any(|known| known.name == kind.name) {
+                    continue;
+                }
+                kinds.push(kind);
+            }
         }
         kinds
     }
 
     /// One of the active tool's kinds, by name.
+    ///
+    /// The base tool's own kinds only: a caller that needs a kind an extension
+    /// added asks [`Self::active_kinds`], which merges both halves.
     pub fn active_kind(&self, name: &str) -> Option<ElementKind> {
-        self.active_kinds()
-            .into_iter()
-            .find(|kind| kind.name == name)
+        let mut kinds = Vec::new();
+        if let Some(report) = self.active_record().and_then(|tool| tool.hooks.kinds) {
+            report(&mut kinds);
+        }
+        kinds.into_iter().find(|kind| kind.name == name)
     }
 
-    /// The elements the active tool reports for `entity`, in its own order.
+    /// The elements the active tool and its attached extensions report for
+    /// `entity`, in their own order.
     ///
-    /// Empty when no tool is active or the tool reports no elements.
+    /// Empty when no tool is active or nothing reports elements.
     pub fn active_elements(&self, entity: Entity, world: &World) -> Vec<ToolElement> {
         let mut elements = Vec::new();
         if let Some(report) = self.active_record().and_then(|tool| tool.hooks.elements) {
             report(entity, world, &mut elements);
         }
+        for extension in self.attached_extensions(entity, world) {
+            if let Some(report) = extension.hooks.elements {
+                report(entity, world, &mut elements);
+            }
+        }
         elements
+    }
+
+    /// Whether anything drawn would come of the active tool for `entity`.
+    ///
+    /// This is the gate the editor asks before it reports element handles at
+    /// all: a tool that reports no elements, with no attached extension that
+    /// does, leaves the entity with none.
+    pub fn active_reports_elements(&self, entity: Entity, world: &World) -> bool {
+        self.active_record()
+            .is_some_and(|tool| tool.hooks.reports_elements())
+            || self
+                .attached_extensions(entity, world)
+                .iter()
+                .any(|extension| {
+                    extension.hooks.kinds.is_some() && extension.hooks.elements.is_some()
+                })
     }
 
     /// Whether the active tool writes element transforms back.
     ///
     /// The editor asks this before it offers an element drag: a tool that
-    /// reports elements but takes no moves leaves the drag on the entity.
-    pub fn active_moves_elements(&self) -> bool {
+    /// reports elements but takes no moves leaves the drag on the entity. An
+    /// attached extension that can move its own elements counts, so a base
+    /// tool that only draws them still gets a drag once an extension adds the
+    /// write-back.
+    pub fn active_moves_elements(&self, entity: Entity, world: &World) -> bool {
         self.active_record()
             .is_some_and(|tool| tool.hooks.moves_elements())
+            || self
+                .attached_extensions(entity, world)
+                .iter()
+                .any(|extension| extension.hooks.set_transforms.is_some())
     }
 
-    /// Hands `moves` to the active tool's write-back, and answers whether a
-    /// tool took them.
+    /// Whether the active tool or an attached extension removes elements.
     ///
-    /// The editor's gizmo drag and its undo step both write through this one
-    /// call, so a tool sees no difference between a live drag and a restored
-    /// value.
+    /// Delete falls through to the entity rule when nothing can: the gate the
+    /// editor asks before it queues an element removal.
+    pub fn active_removes_elements(&self, entity: Entity, world: &World) -> bool {
+        self.active_record()
+            .is_some_and(|tool| tool.hooks.remove.is_some())
+            || self
+                .attached_extensions(entity, world)
+                .iter()
+                .any(|extension| extension.hooks.remove.is_some())
+    }
+
+    /// Hands `moves` to the active tool's write-back and to every attached
+    /// extension's, and answers whether anything took them.
+    ///
+    /// Every writer is called: a tool writes its own elements and an extension
+    /// its own, so each one ignores the ids it does not know. The editor's gizmo
+    /// drag and its undo step both write through this one call, so a tool sees
+    /// no difference between a live drag and a restored value.
     pub fn active_set_transforms(
         &self,
         entity: Entity,
         moves: &[ElementMove],
         world: &mut World,
     ) -> bool {
-        let Some(write) = self
+        let mut wrote = false;
+        if let Some(write) = self
             .active_record()
             .and_then(|tool| tool.hooks.set_transforms)
-        else {
-            return false;
-        };
-        write(entity, moves, world);
-        true
+        {
+            write(entity, moves, world);
+            wrote = true;
+        }
+        let extensions: Vec<ToolSetTransformsFn> = self
+            .attached_extensions(entity, world)
+            .iter()
+            .filter_map(|extension| extension.hooks.set_transforms)
+            .collect();
+        for write in extensions {
+            write(entity, moves, world);
+            wrote = true;
+        }
+        wrote
     }
 
-    /// The extra spaces the active tool offers for `selected`, in its own
-    /// order.
+    /// The extra spaces the active tool and its attached extensions offer for
+    /// `selected`, in their own order.
     ///
-    /// Empty when no tool is active, the tool brings no frames, or it has
+    /// Empty when no tool is active, nothing brings frames, or they have
     /// nothing to say about this selection.
     pub fn active_frames(
         &self,
@@ -843,12 +1239,23 @@ impl ToolRegistry {
         if let Some(report) = self.active_record().and_then(|tool| tool.hooks.frames) {
             report(entity, selected, world, &mut frames);
         }
+        for extension in self.attached_extensions(entity, world) {
+            if let Some(report) = extension.hooks.frames {
+                report(entity, selected, world, &mut frames);
+            }
+        }
         frames
     }
 
-    /// The menu rows the active tool adds for `selected`, in its own order.
+    /// The menu rows the active tool and its attached extensions add for
+    /// `selected`, in `(order, name)` order.
     ///
-    /// Empty when no tool is active, the tool adds none, or it has nothing to
+    /// The base tool's rows come first, then each extension's, so an
+    /// extension's row always reads after what it extends. A row id the base
+    /// already uses is skipped: an extension cannot replace a base entry, only
+    /// add one beside it.
+    ///
+    /// Empty when no tool is active, nothing adds rows, or they have nothing to
     /// say about this selection.
     pub fn active_menu(
         &self,
@@ -861,17 +1268,36 @@ impl ToolRegistry {
         if let Some(report) = self.active_record().and_then(|tool| tool.hooks.menu) {
             report(entity, kind, selected, world, &mut menu);
         }
+        for extension in self.attached_extensions(entity, world) {
+            if !extension.applies_to_kind(kind) {
+                continue;
+            }
+            let Some(report) = extension.hooks.menu else {
+                continue;
+            };
+            let mut added = Vec::new();
+            report(entity, kind, selected, world, &mut added);
+            for entry in added {
+                if menu.iter().any(|known| known.id == entry.id) {
+                    continue;
+                }
+                menu.push(entry);
+            }
+        }
         menu
     }
 
     /// Runs one of the active tool's menu rows, answering the commands it asks
     /// for.
     ///
+    /// The base tool is asked first; an extension answers only when the base
+    /// refuses the row, so an extension can add rows but never take one over.
+    ///
     /// # Errors
     ///
-    /// Returns a message when no tool is active, when the active tool adds no
-    /// menu, or when the tool refuses `item` - which is how a menu row nobody
-    /// registered reads instead of running nothing silently.
+    /// Returns a message when no tool is active, when nothing adds a menu, or
+    /// when nobody claims `item` - which is how a menu row nobody registered
+    /// reads instead of running nothing silently.
     pub fn active_menu_run(
         &self,
         entity: Entity,
@@ -883,16 +1309,33 @@ impl ToolRegistry {
         let Some(tool) = self.active_record() else {
             return Err(format!("no tool is active, so '{item}' has no menu row"));
         };
-        let Some(run) = tool.hooks.menu_run else {
-            return Err(format!("the tool '{}' adds no menu rows", tool.name));
+        let base_outcome = match tool.hooks.menu_run {
+            Some(run) => run(entity, kind, selected, item, world),
+            None => Err(format!("the tool '{}' adds no menu rows", tool.name)),
         };
-        run(entity, kind, selected, item, world)
+        if base_outcome.is_ok() {
+            return base_outcome;
+        }
+        for extension in self.attached_extensions(entity, world) {
+            if !extension.applies_to_kind(kind) {
+                continue;
+            }
+            if let Some(run) = extension.hooks.menu_run {
+                if let Ok(commands) = run(entity, kind, selected, item, world) {
+                    return Ok(commands);
+                }
+            }
+        }
+        base_outcome
     }
 
-    /// Inserts one element through the active tool, answering its id.
+    /// Inserts one element through the active tool or an attached extension,
+    /// answering its id.
     ///
-    /// `None` when no tool is active or the tool cannot insert, which the
-    /// caller reports as a refused edit instead of writing nothing.
+    /// The base tool is asked first, then the extensions in order; an extension
+    /// adds an element of its own kind, which the base refuses by not knowing
+    /// it. `None` when nothing can insert, which the caller reports as a refused
+    /// edit instead of writing nothing.
     pub fn active_insert(
         &self,
         entity: Entity,
@@ -901,13 +1344,29 @@ impl ToolRegistry {
         transform: ElementTransform,
         world: &mut World,
     ) -> Option<u64> {
-        let insert = self.active_record().and_then(|tool| tool.hooks.insert)?;
-        insert(entity, kind, id, transform, world)
+        if let Some(insert) = self.active_record().and_then(|tool| tool.hooks.insert) {
+            if let Some(assigned) = insert(entity, kind, id, transform, world) {
+                return Some(assigned);
+            }
+        }
+        let extensions: Vec<ToolInsertElementFn> = self
+            .attached_extensions(entity, world)
+            .iter()
+            .filter(|extension| extension.applies_to_kind(kind))
+            .filter_map(|extension| extension.hooks.insert)
+            .collect();
+        for insert in extensions {
+            if let Some(assigned) = insert(entity, kind, id, transform, world) {
+                return Some(assigned);
+            }
+        }
+        None
     }
 
-    /// Removes elements through the active tool, answering how many went.
+    /// Removes elements through the active tool and every attached extension,
+    /// answering how many went.
     ///
-    /// `None` when no tool is active or it cannot remove.
+    /// `None` when no tool is active or nothing can remove.
     pub fn active_remove(
         &self,
         entity: Entity,
@@ -915,43 +1374,96 @@ impl ToolRegistry {
         elements: &[u64],
         world: &mut World,
     ) -> Option<usize> {
-        let remove = self.active_record().and_then(|tool| tool.hooks.remove)?;
-        Some(remove(entity, kind, elements, world))
+        let mut removed = None;
+        if let Some(remove) = self.active_record().and_then(|tool| tool.hooks.remove) {
+            removed = Some(remove(entity, kind, elements, world));
+        }
+        let extensions: Vec<ToolRemoveElementsFn> = self
+            .attached_extensions(entity, world)
+            .iter()
+            .filter(|extension| extension.applies_to_kind(kind))
+            .filter_map(|extension| extension.hooks.remove)
+            .collect();
+        for remove in extensions {
+            let count = remove(entity, kind, elements, world);
+            removed = Some(removed.unwrap_or(0) + count);
+        }
+        removed
     }
 
-    /// What the active tool makes of a press on one of its elements.
+    /// What the active tool and its attached extensions make of a press on one
+    /// of `kind`'s elements.
     ///
-    /// [`PressResponse::Default`] when no tool is active or the tool lets the
-    /// editor's own rule run.
+    /// The chain the design states: the base tool is asked first, and an
+    /// extension is asked only while the answer so far is
+    /// [`PressResponse::Default`]. The first answer that is not `Default` wins.
     pub fn active_press(
         &self,
         entity: Entity,
         element: u64,
+        kind: &str,
         click: SelectionClick,
         selected: &[u64],
         world: &World,
     ) -> PressResponse {
-        match self.active_record().and_then(|tool| tool.hooks.press) {
-            Some(press) => press(entity, element, click, selected, world),
-            None => PressResponse::Default,
+        if let Some(press) = self.active_record().and_then(|tool| tool.hooks.press) {
+            let response = press(entity, element, click, selected, world);
+            if response != PressResponse::Default {
+                return response;
+            }
         }
+        for extension in self.attached_extensions(entity, world) {
+            if !extension.applies_to_kind(kind) {
+                continue;
+            }
+            let Some(press) = extension.hooks.press else {
+                continue;
+            };
+            let response = press(entity, element, click, selected, world);
+            if response != PressResponse::Default {
+                return response;
+            }
+        }
+        PressResponse::Default
     }
 
-    /// What the active tool makes of a key press over its element selection.
+    /// What the active tool and its attached extensions make of a key press over
+    /// its element selection.
     ///
-    /// [`KeyResponse::Default`] when no tool is active or the tool lets the
-    /// editor's own rule run.
+    /// Same chain as [`Self::active_press`]: the base tool first, then the
+    /// extensions attached to `entity` in `(order, name)` order. An extension is
+    /// asked only for a chord it declares, which is what makes "bound twice"
+    /// meaningful: the lower `order` answers first and wins.
+    ///
+    /// [`KeyResponse::Default`] when nothing claims the key, so the editor's own
+    /// rule and then the keybindings still see it.
     pub fn active_key(
         &self,
         entity: Entity,
+        kind: &str,
         key: &str,
         selected: &[u64],
         world: &World,
     ) -> KeyResponse {
-        match self.active_record().and_then(|tool| tool.hooks.key) {
-            Some(handle) => handle(entity, key, selected, world),
-            None => KeyResponse::Default,
+        if let Some(handle) = self.active_record().and_then(|tool| tool.hooks.key) {
+            let response = handle(entity, key, selected, world);
+            if response != KeyResponse::Default {
+                return response;
+            }
         }
+        for extension in self.attached_extensions(entity, world) {
+            if !extension.binds_key(key) || !extension.applies_to_kind(kind) {
+                continue;
+            }
+            let Some(handle) = extension.hooks.key else {
+                continue;
+            };
+            let response = handle(entity, key, selected, world);
+            if response != KeyResponse::Default {
+                return response;
+            }
+        }
+        KeyResponse::Default
     }
 
     /// Tells the active tool that the element selection changed.
@@ -1038,7 +1550,8 @@ impl pill_engine::Resource for ToolRegistry {
 
 impl fmt::Display for ToolRegistry {
     /// One line per tool, the active one marked, which is what `dump tools`
-    /// logs.
+    /// logs. An extension follows the tool it extends, indented and marked
+    /// with where it sits in the chain.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for tool in &self.tools {
             let active = self.active.as_deref() == Some(tool.name.as_str());
@@ -1049,6 +1562,17 @@ impl fmt::Display for ToolRegistry {
                 tool.label,
                 tool.name
             )?;
+            for extension in self
+                .extensions
+                .iter()
+                .filter(|extension| extension.base_tool.eq_ignore_ascii_case(&tool.name))
+            {
+                writeln!(
+                    formatter,
+                    "    + {} (order {})",
+                    extension.name, extension.order
+                )?;
+            }
         }
         Ok(())
     }
@@ -1355,7 +1879,7 @@ mod tests {
         let mut registry = ToolRegistry::default();
         registry.register_plugin(&ElementProbeTool, element_probe_hooks());
         assert!(
-            registry.active_kinds().is_empty(),
+            registry.active_kinds(entity, &world).is_empty(),
             "no active tool reports nothing"
         );
         assert!(registry.active_elements(entity, &world).is_empty());
@@ -1363,7 +1887,7 @@ mod tests {
         registry
             .set_active(Some("elements_probe"))
             .expect("the probe is registered");
-        let kinds = registry.active_kinds();
+        let kinds = registry.active_kinds(entity, &world);
         assert_eq!(kinds.len(), 1);
         assert_eq!(kinds[0].name, "probe point");
         assert!(!kinds[0].multi_select);
@@ -1381,7 +1905,7 @@ mod tests {
 
         registry.register(&ElementProbeTool);
         assert!(
-            registry.active_kinds().is_empty(),
+            registry.active_kinds(entity, &world).is_empty(),
             "a record registered without hooks reports no elements"
         );
     }
@@ -1811,11 +2335,11 @@ mod tests {
             .active_menu_run(entity, "point", &[1], "point row", &world)
             .is_err());
         assert_eq!(
-            registry.active_press(entity, 1, SelectionClick::Reset, &[1], &world),
+            registry.active_press(entity, 1, "point", SelectionClick::Reset, &[1], &world),
             PressResponse::Default
         );
         assert_eq!(
-            registry.active_key(entity, "k", &[1], &world),
+            registry.active_key(entity, "point", "k", &[1], &world),
             KeyResponse::Default
         );
 
@@ -1833,23 +2357,23 @@ mod tests {
             .active_menu_run(entity, "point", &[1], "refuse", &world)
             .is_err());
         assert_eq!(
-            registry.active_press(entity, 3, SelectionClick::Reset, &[], &world),
+            registry.active_press(entity, 3, "point", SelectionClick::Reset, &[], &world),
             PressResponse::Select(vec![3])
         );
         assert_eq!(
-            registry.active_press(entity, 3, SelectionClick::Add, &[], &world),
+            registry.active_press(entity, 3, "point", SelectionClick::Add, &[], &world),
             PressResponse::Consume
         );
         assert_eq!(
-            registry.active_key(entity, "k", &[], &world),
+            registry.active_key(entity, "point", "k", &[], &world),
             KeyResponse::Consume
         );
         assert_eq!(
-            registry.active_key(entity, "i", &[], &world),
+            registry.active_key(entity, "point", "i", &[], &world),
             KeyResponse::Commands(Vec::new())
         );
         assert_eq!(
-            registry.active_key(entity, "q", &[], &world),
+            registry.active_key(entity, "point", "q", &[], &world),
             KeyResponse::Default
         );
     }
@@ -1938,5 +2462,605 @@ mod tests {
         assert_eq!(owner, entity);
         assert_eq!(kind, "point");
         assert_eq!(ids, vec![2, 5], "ids keep the selection's own order");
+    }
+
+    // -------------------------------------------------------------------------
+    // Extensions
+    // -------------------------------------------------------------------------
+
+    /// The kind the probe tool reports and the extensions build on.
+    const EXTENSION_KIND: &str = "probe point";
+
+    /// The kind the extensions add.
+    const EXTENSION_ADDED_KIND: &str = "probe mark";
+
+    /// The row the probe tool itself adds.
+    const BASE_ROW: &str = "base";
+
+    /// The chord both key extensions bind.
+    const SHARED_CHORD: &str = "n";
+
+    /// The probe tool's kinds: one kind, named [`EXTENSION_KIND`].
+    fn extension_base_kinds(out: &mut Vec<ElementKind>) {
+        out.push(ElementKind::new(EXTENSION_KIND));
+    }
+
+    /// The probe tool's menu: one row, [`BASE_ROW`].
+    fn extension_base_menu(
+        _entity: Entity,
+        _kind: &str,
+        _selected: &[u64],
+        _world: &World,
+        out: &mut Vec<ElementMenuEntry>,
+    ) {
+        out.push(ElementMenuEntry {
+            id: BASE_ROW.to_string(),
+            label: "Base row".to_string(),
+        });
+    }
+
+    /// The probe tool's menu run: it knows [`BASE_ROW`] and nothing else.
+    fn extension_base_menu_run(
+        _entity: Entity,
+        _kind: &str,
+        _selected: &[u64],
+        item: &str,
+        _world: &World,
+    ) -> Result<Vec<EditorCommand>, String> {
+        if item == BASE_ROW {
+            return Ok(Vec::new());
+        }
+        Err(format!("the probe tool adds no '{item}' row"))
+    }
+
+    /// The probe tool's press rule: a press on element 1 is taken, every other
+    /// press is the editor's.
+    fn extension_base_press(
+        _entity: Entity,
+        element: u64,
+        _click: SelectionClick,
+        _selected: &[u64],
+        _world: &World,
+    ) -> PressResponse {
+        if element == 1 {
+            return PressResponse::Consume;
+        }
+        PressResponse::Default
+    }
+
+    /// The probe tool's key rule: it hears no chord.
+    fn extension_base_key(
+        _entity: Entity,
+        _key: &str,
+        _selected: &[u64],
+        _world: &World,
+    ) -> KeyResponse {
+        KeyResponse::Default
+    }
+
+    /// The tool every extension below extends.
+    struct ExtensionBaseTool;
+
+    impl EditorTool for ExtensionBaseTool {
+        fn name(&self) -> &'static str {
+            "probe"
+        }
+
+        fn label(&self) -> &'static str {
+            "Probe"
+        }
+
+        fn is_global(&self) -> bool {
+            false
+        }
+    }
+
+    /// The first extension: attached only to an entity carrying a transform,
+    /// only for the base kind, first in the chain.
+    struct FirstExtension;
+
+    impl ToolExtension for FirstExtension {
+        fn name() -> &'static str {
+            "first extension"
+        }
+
+        fn extends_tool() -> &'static str {
+            "probe"
+        }
+
+        fn for_kinds() -> &'static [&'static str] {
+            &[EXTENSION_KIND]
+        }
+
+        fn requires_component() -> Option<&'static str> {
+            Some("TransformComponent")
+        }
+
+        fn order() -> i32 {
+            10
+        }
+
+        fn keys() -> &'static [&'static str] {
+            &[SHARED_CHORD]
+        }
+
+        fn hooks() -> ToolExtensionHooks {
+            ToolExtensionHooks {
+                kinds: Some(extension_added_kinds),
+                elements: Some(extension_elements),
+                menu: Some(first_menu),
+                menu_run: Some(first_menu_run),
+                press: Some(first_press),
+                key: Some(first_key),
+                ..ToolExtensionHooks::default()
+            }
+        }
+    }
+
+    /// The second extension: attached to every entity, second in the chain, and
+    /// binding the same chord as the first.
+    struct SecondExtension;
+
+    impl ToolExtension for SecondExtension {
+        fn name() -> &'static str {
+            "second extension"
+        }
+
+        fn extends_tool() -> &'static str {
+            "probe"
+        }
+
+        fn order() -> i32 {
+            20
+        }
+
+        fn keys() -> &'static [&'static str] {
+            &[SHARED_CHORD]
+        }
+
+        fn hooks() -> ToolExtensionHooks {
+            ToolExtensionHooks {
+                menu: Some(second_menu),
+                menu_run: Some(second_menu_run),
+                key: Some(second_key),
+                ..ToolExtensionHooks::default()
+            }
+        }
+    }
+
+    /// A third extension, last in the chain, that re-declares the base's row id
+    /// and re-declares the kind the first one added.
+    struct LateExtension;
+
+    impl ToolExtension for LateExtension {
+        fn name() -> &'static str {
+            "late extension"
+        }
+
+        fn extends_tool() -> &'static str {
+            "probe"
+        }
+
+        fn order() -> i32 {
+            30
+        }
+
+        fn hooks() -> ToolExtensionHooks {
+            ToolExtensionHooks {
+                kinds: Some(extension_duplicate_kinds),
+                menu: Some(late_menu),
+                menu_run: Some(late_menu_run),
+                ..ToolExtensionHooks::default()
+            }
+        }
+    }
+
+    /// The kind one extension adds.
+    fn extension_added_kinds(out: &mut Vec<ElementKind>) {
+        out.push(ElementKind::new(EXTENSION_ADDED_KIND));
+    }
+
+    /// The one element the first extension reports, of the kind it adds.
+    fn extension_elements(entity: Entity, world: &World, out: &mut Vec<ToolElement>) {
+        let translation = world
+            .get_component::<pill_engine::TransformComponent>(entity)
+            .map_or([0.0; 3], |transform| transform.translation);
+        out.push(ToolElement {
+            id: 40,
+            kind: EXTENSION_ADDED_KIND.to_string(),
+            transform: ElementTransform::at(translation),
+        });
+    }
+
+    /// The same kind name again, with a colour nothing else uses: a reader can
+    /// tell which declaration survived by the colour.
+    fn extension_duplicate_kinds(out: &mut Vec<ElementKind>) {
+        let mut duplicate = ElementKind::new(EXTENSION_ADDED_KIND);
+        duplicate.color = [0.0, 1.0, 0.0, 1.0];
+        out.push(duplicate);
+    }
+
+    /// The first extension's row.
+    fn first_menu(
+        _entity: Entity,
+        kind: &str,
+        _selected: &[u64],
+        _world: &World,
+        out: &mut Vec<ElementMenuEntry>,
+    ) {
+        if kind != EXTENSION_KIND {
+            return;
+        }
+        out.push(ElementMenuEntry {
+            id: "first".to_string(),
+            label: "First".to_string(),
+        });
+    }
+
+    /// Runs the first extension's row.
+    fn first_menu_run(
+        _entity: Entity,
+        _kind: &str,
+        _selected: &[u64],
+        item: &str,
+        _world: &World,
+    ) -> Result<Vec<EditorCommand>, String> {
+        if item == "first" {
+            return Ok(Vec::new());
+        }
+        Err(format!("the first extension adds no '{item}' row"))
+    }
+
+    /// The second extension's row, offered for every kind.
+    fn second_menu(
+        _entity: Entity,
+        _kind: &str,
+        _selected: &[u64],
+        _world: &World,
+        out: &mut Vec<ElementMenuEntry>,
+    ) {
+        out.push(ElementMenuEntry {
+            id: "second".to_string(),
+            label: "Second".to_string(),
+        });
+    }
+
+    /// Runs the second extension's row.
+    fn second_menu_run(
+        _entity: Entity,
+        _kind: &str,
+        _selected: &[u64],
+        item: &str,
+        _world: &World,
+    ) -> Result<Vec<EditorCommand>, String> {
+        if item == "second" {
+            return Ok(Vec::new());
+        }
+        Err(format!("the second extension adds no '{item}' row"))
+    }
+
+    /// The late extension's rows: one of its own, and one under the base's id,
+    /// which must not replace the base's.
+    fn late_menu(
+        _entity: Entity,
+        _kind: &str,
+        _selected: &[u64],
+        _world: &World,
+        out: &mut Vec<ElementMenuEntry>,
+    ) {
+        out.push(ElementMenuEntry {
+            id: "late".to_string(),
+            label: "Late".to_string(),
+        });
+        out.push(ElementMenuEntry {
+            id: BASE_ROW.to_string(),
+            label: "Base row, replaced".to_string(),
+        });
+    }
+
+    /// Runs the late extension's row.
+    fn late_menu_run(
+        _entity: Entity,
+        _kind: &str,
+        _selected: &[u64],
+        item: &str,
+        _world: &World,
+    ) -> Result<Vec<EditorCommand>, String> {
+        if item == "late" {
+            return Ok(Vec::new());
+        }
+        Err(format!("the late extension adds no '{item}' row"))
+    }
+
+    /// The first extension's press: it selects element 7.
+    fn first_press(
+        _entity: Entity,
+        element: u64,
+        _click: SelectionClick,
+        _selected: &[u64],
+        _world: &World,
+    ) -> PressResponse {
+        if element == 7 {
+            return PressResponse::Select(vec![7]);
+        }
+        PressResponse::Default
+    }
+
+    /// The first extension's key: it answers the shared chord with a command,
+    /// which is what tells its answer from the second extension's.
+    fn first_key(_entity: Entity, _key: &str, _selected: &[u64], _world: &World) -> KeyResponse {
+        KeyResponse::Commands(Vec::new())
+    }
+
+    /// The second extension's key: it consumes the shared chord.
+    fn second_key(_entity: Entity, _key: &str, _selected: &[u64], _world: &World) -> KeyResponse {
+        KeyResponse::Consume
+    }
+
+    /// A world with a probe tool and the three extensions: one entity carries a
+    /// transform, the other carries nothing.
+    fn extension_world() -> (World, Entity, Entity) {
+        let mut world = World::default();
+        world.register_component::<pill_engine::TransformComponent>();
+        let carrier = world
+            .create_entity()
+            .with(pill_engine::TransformComponent::default())
+            .build()
+            .expect("the carrier builds");
+        let plain = world
+            .create_entity()
+            .build()
+            .expect("the plain entity builds");
+        let mut registry = ToolRegistry::default();
+        registry.register_plugin(
+            &ExtensionBaseTool,
+            ToolElementHooks {
+                kinds: Some(extension_base_kinds),
+                menu: Some(extension_base_menu),
+                menu_run: Some(extension_base_menu_run),
+                press: Some(extension_base_press),
+                key: Some(extension_base_key),
+                ..ToolElementHooks::default()
+            },
+        );
+        registry.register_extension::<FirstExtension>();
+        registry.register_extension::<SecondExtension>();
+        registry.register_extension::<LateExtension>();
+        registry
+            .set_active(Some("probe"))
+            .expect("the probe exists");
+        world.insert_resource(registry);
+        (world, carrier, plain)
+    }
+
+    /// An extension is attached only while its base tool is active and the
+    /// entity carries the component it requires.
+    #[test]
+    fn an_extension_is_attached_by_its_base_and_the_entitys_component() {
+        let (mut world, carrier, plain) = extension_world();
+        let registry = world.get_resource::<ToolRegistry>().expect("registered");
+        let attached: Vec<&str> = registry
+            .attached_extensions(carrier, &world)
+            .iter()
+            .map(|extension| extension.name.as_str())
+            .collect();
+        assert_eq!(
+            attached,
+            ["first extension", "second extension", "late extension"],
+            "every extension of the base, in order"
+        );
+        let on_plain: Vec<&str> = registry
+            .attached_extensions(plain, &world)
+            .iter()
+            .map(|extension| extension.name.as_str())
+            .collect();
+        assert_eq!(
+            on_plain,
+            ["second extension", "late extension"],
+            "the one that requires a component is not attached without it"
+        );
+
+        let registry = world
+            .get_resource_mut::<ToolRegistry>()
+            .expect("registered");
+        registry.set_active(None).expect("clearing works");
+        let registry = world.get_resource::<ToolRegistry>().expect("registered");
+        assert!(
+            registry.attached_extensions(carrier, &world).is_empty(),
+            "no active tool means no extension"
+        );
+    }
+
+    /// Kinds and elements are additive: the base's come first, an extension's
+    /// follow, and a kind name declared twice keeps the first declaration.
+    #[test]
+    fn extension_kinds_are_added_after_the_base_tools() {
+        let (world, carrier, plain) = extension_world();
+        let registry = world.get_resource::<ToolRegistry>().expect("registered");
+        let kinds = registry.active_kinds(carrier, &world);
+        let names: Vec<&str> = kinds.iter().map(|kind| kind.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [EXTENSION_KIND, EXTENSION_ADDED_KIND],
+            "the base kind, then the kind an extension added"
+        );
+        assert_eq!(
+            kinds[1].color,
+            ElementKind::new(EXTENSION_ADDED_KIND).color,
+            "the first declaration of a kind name is the one that survives"
+        );
+        // On the entity without the component the first extension is not
+        // attached, so the late one's declaration of the same kind is the first
+        // one in, and its colour is the one a reader sees.
+        let plain_kinds = registry.active_kinds(plain, &world);
+        assert_eq!(
+            plain_kinds
+                .iter()
+                .map(|kind| kind.name.as_str())
+                .collect::<Vec<&str>>(),
+            [EXTENSION_KIND, EXTENSION_ADDED_KIND],
+            "a kind an attached extension adds is still added"
+        );
+        assert_eq!(plain_kinds[1].color, [0.0, 1.0, 0.0, 1.0]);
+        assert!(
+            registry.active_reports_elements(carrier, &world),
+            "an extension's kinds and elements count as a report"
+        );
+        assert_eq!(
+            registry
+                .active_elements(carrier, &world)
+                .iter()
+                .map(|element| element.id)
+                .collect::<Vec<u64>>(),
+            [40],
+            "the base reports no elements, so the extension's are all there are"
+        );
+    }
+
+    /// The menu keeps every base row, adds the extensions' rows after it in
+    /// `order`, and never lets an extension take a base row's id.
+    #[test]
+    fn the_merged_menu_keeps_the_base_rows_and_orders_the_extensions() {
+        let (world, carrier, plain) = extension_world();
+        let registry = world.get_resource::<ToolRegistry>().expect("registered");
+        let rows = registry.active_menu(carrier, EXTENSION_KIND, &[], &world);
+        let ids: Vec<&str> = rows.iter().map(|entry| entry.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [BASE_ROW, "first", "second", "late"],
+            "the base's row first, then each extension's in order"
+        );
+        let base_label = rows
+            .iter()
+            .find(|entry| entry.id == BASE_ROW)
+            .map(|entry| entry.label.as_str());
+        assert_eq!(
+            base_label,
+            Some("Base row"),
+            "the late extension's row under the base id is skipped"
+        );
+
+        let on_plain: Vec<String> = registry
+            .active_menu(plain, EXTENSION_KIND, &[], &world)
+            .into_iter()
+            .map(|entry| entry.id)
+            .collect();
+        assert_eq!(
+            on_plain,
+            [BASE_ROW, "second", "late"],
+            "an extension attached by a component adds nothing to an entity without it"
+        );
+
+        let other_kind: Vec<String> = registry
+            .active_menu(carrier, "another kind", &[], &world)
+            .into_iter()
+            .map(|entry| entry.id)
+            .collect();
+        assert_eq!(
+            other_kind,
+            [BASE_ROW, "second", "late"],
+            "a `for_kinds` extension stays out of the kinds it does not name"
+        );
+    }
+
+    /// A row an extension added runs through the extension, and the base still
+    /// answers its own.
+    #[test]
+    fn the_menu_run_reaches_an_extensions_row() {
+        let (world, carrier, _plain) = extension_world();
+        let registry = world.get_resource::<ToolRegistry>().expect("registered");
+        assert!(registry
+            .active_menu_run(carrier, EXTENSION_KIND, &[], BASE_ROW, &world)
+            .is_ok());
+        assert!(registry
+            .active_menu_run(carrier, EXTENSION_KIND, &[], "first", &world)
+            .is_ok());
+        assert!(registry
+            .active_menu_run(carrier, EXTENSION_KIND, &[], "late", &world)
+            .is_ok());
+        let refusal = registry
+            .active_menu_run(carrier, EXTENSION_KIND, &[], "nobody", &world)
+            .expect_err("a row nobody adds is refused");
+        assert!(
+            refusal.contains("the probe tool adds no"),
+            "the refusal is the base tool's, which names what it adds: {refusal}"
+        );
+    }
+
+    /// The press chain: the base answers first, and an extension only while the
+    /// answer so far is the editor's own rule.
+    #[test]
+    fn a_press_chains_from_the_base_to_the_extensions() {
+        let (world, carrier, _plain) = extension_world();
+        let registry = world.get_resource::<ToolRegistry>().expect("registered");
+        assert_eq!(
+            registry.active_press(
+                carrier,
+                7,
+                EXTENSION_KIND,
+                SelectionClick::Reset,
+                &[],
+                &world
+            ),
+            PressResponse::Select(vec![7]),
+            "the base let it through, so the extension's answer wins"
+        );
+        assert_eq!(
+            registry.active_press(
+                carrier,
+                1,
+                EXTENSION_KIND,
+                SelectionClick::Reset,
+                &[],
+                &world
+            ),
+            PressResponse::Consume,
+            "a press the base claims never reaches an extension"
+        );
+    }
+
+    /// A chord two extensions bind is answered by the lower `order`, and an
+    /// extension hears only the chords it declares.
+    #[test]
+    fn a_key_bound_twice_is_answered_by_the_lower_order() {
+        let (world, carrier, _plain) = extension_world();
+        let registry = world.get_resource::<ToolRegistry>().expect("registered");
+        assert_eq!(
+            registry.active_key(carrier, EXTENSION_KIND, SHARED_CHORD, &[], &world),
+            KeyResponse::Commands(Vec::new()),
+            "the first extension (order 10) answers, not the second (order 20)"
+        );
+        assert_eq!(
+            registry.active_key(carrier, EXTENSION_KIND, "z", &[], &world),
+            KeyResponse::Default,
+            "a chord nobody declares falls through to the editor"
+        );
+        assert_eq!(
+            registry.active_key(carrier, "another kind", SHARED_CHORD, &[], &world),
+            KeyResponse::Consume,
+            "the first extension's `for_kinds` keeps it out, so the second answers"
+        );
+    }
+
+    /// Registering an extension twice replaces its record, which is what a
+    /// reload does, and the chain stays sorted by `(order, name)`.
+    #[test]
+    fn re_registering_an_extension_keeps_one_record_in_order() {
+        let mut registry = ToolRegistry::default();
+        registry.register_extension::<LateExtension>();
+        registry.register_extension::<FirstExtension>();
+        registry.register_extension::<SecondExtension>();
+        registry.register_extension::<FirstExtension>();
+        let names: Vec<&str> = registry
+            .extensions()
+            .iter()
+            .map(|extension| extension.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["first extension", "second extension", "late extension"]
+        );
+        registry.clear_extensions();
+        assert!(registry.extensions().is_empty());
     }
 }

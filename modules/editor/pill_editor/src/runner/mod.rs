@@ -4333,7 +4333,7 @@ fn element_drag_elements(
         return None;
     }
     let registry = world.get_resource::<tools::ToolRegistry>()?;
-    if !registry.active_moves_elements() {
+    if !registry.active_moves_elements(entity, world) {
         return None;
     }
     let selected: Vec<u64> = elements

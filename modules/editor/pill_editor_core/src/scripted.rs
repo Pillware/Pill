@@ -116,6 +116,13 @@ pub enum ScriptedCommand {
     GizmoRelease,
     /// `gizmo <translate|rotate|scale>` - switch the active tool.
     GizmoTool(GizmoMode),
+    /// `extensions <on|off>` - register or drop the tool extensions the
+    /// executable carries for the suites, so an area can drive the plain tool
+    /// and the extended one in one session.
+    Extensions {
+        /// Whether they are registered afterwards.
+        enabled: bool,
+    },
     /// `drag element <id> <dx> <dy> <dz>` - nudge one element of the active
     /// tool by a world delta, as a direct drag would.
     DragElement {
@@ -927,6 +934,21 @@ impl ScriptedCommand {
                     Some(name.to_string())
                 };
                 Ok(ScriptedCommand::Tool(target))
+            }
+            // `extensions on|off` registers or drops the tool extensions the
+            // executable carries for the suites.
+            "extensions" => {
+                let enabled = match cursor.word() {
+                    Some("on") => true,
+                    Some("off") => false,
+                    _ => {
+                        return Err(ParseError::new(
+                            "extensions needs `on` or `off`",
+                        ));
+                    }
+                };
+                cursor.finish("extensions")?;
+                Ok(ScriptedCommand::Extensions { enabled })
             }
             "dialog" => dialog(&mut cursor),
             "edit" => edit(&mut cursor),
@@ -2470,6 +2492,14 @@ mod tests {
             Accept {
                 line: "tool none",
                 command: ScriptedCommand::Tool(None),
+            },
+            Accept {
+                line: "extensions on",
+                command: ScriptedCommand::Extensions { enabled: true },
+            },
+            Accept {
+                line: "extensions off",
+                command: ScriptedCommand::Extensions { enabled: false },
             },
             Accept {
                 line: "dump tools",

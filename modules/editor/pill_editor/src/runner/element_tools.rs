@@ -107,18 +107,15 @@ impl EditorWindow {
             let registry = world.get_resource::<tools::ToolRegistry>();
             let selection = world.get_resource::<EditorSelection>();
             match (registry, selection) {
-                (Some(registry), Some(selection))
-                    if registry
-                        .active_record()
-                        .is_some_and(|tool| tool.hooks.reports_elements()) =>
-                {
+                (Some(registry), Some(selection)) => {
                     let selected = selection.elements().clone();
                     selection
                         .elements()
                         .owner()
                         .or_else(|| selection.primary())
+                        .filter(|entity| registry.active_reports_elements(*entity, world))
                         .map(|entity| {
-                            let kinds = registry.active_kinds();
+                            let kinds = registry.active_kinds(entity, world);
                             let reported = registry.active_elements(entity, world);
                             (entity, reported, kinds, selected)
                         })
@@ -300,8 +297,14 @@ impl EditorWindow {
             })
             .unwrap_or_default();
         let registry = tools::tool_registry_mut(world).clone();
-        let response =
-            registry.active_press(target.entity, target.element, click, &selected, world);
+        let response = registry.active_press(
+            target.entity,
+            target.element,
+            &target.kind,
+            click,
+            &selected,
+            world,
+        );
         match response {
             tools::PressResponse::Default => {}
             tools::PressResponse::Consume => {

@@ -752,6 +752,7 @@ fn scripted_name(command: &ScriptedCommand) -> &'static str {
         // The page drives the gizmo from its own rows and loads no tool
         // layer, so a named tool has nothing to activate here.
         ScriptedCommand::Tool(_) => "tool",
+        ScriptedCommand::Extensions { .. } => "extensions",
         ScriptedCommand::Key(_) => "key",
         ScriptedCommand::Dump(_) => "dump",
         ScriptedCommand::Browser(_) => "browser",

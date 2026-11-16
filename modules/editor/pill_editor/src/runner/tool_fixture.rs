@@ -71,6 +71,31 @@ pub(super) const FIXTURE_TANGENT_KIND: &str = "tangent";
 /// element the fixture reports.
 pub(super) const FIXTURE_FRAME_NAME: &str = "Fixture";
 
+/// The menu row the notes extension adds for `point` elements.
+pub(super) const FIXTURE_MENU_NOTE: &str = "note";
+
+/// The menu row the marks extension adds for every kind.
+pub(super) const FIXTURE_MENU_MARK: &str = "mark";
+
+/// The chord both fixture extensions bind.
+///
+/// Two extensions of one base on one chord is the clash a reader is told about
+/// once: the lower `order` answers the key and the log names it the winner.
+pub(super) const FIXTURE_EXTENSION_CHORD: &str = "n";
+
+/// The component the notes extension is attached by.
+///
+/// The scene project's rotating models carry it and the camera does not, which
+/// is what lets a suite show the same row appearing on one entity and not on
+/// the other.
+pub(super) const FIXTURE_NOTES_COMPONENT: &str = "TagAlphaComponent";
+
+/// The notes extension's name, as `dump tools` and the conflict line spell it.
+pub(super) const FIXTURE_NOTES_EXTENSION: &str = "fixture notes";
+
+/// The marks extension's name.
+pub(super) const FIXTURE_MARKS_EXTENSION: &str = "fixture marks";
+
 // =============================================================================
 // Element Storage
 // =============================================================================
@@ -186,6 +211,10 @@ impl tools::EditorTool for FixtureTool {
 /// A reload of any shell module re-runs nothing here: the fixture lives in
 /// this executable, which is never reloaded, and its hooks are the
 /// executable's own functions.
+///
+/// The two extensions are registered by [`set_extensions`] instead, so every
+/// other suite area drives the plain tool: an extension's extra menu rows would
+/// otherwise change what those areas read.
 pub(super) fn register(world: &mut World) {
     if world.get_resource::<FixtureElements>().is_none() {
         world.insert_resource(FixtureElements::default());
@@ -206,6 +235,180 @@ pub(super) fn register(world: &mut World) {
             selection_changed: Some(fixture_selection_changed),
         },
     );
+}
+
+/// Registers or drops the fixture's two extensions.
+///
+/// The component-tools steps switch them on: until then the fixture tool is
+/// exactly the tool every other area drives, with two menu rows and no chords,
+/// so an area that reads the element menu elsewhere sees what it always saw.
+pub(super) fn set_extensions(world: &mut World, enabled: bool) {
+    let registry = tools::tool_registry_mut(world);
+    registry.clear_extensions();
+    if !enabled {
+        return;
+    }
+    registry.register_extension::<FixtureNotesExtension>();
+    registry.register_extension::<FixtureMarksExtension>();
+}
+
+// =============================================================================
+// Extensions
+// =============================================================================
+
+/// The extension that adds a row only for `point` elements, and only on an
+/// entity carrying [`FIXTURE_NOTES_COMPONENT`].
+pub(super) struct FixtureNotesExtension;
+
+impl tools::ToolExtension for FixtureNotesExtension {
+    fn name() -> &'static str {
+        FIXTURE_NOTES_EXTENSION
+    }
+
+    fn extends_tool() -> &'static str {
+        FIXTURE_TOOL_NAME
+    }
+
+    /// Its row belongs to the point kind alone, so a tangent selection never
+    /// shows it.
+    fn for_kinds() -> &'static [&'static str] {
+        &[FIXTURE_POINT_KIND]
+    }
+
+    fn requires_component() -> Option<&'static str> {
+        Some(FIXTURE_NOTES_COMPONENT)
+    }
+
+    /// First in the chain, which is what makes it the winner of the chord both
+    /// extensions bind.
+    fn order() -> i32 {
+        10
+    }
+
+    fn keys() -> &'static [&'static str] {
+        &[FIXTURE_EXTENSION_CHORD]
+    }
+
+    fn hooks() -> tools::ToolExtensionHooks {
+        tools::ToolExtensionHooks {
+            menu: Some(notes_menu),
+            menu_run: Some(notes_menu_run),
+            key: Some(extension_key),
+            ..tools::ToolExtensionHooks::default()
+        }
+    }
+}
+
+/// The extension that adds a row for every kind, on every entity.
+pub(super) struct FixtureMarksExtension;
+
+impl tools::ToolExtension for FixtureMarksExtension {
+    fn name() -> &'static str {
+        FIXTURE_MARKS_EXTENSION
+    }
+
+    fn extends_tool() -> &'static str {
+        FIXTURE_TOOL_NAME
+    }
+
+    /// Second in the chain: it binds the same chord as the notes extension and
+    /// loses it, which is the order rule a suite reads off the conflict line.
+    fn order() -> i32 {
+        30
+    }
+
+    fn keys() -> &'static [&'static str] {
+        &[FIXTURE_EXTENSION_CHORD]
+    }
+
+    fn hooks() -> tools::ToolExtensionHooks {
+        tools::ToolExtensionHooks {
+            menu: Some(marks_menu),
+            menu_run: Some(marks_menu_run),
+            key: Some(extension_key),
+            ..tools::ToolExtensionHooks::default()
+        }
+    }
+}
+
+/// The notes extension's one row, for the point kind only.
+fn notes_menu(
+    _entity: Entity,
+    kind: &str,
+    _selected: &[u64],
+    _world: &World,
+    out: &mut Vec<tools::ElementMenuEntry>,
+) {
+    if kind != FIXTURE_POINT_KIND {
+        return;
+    }
+    out.push(tools::ElementMenuEntry {
+        id: FIXTURE_MENU_NOTE.to_string(),
+        label: "Add note".to_string(),
+    });
+}
+
+/// Runs the notes row.
+///
+/// The row changes nothing: the fixture exists to prove an extension's row
+/// reaches the menu and runs as its own recorded batch, and an empty batch is
+/// the smallest honest one.
+fn notes_menu_run(
+    _entity: Entity,
+    kind: &str,
+    _selected: &[u64],
+    item: &str,
+    _world: &World,
+) -> Result<Vec<EditorCommand>, String> {
+    if kind == FIXTURE_POINT_KIND && item == FIXTURE_MENU_NOTE {
+        return Ok(Vec::new());
+    }
+    Err(format!("the notes extension adds no '{item}' row"))
+}
+
+/// The marks extension's one row, offered for every kind.
+fn marks_menu(
+    _entity: Entity,
+    _kind: &str,
+    _selected: &[u64],
+    _world: &World,
+    out: &mut Vec<tools::ElementMenuEntry>,
+) {
+    out.push(tools::ElementMenuEntry {
+        id: FIXTURE_MENU_MARK.to_string(),
+        label: "Mark".to_string(),
+    });
+}
+
+/// Runs the marks row.
+fn marks_menu_run(
+    _entity: Entity,
+    _kind: &str,
+    _selected: &[u64],
+    item: &str,
+    _world: &World,
+) -> Result<Vec<EditorCommand>, String> {
+    if item == FIXTURE_MENU_MARK {
+        return Ok(Vec::new());
+    }
+    Err(format!("the marks extension adds no '{item}' row"))
+}
+
+/// What the fixture's extensions make of their shared chord: they take it.
+///
+/// The chain asks them in `order`, so the notes extension's answer is the one
+/// that counts while both are attached; either way the editor logs the same
+/// consumed-key line, which is what a suite reads.
+fn extension_key(
+    _entity: Entity,
+    key: &str,
+    _selected: &[u64],
+    _world: &World,
+) -> tools::KeyResponse {
+    if key.eq_ignore_ascii_case(FIXTURE_EXTENSION_CHORD) {
+        return tools::KeyResponse::Consume;
+    }
+    tools::KeyResponse::Default
 }
 
 // =============================================================================
