@@ -4,7 +4,7 @@
 //! # Responsibilities
 //!
 //! - Re-export the engine core's field layouts
-//!   (`pill_engine_core::component_registry`) under this path.
+//!   (`pill_engine_core::reflection::component_registry`) under this path.
 //! - Declare the descriptor types the derive and attribute macros submit into
 //!   [`inventory`] collections, and the collections themselves.
 //! - Provide the artifact-wide registration loop, the schema fingerprint of
@@ -37,7 +37,7 @@ use std::hash::{Hash, Hasher};
 use pill_core::telemetry::telemetry_target;
 /// Field layouts, the layout trait and the value-type resolver, which are the
 /// same for every DLL.
-pub use pill_engine_core::component_registry::*;
+pub use pill_engine_core::reflection::component_registry::*;
 
 // Current crate
 use crate::error::WorldError;
@@ -607,7 +607,7 @@ pub fn run_project_init(
 /// field is readable, a wrong one is not.
 pub fn resolve_value_type_layout(path: &str) -> Option<&'static [ComponentFieldDescriptor]> {
     let descriptors = value_type_descriptors();
-    let resolved_type_name = pill_engine_core::component_registry::resolve_unique_name(
+    let resolved_type_name = pill_engine_core::reflection::component_registry::resolve_unique_name(
         path,
         descriptors.iter().map(|descriptor| descriptor.type_name),
     )?;
@@ -630,7 +630,7 @@ pub fn resolve_enum_layout(path: &str) -> Option<EnumLayout> {
             descriptor.owner_kind == OWNER_KIND_ENUM && descriptor.name == MIRROR_TYPE_ROW
         })
         .collect();
-    let resolved_type_name = pill_engine_core::component_registry::resolve_unique_name(
+    let resolved_type_name = pill_engine_core::reflection::component_registry::resolve_unique_name(
         path,
         enum_rows.iter().map(|descriptor| descriptor.type_name),
     )?;

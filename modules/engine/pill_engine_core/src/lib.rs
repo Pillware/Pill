@@ -95,13 +95,6 @@ pub mod asset_standalone;
 /// Where an asset's bytes come from: mounted packs and the filesystem.
 pub mod asset_store;
 
-/// Generic type-erased component field access for editor-style tools.
-pub mod component_field;
-
-/// Compile-time field layouts of components and value types, emitted by the
-/// derive macros.
-pub mod component_registry;
-
 /// The engine's tunable constants and the parallel-execution settings.
 pub mod config;
 
@@ -156,6 +149,11 @@ pub mod persistence;
 /// Re-exports the profiling API from `pill_core`.
 pub mod profiling;
 
+/// The reflection group: the field layouts the derive macros emit, the
+/// type-erased field access built on them, and the public type names. Its
+/// modules keep their old crate-root paths through the re-exports below.
+pub mod reflection;
+
 /// The saved form of asset and entity references: a guid and a stable id, plus
 /// what a later run needs to find the target again.
 pub mod saved_references;
@@ -163,13 +161,6 @@ pub mod saved_references;
 /// A scene: a world's entities, components and references as one standalone
 /// asset that loads back into a world.
 pub mod scene;
-
-/// Dependency analysis and parallel batch scheduling for system execution.
-pub mod scheduler;
-
-/// Script components: a component trait with an update step, and a context
-/// that defers structural changes until it is safe to apply them.
-pub mod scripting;
 
 /// Settings assets that configure manager resources: the bindings that point a
 /// manager at one, the file a host creates when the project has none, and the
@@ -185,16 +176,13 @@ pub mod settings;
 /// the project's own `init` fills the world.
 pub mod startup_scene;
 
-/// How a plain function's parameters are pulled from the world so the function
-/// can run as a system.
-pub mod system;
+/// The systems group: how a function becomes a system, how the frame orders
+/// and batches those systems, and the script hooks. Its modules keep their old
+/// crate-root paths through the re-exports below.
+pub mod systems;
 
 /// Frame timing maintained by the engine and read through `Res<Time>`.
 pub mod time;
-
-/// Type names as the rest of the engine sees them: `pill_engine::...` for the
-/// engine's own types.
-pub mod type_names;
 
 // =============================================================================
 // Public Re-exports
@@ -202,8 +190,9 @@ pub mod type_names;
 
 // Core engine types, re-exported so one `use` reaches them.
 //
-// The ECS group's modules also keep their old crate-root paths, so a caller
-// that names `crate::entity` or `pill_engine_core::world` still resolves.
+// The modules in the `ecs`, `systems` and `reflection` groups also keep their
+// old crate-root paths, so a caller that names `crate::entity`,
+// `pill_engine_core::world` or `crate::scripting` still resolves.
 pub use api::EngineApi;
 pub use asset::{
     Asset, AssetBindingError, AssetBindingResult, AssetGuid, AssetLoadError, AssetLoadResult,
@@ -222,7 +211,6 @@ pub use asset_metadata::{
 };
 pub use asset_reference::AssetReference;
 pub use asset_standalone::{render_standalone, StandaloneAsset};
-pub use component_field::{parse_enum_tag, ComponentFieldError, EnumFieldTag, FieldValue};
 pub use debug_draw::{
     DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
     GizmoPoint, GizmoPointShape, GizmoTriangle, LabelAnchor,
@@ -252,18 +240,23 @@ pub use manager_settings::{
 };
 pub use persistence::{PersistResourceManifestEntry, ResourceSnapshot};
 pub use pill_core::DynamicBuffer;
+pub use reflection::component_field::{
+    parse_enum_tag, ComponentFieldError, EnumFieldTag, FieldValue,
+};
+pub use reflection::{component_field, component_registry, type_names};
 pub use saved_references::{
     restore_asset_reference, saved_reference, SavedAssetReference, SavedEntityLink,
     SavedEntityLinks, SavedReference,
 };
 pub use scene::{load_scene, save_scene, Scene, SceneDocument, SceneEntity, SceneLoad, SceneSave};
-pub use scheduler::{RunPhase, SystemAccess, SystemScheduler, TypeKey};
-pub use scripting::{
+pub use settings::{SettingsAssetManager, SettingsAssetOps, SettingsOutcome};
+pub use startup_scene::{apply_startup_scene, queue_startup_scene, StartupScene};
+pub use systems::scheduler::{RunPhase, SystemAccess, SystemScheduler, TypeKey};
+pub use systems::scripting::{
     CreateCause, CreateInfo, DestroyCause, DestroyInfo, ScriptComponent, ScriptContext,
     ScriptDeclaration, ScriptDeclarationData, StartCause, StartInfo, StopCause, StopInfo,
 };
-pub use settings::{SettingsAssetManager, SettingsAssetOps, SettingsOutcome};
-pub use startup_scene::{apply_startup_scene, queue_startup_scene, StartupScene};
+pub use systems::{scheduler, scripting, system};
 pub use time::Time;
 
 // Serde derives re-exported so downstream components can derive serialization without a direct dependency.
