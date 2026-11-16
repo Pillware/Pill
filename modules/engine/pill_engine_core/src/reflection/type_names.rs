@@ -12,9 +12,7 @@
 //! reports one of its types as
 //! `pill_engine_core::common_components::TransformComponent`. Code outside the
 //! engine names the same type by the public path,
-//! `pill_engine::common_components::TransformComponent`. C# projects import
-//! the namespace `pill_engine.common_components`, and the component names and
-//! persisted keys the managed side receives are spelled that way.
+//! `pill_engine::common_components::TransformComponent`.
 //! [`stable_type_name`](crate::type_names::stable_type_name) produces the
 //! public form by writing the core's crate name as `pill_engine`.
 //!
