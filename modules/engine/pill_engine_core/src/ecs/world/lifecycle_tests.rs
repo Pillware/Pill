@@ -8,15 +8,16 @@
 //!   before its first update.
 //! - Show that an entry for a script that no longer carries the component is
 //!   dropped, that edit mode tells only the scripts that opted in and never
-//!   starts one, and that a re-registration repeats neither hook.
+//!   starts one, and that a re-registration repeats neither `on_create` nor
+//!   `on_start`.
 //! - Show that two types are told in their declared `on_create` order.
 //!
 //! # Design
 //!
-//! Every hook appends a line to a component on an entity of its own, so the
-//! order of the lines is the observation. A component is used rather than a
-//! shared static so two tests running at the same time cannot see each other's
-//! entries.
+//! Every lifecycle method appends a line to a component on an entity of its
+//! own, so the order of the lines is the observation. A component is used
+//! rather than a shared static so two tests running at the same time cannot see
+//! each other's entries.
 
 // Standard library
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -40,7 +41,7 @@ use crate::world::{ChangeOrigin, World};
 /// The lifecycle lines one script recorded.
 #[derive(Debug, Default, Clone)]
 struct LifecycleLog {
-    /// One line per hook call, in the order they happened.
+    /// One line per lifecycle method call, in the order they happened.
     entries: Vec<String>,
 }
 
@@ -53,7 +54,8 @@ fn record(log_entity: Entity, script_context: &mut ScriptContext, entry: String)
     }
 }
 
-/// A script that records every hook it receives, including why it was called.
+/// A script that records every lifecycle method the engine calls on it,
+/// including why it was called.
 #[derive(Debug, Clone)]
 struct RecordingScript {
     /// The entity holding the log.
@@ -369,7 +371,8 @@ fn a_script_removed_before_the_pass_never_hears_about_it() {
     );
 }
 
-/// Re-registering a script type - what a reload does - repeats neither hook.
+/// Re-registering a script type - what a reload does - repeats neither
+/// `on_create` nor `on_start`.
 #[test]
 fn a_re_registration_repeats_neither_create_nor_start() {
     let (mut engine, log_entity) = engine_with_log();
@@ -477,7 +480,7 @@ fn the_create_and_start_passes_follow_their_own_orders() {
 // =============================================================================
 
 /// A script that queues a new entity from its own destruction, so a test can
-/// see where a hook's commands go.
+/// see where a lifecycle method's commands go.
 #[derive(Debug, Clone)]
 struct SpawningDestroyScript;
 
@@ -561,7 +564,7 @@ fn a_removal_while_editing_destroys_without_stopping() {
 }
 
 /// Destroying an entity tells every script on it, and destroying the entity
-/// twice reports the second one instead of telling the hooks again.
+/// twice reports the second one instead of calling the lifecycle methods again.
 #[test]
 fn destroying_an_entity_tells_every_script_on_it() {
     let (mut engine, first_log) = engine_with_log();
@@ -617,10 +620,10 @@ fn destroying_an_entity_tells_every_script_on_it() {
     );
 }
 
-/// A hook that queues during a removal does not run its own commands inside the
-/// removal; they wait for the next flush.
+/// A lifecycle method that queues during a removal does not run its own
+/// commands inside the removal; they wait for the next flush.
 #[test]
-fn a_hook_that_queues_during_a_removal_waits_for_the_next_flush() {
+fn a_lifecycle_method_that_queues_during_a_removal_waits_for_the_next_flush() {
     let (mut engine, _log) = engine_with_log();
     engine
         .world_mut()
@@ -646,12 +649,12 @@ fn a_hook_that_queues_during_a_removal_waits_for_the_next_flush() {
             .world()
             .get_component::<SpawningDestroyScript>(entity)
             .is_none(),
-        "the component is gone before the hook's command runs"
+        "the component is gone before the command `on_destroy` queued runs"
     );
     let entities_after_removal = engine.world().entity_count();
     assert!(
         !commands.is_empty(),
-        "the hook's command waits for the next flush"
+        "the command `on_destroy` queued waits for the next flush"
     );
     commands
         .execute_queued_commands(engine.world_mut(), true)
@@ -660,7 +663,7 @@ fn a_hook_that_queues_during_a_removal_waits_for_the_next_flush() {
     assert_eq!(
         engine.world().entity_count(),
         entities_after_removal + 1,
-        "the hook's entity exists after the flush"
+        "the entity `on_destroy` queued exists after the flush"
     );
 }
 

@@ -1,9 +1,9 @@
-//! Script components, their lifecycle hooks and the declaration behind them.
+//! Script components, their lifecycle methods and the declaration behind them.
 //!
 //! # Responsibilities
 //!
-//! - Defines [`ScriptComponent`] - the five hooks the engine calls, and the
-//!   information each one receives about why it ran.
+//! - Defines [`ScriptComponent`] - the five lifecycle methods the engine calls,
+//!   and the information each one receives about why it ran.
 //! - Defines [`ScriptDeclaration`] and [`ScriptDeclarationData`], what
 //!   `#[script]` reads from an implementation block.
 //! - Provides [`ScriptContext`] - a restricted view of the ECS that queues
@@ -17,18 +17,19 @@
 //! the storage its `&mut self` points into, which would leave that reference
 //! dangling.
 //!
-//! A script declares its hooks instead of announcing them at registration:
-//! `#[script]` on the implementation block reads which hooks the block defines,
-//! each hook's `#[order(n)]`, and whether the script also runs while editing,
-//! and writes them into [`ScriptDeclaration::DECLARATION`]. The world reads
-//! that value once per registration, so a reload points every hook at the
-//! arriving image.
+//! A script declares its lifecycle methods instead of announcing them at
+//! registration: `#[script]` on the implementation block reads which lifecycle
+//! methods the block defines, each lifecycle method's `#[order(n)]`, and
+//! whether the script also runs while editing, and writes them into
+//! [`ScriptDeclaration::DECLARATION`]. The world reads that value once per
+//! registration, so a reload points every lifecycle method at the arriving
+//! image.
 //!
-//! Every hook has a no-op default, so a script implements only the ones it
-//! needs. The engine calls `on_create` when the component starts existing,
-//! `on_start` when the script starts running, `on_update` once per frame while
-//! it runs, `on_stop` when it stops running, and `on_destroy` when the
-//! component stops existing.
+//! Every lifecycle method has a no-op default, so a script implements only the
+//! ones it needs. The engine calls `on_create` when the component starts
+//! existing, `on_start` when the script starts running, `on_update` once per
+//! frame while it runs, `on_stop` when it stops running, and `on_destroy` when
+//! the component stops existing.
 
 // Standard library
 
@@ -198,13 +199,13 @@ impl<'a> ScriptContext<'a> {
 }
 
 // =============================================================================
-// Hook Information
+// Lifecycle Method Information
 // =============================================================================
 
 /// Everything [`ScriptComponent::on_create`] is told about why it ran.
 ///
 /// The editor, the scene loader and the play session all produce the same
-/// hook; only [`CreateInfo::cause`] says which one did.
+/// `on_create` call; only [`CreateInfo::cause`] says which one did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct CreateInfo {
@@ -307,9 +308,10 @@ pub enum DestroyCause {
 
 /// What one `#[script]` implementation block declares.
 ///
-/// The engine reads this once per registration: which hooks the block defines,
-/// the order each one runs in, and whether the script also runs while editing.
-/// A hook that is not implemented has no order the engine would ever read.
+/// The engine reads this once per registration: which lifecycle methods the
+/// block defines, the order each one runs in, and whether the script also runs
+/// while editing. A lifecycle method that is not implemented has no order the
+/// engine would ever read.
 ///
 /// `#[script]` writes the value; a hand-written implementation is only for the
 /// engine's own tests, which cannot reach the facade the attribute expands
@@ -343,7 +345,8 @@ pub struct ScriptDeclarationData {
 }
 
 impl ScriptDeclarationData {
-    /// A declaration that defines no hook and runs only while playing.
+    /// A declaration that defines no lifecycle method and runs only while
+    /// playing.
     pub const NONE: Self = Self {
         implements_on_create: false,
         implements_on_start: false,
@@ -416,8 +419,8 @@ impl ScriptDeclarationData {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is a script component without a `#[script]` declaration",
     label = "add `#[script]` above this implementation",
-    note = "the engine takes the hooks, their orders and the edit-mode flag from \
-            that declaration, so a script cannot leave them implicit"
+    note = "the engine takes the lifecycle methods, their orders and the edit-mode \
+            flag from that declaration, so a script cannot leave them implicit"
 )]
 pub trait ScriptDeclaration {
     /// Everything the `#[script]` attribute read from the implementation
@@ -429,11 +432,11 @@ pub trait ScriptDeclaration {
 // ScriptComponent
 // =============================================================================
 
-/// A component the engine runs as a script, with a hook for each step of its
-/// life.
+/// A component the engine runs as a script, with a lifecycle method for each
+/// step of its life.
 ///
-/// Every hook has a no-op default, so an implementation defines only the ones
-/// it needs, and each one is ordered by its own `#[order(n)]`:
+/// Every lifecycle method has a no-op default, so an implementation defines
+/// only the ones it needs, and each one is ordered by its own `#[order(n)]`:
 ///
 /// ```ignore
 /// #[derive(PillComponent)]
@@ -461,17 +464,18 @@ pub trait ScriptDeclaration {
 /// }
 /// ```
 ///
-/// The hooks mirror Unity's `MonoBehaviour` messages:
+/// The lifecycle methods mirror Unity's `MonoBehaviour` messages:
 /// [`on_create`](ScriptComponent::on_create) is `Awake`,
 /// [`on_start`](ScriptComponent::on_start) is `Start`,
 /// [`on_update`](ScriptComponent::on_update) is `Update`,
 /// [`on_stop`](ScriptComponent::on_stop) has no Unity equivalent, and
 /// [`on_destroy`](ScriptComponent::on_destroy) is `OnDestroy`.
 ///
-/// Every hook receives a [`ScriptContext`], which offers read access to
-/// components and resources, a mutable borrow of a component, and structural
-/// commands that are queued. Adding or removing a component and destroying an
-/// entity all happen after every script in the frame has returned.
+/// Every lifecycle method receives a [`ScriptContext`], which offers read
+/// access to components and resources, a mutable borrow of a component, and
+/// structural commands that are queued. Adding or removing a component and
+/// destroying an entity all happen after every script in the frame has
+/// returned.
 ///
 /// A script component needs the `#[script]` attribute: without it the type
 /// does not implement [`ScriptDeclaration`], and implementing this trait
@@ -518,7 +522,7 @@ pub trait ScriptComponent: Component + ScriptDeclaration {
     /// the editor make - and for the running copy a play session discards when
     /// it stops. A direct [`crate::World::remove_component`] or
     /// [`crate::World::destroy_entity`] call is the tooling path and reports
-    /// nothing, because there is no command queue to hand the hook. The
-    /// component is still readable during the call.
+    /// nothing, because there is no command queue to hand the lifecycle method.
+    /// The component is still readable during the call.
     fn on_destroy(&mut self, _script_context: &mut ScriptContext, _destroy_info: &DestroyInfo) {}
 }

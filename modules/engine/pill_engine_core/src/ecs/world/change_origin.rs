@@ -1,4 +1,4 @@
-//! Who is changing the world, for the lifecycle hooks that report it.
+//! Who is changing the world, for the lifecycle methods that report it.
 //!
 //! # Responsibilities
 //!
@@ -6,7 +6,7 @@
 //!   is made.
 //! - Provides `World::with_change_origin` and `Engine::with_change_origin`, the
 //!   scopes that set it and put the previous one back.
-//! - Translates an origin into the cause a lifecycle hook reports, so the
+//! - Translates an origin into the cause a lifecycle method reports, so the
 //!   components never learn the editor's vocabulary.
 //!
 //! # Design

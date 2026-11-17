@@ -59,8 +59,9 @@
 //! impl ScriptComponent for NoDeclaration {}
 //! ```
 //!
-//! The attribute reads hooks out of a `ScriptComponent` block, so a block that
-//! implements something else is refused instead of registering nothing:
+//! The attribute reads lifecycle methods out of a `ScriptComponent` block, so a
+//! block that implements something else is refused instead of registering
+//! nothing:
 //!
 //! ```compile_fail
 //! use pill_engine::*;
@@ -261,13 +262,13 @@ pub fn register_all_systems(engine: &mut Engine) {
 ///
 /// Called by the artifact entry points after [`register_all_systems`]. A
 /// script's registration also registers its component type, and records the
-/// hooks its `#[script]` declaration states, so a first load, every reload and
-/// a statically linked build all point the hook table at the image that is
-/// running.
+/// lifecycle methods its `#[script]` declaration states, so a first load, every
+/// reload and a statically linked build all point the lifecycle method table at
+/// the image that is running.
 ///
-/// The walk's order does not matter: the update pass reads each hook's own
-/// order from the registration, and equal orders are broken by type name rather
-/// than by registration order.
+/// The walk's order does not matter: the update pass reads each lifecycle
+/// method's own order from the registration, and equal orders are broken by
+/// type name rather than by registration order.
 pub fn register_all_scripts(world: &mut World) {
     // Step 1: Collect this image's declarations.
     let baseline = declaration_baseline().scripts;

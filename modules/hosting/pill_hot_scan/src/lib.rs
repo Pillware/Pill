@@ -1514,10 +1514,10 @@ fn not_a_system() {}
         );
     }
 
-    /// A hook's `#[order(n)]` marker sits outside every function body, so
-    /// stripping the bodies leaves the edit visible and classification refuses
-    /// it as a reload. The engine reads the order at registration, which is what
-    /// makes a changed value something only a reload can apply.
+    /// A lifecycle method's `#[order(n)]` marker sits outside every function
+    /// body, so stripping the bodies leaves the edit visible and classification
+    /// refuses it as a reload. The engine reads the order at registration,
+    /// which is what makes a changed value something only a reload can apply.
     #[test]
     fn an_order_marker_survives_body_stripping() {
         let before = "\

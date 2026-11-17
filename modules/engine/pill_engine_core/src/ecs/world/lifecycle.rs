@@ -4,7 +4,7 @@
 //! # Responsibilities
 //!
 //! - Holds the queue of script components that started existing and have not
-//!   been told yet, with the cause each hook receives.
+//!   been told yet, with the cause each lifecycle method receives.
 //! - Runs the `on_create` pass and then the `on_start` pass, each ordered by its
 //!   own `#[order(n)]` and then by type name and entity.
 //! - Records an attachment at the two places a component can start existing:
@@ -17,20 +17,22 @@
 //! called - the entity must still exist and must still carry the type - so a
 //! script removed before its first start is skipped instead of resurrected. A
 //! type name resolves through the registration table at call time, which is
-//! what lets the name outlive a reload: the retired image's hook bodies are
-//! gone, and the arriving image's registration replaces them.
+//! what lets the name outlive a reload: the retired image's lifecycle method
+//! bodies are gone, and the arriving image's registration replaces them.
 //!
 //! Both passes run at one point in the frame, before `on_update`, and the
-//! frame's flush follows them. A command a hook queues therefore lands in the
-//! queue that flush drains, unless the hook itself runs inside a removal, which
-//! the frame's own flush drives - that case leaves its commands for the next
-//! flush point.
+//! frame's flush follows them. A command a lifecycle method queues therefore
+//! lands in the queue that flush drains, unless the lifecycle method itself
+//! runs inside a removal, which the frame's own flush drives - that case leaves
+//! its commands for the next flush point.
 //!
 //! A play session fills the queue itself: every script the edit world holds is
 //! told it started existing when Play is pressed, which is what makes the first
 //! frames of a session look like a scene load.
 
-use super::scripting::{ScriptCreateHook, ScriptDestroyHook, ScriptStartHook, ScriptStopHook};
+use super::scripting::{
+    ScriptCreateAdapter, ScriptDestroyAdapter, ScriptStartAdapter, ScriptStopAdapter,
+};
 use super::*;
 use crate::engine::RunMode;
 use crate::scripting::{
@@ -183,7 +185,7 @@ impl World {
                 mode: run_mode,
                 duplicated_from: event.duplicated_from,
             };
-            self.call_create_hook(commands, event, &create_info);
+            self.call_on_create(commands, event, &create_info);
         }
     }
 
@@ -205,12 +207,12 @@ impl World {
                 continue;
             };
             let start_info = StartInfo { cause: start_cause };
-            self.call_start_hook(commands, event, &start_info);
+            self.call_on_start(commands, event, &start_info);
         }
     }
 
     /// Calls one entry's `on_create`, if the entity still carries the type.
-    fn call_create_hook(
+    fn call_on_create(
         &mut self,
         commands: &mut CommandQueue,
         event: &PendingScriptEvent,
@@ -239,13 +241,13 @@ impl World {
     }
 
     /// Calls one entry's `on_start`, if the entity still carries the type.
-    fn call_start_hook(
+    fn call_on_start(
         &mut self,
         commands: &mut CommandQueue,
         event: &PendingScriptEvent,
         start_info: &StartInfo,
     ) {
-        // As in `call_create_hook`: the pointers are taken before the row
+        // As in `call_on_create`: the pointers are taken before the row
         // borrow, and both stay valid for this whole call.
         let world_pointer = self as *mut World;
         let commands_pointer = commands as *mut CommandQueue;
@@ -266,13 +268,13 @@ impl World {
     }
 
     /// The `on_create` adapter and component id of a registered script type.
-    fn create_adapter_of(&self, script_type: &str) -> Option<(ScriptCreateHook, ComponentId)> {
+    fn create_adapter_of(&self, script_type: &str) -> Option<(ScriptCreateAdapter, ComponentId)> {
         let registration = self.script_registrations.get(script_type)?;
         Some((registration.on_create?, registration.component_id))
     }
 
     /// The `on_start` adapter and component id of a registered script type.
-    fn start_adapter_of(&self, script_type: &str) -> Option<(ScriptStartHook, ComponentId)> {
+    fn start_adapter_of(&self, script_type: &str) -> Option<(ScriptStartAdapter, ComponentId)> {
         let registration = self.script_registrations.get(script_type)?;
         Some((registration.on_start?, registration.component_id))
     }
@@ -300,7 +302,7 @@ impl World {
     }
 }
 
-/// Sorts pending events by hook order, then type name, then entity.
+/// Sorts pending events by lifecycle method order, then type name, then entity.
 ///
 /// Type name before entity keeps one type's entities together, which is the
 /// order the play-start scan reads them in, and the entity key makes the result
@@ -317,7 +319,7 @@ fn sort_pending_events(ordered: &mut [(i32, &PendingScriptEvent)]) {
 
 /// Sorts `(order, type name, entity)` triples the same way the pending events
 /// are sorted, so every pass in a frame runs in one predictable sequence.
-fn sort_hook_order(ordered: &mut [(i32, &String, Entity)]) {
+fn sort_lifecycle_method_calls(ordered: &mut [(i32, &String, Entity)]) {
     ordered.sort_by(|left, right| {
         left.0
             .cmp(&right.0)
@@ -340,8 +342,9 @@ impl World {
     /// script that never started running has nothing to stop; `on_destroy`
     /// always fires.
     ///
-    /// The component is still there for both calls, so a hook can read its own
-    /// fields and the entity's other components up to the last moment.
+    /// The component is still there for both calls, so a lifecycle method can
+    /// read its own fields and the entity's other components up to the last
+    /// moment.
     pub(crate) fn run_script_removal_passes(
         &mut self,
         entity: Entity,
@@ -367,7 +370,7 @@ impl World {
                 cause: StopCause::Removed,
             };
             for (_, type_name) in ordered {
-                self.call_stop_hook(commands, entity, type_name, &stop_info);
+                self.call_on_stop(commands, entity, type_name, &stop_info);
             }
         }
 
@@ -385,7 +388,7 @@ impl World {
             cause: self.change_origin.destroy_cause(),
         };
         for (_, type_name) in ordered {
-            self.call_destroy_hook(commands, entity, type_name, &destroy_info);
+            self.call_on_destroy(commands, entity, type_name, &destroy_info);
         }
     }
 
@@ -426,12 +429,12 @@ impl World {
                     .map(|_| (registration.on_stop_order, type_name, *entity))
             })
             .collect();
-        sort_hook_order(&mut stop_pass);
+        sort_lifecycle_method_calls(&mut stop_pass);
         let stop_info = StopInfo {
             cause: StopCause::PlayExited,
         };
         for (_, type_name, entity) in stop_pass {
-            self.call_stop_hook(commands, entity, type_name, &stop_info);
+            self.call_on_stop(commands, entity, type_name, &stop_info);
         }
 
         let mut destroy_pass: Vec<(i32, &String, Entity)> = entries
@@ -443,12 +446,12 @@ impl World {
                     .map(|_| (registration.on_destroy_order, type_name, *entity))
             })
             .collect();
-        sort_hook_order(&mut destroy_pass);
+        sort_lifecycle_method_calls(&mut destroy_pass);
         let destroy_info = DestroyInfo {
             cause: DestroyCause::PlayStopRestored,
         };
         for (_, type_name, entity) in destroy_pass {
-            self.call_destroy_hook(commands, entity, type_name, &destroy_info);
+            self.call_on_destroy(commands, entity, type_name, &destroy_info);
         }
     }
 
@@ -485,7 +488,7 @@ impl World {
     }
 
     /// Calls one entity's `on_stop` for `script_type`.
-    fn call_stop_hook(
+    fn call_on_stop(
         &mut self,
         commands: &mut CommandQueue,
         entity: Entity,
@@ -493,7 +496,7 @@ impl World {
         stop_info: &StopInfo,
     ) {
         // Taken before the row borrow, for the same reason as in
-        // `call_create_hook`.
+        // `call_on_create`.
         let world_pointer = self as *mut World;
         let commands_pointer = commands as *mut CommandQueue;
         let Some((adapter, component_id)) = self.stop_adapter_of(script_type) else {
@@ -513,14 +516,14 @@ impl World {
     }
 
     /// Calls one entity's `on_destroy` for `script_type`.
-    fn call_destroy_hook(
+    fn call_on_destroy(
         &mut self,
         commands: &mut CommandQueue,
         entity: Entity,
         script_type: &str,
         destroy_info: &DestroyInfo,
     ) {
-        // Taken before the row borrow, as in `call_stop_hook`.
+        // Taken before the row borrow, as in `call_on_stop`.
         let world_pointer = self as *mut World;
         let commands_pointer = commands as *mut CommandQueue;
         let Some((adapter, component_id)) = self.destroy_adapter_of(script_type) else {
@@ -540,13 +543,13 @@ impl World {
     }
 
     /// The `on_stop` adapter and component id of a registered script type.
-    fn stop_adapter_of(&self, script_type: &str) -> Option<(ScriptStopHook, ComponentId)> {
+    fn stop_adapter_of(&self, script_type: &str) -> Option<(ScriptStopAdapter, ComponentId)> {
         let registration = self.script_registrations.get(script_type)?;
         Some((registration.on_stop?, registration.component_id))
     }
 
     /// The `on_destroy` adapter and component id of a registered script type.
-    fn destroy_adapter_of(&self, script_type: &str) -> Option<(ScriptDestroyHook, ComponentId)> {
+    fn destroy_adapter_of(&self, script_type: &str) -> Option<(ScriptDestroyAdapter, ComponentId)> {
         let registration = self.script_registrations.get(script_type)?;
         Some((registration.on_destroy?, registration.component_id))
     }

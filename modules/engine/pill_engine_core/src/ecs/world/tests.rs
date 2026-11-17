@@ -3988,7 +3988,7 @@ impl ScriptComponent for ZuluScript {
     }
 }
 
-/// A script that declares no update hook at all.
+/// A script that declares no `on_update` at all.
 #[derive(Debug)]
 struct CreateOnlyScript;
 

@@ -56,7 +56,7 @@ and the editor, and a change to any of them is `hot_reload`.
 | Scope        | Covers                                                                                  |
 | ------------ | --------------------------------------------------------------------------------------- |
 | `ecs`        | world, entities, components, queries, systems, resources, commands, persistence, macros |
-| `scripting`  | script components and their hooks                                                       |
+| `scripting`  | script components and their lifecycle methods                                           |
 | `play_mode`  | Play and Stop: what a session copies, runs and restores                                 |
 | `hot_reload` | watchers, module reloads, function patching, layout fingerprints, generated host crates |
 | `assets`     | asset store, guids and `.meta` files, importing and cooking, asset packs, scenes        |

@@ -1,4 +1,5 @@
-//! Script components: the declared hook table and the per-frame update pass.
+//! Script components: the declared lifecycle method table and the per-frame
+//! update pass.
 //!
 //! # Responsibilities
 //!
@@ -24,7 +25,7 @@
 //! after the call. The adapter is created inside the generic registration call,
 //! so its code is compiled into the artifact that declared the script rather
 //! than into the engine dylib. Registering a type twice replaces its entry, so
-//! it has one adapter per hook, not two.
+//! it has one adapter per lifecycle method, not two.
 //!
 //! The adapter receives raw pointers to the world and the command queue because
 //! the dispatch loop already borrows the archetype storage it passes in, so it
@@ -52,55 +53,55 @@ use crate::scripting::{CreateInfo, DestroyInfo, StartInfo, StopInfo};
 /// must pass pointers that stay valid for the whole call. Being a plain `fn`
 /// and not a closure is part of the contract: it cannot capture, so it has no
 /// closure state in which to keep them.
-pub(super) type ScriptUpdateHook =
+pub(super) type ScriptUpdateAdapter =
     fn(&mut ComponentColumns, usize, Entity, *mut World, *mut CommandQueue);
 
 /// Calls `on_create` on one script row.
 ///
-/// Arguments are [`ScriptUpdateHook`]'s plus the information about why the
+/// Arguments are [`ScriptUpdateAdapter`]'s plus the information about why the
 /// component started existing.
 ///
 /// # Safety
 ///
 /// The two raw-pointer arguments are valid only for the duration of the call
-/// that passes them, exactly as [`ScriptUpdateHook`] states.
-pub(super) type ScriptCreateHook =
+/// that passes them, exactly as [`ScriptUpdateAdapter`] states.
+pub(super) type ScriptCreateAdapter =
     fn(&mut ComponentColumns, usize, Entity, *mut World, *mut CommandQueue, &CreateInfo);
 
 /// Calls `on_start` on one script row.
 ///
-/// Arguments are [`ScriptUpdateHook`]'s plus the information about why the
+/// Arguments are [`ScriptUpdateAdapter`]'s plus the information about why the
 /// script started running.
 ///
 /// # Safety
 ///
 /// The two raw-pointer arguments are valid only for the duration of the call
-/// that passes them, exactly as [`ScriptUpdateHook`] states.
-pub(super) type ScriptStartHook =
+/// that passes them, exactly as [`ScriptUpdateAdapter`] states.
+pub(super) type ScriptStartAdapter =
     fn(&mut ComponentColumns, usize, Entity, *mut World, *mut CommandQueue, &StartInfo);
 
 /// Calls `on_stop` on one script row.
 ///
-/// Arguments are [`ScriptUpdateHook`]'s plus the information about why the
+/// Arguments are [`ScriptUpdateAdapter`]'s plus the information about why the
 /// script stopped running.
 ///
 /// # Safety
 ///
 /// The two raw-pointer arguments are valid only for the duration of the call
-/// that passes them, exactly as [`ScriptUpdateHook`] states.
-pub(super) type ScriptStopHook =
+/// that passes them, exactly as [`ScriptUpdateAdapter`] states.
+pub(super) type ScriptStopAdapter =
     fn(&mut ComponentColumns, usize, Entity, *mut World, *mut CommandQueue, &StopInfo);
 
 /// Calls `on_destroy` on one script row.
 ///
-/// Arguments are [`ScriptUpdateHook`]'s plus the information about why the
+/// Arguments are [`ScriptUpdateAdapter`]'s plus the information about why the
 /// component stopped existing.
 ///
 /// # Safety
 ///
 /// The two raw-pointer arguments are valid only for the duration of the call
-/// that passes them, exactly as [`ScriptUpdateHook`] states.
-pub(super) type ScriptDestroyHook =
+/// that passes them, exactly as [`ScriptUpdateAdapter`] states.
+pub(super) type ScriptDestroyAdapter =
     fn(&mut ComponentColumns, usize, Entity, *mut World, *mut CommandQueue, &DestroyInfo);
 
 /// One registered script type.
@@ -110,27 +111,27 @@ pub(super) struct ScriptRegistration {
     pub(super) component_id: ComponentId,
     /// The adapter that calls `on_update`, absent when the declaration does
     /// not implement it.
-    pub(super) on_update: Option<ScriptUpdateHook>,
+    pub(super) on_update: Option<ScriptUpdateAdapter>,
     /// Sort key of the update pass.
     pub(super) on_update_order: i32,
     /// The adapter that calls `on_create`, absent when the declaration does
     /// not implement it.
-    pub(super) on_create: Option<ScriptCreateHook>,
+    pub(super) on_create: Option<ScriptCreateAdapter>,
     /// Sort key of the `on_create` pass.
     pub(super) on_create_order: i32,
     /// The adapter that calls `on_start`, absent when the declaration does not
     /// implement it.
-    pub(super) on_start: Option<ScriptStartHook>,
+    pub(super) on_start: Option<ScriptStartAdapter>,
     /// Sort key of the `on_start` pass.
     pub(super) on_start_order: i32,
     /// The adapter that calls `on_stop`, absent when the declaration does not
     /// implement it.
-    pub(super) on_stop: Option<ScriptStopHook>,
+    pub(super) on_stop: Option<ScriptStopAdapter>,
     /// Sort key of the `on_stop` pass.
     pub(super) on_stop_order: i32,
     /// The adapter that calls `on_destroy`, absent when the declaration does
     /// not implement it.
-    pub(super) on_destroy: Option<ScriptDestroyHook>,
+    pub(super) on_destroy: Option<ScriptDestroyAdapter>,
     /// Sort key of the `on_destroy` pass.
     pub(super) on_destroy_order: i32,
     /// Whether the script runs while the editor edits as well as while it
@@ -145,11 +146,11 @@ pub(super) struct ScriptRegistration {
 impl World {
     /// Registers a component type the engine runs as a script.
     ///
-    /// Registers `T` as an ordinary component first, then records the hooks
-    /// its `#[script]` declaration states. Registering the same type again
-    /// replaces its record instead of adding a second one, which is what a
-    /// reload does: the arriving image's hook bodies replace the retired
-    /// image's.
+    /// Registers `T` as an ordinary component first, then records the lifecycle
+    /// methods its `#[script]` declaration states. Registering the same type
+    /// again replaces its record instead of adding a second one, which is what
+    /// a reload does: the arriving image's lifecycle method bodies replace the
+    /// retired image's.
     ///
     /// The orders and the edit-mode flag are owned values, so nothing here
     /// points into the artifact's static data after the call. The adapters are
@@ -170,9 +171,9 @@ impl World {
         // a bit to address its column by.
         self.register_component::<T>();
 
-        // Step 2: Build one adapter per hook the declaration implements. Every
-        // closure captures nothing, so it coerces to the function pointer; the
-        // raw pointers are passed again on every call.
+        // Step 2: Build one adapter per lifecycle method the declaration
+        // implements. Every closure captures nothing, so it coerces to the
+        // function pointer; the raw pointers are passed again on every call.
         let declaration = T::DECLARATION;
         let update_adapter = (|storage: &mut ComponentColumns,
                                index: usize,
@@ -191,7 +192,7 @@ impl World {
                     ScriptContext::new(&mut *world_ptr, &mut *commands_ptr, entity);
                 component.on_update(&mut script_context);
             }
-        }) as ScriptUpdateHook;
+        }) as ScriptUpdateAdapter;
         let on_update = declaration.implements_on_update.then_some(update_adapter);
 
         let create_adapter = (|storage: &mut ComponentColumns,
@@ -208,7 +209,7 @@ impl World {
                     ScriptContext::new(&mut *world_ptr, &mut *commands_ptr, entity);
                 component.on_create(&mut script_context, create_info);
             }
-        }) as ScriptCreateHook;
+        }) as ScriptCreateAdapter;
         let on_create = declaration.implements_on_create.then_some(create_adapter);
 
         let start_adapter = (|storage: &mut ComponentColumns,
@@ -225,7 +226,7 @@ impl World {
                     ScriptContext::new(&mut *world_ptr, &mut *commands_ptr, entity);
                 component.on_start(&mut script_context, start_info);
             }
-        }) as ScriptStartHook;
+        }) as ScriptStartAdapter;
         let on_start = declaration.implements_on_start.then_some(start_adapter);
 
         let stop_adapter = (|storage: &mut ComponentColumns,
@@ -242,7 +243,7 @@ impl World {
                     ScriptContext::new(&mut *world_ptr, &mut *commands_ptr, entity);
                 component.on_stop(&mut script_context, stop_info);
             }
-        }) as ScriptStopHook;
+        }) as ScriptStopAdapter;
         let on_stop = declaration.implements_on_stop.then_some(stop_adapter);
 
         let destroy_adapter = (|storage: &mut ComponentColumns,
@@ -259,7 +260,7 @@ impl World {
                     ScriptContext::new(&mut *world_ptr, &mut *commands_ptr, entity);
                 component.on_destroy(&mut script_context, destroy_info);
             }
-        }) as ScriptDestroyHook;
+        }) as ScriptDestroyAdapter;
         let on_destroy = declaration.implements_on_destroy.then_some(destroy_adapter);
 
         // Step 3: Record it under the type's name, and drop the cached update

@@ -394,7 +394,7 @@ impl CommandQueue {
         // Step 2: Drain the queue and dispatch each command to its executor.
         //
         // The commands are taken out first, so the executors can hand this
-        // queue to a destruction hook: a component that is about to be removed
+        // queue to `on_destroy`: a component that is about to be removed
         // tells its script, and that script may queue. What it queues lands in
         // the now-empty queue and runs at the frame's next flush point.
         let mut commands = std::mem::take(&mut self.commands);
@@ -676,9 +676,9 @@ impl CommandQueue {
     ///
     /// Moves the entity to a new archetype without the component, or destroys
     /// it when no components are left. It runs the same code as the eager
-    /// removal, with the script hooks the queued path owes: a script that is
-    /// running stops, and the component is told it is being destroyed, both
-    /// before the row goes.
+    /// removal, with the script lifecycle methods the queued path owes: a
+    /// script that is running stops, and the component is told it is being
+    /// destroyed, both before the row goes.
     fn execute_remove_component(
         world: &mut World,
         commands: &mut CommandQueue,

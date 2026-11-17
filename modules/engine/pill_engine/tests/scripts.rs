@@ -3,10 +3,10 @@
 //! # Responsibilities
 //!
 //! - Prove a declared script reaches the engine from the artifact entry point,
-//!   with the hooks and orders its declaration states.
+//!   with the lifecycle methods and orders its declaration states.
 //! - Prove the update pass runs the declared types in `#[order(n)]` order
 //!   rather than in registration order.
-//! - Prove a block that declares no hook at all is a legal script.
+//! - Prove a block that declares no lifecycle method at all is a legal script.
 //!
 //! # Design
 //!
@@ -81,7 +81,8 @@ impl ScriptComponent for EditModeDeclaredScript {
     }
 }
 
-/// Declares a script with no hook at all, which every default covers.
+/// Declares a script with no lifecycle method at all, which every default
+/// covers.
 #[derive(Debug)]
 struct SilentDeclaredScript;
 
@@ -90,15 +91,15 @@ impl Component for SilentDeclaredScript {}
 #[script]
 impl ScriptComponent for SilentDeclaredScript {}
 
-/// The attribute writes the hooks, their orders and the edit-mode flag the
-/// block states into the declaration the engine reads.
+/// The attribute writes the lifecycle methods, their orders and the edit-mode
+/// flag the block states into the declaration the engine reads.
 #[test]
 fn a_declaration_records_what_the_block_states() {
     let late = <LateDeclaredScript as ScriptDeclaration>::DECLARATION;
     assert!(late.implements_on_update, "the block defines on_update");
     assert!(
         !late.implements_on_start,
-        "a hook the block leaves out is not declared"
+        "a lifecycle method the block leaves out is not declared"
     );
     assert_eq!(
         late.on_update_order, 20,
@@ -115,7 +116,7 @@ fn a_declaration_records_what_the_block_states() {
 }
 
 /// The artifact entry point registers every declared script, including one
-/// whose block defines no hook, and reports success.
+/// whose block defines no lifecycle method, and reports success.
 #[test]
 fn declared_scripts_are_registered_by_the_entry_point() {
     let mut engine = Engine::new();

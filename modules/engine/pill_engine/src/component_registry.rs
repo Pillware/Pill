@@ -492,7 +492,7 @@ impl Drop for ValueTypeLayoutScope {
 /// 3. every system the artifact declares is registered, in `(phase, order,
 ///    name)` order;
 /// 4. every script component the artifact declares is registered, with the
-///    hooks its `#[script]` declaration states;
+///    lifecycle methods its `#[script]` declaration states;
 /// 5. every resource the artifact declares is declared, so a `register` half
 ///    that stores a value finds the declaration already in place;
 /// 6. every asset type the artifact declares is declared, so the import

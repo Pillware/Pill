@@ -135,14 +135,14 @@ pill_engine::pill_value_type! {
     }
 }
 
-/// A script the editor suites watch run: one log line per lifecycle hook.
+/// A script the editor suites watch run: one log line per lifecycle method.
 ///
 /// The probe is the end-to-end observation point for the script lifecycle: a
 /// suite plays the scene, removes the component, adds it back and stops, then
-/// reads these lines to check which hook ran, in which order and why. Every
-/// value it logs is an engine-core type, so the probe never learns that an
-/// editor exists, and the entity it prints is the handle the scripted channel
-/// spells.
+/// reads these lines to check which lifecycle method ran, in which order and
+/// why. Every value it logs is an engine-core type, so the probe never learns
+/// that an editor exists, and the entity it prints is the handle the scripted
+/// channel spells.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PillComponent)]
 pub struct LifecycleProbe {

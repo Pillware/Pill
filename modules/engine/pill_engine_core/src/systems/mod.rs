@@ -6,8 +6,8 @@
 //!   function can run as a system ([`system`]).
 //! - Order the frame's systems and decide which of them may run at the same
 //!   time ([`scheduler`]).
-//! - Declare the script hooks and the restricted context they run with
-//!   ([`scripting`]).
+//! - Declare the script lifecycle methods and the restricted context they run
+//!   with ([`scripting`]).
 //!
 //! # Design
 //!
@@ -16,9 +16,10 @@
 //! this group changes no caller - not the facade's glob re-export and not a
 //! `crate::scripting::ScriptContext` path inside the crate.
 //!
-//! [`scripting`] is the hook trait and the context it runs with. The dispatch
-//! that decides when a hook runs walks a world, so it lives beside the world
-//! (the `scripting` module under [`crate::ecs::world`]).
+//! [`scripting`] is the trait that declares the lifecycle methods, and the
+//! context they run with. The dispatch that decides when a lifecycle method
+//! runs walks a world, so it lives beside the world (the `scripting` module
+//! under [`crate::ecs::world`]).
 
 /// Dependency analysis and parallel batch scheduling for system execution.
 pub mod scheduler;

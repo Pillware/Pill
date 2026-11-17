@@ -945,8 +945,9 @@ impl Engine {
         // Step 2: Put every copied resource back, and remove the ones the game
         // inserted: a `Restore` resource with no copy was not there at Play.
         self.world.restore_held_resources();
-        // Step 3: Commands queued by the last play frame - or by a hook of the
-        // stop passes - belong to that world, not to the restored one.
+        // Step 3: Commands queued by the last play frame - or by a lifecycle
+        // method the stop passes called - belong to that world, not to the
+        // restored one.
         self.command_queue.clear();
         // Step 4: The session is over: back to editing, unpaused.
         self.run_mode = RunMode::Editing;

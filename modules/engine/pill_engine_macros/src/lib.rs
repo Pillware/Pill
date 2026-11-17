@@ -12,7 +12,7 @@
 //! - [`pill_value_type!`]: the layout of a foreign value type, with offsets
 //!   taken from the compiler.
 //! - [`script`]: the declaration a script component's implementation states -
-//!   which lifecycle hooks it defines, their orders and its edit-mode flag -
+//!   which lifecycle methods it defines, their orders and its edit-mode flag -
 //!   plus the descriptor the artifact entry point registers the script from.
 //! - [`pill_module`] / [`pill_project`]: the loadable-artifact exports
 //!   (`pill_module_init`, `pill_module_abi_version`, the descriptor copies, the
@@ -2530,15 +2530,16 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// Declares a script component, so the engine registers its lifecycle hooks
+/// Declares a script component, so the engine registers its lifecycle methods
 /// without a call.
 ///
 /// The attribute goes on the `impl ScriptComponent for ...` block. It reads
-/// which hooks the block defines, each hook's `#[order(n)]`, and whether the
-/// script also runs while the editor edits, and turns all of it into the
-/// declaration the engine takes the hooks from. The artifact entry point
-/// registers every declared script before its own `register` and `init` run,
-/// for a first load, every reload and a statically linked build alike.
+/// which lifecycle methods the block defines, each lifecycle method's
+/// `#[order(n)]`, and whether the script also runs while the editor edits, and
+/// turns all of it into the declaration the engine takes the lifecycle methods
+/// from. The artifact entry point registers every declared script before its
+/// own `register` and `init` run, for a first load, every reload and a
+/// statically linked build alike.
 ///
 /// ```ignore
 /// #[script]
@@ -2560,10 +2561,10 @@ pub fn system(attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// - `edit_mode` - the script also runs while the editor edits, not only while
 ///   the game plays.
 ///
-/// Every hook takes its own `#[order(n)]` marker on its method, default `0`.
+/// Every lifecycle method takes its own `#[order(n)]` marker, default `0`.
 /// Lower values run first within the same pass, and equal values run in type
-/// name order. An `#[order]` on a method that is not one of the five hooks is
-/// refused, because nothing would read it.
+/// name order. An `#[order]` on a method that is not one of the five lifecycle
+/// methods is refused, because nothing would read it.
 ///
 /// A script component cannot be written without this attribute: the trait
 /// requires a declaration that only the attribute implements, so leaving it
@@ -2614,10 +2615,10 @@ pub fn script(attribute: TokenStream, item: TokenStream) -> TokenStream {
         .into();
     }
 
-    // Step 3: Record which hooks the block defines and the `#[order(n)]` each
-    // one carries, then strip those markers so the emitted block holds only
-    // what the trait declares.
-    let mut hooks = ScriptHookOrders::default();
+    // Step 3: Record which lifecycle methods the block defines and the
+    // `#[order(n)]` each one carries, then strip those markers so the emitted
+    // block holds only what the trait declares.
+    let mut lifecycle_methods = LifecycleMethodOrders::default();
     for item in &mut item_impl.items {
         let syn::ImplItem::Fn(method) = item else {
             continue;
@@ -2628,14 +2629,14 @@ pub fn script(attribute: TokenStream, item: TokenStream) -> TokenStream {
             .iter()
             .filter(|attribute| attribute.path().is_ident("order"))
             .count();
-        let Some(order_slot) = hooks.order_slot_mut(&method_name) else {
+        let Some(order_slot) = lifecycle_methods.order_slot_mut(&method_name) else {
             if order_attributes > 0 {
                 return syn::Error::new_spanned(
                     &method.sig.ident,
                     format!(
-                        "`#[order(n)]` applies to a script hook; `{method_name}` is \
-                         not one (expected `on_create`, `on_start`, `on_update`, \
-                         `on_stop` or `on_destroy`)"
+                        "`#[order(n)]` applies to a script lifecycle method; \
+                         `{method_name}` is not one (expected `on_create`, \
+                         `on_start`, `on_update`, `on_stop` or `on_destroy`)"
                     ),
                 )
                 .to_compile_error()
@@ -2644,9 +2645,12 @@ pub fn script(attribute: TokenStream, item: TokenStream) -> TokenStream {
             continue;
         };
         if order_attributes > 1 {
-            return syn::Error::new_spanned(&method.sig.ident, "a hook takes one `#[order(n)]`")
-                .to_compile_error()
-                .into();
+            return syn::Error::new_spanned(
+                &method.sig.ident,
+                "a lifecycle method takes one `#[order(n)]`",
+            )
+            .to_compile_error()
+            .into();
         }
         let order = match method
             .attrs
@@ -2660,7 +2664,8 @@ pub fn script(attribute: TokenStream, item: TokenStream) -> TokenStream {
                 },
                 Err(error) => return error.to_compile_error().into(),
             },
-            // A hook without the marker still counts: it runs in order 0.
+            // A lifecycle method without the marker still counts: it runs in
+            // order 0.
             None => 0,
         };
         *order_slot = Some(order);
@@ -2670,7 +2675,7 @@ pub fn script(attribute: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     // Step 4: Emit the block unchanged, the registration helper and the
-    // declaration the engine reads the hooks from.
+    // declaration the engine reads the lifecycle methods from.
     let Some(type_ident) = self_type_ident(&item_impl.self_ty) else {
         return syn::Error::new_spanned(
             &item_impl.self_ty,
@@ -2681,16 +2686,16 @@ pub fn script(attribute: TokenStream, item: TokenStream) -> TokenStream {
     };
     let self_ty = &item_impl.self_ty;
     let register_ident = format_ident!("__pill_script_register_{}", type_ident);
-    let implements_on_create = hooks.on_create.is_some();
-    let implements_on_start = hooks.on_start.is_some();
-    let implements_on_update = hooks.on_update.is_some();
-    let implements_on_stop = hooks.on_stop.is_some();
-    let implements_on_destroy = hooks.on_destroy.is_some();
-    let on_create_order = hooks.on_create.unwrap_or(0);
-    let on_start_order = hooks.on_start.unwrap_or(0);
-    let on_update_order = hooks.on_update.unwrap_or(0);
-    let on_stop_order = hooks.on_stop.unwrap_or(0);
-    let on_destroy_order = hooks.on_destroy.unwrap_or(0);
+    let implements_on_create = lifecycle_methods.on_create.is_some();
+    let implements_on_start = lifecycle_methods.on_start.is_some();
+    let implements_on_update = lifecycle_methods.on_update.is_some();
+    let implements_on_stop = lifecycle_methods.on_stop.is_some();
+    let implements_on_destroy = lifecycle_methods.on_destroy.is_some();
+    let on_create_order = lifecycle_methods.on_create.unwrap_or(0);
+    let on_start_order = lifecycle_methods.on_start.unwrap_or(0);
+    let on_update_order = lifecycle_methods.on_update.unwrap_or(0);
+    let on_stop_order = lifecycle_methods.on_stop.unwrap_or(0);
+    let on_destroy_order = lifecycle_methods.on_destroy.unwrap_or(0);
 
     let expanded = quote! {
         #item_impl
@@ -2729,10 +2734,10 @@ pub fn script(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// The hooks one `#[script]` block declares, each with its order when the
-/// block defines it.
+/// The lifecycle methods one `#[script]` block declares, each with its order
+/// when the block defines it.
 #[derive(Default)]
-struct ScriptHookOrders {
+struct LifecycleMethodOrders {
     /// The `on_create` order, or `None` when the block does not define it.
     on_create: Option<i32>,
     /// The `on_start` order, or `None` when the block does not define it.
@@ -2745,9 +2750,9 @@ struct ScriptHookOrders {
     on_destroy: Option<i32>,
 }
 
-impl ScriptHookOrders {
-    /// The slot for the hook called `method_name`, or `None` when the name is
-    /// not a hook.
+impl LifecycleMethodOrders {
+    /// The slot for the lifecycle method called `method_name`, or `None` when
+    /// the name is not a lifecycle method.
     fn order_slot_mut(&mut self, method_name: &str) -> Option<&mut Option<i32>> {
         match method_name {
             "on_create" => Some(&mut self.on_create),

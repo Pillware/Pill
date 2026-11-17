@@ -124,9 +124,9 @@ pub mod services;
 /// crate-root paths through the re-exports below.
 pub mod settings;
 
-/// The systems group: how a function becomes a system, how the frame orders
-/// and batches those systems, and the script hooks. Its modules keep their old
-/// crate-root paths through the re-exports below.
+/// The systems group: how a function becomes a system, how the frame orders and
+/// batches those systems, and the script lifecycle methods. Its modules keep
+/// their old crate-root paths through the re-exports below.
 pub mod systems;
 
 // =============================================================================
