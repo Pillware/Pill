@@ -114,6 +114,14 @@ HOOK_ELEMENT_TOKEN = "[test] hook element-selection"
 HOOK_COMMAND_ADD_COMPONENT_TOKEN = "[test] hook command add-component"
 HOOK_COMMAND_SELECTION_TOKEN = "[test] hook command selection"
 
+# A project's own editor crate: the lines its proving crate and the host print.
+PROJECT_HOOK_REGISTERED_TOKEN = "[test] project hook registered"
+PROJECT_HOOK_TOKEN = "[test] project hook field-edit-after"
+PROJECT_EDITOR_LOADED_TOKEN = "the project's editor crate loaded"
+PROJECT_EDITOR_FAILED_TOKEN = "the project's editor crate failed to load"
+PROJECT_EDITOR_CASCADE_TOKEN = "queuing its editor crate's reload"
+PROJECT_EDITOR_RELOADED_TOKEN = "project editor crate reload processed"
+
 # The lifecycle probe the scene project seeds: one line per script hook, each
 # carrying the cause it was called with and the entity it ran on.
 PROBE_CREATE_TOKEN = "[probe] create"

@@ -33,6 +33,10 @@ from core.editor_log_tokens import (
     HOOK_SCENE_TOKEN,
     HOOK_SELECTION_TOKEN,
     HOOK_TOOL_TOKEN,
+    PROJECT_EDITOR_CASCADE_TOKEN,
+    PROJECT_EDITOR_LOADED_TOKEN,
+    PROJECT_EDITOR_RELOADED_TOKEN,
+    PROJECT_HOOK_TOKEN,
     PROJECT_RELOAD_TOKEN,
 )
 from core.editor_session import EditorSession
@@ -42,6 +46,7 @@ from editor_step_support import print_ok
 
 # The project this area runs, beside the other test projects.
 API_PROJECT = REPOSITORY_ROOT / "devops" / "tests" / "projects" / "editor_api"
+API_PROJECT_LIB = API_PROJECT / "src" / "lib.rs"
 
 # The crate the reload step edits: an edit to it is what re-runs `register`,
 # so the step proves the callbacks were rebound rather than replaced.
@@ -292,7 +297,11 @@ def _drive_api(session: EditorSession) -> None:
     # Step 11: a project reload rebinds every callback without doubling one.
     _reload_rebinds(session)
 
-    # Step 12: a new scene reaches the scene callback, and leaves the area
+    # Step 12: the project's own editor crate loads, hears an edit and reloads
+    # with its project.
+    _project_editor_crate(session)
+
+    # Step 13: a new scene reaches the scene callback, and leaves the area
     # last because it clears the world.
     begin = session.length()
     session.send("scene new")
@@ -347,6 +356,41 @@ def _reload_rebinds(session: EditorSession) -> None:
     afters = len(re.findall(re.escape(HOOK_FIELD_AFTER_TOKEN), session.read_since(begin)))
     assert afters == 1, "the edit reached {} callbacks, not one".format(afters)
     print_ok("the reload rebound every callback and none fired twice")
+
+
+def _project_editor_crate(session: EditorSession) -> None:
+    """The project's own editor crate loads, hears an edit and reloads with
+    its project."""
+    session.wait_for_match(re.escape(PROJECT_EDITOR_LOADED_TOKEN), 60, "the project editor load")
+    entity = probe_entity(session)
+    begin = session.length()
+    session.send(f"edit set {entity} {PROBE_COMPONENT} accumulated_time 2.5")
+    session.wait(re.escape(PROJECT_HOOK_TOKEN), 30, "the project editor callback", begin)
+    print_ok("the project's own editor crate hears the editor")
+
+    # A project reload reloads the crate, and one edit then fires it once: two
+    # lines would mean the previous image is still registered.
+    with API_PROJECT_LIB.open("r", encoding="utf-8", newline="") as file:
+        original = file.read()
+    begin = session.length()
+    session.edit_source(API_PROJECT_LIB, original + "\n// the editor api area's project reload\n")
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PROJECT_RELOAD_TOKEN), r'[^\n]*module="editor_api"'
+        ),
+        300,
+        "the project reload",
+        begin,
+    )
+    session.wait(re.escape(PROJECT_EDITOR_CASCADE_TOKEN), 120, "the queued cascade", begin)
+    session.wait(re.escape(PROJECT_EDITOR_RELOADED_TOKEN), 240, "the crate's reload", begin)
+    entity = probe_entity(session)
+    begin = session.length()
+    session.send(f"edit set {entity} {PROBE_COMPONENT} accumulated_time 3.5")
+    session.wait(re.escape(PROJECT_HOOK_TOKEN), 30, "the callback after the project reload", begin)
+    fired = len(re.findall(re.escape(PROJECT_HOOK_TOKEN), session.read_since(begin)))
+    assert fired == 1, "the project editor crate fired {} times after the reload".format(fired)
+    print_ok("a project reload reloaded its editor crate and none fired twice")
 
 
 def _area_entry(context: StepContext) -> None:
