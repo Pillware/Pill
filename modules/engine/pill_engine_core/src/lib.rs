@@ -204,7 +204,8 @@ pub use pill_core::DynamicBuffer;
 pub use reflection::component_field::{
     parse_enum_tag, ComponentFieldError, EnumFieldTag, FieldValue,
 };
-pub use reflection::{component_field, component_registry, type_names};
+pub use reflection::component_fields::{ComponentFieldId, ComponentFields};
+pub use reflection::{component_field, component_fields, component_registry, type_names};
 pub use scene::saved_references::{
     restore_asset_reference, saved_reference, SavedAssetReference, SavedEntityLink,
     SavedEntityLinks, SavedReference,

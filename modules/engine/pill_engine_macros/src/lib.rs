@@ -49,8 +49,9 @@ use syn::{parse_macro_input, spanned::Spanned, DeriveInput, ItemFn};
 /// Turns a component type into its engine registration.
 ///
 /// Generates `impl Component for T`, a descriptor submitted into this
-/// artifact's compile-time registry, and the field layout read by the schema
-/// hash and the C# mirror codegen.
+/// artifact's compile-time registry, the field layout read by the schema hash
+/// and the C# mirror codegen, and a `<Type>Field` enum naming every field in
+/// code (see `pill_engine::ComponentFields`).
 ///
 /// Type-level helpers (`#[pill(...)]` on the type):
 /// - `persistable` - the component survives a reload through schema migration.
@@ -208,7 +209,7 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
     // plus the accessor trampolines that let managed code reach a `Vec` or
     // `String` field's live buffer. An unsupported field type is a compile
     // error here, before the host would have to guess at a mirror.
-    let (declared_layout, layout_reference, field_accessors) =
+    let (declared_layout, layout_reference, field_accessors, field_enum) =
         match component_field_descriptors(&input, ident, LayoutSubject::Component) {
             Ok(field_descriptor_emissions) => field_descriptor_emissions,
             Err(error) => return error.to_compile_error().into(),
@@ -372,6 +373,8 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
         }
         #declared_layout
 
+        #field_enum
+
         #field_accessors
 
         #gizmo_wrapper
@@ -490,7 +493,7 @@ pub fn derive_pill_layout(input: TokenStream) -> TokenStream {
     // A layout-only type emits no accessors. It has no registration that could
     // carry heap-field trampolines.
     match component_field_descriptors(&input, &input.ident, LayoutSubject::LayoutOnly) {
-        Ok((declared_layout, _layout_reference, _accessors)) => declared_layout.into(),
+        Ok((declared_layout, _layout_reference, _accessors, _field_enum)) => declared_layout.into(),
         Err(error) => error.to_compile_error().into(),
     }
 }
@@ -556,6 +559,11 @@ impl LayoutSubject {
         matches!(self, Self::Component)
     }
 
+    /// Whether the inherently named field enum is emitted.
+    fn emits_field_enum(self) -> bool {
+        matches!(self, Self::Component)
+    }
+
     /// Whether the inherent `FIELD_LAYOUT` const and the `ComponentLayout`
     /// impl are emitted.
     fn emits_layout_consts(self) -> bool {
@@ -564,13 +572,14 @@ impl LayoutSubject {
 }
 
 /// Emit a `static` carrying one [`ComponentFieldDescriptor`] per named field,
-/// the expression that names it, and the heap-field accessor machinery when
-/// the struct declares container fields.
+/// the expression that names it, the heap-field accessor machinery when the
+/// struct declares container fields, and the field enum when the subject is a
+/// component.
 ///
 /// `self_type` is the path every offset is taken through: the derived type's
 /// own name for the derives, or the declared path when `pill_value_type!`
 /// describes a foreign type. `layout_subject` says which derive is asking, and
-/// that is what decides container fields, accessors and consts.
+/// that is what decides container fields, accessors, consts and the enum.
 ///
 /// Enums, unions, unit structs and tuple structs have no named fields to mirror
 /// and produce an empty layout.
@@ -582,6 +591,7 @@ fn component_field_descriptors(
     proc_macro2::TokenStream,
     proc_macro2::TokenStream,
     proc_macro2::TokenStream,
+    proc_macro2::TokenStream,
 )> {
     let type_ident = &input.ident;
     // Step 1: Any type without named fields has nothing to mirror, so it gets
@@ -589,12 +599,31 @@ fn component_field_descriptors(
     let named_fields = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
             syn::Fields::Named(fields) => &fields.named,
-            _ => return Ok((empty_field_layout(type_ident), quote! { &[] }, quote! {})),
+            _ => {
+                return Ok((
+                    empty_field_layout(type_ident),
+                    quote! { &[] },
+                    quote! {},
+                    quote! {},
+                ))
+            }
         },
-        _ => return Ok((empty_field_layout(type_ident), quote! { &[] }, quote! {})),
+        _ => {
+            return Ok((
+                empty_field_layout(type_ident),
+                quote! { &[] },
+                quote! {},
+                quote! {},
+            ))
+        }
     };
     if named_fields.is_empty() {
-        return Ok((empty_field_layout(type_ident), quote! { &[] }, quote! {}));
+        return Ok((
+            empty_field_layout(type_ident),
+            quote! { &[] },
+            quote! {},
+            quote! {},
+        ));
     }
 
     let type_name = quote! {
@@ -603,8 +632,9 @@ fn component_field_descriptors(
 
     let mut field_descriptor_expressions = Vec::with_capacity(named_fields.len());
     let mut accessor_emissions: Vec<proc_macro2::TokenStream> = Vec::new();
-    // Step 2: Build one descriptor per field, and one accessor set per
-    // container field.
+    let mut field_enum_variants: Vec<FieldEnumVariant> = Vec::new();
+    // Step 2: Build one descriptor per field, one accessor set per container
+    // field, and the field enum's variants for a component.
     for field in named_fields {
         let field_ident = field.ident.as_ref().expect("named field has an identifier");
         let field_type = &field.ty;
@@ -612,6 +642,29 @@ fn component_field_descriptors(
         let tag = field_type_tag(field_type, layout_subject.allows_containers())?;
         let type_tag = &tag.tag_text;
         let decorators = parse_field_decorators(&field.attrs)?;
+        // The enum is built from this same walk, so a variant's name and tag
+        // cannot disagree with the descriptor beside it.
+        if layout_subject.emits_field_enum() {
+            let variant_ident = field_variant_ident(field_ident)?;
+            if let Some(known) = field_enum_variants
+                .iter()
+                .find(|known| known.variant_ident == variant_ident)
+            {
+                return Err(syn::Error::new(
+                    field_ident.span(),
+                    format!(
+                        "`{}` and `{}` both generate the field enum variant `{}`; \
+                         rename one field",
+                        known.field_name, field_name, variant_ident
+                    ),
+                ));
+            }
+            field_enum_variants.push(FieldEnumVariant {
+                variant_ident,
+                field_name: field_name.clone(),
+                tag_text: tag.tag_text.clone(),
+            });
+        }
         // An array length may be a literal or a `const` path. Both work in a
         // const context, so the count is emitted as an expression instead of
         // being parsed here.
@@ -649,7 +702,14 @@ fn component_field_descriptors(
         }
     }
 
-    // Step 3: Put the descriptors behind one `static`, and add the layout
+    // Step 3: Name the fields in code, when the subject is a component. The
+    // enum is the code-side view of the descriptors just built.
+    let field_enum = if layout_subject.emits_field_enum() {
+        field_enum_emission(type_ident, &field_enum_variants)
+    } else {
+        quote! {}
+    };
+    // Step 4: Put the descriptors behind one `static`, and add the layout
     // consts when this subject may carry them.
     let static_name = format_ident!("__PILL_FIELD_LAYOUT_{}", type_ident);
     // A foreign type can carry neither an inherent const nor the
@@ -674,7 +734,140 @@ fn component_field_descriptors(
         declared_layout,
         quote! { #static_name },
         quote! { #(#accessor_emissions)* },
+        field_enum,
     ))
+}
+
+/// One variant of a component's generated field enum: the variant, the field
+/// name it answers to, and the tag its descriptor carries.
+struct FieldEnumVariant {
+    /// The enum variant's identifier.
+    variant_ident: syn::Ident,
+    /// The field's Rust name, as its descriptor spells it.
+    field_name: String,
+    /// The field's type tag, as its descriptor carries it.
+    tag_text: String,
+}
+
+/// The variant name for one field: the field's name in PascalCase.
+///
+/// A raw identifier (`r#type`) keeps the name after its prefix. Two fields can
+/// map to one variant (`foo_bar` and `foo__bar`), which the caller refuses
+/// rather than generating an enum that cannot compile.
+fn field_variant_ident(field_ident: &syn::Ident) -> syn::Result<syn::Ident> {
+    let field_text = field_ident.to_string();
+    let field_name = field_text.strip_prefix("r#").unwrap_or(&field_text);
+    let mut variant_name = String::new();
+    for segment in field_name.split('_').filter(|segment| !segment.is_empty()) {
+        let mut characters = segment.chars();
+        if let Some(first) = characters.next() {
+            variant_name.extend(first.to_uppercase());
+            variant_name.extend(characters);
+        }
+    }
+    if variant_name.is_empty() {
+        return Err(syn::Error::new(
+            field_ident.span(),
+            "the generated field enum needs a field name with letters in it",
+        ));
+    }
+    Ok(format_ident!("{}", variant_name, span = field_ident.span()))
+}
+
+/// The `<Type>Field` enum and the `ComponentFields` link that names it from
+/// the component type.
+///
+/// The enum's inherent methods answer from its trait impl, so a direct call, a
+/// generic bound and the generated code all read one list.
+fn field_enum_emission(
+    type_ident: &syn::Ident,
+    variants: &[FieldEnumVariant],
+) -> proc_macro2::TokenStream {
+    let enum_ident = format_ident!("{}Field", type_ident);
+    let variant_ident_storage: Vec<&syn::Ident> = variants
+        .iter()
+        .map(|variant| &variant.variant_ident)
+        .collect();
+    let field_name_storage: Vec<&str> = variants
+        .iter()
+        .map(|variant| variant.field_name.as_str())
+        .collect();
+    let tag_text_storage: Vec<&str> = variants
+        .iter()
+        .map(|variant| variant.tag_text.as_str())
+        .collect();
+    // Every list is spliced more than once (the enum, the name table and the
+    // trait impl), so the macro reads them through slices whose iterators
+    // clone.
+    let variant_idents = variant_ident_storage.as_slice();
+    let field_names = field_name_storage.as_slice();
+    let tag_texts = tag_text_storage.as_slice();
+    quote! {
+        /// The fields of this component, named in code; generated by
+        /// `#[derive(PillComponent)]`.
+        ///
+        /// One variant per field, in declaration order. `name` is the name the
+        /// field layer and the editor's commands spell, and `from_name` maps
+        /// that name back to the variant.
+        #[allow(dead_code)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum #enum_ident {
+            #(
+                #[doc = ::core::concat!("The `", #field_names, "` field.")]
+                #variant_idents,
+            )*
+        }
+
+        #[allow(dead_code)]
+        impl #enum_ident {
+            /// Every field, in the order the type declares them.
+            pub const ALL: &'static [#enum_ident] =
+                &[ #( Self::#variant_idents ),* ];
+
+            /// The field's Rust name, as the field layer spells it.
+            pub fn name(self) -> &'static str {
+                <Self as ::pill_engine::ComponentFieldId>::name(self)
+            }
+
+            /// The field `name` names, or `None` when the type has no such
+            /// field.
+            pub fn from_name(name: &str) -> ::core::option::Option<Self> {
+                <Self as ::pill_engine::ComponentFieldId>::from_name(name)
+            }
+
+            /// The field's registered type tag, as its descriptor reports it.
+            pub fn value_tag(self) -> &'static str {
+                <Self as ::pill_engine::ComponentFieldId>::value_tag(self)
+            }
+        }
+
+        impl ::pill_engine::ComponentFieldId for #enum_ident {
+            const ALL: &'static [Self] = &[ #( Self::#variant_idents ),* ];
+
+            fn name(self) -> &'static str {
+                match self {
+                    #( Self::#variant_idents => #field_names, )*
+                }
+            }
+
+            fn from_name(name: &str) -> ::core::option::Option<Self> {
+                match name {
+                    #( #field_names => ::core::option::Option::Some(Self::#variant_idents), )*
+                    _ => ::core::option::Option::None,
+                }
+            }
+
+            fn value_tag(self) -> &'static str {
+                match self {
+                    #( Self::#variant_idents => #tag_texts, )*
+                }
+            }
+        }
+
+        impl ::pill_engine::ComponentFields for #type_ident {
+            type Field = #enum_ident;
+        }
+    }
 }
 
 /// The argument list of a decorator written with parentheses, e.g.
@@ -1734,7 +1927,7 @@ pub fn derive_pill_mirror(input: TokenStream) -> TokenStream {
     // Value types cross the boundary as plain data, so a heap-owning field has
     // no meaning here. Nothing gives managed code a live row to reach a buffer
     // through, and the mirror is copied by value.
-    let (declared_layout, layout_reference, _accessors) =
+    let (declared_layout, layout_reference, _accessors, _field_enum) =
         match component_field_descriptors(&input, ident, LayoutSubject::MirroredValue) {
             Ok(field_descriptor_emissions) => field_descriptor_emissions,
             Err(error) => return error.to_compile_error().into(),
@@ -1816,14 +2009,15 @@ pub fn pill_value_type(input: TokenStream) -> TokenStream {
     // A foreign type can carry neither the inherent `FIELD_LAYOUT` const nor
     // the trait impl, so the emitter skips them and the submit below is the
     // only registration output.
-    let (declared_layout, layout_reference, _accessors) = match component_field_descriptors(
-        &synthetic,
-        &declaration.type_path,
-        LayoutSubject::ForeignValue,
-    ) {
-        Ok(field_descriptor_emissions) => field_descriptor_emissions,
-        Err(error) => return error.to_compile_error().into(),
-    };
+    let (declared_layout, layout_reference, _accessors, _field_enum) =
+        match component_field_descriptors(
+            &synthetic,
+            &declaration.type_path,
+            LayoutSubject::ForeignValue,
+        ) {
+            Ok(field_descriptor_emissions) => field_descriptor_emissions,
+            Err(error) => return error.to_compile_error().into(),
+        };
 
     // Joined the same way the field tag is, so the descriptor name matches
     // what a component field spelled with this path produces.

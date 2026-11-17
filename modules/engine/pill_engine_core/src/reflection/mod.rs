@@ -23,6 +23,10 @@
 /// Generic type-erased component field access for editor-style tools.
 pub mod component_field;
 
+/// The generated field enums: a component's fields named in code, and the
+/// traits that connect an enum to its component type.
+pub mod component_fields;
+
 /// Compile-time field layouts of components and value types, emitted by the
 /// derive macros.
 pub mod component_registry;
