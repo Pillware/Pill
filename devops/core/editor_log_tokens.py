@@ -93,6 +93,27 @@ PLAY_RESTORED_TAB_TOKEN = "[editor] play restored the tab"
 PLAY_RESTORED_CAMERAS_TOKEN = "[editor] play restored the cameras"
 PLAY_DUMP_TOKEN = "[test] play"
 
+# The editor API: the module's registration, one line per event a callback
+# received, the state a field callback read, the two verdicts and the commands
+# a callback queued.
+HOOK_REGISTERED_TOKEN = "[test] hook registered"
+HOOK_EXECUTABLE_REGISTERED_TOKEN = "[editor] hook registered"
+HOOK_REFUSED_TOKEN = "[editor] hook refused"
+HOOK_FIELD_BEFORE_TOKEN = "[test] hook field-edit-before"
+HOOK_FIELD_AFTER_TOKEN = "[test] hook field-edit-after"
+HOOK_FOLLOW_UP_TOKEN = "[test] hook follow-up"
+HOOK_COMPONENT_TOKEN = "[test] hook component-edit"
+HOOK_ENTITY_TOKEN = "[test] hook entity-edit"
+HOOK_ASSET_TOKEN = "[test] hook asset-edit"
+HOOK_HISTORY_TOKEN = "[test] hook history-edit"
+HOOK_SELECTION_TOKEN = "[test] hook selection-changed"
+HOOK_SCENE_TOKEN = "[test] hook scene-edit"
+HOOK_PLAY_TOKEN = "[test] hook play-edit"
+HOOK_TOOL_TOKEN = "[test] hook tool-activated"
+HOOK_ELEMENT_TOKEN = "[test] hook element-selection"
+HOOK_COMMAND_ADD_COMPONENT_TOKEN = "[test] hook command add-component"
+HOOK_COMMAND_SELECTION_TOKEN = "[test] hook command selection"
+
 # The lifecycle probe the scene project seeds: one line per script hook, each
 # carrying the cause it was called with and the entity it ran on.
 PROBE_CREATE_TOKEN = "[probe] create"

@@ -60,6 +60,7 @@ TEST_PROJECT_NAMES = (
     "native",
     "scene",
     "managed",
+    "editor_api",
 )
 
 # The official examples, the tracked counterpart of the local checkout above:

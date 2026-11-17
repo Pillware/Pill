@@ -1,0 +1,18 @@
+[package]
+name = "editor_api"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# `cdylib` for a hot-reloading build, where the host loads this as a DLL.
+# `rlib` so a shipping build can link the project straight into the binary.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pill_engine = { path = "../../../../modules/engine/pill_engine" }
+# The master renderer's data only - components, assets, pipelines. The GPU
+# renderer is the host's, so this project does not carry wgpu in its own DLL.
+pill_master_renderer_data = { path = "../../../../modules/extensions/pill_master_renderer/pill_master_renderer_data", default-features = false }
+serde = { version = "1", features = ["derive"] }
+
+[features]

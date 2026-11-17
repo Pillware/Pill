@@ -1,0 +1,34 @@
+[package]
+name = "pill_test_editor"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The crate's build script emits the function-address inventory the host uses
+# to patch any function, annotated or not.
+[build-dependencies]
+pill_hot_scan = { path = "../../../hosting/pill_hot_scan" }
+
+[lib]
+# Named after the crate rather than `lib.rs`, like every extension crate.
+path = "src/pill_test_editor.rs"
+# `rlib` only: the artifact an editor host loads is built by the generated
+# `host_module_pill_test_editor` wrapper in this folder's `generated/`.
+crate-type = ["rlib"]
+
+[package.metadata.pill]
+# The editor frontend this crate is written against, which is what the host's
+# editor-frontend filter matches.
+editor_frontend = "egui"
+
+# The test extension's editor part: it answers the editor API's events, reads
+# the editor state and changes the editor through the API's command builders.
+# Nothing here is loaded by a game build; the `pill_test` crate beside it is
+# what a game links.
+[dependencies]
+pill_core = { path = "../../../engine/pill_core" }
+pill_engine = { path = "../../../engine/pill_engine" }
+pill_editor_core = { path = "../../../editor/pill_editor_core" }
+pill_test = { path = "../pill_test", default-features = false }
