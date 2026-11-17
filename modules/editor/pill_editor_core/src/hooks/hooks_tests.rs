@@ -1055,3 +1055,319 @@ fn an_asset_edit_fires_with_its_kind_and_path() {
         "the delete reports its kind and the file it removed"
     );
 }
+
+// =============================================================================
+// Commands from callbacks
+// =============================================================================
+
+/// Adds [`HookExtra`] whenever the probe's `value` is written.
+fn add_extra_after(context: &mut HookContext<'_>, edit: &FieldEdit<'_, HookProbe>) {
+    if edit.field == HookProbeField::Value {
+        context.queue_add_component(edit.entity, &extra_component());
+    }
+}
+
+#[test]
+fn an_after_hook_that_adds_a_component_joins_the_step() {
+    let mut engine = probe_engine();
+    engine
+        .world_mut()
+        .register_component_with_layout::<HookExtra>(HookExtra::FIELD_LAYOUT);
+    let entity = spawn_probe(&mut engine);
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        FieldEditHookRequest::after::<HookProbe>("test.hooks", add_extra_after),
+    );
+
+    write_field(&mut engine, entity, "value", 5.0);
+    assert!(
+        engine.world().get_component::<HookExtra>(entity).is_some(),
+        "the builder's component is on the entity"
+    );
+    assert_eq!(
+        undo_depth(&engine),
+        1,
+        "the component joins the step of the edit that caused it"
+    );
+
+    undo(&mut engine);
+    assert_eq!(read_field(&engine, entity, "value"), 0.0);
+    assert!(
+        engine.world().get_component::<HookExtra>(entity).is_none(),
+        "one undo removes the component with the edit that added it"
+    );
+}
+
+/// Rotates the gizmo whenever the probe's `value` is written.
+fn rotate_after(context: &mut HookContext<'_>, edit: &FieldEdit<'_, HookProbe>) {
+    if edit.field == HookProbeField::Value {
+        context.queue_gizmo(Some(crate::gizmo::GizmoMode::Rotate), None, Some(true));
+    }
+}
+
+/// The gizmo settings the world holds.
+fn gizmo_settings(engine: &Engine) -> crate::gizmo::GizmoSettings {
+    engine
+        .world()
+        .get_resource::<crate::gizmo::GizmoState>()
+        .copied()
+        .expect("the tool change registered the gizmo state")
+        .settings
+}
+
+#[test]
+fn a_queued_gizmo_change_records_no_step() {
+    let mut engine = probe_engine();
+    let entity = spawn_probe(&mut engine);
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        FieldEditHookRequest::after::<HookProbe>("test.hooks", rotate_after),
+    );
+
+    write_field(&mut engine, entity, "value", 5.0);
+    let settings = gizmo_settings(&engine);
+    assert_eq!(settings.mode, crate::gizmo::GizmoMode::Rotate);
+    assert!(settings.snap, "both settings the builder named applied");
+    assert_eq!(
+        undo_depth(&engine),
+        1,
+        "the tool change adds no step of its own"
+    );
+
+    undo(&mut engine);
+    assert_eq!(read_field(&engine, entity, "value"), 0.0);
+    assert_eq!(
+        gizmo_settings(&engine).mode,
+        crate::gizmo::GizmoMode::Rotate,
+        "undo does not walk a tool choice back"
+    );
+}
+
+/// The entity a selection hook selects.
+static SELECTION_TARGET: Mutex<Option<Entity>> = Mutex::new(None);
+
+/// Selects [`SELECTION_TARGET`] whenever the selection moves.
+fn select_the_target(context: &mut HookContext<'_>, _edit: &SelectionChanged) {
+    let Some(target) = *SELECTION_TARGET
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    else {
+        return;
+    };
+    if context.selection().entities().len() == 1 && context.selection().primary() == Some(target) {
+        return;
+    }
+    context.queue_selection(vec![target]);
+}
+
+/// Replaces the shared selection's entities, keeping everything else.
+fn set_selection(engine: &mut Engine, entities: Vec<Entity>) {
+    if engine.world().get_resource::<EditorSelection>().is_none() {
+        engine
+            .world_mut()
+            .insert_resource(EditorSelection::default());
+    }
+    if let Some(selection) = engine.world_mut().get_resource_mut::<EditorSelection>() {
+        selection.set_entities(entities);
+    }
+}
+
+/// The shared selection's primary entity.
+fn selected_entity(engine: &Engine) -> Option<Entity> {
+    engine
+        .world()
+        .get_resource::<EditorSelection>()
+        .and_then(EditorSelection::primary)
+}
+
+#[test]
+fn a_selection_hook_that_selects_another_entity_is_one_step() {
+    *SELECTION_TARGET
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    let mut engine = probe_engine();
+    let first = spawn_probe(&mut engine);
+    let second = spawn_probe(&mut engine);
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::selection_changed("test.hooks", select_the_target),
+    );
+
+    // The first drain records the empty selection silently, so the click below
+    // is the change the hook answers.
+    drain::apply_pending(&mut engine, 0);
+    *SELECTION_TARGET
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(second);
+
+    set_selection(&mut engine, vec![first]);
+    drain::apply_pending(&mut engine, 0);
+    assert_eq!(
+        selected_entity(&engine),
+        Some(second),
+        "the hook's selection change applied"
+    );
+    assert_eq!(undo_depth(&engine), 1, "the hook's selection is one step");
+
+    undo(&mut engine);
+    assert_eq!(
+        selected_entity(&engine),
+        Some(first),
+        "undo puts the previous selection back, and the replay drops the hook's own"
+    );
+}
+
+#[test]
+fn every_builder_queues_the_editors_own_command() {
+    use crate::hooks::context::HookQueue;
+    use crate::hooks::FieldEditCause;
+
+    let mut engine = probe_engine();
+    let entity = spawn_probe(&mut engine);
+    let selection = EditorSelection::default();
+    let mut queue = HookQueue::default();
+    let mut notices = Vec::new();
+    {
+        let mut context = HookContext::new(
+            engine.world_mut(),
+            &selection,
+            &mut queue,
+            &mut notices,
+            FieldEditCause::Authored,
+            "test.hooks",
+        );
+        context.queue_add_component(entity, &extra_component());
+        context.queue_remove_component(entity, &probe_component());
+        context.queue_create_entity();
+        context.queue_destroy_entity(entity);
+        context.queue_selection(vec![entity]);
+        context.queue_gizmo(Some(crate::gizmo::GizmoMode::Rotate), None, Some(true));
+    }
+
+    let (edits, source) = queue.take_edits();
+    assert_eq!(
+        source.as_deref(),
+        Some("test.hooks"),
+        "the queue names the callback that queued the edits"
+    );
+    let (add, _label) = crate::inspector::component_add(entity, &extra_component());
+    let (remove, _label) = crate::inspector::component_remove(entity, &probe_component());
+    let (create, _label) = crate::entities::entity_create();
+    let (destroy, _label) = crate::entities::entity_delete(entity, None);
+    let mut expected = vec![add, remove, create];
+    expected.extend(destroy);
+    expected.push(crate::editor_state::EditorCommand::SetSelection {
+        entities: vec![entity],
+        asset: None,
+    });
+    assert_eq!(
+        edits, expected,
+        "each builder queues the command the editor's own row queues"
+    );
+    assert_eq!(
+        queue.take_controls(),
+        vec![crate::editor_state::EditorCommand::SetGizmoTool {
+            mode: Some(crate::gizmo::GizmoMode::Rotate),
+            space: None,
+            snap: Some(true),
+        }],
+        "a gizmo change is a control, not an edit"
+    );
+}
+
+#[test]
+fn a_replay_drops_what_the_builders_queue() {
+    let mut engine = probe_engine();
+    engine
+        .world_mut()
+        .register_component_with_layout::<HookExtra>(HookExtra::FIELD_LAYOUT);
+    let entity = spawn_probe(&mut engine);
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        FieldEditHookRequest::after::<HookProbe>("test.hooks", add_extra_after),
+    );
+
+    write_field(&mut engine, entity, "value", 5.0);
+    assert!(engine.world().get_component::<HookExtra>(entity).is_some());
+
+    // The undo replays the step, so the callback runs again and queues the
+    // same component; nothing it queues may apply on top of the step.
+    undo(&mut engine);
+    assert_eq!(read_field(&engine, entity, "value"), 0.0);
+    assert!(
+        engine.world().get_component::<HookExtra>(entity).is_none(),
+        "a builder's command queued during a replay is dropped"
+    );
+}
+
+#[test]
+fn every_builder_is_a_no_op_under_a_replay_and_reports_once() {
+    use crate::hooks::context::HookQueue;
+    use crate::hooks::FieldEditCause;
+
+    let mut engine = probe_engine();
+    let entity = spawn_probe(&mut engine);
+    let selection = EditorSelection::default();
+    let mut queue = HookQueue::default();
+    let mut notices = Vec::new();
+    {
+        let mut context = HookContext::new(
+            engine.world_mut(),
+            &selection,
+            &mut queue,
+            &mut notices,
+            FieldEditCause::HistoryRestored,
+            "test.hooks",
+        );
+
+        context.queue_add_component(entity, &extra_component());
+        context.queue_remove_component(entity, &probe_component());
+        context.queue_create_entity();
+        context.queue_destroy_entity(entity);
+        context.queue_selection(vec![entity]);
+        context.queue_gizmo(Some(crate::gizmo::GizmoMode::Rotate), None, Some(true));
+        context.queue(EditorCommand::SetSelection {
+            entities: Vec::new(),
+            asset: None,
+        });
+    }
+
+    let (edits, source) = queue.take_edits();
+    assert!(edits.is_empty(), "no edit survives a replay: {edits:?}");
+    assert!(source.is_none(), "nothing was attributed to a callback");
+    assert!(
+        queue.take_controls().is_empty(),
+        "no control survives a replay either"
+    );
+    assert!(
+        queue.drop_reported(),
+        "the drop is reported once for the session"
+    );
+
+    // The same session keeps dropping without reporting again, and nothing
+    // accumulates for a later round.
+    {
+        let mut context = HookContext::new(
+            engine.world_mut(),
+            &selection,
+            &mut queue,
+            &mut notices,
+            FieldEditCause::HistoryRestored,
+            "test.hooks",
+        );
+        context.queue_gizmo(None, Some(crate::gizmo::GizmoSpace::Local), None);
+    }
+    assert!(
+        queue.take_controls().is_empty(),
+        "a control queued after the first drop is still dropped"
+    );
+    assert!(queue.drop_reported());
+}

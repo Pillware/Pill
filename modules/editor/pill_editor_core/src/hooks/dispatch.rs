@@ -9,6 +9,8 @@
 //!   dropping the batch on a refusal.
 //! - Run the after-callbacks per applied command
 //!   ([`HookSession::after_field_command`]) and hold the commands they queue.
+//! - Turn what a callback queued outside a command into the batches it needs
+//!   ([`HookSession::take_queued_batches`]).
 //! - Publish the notices the callbacks posted ([`HookNotices`]).
 //!
 //! # Design
@@ -26,8 +28,9 @@ use pill_core::telemetry::telemetry_target;
 use pill_engine::{Engine, Entity, World};
 
 // Current crate
+use crate::commands::PendingCommandBatch;
 use crate::editor_state::{CommandObserver, EditorCommand, EditorSelection};
-use crate::hooks::context::{HookContext, HookNotice, HookNotices};
+use crate::hooks::context::{HookContext, HookNotice, HookNotices, HookQueue};
 use crate::hooks::events::{
     AssetEdit, AssetEditKind, ComponentEdit, EntityEdit, FieldEditCause, FieldEditPhase,
     FieldEditView, HistoryEdit, HookVerdict, PlayEdit, SceneEdit,
@@ -52,9 +55,10 @@ macro_rules! call_callbacks {
             let mut context = HookContext::new(
                 $engine.world_mut(),
                 &selection,
-                &mut $session.followups,
+                &mut $session.queue,
                 &mut $session.notices,
                 $session.cause,
+                hook.source.as_str(),
             );
             callback(&mut context, $payload);
         }
@@ -71,8 +75,8 @@ pub struct HookSession {
     live: Vec<LiveHook>,
     /// The notices the callbacks posted this drain.
     notices: Vec<HookNotice>,
-    /// The commands the callbacks queued for the current command.
-    followups: Vec<EditorCommand>,
+    /// The commands the callbacks queued.
+    queue: HookQueue,
     /// What made the current batch happen.
     cause: FieldEditCause,
     /// The interaction phase of the current batch.
@@ -89,7 +93,7 @@ impl HookSession {
         Self {
             live,
             notices: Vec::new(),
-            followups: Vec::new(),
+            queue: HookQueue::default(),
             cause: FieldEditCause::Authored,
             phase: FieldEditPhase::Committed,
         }
@@ -136,9 +140,10 @@ impl HookSession {
                 let mut context = HookContext::new(
                     engine.world_mut(),
                     &selection,
-                    &mut self.followups,
+                    &mut self.queue,
                     &mut self.notices,
                     cause,
+                    hook.source.as_str(),
                 );
                 // SAFETY: the request constructors store a callback and its
                 // applier as one pair, and the registry copies both together.
@@ -208,18 +213,22 @@ impl HookSession {
         ) else {
             return;
         };
-        let mut context = HookContext::new(
-            engine.world_mut(),
-            &selection,
-            &mut self.followups,
-            &mut self.notices,
-            self.cause,
-        );
         for hook in self
             .live
             .iter()
             .filter(|hook| hook.event == HookEvent::FieldEditAfter)
         {
+            // A context per callback, so a queued command is attributed to the
+            // callback that queued it.
+            let selection = selection_copy(engine.world());
+            let mut context = HookContext::new(
+                engine.world_mut(),
+                &selection,
+                &mut self.queue,
+                &mut self.notices,
+                self.cause,
+                hook.source.as_str(),
+            );
             // SAFETY: the request constructors store a callback and its
             // applier as one pair, and the registry copies both together.
             unsafe {
@@ -437,6 +446,48 @@ impl HookSession {
         }
     }
 
+    /// Takes what the callbacks queued outside a command, as the batches it
+    /// needs.
+    ///
+    /// A callback answering a diff (the selection, the tool or the element
+    /// slot) runs after every batch of the drain, so its edits have no batch to
+    /// join: they become one recorded step labelled after the callback that
+    /// queued them, `hook {source}`. Its controls (a tool, a space, snapping)
+    /// never record, so they run as one unrecorded batch of their own, exactly
+    /// what the toolbox's rows queue.
+    pub(crate) fn take_queued_batches(&mut self) -> Vec<PendingCommandBatch> {
+        let mut batches = Vec::new();
+        let controls = self.queue.take_controls();
+        if !controls.is_empty() {
+            batches.push(PendingCommandBatch {
+                commands: controls,
+                record: false,
+                label: String::new(),
+                coalesce_key: None,
+                replay: None,
+                replay_label: None,
+                phase: FieldEditPhase::Committed,
+            });
+        }
+        let (commands, source) = self.queue.take_edits();
+        if !commands.is_empty() {
+            let label = match source {
+                Some(source) => format!("hook {source}"),
+                None => "hook".to_string(),
+            };
+            batches.push(PendingCommandBatch {
+                commands,
+                record: true,
+                label,
+                coalesce_key: None,
+                replay: None,
+                replay_label: None,
+                phase: FieldEditPhase::Committed,
+            });
+        }
+        batches
+    }
+
     /// Fold this drain's notices into the world's queue for the executable.
     pub(crate) fn publish_notices(&mut self, world: &mut World) {
         if self.notices.is_empty() {
@@ -464,7 +515,7 @@ impl CommandObserver for HookSession {
     }
 
     fn take_followups(&mut self) -> Vec<EditorCommand> {
-        std::mem::take(&mut self.followups)
+        self.queue.take_edits().0
     }
 }
 
