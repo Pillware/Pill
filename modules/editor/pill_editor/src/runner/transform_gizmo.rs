@@ -252,18 +252,25 @@ impl EditorWindow {
 
     /// Switches the gizmo's mode; the keyboard shortcuts and the scripted
     /// `gizmo` verb call this.
+    ///
+    /// The switch is queued as the same [`EditorCommand::SetGizmoTool`] the
+    /// toolbox rows, the viewport menu and the inspector queue, so the editor
+    /// API's tool event has one source and the shortcut cannot bypass it.
     pub(super) fn set_gizmo_tool(&mut self, mode: GizmoMode) {
         let world = self.host.host_mut().engine_mut().world_mut();
-        if world.get_resource::<GizmoState>().is_none() {
-            world.insert_resource(GizmoState::default());
-        }
-        let Some(gizmo_state) = world.get_resource_mut::<GizmoState>() else {
-            return;
-        };
-        if gizmo_state.settings.mode == mode {
+        let current_mode = world
+            .get_resource::<GizmoState>()
+            .map(|state| state.settings.mode);
+        if current_mode == Some(mode) {
             return;
         }
-        gizmo_state.settings.mode = mode;
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push(vec![EditorCommand::SetGizmoTool {
+                mode: Some(mode),
+                space: None,
+                snap: None,
+            }]);
+        }
         info!(
             target: telemetry_target::EDITOR,
             mode = gizmo_mode_name(mode),

@@ -84,6 +84,7 @@ use pill_editor_core::style::{
 };
 use pill_editor_core::systems;
 use pill_editor_core::tools;
+use pill_editor_core::viewport::EditorViewportState;
 use pill_engine_core::common_components::TRANSFORM_SHARED_NAME;
 use pill_engine_core::debug_draw::{DebugDraw, DebugStyle};
 use pill_engine_core::gizmos::{GizmoRegistry, GizmoSelection};

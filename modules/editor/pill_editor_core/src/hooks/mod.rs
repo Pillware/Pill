@@ -39,15 +39,22 @@ pub mod events;
 pub mod registry;
 /// The queue a module registers its callbacks through.
 pub mod requests;
+/// The last reported selection and tool state, for the diff-driven events.
+pub mod watch;
 
 pub use context::{HookContext, HookNotice, HookNotices};
 pub use dispatch::HookSession;
-pub use events::{FieldEdit, FieldEditCause, FieldEditPhase, FieldEditView, HookVerdict};
+pub use events::{
+    AssetEdit, AssetEditKind, ComponentEdit, ElementSelectionChanged, EntityEdit, FieldEdit,
+    FieldEditCause, FieldEditPhase, FieldEditView, HistoryEdit, HookVerdict, PlayEdit, SceneEdit,
+    SelectionChanged, SelectionSnapshot, ToolActivatedEdit,
+};
 pub use registry::{
     EditorHookRegistry, FieldEditAfterHook, FieldEditBeforeHook, HookCallback, HookEvent,
     HookRegistration,
 };
 pub use requests::{EditorHookRequests, FieldEditHookRequest, HookRequest};
+pub use watch::HookWatch;
 
 #[cfg(test)]
 mod hooks_tests;

@@ -28,6 +28,35 @@ use crate::entity::Entity;
 use crate::world::World;
 
 // =============================================================================
+// The typed accessors
+// =============================================================================
+
+/// Each accessor answers its own variant and `None` for another, which is what
+/// lets a callback read a value without matching the variant itself.
+#[test]
+fn the_field_value_accessors_answer_their_own_variant_only() {
+    let float = FieldValue::F32(1.5);
+    assert_eq!(float.as_f32(), Some(1.5));
+    assert_eq!(float.as_u32(), None);
+    assert_eq!(float.as_bool(), None);
+    assert!(float.as_array().is_none());
+
+    let integer = FieldValue::U32(7);
+    assert_eq!(integer.as_u32(), Some(7));
+    assert_eq!(integer.as_f32(), None);
+
+    let flag = FieldValue::Bool(true);
+    assert_eq!(flag.as_bool(), Some(true));
+    assert_eq!(flag.as_u32(), None);
+
+    let array = FieldValue::Array(vec![FieldValue::U32(2), FieldValue::U32(3)]);
+    let elements = array.as_array().expect("an array field reads back");
+    assert_eq!(elements.len(), 2);
+    assert_eq!(elements[1].as_u32(), Some(3));
+    assert_eq!(array.as_f32(), None);
+}
+
+// =============================================================================
 // Probe components and their declared layouts
 // =============================================================================
 

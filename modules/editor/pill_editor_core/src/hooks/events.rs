@@ -228,3 +228,140 @@ pub(crate) unsafe fn apply_field_edit_after<T: ComponentFields>(
     };
     callback(context, &edit);
 }
+
+// =============================================================================
+// The other editor events
+// =============================================================================
+
+/// One component added to or removed from an entity.
+#[derive(Clone, Copy, Debug)]
+pub struct ComponentEdit<'a> {
+    /// The entity the component belongs to.
+    pub entity: Entity,
+    /// The component's registered type name.
+    pub component: &'a str,
+    /// `true` when it was added, `false` when it was removed.
+    pub added: bool,
+}
+
+/// One entity created or destroyed.
+#[derive(Clone, Copy, Debug)]
+pub struct EntityEdit {
+    /// The entity, as the command applied it.
+    pub entity: Entity,
+    /// `true` when it was created, `false` when it was destroyed.
+    pub created: bool,
+}
+
+/// What an asset edit did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssetEditKind {
+    /// A standalone asset file was created.
+    Created,
+    /// An asset file was deleted.
+    Deleted,
+    /// An asset file was moved or renamed.
+    Moved,
+    /// A `.meta` sidecar was written.
+    MetaWritten,
+    /// An asset's settings or standalone document were written.
+    SettingsWritten,
+    /// Files were imported into the asset directory.
+    Imported,
+}
+
+impl AssetEditKind {
+    /// The kind's wire name, as the log lines spell it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Deleted => "deleted",
+            Self::Moved => "moved",
+            Self::MetaWritten => "meta-written",
+            Self::SettingsWritten => "settings-written",
+            Self::Imported => "imported",
+        }
+    }
+}
+
+/// One asset-file edit.
+#[derive(Clone, Copy, Debug)]
+pub struct AssetEdit<'a> {
+    /// What the edit did.
+    pub kind: AssetEditKind,
+    /// The asset key involved: the file's path, or the import's destination.
+    pub path: &'a str,
+}
+
+/// One walk through the undo history.
+#[derive(Clone, Copy, Debug)]
+pub struct HistoryEdit<'a> {
+    /// `"undo"` or `"redo"`.
+    pub direction: &'a str,
+    /// The step's label, as the history recorded it.
+    pub label: &'a str,
+}
+
+/// The selection's four slots at one moment.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SelectionSnapshot {
+    /// The selected entities, the primary last.
+    pub entities: Vec<Entity>,
+    /// The selected asset's key.
+    pub asset: Option<String>,
+    /// The selected resource's stable name.
+    pub resource: Option<String>,
+    /// The element slot's kind, empty when nothing is selected.
+    pub element_kind: String,
+    /// The entity the selected elements belong to.
+    pub element_owner: Option<Entity>,
+    /// The selected element ids.
+    pub elements: Vec<u64>,
+}
+
+/// One selection change, whatever made it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SelectionChanged {
+    /// The selection before the change.
+    pub previous: SelectionSnapshot,
+    /// The selection after it.
+    pub current: SelectionSnapshot,
+}
+
+/// One scene document change.
+#[derive(Clone, Copy, Debug)]
+pub struct SceneEdit<'a> {
+    /// `true` for an opened file, `false` for a new empty scene.
+    pub loaded: bool,
+    /// The opened file's path, when one was opened.
+    pub path: Option<&'a str>,
+}
+
+/// One play-mode change.
+#[derive(Clone, Copy, Debug)]
+pub struct PlayEdit {
+    /// `true` when a session started, `false` when it stopped.
+    pub playing: bool,
+}
+
+/// One active-tool change.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToolActivatedEdit {
+    /// The tool that was active, when one was.
+    pub previous: Option<String>,
+    /// The tool that is active now, when one is.
+    pub current: Option<String>,
+}
+
+/// One element-selection change.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ElementSelectionChanged {
+    /// The entity the elements belong to now.
+    pub entity: Option<Entity>,
+    /// The kind the elements belong to.
+    pub kind: String,
+    /// The previously selected element ids.
+    pub previous: Vec<u64>,
+    /// The element ids selected now.
+    pub current: Vec<u64>,
+}

@@ -129,6 +129,10 @@ pub(super) struct EditorWindow {
     /// The overlay chips' rectangles the shell reported last frame, in
     /// logical points. A click inside one belongs to the UI, not the scene.
     pub(super) overlay_regions: Vec<ShellRect>,
+    /// The scene view rectangles the shell reported last frame, in logical
+    /// points, one slot per view. The published viewport state names the
+    /// active view's entry.
+    pub(super) scene_rects: Vec<Option<ShellRect>>,
     /// The gizmo drag in flight, when one is.
     pub(super) gizmo_drag: Option<GizmoDrag>,
     /// The gizmo geometry drawn this frame. The hover test runs against these
@@ -708,6 +712,7 @@ impl EditorWindow {
             press_pick: None,
             outlined_entities: Vec::new(),
             overlay_regions: Vec::new(),
+            scene_rects: Vec::new(),
             gizmo_drag: None,
             gizmo_geometry: GizmoGeometry::default(),
             element_handles: Vec::new(),

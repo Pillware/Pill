@@ -161,6 +161,8 @@ pub mod toolbox;
 /// The tool layer: the modes a scene view can be in, the registry that holds
 /// them and which one is active.
 pub mod tools;
+/// The viewport state a callback reads.
+pub mod viewport;
 
 // =============================================================================
 // Test Support

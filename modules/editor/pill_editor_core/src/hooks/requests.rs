@@ -19,7 +19,10 @@
 use pill_engine::{ComponentFields, Resource};
 
 // Current crate
-use crate::hooks::events::HookVerdict;
+use crate::hooks::events::{
+    AssetEdit, ComponentEdit, ElementSelectionChanged, EntityEdit, HistoryEdit, HookVerdict,
+    PlayEdit, SceneEdit, SelectionChanged, ToolActivatedEdit,
+};
 use crate::hooks::registry::{FieldEditAfterHook, FieldEditBeforeHook, HookCallback, HookEvent};
 use crate::hooks::{FieldEdit, HookContext};
 
@@ -55,6 +58,15 @@ impl HookRequest {
     /// The erased callback.
     pub fn callback(&self) -> HookCallback {
         self.callback
+    }
+
+    /// One request whose callback is already a plain function pointer.
+    fn plain(source: &'static str, callback: HookCallback) -> HookRequest {
+        HookRequest {
+            source,
+            event: callback.event(),
+            callback,
+        }
     }
 }
 
@@ -146,5 +158,82 @@ impl FieldEditHookRequest {
             event: HookEvent::FieldEditAfter,
             callback: HookCallback::FieldEditAfter(FieldEditAfterHook::of::<T>(callback)),
         }
+    }
+}
+
+/// The plain-event constructors an `_editor` crate calls.
+///
+/// Each event carries one payload and the callback is a plain function
+/// pointer, so nothing has to be monomorphized on the caller's side.
+impl HookRequest {
+    /// Builds a component add/remove callback.
+    pub fn component_edit(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &ComponentEdit<'_>),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::ComponentEdit(callback))
+    }
+    /// Builds an entity create/destroy callback.
+    pub fn entity_edit(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &EntityEdit),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::EntityEdit(callback))
+    }
+
+    /// Builds an asset-file edit callback.
+    pub fn asset_edit(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &AssetEdit<'_>),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::AssetEdit(callback))
+    }
+
+    /// Builds an undo/redo callback.
+    pub fn history_edit(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &HistoryEdit<'_>),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::HistoryEdit(callback))
+    }
+
+    /// Builds a selection-change callback.
+    pub fn selection_changed(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &SelectionChanged),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::SelectionChanged(callback))
+    }
+
+    /// Builds a scene open/new callback.
+    pub fn scene_edit(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &SceneEdit<'_>),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::SceneEdit(callback))
+    }
+
+    /// Builds a play/stop callback.
+    pub fn play_edit(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &PlayEdit),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::PlayEdit(callback))
+    }
+
+    /// Builds an active-tool callback.
+    pub fn tool_activated(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &ToolActivatedEdit),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::ToolActivated(callback))
+    }
+
+    /// Builds an element-selection callback.
+    pub fn element_selection(
+        source: &'static str,
+        callback: fn(&mut HookContext<'_>, &ElementSelectionChanged),
+    ) -> HookRequest {
+        HookRequest::plain(source, HookCallback::ElementSelectionChanged(callback))
     }
 }

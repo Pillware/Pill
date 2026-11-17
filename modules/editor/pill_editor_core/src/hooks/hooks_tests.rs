@@ -30,8 +30,9 @@ use crate::drain::{self, HistoryDirection};
 use crate::editor_state::{EditorCommand, EditorSelection};
 use crate::history::CommandHistory;
 use crate::hooks::{
-    EditorHookRegistry, FieldEdit, FieldEditHookRequest, HookContext, HookNotices, HookRequest,
-    HookVerdict,
+    AssetEdit, ComponentEdit, EditorHookRegistry, EntityEdit, FieldEdit, FieldEditHookRequest,
+    HistoryEdit, HookContext, HookNotices, HookRequest, HookVerdict, PlayEdit, SelectionChanged,
+    ToolActivatedEdit,
 };
 use crate::panels::ModuleLiveness;
 
@@ -516,4 +517,541 @@ fn a_request_queued_by_a_module_binds_and_fires() {
 
     write_field(&mut engine, entity, "value", 6.0);
     assert_eq!(REQUESTS_QUEUE_CALLS.load(Ordering::SeqCst), 1);
+}
+
+// =============================================================================
+// Component, entity and history events
+// =============================================================================
+
+/// A second component, so a test can add one the probe entity does not carry.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, PillComponent)]
+struct HookExtra {
+    /// The only field, unused.
+    amount: f32,
+}
+
+/// The name the world registered [`HookExtra`] under.
+fn extra_component() -> String {
+    pill_engine::component::ComponentRegistry::registered_name::<HookExtra>()
+}
+
+/// The component events a test observed.
+static COMPONENT_EVENTS: Mutex<Vec<(String, bool)>> = Mutex::new(Vec::new());
+
+fn record_component_edit(_context: &mut HookContext<'_>, edit: &ComponentEdit<'_>) {
+    COMPONENT_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((edit.component.to_string(), edit.added));
+}
+
+/// The entity events a test observed.
+static ENTITY_EVENTS: Mutex<Vec<(Entity, bool)>> = Mutex::new(Vec::new());
+
+fn record_entity_edit(_context: &mut HookContext<'_>, edit: &EntityEdit) {
+    ENTITY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((edit.entity, edit.created));
+}
+
+/// Queues one unrecorded batch and applies it through the drain.
+fn queue_plain(engine: &mut Engine, commands: Vec<EditorCommand>) {
+    let pending = engine
+        .world_mut()
+        .get_resource_mut::<PendingEditorCommands>()
+        .expect("the command queue exists");
+    pending.push(commands);
+    drain::apply_pending(engine, 0);
+}
+
+#[test]
+fn the_component_and_entity_events_name_what_changed() {
+    COMPONENT_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    ENTITY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    let mut engine = probe_engine();
+    engine
+        .world_mut()
+        .register_component_with_layout::<HookExtra>(HookExtra::FIELD_LAYOUT);
+    let entity = spawn_probe(&mut engine);
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::component_edit("test.hooks", record_component_edit),
+    );
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::entity_edit("test.hooks", record_entity_edit),
+    );
+
+    queue_plain(
+        &mut engine,
+        vec![EditorCommand::AddComponent {
+            entity,
+            component: extra_component(),
+        }],
+    );
+    queue_plain(
+        &mut engine,
+        vec![EditorCommand::RemoveComponent {
+            entity,
+            component: extra_component(),
+        }],
+    );
+    let component_events = COMPONENT_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(
+        component_events.as_slice(),
+        [(extra_component(), true), (extra_component(), false)],
+        "one event per add and one per remove, naming the component"
+    );
+    drop(component_events);
+
+    queue_plain(
+        &mut engine,
+        vec![EditorCommand::CreateEntity {
+            components: Vec::new(),
+        }],
+    );
+    queue_plain(&mut engine, vec![EditorCommand::DestroyEntity { entity }]);
+    let entity_events = ENTITY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(entity_events.len(), 2);
+    assert!(
+        entity_events[0].1,
+        "the create reports an entity that now exists"
+    );
+    assert_eq!(
+        entity_events[1],
+        (entity, false),
+        "the destroy names the entity it removed"
+    );
+}
+
+/// The history events a test observed.
+static HISTORY_EVENTS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+fn record_history_edit(_context: &mut HookContext<'_>, edit: &HistoryEdit<'_>) {
+    HISTORY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((edit.direction.to_string(), edit.label.to_string()));
+}
+
+#[test]
+fn the_history_event_names_the_direction_and_the_step() {
+    HISTORY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    let mut engine = probe_engine();
+    let entity = spawn_probe(&mut engine);
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::history_edit("test.hooks", record_history_edit),
+    );
+
+    write_field(&mut engine, entity, "value", 5.0);
+    undo(&mut engine);
+    let events = HISTORY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(
+        events.as_slice(),
+        [("undo".to_string(), "test write".to_string())],
+        "one event for the walk, naming the step it replayed"
+    );
+}
+
+// =============================================================================
+// Selection and tool events
+// =============================================================================
+
+/// The selection events a test observed, as `(previous, current)` counts.
+static SELECTION_EVENTS: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
+
+fn record_selection_changed(_context: &mut HookContext<'_>, edit: &SelectionChanged) {
+    SELECTION_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((edit.previous.entities.len(), edit.current.entities.len()));
+}
+
+#[test]
+fn the_selection_event_fires_once_per_change() {
+    SELECTION_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    let mut engine = probe_engine();
+    let entity = spawn_probe(&mut engine);
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::selection_changed("test.hooks", record_selection_changed),
+    );
+
+    // The first drain records the state it found; a session that starts with
+    // nothing selected must not report a change nobody made.
+    drain::apply_pending(&mut engine, 0);
+    assert!(SELECTION_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .is_empty());
+
+    let mut selection = EditorSelection::default();
+    selection.set_entities(vec![entity]);
+    engine.world_mut().insert_resource(selection);
+    drain::apply_pending(&mut engine, 0);
+    drain::apply_pending(&mut engine, 0);
+
+    let events = SELECTION_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(
+        events.as_slice(),
+        [(0, 1)],
+        "one event for the change and none for the drain after it"
+    );
+}
+
+/// The tool events a test observed.
+static TOOL_EVENTS: Mutex<Vec<(Option<String>, Option<String>)>> = Mutex::new(Vec::new());
+
+fn record_tool_activated(_context: &mut HookContext<'_>, edit: &ToolActivatedEdit) {
+    TOOL_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((edit.previous.clone(), edit.current.clone()));
+}
+
+#[test]
+fn the_tool_event_fires_when_a_command_switches_the_tool() {
+    TOOL_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    let mut engine = probe_engine();
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::tool_activated("test.hooks", record_tool_activated),
+    );
+
+    drain::apply_pending(&mut engine, 0);
+    queue_plain(
+        &mut engine,
+        vec![EditorCommand::SetGizmoTool {
+            mode: Some(crate::gizmo::GizmoMode::Rotate),
+            space: None,
+            snap: None,
+        }],
+    );
+
+    let events = TOOL_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(
+        events.as_slice(),
+        [(None, Some("rotate".to_string()))],
+        "the tool command is what moves the tool, and it fires one event"
+    );
+}
+
+// =============================================================================
+// Play and asset events
+// =============================================================================
+
+/// The play events a test observed.
+static PLAY_EVENTS: Mutex<Vec<bool>> = Mutex::new(Vec::new());
+
+fn record_play_edit(_context: &mut HookContext<'_>, edit: &PlayEdit) {
+    PLAY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(edit.playing);
+}
+
+#[test]
+fn play_and_stop_fire_their_events() {
+    PLAY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    let mut engine = probe_engine();
+    // An engine plays unless the editor puts it into editing, so the test
+    // starts where the editor's engine starts.
+    engine.set_run_mode(pill_engine::RunMode::Editing);
+    spawn_probe(&mut engine);
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::play_edit("test.hooks", record_play_edit),
+    );
+
+    queue_plain(&mut engine, vec![EditorCommand::EnterPlay]);
+    assert_eq!(
+        engine.run_mode(),
+        pill_engine::RunMode::Playing,
+        "the start command puts the engine into play"
+    );
+    queue_plain(&mut engine, vec![EditorCommand::ExitPlay]);
+    assert_eq!(
+        engine.run_mode(),
+        pill_engine::RunMode::Editing,
+        "the stop command puts the engine back into editing"
+    );
+
+    let events = PLAY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(
+        events.as_slice(),
+        [true, false],
+        "the start reports the run mode the session reached, the stop reports editing"
+    );
+}
+
+/// The play events a refused start observed.
+static REFUSED_PLAY_EVENTS: Mutex<Vec<bool>> = Mutex::new(Vec::new());
+
+fn record_refused_play(_context: &mut HookContext<'_>, edit: &PlayEdit) {
+    REFUSED_PLAY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(edit.playing);
+}
+
+#[test]
+fn a_refused_play_fires_no_started_event() {
+    /// A component that owns heap data and is not `Clone`, so the world
+    /// cannot be copied into a session.
+    #[derive(Debug)]
+    struct UncopyableProbe {
+        /// The heap data that makes the type uncopyable.
+        #[allow(dead_code)]
+        buffer: Vec<u32>,
+    }
+    impl pill_engine::Component for UncopyableProbe {}
+
+    REFUSED_PLAY_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    let mut engine = probe_engine();
+    engine.set_run_mode(pill_engine::RunMode::Editing);
+    engine.world_mut().register_component::<UncopyableProbe>();
+    engine
+        .world_mut()
+        .create_entity()
+        .with(UncopyableProbe { buffer: vec![1] })
+        .build()
+        .expect("the uncopyable entity builds");
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::play_edit("test.hooks", record_refused_play),
+    );
+
+    queue_plain(&mut engine, vec![EditorCommand::EnterPlay]);
+
+    assert_eq!(
+        engine.run_mode(),
+        pill_engine::RunMode::Editing,
+        "a refused play leaves the editor editing"
+    );
+    assert!(
+        REFUSED_PLAY_EVENTS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty(),
+        "a session that never started must not report a start"
+    );
+}
+
+// =============================================================================
+// The editor state a callback reads
+// =============================================================================
+
+/// One callback's reading of the editor state.
+type StateRead = (
+    String,
+    String,
+    bool,
+    Option<String>,
+    Option<usize>,
+    Option<(f32, f32)>,
+    Option<Entity>,
+);
+
+/// The state reads a test observed.
+static STATE_READS: Mutex<Vec<StateRead>> = Mutex::new(Vec::new());
+
+fn record_editor_state(context: &mut HookContext<'_>, _edit: &ComponentEdit<'_>) {
+    let gizmo = context
+        .gizmo()
+        .map(|state| state.settings)
+        .unwrap_or_default();
+    let viewport = context.viewport();
+    STATE_READS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((
+            format!("{:?}", gizmo.mode),
+            format!("{:?}", gizmo.space),
+            gizmo.snap,
+            context.active_tool(),
+            viewport.active_view,
+            viewport.pointer_in_view,
+            context.selection().primary(),
+        ));
+}
+
+#[test]
+fn a_hook_reads_the_editor_state() {
+    STATE_READS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    let mut engine = probe_engine();
+    engine
+        .world_mut()
+        .register_component_with_layout::<HookExtra>(HookExtra::FIELD_LAYOUT);
+    let entity = spawn_probe(&mut engine);
+    {
+        // The tool and the gizmo as the toolbox leaves them after two clicks.
+        let world = engine.world_mut();
+        crate::tools::activate_tool(world, Some("rotate")).expect("rotate is a built-in");
+        if let Some(state) = world.get_resource_mut::<crate::gizmo::GizmoState>() {
+            state.settings.mode = crate::gizmo::GizmoMode::Rotate;
+            state.settings.space = crate::gizmo::GizmoSpace::Local;
+            state.settings.snap = true;
+        }
+        let mut selection = EditorSelection::default();
+        selection.set_entities(vec![entity]);
+        world.insert_resource(selection);
+    }
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::component_edit("test.hooks", record_editor_state),
+    );
+
+    // The first call runs before any executable published a viewport.
+    queue_plain(
+        &mut engine,
+        vec![EditorCommand::AddComponent {
+            entity,
+            component: extra_component(),
+        }],
+    );
+    engine
+        .world_mut()
+        .insert_resource(crate::viewport::EditorViewportState {
+            active_view: Some(1),
+            pointer_in_view: Some((10.0, 20.0)),
+            view_rect: None,
+            view_count: 2,
+        });
+    queue_plain(
+        &mut engine,
+        vec![EditorCommand::RemoveComponent {
+            entity,
+            component: extra_component(),
+        }],
+    );
+
+    let reads = STATE_READS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(reads.len(), 2);
+    assert_eq!(
+        reads[0],
+        (
+            "Rotate".to_string(),
+            "Local".to_string(),
+            true,
+            Some("rotate".to_string()),
+            None,
+            None,
+            Some(entity),
+        ),
+        "the gizmo, the tool, the selection and the empty viewport posture reach the callback"
+    );
+    assert_eq!(
+        reads[1].4,
+        Some(1),
+        "the published viewport names the active view"
+    );
+    assert_eq!(reads[1].5, Some((10.0, 20.0)));
+}
+
+/// The asset events a test observed.
+static ASSET_EVENTS: Mutex<Vec<(crate::hooks::AssetEditKind, String)>> = Mutex::new(Vec::new());
+
+fn record_asset_edit(_context: &mut HookContext<'_>, edit: &AssetEdit<'_>) {
+    ASSET_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((edit.kind, edit.path.to_string()));
+}
+
+#[test]
+fn an_asset_edit_fires_with_its_kind_and_path() {
+    ASSET_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    let _mount = crate::test_support::asset_mount_lock();
+    let asset_directory =
+        std::env::temp_dir().join(format!("pill-editor-hooks-assets-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&asset_directory);
+    std::fs::create_dir_all(&asset_directory).unwrap();
+    std::fs::write(asset_directory.join("plain.material"), b"body").unwrap();
+    pill_engine::asset_store::mount_directory(&asset_directory);
+
+    let mut engine = probe_engine();
+    let marker = ModuleLiveness::new();
+    bind(
+        &mut engine,
+        &marker,
+        HookRequest::asset_edit("test.hooks", record_asset_edit),
+    );
+
+    queue_plain(
+        &mut engine,
+        vec![EditorCommand::DeleteAssetFile {
+            path: "plain.material".to_string(),
+        }],
+    );
+
+    let events = ASSET_EVENTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    assert_eq!(
+        events.as_slice(),
+        [(
+            crate::hooks::AssetEditKind::Deleted,
+            "plain.material".to_string()
+        )],
+        "the delete reports its kind and the file it removed"
+    );
 }

@@ -814,6 +814,9 @@ impl EditorWindow {
         // The chips the shell drew over the viewports, kept for scene click
         // routing: a click inside one belongs to the UI, not the scene.
         self.overlay_regions = overlay_regions;
+        // The viewport rectangles are kept for the viewport state a callback
+        // reads, which is published before the next frame's draw.
+        self.scene_rects = scene_rects;
         // Step 2: log the change when egui starts or stops claiming the
         // pointer or the keyboard.
         if wants_pointer != self.claimed_pointer || wants_keyboard != self.claimed_keyboard {

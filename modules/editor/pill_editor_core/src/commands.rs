@@ -1174,6 +1174,7 @@ impl PendingEditorCommands {
             label: String::new(),
             coalesce_key: None,
             replay: None,
+            replay_label: None,
             phase: FieldEditPhase::Committed,
         });
     }
@@ -1183,14 +1184,21 @@ impl PendingEditorCommands {
     /// The batch keeps `direction` because the step is popped before its
     /// commands run. When a replay fails, the executable puts the step back on
     /// the side it came from; without that, the history would claim an edit
-    /// that never happened.
-    pub fn push_replay(&mut self, commands: Vec<EditorCommand>, direction: HistoryDirection) {
+    /// that never happened. `label` is the step's own label, which the
+    /// editor API's history callback reports.
+    pub fn push_replay(
+        &mut self,
+        commands: Vec<EditorCommand>,
+        direction: HistoryDirection,
+        label: Option<&str>,
+    ) {
         self.batches.push(PendingCommandBatch {
             commands,
             record: false,
             label: String::new(),
             coalesce_key: None,
             replay: Some(direction),
+            replay_label: label.map(str::to_string),
             phase: FieldEditPhase::Committed,
         });
     }
@@ -1250,6 +1258,7 @@ impl PendingEditorCommands {
             label: label.into(),
             coalesce_key,
             replay: None,
+            replay_label: None,
             phase,
         });
     }
@@ -1269,6 +1278,9 @@ pub struct PendingCommandBatch {
     pub coalesce_key: Option<String>,
     /// The history move this batch replays, when it is one.
     pub replay: Option<HistoryDirection>,
+    /// The label of the history step this batch replays, when the replay
+    /// came from one.
+    pub replay_label: Option<String>,
     /// The interaction phase its field edits report to the editor API's
     /// callbacks.
     pub phase: FieldEditPhase,
@@ -1310,6 +1322,8 @@ pub fn ensure_command_resources(world: &mut pill_engine::World) {
     crate::hooks::EditorHookRegistry::ensure(world);
     crate::hooks::EditorHookRequests::ensure(world);
     crate::hooks::HookNotices::ensure(world);
+    crate::hooks::HookWatch::ensure(world);
+    crate::viewport::EditorViewportState::ensure(world);
 }
 
 // =============================================================================

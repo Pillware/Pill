@@ -23,7 +23,11 @@
 use std::sync::{Arc, Weak};
 
 // Current crate
-use crate::hooks::events::{apply_field_edit_after, apply_field_edit_before};
+use crate::hooks::events::{
+    apply_field_edit_after, apply_field_edit_before, AssetEdit, ComponentEdit,
+    ElementSelectionChanged, EntityEdit, HistoryEdit, PlayEdit, SceneEdit, SelectionChanged,
+    ToolActivatedEdit,
+};
 use crate::hooks::{FieldEditView, HookContext, HookVerdict};
 use crate::panels::ModuleLiveness;
 
@@ -39,6 +43,24 @@ pub enum HookEvent {
     /// After a field edit applied; the callback reacts and may queue
     /// follow-ups.
     FieldEditAfter,
+    /// A component was added to or removed from an entity.
+    ComponentEdit,
+    /// An entity was created or destroyed.
+    EntityEdit,
+    /// An asset file was created, deleted, moved or written.
+    AssetEdit,
+    /// The editor walked the undo history.
+    HistoryEdit,
+    /// The shared selection changed.
+    SelectionChanged,
+    /// A scene was opened or a new one started.
+    SceneEdit,
+    /// A play session started or stopped.
+    PlayEdit,
+    /// The active tool changed.
+    ToolActivated,
+    /// The selected elements changed.
+    ElementSelectionChanged,
 }
 
 impl HookEvent {
@@ -47,6 +69,15 @@ impl HookEvent {
         match self {
             Self::FieldEditBefore => "field-edit-before",
             Self::FieldEditAfter => "field-edit-after",
+            Self::ComponentEdit => "component-edit",
+            Self::EntityEdit => "entity-edit",
+            Self::AssetEdit => "asset-edit",
+            Self::HistoryEdit => "history-edit",
+            Self::SelectionChanged => "selection-changed",
+            Self::SceneEdit => "scene-edit",
+            Self::PlayEdit => "play-edit",
+            Self::ToolActivated => "tool-activated",
+            Self::ElementSelectionChanged => "element-selection-changed",
         }
     }
 }
@@ -124,6 +155,24 @@ pub enum HookCallback {
     FieldEditBefore(FieldEditBeforeHook),
     /// An after-callback for a field edit.
     FieldEditAfter(FieldEditAfterHook),
+    /// A component add or remove.
+    ComponentEdit(fn(&mut HookContext<'_>, &ComponentEdit<'_>)),
+    /// An entity create or destroy.
+    EntityEdit(fn(&mut HookContext<'_>, &EntityEdit)),
+    /// An asset-file edit.
+    AssetEdit(fn(&mut HookContext<'_>, &AssetEdit<'_>)),
+    /// An undo or redo walk.
+    HistoryEdit(fn(&mut HookContext<'_>, &HistoryEdit<'_>)),
+    /// A selection change.
+    SelectionChanged(fn(&mut HookContext<'_>, &SelectionChanged)),
+    /// A scene open or new.
+    SceneEdit(fn(&mut HookContext<'_>, &SceneEdit<'_>)),
+    /// A play session started or stopped.
+    PlayEdit(fn(&mut HookContext<'_>, &PlayEdit)),
+    /// The active tool changed.
+    ToolActivated(fn(&mut HookContext<'_>, &ToolActivatedEdit)),
+    /// The selected elements changed.
+    ElementSelectionChanged(fn(&mut HookContext<'_>, &ElementSelectionChanged)),
 }
 
 impl HookCallback {
@@ -132,6 +181,15 @@ impl HookCallback {
         match self {
             Self::FieldEditBefore(_) => HookEvent::FieldEditBefore,
             Self::FieldEditAfter(_) => HookEvent::FieldEditAfter,
+            Self::ComponentEdit(_) => HookEvent::ComponentEdit,
+            Self::EntityEdit(_) => HookEvent::EntityEdit,
+            Self::AssetEdit(_) => HookEvent::AssetEdit,
+            Self::HistoryEdit(_) => HookEvent::HistoryEdit,
+            Self::SelectionChanged(_) => HookEvent::SelectionChanged,
+            Self::SceneEdit(_) => HookEvent::SceneEdit,
+            Self::PlayEdit(_) => HookEvent::PlayEdit,
+            Self::ToolActivated(_) => HookEvent::ToolActivated,
+            Self::ElementSelectionChanged(_) => HookEvent::ElementSelectionChanged,
         }
     }
 
@@ -158,6 +216,10 @@ impl HookCallback {
                 unsafe { (after.apply)(after.callback, context, view) };
                 None
             }
+            // Every other event carries a payload of its own; the session
+            // calls those through their plain function pointer and never
+            // reaches this method.
+            _ => None,
         }
     }
 }
@@ -189,6 +251,8 @@ impl HookRegistration {
 pub(crate) struct LiveHook {
     /// The crate that registered it, as the log lines name it.
     pub(crate) source: String,
+    /// The event it answers.
+    pub(crate) event: HookEvent,
     /// The erased callback.
     pub(crate) callback: HookCallback,
 }
@@ -224,13 +288,14 @@ impl EditorHookRegistry {
         });
     }
 
-    /// The live callbacks of one event, in registration order.
-    pub(crate) fn live(&self, event: HookEvent) -> Vec<LiveHook> {
+    /// Every live callback, in registration order.
+    pub(crate) fn live_all(&self) -> Vec<LiveHook> {
         self.registrations
             .iter()
-            .filter(|registration| registration.event == event && registration.alive())
+            .filter(|registration| registration.alive())
             .map(|registration| LiveHook {
                 source: registration.source.clone(),
+                event: registration.event,
                 callback: registration.callback,
             })
             .collect()

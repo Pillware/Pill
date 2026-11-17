@@ -876,6 +876,38 @@ impl EditorWindow {
             frame,
             "[test] viewport"
         );
+        // The value a callback reads: the same numbers, published as a
+        // resource at the frame boundary. A suite that moves the pointer and
+        // dumps again proves the publish, not just the runner's own fields.
+        let published = self
+            .host
+            .host_mut()
+            .engine_mut()
+            .world()
+            .get_resource::<EditorViewportState>()
+            .copied()
+            .unwrap_or_default();
+        let pointer_text = published
+            .pointer_in_view
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
+            .unwrap_or_else(|| "-".to_string());
+        let rect_text = published
+            .view_rect
+            .map(|rect| {
+                format!(
+                    "{:.1},{:.1},{:.1},{:.1}",
+                    rect.x, rect.y, rect.width, rect.height
+                )
+            })
+            .unwrap_or_else(|| "-".to_string());
+        info!(
+            target: telemetry_target::EDITOR,
+            active = published.active_view.map_or(-1, |view| view as i64),
+            pointer = pointer_text.as_str(),
+            rect = rect_text.as_str(),
+            views = published.view_count,
+            "[test] viewport state"
+        );
         for view in 0..self.views.len() {
             let camera = self.cameras[view];
             let eye = camera.eye();

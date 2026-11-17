@@ -183,6 +183,10 @@ impl EditorWindow {
     /// before the snapshot, so the tabs draw this frame's state and not a
     /// frame-old one.
     pub(super) fn service_editor_requests(&mut self) {
+        // Step 3: publish the viewport state a callback reads, before anything
+        // applies, so a hook of a command queued last frame sees this frame's
+        // pointer.
+        self.publish_viewport_state();
         // Step 3a: bind the callbacks the loaded modules registered, before
         // anything applies, so a module's first edits already reach it.
         self.sync_hooks();
@@ -219,6 +223,34 @@ impl EditorWindow {
         // belongs to this executable, so it is applied here like every other
         // queued request.
         self.apply_clipboard();
+    }
+
+    /// Publishes the viewport state a callback reads.
+    ///
+    /// The active view and the pointer live in this executable, so they reach
+    /// the editor API's context through a resource. The pointer is stored in
+    /// the scene window's physical pixels and is published in logical points;
+    /// the rectangle is the one the shell drew last frame, because the frame's
+    /// draw happens after this boundary.
+    pub(super) fn publish_viewport_state(&mut self) {
+        let active_view = self.active_view;
+        let pointer_in_view = self
+            .scene_cursor
+            .get(active_view)
+            .copied()
+            .flatten()
+            .map(|(x, y)| (x / self.scale_factor, y / self.scale_factor));
+        let state = EditorViewportState {
+            active_view: Some(active_view),
+            pointer_in_view,
+            view_rect: self.scene_rects.get(active_view).copied().flatten(),
+            view_count: self.views.len(),
+        };
+        let world = self.host.host_mut().engine_mut().world_mut();
+        EditorViewportState::ensure(world);
+        if let Some(slot) = world.get_resource_mut::<EditorViewportState>() {
+            *slot = state;
+        }
     }
 
     /// Copies the scene cameras when a play session starts and puts them back

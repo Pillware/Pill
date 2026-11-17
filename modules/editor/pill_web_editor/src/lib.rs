@@ -55,6 +55,7 @@ use pill_editor_core::hooks::{EditorHookRegistry, EditorHookRequests, HookNotice
 use pill_editor_core::notices::EditorNotices;
 use pill_editor_core::panels::ModuleLiveness;
 use pill_editor_core::scripted::{Dump, ScriptedCommand};
+use pill_editor_core::viewport::EditorViewportState;
 use pill_editor_core::{entities, systems};
 use pill_engine_core::input::InputEvent;
 use pill_input::winit_events::translate_window_event;
@@ -368,6 +369,12 @@ impl WebEditorApplication {
             world.register_resource::<GizmoState>();
             if world.get_resource::<GizmoState>().is_none() {
                 world.insert_resource(GizmoState::default());
+            }
+            // The page has one canvas and no scene viewport, so a callback
+            // reads the documented empty posture instead of an absent
+            // resource.
+            if let Some(viewport) = world.get_resource_mut::<EditorViewportState>() {
+                *viewport = EditorViewportState::default();
             }
         }
 

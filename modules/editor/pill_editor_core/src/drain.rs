@@ -109,6 +109,7 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
         let recorded_apply =
             EditorCommand::apply_recorded_observed(engine, &batch.commands, &mut hook_session);
         let failed_command_count = recorded_apply.failures.len();
+        let replay_label = batch.replay_label.clone().unwrap_or_default();
         pill_core::info!(
             target: telemetry_target::EDITOR,
             count = batch.commands.len(),
@@ -170,6 +171,11 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
                     );
                 }
             }
+            // The editor API hears about the walk only when it happened: a
+            // step whose commands failed was put back, so nothing changed.
+            if failed_command_count == 0 {
+                hook_session.fire_history(engine, direction.name(), replay_label.as_str());
+            }
         }
         // A restore gives its entity a fresh handle. The history follows the
         // new handle before anything else is recorded, so a later undo cannot
@@ -216,6 +222,9 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
     }
     // Step 3: hand the notices the callbacks posted to the executable's toast
     // path, then drop the history entries the rebuilt registry cannot resolve.
+    // The selection and tool events are diffs against the last drain, so they
+    // are read once here, after every batch in this frame has applied.
+    hook_session.fire_diffs(engine);
     hook_session.publish_notices(engine.world_mut());
     prune_history(engine);
     drain_outcome
@@ -432,7 +441,7 @@ pub fn step_history(engine: &mut Engine, direction: HistoryDirection) -> History
     // Step 3: Queue the step's batch for the next drain, then log the walk.
     if let Some(commands) = commands {
         if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
-            pending.push_replay(commands, direction);
+            pending.push_replay(commands, direction, Some(label.as_str()));
         }
     }
     pill_core::info!(

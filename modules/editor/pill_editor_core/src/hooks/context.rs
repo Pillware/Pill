@@ -140,6 +140,29 @@ impl<'a> HookContext<'a> {
         self.selection
     }
 
+    /// The gizmo's settings, when the world holds a gizmo.
+    pub fn gizmo(&self) -> Option<&crate::gizmo::GizmoState> {
+        self.world.get_resource::<crate::gizmo::GizmoState>()
+    }
+
+    /// The active tool's name, when a tool is active.
+    pub fn active_tool(&self) -> Option<String> {
+        self.world
+            .get_resource::<crate::tools::ToolRegistry>()
+            .and_then(|registry| registry.active().map(str::to_string))
+    }
+
+    /// The editor's viewports as the executable last published them.
+    ///
+    /// The empty posture when nothing published one, so a callback can read
+    /// this unconditionally.
+    pub fn viewport(&self) -> crate::viewport::EditorViewportState {
+        self.world
+            .get_resource::<crate::viewport::EditorViewportState>()
+            .copied()
+            .unwrap_or_default()
+    }
+
     /// What made the edit happen.
     pub fn cause(&self) -> FieldEditCause {
         self.cause

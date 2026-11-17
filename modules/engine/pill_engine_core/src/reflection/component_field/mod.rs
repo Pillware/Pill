@@ -221,6 +221,46 @@ impl FieldValue {
         }
     }
 
+    /// The value as an `f32`, when it is one.
+    ///
+    /// The typed accessors exist so a callback reads a value without matching
+    /// the variant itself; each answers `None` for every other variant, which
+    /// is what makes a mismatched payload a quiet skip rather than a panic.
+    #[must_use]
+    pub fn as_f32(&self) -> Option<f32> {
+        match self {
+            Self::F32(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// The value as a `u32`, when it is one.
+    #[must_use]
+    pub fn as_u32(&self) -> Option<u32> {
+        match self {
+            Self::U32(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// The value as a `bool`, when it is one.
+    #[must_use]
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// The value's elements, when it is a whole array field.
+    #[must_use]
+    pub fn as_array(&self) -> Option<&[FieldValue]> {
+        match self {
+            Self::Array(values) => Some(values),
+            _ => None,
+        }
+    }
+
     /// The closed-vocabulary tag a value's variant corresponds to.
     ///
     /// Mirrors the `type_tag` strings the derive emits, so a mismatch can name
