@@ -417,6 +417,33 @@ impl ExtensionConfig {
         Self::workspace_member(name, &folder)
     }
 
+    /// The configuration of a project's own editor crate.
+    ///
+    /// The crate lives at `<project_path>/<package>_editor/`, the project
+    /// directory's analogue of `extensions/<folder>/<folder>_editor`. Its
+    /// generated wrapper is the `host_module_<package>_editor` member under
+    /// `projects_generated/`, so the workspace glob that already finds the
+    /// generated project members finds this one too.
+    ///
+    /// `folder` is the project's package name, which is what makes
+    /// [`Self::is_editor_crate`] true for it and keeps the log lines naming
+    /// the project rather than a path.
+    pub fn project_editor(project_path: &str, package_name: &str) -> Self {
+        let name = format!("{package_name}{EDITOR_CRATE_SUFFIX}");
+        let wrapper_library_name = format!("{HOST_MODULE_MEMBER_PREFIX}{name}");
+        let build_command = host_cargo_command(std::slice::from_ref(&wrapper_library_name));
+        Self {
+            is_editor_crate: true,
+            library_name: name.clone(),
+            watch_directory: format!("{project_path}/{name}/src"),
+            build_command,
+            output_subdirectory: "target/hot".to_string(),
+            wrapper_library_name,
+            folder: package_name.to_string(),
+            name,
+        }
+    }
+
     /// Verify that the configuration is internally consistent.
     ///
     /// # Errors
@@ -511,6 +538,16 @@ pub struct HostConfig {
     /// The project's `res` directory, which asset paths are relative to;
     /// `None` when the configuration was not read from a project directory.
     pub asset_directory: Option<PathBuf>,
+
+    /// The project's own editor crate, when the project has one and this host
+    /// is an editor host: `<PROJECT_PATH>/<package>_editor/`, discovered by
+    /// convention like an extension's editor crate.
+    ///
+    /// Filled by [`Self::from_environment_for_editor_frontend`] and `None` in
+    /// every other posture, so a game build neither builds, watches nor loads
+    /// it. It loads after the project, because it exists to change the editor
+    /// the project runs in.
+    pub project_editor: Option<ExtensionConfig>,
 }
 
 /// The `assets:` section of `project_settings.yaml`.
@@ -702,6 +739,34 @@ impl HostConfig {
             first_load_optional = editor_only_crate_names;
         }
 
+        // Step 4: Resolve the project's own editor crate, when it has one.
+        // It is not an extension: it lives beside the project's manifest, loads
+        // after the project and reloads with it, so the game postures never
+        // see it and a project without one is the ordinary case.
+        let project_editor = if load_editor_crates {
+            resolve_project_editor_crate(
+                &workspace_root,
+                &project_path,
+                &project.name,
+                editor_frontend,
+            )?
+        } else {
+            None
+        };
+        // Whatever posture this is, a wrapper left by another project would
+        // still be a workspace member pointing into a folder that may be gone.
+        prune_stale_project_editor_wrappers(
+            &workspace_root,
+            project_editor
+                .as_ref()
+                .map(|configuration| {
+                    workspace_root
+                        .join(PROJECT_MEMBER_DIRECTORY)
+                        .join(&configuration.wrapper_library_name)
+                })
+                .as_deref(),
+        );
+
         // Step 5: Write every loaded extension crate's wrapper into its
         // extension folder's `generated/` before the first build, and clear
         // wrappers for crates this project no longer loads. The renderer
@@ -748,6 +813,7 @@ impl HostConfig {
             shipping_debug_draw: project_settings.debug_draw.unwrap_or(false),
             startup_scene,
             asset_directory: Some(project_root.join(PROJECT_ASSET_DIRECTORY)),
+            project_editor,
         })
     }
 
@@ -933,30 +999,6 @@ impl HostConfig {
         editor_frontend: &str,
     ) -> Result<(Vec<ExtensionConfig>, Vec<String>), ConfigError> {
         let editor_crate_of = |folder: &str| format!("{folder}{EDITOR_CRATE_SUFFIX}");
-        // The editor frontend a crate's manifest tags itself for, if any:
-        // `editor_frontend = "<name>"` in the `[package.metadata.pill]`
-        // table. Text-scanned rather than parsed so the
-        // host gains no TOML dependency for one string.
-        let declared_frontend = |directory: &Path| -> Option<String> {
-            let manifest = std::fs::read_to_string(directory.join("Cargo.toml")).ok()?;
-            let mut in_pill_metadata = false;
-            for line in manifest.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with('[') {
-                    in_pill_metadata = trimmed == "[package.metadata.pill]";
-                    continue;
-                }
-                if !in_pill_metadata {
-                    continue;
-                }
-                let Some(after_key) = trimmed.strip_prefix("editor_frontend") else {
-                    continue;
-                };
-                let tag_value = after_key.split_once('=')?.1.trim();
-                return Some(tag_value.trim_matches('"').to_string());
-            }
-            None
-        };
         // A crate tagged for another editor frontend is left out; an untagged
         // one loads under every editor frontend. The `pill_ui` tag is refused
         // rather than skipped: no host runs that frontend, so skipping the
@@ -966,7 +1008,7 @@ impl HostConfig {
             if !directory.join("Cargo.toml").is_file() {
                 return Ok(false);
             }
-            match declared_frontend(&directory) {
+            match declared_editor_frontend(&directory) {
                 Some(frontend_tag) if frontend_tag == RETIRED_EDITOR_FRONTEND => {
                     Err(ConfigError::RetiredEditorFrontend {
                         name: editor_crate_of(folder),
@@ -1045,6 +1087,7 @@ impl From<ProjectModuleConfig> for HostConfig {
             shipping_debug_draw: false,
             startup_scene: None,
             asset_directory: None,
+            project_editor: None,
         }
     }
 }
@@ -2309,6 +2352,152 @@ fn materialize_host_module_wrapper(
          {renderer_entry}"
     );
 
+    write_module_member(&member_directory, &manifest, &source)
+}
+
+/// The editor frontend a crate's manifest tags itself for, if any.
+///
+/// `editor_frontend = "<name>"` under `[package.metadata.pill]`. Text-scanned
+/// rather than parsed, so the host gains no TOML dependency for one string.
+fn declared_editor_frontend(directory: &Path) -> Option<String> {
+    let manifest = std::fs::read_to_string(directory.join("Cargo.toml")).ok()?;
+    let mut in_pill_metadata = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_pill_metadata = trimmed == "[package.metadata.pill]";
+            continue;
+        }
+        if !in_pill_metadata {
+            continue;
+        }
+        let Some(after_key) = trimmed.strip_prefix("editor_frontend") else {
+            continue;
+        };
+        let tag_value = after_key.split_once('=')?.1.trim();
+        return Some(tag_value.trim_matches('"').to_string());
+    }
+    None
+}
+
+/// Resolves the project's own editor crate, when it has one.
+///
+/// The crate is discovered by convention: `<project_path>/<package>_editor/`,
+/// beside the project's `Cargo.toml`, the project-directory analogue of
+/// `extensions/<folder>/<folder>_editor`. A project without one has no editor
+/// part and no error, and a crate tagged for another editor frontend is left
+/// out the same way an extension's is.
+///
+/// The crate's generated wrapper is written here, because nothing else would
+/// write it: it lives under `projects_generated/`, which the workspace glob
+/// already finds.
+///
+/// # Errors
+///
+/// Returns [`ConfigError::RetiredEditorFrontend`] when the crate is tagged for
+/// the retired `pill_ui` frontend, and
+/// [`ConfigError::HostModuleMemberCreationFailed`] when the wrapper cannot be
+/// written.
+fn resolve_project_editor_crate(
+    workspace_root: &Path,
+    project_path: &str,
+    package_name: &str,
+    editor_frontend: &str,
+) -> Result<Option<ExtensionConfig>, ConfigError> {
+    let configuration = ExtensionConfig::project_editor(project_path, package_name);
+    let directory = workspace_root
+        .join(project_path)
+        .join(configuration.name.as_str());
+    if !directory.join("Cargo.toml").is_file() {
+        return Ok(None);
+    }
+    match declared_editor_frontend(&directory) {
+        Some(frontend_tag) if frontend_tag == RETIRED_EDITOR_FRONTEND => {
+            return Err(ConfigError::RetiredEditorFrontend {
+                name: configuration.name,
+            });
+        }
+        Some(frontend_tag) if frontend_tag != editor_frontend => return Ok(None),
+        _ => {}
+    }
+    materialize_project_editor_wrapper(workspace_root, project_path, package_name)?;
+    Ok(Some(configuration))
+}
+
+/// Writes the wrapper member that builds a project's editor crate.
+///
+/// The wrapper is the `host_module_<package>_editor` member under
+/// `projects_generated/`, found by the same workspace glob as the generated
+/// project members, and its `cdylib` is the artifact the host loads. The
+/// editor crate stays a plain library inside it.
+///
+/// # Errors
+///
+/// Returns a [`ConfigError`] when the member directory or either generated
+/// file cannot be written.
+fn materialize_project_editor_wrapper(
+    workspace_root: &Path,
+    project_path: &str,
+    package_name: &str,
+) -> Result<(), ConfigError> {
+    let crate_name = format!("{package_name}{EDITOR_CRATE_SUFFIX}");
+    let member_name = format!("{HOST_MODULE_MEMBER_PREFIX}{crate_name}");
+    let member_directory = workspace_root
+        .join(PROJECT_MEMBER_DIRECTORY)
+        .join(&member_name);
+    let crate_directory = workspace_root.join(project_path).join(&crate_name);
+    let engine_directory = workspace_root.join("engine").join("pill_engine");
+    let manifest = format!(
+        "# Generated by the host for the `{crate_name}` project editor crate; \
+         rewritten on every run.\n\
+         [package]\n\
+         name = \"{member_name}\"\n\
+         version = \"0.1.0\"\n\
+         edition = \"2021\"\n\
+         \n\
+         [lints]\n\
+         workspace = true\n\
+         \n\
+         [lib]\n\
+         name = \"{member_name}\"\n\
+         crate-type = [\"cdylib\", \"rlib\"]\n\
+         \n\
+         [dependencies]\n\
+         pill_engine = {{ path = \"{engine_path}\" }}\n\
+         {crate_name} = {{ path = \"{crate_path}\" }}\n",
+        engine_path = render_manifest_path(&engine_directory),
+        crate_path = render_manifest_path(&crate_directory),
+    );
+    let source = format!(
+        "//! Loadable-artifact wrapper for the `{crate_name}` project editor crate.\n\
+         //!\n\
+         //! # Responsibilities\n\
+         //!\n\
+         //! - Builds the cdylib the editor host loads as `{crate_name}`, with the\n\
+         //!   editor crate compiled inside it as a plain library.\n\
+         //! - Carries the loadable-artifact entry points by expanding\n\
+         //!   `{crate_name}::__pill_module_entry_points!()`.\n\
+         //!\n\
+         //! Generated by the host on startup; rewritten on every run, never\n\
+         //! edited by hand.\n\
+         \n\
+         {crate_name}::__pill_module_entry_points!();\n"
+    );
+    write_module_member(&member_directory, &manifest, &source)
+}
+
+/// Writes one generated wrapper member's `Cargo.toml` and `src/lib.rs`,
+/// leaving a file whose content is unchanged untouched.
+///
+/// # Errors
+///
+/// Returns [`ConfigError::HostModuleMemberCreationFailed`] when a directory or
+/// file cannot be written.
+fn write_module_member(
+    member_directory: &Path,
+    manifest: &str,
+    source: &str,
+) -> Result<(), ConfigError> {
     for (relative_path, contents) in [("Cargo.toml", manifest), ("src/lib.rs", source)] {
         let path = member_directory.join(relative_path);
         if let Some(parent) = path.parent() {
@@ -2333,6 +2522,34 @@ fn materialize_host_module_wrapper(
         })?;
     }
     Ok(())
+}
+
+/// Removes project editor wrappers left behind by earlier runs.
+///
+/// Every `host_module_*` member under `projects_generated/` was written by
+/// [`materialize_project_editor_wrapper`] for some project. Any one that is
+/// not `kept` belongs to a project the host no longer runs, and the workspace
+/// glob would still pick it up as a member whose dependency paths may no
+/// longer resolve. With `None` - a game posture, which loads no project editor
+/// crate - every one of them is stale.
+///
+/// Failures are ignored rather than returned: a member the host cannot remove
+/// is a housekeeping problem, not a reason to refuse to start.
+fn prune_stale_project_editor_wrappers(workspace_root: &Path, kept: Option<&Path>) {
+    let Ok(entries) = std::fs::read_dir(workspace_root.join(PROJECT_MEMBER_DIRECTORY)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let wraps_a_crate = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(HOST_MODULE_MEMBER_PREFIX));
+        if !wraps_a_crate || !path.is_dir() || kept == Some(path.as_path()) {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(&path);
+    }
 }
 
 /// Removes generated extension wrappers left behind by earlier runs.
@@ -3717,6 +3934,181 @@ mod host_module_wrapper_pruning_tests {
             "a flat wrapper from an older host must be gone"
         );
         assert!(real_crate.exists(), "a real crate must never be removed");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod project_editor_crate_tests {
+    use super::{
+        prune_stale_project_editor_wrappers, resolve_project_editor_crate,
+        HOST_MODULE_MEMBER_PREFIX, PROJECT_MEMBER_DIRECTORY,
+    };
+    use pill_core::error::ConfigError;
+
+    use crate::scratch::ScratchDirectory;
+
+    /// Lays out a workspace with a project at `project/`, optionally with its
+    /// editor crate at `project/project_editor/` and a frontend tag.
+    fn workspace(test_name: &str, editor_tag: Option<&str>) -> ScratchDirectory {
+        let root = ScratchDirectory::new(test_name);
+        std::fs::create_dir_all(root.join("project").join("src")).unwrap();
+        std::fs::write(
+            root.join("project").join("Cargo.toml"),
+            "[package]\nname = \"project\"\nversion = \"0.1.0\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("project").join("src").join("lib.rs"), "").unwrap();
+        if let Some(tag) = editor_tag {
+            let crate_directory = root.join("project").join("project_editor");
+            std::fs::create_dir_all(crate_directory.join("src")).unwrap();
+            std::fs::write(
+                crate_directory.join("Cargo.toml"),
+                format!(
+                    "[package]\nname = \"project_editor\"\nversion = \"0.1.0\"\n\n[package.metadata.pill]\neditor_frontend = \"{tag}\"\n"
+                ),
+            )
+            .unwrap();
+            std::fs::write(crate_directory.join("src").join("lib.rs"), "").unwrap();
+        }
+        root
+    }
+
+    /// The wrapper `resolve_project_editor_crate` writes for `project`.
+    fn wrapper_directory(root: &std::path::Path) -> std::path::PathBuf {
+        root.join(PROJECT_MEMBER_DIRECTORY)
+            .join(format!("{HOST_MODULE_MEMBER_PREFIX}project_editor"))
+    }
+
+    #[test]
+    fn an_untagged_editor_crate_is_resolved_and_wrapped() {
+        let root = workspace("project_editor_resolved", Some(""));
+        // A tag-less crate: write the manifest again without the metadata
+        // table, which is what a project author writes by omitting the tag.
+        std::fs::write(
+            root.join("project")
+                .join("project_editor")
+                .join("Cargo.toml"),
+            "[package]\nname = \"project_editor\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let configuration = resolve_project_editor_crate(&root, "project", "project", "egui")
+            .unwrap()
+            .expect("an untagged editor crate resolves under every frontend");
+
+        assert_eq!(configuration.name, "project_editor");
+        assert!(configuration.is_editor_crate);
+        assert_eq!(
+            configuration.watch_directory, "project/project_editor/src",
+            "the crate is watched where it lives"
+        );
+        assert_eq!(
+            configuration.wrapper_library_name,
+            "host_module_project_editor"
+        );
+        let manifest =
+            std::fs::read_to_string(wrapper_directory(&root).join("Cargo.toml")).unwrap();
+        assert!(
+            manifest.contains("name = \"host_module_project_editor\""),
+            "{manifest}"
+        );
+        assert!(
+            manifest.contains("project_editor = { path ="),
+            "the wrapper links the editor crate by its resolved path: {manifest}"
+        );
+        assert!(wrapper_directory(&root)
+            .join("src")
+            .join("lib.rs")
+            .is_file());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_project_without_an_editor_crate_has_none() {
+        let root = workspace("project_editor_absent", None);
+
+        let configuration = resolve_project_editor_crate(&root, "project", "project", "egui")
+            .expect("a project without an editor part is the ordinary case");
+
+        assert!(configuration.is_none());
+        assert!(
+            !wrapper_directory(&root).exists(),
+            "no wrapper is written for a crate that does not exist"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_crate_tagged_for_another_frontend_is_skipped() {
+        let root = workspace("project_editor_other_frontend", Some("some_other_editor"));
+
+        let configuration = resolve_project_editor_crate(&root, "project", "project", "egui")
+            .expect("another frontend's crate is not an error");
+
+        assert!(
+            configuration.is_none(),
+            "a crate tagged for another frontend is left out"
+        );
+        assert!(!wrapper_directory(&root).exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_retired_frontend_tag_is_refused() {
+        let root = workspace("project_editor_retired_frontend", Some("pill_ui"));
+
+        let error = resolve_project_editor_crate(&root, "project", "project", "egui")
+            .expect_err("the retired frontend tag is refused rather than skipped");
+
+        match error {
+            ConfigError::RetiredEditorFrontend { name } => assert_eq!(name, "project_editor"),
+            other => panic!("expected the retired-frontend error, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_leftover_wrapper_is_pruned_and_the_kept_one_survives() {
+        let root = workspace("project_editor_prune", Some(""));
+        std::fs::write(
+            root.join("project")
+                .join("project_editor")
+                .join("Cargo.toml"),
+            "[package]\nname = \"project_editor\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        resolve_project_editor_crate(&root, "project", "project", "egui")
+            .unwrap()
+            .expect("the project's editor crate resolves");
+        let kept = wrapper_directory(&root);
+        assert!(kept.join("Cargo.toml").is_file());
+        let stale = root
+            .join(PROJECT_MEMBER_DIRECTORY)
+            .join(format!("{HOST_MODULE_MEMBER_PREFIX}another_project_editor"));
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::write(stale.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+
+        prune_stale_project_editor_wrappers(&root, Some(kept.as_path()));
+        assert!(
+            kept.join("Cargo.toml").is_file(),
+            "the wrapper of the project this host runs survives"
+        );
+        assert!(
+            !stale.exists(),
+            "a wrapper of a project the host no longer runs must be gone"
+        );
+
+        prune_stale_project_editor_wrappers(&root, None);
+        assert!(
+            !kept.exists(),
+            "a game posture prunes every project editor wrapper"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
