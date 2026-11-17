@@ -148,6 +148,10 @@ pub struct DevHost {
     engine_api: EngineApi,
     /// The loaded project image, and the generations retired behind it.
     loaded_project: LoadedProject,
+    /// The project's own editor crate, when it has one and this host is an
+    /// editor host. It loads after the project, because it exists to change
+    /// the editor the project runs in, and it reloads with it.
+    project_editor: Option<ExtensionSlot>,
     /// Extensions, each with its own watcher and reload transaction.
     extensions: Vec<ExtensionSlot>,
     /// Tolerated editor-only modules whose first load failed: no slot and no
@@ -373,6 +377,9 @@ impl DevHost {
                 .iter()
                 .map(|pending| (pending.config.name.as_str(), pending.owner)),
         );
+        if let Some(project_editor) = &self.project_editor {
+            owners.push((project_editor.name(), project_editor.owner()));
+        }
         owners.push(("the project", SystemOwner::PROJECT));
         owners
     }
@@ -1543,6 +1550,12 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
             });
         }
     }
+    if let Some(project_editor) = &host_config.project_editor {
+        planned_builds.push(crate::build_progress::PlannedBuild {
+            module: project_editor.name.clone(),
+            kind: "editor",
+        });
+    }
     crate::build_progress::announce_plan(&host_config.name, planned_builds);
 
     // Build every native module in one cargo invocation: the extensions, the
@@ -1561,6 +1574,7 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
         } else {
             None
         },
+        host_config.project_editor.as_ref(),
     );
 
     // Step 3: Build, load and watch the extensions before the project.
@@ -1708,6 +1722,51 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
         Err(error) => return Err(fail_setup(runtime, error)),
     };
 
+    // Step 4b: the project's own editor crate, when it has one. It loads after
+    // the project because it exists to change the editor the project runs in,
+    // and its failure costs the editor part only: the project, its world and
+    // every extension keep running, so a person can fix the crate without
+    // losing the session. The failed image stays loaded and only what it
+    // registered is cleared, which is what `ClearGenerationData` says.
+    let project_editor_generation = Arc::new(AtomicU64::new(0));
+    let project_editor = match host_config.project_editor.as_ref() {
+        None => None,
+        Some(configuration) => {
+            let loaded = ExtensionSlot::start(
+                runtime.engine_mut(),
+                &engine_api,
+                &workspace_root,
+                configuration,
+                SystemOwner::PROJECT_EDITOR,
+                Arc::clone(&project_editor_generation),
+                crate::reload::FirstLoadFailure::ClearGenerationData,
+            );
+            match loaded {
+                Ok(slot) => {
+                    info!(
+                        target: telemetry_target::HOT_RELOAD,
+                        module = configuration.name.as_str(),
+                        "the project's editor crate loaded"
+                    );
+                    Some(slot)
+                }
+                Err(error) => {
+                    warn!(
+                        target: telemetry_target::HOT_RELOAD,
+                        module = configuration.name.as_str(),
+                        error = %error,
+                        "the project's editor crate failed to load; the project keeps running without it"
+                    );
+                    notices::push(HostNotice::ModuleFailed {
+                        module: configuration.name.clone(),
+                        output: optional_failure_output(&error),
+                    });
+                    None
+                }
+            }
+        }
+    };
+
     let source_edit_generation = Arc::new(AtomicU64::new(0));
     let source_trigger_log = Arc::new(crate::watchers::TriggerLog::new());
     if switches.hot_reloading {
@@ -1811,6 +1870,7 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
         runtime,
         engine_api,
         loaded_project,
+        project_editor,
         extensions,
         pending_modules,
         source_edit_generation,

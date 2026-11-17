@@ -2007,6 +2007,7 @@ pub(crate) fn build_extension_batch(
     configs: &[ExtensionConfig],
     project: Option<&ProjectModuleConfig>,
     renderer_name: Option<&str>,
+    project_editor: Option<&ExtensionConfig>,
 ) -> bool {
     // Only a native project shares cargo's fixed cost. A managed build's
     // `dotnet` invocation is its own machinery, and selecting its member here
@@ -2027,7 +2028,8 @@ pub(crate) fn build_extension_batch(
     });
     let package_count = configs.len()
         + usize::from(project_package.is_some())
-        + usize::from(renderer_config.is_some());
+        + usize::from(renderer_config.is_some())
+        + usize::from(project_editor.is_some());
     // One package has no fixed cost to share; its own step builds it.
     if package_count < 2 {
         return false;
@@ -2042,6 +2044,12 @@ pub(crate) fn build_extension_batch(
     }
     if let Some(renderer_extension_config) = &renderer_config {
         packages.push(renderer_extension_config.wrapper_library_name.clone());
+    }
+    // The project's own editor crate shares the batch: it is an ordinary
+    // wrapper build with a different root, and building it alone would pay
+    // cargo's fixed cost a second time.
+    if let Some(project_editor_config) = project_editor {
+        packages.push(project_editor_config.wrapper_library_name.clone());
     }
     let command = crate::config::host_cargo_command(&packages);
     // One capture entry per selected package, so the patch pipeline harvests
@@ -2062,6 +2070,12 @@ pub(crate) fn build_extension_batch(
         capture_entries.push((
             renderer_extension_config.name.as_str(),
             renderer_extension_config.build_command.as_slice(),
+        ));
+    }
+    if let Some(project_editor_config) = project_editor {
+        capture_entries.push((
+            project_editor_config.name.as_str(),
+            project_editor_config.build_command.as_slice(),
         ));
     }
     info!(
@@ -2104,6 +2118,9 @@ pub(crate) fn build_extension_batch(
                 validation
                     .names
                     .insert(renderer_extension_config.name.clone());
+            }
+            if let Some(project_editor_config) = project_editor {
+                validation.names.insert(project_editor_config.name.clone());
             }
             with_batch_validation(|validation_slot| *validation_slot = Some(validation));
             true

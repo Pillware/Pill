@@ -103,10 +103,24 @@ impl SystemOwner {
     /// reaches, and which differs from [`Self::PROJECT`] and [`Self::ENGINE`].
     pub const RENDERER: Self = Self(u64::MAX - 1);
 
-    /// The extension index this owner encodes, or `None` for the project, the
-    /// renderer and the engine.
+    /// Owner of the systems a project's own editor crate registers.
+    ///
+    /// That crate is not an extension: it loads after the project because it
+    /// exists to change the editor the project runs in, and it reloads on its
+    /// own. Sharing [`Self::PROJECT`] would make either reload clear the
+    /// other's systems, and taking an extension index would collide with a
+    /// module the editor's safe mode is waiting to retry, so the value is
+    /// reserved like the renderer's.
+    pub const PROJECT_EDITOR: Self = Self(u64::MAX - 2);
+
+    /// The extension index this owner encodes, or `None` for the project, its
+    /// editor crate, the renderer and the engine.
     pub fn extension_index(self) -> Option<usize> {
-        if self == Self::PROJECT || self == Self::ENGINE || self == Self::RENDERER {
+        if self == Self::PROJECT
+            || self == Self::ENGINE
+            || self == Self::RENDERER
+            || self == Self::PROJECT_EDITOR
+        {
             None
         } else {
             Some((self.0 - 1) as usize)
@@ -115,11 +129,12 @@ impl SystemOwner {
 }
 
 impl std::fmt::Display for SystemOwner {
-    /// Writes `project`, `renderer`, `engine` or `extension <n>`; this is the
-    /// one place an owner becomes text.
+    /// Writes `project`, `project editor`, `renderer`, `engine` or
+    /// `extension <n>`; this is the one place an owner becomes text.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.extension_index() {
             None if *self == Self::PROJECT => formatter.write_str("project"),
+            None if *self == Self::PROJECT_EDITOR => formatter.write_str("project editor"),
             None if *self == Self::RENDERER => formatter.write_str("renderer"),
             None => formatter.write_str("engine"),
             Some(index) => write!(formatter, "extension {index}"),

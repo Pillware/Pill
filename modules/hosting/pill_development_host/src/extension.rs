@@ -231,7 +231,14 @@ mod slot {
                 target: telemetry_target::HOT_RELOAD,
                 module = extension_config.name.as_str(),
                 owner = system_owner.0,
-                "extension loaded"
+                // The project's own editor crate is loaded by the same code
+                // but is not an extension, and its log line should not say so.
+                kind = if system_owner == SystemOwner::PROJECT_EDITOR {
+                    "project editor"
+                } else {
+                    "extension"
+                },
+                "loadable artifact loaded"
             );
 
             // What this generation declared its resources' layouts are made of,
