@@ -409,6 +409,13 @@ impl DevHost {
         {
             return true;
         }
+        if self
+            .project_editor
+            .as_ref()
+            .is_some_and(|slot| slot.pending_reload_generation().is_some())
+        {
+            return true;
+        }
         self.source_edit_generation.load(Ordering::Acquire) != self.last_processed_source_edit
     }
 
@@ -1787,6 +1794,22 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
         );
     }
 
+    // The project's own editor crate gets its own watcher, so an edit inside
+    // it reloads that crate alone instead of waiting for the project to change.
+    if switches.hot_reloading {
+        if let Some(configuration) = host_config.project_editor.as_ref() {
+            if let Err(error) = spawn_source_watcher(
+                workspace_root.clone(),
+                &configuration.name,
+                &configuration.watch_directory,
+                Arc::clone(&project_editor_generation),
+                Some(Arc::clone(&source_trigger_log)),
+            ) {
+                return Err(fail_setup(runtime, error.into()));
+            }
+        }
+    }
+
     // Import the project's source assets when its settings ask for it, once
     // every module has registered its imported asset types.
     if host_config.assets.scan_on_start {
@@ -2815,8 +2838,70 @@ fn finish_managed_build(host: &mut DevHost, report: BuildReport) {
 /// Both sites call this: the build completion, which shortens the loader's
 /// debounce and polls, and the frame-boundary poll that catches a swap whose
 /// wait outlived Step 5.
+/// Reloads the project's own editor crate when its sources moved, or when the
+/// project it belongs to reloaded.
+///
+/// The crate is not an extension and does not live in `extensions`, so the
+/// module pass cannot reach it; the transaction it runs is the same one, and
+/// the peers it passes are every other subject, because a component type it
+/// names is not this crate's to retire.
+fn reload_project_editor_if_changed(host: &mut DevHost) {
+    let DevHost {
+        project_editor,
+        runtime,
+        engine_api,
+        workspace_root,
+        extensions,
+        loaded_project,
+        ..
+    } = host;
+    let Some(slot) = project_editor else {
+        return;
+    };
+    if !slot.has_pending_reload() {
+        return;
+    }
+    let peers = peer_component_names(extensions, None, loaded_project);
+    let outcome = slot.reload_if_changed(runtime.engine_mut(), engine_api, workspace_root, &peers);
+    match outcome {
+        ReloadOutcome::Reloaded { generation } => {
+            info!(
+                target: telemetry_target::HOT_RELOAD,
+                module = slot.name(),
+                generation,
+                "project editor crate reload processed"
+            );
+            notices::push(HostNotice::Reloaded {
+                module: slot.name().to_string(),
+                build_ms: analytics::module_build_ms(slot.name()).unwrap_or(0),
+            });
+        }
+        ReloadOutcome::Failed { generation } => {
+            // The previous generation is still current, so nothing more is
+            // reported here: the shared sequence already pushed the refusal.
+            warn!(
+                target: telemetry_target::HOT_RELOAD,
+                module = slot.name(),
+                generation,
+                "project editor crate reload failed; keeping the previous generation"
+            );
+        }
+        ReloadOutcome::Unchanged => {}
+    }
+}
+
 fn note_managed_swap(host: &mut DevHost) {
     forget_prologue_records(host);
+    // The project's editor crate follows the project's reload, as it does on
+    // the native path: queued here, run by the module pass.
+    if let Some(slot) = &mut host.project_editor {
+        info!(
+            target: telemetry_target::HOT_RELOAD,
+            module = slot.name(),
+            "the project reloaded; queuing its editor crate's reload"
+        );
+        slot.queue_cascade_reload();
+    }
     // The swap ends the reload, so its timing is finished here, at the one
     // place both swap sites reach. A swap with no armed timing - an assembly
     // this host did not build - records zeros, which is what the report says
@@ -3132,6 +3217,11 @@ fn run_reload_steps(host: &mut DevHost) -> Vec<String> {
         host.bump_editor_revision();
     }
 
+    // The project's own editor crate reloads like an extension's, on the same
+    // signal: it is one more loadable artifact whose running image must not
+    // outlive its sources.
+    reload_project_editor_if_changed(host);
+
     // Step 4: Try the per-function fast path for the project, before the
     // reload below turns a pending change into a full rebuild.
     try_project_fast_path(host, !failed_attempt);
@@ -3206,6 +3296,17 @@ fn run_reload_steps(host: &mut DevHost) -> Vec<String> {
                 // rollback route, so the records are dropped only on a real swap.
                 if replaced {
                     forget_prologue_records(host);
+                    // The editor part exists to change the editor the project
+                    // runs in, so it follows the project's reload. Queued, not
+                    // run here: the module pass owns building and swapping it.
+                    if let Some(slot) = &mut host.project_editor {
+                        info!(
+                            target: telemetry_target::HOT_RELOAD,
+                            module = slot.name(),
+                            "the project reloaded; queuing its editor crate's reload"
+                        );
+                        slot.queue_cascade_reload();
+                    }
                     // The editor sees a toast and a cleared problem list, as
                     // on an extension reload. Without it, a fixed compile
                     // error would stay in the Problems panel until the next
