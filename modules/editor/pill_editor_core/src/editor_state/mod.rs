@@ -42,6 +42,47 @@ mod apply;
 mod command;
 
 // =============================================================================
+// Batch observers
+// =============================================================================
+
+/// Receives each command a batch applied, for the editor API's callbacks.
+///
+/// The drain implements this with its hook session; every other caller uses
+/// [`NoopObserver`], so their recording path is unchanged.
+pub(crate) trait CommandObserver {
+    /// Called after one command applied successfully.
+    fn after_command(
+        &mut self,
+        engine: &mut Engine,
+        index: usize,
+        command: &EditorCommand,
+        inverse: Option<&EditorCommand>,
+    );
+
+    /// Takes the commands a callback queued for the command just reported.
+    fn take_followups(&mut self) -> Vec<EditorCommand>;
+}
+
+/// The observer that does nothing: the form [`EditorCommand::apply_recorded`]
+/// uses.
+pub(crate) struct NoopObserver;
+
+impl CommandObserver for NoopObserver {
+    fn after_command(
+        &mut self,
+        _engine: &mut Engine,
+        _index: usize,
+        _command: &EditorCommand,
+        _inverse: Option<&EditorCommand>,
+    ) {
+    }
+
+    fn take_followups(&mut self) -> Vec<EditorCommand> {
+        Vec::new()
+    }
+}
+
+// =============================================================================
 // Constants
 // =============================================================================
 

@@ -51,6 +51,9 @@ use pill_editor_core::drain::{self, HistoryDirection};
 use pill_editor_core::editor_state::{EditorCommand, EditorSelection, EditorSnapshot};
 use pill_editor_core::gizmo::{GizmoMode, GizmoSettings, GizmoSpace, GizmoState};
 use pill_editor_core::history::CommandHistory;
+use pill_editor_core::hooks::{EditorHookRegistry, EditorHookRequests, HookNotices};
+use pill_editor_core::notices::EditorNotices;
+use pill_editor_core::panels::ModuleLiveness;
 use pill_editor_core::scripted::{Dump, ScriptedCommand};
 use pill_editor_core::{entities, systems};
 use pill_engine_core::input::InputEvent;
@@ -144,6 +147,10 @@ struct WebEditorApplication {
     last_frame_time: Option<Instant>,
     /// Frames run since startup.
     frame_index: u64,
+    /// The liveness marker of every editor API callback the linked modules
+    /// registered. A browser build never unloads an image, so one marker
+    /// serves the whole session.
+    hook_liveness: Arc<ModuleLiveness>,
 }
 
 impl ApplicationHandler for WebEditorApplication {
@@ -364,9 +371,11 @@ impl WebEditorApplication {
             }
         }
 
-        // Step 4: apply the batches the shell queued in the previous frame and
-        // the lines the page scripted, then publish this frame's boundary
-        // input and snapshot.
+        // Step 4: bind the callbacks the linked modules registered, then apply
+        // the batches the shell queued in the previous frame and the lines the
+        // page scripted. The marker is permanent: a static build never unloads
+        // an image, so there is nothing to invalidate.
+        sync_hooks(driver.engine_mut().world_mut(), &self.hook_liveness);
         apply_pending_commands(
             driver.engine_mut(),
             now.duration_since(self.started_at),
@@ -508,6 +517,7 @@ pub fn run(project: StaticProject, scene_canvas_id: &str, ui_canvas_id: &str) {
             frames_per_second: 0.0,
             last_frame_time: None,
             frame_index: 0,
+            hook_liveness: ModuleLiveness::new(),
         });
     });
 }
@@ -533,6 +543,57 @@ fn apply_pending_commands(
     // the desktop editor does.
     let now_millis = elapsed_since_start.as_millis() as u64;
     let _ = drain::apply_pending(engine, now_millis);
+    // Step 3: hand the notices the callbacks posted to the editor's own list.
+    // The browser has no executable republishing that resource, so it is
+    // written directly.
+    publish_hook_notices(engine);
+}
+
+/// Binds every callback request the linked modules queued.
+///
+/// A browser build links its modules into one image, so one permanent marker
+/// is the whole liveness story; the registry still filters by it, exactly as
+/// the desktop editor filters by each module's own marker.
+fn sync_hooks(world: &mut pill_engine_core::World, liveness: &Arc<ModuleLiveness>) {
+    let requests = world
+        .get_resource_mut::<EditorHookRequests>()
+        .map(|requests| requests.drain())
+        .unwrap_or_default();
+    if requests.is_empty() {
+        return;
+    }
+    let Some(registry) = world.get_resource_mut::<EditorHookRegistry>() else {
+        return;
+    };
+    for request in requests {
+        registry.register(
+            request.source(),
+            request.event(),
+            request.callback(),
+            liveness,
+        );
+    }
+}
+
+/// Appends the notices the editor API's callbacks posted to the editor's list.
+fn publish_hook_notices(engine: &mut pill_engine_core::Engine) {
+    let notices = engine
+        .world_mut()
+        .get_resource_mut::<HookNotices>()
+        .map(|notices| notices.drain())
+        .unwrap_or_default();
+    if notices.is_empty() {
+        return;
+    }
+    let world = engine.world_mut();
+    if world.get_resource::<EditorNotices>().is_none() {
+        world.insert_resource(EditorNotices::default());
+    }
+    if let Some(editor_notices) = world.get_resource_mut::<EditorNotices>() {
+        for notice in notices {
+            editor_notices.push_event(notice.level, notice.text);
+        }
+    }
 }
 
 /// Run every scripted line the page has appended through the shared grammar.

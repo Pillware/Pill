@@ -27,6 +27,7 @@
 //! too.
 
 // Current crate
+use pill_editor_core::hooks::FieldEditPhase;
 use pill_editor_shell_egui_editor::shell::prelude::*;
 use pill_editor_shell_egui_editor::shell::*;
 
@@ -231,7 +232,13 @@ pub fn inspector_field_row(
                             if response.lost_focus() && edited != *current {
                                 let committed = FieldValue::Text(edited.clone());
                                 queue_field_edit(
-                                    pending, targets, entity, type_name, field, committed,
+                                    pending,
+                                    targets,
+                                    entity,
+                                    type_name,
+                                    field,
+                                    committed,
+                                    FieldEditPhase::Committed,
                                 );
                             }
                         },
@@ -256,7 +263,13 @@ pub fn inspector_field_row(
                             // squashes the field instead of the row growing.
                             if let Some(edited) = fixed_width_field(ui, other, Some(widget)) {
                                 queue_field_edit(
-                                    pending, targets, entity, type_name, field, edited,
+                                    pending,
+                                    targets,
+                                    entity,
+                                    type_name,
+                                    field,
+                                    edited.value,
+                                    edited.phase,
                                 );
                             }
                         },
@@ -311,7 +324,8 @@ pub fn inspector_field_row(
                             type_name,
                             field,
                             element_index,
-                            edited,
+                            edited.value,
+                            edited.phase,
                         );
                     }
                 },
@@ -352,7 +366,8 @@ pub fn inspector_field_row(
                                     type_name,
                                     &leaf.field,
                                     element,
-                                    edited,
+                                    edited.value,
+                                    edited.phase,
                                 ),
                                 None => queue_field_edit(
                                     pending,
@@ -360,7 +375,8 @@ pub fn inspector_field_row(
                                     entity,
                                     type_name,
                                     &leaf.field,
-                                    edited,
+                                    edited.value,
+                                    edited.phase,
                                 ),
                             }
                         }
@@ -415,7 +431,15 @@ pub fn inspector_field_row(
                         return;
                     };
                     if let Some(edited) = fixed_width_field(ui, value, Some(widget)) {
-                        queue_field_edit(pending, targets, entity, type_name, &leaf.field, edited);
+                        queue_field_edit(
+                            pending,
+                            targets,
+                            entity,
+                            type_name,
+                            &leaf.field,
+                            edited.value,
+                            edited.phase,
+                        );
                     }
                 },
             );
@@ -1093,13 +1117,17 @@ pub fn queue_field_edit(
     type_name: &str,
     field: &str,
     value: FieldValue,
+    phase: FieldEditPhase,
 ) {
     let (commands, label, coalesce_key) =
         inspector::selection_field_edit(targets, entity, type_name, field, value);
-    pending.push_recorded(commands, label, Some(coalesce_key));
+    pending.push_recorded_with_phase(commands, label, Some(coalesce_key), phase);
 }
 
 /// Queues one array-element edit for every target, as one recorded step.
+// The parameters mirror `inspector::selection_element_edit`; bundling them
+// into a struct would only rename the same list.
+#[allow(clippy::too_many_arguments)]
 pub fn queue_element_edit(
     pending: &mut PendingEditorCommands,
     targets: &[Entity],
@@ -1108,10 +1136,11 @@ pub fn queue_element_edit(
     field: &str,
     index: usize,
     value: FieldValue,
+    phase: FieldEditPhase,
 ) {
     let (commands, label, coalesce_key) =
         inspector::selection_element_edit(targets, entity, type_name, field, index, value);
-    pending.push_recorded(commands, label, Some(coalesce_key));
+    pending.push_recorded_with_phase(commands, label, Some(coalesce_key), phase);
 }
 
 /// Returns whether the selected entities disagree on this row's value.

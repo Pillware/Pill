@@ -183,11 +183,17 @@ impl EditorWindow {
     /// before the snapshot, so the tabs draw this frame's state and not a
     /// frame-old one.
     pub(super) fn service_editor_requests(&mut self) {
+        // Step 3a: bind the callbacks the loaded modules registered, before
+        // anything applies, so a module's first edits already reach it.
+        self.sync_hooks();
         // Step 3b: apply the engine mutations the shell's assets actions and
         // the scripted channel queued - the frame boundary the
         // `EditorCommand` contract names. A failed command never aborts the
         // rest of the batch.
         self.apply_pending_commands();
+        // The notices those callbacks posted take the executable's toast path,
+        // so its next republish of the notice list cannot erase them.
+        self.apply_hook_notices();
         // Step 3c: write the gizmo's settings back when they changed, then read
         // the live preference, theme and keybinding files. All of it is before
         // the snapshot, so the tabs see the state this frame's edits left. The

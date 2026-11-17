@@ -264,6 +264,7 @@ pub use inspector_widgets::read_only_row;
 pub use inspector_widgets::scalar_edit;
 pub use inspector_widgets::scalar_edit_decorated;
 pub use inspector_widgets::stretched_drag_value;
+pub use inspector_widgets::FieldEditResponse;
 pub use inspector_widgets::Number;
 
 /// The [`inspector_settings`] module: the inspector's asset import settings.

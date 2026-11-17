@@ -2,9 +2,11 @@
 //!
 //! # Responsibilities
 //!
+//! - `FieldEditResponse`: what one control reports for a frame - the value and
+//!   the interaction phase it belongs to.
 //! - `scalar_edit_decorated`: one field's editor, drawn in the form the row
-//!   model asked for. It returns the edited value and leaves committing it to
-//!   the caller.
+//!   model asked for. It returns the edit and leaves committing it to the
+//!   caller.
 //! - `Number` and `integer_edit`: the editor every whole-number kind shares,
 //!   in its slider and drag-value forms.
 //! - `axis_slot` and `fixed_width_field`: a vector component's axis letter and
@@ -20,6 +22,7 @@
 //! crate resolves them too.
 
 // Current crate
+use pill_editor_core::hooks::FieldEditPhase;
 use pill_editor_shell_egui_editor::shell::prelude::*;
 use pill_editor_shell_egui_editor::shell::tab_inspector::{
     INSPECTOR_VECTOR_FIELD_HEIGHT, INSPECTOR_VECTOR_LABEL_WIDTH,
@@ -29,6 +32,57 @@ use pill_editor_shell_egui_editor::shell::*;
 // =============================================================================
 // Types
 // =============================================================================
+
+/// What one field control reports for a frame.
+///
+/// A continuous control reports [`FieldEditPhase::Interactive`] while it is
+/// dragged and one [`FieldEditPhase::Committed`] on release; a one-shot control
+/// reports one committed edit. The editor API's callbacks see the phase, so a
+/// hook can react once when a drag ends rather than on every frame.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FieldEditResponse {
+    /// The value to write.
+    pub value: FieldValue,
+    /// The interaction phase the write belongs to.
+    pub phase: FieldEditPhase,
+}
+
+impl FieldEditResponse {
+    /// One committed edit of `value`.
+    pub fn committed(value: FieldValue) -> Self {
+        Self {
+            value,
+            phase: FieldEditPhase::Committed,
+        }
+    }
+}
+
+/// Turns a continuous control's response into the edit it reports.
+///
+/// A drag reports `Interactive` while the pointer moves and one `Committed` on
+/// release. A value typed into the control commits at once. A release frame
+/// with no new value still reports the commit, carrying the value the control
+/// shows, so a callback hears exactly one end of the interaction.
+pub fn continuous_edit(response: &egui::Response, value: FieldValue) -> Option<FieldEditResponse> {
+    if response.changed() {
+        let phase = if response.dragged() {
+            FieldEditPhase::Interactive
+        } else {
+            FieldEditPhase::Committed
+        };
+        return Some(FieldEditResponse { value, phase });
+    }
+    response
+        .drag_stopped()
+        .then_some(FieldEditResponse::committed(value))
+}
+
+/// Turns a one-shot control's response into the edit it reports.
+pub fn one_shot_edit(response: &egui::Response, value: FieldValue) -> Option<FieldEditResponse> {
+    response
+        .changed()
+        .then(|| FieldEditResponse::committed(value))
+}
 
 /// One whole number seen through `f64`, with the way back into its own
 /// `FieldValue`.
@@ -143,47 +197,44 @@ pub fn scalar_edit_decorated(
     ui: &mut egui::Ui,
     value: &FieldValue,
     widget: &inspector::FieldWidget,
-) -> Option<FieldValue> {
+) -> Option<FieldEditResponse> {
     use inspector::FieldWidget as Row;
     match (value, widget) {
         (FieldValue::F32(current), Row::FloatSlider { min, max }) => {
             let mut edited = *current;
             let (low, high) = ascending(*min, *max);
             fill_slider_width(ui);
-            ui.add(egui::Slider::new(&mut edited, low..=high).max_decimals(4))
-                .changed()
-                .then_some(FieldValue::F32(edited))
+            let response = ui.add(egui::Slider::new(&mut edited, low..=high).max_decimals(4));
+            continuous_edit(&response, FieldValue::F32(edited))
         }
         (FieldValue::F32(current), Row::FloatDrag { min }) => {
             let mut edited = current.max(*min);
-            stretched_drag_value(
+            let response = stretched_drag_value(
                 ui,
                 egui::DragValue::new(&mut edited)
                     .range(*min..=f32::MAX)
                     .speed(0.05),
-            )
-            .changed()
-            .then_some(FieldValue::F32(edited))
+            );
+            continuous_edit(&response, FieldValue::F32(edited))
         }
         (FieldValue::F64(current), Row::FloatSlider { min, max }) => {
             let mut edited = *current;
             let (low, high) = ascending(*min, *max);
             fill_slider_width(ui);
-            ui.add(egui::Slider::new(&mut edited, low as f64..=high as f64).max_decimals(9))
-                .changed()
-                .then_some(FieldValue::F64(edited))
+            let response =
+                ui.add(egui::Slider::new(&mut edited, low as f64..=high as f64).max_decimals(9));
+            continuous_edit(&response, FieldValue::F64(edited))
         }
         (FieldValue::F64(current), Row::FloatDrag { min }) => {
             let mut edited = current.max(*min as f64);
-            stretched_drag_value(
+            let response = stretched_drag_value(
                 ui,
                 egui::DragValue::new(&mut edited)
                     .range(*min as f64..=f64::MAX)
                     .speed(0.05)
                     .max_decimals(9),
-            )
-            .changed()
-            .then_some(FieldValue::F64(edited))
+            );
+            continuous_edit(&response, FieldValue::F64(edited))
         }
         // Every whole-number kind shares one editor. The decorator picks the
         // widget, and the kind supplies its own bounds.
@@ -223,7 +274,7 @@ pub fn fixed_width_field(
     ui: &mut egui::Ui,
     value: &FieldValue,
     widget: Option<&inspector::FieldWidget>,
-) -> Option<FieldValue> {
+) -> Option<FieldEditResponse> {
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), INSPECTOR_VECTOR_FIELD_HEIGHT),
         egui::Sense::hover(),
@@ -278,7 +329,7 @@ pub fn integer_edit(
     number: &Number,
     range: Option<(f32, f32)>,
     floor: Option<f32>,
-) -> Option<FieldValue> {
+) -> Option<FieldEditResponse> {
     if let Some((low, high)) = range {
         let low = (low as f64).clamp(number.kind_min, number.kind_max);
         let high = (high as f64).clamp(number.kind_min, number.kind_max);
@@ -289,68 +340,61 @@ pub fn integer_edit(
         };
         let mut current = number.rounded(low, high);
         fill_slider_width(ui);
-        return ui
-            .add(
-                egui::Slider::new(&mut current, low..=high)
-                    .step_by(1.0)
-                    .fixed_decimals(0),
-            )
-            .changed()
-            .then(|| (number.rebuild)(current.round()));
+        let response = ui.add(
+            egui::Slider::new(&mut current, low..=high)
+                .step_by(1.0)
+                .fixed_decimals(0),
+        );
+        return continuous_edit(&response, (number.rebuild)(current.round()));
     }
     let low = (floor? as f64).clamp(number.kind_min, number.kind_max);
     let mut current = number.rounded(low, number.kind_max);
-    stretched_drag_value(
+    let response = stretched_drag_value(
         ui,
         egui::DragValue::new(&mut current)
             .range(low..=number.kind_max)
             .speed(1.0)
             .fixed_decimals(0),
-    )
-    .changed()
-    .then(|| (number.rebuild)(current.round()))
+    );
+    continuous_edit(&response, (number.rebuild)(current.round()))
 }
 
 /// Draws the editor for one scalar field: a checkbox for a boolean, a drag
 /// value for a number (drag to scrub, click to type). Returns `None` when the
 /// kind has no editor, and the caller then draws the value as read-only text.
-pub fn scalar_edit(ui: &mut egui::Ui, value: &FieldValue) -> Option<FieldValue> {
+pub fn scalar_edit(ui: &mut egui::Ui, value: &FieldValue) -> Option<FieldEditResponse> {
     match value {
         FieldValue::Bool(current) => {
             let mut edited = *current;
-            ui.checkbox(&mut edited, "")
-                .changed()
-                .then_some(FieldValue::Bool(edited))
+            let response = ui.checkbox(&mut edited, "");
+            one_shot_edit(&response, FieldValue::Bool(edited))
         }
         FieldValue::F32(current) => {
             let mut edited = *current;
-            stretched_drag_value(ui, egui::DragValue::new(&mut edited).speed(0.05))
-                .changed()
-                .then_some(FieldValue::F32(edited))
+            let response = stretched_drag_value(ui, egui::DragValue::new(&mut edited).speed(0.05));
+            continuous_edit(&response, FieldValue::F32(edited))
         }
         FieldValue::F64(current) => {
             let mut edited = *current;
-            stretched_drag_value(
+            let response = stretched_drag_value(
                 ui,
                 egui::DragValue::new(&mut edited)
                     .speed(0.05)
                     .max_decimals(9),
-            )
-            .changed()
-            .then_some(FieldValue::F64(edited))
+            );
+            continuous_edit(&response, FieldValue::F64(edited))
         }
         FieldValue::Enum {
             type_tag,
             discriminant,
-        } => enum_edit(ui, type_tag, *discriminant),
+        } => enum_edit(ui, type_tag, *discriminant).map(FieldEditResponse::committed),
         // Every whole-number kind shares one drag value here. A kind without a
         // numeric editor answers `None`.
         other => {
             let number = Number::of(other)?;
             let mut edited = number.current;
-            stretched_drag_value(ui, egui::DragValue::new(&mut edited))
-                .changed()
-                .then(|| (number.rebuild)(edited))
+            let response = stretched_drag_value(ui, egui::DragValue::new(&mut edited));
+            continuous_edit(&response, (number.rebuild)(edited))
         }
     }
 }

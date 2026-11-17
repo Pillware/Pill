@@ -40,7 +40,7 @@ pub fn resource_section(
             // edits too, because the resource's table stores it as a `U32`
             // discriminant.
             if let Some(edited) = scalar_edit(ui, &field.value) {
-                queue_edit(pending, view, field, edited);
+                queue_edit(pending, view, field, edited.value);
                 return;
             }
             // A kind with no control - text, an array, a list, an asset or

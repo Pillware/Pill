@@ -16,6 +16,9 @@
 //!   it ([`editor_state`]).
 //! - Own the clipboard documents ([`clipboard`]), the transform gizmos
 //!   ([`gizmo`]) and the floating viewport toolbox ([`toolbox`]).
+//! - Own the editor API's callbacks ([`hooks`]): the callbacks an `_editor`
+//!   crate registers, their payloads, the context they run with and the
+//!   frame-boundary dispatch that applies their answers.
 //! - Own the tools layer ([`tools`]): the element selection, the tool registry
 //!   and the chain of extensions that add to a tool another crate owns, so a
 //!   component tool reports its own elements, frames, menu rows and keys and
@@ -105,6 +108,9 @@ pub mod error;
 pub mod gizmo;
 /// The undo and redo history of editor edits.
 pub mod history;
+/// The editor API an `_editor` crate registers against: callbacks for the
+/// editor's edits, their context and the drain's dispatch.
+pub mod hooks;
 /// Phosphor's icons: the fonts, the glyphs and the duotone painting.
 pub mod icons;
 /// The bridge from the shell's own window events to egui's input.

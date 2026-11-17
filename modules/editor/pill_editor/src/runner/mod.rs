@@ -61,6 +61,7 @@ use pill_editor_core::gizmo::{
     self, GizmoGeometry, GizmoMode, GizmoSettings, GizmoSpace, GizmoState, HandleKind, HandleStates,
 };
 use pill_editor_core::history::CommandHistory;
+use pill_editor_core::hooks::{EditorHookRegistry, EditorHookRequests, HookNotices};
 use pill_editor_core::inspector;
 use pill_editor_core::layout::{
     layout_directory, EditorTab, BOTTOM_ROW_FRACTION, SIDE_COLUMN_FRACTION,
@@ -1816,7 +1817,7 @@ impl EditorWindow {
         }
         for request in requests {
             let marker = self
-                .panel_markers
+                .module_markers
                 .entry(request.source.to_string())
                 .or_default();
             let slot = {
@@ -1968,6 +1969,68 @@ impl EditorWindow {
         if !plan.skipped.is_empty() {
             let message = format!("skipped {}", plan.skipped.join(", "));
             self.push_toast(NoticeLevel::Warning, format!("clipboard: {message}"));
+        }
+    }
+
+    /// Apply the editor API's callback requests.
+    ///
+    /// A request names a callback that lives in the requesting module's image,
+    /// so the executable ties it to that module's liveness marker. The
+    /// registry hands a callback out only while the marker is alive, and a
+    /// reload drops the marker (see [`Self::fold_host_notices`]).
+    fn sync_hooks(&mut self) {
+        let requests = {
+            let world = self.host.host_mut().engine_mut().world_mut();
+            world
+                .get_resource_mut::<EditorHookRequests>()
+                .map(|requests| requests.drain())
+                .unwrap_or_default()
+        };
+        if requests.is_empty() {
+            return;
+        }
+        for request in requests {
+            let marker = self
+                .module_markers
+                .entry(request.source().to_string())
+                .or_default();
+            {
+                let world = self.host.host_mut().engine_mut().world_mut();
+                let Some(registry) = world.get_resource_mut::<EditorHookRegistry>() else {
+                    continue;
+                };
+                registry.register(
+                    request.source(),
+                    request.event(),
+                    request.callback(),
+                    marker,
+                );
+            }
+            info!(
+                target: telemetry_target::EDITOR,
+                source = request.source(),
+                event = request.event().name(),
+                "[editor] hook registered"
+            );
+        }
+    }
+
+    /// Fold the notices the editor API's callbacks posted into the toast list.
+    ///
+    /// A notice written into [`EditorNotices`] by the shared core would be
+    /// erased by this executable's next republish, so the drain collects them
+    /// in its own queue and they take the same path as the editor's own
+    /// toasts.
+    fn apply_hook_notices(&mut self) {
+        let notices = {
+            let world = self.host.host_mut().engine_mut().world_mut();
+            world
+                .get_resource_mut::<HookNotices>()
+                .map(|notices| notices.drain())
+                .unwrap_or_default()
+        };
+        for notice in notices {
+            self.push_toast(notice.level, notice.text);
         }
     }
 
@@ -3358,10 +3421,10 @@ impl EditorWindow {
                 HostNotice::Reloaded { module, .. } => {
                     self.notices.problems.retain(|row| row.module != *module);
                     // The swap means the old image is gone: its panels' draw
-                    // functions are stale addresses. Dropping the marker makes
-                    // them read "module not loaded" until the new generation's
-                    // request arrives this same frame.
-                    if self.panel_markers.remove(module).is_some() {
+                    // functions and its hook callbacks are stale addresses.
+                    // Dropping the marker makes both read "not loaded" until
+                    // the new generation's requests arrive this same frame.
+                    if self.module_markers.remove(module).is_some() {
                         info!(
                             target: telemetry_target::EDITOR,
                             module = module.as_str(),

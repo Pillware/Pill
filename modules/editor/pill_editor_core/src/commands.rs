@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 // Current crate
 use crate::drain::HistoryDirection;
 use crate::editor_state::EditorCommand;
+use crate::hooks::events::FieldEditPhase;
 use crate::layout::EditorTab;
 
 // =============================================================================
@@ -1173,6 +1174,7 @@ impl PendingEditorCommands {
             label: String::new(),
             coalesce_key: None,
             replay: None,
+            phase: FieldEditPhase::Committed,
         });
     }
 
@@ -1189,6 +1191,7 @@ impl PendingEditorCommands {
             label: String::new(),
             coalesce_key: None,
             replay: Some(direction),
+            phase: FieldEditPhase::Committed,
         });
     }
 
@@ -1225,12 +1228,29 @@ impl PendingEditorCommands {
         label: impl Into<String>,
         coalesce_key: Option<String>,
     ) {
+        self.push_recorded_with_phase(commands, label, coalesce_key, FieldEditPhase::Committed);
+    }
+
+    /// [`Self::push_recorded`] with the interaction phase its field edits
+    /// report to the editor API's callbacks.
+    ///
+    /// A continuous control queues [`FieldEditPhase::Interactive`] frames while
+    /// it is dragged and one [`FieldEditPhase::Committed`] batch on release;
+    /// every other edit is a single committed batch.
+    pub fn push_recorded_with_phase(
+        &mut self,
+        commands: Vec<EditorCommand>,
+        label: impl Into<String>,
+        coalesce_key: Option<String>,
+        phase: FieldEditPhase,
+    ) {
         self.batches.push(PendingCommandBatch {
             commands,
             record: true,
             label: label.into(),
             coalesce_key,
             replay: None,
+            phase,
         });
     }
 }
@@ -1249,6 +1269,9 @@ pub struct PendingCommandBatch {
     pub coalesce_key: Option<String>,
     /// The history move this batch replays, when it is one.
     pub replay: Option<HistoryDirection>,
+    /// The interaction phase its field edits report to the editor API's
+    /// callbacks.
+    pub phase: FieldEditPhase,
 }
 
 impl pill_engine::Resource for PendingEditorCommands {
@@ -1280,6 +1303,13 @@ pub fn ensure_command_resources(world: &mut pill_engine::World) {
     }
     crate::history::CommandHistory::ensure(world);
     crate::scene_workflow::SceneSession::ensure(world);
+    // The editor API's callbacks: the registry the executable binds requests
+    // into, the queue modules register through, and the notices a callback
+    // posted. All three exist before the first frame, so a module's `register`
+    // has somewhere to queue and the shell has something to read.
+    crate::hooks::EditorHookRegistry::ensure(world);
+    crate::hooks::EditorHookRequests::ensure(world);
+    crate::hooks::HookNotices::ensure(world);
 }
 
 // =============================================================================

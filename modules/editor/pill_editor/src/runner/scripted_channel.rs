@@ -2370,7 +2370,7 @@ impl EditorWindow {
     /// marker, which is what a reload's re-registration does.
     pub(super) fn scripted_panel_restore(&mut self, source: &str) {
         // Step 1: Report a source that is still bound and stop.
-        if self.panel_markers.contains_key(source) {
+        if self.module_markers.contains_key(source) {
             info!(
                 target: telemetry_target::EDITOR,
                 source,
@@ -2403,7 +2403,7 @@ impl EditorWindow {
         }
         // Step 3: Remember the marker and report the count.
         if restored > 0 {
-            self.panel_markers
+            self.module_markers
                 .insert(source.to_string(), liveness_marker);
         }
         info!(
@@ -2418,10 +2418,10 @@ impl EditorWindow {
     ///
     /// This leaves the registry in the state a module unload leaves it in,
     /// because the marker is what an unload drops. The tab then reads
-    /// "module not loaded", and the panel's draw function is no longer handed
-    /// out.
+    /// "module not loaded", and neither the panel's draw function nor the
+    /// module's editor-API callbacks are handed out.
     pub(super) fn scripted_panel_unload(&mut self, source: &str) {
-        let dropped = self.panel_markers.remove(source).is_some();
+        let dropped = self.module_markers.remove(source).is_some();
         info!(
             target: telemetry_target::EDITOR,
             source,

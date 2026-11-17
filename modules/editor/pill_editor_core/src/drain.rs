@@ -37,6 +37,7 @@ use pill_engine::{Engine, World};
 use crate::commands::PendingEditorCommands;
 use crate::editor_state::{EditorCommand, EditorSelection};
 use crate::history::{CommandHistory, HistoryEntry, HistoryEntryKind};
+use crate::hooks::{FieldEditCause, HookSession};
 
 // =============================================================================
 // The drain
@@ -72,6 +73,9 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
             .unwrap_or_default()
     };
     let mut drain_outcome = DrainOutcome::default();
+    // The editor API's callbacks: one snapshot of the live registrations,
+    // taken before any batch applies, and the notices this drain collected.
+    let mut hook_session = HookSession::new(engine.world());
     // Step 2: Apply each batch in order, then act on what it changed.
     for mut batch in batches {
         drain_outcome.batches += 1;
@@ -79,7 +83,31 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
         // it means, so it is asked here and its commands run in the row's
         // place, which makes one menu click one undo step.
         expand_element_menu(engine, &mut batch);
-        let recorded_apply = EditorCommand::apply_recorded(engine, &batch.commands);
+        // Step 2b: the editor API's before-callbacks see the whole batch
+        // first, so a refusal drops every command of it instead of leaving
+        // part of a multi-selection edit applied and unrecorded.
+        let cause = if batch.replay.is_some() {
+            FieldEditCause::HistoryRestored
+        } else {
+            FieldEditCause::Authored
+        };
+        if !hook_session.prepare_field_batch(engine, &mut batch.commands, cause, batch.phase) {
+            // The refusal is already a notice and a log line. A replay's step
+            // was popped before its commands ran, so it goes back where it
+            // came from exactly as a failed replay does.
+            if let Some(direction) = batch.replay {
+                let world = engine.world_mut();
+                if let Some(history) = world.get_resource_mut::<CommandHistory>() {
+                    match direction {
+                        HistoryDirection::Undo => history.undo_rollback(),
+                        HistoryDirection::Redo => history.redo_rollback(),
+                    }
+                }
+            }
+            continue;
+        }
+        let recorded_apply =
+            EditorCommand::apply_recorded_observed(engine, &batch.commands, &mut hook_session);
         let failed_command_count = recorded_apply.failures.len();
         pill_core::info!(
             target: telemetry_target::EDITOR,
@@ -186,7 +214,9 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
             }
         }
     }
-    // Step 3: Drop the history entries the rebuilt registry cannot resolve.
+    // Step 3: hand the notices the callbacks posted to the executable's toast
+    // path, then drop the history entries the rebuilt registry cannot resolve.
+    hook_session.publish_notices(engine.world_mut());
     prune_history(engine);
     drain_outcome
 }

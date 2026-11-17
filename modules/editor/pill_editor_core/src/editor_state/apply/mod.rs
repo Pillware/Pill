@@ -54,6 +54,20 @@ impl EditorCommand {
     /// new handle while the selection restore still named the destroyed one,
     /// so the selection would come back pointing at nothing.
     pub fn apply_recorded(engine: &mut Engine, commands: &[EditorCommand]) -> RecordedApply {
+        Self::apply_recorded_observed(engine, commands, &mut NoopObserver)
+    }
+
+    /// [`Self::apply_recorded`], reporting each applied command to `observer`.
+    ///
+    /// The drain passes the editor API's hook session, whose after-callbacks
+    /// may queue follow-up commands. A follow-up runs right after the command
+    /// that queued it, inside the same history step, and never reaches the
+    /// observer again, so a callback cannot re-enter itself.
+    pub(crate) fn apply_recorded_observed(
+        engine: &mut Engine,
+        commands: &[EditorCommand],
+        observer: &mut dyn CommandObserver,
+    ) -> RecordedApply {
         let mut recorded = RecordedApply {
             fully_invertible: true,
             ..RecordedApply::default()
@@ -74,12 +88,13 @@ impl EditorCommand {
                     if working_commands[index].recordable() {
                         crate::scene_workflow::mark_dirty(engine.world_mut());
                     }
-                    if let Some(inverse) = command_outcome.inverse {
-                        recorded.inverses.push(inverse);
+                    let CommandOutcome { inverse, remap } = command_outcome;
+                    if let Some(inverse) = &inverse {
+                        recorded.inverses.push(inverse.clone());
                     } else {
                         recorded.fully_invertible = false;
                     }
-                    if let Some((previous, assigned)) = command_outcome.remap {
+                    if let Some((previous, assigned)) = remap {
                         for later in &mut working_commands[index + 1..] {
                             later.remap_entity(previous, assigned);
                         }
@@ -87,6 +102,18 @@ impl EditorCommand {
                             inverse.remap_entity(previous, assigned);
                         }
                         recorded.remaps.push((previous, assigned));
+                    }
+                    // Step 1a: report the command, then run the follow-ups its
+                    // callback queued. They run inside this batch, so one undo
+                    // reverts them with the command that caused them.
+                    observer.after_command(
+                        engine,
+                        index,
+                        &working_commands[index],
+                        inverse.as_ref(),
+                    );
+                    for followup in observer.take_followups() {
+                        Self::apply_followup(engine, &followup, index, &mut recorded);
                     }
                 }
                 Err(message) => {
@@ -99,6 +126,43 @@ impl EditorCommand {
         // reversed.
         recorded.inverses.reverse();
         recorded
+    }
+
+    /// Applies one command a callback queued, recording its inverse into the
+    /// same batch.
+    ///
+    /// A follow-up that re-creates an entity cannot be part of one step: its
+    /// fresh handle would have to move the command that queued it. The batch
+    /// reports itself as not fully invertible instead of recording half of it.
+    fn apply_followup(
+        engine: &mut Engine,
+        command: &EditorCommand,
+        index: usize,
+        recorded: &mut RecordedApply,
+    ) {
+        if !command.recordable() {
+            recorded.fully_invertible = false;
+        }
+        match Self::apply_one(engine, command) {
+            Ok(outcome) => {
+                if command.recordable() {
+                    crate::scene_workflow::mark_dirty(engine.world_mut());
+                }
+                match outcome.inverse {
+                    Some(inverse) => recorded.inverses.push(inverse),
+                    None => recorded.fully_invertible = false,
+                }
+                if outcome.remap.is_some() {
+                    recorded.fully_invertible = false;
+                }
+            }
+            Err(message) => {
+                recorded
+                    .failures
+                    .push((index, format!("follow-up {command:?}: {message}")));
+                recorded.fully_invertible = false;
+            }
+        }
     }
 
     /// Captures a live entity's component values as seeds for a later restore.

@@ -323,11 +323,12 @@ pub(super) struct EditorWindow {
     /// The snapshot field whose change last asked for a frame. The log names a
     /// churning reason once rather than every frame.
     pub(super) snapshot_changed_field: Option<String>,
-    /// One liveness marker per module that registered a panel. The executable
-    /// holds the strong handle and drops it when the module reloads, which is
-    /// what makes the module's panels read "module not loaded". The module
-    /// itself only queues requests.
-    pub(super) panel_markers: std::collections::HashMap<String, Arc<ModuleLiveness>>,
+    /// One liveness marker per module that registered a panel or an editor
+    /// API callback. The executable holds the strong handle and drops it when
+    /// the module reloads, which is what makes the module's panels read
+    /// "module not loaded" and keeps its callbacks from being called. The
+    /// module itself only queues requests.
+    pub(super) module_markers: std::collections::HashMap<String, Arc<ModuleLiveness>>,
     /// The newest request per panel id, kept so a panel can be registered
     /// again after an unload without the module running.
     pub(super) panel_requests: Vec<PanelRequest>,
@@ -796,7 +797,7 @@ impl EditorWindow {
             polling: false,
             idle_frame_millis_max: 0.0,
             snapshot_changed_field: None,
-            panel_markers: std::collections::HashMap::new(),
+            module_markers: std::collections::HashMap::new(),
             panel_requests: Vec::new(),
         };
         editor.place_views();
