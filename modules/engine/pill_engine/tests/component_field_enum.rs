@@ -1,4 +1,4 @@
-//! Proves the field enum `#[derive(PillComponent)]` generates.
+//! Proves the field enum `#[component]` generates.
 //!
 //! # Responsibilities
 //!
@@ -14,11 +14,12 @@
 //! case pins that a type with no named fields keeps compiling.
 
 // External crates
-use pill_engine::{ComponentFieldId, ComponentFields, PillComponent};
+use pill_engine::{component, ComponentFieldId, ComponentFields};
 
 /// A component covering the field shapes the enum has to name.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[derive(Debug, Clone, Copy, Default)]
 struct FieldEnumProbe {
     /// A scalar field.
     speed: f32,
@@ -29,7 +30,8 @@ struct FieldEnumProbe {
 }
 
 /// A component with no named fields: the derive emits no enum for it.
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[component]
+#[derive(Debug, Clone, Copy, Default)]
 struct TupleProbe(f32);
 
 /// Returns every field name a component's generated enum reports, through the

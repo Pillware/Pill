@@ -239,7 +239,10 @@ pub use systems::scripting::{
 };
 pub use systems::{scheduler, scripting, system};
 
-// Serde derives re-exported so downstream components can derive serialization without a direct dependency.
+// Serde, re-exported so downstream components derive serialization without a
+// direct dependency: the two derive names, and the crate itself, which is what
+// a generated `#[serde(crate = "::pill_engine::serde")]` resolves through.
+pub use serde;
 pub use serde::{Deserialize, Serialize};
 
 // The type-map crate an asset type implements `TraitAccessible` from, re-exported
@@ -253,11 +256,14 @@ pub use tracing;
 
 // Registration macros, re-exported here so the facade's glob re-export carries
 // them to every project and module. The `inventory::submit` they expand to is
-// re-exported by the facade, which owns the registries.
+// re-exported by the facade, which owns the registries. `component`,
+// `resource` and `asset` are the declaration form an author writes; each
+// expands to the derive beside it.
 pub use pill_engine_macros::{
-    pill_hot, pill_hot_fn, pill_hot_resolver, pill_mirror_fn, pill_mirror_impl, pill_mirror_method,
-    pill_mirror_object, pill_mirror_resource, pill_module, pill_project, pill_value_type, script,
-    system, PillAsset, PillComponent, PillLayout, PillMirror, PillResource,
+    asset, component, pill_hot, pill_hot_fn, pill_hot_resolver, pill_mirror_fn, pill_mirror_impl,
+    pill_mirror_method, pill_mirror_object, pill_mirror_resource, pill_module, pill_project,
+    pill_value_type, resource, script, system, PillAsset, PillComponent, PillLayout, PillMirror,
+    PillResource,
 };
 
 // World container and its entity-builder and error types.

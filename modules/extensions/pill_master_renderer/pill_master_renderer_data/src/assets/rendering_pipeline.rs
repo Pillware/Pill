@@ -30,8 +30,8 @@
 
 // External crates
 use pill_engine::{
-    pill_mirror_object, AssetLoadResult, AssetManager, AssetReference, Handle, PillAsset,
-    PillMirror, StandaloneAsset,
+    asset, pill_mirror_object, AssetLoadResult, AssetManager, AssetReference, Handle, PillMirror,
+    StandaloneAsset,
 };
 use serde::{Deserialize, Serialize};
 
@@ -71,9 +71,9 @@ impl PipelinePass {
 // =============================================================================
 
 /// The passes a frame runs, in the order they were added.
-#[derive(Clone, Debug, PillAsset)]
-#[pill(standalone)]
+#[asset(standalone)]
 #[pill_mirror_object(asset, shared = "pill_master_renderer::assets::RenderingPipeline")]
+#[derive(Clone, Debug)]
 pub struct RenderingPipeline {
     /// The passes, in the order they run. The renderer sorts the chain by each
     /// pass's own `order` value; the order here breaks ties.

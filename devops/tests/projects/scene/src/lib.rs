@@ -24,7 +24,7 @@
 
 // External crates
 use pill_engine::{
-    pill_project, script, tracing, CreateInfo, DestroyInfo, Engine, Entity, PillComponent,
+    component, pill_project, script, tracing, CreateInfo, DestroyInfo, Engine, Entity,
     ScriptComponent, ScriptContext, StartInfo, StopInfo, World,
 };
 use pill_master_renderer_data::TransformComponent;
@@ -36,9 +36,9 @@ mod scene;
 mod systems;
 
 /// Selects every model that the rotation system animates.
+#[component(shared = "scene::TagAlphaComponent", persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-#[pill(shared = "scene::TagAlphaComponent", persistable)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TagAlphaComponent;
 
 /// Presentation metadata for the Inspector, one field per decorator.
@@ -47,9 +47,9 @@ pub struct TagAlphaComponent;
 /// have a real component whose Inspector section draws a header, a gap, a
 /// tooltip, a slider, a clamped drag value and a hidden field, without
 /// inventing a second test project.
+#[component(persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-#[pill(persistable)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ShowcaseComponent {
     /// Hidden noise: the row must not reach the Inspector, but the value is
     /// stored, serialized and copied like any other field.
@@ -80,9 +80,9 @@ pub const SHOWCASE_POINTS: usize = 2;
 /// *kind*, which the Inspector turns into a row naming the referenced entity,
 /// with a picker, a scene pick and a drop target. Its gizmo draws the reference
 /// as a line, which is the editor suites' witness for the engine's gizmo pass.
+#[component(gizmo = crate::draw_showcase_reference_gizmo)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
-#[pill(gizmo = crate::draw_showcase_reference_gizmo)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ShowcaseReferenceComponent {
     /// The entity this one points at.
     #[pill(tooltip("The entity this one points at"))]
@@ -143,8 +143,9 @@ pill_engine::pill_value_type! {
 /// why. Every value it logs is an engine-core type, so the probe never learns
 /// that an editor exists, and the entity it prints is the handle the scripted
 /// channel spells.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct LifecycleProbe {
     /// How many frames the probe's update has run for.
     pub updates: u32,

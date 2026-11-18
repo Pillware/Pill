@@ -1,4 +1,4 @@
-//! A resource declared with `#[derive(PillResource)]` is declared by the
+//! A resource declared with `#[resource]` is declared by the
 //! artifact entry point, with no call from the artifact.
 //!
 //! # Responsibilities
@@ -17,15 +17,14 @@
 
 // External crates
 use pill_engine::component_registry::run_artifact_registration;
-use pill_engine::{Engine, PillResource, ResourceId, SettingsAssetManager, SettingsOutcome};
+use pill_engine::{resource, Engine, ResourceId, SettingsAssetManager, SettingsOutcome};
 
 // =============================================================================
 // Declarations
 // =============================================================================
 
 /// A plain resource the artifact stores once the declaration is in place.
-#[derive(PillResource)]
-#[pill(shared = "automatic_resources::Countdown")]
+#[resource(shared = "automatic_resources::Countdown")]
 struct Countdown {
     /// Frames left before the countdown ends.
     frames_left: u32,
@@ -33,7 +32,7 @@ struct Countdown {
 
 /// A manager resource: the derive declares the value, and the registration
 /// function below declares the settings asset it reads.
-#[derive(PillResource)]
+#[resource]
 struct DeclaredManager {
     /// How many documents were applied to this value.
     applied_count: u32,
@@ -41,8 +40,8 @@ struct DeclaredManager {
 
 /// A game-state resource the derive makes copyable, so a play session can put
 /// its edit-world value back at Stop.
-#[derive(PillResource, Clone)]
-#[pill(shared = "automatic_resources::SessionPoints")]
+#[resource(shared = "automatic_resources::SessionPoints")]
+#[derive(Clone)]
 struct SessionPoints {
     /// The session's running total.
     points: u32,

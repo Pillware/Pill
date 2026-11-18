@@ -1,4 +1,4 @@
-//! An asset type declared with `#[derive(PillAsset)]` is declared by the
+//! An asset type declared with `#[asset]` is declared by the
 //! artifact entry point, with no call from the artifact that owns it.
 //!
 //! # Responsibilities
@@ -20,7 +20,7 @@
 // External crates
 use pill_engine::component_registry::{no_registration, run_artifact_registration};
 use pill_engine::{
-    Asset, AssetLoadResult, AssetManager, Engine, ImportRegistry, ImportedAsset, PillAsset,
+    asset, Asset, AssetLoadResult, AssetManager, Engine, ImportRegistry, ImportedAsset,
     StandaloneAsset,
 };
 
@@ -29,14 +29,12 @@ use pill_engine::{
 // =============================================================================
 
 /// An imported asset: its source file carries the type's contents.
-#[derive(Debug, Default, PillAsset)]
-#[pill(imported)]
+#[asset(imported)]
+#[derive(Debug, Default)]
 struct Note {
     /// The name the importer was given.
     name: String,
 }
-
-trait_type_map::impl_trait_accessible!(dyn Asset; Note);
 
 impl Asset for Note {
     fn shared_name() -> Option<&'static str> {
@@ -64,14 +62,12 @@ impl ImportedAsset for Note {
 struct NoteSettings {}
 
 /// A standalone asset: it is its own document file, with no source beside it.
-#[derive(Debug, Default, PillAsset)]
-#[pill(standalone)]
+#[asset(standalone)]
+#[derive(Debug, Default)]
 struct Palette {
     /// The colour names the document lists.
     entries: Vec<String>,
 }
-
-trait_type_map::impl_trait_accessible!(dyn Asset; Palette);
 
 impl Asset for Palette {
     fn shared_name() -> Option<&'static str> {

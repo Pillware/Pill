@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 
 // External crates
 use pill_engine::{
-    pill_mirror_object, AssetLoadResult, AssetManager, AssetReference, Handle, PillAsset,
+    asset, pill_mirror_object, AssetLoadResult, AssetManager, AssetReference, Handle,
     StandaloneAsset,
 };
 // The pass vocabulary is part of the frame contract, so it lives there.
@@ -53,9 +53,9 @@ use crate::{Material, Shader, Texture};
 /// module that built it is reloaded, and its retired image is eventually
 /// unmapped. Reading such a map afterwards faults. A `BTreeMap` holds no such
 /// pointer.
-#[derive(Clone, Debug, PillAsset)]
-#[pill(standalone)]
+#[asset(standalone)]
 #[pill_mirror_object(asset, standalone, shared = "pill_master_renderer::assets::RenderPass")]
+#[derive(Clone, Debug)]
 pub struct RenderPass {
     /// Label used in logs, profiling and error messages.
     pub name: String,

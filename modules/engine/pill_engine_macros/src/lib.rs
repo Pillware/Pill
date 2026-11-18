@@ -3,6 +3,9 @@
 //!
 //! # Responsibilities
 //!
+//! - [`component`], [`resource`], [`asset`]: the declaration an author writes.
+//!   Each expands to the matching derive plus its arguments, so the derive
+//!   form stays the documented expansion.
 //! - [`PillComponent`]: the `Component` impl plus the descriptor a type submits
 //!   into this artifact's registry. A persistable component also registers for
 //!   schema migration and feeds the project schema fingerprint.
@@ -48,6 +51,10 @@ use syn::{parse_macro_input, spanned::Spanned, DeriveInput, ItemFn};
 
 /// Turns a component type into its engine registration.
 ///
+/// A project or module writes [`component`] rather than this derive; the
+/// attribute expands to this derive plus the `#[pill(...)]` arguments below,
+/// and this form stays available for a generated file.
+///
 /// Generates `impl Component for T`, a descriptor submitted into this
 /// artifact's compile-time registry, the field layout read by the schema hash
 /// and the C# mirror codegen, and a `<Type>Field` enum naming every field in
@@ -90,6 +97,7 @@ use syn::{parse_macro_input, spanned::Spanned, DeriveInput, ItemFn};
 /// element drop glue.
 ///
 /// [`World::register_persistable_component_with_layout`]: ::pill_engine::World::register_persistable_component_with_layout
+/// [`component`]: macro@component
 #[proc_macro_derive(PillComponent, attributes(pill))]
 pub fn derive_pill_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -2776,8 +2784,10 @@ fn self_type_ident(self_type: &syn::Type) -> Option<&syn::Ident> {
 
 /// Declares an ECS resource, so the artifact declares its type without a call.
 ///
-/// A project or module writes only this derive. The artifact entry point
-/// declares every derived type before its own `register` and `init` run, for a
+/// A project or module writes [`resource`] rather than this derive; the
+/// attribute expands to this derive plus the `#[pill(...)]` arguments below,
+/// and this form stays available for a generated file. The artifact entry point
+/// declares every declared type before its own `register` and `init` run, for a
 /// first load, every reload and a statically linked build alike, so the
 /// declaration reaches every posture that compiles the artifact. The value is
 /// still stored by `world.insert_resource(..)`, exactly as before; only the
@@ -2814,6 +2824,8 @@ fn self_type_ident(self_type: &syn::Type) -> Option<&syn::Ident> {
 /// `World::register_settings_asset_manager` in its crate's `register` instead:
 /// the settings surface holds function pointers into the image that declared
 /// it, so every generation re-points them.
+///
+/// [`resource`]: macro@resource
 #[proc_macro_derive(PillResource, attributes(pill))]
 pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -2996,11 +3008,13 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
 
 /// Declares an asset type, so the artifact declares it without a call.
 ///
-/// A crate that owns an asset type writes only this derive. The artifact entry
-/// point declares every derived type before its own `register` and `init` run,
-/// for a first load, every reload and a statically linked build alike. Loading
-/// (`import`, `load_asset`, `import_standalone`) is unchanged: only the
-/// declaration call moves.
+/// A crate that owns an asset type writes [`asset`] rather than this derive;
+/// the attribute expands to this derive, its `#[pill(...)]` argument and the
+/// `impl_trait_accessible!` line the store needs, and this form stays available
+/// for a generated file. The artifact entry point declares every declared type
+/// before its own `register` and `init` run, for a first load, every reload and
+/// a statically linked build alike. Loading (`import`, `load_asset`,
+/// `import_standalone`) is unchanged: only the declaration call moves.
 ///
 /// The trait implementations themselves stay hand-written - which source
 /// extensions a type imports, how it decodes them, and its on-disk document
@@ -3008,12 +3022,10 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
 /// derive only says how the world should declare it.
 ///
 /// ```ignore
-/// #[derive(PillAsset)]
-/// #[pill(imported)]
+/// #[asset(imported)]
 /// pub struct Sound { /* ... */ }
 ///
-/// #[derive(PillAsset)]
-/// #[pill(standalone)]
+/// #[asset(standalone)]
 /// pub struct Material { /* ... */ }
 /// ```
 ///
@@ -3027,6 +3039,8 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
 ///   file.
 ///
 /// Exactly one of the two is required: a type is one or the other.
+///
+/// [`asset`]: macro@asset
 #[proc_macro_derive(PillAsset, attributes(pill))]
 pub fn derive_pill_asset(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -3138,6 +3152,407 @@ fn parse_string_list(input: syn::parse::ParseStream) -> syn::Result<Vec<String>>
         values.push(value);
     }
     Ok(values)
+}
+
+// =============================================================================
+// #[component] / #[resource] / #[asset]
+// =============================================================================
+
+/// What one declaration attribute adds beyond the derive it expands to.
+#[derive(Clone, Copy)]
+enum DeclarationExtras {
+    /// A component: `persistable` also derives serde, unless the type lists
+    /// those derives itself.
+    Component,
+    /// A resource: nothing beyond the derive and its arguments.
+    Resource,
+    /// An asset: the type-erased store needs its accessor impl beside the type.
+    Asset,
+}
+
+/// One declaration attribute: the derive it stands for and the arguments it
+/// passes through to it.
+struct DeclarationAttribute {
+    /// The attribute's name as an author writes it, for the refusal text.
+    attribute_name: &'static str,
+    /// The derive the attribute expands to.
+    derive_name: &'static str,
+    /// The argument keys the derive accepts, used to check the author's list.
+    accepted_keys: &'static [&'static str],
+    /// The accepted arguments as the refusal text spells them out.
+    accepted_spellings: &'static [&'static str],
+}
+
+impl DeclarationAttribute {
+    /// Expands the attribute into the declaration it stands for.
+    ///
+    /// The author's arguments are re-emitted verbatim, so the derive stays the
+    /// one place that judges a shared name, a layout list or a play state.
+    fn expand(
+        &self,
+        extras: DeclarationExtras,
+        attribute: proc_macro2::TokenStream,
+        item: proc_macro2::TokenStream,
+    ) -> syn::Result<proc_macro2::TokenStream> {
+        // Step 1: the attribute declares a type, which is what the derive it
+        // expands to registers.
+        let annotated_item: syn::Item = syn::parse2(item)?;
+        let (ident, item_attributes) = match &annotated_item {
+            syn::Item::Struct(item_struct) => (&item_struct.ident, &item_struct.attrs),
+            syn::Item::Enum(item_enum) => (&item_enum.ident, &item_enum.attrs),
+            other => {
+                return Err(syn::Error::new_spanned(
+                    other,
+                    format!(
+                        "`#[{}]` applies to a struct or an enum: the derive it expands to \
+                         registers one concrete type",
+                        self.attribute_name
+                    ),
+                ));
+            }
+        };
+
+        // Step 2: every argument is one the derive accepts.
+        let arguments = syn::parse::Parser::parse2(
+            syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+            attribute,
+        )?;
+        for meta in &arguments {
+            let accepted = meta
+                .path()
+                .get_ident()
+                .is_some_and(|name| self.accepted_keys.iter().any(|key| name == *key));
+            if !accepted {
+                let expected = self
+                    .accepted_spellings
+                    .iter()
+                    .map(|spelling| format!("`{spelling}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let refused = match meta.path().get_ident() {
+                    Some(name) => format!(" `{name}`"),
+                    None => String::new(),
+                };
+                return Err(syn::Error::new_spanned(
+                    meta,
+                    format!(
+                        "unknown `{}` argument{refused}; expected {expected}",
+                        self.attribute_name
+                    ),
+                ));
+            }
+        }
+
+        // Step 3: the attribute form and the derive form are one declaration,
+        // so carrying both would write the trait implementation twice. Only a
+        // derive written below the attribute is visible here; one written
+        // above it reports a duplicate implementation instead.
+        let listed_derives = item_attributes
+            .iter()
+            .flat_map(derive_type_names)
+            .collect::<Vec<_>>();
+        if listed_derives.iter().any(|name| *name == self.derive_name) {
+            return Err(syn::Error::new_spanned(
+                ident,
+                format!(
+                    "`#[{}]` already expands to `#[derive({})]`, so the type carries one \
+                     form and not both",
+                    self.attribute_name, self.derive_name
+                ),
+            ));
+        }
+
+        // Step 4: emit the derive, the arguments it reads, and whatever this
+        // form adds beside the type.
+        let derive_name = format_ident!("{}", self.derive_name);
+        let derive_attribute = quote! { #[derive(::pill_engine::#derive_name)] };
+        let arguments_attribute = if arguments.is_empty() {
+            quote! {}
+        } else {
+            quote! { #[pill(#arguments)] }
+        };
+        let extra_attributes = match extras {
+            DeclarationExtras::Component => serde_derive_attributes(&arguments, &listed_derives),
+            DeclarationExtras::Resource => quote! {},
+            DeclarationExtras::Asset => {
+                self.check_asset_kind(&arguments, ident)?;
+                quote! {}
+            }
+        };
+        let extra_items = match extras {
+            DeclarationExtras::Asset => quote! {
+                ::pill_engine::trait_type_map::impl_trait_accessible!(
+                    dyn ::pill_engine::Asset;
+                    #ident
+                );
+            },
+            DeclarationExtras::Component | DeclarationExtras::Resource => quote! {},
+        };
+
+        Ok(quote! {
+            #derive_attribute
+            #arguments_attribute
+            #extra_attributes
+            #annotated_item
+
+            #extra_items
+        })
+    }
+
+    /// Refuses an asset declaration that names neither kind or both: a type
+    /// imports from a source file or is its own document file.
+    fn check_asset_kind(
+        &self,
+        arguments: &syn::punctuated::Punctuated<syn::Meta, syn::Token![,]>,
+        ident: &syn::Ident,
+    ) -> syn::Result<()> {
+        let imported = arguments
+            .iter()
+            .any(|meta| meta.path().is_ident("imported"));
+        let standalone = arguments
+            .iter()
+            .any(|meta| meta.path().is_ident("standalone"));
+        if imported == standalone {
+            return Err(syn::Error::new_spanned(
+                ident,
+                "`#[asset]` needs exactly one of `imported` or `standalone`: a type imports \
+                 from a source file or is its own document file, never both",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// The serde derives, and the crate path they resolve through, that a
+/// `persistable` component needs.
+///
+/// Only the names the type's own derive list below the attribute does not
+/// already carry are added, so a type that states its serde derives keeps
+/// them. The crate path always goes through the engine's re-export, so the
+/// generated implementation is the one the engine's own persistence bounds
+/// name.
+fn serde_derive_attributes(
+    arguments: &syn::punctuated::Punctuated<syn::Meta, syn::Token![,]>,
+    listed_derives: &[syn::Ident],
+) -> proc_macro2::TokenStream {
+    let persistable = arguments
+        .iter()
+        .any(|meta| meta.path().is_ident("persistable"));
+    if !persistable {
+        return quote! {};
+    }
+    let derives_serialize = listed_derives.iter().any(|name| *name == "Serialize");
+    let derives_deserialize = listed_derives.iter().any(|name| *name == "Deserialize");
+    let serde_derives = match (derives_serialize, derives_deserialize) {
+        (true, true) => quote! {},
+        (true, false) => quote! { #[derive(::pill_engine::Deserialize)] },
+        (false, true) => quote! { #[derive(::pill_engine::Serialize)] },
+        (false, false) => {
+            quote! { #[derive(::pill_engine::Serialize, ::pill_engine::Deserialize)] }
+        }
+    };
+    quote! {
+        #serde_derives
+        #[serde(crate = "::pill_engine::serde")]
+    }
+}
+
+/// The last path segment of every type one `#[derive(...)]` attribute lists.
+///
+/// A derive written as `serde::Serialize` is the same type as `Serialize`, so
+/// the declaration attributes compare the last segment.
+fn derive_type_names(attribute: &syn::Attribute) -> Vec<syn::Ident> {
+    if !attribute.path().is_ident("derive") {
+        return Vec::new();
+    }
+    let Ok(paths) = attribute.parse_args_with(
+        syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+    ) else {
+        return Vec::new();
+    };
+    paths
+        .into_iter()
+        .filter_map(|path| path.segments.last().map(|segment| segment.ident.clone()))
+        .collect()
+}
+
+/// The `#[component(...)]` declaration.
+const COMPONENT_DECLARATION: DeclarationAttribute = DeclarationAttribute {
+    attribute_name: "component",
+    derive_name: "PillComponent",
+    accepted_keys: &["persistable", "shared", "gizmo", "gizmo_when"],
+    accepted_spellings: &[
+        "persistable",
+        "shared",
+        "shared = \"...\"",
+        "gizmo = <path>",
+        "gizmo_when = \"always\" | \"selected\"",
+    ],
+};
+
+/// The `#[resource(...)]` declaration.
+const RESOURCE_DECLARATION: DeclarationAttribute = DeclarationAttribute {
+    attribute_name: "resource",
+    derive_name: "PillResource",
+    accepted_keys: &[
+        "shared",
+        "layout_sources",
+        "layout_dependencies",
+        "play_state",
+    ],
+    accepted_spellings: &[
+        "shared",
+        "shared = \"...\"",
+        "layout_sources = [\"...\"]",
+        "layout_dependencies = [\"...\"]",
+        "play_state = \"keep\" | \"rebuild\"",
+    ],
+};
+
+/// The `#[asset(...)]` declaration.
+const ASSET_DECLARATION: DeclarationAttribute = DeclarationAttribute {
+    attribute_name: "asset",
+    derive_name: "PillAsset",
+    accepted_keys: &["imported", "standalone"],
+    accepted_spellings: &["imported", "standalone"],
+};
+
+/// Expands `#[component(...)]`, for the tests that drive the expansion.
+fn component_impl(
+    attribute: proc_macro2::TokenStream,
+    item: proc_macro2::TokenStream,
+) -> syn::Result<proc_macro2::TokenStream> {
+    COMPONENT_DECLARATION.expand(DeclarationExtras::Component, attribute, item)
+}
+
+/// Expands `#[resource(...)]`, for the tests that drive the expansion.
+fn resource_impl(
+    attribute: proc_macro2::TokenStream,
+    item: proc_macro2::TokenStream,
+) -> syn::Result<proc_macro2::TokenStream> {
+    RESOURCE_DECLARATION.expand(DeclarationExtras::Resource, attribute, item)
+}
+
+/// Expands `#[asset(...)]`, for the tests that drive the expansion.
+fn asset_impl(
+    attribute: proc_macro2::TokenStream,
+    item: proc_macro2::TokenStream,
+) -> syn::Result<proc_macro2::TokenStream> {
+    ASSET_DECLARATION.expand(DeclarationExtras::Asset, attribute, item)
+}
+
+/// Declares an ECS component, so the artifact registers its type without a call.
+///
+/// `#[component]` is the form an author writes; it expands to
+/// `#[derive(PillComponent)]` plus the `#[pill(...)]` arguments below, and the
+/// derive keeps `#[pill(...)]` on a field as its decorator vocabulary. Write the
+/// attribute **above** the type's own `#[derive(...)]` list: only attributes
+/// written below an attribute are visible to it, and the serde derives are one
+/// of the things it looks for.
+///
+/// ```ignore
+/// #[component(persistable, shared)]
+/// #[derive(Debug, Clone, Default)]
+/// pub struct Spin { pub speed: f32 }
+///
+/// #[component(persistable, shared = "pill_spline::Spline", gizmo = draw_spline_gizmo)]
+/// #[derive(Debug, Clone, Copy)]
+/// #[repr(C)]
+/// pub struct Spline { /* ... */ }
+/// ```
+///
+/// # Arguments
+///
+/// The arguments are the derive's, passed through unchanged:
+///
+/// - `persistable` - the component survives a reload through schema migration.
+///   The type must implement `Serialize + DeserializeOwned + Default`; this
+///   attribute derives only the serde half and leaves `Default` explicit.
+/// - `shared`, `shared = "crate::Name"` - one identity in every binary that
+///   links the type, derived from `module_path!()` or pinned.
+/// - `gizmo = <path>` - the function that draws this component's editor gizmo.
+/// - `gizmo_when = "always" | "selected"` - when that gizmo draws; declared
+///   together with `gizmo`.
+///
+/// `Default`, `Clone`, `Copy` and `Debug` stay the author's explicit choice, as
+/// they are with the derive.
+#[proc_macro_attribute]
+pub fn component(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    component_impl(attribute.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Declares an ECS resource, so the artifact declares its type without a call.
+///
+/// `#[resource]` expands to `#[derive(PillResource)]` plus the `#[pill(...)]`
+/// arguments below. The value is still stored with
+/// `world.insert_resource(..)`; only the declaration moves.
+///
+/// ```ignore
+/// #[resource(shared, layout_sources = ["src/frame_stats.rs"])]
+/// #[derive(Clone)]
+/// pub struct FrameStats { frames: u64 }
+///
+/// #[resource(play_state = "keep")]
+/// pub struct EditorSession { /* ... */ }
+/// ```
+///
+/// # Arguments
+///
+/// The arguments are the derive's, passed through unchanged:
+///
+/// - `shared`, `shared = "crate::Name"` - a stable identity across generations
+///   instead of a per-binary `TypeId`, which is what lets a reload keep the
+///   value.
+/// - `layout_sources = ["..."]` - the files whose contents define the layout,
+///   fingerprinted so an edit that changes it rebuilds the value.
+/// - `layout_dependencies = ["..."]` - the crates whose version can change the
+///   layout, as package names.
+/// - `play_state = "keep" | "rebuild"` - what a play session does with the
+///   value; an unmarked resource is restored at Stop.
+#[proc_macro_attribute]
+pub fn resource(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    resource_impl(attribute.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Declares an asset type, so the artifact declares it without a call.
+///
+/// `#[asset(..)]` expands to `#[derive(PillAsset)]`, the `#[pill(...)]`
+/// argument that names the kind, and the `impl_trait_accessible!` line every
+/// asset type needs to be reachable through the store's `dyn Asset` columns. A
+/// type migrated to this attribute therefore drops its hand-written accessor
+/// line.
+///
+/// The trait implementations themselves stay hand-written - which source
+/// extensions a type imports, how it decodes them and its on-disk document
+/// shape are decisions about the type.
+///
+/// ```ignore
+/// #[asset(imported)]
+/// #[derive(Debug, Default)]
+/// pub struct Sound { /* ... */ }
+///
+/// #[asset(standalone)]
+/// #[derive(Debug, Default)]
+/// pub struct Material { /* ... */ }
+/// ```
+///
+/// # Arguments
+///
+/// Exactly one of:
+///
+/// - `imported` - an `ImportedAsset`, declared so a source file with its
+///   extension imports as this type.
+/// - `standalone` - a `StandaloneAsset`, declared so its own document files
+///   load by extension.
+#[proc_macro_attribute]
+pub fn asset(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    asset_impl(attribute.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
 /// Arguments `#[pill_hot_fn]` accepts when it generates a patch body.
@@ -4272,5 +4687,168 @@ mod decorator_vocabulary_tests {
         for (_, usage) in FIELD_DECORATOR_USAGE {
             assert!(message.contains(usage), "the refusal text names `{usage}`");
         }
+    }
+}
+
+#[cfg(test)]
+mod declaration_attribute_tests {
+    use super::*;
+
+    /// The expansion with every space removed, so a test can look for the
+    /// token shape the attribute emits.
+    fn normalized(expanded: proc_macro2::TokenStream) -> String {
+        expanded.to_string().replace(' ', "")
+    }
+
+    /// A plain probe struct, with nothing the attribute has to look at.
+    fn probe() -> proc_macro2::TokenStream {
+        quote! {
+            #[derive(Debug, Clone)]
+            struct Probe {
+                value: f32,
+            }
+        }
+    }
+
+    /// A component expands to its derive, its arguments and, because it is
+    /// persistable, the serde derives and the crate path they use.
+    #[test]
+    fn a_component_expands_to_its_derive_and_its_arguments() {
+        let expanded = normalized(
+            component_impl(quote! { persistable, shared, gizmo = draw_probe }, probe())
+                .expect("the declaration is valid"),
+        );
+
+        assert!(expanded.contains("#[derive(::pill_engine::PillComponent)]"));
+        assert!(expanded.contains("#[pill(persistable,shared,gizmo=draw_probe)]"));
+        assert!(expanded.contains("#[derive(::pill_engine::Serialize,::pill_engine::Deserialize)]"));
+        assert!(expanded.contains("#[serde(crate=\"::pill_engine::serde\")]"));
+    }
+
+    /// A component that is not persistable needs no serde at all.
+    #[test]
+    fn a_component_that_is_not_persistable_derives_no_serde() {
+        let expanded = normalized(component_impl(quote! { shared }, probe()).expect("valid"));
+
+        assert!(!expanded.contains("::pill_engine::Serialize"));
+        assert!(!expanded.contains("#[serde("));
+    }
+
+    /// A type that states its own serde derives keeps them; the attribute only
+    /// adds the crate path they resolve through.
+    #[test]
+    fn a_persistable_component_keeps_the_serde_derives_the_type_lists() {
+        let expanded = normalized(
+            component_impl(
+                quote! { persistable },
+                quote! {
+                    #[derive(Debug, Serialize, Deserialize)]
+                    struct Probe {
+                        value: f32,
+                    }
+                },
+            )
+            .expect("valid"),
+        );
+
+        assert!(!expanded.contains("#[derive(::pill_engine::Serialize"));
+        assert!(expanded.contains("#[serde(crate=\"::pill_engine::serde\")]"));
+    }
+
+    /// An argument the derive does not read is refused, and the refusal names
+    /// it and every accepted one.
+    #[test]
+    fn an_unknown_component_argument_is_refused_by_name() {
+        let error =
+            component_impl(quote! { sharded }, probe()).expect_err("the argument is refused");
+        let message = error.to_string();
+
+        assert!(
+            message.contains("unknown `component` argument `sharded`"),
+            "{message}"
+        );
+        assert!(message.contains("`persistable`"), "{message}");
+    }
+
+    /// The attribute already expands to the derive, so carrying both is
+    /// refused instead of writing the implementation twice.
+    #[test]
+    fn a_type_carrying_the_derive_is_refused() {
+        let error = component_impl(
+            quote! {},
+            quote! {
+                #[derive(Debug, PillComponent)]
+                struct Probe {
+                    value: f32,
+                }
+            },
+        )
+        .expect_err("the derive is refused");
+
+        assert!(error.to_string().contains("already expands to"), "{error}");
+    }
+
+    /// A resource's arguments reach the derive unchanged.
+    #[test]
+    fn a_resource_passes_its_arguments_through() {
+        let expanded = normalized(
+            resource_impl(
+                quote! {
+                    shared = "probe::Session",
+                    layout_sources = ["src/session.rs"],
+                    play_state = "keep"
+                },
+                quote! { struct Session { frames: u64 } },
+            )
+            .expect("the declaration is valid"),
+        );
+
+        assert!(expanded.contains("#[derive(::pill_engine::PillResource)]"));
+        assert!(expanded.contains(
+            "#[pill(shared=\"probe::Session\",layout_sources=[\"src/session.rs\"],\
+             play_state=\"keep\")]"
+                .replace(' ', "")
+                .as_str()
+        ));
+    }
+
+    /// An asset also emits the accessor impl the type-erased columns need.
+    #[test]
+    fn an_asset_emits_the_accessor_line() {
+        let expanded = normalized(
+            asset_impl(quote! { imported }, quote! { struct Probe { value: f32 } })
+                .expect("the declaration is valid"),
+        );
+
+        assert!(expanded.contains("#[derive(::pill_engine::PillAsset)]"));
+        assert!(expanded.contains("#[pill(imported)]"));
+        assert!(
+            expanded.contains("impl_trait_accessible!(dyn::pill_engine::Asset;Probe);"),
+            "{expanded}"
+        );
+    }
+
+    /// An asset is one kind or the other, never neither and never both.
+    #[test]
+    fn an_asset_needs_exactly_one_kind() {
+        assert!(asset_impl(quote! {}, quote! { struct Probe { value: f32 } }).is_err());
+        assert!(asset_impl(
+            quote! { imported, standalone },
+            quote! { struct Probe { value: f32 } }
+        )
+        .is_err());
+        assert!(asset_impl(
+            quote! { standalone },
+            quote! { struct Probe { value: f32 } }
+        )
+        .is_ok());
+    }
+
+    /// The attributes declare a type; anything else is refused by name.
+    #[test]
+    fn an_item_that_is_not_a_type_is_refused() {
+        let error = resource_impl(quote! {}, quote! { fn probe() {} }).expect_err("refused");
+
+        assert!(error.to_string().contains("struct or an enum"), "{error}");
     }
 }

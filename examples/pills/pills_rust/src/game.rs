@@ -26,7 +26,7 @@ use std::f32::consts::PI;
 
 // External crates
 use pill_engine::{
-    pill_hot, system, tracing, Handle, Input, KeyCode, PillComponent, Query, Res, ResMut, Resource,
+    component, pill_hot, system, tracing, Handle, Input, KeyCode, Query, Res, ResMut, Resource,
     SystemError, World,
 };
 use pill_master_renderer_data::{
@@ -54,9 +54,9 @@ const CURL_DAMPING_STEP: f32 = 0.01;
 const CURL_EPSILON_STEP: f32 = 0.001;
 
 /// One pill's motion through the curl noise field.
+#[component(shared = "pills_rust::CurlNoiseComponent", persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-#[pill(shared = "pills_rust::CurlNoiseComponent", persistable)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CurlNoiseComponent {
     /// Current velocity, in world units per second.
     pub velocity: [f32; 3],
@@ -68,9 +68,9 @@ pub struct CurlNoiseComponent {
 }
 
 /// Settings and smoothed state of the free flying camera.
+#[component(shared = "pills_rust::CameraMovementComponent", persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-#[pill(shared = "pills_rust::CameraMovementComponent", persistable)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CameraMovementComponent {
     /// Flying speed, in world units per second.
     pub move_speed: f32,

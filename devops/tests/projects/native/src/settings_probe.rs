@@ -24,9 +24,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 // External crates
-use pill_engine::{
-    Asset, AssetLoadResult, AssetManager, Engine, PillAsset, PillResource, SettingsOutcome,
-};
+use pill_engine::{asset, resource, AssetLoadResult, AssetManager, Engine, SettingsOutcome};
 use serde::{Deserialize, Serialize};
 
 // =============================================================================
@@ -80,14 +78,9 @@ impl Default for FixtureSettings {
 /// the manager applies. The loaded value carries nothing: a settings file is
 /// applied from its document, and the asset type is what gives the file its
 /// identity in the store.
-#[derive(Debug, Default, PillAsset)]
-#[pill(standalone)]
+#[asset(standalone)]
+#[derive(Debug, Default)]
 pub struct FixtureSettingsAsset;
-
-// Registers the type with the type-erased asset columns, without which the
-// world could load its file but never store or look it up. Reached through the
-// facade, so this project needs no dependency of its own for it.
-pill_engine::trait_type_map::impl_trait_accessible!(dyn Asset; FixtureSettingsAsset);
 
 impl pill_engine::Asset for FixtureSettingsAsset {
     fn shared_name() -> Option<&'static str> {
@@ -117,8 +110,7 @@ impl pill_engine::StandaloneAsset for FixtureSettingsAsset {
 /// It keeps a shared name, so it holds one world id across a reload: an id
 /// built from `TypeId` differs in every generation, and the value would be
 /// retired instead of kept.
-#[derive(PillResource)]
-#[pill(shared = "native::settings_probe::FixtureManager")]
+#[resource(shared = "native::settings_probe::FixtureManager")]
 pub struct FixtureManager {
     /// A flag the document sets.
     pub enabled: bool,

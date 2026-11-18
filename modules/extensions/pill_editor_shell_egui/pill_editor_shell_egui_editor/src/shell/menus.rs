@@ -74,6 +74,7 @@ pub fn scene_context_menu(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui) {
         grid: viewer.snapshot.grid_enabled,
         gizmos: viewer.snapshot.gizmos_enabled,
         frame: viewer.snapshot.gizmo_frame.as_deref(),
+        component_tools: &viewer.snapshot.component_tools,
     };
     let pending = &mut viewer.pending;
     let element_menu = viewer.snapshot.element_menu.clone();
@@ -114,7 +115,7 @@ pub fn scene_context_menu(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui) {
         // and the command a click queues. Each label comes from `menu_label`,
         // which holds the menu's own wording where it differs.
         for item in toolbox::TOOL_ROWS {
-            let button = icons::IconButton::new(item.icon(&state), item.menu_label())
+            let button = icons::IconButton::new(item.icon(&state), item.menu_label(&state))
                 .active(item.active(&state));
             if ui.add(button).clicked() {
                 pending.push(vec![item.command(&state)]);
@@ -125,7 +126,7 @@ pub fn scene_context_menu(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui) {
         // Step 2: the snapping row.
         let snapping = icons::IconButton::new(
             toolbox::ToolboxItem::Snap.icon(&state),
-            toolbox::ToolboxItem::Snap.menu_label(),
+            toolbox::ToolboxItem::Snap.menu_label(&state),
         )
         .active(toolbox::ToolboxItem::Snap.active(&state));
         if ui.add(snapping).clicked() {
@@ -145,7 +146,7 @@ pub fn scene_context_menu(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui) {
         // Step 4: the scene grid's switch.
         let grid = icons::IconButton::new(
             toolbox::ToolboxItem::Grid.icon(&state),
-            toolbox::ToolboxItem::Grid.menu_label(),
+            toolbox::ToolboxItem::Grid.menu_label(&state),
         )
         .active(toolbox::ToolboxItem::Grid.active(&state));
         if ui.add(grid).clicked() {

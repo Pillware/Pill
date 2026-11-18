@@ -40,9 +40,9 @@ pub const REPORT_INTERVAL_SECONDS: f32 = 1.0;
 /// and read back into the new one. The type must stay `Serialize +
 /// DeserializeOwned + Default`, and `#[repr(C)]` keeps its memory layout
 /// fixed.
+#[component(persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-#[pill(persistable)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TickCounter {
     /// How many times the tick system has advanced this entity.
     pub ticks: u64,

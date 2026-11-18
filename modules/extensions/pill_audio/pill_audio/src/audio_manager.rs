@@ -20,7 +20,7 @@
 
 // External crates
 use pill_core::telemetry::telemetry_target;
-use pill_engine::{Asset, AssetLoadResult, AssetManager, PillAsset, PillResource, SettingsOutcome};
+use pill_engine::{asset, resource, AssetLoadResult, AssetManager, SettingsOutcome};
 use serde::{Deserialize, Serialize};
 
 // Current crate
@@ -68,8 +68,7 @@ pub const EAR_SEPARATION: f32 = 1.0;
 /// and putting a pre-play copy back would drop the live stream and stop the
 /// audio. What plays is decided by the entities' components, which the session
 /// does restore.
-#[derive(PillResource)]
-#[pill(play_state = "keep")]
+#[resource(play_state = "keep")]
 pub struct AudioManager {
     /// The output stream. Nothing reads it after construction, but dropping it
     /// silences every sink, so it is held for its lifetime alone.
@@ -156,18 +155,14 @@ impl std::default::Default for AudioSettings {
 /// manager applies. The loaded value is only a carrier: the manager reads the
 /// document, not the asset.
 ///
-/// The derive declares the type, so every generation of the module registers it
-/// with the world's asset store without a call in `register`.
-#[derive(Debug, Default, PillAsset)]
-#[pill(standalone)]
+/// The attribute declares the type, so every generation of the module registers
+/// it with the world's asset store without a call in `register`.
+#[asset(standalone)]
+#[derive(Debug, Default)]
 pub struct AudioSettingsAsset {
     /// The settings the file holds.
     pub settings: AudioSettings,
 }
-
-// Registers the type with the type-erased asset columns, without which the
-// world could load its file but never store or look it up.
-trait_type_map::impl_trait_accessible!(dyn Asset; AudioSettingsAsset);
 
 impl pill_engine::Asset for AudioSettingsAsset {
     fn shared_name() -> Option<&'static str> {

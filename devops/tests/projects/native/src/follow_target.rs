@@ -24,9 +24,9 @@ const FOLLOW_COLOR: [f32; 4] = [1.0, 0.85, 0.25, 1.0];
 /// `#[repr(C)]` because the host copies the row across hot-reload generations,
 /// and the field layout the derive registers is what the Inspector draws. The
 /// gizmo draws a line to the entity the reference names.
+#[component(gizmo = crate::follow_target::draw_follow_target_gizmo)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
-#[pill(gizmo = crate::follow_target::draw_follow_target_gizmo)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct FollowTarget {
     /// The entity this one follows.
     ///

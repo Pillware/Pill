@@ -80,14 +80,14 @@ SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "pill_spline" / "s
 PROJECT_LIB_RS = NATIVE_PROJECT_LIB_RS
 
 # The component whose identity this suite is about, spelled as the engine
-# registers it. With `#[pill(shared)]` and no explicit name, the derive uses
-# `module_path!()::TypeName`, which for a crate-root type is the same string
-# `std::any::type_name` produces - so nothing keyed on the name moves.
+# registers it. With `shared` on [`Spline`] and no explicit name, the attribute
+# uses `module_path!()::TypeName`, which for a crate-root type is the same
+# string `std::any::type_name` produces - so nothing keyed on the name moves.
 SHARED_COMPONENT_NAME = "pill_spline::Spline"
 
-# The attribute under test, and the form it takes with sharing removed.
-SHARED_ATTRIBUTE = "#[pill(persistable, shared)]"
-UNSHARED_ATTRIBUTE = "#[pill(persistable)]"
+# The declaration under test, and the form it takes with sharing removed.
+SHARED_ATTRIBUTE = "#[component(persistable, shared, gizmo = draw_spline_gizmo)]"
+UNSHARED_ATTRIBUTE = "#[component(persistable, gizmo = draw_spline_gizmo)]"
 
 # The project must load `pill_spline` as a module *and* link it directly, which
 # is exactly the arrangement that produces two `TypeId`s. `devops/tests/projects/native`
@@ -329,7 +329,7 @@ COLUMN_LINE_PATTERN = re.compile(r"^\W*bit\s+(\d+)\s+(\S+)")
 
 
 def set_shared_identity(enabled: bool) -> None:
-    """Puts `#[pill(shared)]` on the spline component, or takes it off.
+    """Puts `shared` on the spline component, or takes it off.
 
     Always writes, even when the text is already what is wanted, because the
     write is what makes the file newer than the artifact built from it. The

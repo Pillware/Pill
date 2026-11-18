@@ -23,12 +23,12 @@ use std::collections::HashSet;
 // External crates
 use pill_engine::archetype::Blittability;
 use pill_engine::component_registry::{register_all_components, ComponentFieldDescriptor};
-use pill_engine::{ComponentId, PillComponent, World};
+use pill_engine::{component, ComponentId, World};
 
 /// A persistable component with a `Vec` field, a `String` field and an inline
 /// scalar field.
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PillComponent)]
-#[pill(persistable)]
+#[component(persistable)]
+#[derive(Clone, Debug, Default)]
 struct HeapProbe {
     /// Heap-owning sequence field.
     values: Vec<f32>,
@@ -139,8 +139,8 @@ static HEAP_PROBE_STRING_LAYOUT: &[ComponentFieldDescriptor] = &[
 
 /// A persistable component holding a list of strings, each in its own
 /// allocation, so the list cannot be read as one contiguous run of bytes.
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PillComponent)]
-#[pill(persistable)]
+#[component(persistable)]
+#[derive(Clone, Debug, Default)]
 struct NameList {
     /// Text list: each element is its own allocation.
     names: Vec<String>,

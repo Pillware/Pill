@@ -25,8 +25,8 @@ use std::collections::BTreeMap;
 
 // External crates
 use pill_engine::{
-    pill_mirror_impl, pill_mirror_method, pill_mirror_object, AssetLoadResult, AssetManager,
-    AssetReference, Handle, PillAsset, StandaloneAsset,
+    asset, pill_mirror_impl, pill_mirror_method, pill_mirror_object, AssetLoadResult, AssetManager,
+    AssetReference, Handle, StandaloneAsset,
 };
 // The parameter vocabulary is part of the frame contract, shared with passes.
 use pill_renderer_api::frame::MaterialParameter;
@@ -67,9 +67,9 @@ pub struct MaterialTexture {
 /// lives in the world and outlives that binary - a project or module that made
 /// it reloads and its old image is eventually unloaded - so reading such a map
 /// afterwards would fault. A `BTreeMap` keeps no such pointer.
-#[derive(Clone, Debug, PillAsset)]
-#[pill(standalone)]
+#[asset(standalone)]
 #[pill_mirror_object(asset, standalone, shared = "pill_master_renderer::assets::Material")]
+#[derive(Clone, Debug)]
 pub struct Material {
     /// Label used in logs and error messages.
     pub name: String,

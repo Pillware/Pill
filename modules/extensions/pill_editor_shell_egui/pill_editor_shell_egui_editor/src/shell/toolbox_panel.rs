@@ -3,9 +3,9 @@
 //! # Responsibilities
 //!
 //! - `toolbox_overlay`: one draggable panel per scene viewport, holding the
-//!   gizmo's three tools, its space, its snapping and the scene grid's switch.
-//!   The panel's rectangle and every row's rectangle are logged whenever the
-//!   panel moves.
+//!   gizmo's three tools, one row per component tool the selection offers, its
+//!   space, its snapping and the two switches. The panel's rectangle and every
+//!   row's rectangle are logged whenever the panel moves.
 //!
 //! # Design
 //!
@@ -17,8 +17,9 @@
 use pill_editor_shell_egui_editor::shell::prelude::*;
 use pill_editor_shell_egui_editor::shell::*;
 
-/// Draws the floating toolbox over one scene viewport: the gizmo's tools, its
-/// space, its snapping and the scene grid's switch.
+/// Draws the floating toolbox over one scene viewport: the gizmo's tools, one
+/// row per component tool the selection is offered, its space, its snapping
+/// and the two switches.
 ///
 /// The panel carries the same settings as the viewport menu, always on screen.
 /// A press on the handle along the panel's top drags it. A drag is kept inside
@@ -41,13 +42,16 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
         grid: viewer.snapshot.grid_enabled,
         gizmos: viewer.snapshot.gizmos_enabled,
         frame: viewer.snapshot.gizmo_frame.as_deref(),
+        component_tools: &viewer.snapshot.component_tools,
     };
+    let drawn = toolbox::rows(&state);
     let mut origin = toolbox::clamped_origin(
         viewer
             .toolbox
             .origin(view)
             .unwrap_or_else(|| toolbox::default_origin(viewport)),
         viewport,
+        drawn.len(),
     );
     // Step 2: Drag the panel by its handle, which is the one part of the panel
     // a press drags. A click on a row below it still reaches the row's button.
@@ -58,7 +62,7 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
         egui::Sense::drag(),
     );
     if response.dragged() {
-        origin = toolbox::clamped_origin(origin + response.drag_delta(), viewport);
+        origin = toolbox::clamped_origin(origin + response.drag_delta(), viewport, drawn.len());
         viewer.toolbox.set_origin(view, origin);
     }
     if response.drag_stopped() {
@@ -71,7 +75,7 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
         );
     }
     // Step 3: Paint the panel's background and its title, then draw its rows.
-    let panel = toolbox::panel_rect(origin);
+    let panel = toolbox::panel_rect(origin, drawn.len());
     ui.painter().rect(
         panel,
         egui::CornerRadius::same(5),
@@ -91,9 +95,9 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
     // the theme's selection colour, and the rest keep the widget's idle fill.
     // Each button's rectangle is recorded for the layout test, and the
     // scripted suite clicks the centre of each row's logged rectangle.
-    let mut faces = Vec::with_capacity(toolbox::TOOLBOX_ITEMS.len());
-    for item in toolbox::TOOLBOX_ITEMS {
-        let rect = toolbox::item_rect(item, origin);
+    let mut faces = Vec::with_capacity(drawn.len());
+    for (index, item) in drawn.iter().enumerate() {
+        let rect = toolbox::item_rect(index, origin);
         let button = ui
             .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                 ui.add_sized(
@@ -108,7 +112,7 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
             pill_core::info!(
                 target: telemetry_target::EDITOR,
                 view,
-                item = item.name(),
+                item = item.name(&state),
                 "[editor] toolbox click"
             );
         }
@@ -129,9 +133,10 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
             "[editor] toolbox rect"
         );
         for (item, rect) in std::iter::once(("handle", handle)).chain(
-            toolbox::TOOLBOX_ITEMS
+            drawn
                 .iter()
-                .map(|item| (item.name(), toolbox::item_rect(*item, origin))),
+                .enumerate()
+                .map(|(index, item)| (item.name(&state), toolbox::item_rect(index, origin))),
         ) {
             pill_core::debug!(
                 target: telemetry_target::EDITOR,

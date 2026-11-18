@@ -127,6 +127,11 @@ impl EditorTool for SplineTool {
     fn is_global(&self) -> bool {
         false
     }
+
+    /// Offered for an entity that carries a [`Spline`].
+    fn requires_component(&self) -> Option<&'static str> {
+        Some("Spline")
+    }
 }
 
 /// Registers the spline tool and its element hooks into `registry`.

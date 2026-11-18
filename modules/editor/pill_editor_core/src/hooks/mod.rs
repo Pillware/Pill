@@ -39,6 +39,12 @@
 //! else has to be added: the host discovers the crate by its folder, loads it
 //! after the runtime crates, and reloads it whenever one of them reloads.
 //!
+//! A project's editor code lives in the same kind of crate, at
+//! `<PROJECT_PATH>/<package>_editor/`: the project directory is the folder, so
+//! the one rule covers both. An editor host discovers it the same way, builds
+//! it with the project's modules, loads it after the project and reloads it
+//! when the project reloads; a game build never sees it.
+//!
 //! ```ignore
 //! use pill_editor_core::hooks::{
 //!     EditorHookRequests, FieldEdit, FieldEditHookRequest, HookContext, HookRequest, HookVerdict,

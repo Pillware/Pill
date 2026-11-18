@@ -102,8 +102,9 @@ ALL_DYLIBS = ENGINE_DYLIBS + EGUI_EDITOR_DYLIBS
 # declares: `development`, the profiling levels, `metrics`, `dev-logs`), and the
 # cargo anchor a posture appends to every spawned build
 # (`build_runner::apply_cargo_host_overrides`). The editor host anchors its
-# module builds to `pill_editor` with no features of its own; an anchored
-# build ignores the engine features.
+# module builds to `pill_editor` with whichever of the posture features that
+# package declares - today the profiling pair, when the running binary was
+# built with one; an anchored build ignores the engine features.
 FRONTENDS = {
     "headless": (
         ["--package", "pill_standalone"],
@@ -128,6 +129,15 @@ FRONTENDS = {
         [],
         ("pill_editor", ()),
         # The editor loads every shared dylib, including its own parts.
+        ALL_DYLIBS,
+    ),
+    # The editor built with Tracy on, which is also the posture its module and
+    # project builds inherit from the anchor: every spawned build names the
+    # same feature the running binary was built with.
+    "editor profiling": (
+        ["--package", "pill_editor", "--features", "pill_editor/profiling"],
+        [],
+        ("pill_editor", ("profiling",)),
         ALL_DYLIBS,
     ),
 }
@@ -243,7 +253,8 @@ def engine_selection(engine_features):
 # keeps a cargo anchor (`build_runner::apply_cargo_host_overrides`), without
 # its defaults and with the features the running host was built with. One
 # helper, so the build shapes below cannot drift apart on it. A posture whose
-# anchor declares no features (the editor) emits no `--features` at all.
+# anchor tuple names no features (the unprofiled editor) emits no `--features`
+# at all.
 def anchor_selection(anchor):
     if not anchor:
         return []

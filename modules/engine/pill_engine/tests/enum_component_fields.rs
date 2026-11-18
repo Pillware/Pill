@@ -10,7 +10,7 @@
 
 // External crates
 use pill_engine::component_registry::{register_all_components, resolve_enum_layout};
-use pill_engine::{FieldValue, PillComponent, PillMirror, World};
+use pill_engine::{component, FieldValue, PillMirror, World};
 
 /// A mirrored enum with an explicit discriminant after the first two.
 #[repr(u8)]
@@ -23,8 +23,9 @@ enum ProbeKind {
 }
 
 /// A derived component carrying the enum beside a scalar.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[derive(Debug, Clone, Copy, Default)]
 struct KindCarrier {
     speed: f32,
     kind: ProbeKind,

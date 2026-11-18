@@ -118,6 +118,11 @@ impl EditorTool for ColliderTool {
     fn is_global(&self) -> bool {
         false
     }
+
+    /// Offered for an entity that carries a [`ColliderComponent`].
+    fn requires_component(&self) -> Option<&'static str> {
+        Some("ColliderComponent")
+    }
 }
 
 /// Registers the tool and its element hooks into `registry`.

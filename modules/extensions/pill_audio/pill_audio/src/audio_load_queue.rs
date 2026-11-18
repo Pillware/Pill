@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 
 // External crates
-use pill_engine::PillResource;
+use pill_engine::resource;
 
 // =============================================================================
 // AudioLoadQueue
@@ -27,9 +27,9 @@ use pill_engine::PillResource;
 ///
 /// The shared name is what lets a project and this module reach one queue: an
 /// id built from `TypeId` differs between the two images.
+#[resource(shared = "pill_audio::AudioLoadQueue")]
 #[repr(C)]
-#[derive(Default, PillResource)]
-#[pill(shared = "pill_audio::AudioLoadQueue")]
+#[derive(Default)]
 pub struct AudioLoadQueue {
     /// The encoded bytes of each queued sound, by playback name.
     pub(crate) sounds: BTreeMap<String, Vec<u8>>,

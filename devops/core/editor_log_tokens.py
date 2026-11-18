@@ -422,7 +422,7 @@ TOOLBOX_RECT_PATTERN = (
     + r"\s+width=([0-9.]+)\s+height=([0-9.]+)"
 )
 TOOLBOX_ITEM_PATTERN = (
-    log_layout.message_then_fields_pattern(re.escape(TOOLBOX_ITEM_TOKEN), r'\s+view=(\d+)\s+item="([a-z]+)"\s+x=(-?[0-9.]+)\s+y=(-?[0-9.]+)')
+    log_layout.message_then_fields_pattern(re.escape(TOOLBOX_ITEM_TOKEN), r'\s+view=(\d+)\s+item="([^"]+)"\s+x=(-?[0-9.]+)\s+y=(-?[0-9.]+)')
     + r"\s+width=([0-9.]+)\s+height=([0-9.]+)"
 )
 # The menu bar's runtime values, in the field order the shell logs them: the

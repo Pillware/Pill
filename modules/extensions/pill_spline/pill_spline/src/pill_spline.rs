@@ -33,7 +33,7 @@
 //! allocates memory another has to free, and `#[repr(C)]` gives every copy of
 //! the type the same field layout. A project that depends on the crate and the
 //! module DLL the host loads hold separate copies of the type;
-//! `#[pill(shared)]` on [`Spline`] is what makes them one component.
+//! `shared` on [`Spline`] is what makes them one component.
 //!
 //! Registration lives in [`register`], a plain Rust function, so the crate can
 //! also be linked statically.
@@ -148,15 +148,15 @@ impl TangentMode {
 /// this component's layout migrates its rows by serializing them, so the struct
 /// stays `#[repr(C)]` and every field stays serde compatible.
 ///
-/// `#[pill(shared)]` because a project that depends on this crate and the
+/// `shared` because a project that depends on this crate and the
 /// module DLL the host loads hold two copies of the type, each with its own
 /// `TypeId`. The declared name (`pill_spline::Spline`, the string
 /// `std::any::type_name` reports) is what makes them one component with one
 /// column; without it the engine would allocate two and keep whichever
 /// registered first.
+#[component(persistable, shared, gizmo = draw_spline_gizmo)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared, gizmo = draw_spline_gizmo)]
+#[derive(Debug, Clone, Copy)]
 pub struct Spline {
     /// Control points the curve passes through, in order.
     pub control_points: [Vector3f; MAX_CONTROL_POINTS],

@@ -88,3 +88,18 @@ windows = { version = "0.58", features = [
 # The `#[implement]` macro's generated code names `windows_core` directly, so
 # the crate it lives in has to be nameable here.
 windows-core = "0.58"
+
+[features]
+# Tracy profiling for the editor's own code: the UI refresh path carries zones
+# (one per dock tab, the egui pass, the tessellation, the overlay's paint and
+# present) and one frame mark per redraw, all on the one client inside
+# `pill_core`. The feature lives here because an editor host anchors every
+# module build to this package, so the pair is also what `build_runner` passes
+# on: `host_posture_features` forwards whichever level the running binary was
+# built with, and the anchor reproduces the union on the shared dylibs.
+# `profiling-fine` adds the fine-grained lane.
+profiling = ["pill_player/profiling", "pill_development_host/profiling"]
+profiling-fine = [
+    "pill_player/profiling-fine",
+    "pill_development_host/profiling-fine",
+]

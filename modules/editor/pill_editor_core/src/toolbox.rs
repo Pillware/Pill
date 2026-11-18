@@ -3,9 +3,10 @@
 //!
 //! # Responsibilities
 //!
-//! - Name the toolbox's rows ([`ToolboxItem`]: the three gizmo tools, the
-//!   space toggle, the snapping toggle and the scene grid's switch) and the
-//!   order the panel stacks them in ([`TOOLBOX_ITEMS`]).
+//! - Name the toolbox's rows ([`ToolboxItem`]: the three gizmo tools, one row
+//!   per component tool the selection is offered, the space toggle, the
+//!   snapping toggle and the two switches) and the order the panel stacks them
+//!   in ([`rows`], and [`TOOLBOX_ITEMS`] for the rows every editor has).
 //! - The row lists the other surfaces share with the panel: the three tools
 //!   ([`TOOL_ROWS`]) and the two spaces with their labels and icons
 //!   ([`SPACE_ROWS`], [`SpaceRow`]), plus the edit builders for one tool and
@@ -28,13 +29,18 @@
 //! come from here. A row queues the same edit the shortcuts, the viewport menu
 //! and the Preferences tab queue: `SetGizmoTool` for the tools and the
 //! snapping, `CycleGizmoSpace` for the space row - which walks World, Local and
-//! then the active tool's own frames - and `SetGrid` for the grid.
+//! then the active tool's own frames - `SetGrid` and `SetGizmos` for the two
+//! switches, and `SetTool` for a component tool's row.
+//!
+//! Every row list is a function of the state, because which component tools a
+//! selection offers changes as the selection moves: [`rows`] is the one order
+//! the panel draws in and its length is what the geometry is sized from.
 
 // External crates
 use egui::{Pos2, Rect, Vec2};
 
 // Current crate
-use crate::editor_state::EditorCommand;
+use crate::editor_state::{ComponentToolRow, EditorCommand};
 use crate::gizmo::{GizmoMode, GizmoSettings, GizmoSpace};
 use crate::icons::Icon;
 
@@ -67,10 +73,11 @@ pub const TOOLBOX_ITEM_HEIGHT: f32 = 24.0;
 /// last row and the panel's bottom edge.
 pub const TOOLBOX_PADDING: f32 = 6.0;
 
-/// Returns the panel's size in points: the handle, the gap below it, one row
-/// per item with a gap between rows, and the bottom inset.
-pub fn panel_size() -> Vec2 {
-    let row_count = TOOLBOX_ITEMS.len() as f32;
+/// Returns the panel's size in points for `row_count` rows: the handle, the
+/// gap below it, one row per item with a gap between rows, and the bottom
+/// inset.
+pub fn panel_size(row_count: usize) -> Vec2 {
+    let row_count = row_count as f32;
     Vec2::new(
         TOOLBOX_WIDTH,
         TOOLBOX_HANDLE_HEIGHT
@@ -82,8 +89,8 @@ pub fn panel_size() -> Vec2 {
 }
 
 /// Returns the panel's rectangle when its top-left corner sits at `origin`.
-pub fn panel_rect(origin: Pos2) -> Rect {
-    Rect::from_min_size(origin, panel_size())
+pub fn panel_rect(origin: Pos2, row_count: usize) -> Rect {
+    Rect::from_min_size(origin, panel_size(row_count))
 }
 
 /// Returns the drag handle's rectangle: the panel's top strip. It is the one
@@ -92,23 +99,15 @@ pub fn handle_rect(origin: Pos2) -> Rect {
     Rect::from_min_size(origin, Vec2::new(TOOLBOX_WIDTH, TOOLBOX_HANDLE_HEIGHT))
 }
 
-/// Returns one row's rectangle inside the panel.
-///
-/// A row that [`TOOLBOX_ITEMS`] does not list takes the first row's place.
-/// Every [`ToolboxItem`] variant is listed, so that only keeps the function
-/// total.
-pub fn item_rect(item: ToolboxItem, origin: Pos2) -> Rect {
-    let row_index = TOOLBOX_ITEMS
-        .iter()
-        .position(|candidate| *candidate == item)
-        .unwrap_or(0) as f32;
+/// Returns one row's rectangle inside the panel, by its place in [`rows`].
+pub fn item_rect(row_index: usize, origin: Pos2) -> Rect {
     Rect::from_min_size(
         Pos2::new(
             origin.x + TOOLBOX_PADDING,
             origin.y
                 + TOOLBOX_HANDLE_HEIGHT
                 + TOOLBOX_ITEM_GAP
-                + row_index * (TOOLBOX_ITEM_HEIGHT + TOOLBOX_ITEM_GAP),
+                + row_index as f32 * (TOOLBOX_ITEM_HEIGHT + TOOLBOX_ITEM_GAP),
         ),
         Vec2::new(TOOLBOX_WIDTH - 2.0 * TOOLBOX_PADDING, TOOLBOX_ITEM_HEIGHT),
     )
@@ -124,13 +123,13 @@ pub fn default_origin(viewport: Rect) -> Pos2 {
 }
 
 /// Returns the origin a drag may use: `requested_origin` moved back inside
-/// `viewport`, one margin clear of its edges.
+/// `viewport`, one margin clear of its edges, for a panel of `row_count` rows.
 ///
 /// A viewport smaller than the panel cannot hold it. The clamp then pins the
 /// panel's top-left corner at its starting position, so the right or bottom
 /// part may stick out; the handle and the first rows stay reachable.
-pub fn clamped_origin(requested_origin: Pos2, viewport: Rect) -> Pos2 {
-    let panel_dimensions = panel_size();
+pub fn clamped_origin(requested_origin: Pos2, viewport: Rect, row_count: usize) -> Pos2 {
+    let panel_dimensions = panel_size(row_count);
     let minimum_origin = default_origin(viewport);
     let maximum_origin = Pos2::new(
         (viewport.right() - panel_dimensions.x - TOOLBOX_MARGIN).max(minimum_origin.x),
@@ -147,8 +146,9 @@ pub fn clamped_origin(requested_origin: Pos2, viewport: Rect) -> Pos2 {
 // =============================================================================
 
 /// What the toolbox's rows show: the gizmo's settings, the tool frame it is
-/// in, and the scene grid's switch. A row reads this, and the command a click
-/// queues changes it for the next frame.
+/// in, the two switches and the component tools the selection is offered. A
+/// row reads this, and the command a click queues changes it for the next
+/// frame.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ToolboxState<'a> {
     /// The gizmo's mode, space and snapping.
@@ -160,6 +160,19 @@ pub struct ToolboxState<'a> {
     /// The name of the tool frame the gizmo is in, when the active tool offers
     /// one and the space row has reached it.
     pub frame: Option<&'a str>,
+    /// The component tools the selection's entity is offered, in the order
+    /// their rows stack. Empty means no row for any of them.
+    pub component_tools: &'a [ComponentToolRow],
+}
+
+impl ToolboxState<'_> {
+    /// Whether an offered component tool is the active one.
+    ///
+    /// Exactly one tool is active at a time, so a component tool's row and the
+    /// three built-in tool rows never both look active.
+    pub fn component_tool_active(&self) -> bool {
+        self.component_tools.iter().any(|row| row.active)
+    }
 }
 
 /// One row of the floating toolbox.
@@ -171,6 +184,9 @@ pub enum ToolboxItem {
     Rotate,
     /// The scale tool's row.
     Scale,
+    /// One component tool's row, by its place in
+    /// [`ToolboxState::component_tools`].
+    ComponentTool(usize),
     /// The space toggle's row: switches the gizmo between world and local
     /// space. The label names the space the gizmo is in.
     Space,
@@ -182,7 +198,8 @@ pub enum ToolboxItem {
     Gizmos,
 }
 
-/// Every row, in the order the panel stacks them.
+/// Every row an editor always draws, in the order [`rows`] keeps them: the
+/// three tools first, then the four toggles.
 pub const TOOLBOX_ITEMS: [ToolboxItem; 7] = [
     ToolboxItem::Translate,
     ToolboxItem::Rotate,
@@ -201,6 +218,31 @@ pub const TOOL_ROWS: [ToolboxItem; 3] = [
     ToolboxItem::Rotate,
     ToolboxItem::Scale,
 ];
+
+/// The four rows below the tools: the space toggle, the snapping toggle, the
+/// scene grid's switch and the component gizmos' switch.
+pub const TOGGLE_ROWS: [ToolboxItem; 4] = [
+    ToolboxItem::Space,
+    ToolboxItem::Snap,
+    ToolboxItem::Grid,
+    ToolboxItem::Gizmos,
+];
+
+/// Every row the panel draws for one state, in stacking order: the three
+/// built-in tools, one row per component tool the selection offers, then the
+/// four toggles.
+///
+/// The panel's height, the drag limit and every row's rectangle are sized from
+/// this list's length, so a row appearing or disappearing with the selection
+/// grows and shrinks the whole panel.
+pub fn rows(state: &ToolboxState) -> Vec<ToolboxItem> {
+    let mut rows =
+        Vec::with_capacity(TOOL_ROWS.len() + state.component_tools.len() + TOGGLE_ROWS.len());
+    rows.extend(TOOL_ROWS);
+    rows.extend((0..state.component_tools.len()).map(ToolboxItem::ComponentTool));
+    rows.extend(TOGGLE_ROWS);
+    rows
+}
 
 /// One gizmo space as the viewport menu and the Preferences tab draw it: the
 /// value it selects, the long label the menu shows, the short one the
@@ -240,11 +282,16 @@ pub const SPACE_ROWS: [SpaceRow; 2] = [
 impl ToolboxItem {
     /// Returns the row's name in the log: the shell writes it with each row
     /// (`item="translate"`), and the editor's test suite finds a row by it.
-    pub fn name(self) -> &'static str {
+    /// A component tool's row is named by the tool itself.
+    pub fn name<'a>(self, state: &ToolboxState<'a>) -> &'a str {
         match self {
             ToolboxItem::Translate => "translate",
             ToolboxItem::Rotate => "rotate",
             ToolboxItem::Scale => "scale",
+            ToolboxItem::ComponentTool(index) => state
+                .component_tools
+                .get(index)
+                .map_or("component tool", |row| row.name.as_str()),
             ToolboxItem::Space => "space",
             ToolboxItem::Snap => "snap",
             ToolboxItem::Grid => "grid",
@@ -253,12 +300,15 @@ impl ToolboxItem {
     }
 
     /// Returns the row's icon: the tool's own mark, a globe or a map pin for
-    /// the space the gizmo is in, and a magnet or a grid for the two toggles.
+    /// the space the gizmo is in, a magnet or a grid for the two switches, and
+    /// the component icon the Inspector uses for a structural component on a
+    /// component tool's row.
     pub fn icon(self, state: &ToolboxState) -> Icon {
         match self {
             ToolboxItem::Translate => Icon::ArrowsOutCardinal,
             ToolboxItem::Rotate => Icon::ArrowsClockwise,
             ToolboxItem::Scale => Icon::ArrowsOut,
+            ToolboxItem::ComponentTool(_) => Icon::CubeTransparent,
             ToolboxItem::Space => match state.gizmo.space {
                 GizmoSpace::World if state.frame.is_none() => Icon::GlobeHemisphereWest,
                 // A tool frame is the object's own space, so it takes the map
@@ -272,13 +322,18 @@ impl ToolboxItem {
     }
 
     /// Returns the label the row shows for the current state: a fixed word for
-    /// the tools and the two toggles, and the space the gizmo is in for the
-    /// space row - the tool frame's own name when the row has reached one.
+    /// the built-in tools and the toggles, the space the gizmo is in for the
+    /// space row - the tool frame's own name when the row has reached one - and
+    /// the tool's own label for a component tool.
     pub fn label<'a>(self, state: &ToolboxState<'a>) -> &'a str {
         match self {
             ToolboxItem::Translate => "Translate",
             ToolboxItem::Rotate => "Rotate",
             ToolboxItem::Scale => "Scale",
+            ToolboxItem::ComponentTool(index) => state
+                .component_tools
+                .get(index)
+                .map_or("Tool", |row| row.label.as_str()),
             ToolboxItem::Space => match (state.frame, state.gizmo.space) {
                 (Some(frame), _) => frame,
                 (None, GizmoSpace::World) => "World",
@@ -293,11 +348,25 @@ impl ToolboxItem {
     /// Returns whether the row looks active: the selected tool, and each
     /// toggle in its non-default state (local space or a tool frame, snapping
     /// on, grid on).
+    ///
+    /// Exactly one tool is active at a time, so while an offered component
+    /// tool is the active one none of the three built-in tool rows looks
+    /// active.
     pub fn active(self, state: &ToolboxState) -> bool {
         match self {
-            ToolboxItem::Translate => state.gizmo.mode == GizmoMode::Translate,
-            ToolboxItem::Rotate => state.gizmo.mode == GizmoMode::Rotate,
-            ToolboxItem::Scale => state.gizmo.mode == GizmoMode::Scale,
+            ToolboxItem::Translate => {
+                !state.component_tool_active() && state.gizmo.mode == GizmoMode::Translate
+            }
+            ToolboxItem::Rotate => {
+                !state.component_tool_active() && state.gizmo.mode == GizmoMode::Rotate
+            }
+            ToolboxItem::Scale => {
+                !state.component_tool_active() && state.gizmo.mode == GizmoMode::Scale
+            }
+            ToolboxItem::ComponentTool(index) => state
+                .component_tools
+                .get(index)
+                .is_some_and(|row| row.active),
             ToolboxItem::Space => state.gizmo.space == GizmoSpace::Local || state.frame.is_some(),
             ToolboxItem::Snap => state.gizmo.snap,
             ToolboxItem::Grid => state.grid,
@@ -308,12 +377,14 @@ impl ToolboxItem {
     /// Returns the label the scene viewport's menu shows: "Snapping" where the
     /// panel says "Snap", and the panel's word for the other rows. The menu
     /// lists the two spaces as rows of their own, so the space toggle only
-    /// needs its own name here.
-    pub fn menu_label(self) -> &'static str {
+    /// needs its own name here. It draws [`TOOL_ROWS`] and not a component
+    /// tool's row, so only the fixed rows reach it.
+    pub fn menu_label<'a>(self, state: &ToolboxState<'a>) -> &'a str {
         match self {
             ToolboxItem::Translate => "Translate",
             ToolboxItem::Rotate => "Rotate",
             ToolboxItem::Scale => "Scale",
+            ToolboxItem::ComponentTool(_) => self.label(state),
             ToolboxItem::Space => "Space",
             ToolboxItem::Snap => "Snapping",
             ToolboxItem::Grid => "Grid",
@@ -321,9 +392,9 @@ impl ToolboxItem {
         }
     }
 
-    /// Returns the command a click queues: a tool row selects that tool, the
-    /// space row walks to the next space, and the snapping and grid rows flip
-    /// their switch.
+    /// Returns the command a click queues: a built-in tool row selects that
+    /// tool, a component tool's row activates or clears it, the space row
+    /// walks to the next space, and the other rows flip their switch.
     ///
     /// The space row queues the cycle rather than one space, so it can reach a
     /// frame the active tool offers; the viewport menu and the Preferences tab
@@ -344,6 +415,12 @@ impl ToolboxItem {
                 mode: Some(GizmoMode::Scale),
                 space: None,
                 snap: None,
+            },
+            // A row whose tool is no longer offered clears the active tool,
+            // which is the state `tool none` produces; the panel never draws
+            // one, because its rows come from the same list.
+            ToolboxItem::ComponentTool(index) => EditorCommand::SetTool {
+                tool: state.component_tools.get(index).map(|row| row.name.clone()),
             },
             ToolboxItem::Space => EditorCommand::CycleGizmoSpace,
             ToolboxItem::Snap => EditorCommand::SetGizmoTool {
@@ -400,14 +477,26 @@ mod tests {
         Rect::from_min_size(Pos2::new(100.0, 50.0), vec2(800.0, 600.0))
     }
 
+    /// One component tool the selection offers.
+    fn component_row(name: &str, label: &str, active: bool) -> ComponentToolRow {
+        ComponentToolRow {
+            name: name.to_string(),
+            label: label.to_string(),
+            active,
+        }
+    }
+
     #[test]
     fn the_rows_stack_inside_the_panel() {
+        let state = ToolboxState::default();
+        let drawn = rows(&state);
+        assert_eq!(drawn, TOOLBOX_ITEMS.to_vec());
         let origin = default_origin(viewport());
-        let panel = panel_rect(origin);
+        let panel = panel_rect(origin, drawn.len());
         assert!(panel.contains_rect(handle_rect(origin)));
         let mut previous_bottom = handle_rect(origin).bottom();
-        for item in TOOLBOX_ITEMS {
-            let rect = item_rect(item, origin);
+        for (index, item) in drawn.iter().enumerate() {
+            let rect = item_rect(index, origin);
             assert!(panel.contains_rect(rect), "{item:?} outside the panel");
             assert!(
                 rect.top() >= previous_bottom,
@@ -418,8 +507,82 @@ mod tests {
             previous_bottom = rect.bottom() + TOOLBOX_ITEM_GAP;
         }
         // The last row ends exactly where the bottom inset begins.
-        let last = item_rect(TOOLBOX_ITEMS[TOOLBOX_ITEMS.len() - 1], origin);
+        let last = item_rect(drawn.len() - 1, origin);
         assert_eq!(panel.bottom(), last.bottom() + TOOLBOX_PADDING);
+    }
+
+    /// An offered component tool adds one row between the built-in tools and
+    /// the toggles, and the panel grows by exactly that row.
+    #[test]
+    fn a_component_tool_adds_one_row_between_the_tools_and_the_toggles() {
+        let offered = [component_row("spline", "Spline", false)];
+        let state = ToolboxState {
+            component_tools: &offered,
+            ..ToolboxState::default()
+        };
+        let drawn = rows(&state);
+        assert_eq!(drawn.len(), TOOLBOX_ITEMS.len() + 1);
+        assert_eq!(drawn[2], ToolboxItem::Scale);
+        assert_eq!(drawn[3], ToolboxItem::ComponentTool(0));
+        assert_eq!(drawn[4], ToolboxItem::Space);
+        let taller = panel_size(drawn.len());
+        let base = panel_size(TOOLBOX_ITEMS.len());
+        assert_eq!(
+            taller.y - base.y,
+            TOOLBOX_ITEM_HEIGHT + TOOLBOX_ITEM_GAP,
+            "one row taller, with its gap"
+        );
+        // The row below it moved down by the same amount the panel grew.
+        let origin = default_origin(viewport());
+        assert_eq!(
+            item_rect(4, origin).top() - item_rect(3, origin).top(),
+            item_rect(3, origin).top() - item_rect(2, origin).top()
+        );
+    }
+
+    /// A component tool's row reads its label, its active flag and its
+    /// activation command from the offered row.
+    #[test]
+    fn a_component_tool_row_reads_the_offered_tool() {
+        let offered = [
+            component_row("spline", "Spline", false),
+            component_row("collider", "Collider", true),
+        ];
+        let state = ToolboxState {
+            component_tools: &offered,
+            ..ToolboxState::default()
+        };
+        let spline = ToolboxItem::ComponentTool(0);
+        let collider = ToolboxItem::ComponentTool(1);
+        assert_eq!(spline.name(&state), "spline");
+        assert_eq!(collider.label(&state), "Collider");
+        assert!(!spline.active(&state));
+        assert!(collider.active(&state));
+        assert_eq!(
+            spline.command(&state),
+            EditorCommand::SetTool {
+                tool: Some("spline".to_string()),
+            }
+        );
+        assert_eq!(spline.icon(&state), Icon::CubeTransparent);
+        // Exactly one tool is active, so the built-in rows give way to it.
+        assert!(state.component_tool_active());
+        assert!(!ToolboxItem::Translate.active(&state));
+        assert!(!ToolboxItem::Rotate.active(&state));
+        assert!(!ToolboxItem::Scale.active(&state));
+    }
+
+    /// A row whose index names no offered tool answers safely: the callers
+    /// only ever hand it a drawn row, and the degenerate answers keep the
+    /// functions total.
+    #[test]
+    fn a_stale_component_row_answers_with_the_neutral_values() {
+        let state = ToolboxState::default();
+        let stale = ToolboxItem::ComponentTool(3);
+        assert_eq!(stale.name(&state), "component tool");
+        assert_eq!(stale.label(&state), "Tool");
+        assert!(!stale.active(&state));
+        assert_eq!(stale.command(&state), EditorCommand::SetTool { tool: None });
     }
 
     #[test]
@@ -430,8 +593,9 @@ mod tests {
     #[test]
     fn a_drag_clamps_inside_the_viewport() {
         let viewport_rect = viewport();
-        let panel_dimensions = panel_size();
-        let far_origin = clamped_origin(Pos2::new(5000.0, 5000.0), viewport_rect);
+        let row_count = TOOLBOX_ITEMS.len();
+        let panel_dimensions = panel_size(row_count);
+        let far_origin = clamped_origin(Pos2::new(5000.0, 5000.0), viewport_rect, row_count);
         assert_eq!(
             far_origin,
             Pos2::new(
@@ -439,17 +603,17 @@ mod tests {
                 viewport_rect.bottom() - panel_dimensions.y - TOOLBOX_MARGIN
             )
         );
-        let negative_origin = clamped_origin(Pos2::new(-200.0, -200.0), viewport_rect);
+        let negative_origin = clamped_origin(Pos2::new(-200.0, -200.0), viewport_rect, row_count);
         assert_eq!(negative_origin, default_origin(viewport_rect));
         // A point already inside the bounds is left alone.
         let inside = Pos2::new(300.0, 200.0);
-        assert_eq!(clamped_origin(inside, viewport_rect), inside);
+        assert_eq!(clamped_origin(inside, viewport_rect, row_count), inside);
     }
 
     #[test]
     fn a_tiny_viewport_keeps_the_top_left_corner() {
         let tiny = Rect::from_min_size(Pos2::new(100.0, 50.0), vec2(40.0, 40.0));
-        let clamped = clamped_origin(Pos2::new(500.0, 500.0), tiny);
+        let clamped = clamped_origin(Pos2::new(500.0, 500.0), tiny, TOOLBOX_ITEMS.len());
         assert_eq!(clamped, default_origin(tiny));
     }
 
@@ -466,6 +630,7 @@ mod tests {
             grid: false,
             gizmos: true,
             frame: Some("Fixture"),
+            component_tools: &[],
         };
         assert_eq!(ToolboxItem::Space.label(&framed), "Fixture");
         assert_eq!(ToolboxItem::Snap.label(&state), "Snap");
@@ -493,6 +658,7 @@ mod tests {
             grid: false,
             gizmos: true,
             frame: Some("Fixture"),
+            component_tools: &[],
         };
         assert_eq!(ToolboxItem::Space.icon(&framed), Icon::MapPin);
     }
@@ -509,6 +675,7 @@ mod tests {
             grid: true,
             gizmos: true,
             frame: None,
+            component_tools: &[],
         };
         assert!(ToolboxItem::Scale.active(&state));
         assert!(ToolboxItem::Space.active(&state));
@@ -525,6 +692,7 @@ mod tests {
             grid: true,
             gizmos: false,
             frame: Some("Fixture"),
+            component_tools: &[],
         };
         assert!(ToolboxItem::Space.active(&framed));
         assert!(!ToolboxItem::Gizmos.active(&framed));
@@ -579,6 +747,7 @@ mod tests {
             grid: true,
             gizmos: true,
             frame: None,
+            component_tools: &[],
         };
         assert_eq!(
             ToolboxItem::Space.command(&flipped),
@@ -610,9 +779,16 @@ mod tests {
     #[test]
     fn the_menu_rows_are_the_panels_rows() {
         assert_eq!(TOOL_ROWS.as_slice(), &TOOLBOX_ITEMS[..3]);
-        for item in TOOL_ROWS {
-            assert!(TOOLBOX_ITEMS.contains(&item), "{item:?} is not a panel row");
-            assert!(!item.menu_label().is_empty(), "{item:?} has no menu label");
+        assert_eq!(TOGGLE_ROWS.as_slice(), &TOOLBOX_ITEMS[3..]);
+        for item in TOOLBOX_ITEMS {
+            assert!(
+                rows(&ToolboxState::default()).contains(&item),
+                "{item:?} is not a panel row"
+            );
+            assert!(
+                !item.menu_label(&ToolboxState::default()).is_empty(),
+                "{item:?} has no menu label"
+            );
         }
         for row in SPACE_ROWS {
             let state = ToolboxState {
@@ -623,6 +799,7 @@ mod tests {
                 grid: false,
                 gizmos: true,
                 frame: None,
+                component_tools: &[],
             };
             assert_eq!(ToolboxItem::Space.label(&state), row.short);
             assert_eq!(ToolboxItem::Space.icon(&state), row.icon);

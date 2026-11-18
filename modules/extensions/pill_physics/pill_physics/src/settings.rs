@@ -72,18 +72,14 @@ impl std::default::Default for PhysicsSettings {
 /// The file lives at `res/settings/pill_physics.physics_settings`. The loaded
 /// value is only a carrier: the manager reads the document, not the asset.
 ///
-/// The derive declares the type, so every generation of the module registers it
-/// with the world's asset store without a call in `register`.
-#[derive(Debug, Default, PillAsset)]
-#[pill(standalone)]
+/// The attribute declares the type, so every generation of the module registers
+/// it with the world's asset store without a call in `register`.
+#[asset(standalone)]
+#[derive(Debug, Default)]
 pub struct PhysicsSettingsAsset {
     /// The settings the file holds.
     pub settings: PhysicsSettings,
 }
-
-// Registers the type with the type-erased asset columns, without which the
-// world could load its file but never store or look it up.
-trait_type_map::impl_trait_accessible!(dyn Asset; PhysicsSettingsAsset);
 
 impl pill_engine::Asset for PhysicsSettingsAsset {
     fn shared_name() -> Option<&'static str> {

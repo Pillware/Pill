@@ -14,7 +14,7 @@
 //! a project never sees a handle and never needs rapier in its dependencies.
 
 // Current crate
-use pill_engine::{Entity, PillResource};
+use pill_engine::{resource, Entity};
 
 // =============================================================================
 // CollisionStarted
@@ -69,7 +69,8 @@ pub struct ContactForce {
 /// The manager empties this at the start of each frame and fills it while the
 /// simulation steps, so a system that reads it always sees the frame that just
 /// ran. Game code that needs an event to outlive the frame copies it out.
-#[derive(Debug, Clone, Default, PartialEq, PillResource)]
+#[resource]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PhysicsEvents {
     /// Contacts that began this frame.
     pub started: Vec<CollisionStarted>,

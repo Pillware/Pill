@@ -13,8 +13,7 @@
 //! [`facing_degrees`](AudioListenerComponent::facing_degrees) holds it.
 
 // External crates
-use pill_engine::PillComponent;
-use serde::{Deserialize, Serialize};
+use pill_engine::component;
 
 // =============================================================================
 // AudioListenerComponent
@@ -26,9 +25,9 @@ use serde::{Deserialize, Serialize};
 /// one it finds. The entity also needs a
 /// [`TransformComponent`](pill_engine::TransformComponent), because the
 /// listener's position comes from there.
+#[component(persistable, shared)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared)]
+#[derive(Debug, Clone, Copy)]
 pub struct AudioListenerComponent {
     /// Whether the system may use this listener.
     pub enabled: bool,

@@ -4,7 +4,9 @@ The tools framework is only worth anything if a real tool, in a real extension,
 edits a real component. These steps start two editor sessions of their own, each
 on an extension example project, and drive one tool end to end:
 
-- the spline tool on `extensions/pill_spline/examples/uber_spline`: its points
+- the spline tool on `extensions/pill_spline/examples/uber_spline`: its row
+  in the floating toolbox appearing for the entity that carries a spline and
+  entering the tool, its points
   and tangents reported as elements, two points selected, the `Spline` frame
   reached through the space row, a drag written back through the tool and undone
   as one step, a point inserted from the context menu and deleted with Delete,
@@ -34,18 +36,29 @@ from core.editor_log_tokens import (
     ELEMENTS_DUMP_TOKEN,
     ELEMENTS_INSERTED_TOKEN,
     ELEMENTS_REMOVED_TOKEN,
+    ENGINE_COMMANDS_APPLIED_TOKEN,
     ENTITIES_DUMP_TOKEN,
     ENTITY_ROW_TOKEN,
     ELEMENT_TRANSFORMS_WRITTEN_TOKEN,
     FIELD_TOKEN,
     GIZMO_SPACE_TOKEN,
     HISTORY_UNDO_TOKEN,
+    NEW_ENTITY_TOKEN,
     SELECTION_CHANGED_TOKEN,
     TOOL_ACTIVATED_TOKEN,
+    TOOLBOX_ITEM_TOKEN,
+    TOOLBOX_RECT_TOKEN,
 )
 from core.editor_session import EditorSession
 from core.projects import EXTENSION_EXAMPLES_ROOT, host_project_path
-from editor_step_support import print_ok
+from editor_step_support import (
+    entity_count,
+    occurrence_count,
+    print_ok,
+    toolbox_click,
+    wait_applied,
+    wait_for_entity_count,
+)
 
 # The two extension examples these steps drive, by the path a host resolves.
 UBER_SPLINE_PROJECT = host_project_path(
@@ -208,21 +221,29 @@ def run_spline_tool_steps(binary) -> None:
     """The spline tool, on the project that ships a spline."""
     session = open_session(binary, UBER_SPLINE_PROJECT, "tools_spline")
     try:
-        # Step 1: the entity the spline crate's example spawned is the subject.
+        # Step 1: the entity the spline crate's example spawned is the subject,
+        # and the floating toolbox's own row is how a person enters its tool.
         rows = read_entities(session)
         spline_entity = next(
             display for display, components in rows if "Spline" in components
         )
-        select_entity(session, spline_entity, "the spline entity selected")
         begin = session.length()
-        session.send("tool spline")
+        select_entity(session, spline_entity, "the spline entity selected")
+        session.wait(
+            message_pattern(TOOLBOX_ITEM_TOKEN, r'\s+view=0\s+item="spline"'),
+            30,
+            "the spline row appears for the entity that carries a spline",
+            begin,
+        )
+        begin = session.length()
+        toolbox_click(session, 0, "spline", "the toolbox row entered the spline tool")
         session.wait(
             message_pattern(TOOL_ACTIVATED_TOKEN, r'\s+tool="spline"'),
             30,
             "the spline tool activated",
             begin,
         )
-        print_ok("the spline tool is offered for the entity that carries a spline")
+        print_ok("the toolbox row enters the spline tool for the entity that carries one")
 
         # Step 2: it reports the four control points and their four tangents.
         count, elements, _ = read_elements(session)
@@ -343,7 +364,38 @@ def run_spline_tool_steps(binary) -> None:
         )
         print_ok("the Uber extension's kind and row appear only with its component")
 
-        # Step 8: back to no tool, so the session ends the way it started.
+        # Step 8: an entity that carries no spline is offered no row. The tool
+        # keeps running while its row is gone - that is what strict visibility
+        # means - and the built-in tool rows stay there to leave it.
+        count_before = entity_count(session)
+        begin = session.length()
+        applied_before = occurrence_count(session, re.escape(ENGINE_COMMANDS_APPLIED_TOKEN))
+        session.send("command editor.entity_create")
+        session.wait(re.escape(NEW_ENTITY_TOKEN), 30, "the new entity queued", begin)
+        wait_applied(session, applied_before, "the new entity applied")
+        wait_for_entity_count(session, count_before + 1, "the create added one entity")
+        plain_entity = next(
+            display
+            for display, components in read_entities(session)
+            if "Spline" not in components
+        )
+        begin = session.length()
+        select_entity(session, plain_entity, "the entity with no spline selected")
+        session.wait(
+            message_pattern(TOOLBOX_RECT_TOKEN, r"\s+view=0"),
+            30,
+            "the panel re-laid out for the entity with no spline",
+            begin,
+        )
+        block = session.read_since(begin)
+        assert 'item="spline"' not in block, (
+            "the spline row is drawn for an entity that carries none: {}".format(
+                block[-500:]
+            )
+        )
+        print_ok("an entity with no spline offers no toolbox row")
+
+        # Step 9: back to no tool, so the session ends the way it started.
         begin = session.length()
         session.send("tool none")
         session.wait(

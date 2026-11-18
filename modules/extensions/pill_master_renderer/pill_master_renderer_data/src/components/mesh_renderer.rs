@@ -13,8 +13,7 @@
 //! than derived from the module path; see [`crate::components`].
 
 // External crates
-use pill_engine::{Handle, PillComponent, World};
-use serde::{Deserialize, Serialize};
+use pill_engine::{component, Handle, World};
 
 // Current crate
 use crate::assets::{Material, Mesh};
@@ -60,15 +59,12 @@ impl MeshRendererComponentBuilder {
 /// carrying this component and emits one instance for each pair whose handles
 /// still resolve in the asset manager. A dangling handle therefore draws
 /// nothing instead of failing the frame.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-// Pinned so the identity does not follow the module path. A derived name is
-// built from `module_path!()`, so re-deriving it would register a different
-// component and orphan every column a live world holds for this one.
-#[pill(
+#[component(
     shared = "pill_master_renderer::component::MeshRendererComponent",
     persistable
 )]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct MeshRendererComponent {
     /// Mesh this entity draws.
     pub mesh: Handle<Mesh>,

@@ -1234,7 +1234,15 @@ fn the_toolbox_rows_fill_their_width() {
         &mut pending,
         &mut regions,
     );
-    let faces: Vec<egui::Rect> = (0..toolbox::TOOLBOX_ITEMS.len())
+    let drawer_state = toolbox::ToolboxState {
+        gizmo: snapshot.gizmo,
+        grid: snapshot.grid_enabled,
+        gizmos: snapshot.gizmos_enabled,
+        frame: snapshot.gizmo_frame.as_deref(),
+        component_tools: &snapshot.component_tools,
+    };
+    let drawn = toolbox::rows(&drawer_state);
+    let faces: Vec<egui::Rect> = (0..drawn.len())
         .map(|index| {
             toolbox
                 .face(0, index)
@@ -1249,17 +1257,17 @@ fn the_toolbox_rows_fill_their_width() {
             toolbox::TOOLBOX_PADDING,
             toolbox::TOOLBOX_HANDLE_HEIGHT + toolbox::TOOLBOX_ITEM_GAP,
         );
-    for (item, face) in toolbox::TOOLBOX_ITEMS.iter().zip(&faces) {
-        let row = toolbox::item_rect(*item, origin);
+    for (index, (item, face)) in drawn.iter().zip(&faces).enumerate() {
+        let row = toolbox::item_rect(index, origin);
         assert!(
             row.contains_rect(*face),
             "{}'s button {face:?} is not inside its row {row:?}",
-            item.name()
+            item.name(&drawer_state)
         );
         assert!(
             (face.width() - row.width()).abs() < 0.5,
             "{}'s button takes the whole row's width: {face:?} in {row:?}",
-            item.name()
+            item.name(&drawer_state)
         );
     }
 

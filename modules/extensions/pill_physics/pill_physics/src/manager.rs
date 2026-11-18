@@ -52,7 +52,7 @@ use rapier3d::prelude::{
 use crate::components::{BodyKind, ColliderComponent, ColliderShape, RigidBodyComponent};
 use crate::events::{CollisionStarted, CollisionStopped, ContactForce, PhysicsEvents};
 use crate::settings::PhysicsSettings;
-use pill_engine::{Entity, PillResource, TransformComponent};
+use pill_engine::{resource, Entity, TransformComponent};
 
 // =============================================================================
 // Constants
@@ -113,8 +113,7 @@ struct StaticColliderState {
 /// transforms, so putting a copy back at Stop would leave the simulation
 /// describing bodies that no longer exist. Stop leaves it untouched, and the
 /// next Play rebuilds it from the restored components.
-#[derive(PillResource)]
-#[pill(
+#[resource(
     shared,
     play_state = "rebuild",
     layout_sources = ["Cargo.toml", "src/components.rs", "src/manager.rs"]

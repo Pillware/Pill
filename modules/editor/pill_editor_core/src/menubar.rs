@@ -275,6 +275,7 @@ fn menu_entry_for_command(command: &CommandView, view: &MenuView<'_>) -> Option<
         grid: view.snapshot.grid_enabled,
         gizmos: view.snapshot.gizmos_enabled,
         frame: view.snapshot.gizmo_frame.as_deref(),
+        component_tools: &view.snapshot.component_tools,
     };
     let mut enabled = true;
     let mut checked = None;

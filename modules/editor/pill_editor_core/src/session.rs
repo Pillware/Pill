@@ -363,10 +363,10 @@ pub struct ToolboxSession {
     /// Per-scene-view panel rectangles whose rows the log already reported,
     /// so the rect lines appear once per placement and once per drag.
     pub logged: LoggedRects<usize>,
-    /// Per-scene-view row rectangles, in [`crate::toolbox::TOOLBOX_ITEMS`]
-    /// order: the face a row's button drew this pass, which is what a click
-    /// aims at. A row's face is narrower than the row it sits in, so the
-    /// logged row rectangle alone would not say where the button is.
+    /// Per-scene-view row rectangles, in [`crate::toolbox::rows`] order: the
+    /// face a row's button drew this pass, which is what a click aims at. A
+    /// row's face is narrower than the row it sits in, so the logged row
+    /// rectangle alone would not say where the button is.
     pub faces: Vec<Vec<Rect>>,
 }
 

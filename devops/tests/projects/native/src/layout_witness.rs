@@ -25,7 +25,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 // External crates
-use pill_engine::{Engine, PillResource};
+use pill_engine::{resource, Engine};
 
 /// The witness's build-time value. Editing this line is editing the layout.
 const WITNESS_BUILD_VALUE: u32 = 1;
@@ -43,8 +43,7 @@ static DROPPED_WITNESS_COUNT: AtomicU32 = AtomicU32::new(0);
 ///
 /// It declares this file as its layout, and only this file, so the suites can
 /// edit the layout without touching anything else the module compiles.
-#[derive(PillResource)]
-#[pill(
+#[resource(
     shared = "native::layout_witness::LayoutWitness",
     layout_sources = ["src/layout_witness.rs"]
 )]

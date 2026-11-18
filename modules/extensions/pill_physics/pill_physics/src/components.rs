@@ -19,7 +19,7 @@
 use serde::{Deserialize, Serialize};
 
 // Current crate
-use pill_engine::{PillComponent, PillMirror};
+use pill_engine::{component, PillMirror};
 
 // =============================================================================
 // BodyKind
@@ -70,9 +70,9 @@ pub enum ColliderShape {
 /// The pose is not here: it stays in
 /// [`TransformComponent`](pill_engine::TransformComponent), which the body is
 /// built from and which the simulation writes back to.
+#[component(persistable, shared)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RigidBodyComponent {
     /// How the simulation may move this body.
     pub body_kind: BodyKind,
@@ -138,9 +138,9 @@ impl std::default::Default for RigidBodyComponent {
 /// entities that carry both components. The component also declares the gizmo
 /// that outlines it: the engine draws it wherever a gizmo pass is installed,
 /// and the settings document's `debug_draw` switch decides whether it draws.
+#[component(persistable, shared, gizmo = crate::debug_draw::draw_collider_outline)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared, gizmo = crate::debug_draw::draw_collider_outline)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColliderComponent {
     /// The shape the dimensions are read as.
     pub shape: ColliderShape,

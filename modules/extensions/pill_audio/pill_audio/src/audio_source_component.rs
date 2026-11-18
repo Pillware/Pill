@@ -14,9 +14,8 @@
 //! names one loaded sound, so playing it needs no path lookup.
 
 // External crates
+use pill_engine::component;
 use pill_engine::Handle;
-use pill_engine::PillComponent;
-use serde::{Deserialize, Serialize};
 
 // Current crate
 use crate::audio_command::AudioCommand;
@@ -42,9 +41,9 @@ pub const NO_SINK: u32 = u32::MAX;
 /// The sound is a [`Handle<Sound>`], the same reference every other component
 /// uses for its assets. A handle that no longer resolves - because its sound
 /// was unloaded - plays nothing, so unloading a sound is safe.
+#[component(persistable, shared)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared)]
+#[derive(Debug, Clone, Copy)]
 pub struct AudioSourceComponent {
     /// Which sink pool to draw from.
     pub sound_type: SoundType,

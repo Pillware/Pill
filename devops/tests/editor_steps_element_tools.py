@@ -112,6 +112,14 @@ def run_element_tools_steps(state: StepState) -> None:
     )
     print_ok("the fixture tool reports elements for the selected entity")
 
+    # The fixture is a component tool that names no component, so it gains no
+    # toolbox row: a row is drawn only for a tool the selected entity is
+    # offered, which is what keeps a scripted-only tool out of a person's UI.
+    assert 'item="fixture"' not in session.text(), (
+        "the fixture tool drew a toolbox row"
+    )
+    print_ok("a component tool that names no component draws no toolbox row")
+
     # Step 2: the handles land in the active view, five of them of two kinds.
     begin = session.length()
     session.wait(HANDLES_PATTERN, 30, "the element handles published", begin)

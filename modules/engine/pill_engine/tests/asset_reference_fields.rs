@@ -1,4 +1,4 @@
-//! Proves that `#[derive(PillComponent)]` records the asset type each
+//! Proves that `#[component]` records the asset type each
 //! [`Handle`] field references.
 //!
 //! # Responsibilities
@@ -19,7 +19,7 @@
 use pill_engine::asset::{Asset, Handle};
 use pill_engine::component_field::FieldValue;
 use pill_engine::component_registry::register_all_components;
-use pill_engine::{ComponentId, PillComponent, World};
+use pill_engine::{component, ComponentId, World};
 
 /// An asset type with a pinned shared name, like the renderer's asset types.
 struct PinnedMesh;
@@ -34,8 +34,9 @@ struct LocalSound;
 impl Asset for LocalSound {}
 
 /// A derived component with two handle fields and a scalar between them.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[derive(Debug, Clone, Copy, Default)]
 struct ReferenceCarrier {
     mesh: Handle<PinnedMesh>,
     volume: f32,

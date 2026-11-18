@@ -30,7 +30,7 @@ use std::collections::HashSet;
 // External crates
 use pill_engine::component::ComponentRegistry;
 use pill_engine::query::{Changed, Query};
-use pill_engine::{ComponentId, PillComponent, World};
+use pill_engine::{component, ComponentId, World};
 
 // Current crate
 use module_copy::Spline as ModuleSpline;
@@ -50,8 +50,8 @@ const SHARED_NAME: &str = "pill_spline::Spline";
 /// The project's copy of the shared component.
 pub mod project_copy {
     /// `pill_spline::Spline` as the project compiled it.
-    #[derive(Clone, Debug, Default, pill_engine::PillComponent)]
-    #[pill(shared = "pill_spline::Spline")]
+    #[pill_engine::component(shared = "pill_spline::Spline")]
+    #[derive(Clone, Debug, Default)]
     #[repr(C)]
     pub struct Spline {
         pub tension: f32,
@@ -63,8 +63,8 @@ pub mod project_copy {
 /// different `TypeId`, declaring the same shared name and the same layout.
 pub mod module_copy {
     /// `pill_spline::Spline` as the module DLL compiled it.
-    #[derive(Clone, Debug, Default, pill_engine::PillComponent)]
-    #[pill(shared = "pill_spline::Spline")]
+    #[pill_engine::component(shared = "pill_spline::Spline")]
+    #[derive(Clone, Debug, Default)]
     #[repr(C)]
     pub struct Spline {
         pub tension: f32,
@@ -73,13 +73,15 @@ pub mod module_copy {
 }
 
 /// An ordinary component, to show the default identity is untouched.
-#[derive(Clone, Debug, Default, PillComponent)]
+#[component]
+#[derive(Clone, Debug, Default)]
 struct PlainMarker {
     value: u32,
 }
 
 /// A second ordinary component that forces a different archetype.
-#[derive(Clone, Debug, Default, PillComponent)]
+#[component]
+#[derive(Clone, Debug, Default)]
 struct OtherMarker {
     value: u32,
 }
@@ -392,8 +394,8 @@ fn a_disagreeing_layout_is_reported_instead_of_bound() {
         /// `pill_spline::Spline` as a module rebuilt against a changed
         /// definition declares it: same name, same declared identity, wider
         /// fields.
-        #[derive(Clone, Debug, Default, pill_engine::PillComponent)]
-        #[pill(shared = "pill_spline::Spline")]
+        #[pill_engine::component(shared = "pill_spline::Spline")]
+        #[derive(Clone, Debug, Default)]
         #[repr(C)]
         pub struct Spline {
             pub tension: f64,
@@ -629,10 +631,8 @@ fn a_shared_row_can_be_removed_without_disturbing_its_neighbours() {
 /// A persistable shared component, as each artifact compiled it.
 pub mod project_persisted {
     /// `pill_spline::PersistedSpline` as the project compiled it.
-    #[derive(
-        Clone, Debug, Default, serde::Serialize, serde::Deserialize, pill_engine::PillComponent,
-    )]
-    #[pill(persistable, shared = "pill_spline::PersistedSpline")]
+    #[pill_engine::component(persistable, shared = "pill_spline::PersistedSpline")]
+    #[derive(Clone, Debug, Default)]
     #[repr(C)]
     pub struct PersistedSpline {
         pub tension: f32,
@@ -643,10 +643,8 @@ pub mod project_persisted {
 /// The other binary's copy of the same persistable shared component.
 pub mod module_persisted {
     /// `pill_spline::PersistedSpline` as the module DLL compiled it.
-    #[derive(
-        Clone, Debug, Default, serde::Serialize, serde::Deserialize, pill_engine::PillComponent,
-    )]
-    #[pill(persistable, shared = "pill_spline::PersistedSpline")]
+    #[pill_engine::component(persistable, shared = "pill_spline::PersistedSpline")]
+    #[derive(Clone, Debug, Default)]
     #[repr(C)]
     pub struct PersistedSpline {
         pub tension: f32,
@@ -762,8 +760,8 @@ fn a_shared_persistable_component_appears_once_in_the_manifest() {
 // a collision needs a qualified name written on purpose.
 
 /// One crate's `Transform`.
-#[derive(Clone, Debug, Default, PillComponent)]
-#[pill(shared = "engine::Transform")]
+#[component(shared = "engine::Transform")]
+#[derive(Clone, Debug, Default)]
 #[repr(C)]
 struct PhysicsTransform {
     x: f32,
@@ -773,8 +771,8 @@ struct PhysicsTransform {
 
 /// An unrelated crate's `Transform` claiming the same qualified name, with a
 /// *different* layout.
-#[derive(Clone, Debug, Default, PillComponent)]
-#[pill(shared = "engine::Transform")]
+#[component(shared = "engine::Transform")]
+#[derive(Clone, Debug, Default)]
 #[repr(C)]
 struct UiTransform {
     x: f64,
@@ -783,8 +781,8 @@ struct UiTransform {
 
 /// An unrelated crate's `Transform` claiming the same qualified name with a
 /// byte-identical layout but a completely different meaning.
-#[derive(Clone, Debug, Default, PillComponent)]
-#[pill(shared = "engine::Transform")]
+#[component(shared = "engine::Transform")]
+#[derive(Clone, Debug, Default)]
 #[repr(C)]
 struct AudioTransform {
     x: f32,

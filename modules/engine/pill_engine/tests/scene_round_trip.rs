@@ -10,7 +10,7 @@
 //!
 //! # Design
 //!
-//! The component comes from `#[derive(PillComponent)]` and is registered by
+//! The component comes from `#[component]` and is registered by
 //! [`register_all_components`], the same loop a module's registration uses, so
 //! the scene reads and writes the generated field layout rather than a
 //! hand-written copy. The asset the rider references is itself a scene file,
@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 use pill_engine::asset_store::mount_directory;
 use pill_engine::component_registry::register_all_components;
 use pill_engine::{
-    load_scene, render_standalone, save_scene, AssetDatabase, AssetGuid, AssetManager, Engine,
-    Entity, EntityId, Handle, ImportRegistry, PillComponent, Scene, SceneDocument, StandaloneAsset,
+    component, load_scene, render_standalone, save_scene, AssetDatabase, AssetGuid, AssetManager,
+    Engine, Entity, EntityId, Handle, ImportRegistry, Scene, SceneDocument, StandaloneAsset,
 };
 
 // =============================================================================
@@ -36,8 +36,9 @@ use pill_engine::{
 ///
 /// The three fields are one of each kind a scene has to save: an entity
 /// reference, an asset reference and a plain number.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PillComponent)]
+#[derive(Debug, Clone, Copy)]
 pub struct Rider {
     /// The entity this rider rides.
     mount: Entity,

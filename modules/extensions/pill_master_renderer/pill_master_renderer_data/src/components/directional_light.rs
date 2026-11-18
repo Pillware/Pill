@@ -14,8 +14,7 @@
 //! from the module path; [`crate::components`] explains why.
 
 // External crates
-use pill_engine::{PillComponent, World};
-use serde::{Deserialize, Serialize};
+use pill_engine::{component, World};
 
 // =============================================================================
 // DirectionalLightComponent
@@ -27,16 +26,12 @@ use serde::{Deserialize, Serialize};
 /// the editor edits its fields live. The shipped passes do not read it - each
 /// writes its own lights into its shaders - so the value is saved with the
 /// scene and never drawn.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-// The name is written out so the component's identity does not follow the
-// module path. A derived name is built from `module_path!()`, so deriving it
-// again would register a second component, and the data a running world
-// already holds under the first one would never be found again.
-#[pill(
+#[component(
     shared = "pill_master_renderer::component::DirectionalLightComponent",
     persistable
 )]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct DirectionalLightComponent {
     /// Linear RGB colour the light emits: red, green, blue, one value each.
     #[pill(color)]

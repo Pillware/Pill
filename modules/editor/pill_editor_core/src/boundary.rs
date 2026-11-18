@@ -344,16 +344,21 @@ pub fn frame_from_output(context: &Context, egui_output: FullOutput) -> EguiShel
         .map(|viewport| viewport.repaint_delay)
         .filter(|repaint_delay| *repaint_delay != Duration::MAX)
         .min();
-    let meshes = context
-        .tessellate(egui_output.shapes, pixels_per_point)
-        .into_iter()
-        .filter(|clipped_primitive| {
-            matches!(
-                clipped_primitive.primitive,
-                egui::epaint::Primitive::Mesh(_)
-            )
-        })
-        .collect();
+    // Tessellation is the shell's heaviest CPU step and runs in this shared
+    // dylib, so its zone belongs here rather than in either caller.
+    let meshes = {
+        let _zone = pill_core::profile_scope!("egui tessellate");
+        context
+            .tessellate(egui_output.shapes, pixels_per_point)
+            .into_iter()
+            .filter(|clipped_primitive| {
+                matches!(
+                    clipped_primitive.primitive,
+                    egui::epaint::Primitive::Mesh(_)
+                )
+            })
+            .collect()
+    };
     let wants_pointer = context.egui_wants_pointer_input();
     let wants_keyboard = context.egui_wants_keyboard_input();
     let platform_output = egui_output.platform_output;

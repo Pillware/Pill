@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 // External crates
-use pill_engine::{Engine, Entity, FieldValue, PillComponent};
+use pill_engine::{component, Engine, Entity, FieldValue};
 
 // Current crate
 use crate::commands::{ensure_command_resources, PendingEditorCommands};
@@ -41,8 +41,9 @@ use crate::panels::ModuleLiveness;
 // =============================================================================
 
 /// The component every test edits.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, PillComponent)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct HookProbe {
     /// The field most tests edit.
     value: f32,
@@ -524,8 +525,9 @@ fn a_request_queued_by_a_module_binds_and_fires() {
 // =============================================================================
 
 /// A second component, so a test can add one the probe entity does not carry.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[derive(Debug, Clone, Copy, Default)]
 struct HookExtra {
     /// The only field, unused.
     amount: f32,

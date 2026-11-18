@@ -725,101 +725,106 @@ pub fn run_frame(
         badges: &shell_input.badges,
         marquee: shell_input.marquee,
     };
-    let output = context.run_ui(raw_input, |ui| {
-        // The tabs and badges a pass draws are the ones their rectangle caches
-        // keep for this frame. Opening the window here means a row that left
-        // the list stops occupying the session.
-        viewer.inspector.begin_geometry_pass();
-        // The menu strip comes first, so the dock and every viewport rectangle
-        // it reports start below it.
-        menu_bar(ui, menubar, &mark, &mut viewer);
-        // Tab bars carry the tabs and their close buttons only. With no
-        // collapse chevron and no panel-level close-all button, a panel closes
-        // exactly when its last tab closes.
-        DockArea::new(dock.state_mut())
-            .style({
-                let mut dock_style =
-                    style::dock_style(ui.ctx().global_style().as_ref(), &style::palette());
-                // While a session runs the tab strips carry the play tint, so
-                // the whole frame reads as the game's.
-                if let Some(tint) = play_tint {
-                    dock_style.tab_bar.bg_fill = tint;
+    // The whole egui pass - layout, widgets and the dock - as one Tracy zone.
+    // It closes before the settle stage below, so the span is the pass itself.
+    let output = {
+        let _zone = pill_core::profile_scope!("egui pass");
+        context.run_ui(raw_input, |ui| {
+            // The tabs and badges a pass draws are the ones their rectangle caches
+            // keep for this frame. Opening the window here means a row that left
+            // the list stops occupying the session.
+            viewer.inspector.begin_geometry_pass();
+            // The menu strip comes first, so the dock and every viewport rectangle
+            // it reports start below it.
+            menu_bar(ui, menubar, &mark, &mut viewer);
+            // Tab bars carry the tabs and their close buttons only. With no
+            // collapse chevron and no panel-level close-all button, a panel closes
+            // exactly when its last tab closes.
+            DockArea::new(dock.state_mut())
+                .style({
+                    let mut dock_style =
+                        style::dock_style(ui.ctx().global_style().as_ref(), &style::palette());
+                    // While a session runs the tab strips carry the play tint, so
+                    // the whole frame reads as the game's.
+                    if let Some(tint) = play_tint {
+                        dock_style.tab_bar.bg_fill = tint;
+                    }
+                    dock_style
+                })
+                .show_leaf_collapse_buttons(false)
+                .show_leaf_close_all_buttons(false)
+                .show_inside(ui, &mut viewer);
+            // The create/rename dialog floats over the dock while it is open.
+            pill_editor_shell_egui_editor::shell::asset_dialog_window(
+                ui.ctx(),
+                viewer.asset_dialog,
+                viewer.pending,
+                viewer.snapshot,
+                &mut viewer.overlay_regions,
+            );
+            pill_editor_shell_egui_editor::shell::about_window(
+                ui.ctx(),
+                &mark,
+                &mut menubar.about_open,
+                &mut viewer.overlay_regions,
+            );
+            // The toast stack floats over the dock and every viewport it covers,
+            // so its rows join the frame's overlay regions.
+            pill_editor_shell_egui_editor::shell::draw_toasts(
+                toasts,
+                frame_index,
+                ui.ctx(),
+                &mut viewer.overlay_regions,
+            );
+            // The command palette draws last so it sits above every other surface:
+            // it is driven from the keyboard, not from the pointer.
+            pill_editor_shell_egui_editor::shell::palette_window(
+                ui.ctx(),
+                palette,
+                menubar,
+                &mut viewer,
+            );
+            // The windows the module panels asked for, applied before the windows
+            // pass draws them, so one opened this frame is on screen this frame.
+            for (slot, request) in viewer.panel_window_requests.drain(..) {
+                let source = panels
+                    .get(slot)
+                    .map(|entry| entry.source.clone())
+                    .unwrap_or_default();
+                match request {
+                    PanelCommand::OpenWindow(request) => {
+                        pill_core::info!(
+                            target: telemetry_target::EDITOR,
+                            slot,
+                            window = request.id.as_str(),
+                            modal = request.modal,
+                            "[editor] panel window opened"
+                        );
+                        windows.open(&source, slot, &request)
+                    }
+                    PanelCommand::CloseWindow(id) => {
+                        pill_core::info!(
+                            target: telemetry_target::EDITOR,
+                            slot,
+                            window = id.as_str(),
+                            "[editor] panel window closed"
+                        );
+                        windows.close(&source, &id)
+                    }
+                    _ => {}
                 }
-                dock_style
-            })
-            .show_leaf_collapse_buttons(false)
-            .show_leaf_close_all_buttons(false)
-            .show_inside(ui, &mut viewer);
-        // The create/rename dialog floats over the dock while it is open.
-        pill_editor_shell_egui_editor::shell::asset_dialog_window(
-            ui.ctx(),
-            viewer.asset_dialog,
-            viewer.pending,
-            viewer.snapshot,
-            &mut viewer.overlay_regions,
-        );
-        pill_editor_shell_egui_editor::shell::about_window(
-            ui.ctx(),
-            &mark,
-            &mut menubar.about_open,
-            &mut viewer.overlay_regions,
-        );
-        // The toast stack floats over the dock and every viewport it covers,
-        // so its rows join the frame's overlay regions.
-        pill_editor_shell_egui_editor::shell::draw_toasts(
-            toasts,
-            frame_index,
-            ui.ctx(),
-            &mut viewer.overlay_regions,
-        );
-        // The command palette draws last so it sits above every other surface:
-        // it is driven from the keyboard, not from the pointer.
-        pill_editor_shell_egui_editor::shell::palette_window(
-            ui.ctx(),
-            palette,
-            menubar,
-            &mut viewer,
-        );
-        // The windows the module panels asked for, applied before the windows
-        // pass draws them, so one opened this frame is on screen this frame.
-        for (slot, request) in viewer.panel_window_requests.drain(..) {
-            let source = panels
-                .get(slot)
-                .map(|entry| entry.source.clone())
-                .unwrap_or_default();
-            match request {
-                PanelCommand::OpenWindow(request) => {
-                    pill_core::info!(
-                        target: telemetry_target::EDITOR,
-                        slot,
-                        window = request.id.as_str(),
-                        modal = request.modal,
-                        "[editor] panel window opened"
-                    );
-                    windows.open(&source, slot, &request)
-                }
-                PanelCommand::CloseWindow(id) => {
-                    pill_core::info!(
-                        target: telemetry_target::EDITOR,
-                        slot,
-                        window = id.as_str(),
-                        "[editor] panel window closed"
-                    );
-                    windows.close(&source, &id)
-                }
-                _ => {}
             }
-        }
-        pill_editor_shell_egui_editor::shell::panel_windows(
-            ui.ctx(),
-            windows,
-            panels,
-            &mut *viewer.panel_budget,
-            &panel_feed,
-            &mut *viewer.panel_commands,
-            &mut viewer.overlay_regions,
-        );
-    });
+            pill_editor_shell_egui_editor::shell::panel_windows(
+                ui.ctx(),
+                windows,
+                panels,
+                &mut *viewer.panel_budget,
+                &panel_feed,
+                &mut *viewer.panel_commands,
+                &mut viewer.overlay_regions,
+            );
+        })
+    };
     let mut shell_frame = frame_from_output(&context, output);
     shell_frame.scene_rects = std::mem::take(&mut viewer.scene_rects);
     shell_frame.game_rect = viewer.game_rect.take();
@@ -1021,6 +1026,10 @@ pub fn tab_title(viewer: &mut EditorTabViewer<'_>, tab: EditorTab) -> egui::Widg
 /// measurements, not estimates.
 #[pill_hot_fn]
 pub fn tab_body(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, tab: EditorTab) {
+    // One Tracy zone per tab, named for it: the same closure the Statistics tab
+    // times, on the profiler's timeline. The name formats only when a profiler
+    // is connected.
+    let _zone = pill_core::profile_scope!("tab: {}", tab.name());
     let started = pill_core::platform::Instant::now();
     // A tab has no horizontal scrolling, so text too long for the room left
     // ends in an ellipsis instead of running past the tab's edge.

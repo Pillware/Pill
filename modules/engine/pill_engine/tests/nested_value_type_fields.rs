@@ -12,7 +12,7 @@
 
 // External crates
 use pill_engine::component_registry::{register_all_components, ComponentFieldDescriptor};
-use pill_engine::{Component, ComponentId, PillComponent, PillMirror, World};
+use pill_engine::{component, Component, ComponentId, PillMirror, World};
 
 /// A mirrored value type. The engine can expand its fields only while this
 /// test binary's value types are installed as the world's resolver.
@@ -25,8 +25,9 @@ struct NestedVector {
 
 /// A derived component with one plain scalar and one field of a mirrored value
 /// type.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[derive(Debug, Clone, Copy, Default)]
 struct NestedFieldCarrier {
     lead: f32,
     offset: NestedVector,

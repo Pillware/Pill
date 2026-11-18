@@ -1001,6 +1001,9 @@ pub struct EditorSnapshot {
     /// Whether the engine's component gizmos draw. The toolbox's gizmos row
     /// checks it against the registry's switch.
     pub gizmos_enabled: bool,
+    /// One row per component tool the primary selection's entity is offered,
+    /// in registration order. The floating toolbox draws one button per row.
+    pub component_tools: Vec<ComponentToolRow>,
     /// One row per registered component gizmo: the type, the package that
     /// declared it and whether an editor hid it. The Preferences tab draws a
     /// switch for each of them.
@@ -1059,6 +1062,19 @@ pub struct ResourceView {
     pub label: String,
     /// The editable fields, in row order.
     pub fields: Vec<ResourceFieldView>,
+}
+
+/// One component tool the selection's entity is offered, as the floating
+/// toolbox draws it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ComponentToolRow {
+    /// The tool's registered name, which is what a click names and what the
+    /// row is logged under.
+    pub name: String,
+    /// The label the row shows.
+    pub label: String,
+    /// Whether this tool is the active one.
+    pub active: bool,
 }
 
 /// One registered component gizmo, as the Preferences tab lists it.
@@ -1148,6 +1164,7 @@ impl EditorSnapshot {
                 .get_resource::<pill_engine::gizmos::GizmoRegistry>()
                 .map(pill_engine::gizmos::GizmoRegistry::is_enabled)
                 .unwrap_or(false),
+            component_tools: Self::capture_component_tools(engine),
             gizmo_types: engine
                 .world()
                 .get_resource::<pill_engine::gizmos::GizmoRegistry>()
@@ -1240,6 +1257,35 @@ impl EditorSnapshot {
         registry.active_menu(entity, &kind, &selected, world)
     }
 
+    /// The component tools the Inspector's entity is offered, in registration
+    /// order.
+    ///
+    /// The subject is the selection's primary entity, which is what the
+    /// Inspector shows. An empty selection, or an entity that carries no tool's
+    /// component, offers nothing.
+    fn capture_component_tools(engine: &Engine) -> Vec<ComponentToolRow> {
+        let world = engine.world();
+        let Some(entity) = world
+            .get_resource::<EditorSelection>()
+            .and_then(EditorSelection::primary)
+        else {
+            return Vec::new();
+        };
+        let Some(registry) = world.get_resource::<crate::tools::ToolRegistry>() else {
+            return Vec::new();
+        };
+        let active = registry.active();
+        registry
+            .offered_component_tools(entity, world)
+            .into_iter()
+            .map(|tool| ComponentToolRow {
+                name: tool.name.clone(),
+                label: tool.label.clone(),
+                active: active == Some(tool.name.as_str()),
+            })
+            .collect()
+    }
+
     /// Returns the snapshot fields that differ from `previous`, comma-joined.
     ///
     /// The redraw cadence treats any change as a reason to draw, so this
@@ -1307,6 +1353,9 @@ impl EditorSnapshot {
         }
         if previous.gizmos_enabled != current.gizmos_enabled {
             changed.push("gizmos_enabled");
+        }
+        if previous.component_tools != current.component_tools {
+            changed.push("component_tools");
         }
         if previous.gizmo_types != current.gizmo_types {
             changed.push("gizmo_types");
@@ -1956,6 +2005,84 @@ mod tests {
         );
     }
 
+    /// A component tool over the test module's own component.
+    struct DemoComponentTool;
+
+    impl crate::tools::EditorTool for DemoComponentTool {
+        fn name(&self) -> &'static str {
+            "demo component"
+        }
+
+        fn label(&self) -> &'static str {
+            "Demo Component"
+        }
+
+        fn is_global(&self) -> bool {
+            false
+        }
+
+        fn requires_component(&self) -> Option<&'static str> {
+            Some("DemoComponent")
+        }
+    }
+
+    #[test]
+    fn the_snapshot_carries_the_component_tools_the_selection_is_offered() {
+        let mut engine = demo_engine();
+        let carrier = engine
+            .world_mut()
+            .create_entity()
+            .with(DemoComponent {
+                strength: 1.0,
+                enabled: true,
+            })
+            .build()
+            .expect("the carrier builds");
+        let plain = engine
+            .world_mut()
+            .create_entity()
+            .build()
+            .expect("the plain entity builds");
+        crate::tools::tool_registry_mut(engine.world_mut()).register(&DemoComponentTool);
+
+        // Nothing selected: no row.
+        let empty = EditorSnapshot::capture_engine_tiers(&engine, 0, &[], Vec::new());
+        assert!(empty.component_tools.is_empty());
+
+        // The carrier offers its row, inactive until the tool is chosen.
+        let mut selection = EditorSelection::default();
+        selection.select_only(carrier);
+        engine.world_mut().insert_resource(selection);
+        let offered = EditorSnapshot::capture_engine_tiers(&engine, 1, &[], Vec::new());
+        assert_eq!(
+            offered.component_tools,
+            vec![ComponentToolRow {
+                name: "demo component".to_string(),
+                label: "Demo Component".to_string(),
+                active: false,
+            }]
+        );
+        let changed = empty.changed_fields(&offered);
+        assert!(
+            changed.split(',').any(|field| field == "component_tools"),
+            "a row appearing is a change the frame has to draw: {changed}"
+        );
+
+        // Choosing the tool turns its row active.
+        crate::tools::activate_tool(engine.world_mut(), Some("demo component"))
+            .expect("the demo tool is registered");
+        let chosen = EditorSnapshot::capture_engine_tiers(&engine, 2, &[], Vec::new());
+        assert_eq!(chosen.component_tools.len(), 1);
+        assert!(chosen.component_tools[0].active);
+
+        // An entity that carries nothing is offered nothing.
+        let mut selection = EditorSelection::default();
+        selection.select_only(plain);
+        engine.world_mut().insert_resource(selection);
+        let none = EditorSnapshot::capture_engine_tiers(&engine, 3, &[], Vec::new());
+        assert!(none.component_tools.is_empty());
+    }
+
     #[test]
     fn apply_changes_real_state_and_reports_failures() {
         let mut engine = demo_engine();
@@ -2532,6 +2659,44 @@ mod tests {
         // Controls never enter the history as steps.
         assert!(!recorded.fully_invertible);
         assert!(recorded.inverses.is_empty());
+    }
+
+    /// Choosing a tool is a control: the registry's active name moves and no
+    /// undo step is recorded.
+    #[test]
+    fn choosing_a_tool_activates_it_without_recording_a_step() {
+        let mut engine = demo_engine();
+        let recorded = EditorCommand::apply_recorded(
+            &mut engine,
+            &[EditorCommand::SetTool {
+                tool: Some("rotate".to_string()),
+            }],
+        );
+        assert!(recorded.failures.is_empty(), "{:?}", recorded.failures);
+        assert!(!recorded.fully_invertible);
+        assert!(recorded.inverses.is_empty());
+        let active = crate::tools::active_tool(&engine);
+        assert_eq!(active.as_deref(), Some("rotate"));
+    }
+
+    /// A name nobody registered fails the command with the registry's list of
+    /// the tools that exist, so a stale row says what is wrong.
+    #[test]
+    fn choosing_an_unknown_tool_reports_the_registered_names() {
+        let mut engine = demo_engine();
+        let recorded = EditorCommand::apply_recorded(
+            &mut engine,
+            &[EditorCommand::SetTool {
+                tool: Some("spline".to_string()),
+            }],
+        );
+        assert_eq!(recorded.failures.len(), 1, "one command, one failure");
+        let (_, reason) = &recorded.failures[0];
+        assert!(
+            reason.contains("spline") && reason.contains("translate"),
+            "the failure names the missing tool and the ones that exist: {reason}"
+        );
+        assert_eq!(crate::tools::active_tool(&engine), None);
     }
 
     #[test]

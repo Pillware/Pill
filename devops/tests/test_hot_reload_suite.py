@@ -261,19 +261,18 @@ pub fn register(engine: &mut Engine) -> u32 {
     0
 }"""
 
-# The struct preamble of `Spline` as committed. Dropping `PillComponent` - and
-# its `#[pill(...)]` helper, which without the derive is an unknown attribute -
-# is what lets a stubbed module avoid auto-registering the type while the
-# project's copy of the same sources keeps deriving it:
-# `register_all_components` reads this artifact's own inventory, and without
-# the derive that inventory holds nothing for `Spline`. The hand-written
-# `Component` impl gives the type the identity the derive would have, so the
-# rest of both builds compiles and every other type-keyed behavior is
-# unchanged.
+# The struct preamble of `Spline` as committed. Dropping `#[component(...)]` -
+# whose expansion is the derive that registers the type - is what lets a stubbed
+# module avoid auto-registering the type while the project's copy of the same
+# sources keeps declaring it: `register_all_components` reads this artifact's
+# own inventory, and without the attribute that inventory holds nothing for
+# `Spline`. The hand-written `Component` impl gives the type the identity the
+# attribute would have, so the rest of both builds compiles and every other
+# type-keyed behavior is unchanged.
 SPLINE_DERIVE_ORIGINAL = """\
+#[component(persistable, shared, gizmo = draw_spline_gizmo)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared, gizmo = draw_spline_gizmo)]
+#[derive(Debug, Clone, Copy)]
 pub struct Spline {"""
 
 SPLINE_DERIVE_STUB_NO_REGISTRATION = """\
@@ -382,8 +381,8 @@ FRAMECOUNTER_MIGRATION_EDITS = [
 PROJECT_FORGOTTEN_EDITS = [
     (
         "/// A two-axis velocity, paired with [`SpatialPosition`] on one archetype.\n"
-        "#[derive(Debug, Clone, Serialize, Deserialize, Default, PillComponent)]\n"
-        "#[pill(persistable)]\n"
+        "#[component(persistable)]\n"
+        "#[derive(Debug, Clone, Default)]\n"
         "struct LinearVelocity {\n"
         "    horizontal_speed: f32,\n"
         "    vertical_speed: f32,\n"

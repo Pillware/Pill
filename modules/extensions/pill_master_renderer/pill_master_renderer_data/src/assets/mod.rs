@@ -56,19 +56,6 @@ pub use texture::{
     TextureImportSettings, TextureType, DEFAULT_COLOR_TEXTURE, DEFAULT_NORMAL_TEXTURE,
 };
 
-// Make every asset type usable through `dyn Asset`. The store's methods all
-// ask for that bound, so a type missing from this list cannot be added to an
-// `AssetManager` or looked up by its handle.
-trait_type_map::impl_trait_accessible!(
-    dyn Asset;
-    Mesh,
-    Texture,
-    Shader,
-    Material,
-    RenderPass,
-    RenderingPipeline
-);
-
 // =============================================================================
 // Free Functions
 // =============================================================================

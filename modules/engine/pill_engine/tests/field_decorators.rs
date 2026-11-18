@@ -1,4 +1,4 @@
-//! Field decorators on `#[derive(PillComponent)]` and `#[derive(PillMirror)]`.
+//! Field decorators on `#[component]` and `#[derive(PillMirror)]`.
 //!
 //! # Responsibilities
 //!
@@ -12,7 +12,7 @@
 use pill_engine::component_registry::{
     register_all_components, ComponentFieldDescriptor, FieldDecorator,
 };
-use pill_engine::{ComponentId, PillComponent, PillMirror, World};
+use pill_engine::{component, ComponentId, PillMirror, World};
 
 // =============================================================================
 // Fixture Types
@@ -22,8 +22,9 @@ use pill_engine::{ComponentId, PillComponent, PillMirror, World};
 /// one undecorated field, so every declared decorator can be read back from
 /// its descriptor. The `color` and `vector` grouping decorators are covered by
 /// the editor's inspector row tests instead.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Default, PillComponent)]
+#[derive(Debug, Clone, Default)]
 struct DecoratedProbe {
     /// No decorators, so its descriptor carries an empty decorator list.
     plain: f32,
@@ -68,8 +69,9 @@ struct DecoratedRange {
 }
 
 /// A component that nests the decorated value type.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[derive(Debug, Clone, Copy, Default)]
 struct RangedCarrier {
     /// An ordinary scalar, so the dotted rows include one that is not nested.
     lead: f32,

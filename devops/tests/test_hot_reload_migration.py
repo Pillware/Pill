@@ -662,10 +662,11 @@ def build_scenarios() -> List[Scenario]:
             name="Remove LinearVelocity from registered/seeded components",
             replacements=[
                 (
-                    "#[derive(Debug, Clone, Serialize, Deserialize, Default, PillComponent)]\n"
-                    "#[pill(persistable)]\n"
+                    "#[component(persistable)]\n"
+                    "#[derive(Debug, Clone, Default)]\n"
                     "struct LinearVelocity {",
-                    "#[derive(Debug, Clone, Serialize, Deserialize, Default, PillComponent)]\n"
+                    "#[component]\n"
+                    "#[derive(Debug, Clone, Default)]\n"
                     "struct LinearVelocity {",
                 ),
             ],

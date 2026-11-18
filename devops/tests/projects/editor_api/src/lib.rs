@@ -21,7 +21,6 @@
 // External crates
 use pill_engine::*;
 use pill_master_renderer_data::TransformComponent;
-use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // Components
@@ -31,9 +30,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// Persistable, so the editor's own reload keeps it and a second generation
 /// does not spawn a duplicate.
+#[component(persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-#[pill(persistable)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct EditorApiProbe {
     /// A value the suite writes through the Inspector.
     pub value: f32,

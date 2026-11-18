@@ -30,11 +30,8 @@ use pill_editor_core::tools::{
     self, ElementKind, ElementMenuEntry, ElementTransform, ToolElement, ToolExtension,
     ToolExtensionHooks, ToolRegistry,
 };
-use pill_engine::{
-    pill_module, Engine, Entity, FieldValue, PillComponent, TransformComponent, World,
-};
+use pill_engine::{component, pill_module, Engine, Entity, FieldValue, TransformComponent, World};
 use pill_spline::{Spline, MAX_CONTROL_POINTS};
-use serde::{Deserialize, Serialize};
 
 // The build script scans this crate and emits one address entry per function
 // into `function_inventory.rs`.
@@ -83,9 +80,9 @@ const BASE_KIND: &str = "control point";
 /// The component exists so the extension has something to be attached by. A
 /// plain spline entity has no extras, which is what keeps this crate's kind and
 /// menu rows out of a plain spline's tool.
+#[component(persistable, shared)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-#[pill(persistable, shared)]
+#[derive(Debug, Clone, Copy)]
 pub struct UberSplineExtras {
     /// The roll of each control point, in degrees.
     pub rolls: [f32; MAX_CONTROL_POINTS],

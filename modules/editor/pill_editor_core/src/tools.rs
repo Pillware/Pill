@@ -3,8 +3,8 @@
 //! # Responsibilities
 //!
 //! - Declare [`EditorTool`], the value a tool is described by: the name a
-//!   command and the scripted channel spell, the label the toolbox shows and
-//!   its optional shortcut.
+//!   command and the scripted channel spell, the label the toolbox shows, its
+//!   optional shortcut, and the component that makes it offered for an entity.
 //! - Hold the registered tools and the active one in [`ToolRegistry`], and
 //!   name the three built-ins the editor always offers.
 //! - Declare [`ToolExtension`], what a crate adds to a tool another crate owns:
@@ -21,8 +21,7 @@
 //! the editor's draw, pick and drag paths read which one it is. This module is
 //! the vocabulary; the editor core applies the modes it already knows (the
 //! transform gizmo's translate, rotate and scale), and an extension's editor
-//! crate registers its own through the same registry once a stage gives tools
-//! something to do.
+//! crate registers its own through the same registry.
 //!
 //! Everything here is plain data. A registered tool is a record of strings and
 //! flags rather than a trait object, because the record outlives the image
@@ -56,8 +55,8 @@ use crate::gizmo::{
 /// The three modes the editor offers with no extension loaded.
 ///
 /// They are global tools: offered whatever the selection holds, because they
-/// act on whole entities. An extension's tool names its own component and is
-/// offered only while that component is selected (a later stage).
+/// act on whole entities. A component tool names its own component instead and
+/// is offered only for an entity that carries it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinTool {
     /// Move the selection.
@@ -138,6 +137,17 @@ pub trait EditorTool {
     fn is_global(&self) -> bool {
         true
     }
+
+    /// The component that makes the tool offered for an entity.
+    ///
+    /// The name is matched against an entity's component names by full name or
+    /// by its `::` suffix, so a crate names its own component without spelling
+    /// the module path. `None`, the default, means no entity offers the tool:
+    /// that is a global tool, which needs no row of its own, and a tool that
+    /// declares nothing (a test fixture), which stays out of the toolbox.
+    fn requires_component(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 impl EditorTool for BuiltinTool {
@@ -172,6 +182,9 @@ pub struct RegisteredTool {
     pub shortcut: Option<String>,
     /// Whether the tool is offered whatever the selection holds.
     pub global: bool,
+    /// The component that makes the tool offered for an entity, matched by
+    /// full name or by its `::` suffix.
+    pub requires_component: Option<String>,
     /// The tool's optional element reporting.
     pub hooks: ToolElementHooks,
 }
@@ -185,6 +198,7 @@ impl PartialEq for RegisteredTool {
             && self.label == other.label
             && self.shortcut == other.shortcut
             && self.global == other.global
+            && self.requires_component == other.requires_component
     }
 }
 
@@ -203,8 +217,21 @@ impl RegisteredTool {
             label: tool.label().to_string(),
             shortcut: tool.shortcut().map(str::to_string),
             global: tool.is_global(),
+            requires_component: tool.requires_component().map(str::to_string),
             hooks,
         }
+    }
+
+    /// Whether `entity` carries the component that makes this tool offered.
+    ///
+    /// A global tool needs no component and a tool that declares none names no
+    /// entity's component, so neither is ever offered this way.
+    pub fn is_offered_for(&self, entity: Entity, world: &World) -> bool {
+        !self.global
+            && self
+                .requires_component
+                .as_deref()
+                .is_some_and(|required| has_component_named(world, entity, required))
     }
 }
 
@@ -880,19 +907,12 @@ impl RegisteredExtension {
 
     /// Whether `entity` carries the component the extension requires.
     ///
-    /// An extension that requires none is always attached. A name is matched
-    /// against the entity's component names in full or by its `::` suffix, so a
-    /// crate can name its own component without spelling the module path.
+    /// An extension that requires none is always attached.
     pub fn requires_component_of(&self, entity: Entity, world: &World) -> bool {
         let Some(required) = self.requires_component.as_deref() else {
             return true;
         };
-        let suffix = format!("::{required}");
-        world.entity_component_names(entity).is_some_and(|names| {
-            names
-                .iter()
-                .any(|name| name == required || name.ends_with(&suffix))
-        })
+        has_component_named(world, entity, required)
     }
 }
 
@@ -902,6 +922,21 @@ impl RegisteredExtension {
 
 /// The name [`ToolRegistry`] registers under.
 pub const RESOURCE_NAME: &str = "pill_editor_core::tools::ToolRegistry";
+
+/// Whether `entity` carries a component named `required`.
+///
+/// The name is matched in full or by its `::` suffix, which is the one rule
+/// every declaration that names a component follows: a crate names its own
+/// component without spelling the module path, and a name that matches nothing
+/// is simply absent.
+pub fn has_component_named(world: &World, entity: Entity, required: &str) -> bool {
+    let suffix = format!("::{required}");
+    world.entity_component_names(entity).is_some_and(|names| {
+        names
+            .iter()
+            .any(|name| name == required || name.ends_with(&suffix))
+    })
+}
 
 /// Every registered tool, and which one is active.
 ///
@@ -1491,6 +1526,19 @@ impl ToolRegistry {
         &self.tools
     }
 
+    /// The component tools `entity` is offered, in registration order.
+    ///
+    /// A tool is offered only when it is not global and the entity carries the
+    /// component it declares. The toolbox draws one row per entry and names it
+    /// by the tool's own name; the built-ins are global, so they never appear
+    /// here.
+    pub fn offered_component_tools(&self, entity: Entity, world: &World) -> Vec<&RegisteredTool> {
+        self.tools
+            .iter()
+            .filter(|tool| tool.is_offered_for(entity, world))
+            .collect()
+    }
+
     /// The active tool's name, or `None` when no tool is active.
     pub fn active(&self) -> Option<&str> {
         self.active.as_deref()
@@ -1790,6 +1838,122 @@ mod tests {
         assert_eq!(names, ["translate", "rotate", "scale"]);
         assert_eq!(registry.active(), None);
         assert!(registry.tools().iter().all(|tool| tool.global));
+    }
+
+    /// A component tool over the engine's transform component, named by its
+    /// `::` suffix - the spelling a crate uses without knowing the module path.
+    struct TransformTool;
+
+    impl EditorTool for TransformTool {
+        fn name(&self) -> &'static str {
+            "transform"
+        }
+
+        fn label(&self) -> &'static str {
+            "Transform"
+        }
+
+        fn is_global(&self) -> bool {
+            false
+        }
+
+        fn requires_component(&self) -> Option<&'static str> {
+            Some("TransformComponent")
+        }
+    }
+
+    /// A world with one entity that carries a transform and one that carries
+    /// nothing.
+    fn component_tool_world() -> (World, Entity, Entity) {
+        let mut world = World::default();
+        world.register_component::<pill_engine::TransformComponent>();
+        let carrier = world
+            .create_entity()
+            .with(pill_engine::TransformComponent::default())
+            .build()
+            .expect("the carrier builds");
+        let plain = world
+            .create_entity()
+            .build()
+            .expect("the plain entity builds");
+        (world, carrier, plain)
+    }
+
+    /// A tool is offered only for an entity that carries the component it
+    /// names, matched by the name's `::` suffix.
+    #[test]
+    fn a_component_tool_is_offered_only_for_an_entity_that_carries_its_component() {
+        let (world, carrier, plain) = component_tool_world();
+        let mut registry = ToolRegistry::default();
+        registry.register(&TransformTool);
+        registry.register(&ProbeTool);
+
+        let offered = registry.offered_component_tools(carrier, &world);
+        let names: Vec<&str> = offered.iter().map(|tool| tool.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["transform"],
+            "the suffix spelling matches the carrier's component"
+        );
+        assert!(
+            registry.offered_component_tools(plain, &world).is_empty(),
+            "an entity that carries nothing is offered nothing"
+        );
+    }
+
+    /// The name match reads a component's registered name in full and by its
+    /// `::` suffix, and finds nothing for an entity that does not carry it.
+    #[test]
+    fn a_component_name_matches_in_full_and_by_its_suffix() {
+        let (world, carrier, plain) = component_tool_world();
+        let registered = world
+            .entity_component_names(carrier)
+            .expect("the carrier is alive");
+        assert_eq!(registered.len(), 1, "one component, registered once");
+        let full_name = registered[0].as_str();
+        assert!(
+            has_component_named(&world, carrier, full_name),
+            "{full_name} is the carrier's own name"
+        );
+        let suffix = full_name.rsplit("::").next().unwrap_or(full_name);
+        assert!(
+            has_component_named(&world, carrier, suffix),
+            "{suffix} matches by suffix"
+        );
+        assert!(!has_component_named(&world, carrier, "Missing"));
+        assert!(!has_component_named(&world, plain, suffix));
+    }
+
+    /// A global tool and a tool that names no component are never offered:
+    /// the built-ins need no row of their own and a fixture stays out of the
+    /// toolbox.
+    #[test]
+    fn globals_and_component_tools_without_a_component_are_never_offered() {
+        let (world, carrier, _) = component_tool_world();
+        let registry = ToolRegistry::default();
+        assert!(
+            registry.offered_component_tools(carrier, &world).is_empty(),
+            "the three built-ins are global"
+        );
+        let mut registry = ToolRegistry::default();
+        registry.register(&ProbeTool);
+        assert!(
+            registry.offered_component_tools(carrier, &world).is_empty(),
+            "a non-global tool that names no component is offered nowhere"
+        );
+    }
+
+    /// The record keeps the declaration through a re-registration, so a
+    /// reloaded image's row keeps appearing for the same entity.
+    #[test]
+    fn a_registered_tool_keeps_its_component_declaration() {
+        let record = RegisteredTool::of(&TransformTool);
+        assert_eq!(
+            record.requires_component.as_deref(),
+            Some("TransformComponent")
+        );
+        let bare = RegisteredTool::of(&ProbeTool);
+        assert_eq!(bare.requires_component, None);
     }
 
     #[test]

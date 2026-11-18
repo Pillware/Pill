@@ -360,6 +360,12 @@ impl EditorWindow {
             self.idle_frame_millis_max = self.idle_frame_millis_max.max(frame_millis);
         }
         self.decide_next_wake(frame_millis);
+        // The redraw is one named Tracy frame of its own. It is a secondary
+        // frame, not a primary one: the engine already marks a primary frame
+        // per world frame, and the editor runs exactly one of those per redraw,
+        // so a second primary mark here would split every redraw into two
+        // frames. This one spans the whole redraw, presentation included.
+        pill_core::profile_secondary_frame_mark!("UI refresh");
     }
 
     /// Decides when the loop draws next, from what asked for this frame.
@@ -397,7 +403,6 @@ impl EditorWindow {
         self.demand = FrameDemand::default();
         self.repaint_after = None;
     }
-
     /// Whether something is moving, so the next frame is already owed.
     ///
     /// A paused project stops animating, but a camera navigation and a

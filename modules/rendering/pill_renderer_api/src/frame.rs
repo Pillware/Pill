@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 
 // External crates
 use pill_engine::common_components::TransformComponent;
-use pill_engine::PillResource;
+use pill_engine::resource;
 
 // =============================================================================
 // PassKind
@@ -316,8 +316,8 @@ pub struct ChainSource {
 /// renderer module find the same resource by this string across the artifact
 /// boundary. It spells the renderer module's path rather than this crate's, and
 /// that spelling is part of the identity, so leave it exactly as it is.
-#[derive(Clone, Debug, PillResource)]
-#[pill(shared = "pill_master_renderer::frame::RenderFrame")]
+#[resource(shared = "pill_master_renderer::frame::RenderFrame")]
+#[derive(Clone, Debug)]
 pub struct RenderFrame {
     /// Every drawable collected from the world this update, in traversal order.
     pub instances: Vec<RenderInstance>,

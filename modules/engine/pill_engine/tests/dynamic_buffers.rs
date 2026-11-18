@@ -24,7 +24,7 @@ use std::sync::Mutex;
 // External crates
 use pill_core::native_buffer;
 use pill_engine::component_registry::{register_all_components, ComponentFieldDescriptor};
-use pill_engine::{ComponentId, DynamicBuffer, PillComponent, World};
+use pill_engine::{component, ComponentId, DynamicBuffer, World};
 
 // =============================================================================
 // Constants
@@ -87,16 +87,16 @@ static ACCOUNTING_LOCK: Mutex<()> = Mutex::new(());
 
 /// A persistable component with an engine-owned buffer field and a plain `u32`
 /// field, so one structural change carries both kinds of field.
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PillComponent)]
-#[pill(persistable)]
+#[component(persistable)]
+#[derive(Clone, Debug, Default)]
 struct Trail {
     points: DynamicBuffer<f32>,
     weight: u32,
 }
 
 /// A second component that forces an archetype move.
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PillComponent)]
-#[pill(persistable)]
+#[component(persistable)]
+#[derive(Clone, Debug, Default)]
 struct Marker {
     value: u32,
 }

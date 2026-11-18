@@ -13,3 +13,7 @@ modules:
 logging:
   targets:
     project: debug
+    # The spline tool's suite locates its row in the floating toolbox through
+    # the shell's debug dumps, and a reader running this example can follow
+    # what the tool reports the same way.
+    engine::editor: debug

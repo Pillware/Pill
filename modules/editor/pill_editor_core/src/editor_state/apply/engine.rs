@@ -212,6 +212,19 @@ pub(super) fn apply(
             Ok(CommandOutcome::plain())
         }
 
+        EditorCommand::SetTool { tool } => {
+            // One call changes both halves: the registry's active name and the
+            // space the gizmo is on, which the arriving tool was last on.
+            crate::tools::activate_tool(engine.world_mut(), tool.as_deref())
+                .map_err(|reason| format!("{command:?}: {reason}"))?;
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                tool = tool.as_deref().unwrap_or("none"),
+                "[editor] tool activated"
+            );
+            Ok(CommandOutcome::plain())
+        }
+
         EditorCommand::SetGizmoTypeVisible { type_name, visible } => {
             let world = engine.world_mut();
             let Some(gizmo_registry) = world.get_resource_mut::<GizmoRegistry>() else {

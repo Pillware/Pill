@@ -29,8 +29,8 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 use pill_core::telemetry::telemetry_target;
 use pill_engine::{
-    pill_mirror_impl, pill_mirror_method, pill_mirror_object, AssetLoadError, AssetLoadResult,
-    AssetLoader, ImportedAsset, PillAsset, PillMirror,
+    asset, pill_mirror_impl, pill_mirror_method, pill_mirror_object, AssetLoadError,
+    AssetLoadResult, AssetLoader, ImportedAsset, PillMirror,
 };
 use serde::{Deserialize, Serialize};
 
@@ -218,9 +218,9 @@ impl SlotName for ShaderTextureSlot {
 /// The slots travel with the sources because both describe the same shader:
 /// the sources go to the pipeline, and the slots say how that pipeline's
 /// uniform buffer and texture bindings must be laid out.
-#[derive(Clone, Debug, PillAsset)]
-#[pill(imported)]
+#[asset(imported)]
 #[pill_mirror_object(asset, shared = "pill_master_renderer::assets::Shader")]
+#[derive(Clone, Debug)]
 pub struct Shader {
     /// Name used in logs and error messages.
     pub name: String,

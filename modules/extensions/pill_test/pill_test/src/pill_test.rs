@@ -25,7 +25,6 @@
 use pill_core::info;
 use pill_core::telemetry::telemetry_target;
 use pill_engine::*;
-use serde::{Deserialize, Serialize};
 
 // =============================================================================
 // Constants
@@ -61,9 +60,9 @@ const FIXED_DELTA_TIME: f32 = 1.0 / 60.0;
 /// the layout is pinned with `#[repr(C)]` and every field stays serde
 /// compatible. Adding or removing a field is safe: serde matches fields by
 /// name, a new field gets its default, and a removed field is ignored.
+#[component(persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-#[pill(persistable)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ModuleTest {
     /// Number of frames this entity has been processed for.
     pub processed_frame_count: u64,

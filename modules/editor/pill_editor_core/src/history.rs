@@ -518,6 +518,7 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::SetGizmos { .. }
+            | EditorCommand::SetTool { .. }
             | EditorCommand::SetGizmoTypeVisible { .. }
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce => 0,

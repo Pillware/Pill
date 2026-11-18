@@ -23,8 +23,8 @@ use std::path::Path;
 use pill_engine::asset_store::mount_directory;
 use pill_engine::component_registry::{no_registration, register_all_components, run_project_init};
 use pill_engine::{
-    queue_startup_scene, render_standalone, save_scene, AssetManager, Engine, EntityId,
-    ImportRegistry, PillComponent, Scene,
+    component, queue_startup_scene, render_standalone, save_scene, AssetManager, Engine, EntityId,
+    ImportRegistry, Scene,
 };
 
 // =============================================================================
@@ -46,8 +46,9 @@ thread_local! {
 // =============================================================================
 
 /// The component the scene carries.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PillComponent)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Beacon {
     /// The value the test writes and reads back unchanged.
     power: f32,

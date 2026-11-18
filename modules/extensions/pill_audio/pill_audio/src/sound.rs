@@ -25,7 +25,7 @@
 
 // External crates
 use pill_core::utils::AssetPathError;
-use pill_engine::{Asset, AssetLoadError, AssetLoadResult, PillAsset};
+use pill_engine::{asset, AssetLoadError, AssetLoadResult};
 use serde::{Deserialize, Serialize};
 
 // =============================================================================
@@ -67,16 +67,16 @@ pub const SUPPORTED_AUDIO_FORMATS: &[&str] = &["mp3", "wav", "ogg", "flac"];
 /// `assets.Import<Sound>(path, ...)` and builds one with `Sound.Load` or
 /// `Sound.FromBytes`.
 ///
-/// The derive declares the type, so the world's asset store re-points its table
-/// at the generation still mapped without a call in the module's `register`.
+/// The attribute declares the type, so the world's asset store re-points its
+/// table at the generation still mapped without a call in the module's
+/// `register`.
 // Pins the asset type's shared name, so the module DLL and every project that
 // links this crate use one asset column: a `Handle<Sound>` issued by a project
 // has to find the column the module's playback system reads. The `.meta` files
 // record the same spelling, because `metadata_type_name` defaults to this
 // name, so keeping the two equal also stops a move of the type from orphaning
 // them.
-#[derive(PillAsset)]
-#[pill(imported)]
+#[asset(imported)]
 #[pill_engine::pill_mirror_object(asset, import, shared = "pill_audio::Sound")]
 pub struct Sound {
     /// Path the bytes were read from, or the label [`Sound::from_bytes`] was
@@ -85,11 +85,6 @@ pub struct Sound {
     /// The encoded bytes, as they were read or handed over.
     bytes: std::sync::Arc<[u8]>,
 }
-
-// Registers `Sound` with the type-erased asset columns. Every `AssetManager`
-// method needs it, so without this line a `Sound` could be loaded but never
-// stored or looked up through a `Handle<Sound>`.
-trait_type_map::impl_trait_accessible!(dyn Asset; Sound);
 
 impl std::fmt::Debug for Sound {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

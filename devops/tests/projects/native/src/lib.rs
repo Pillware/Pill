@@ -52,7 +52,6 @@ use pill_master_renderer_data::{
     RenderingManager, RenderingPipeline, Shader, TransformComponent,
 };
 use pill_spline::Spline;
-use serde::{Deserialize, Serialize};
 
 mod follow_target;
 mod layout_witness;
@@ -97,7 +96,7 @@ const PROBE_SHADER_PATH: &str = "shaders/reload_probe_fragment.hlsl";
 ///
 /// Public so a hot patch can name it: a patched system's signature must be
 /// expressible from outside the crate.
-#[derive(PillResource)]
+#[resource]
 pub struct SimulationTime {
     pub last_frame: Instant,
     pub delta_seconds: f32,
@@ -110,9 +109,9 @@ pub struct SimulationTime {
 /// The host serializes this component across hot-reload generations, so the
 /// struct layout is pinned with `#[repr(C)]` and every field stays
 /// `Serialize` / `Deserialize` compatible.
+#[component(persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-#[pill(persistable)]
+#[derive(Debug, Clone, Copy)]
 pub struct PhysicsState {
     /// The simulation owns it; the Inspector leaves it out.
     #[pill(hide_in_inspector)]
@@ -134,9 +133,9 @@ pub struct PhysicsState {
 /// it renders like any other mesh, and `spline_path_system` moves it along the
 /// curve as the balls move. The host serializes this component across
 /// hot-reload generations, so the layout is pinned with `#[repr(C)]`.
+#[component(persistable)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PillComponent)]
-#[pill(persistable)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SplineSample {
     /// Curve parameter this dot samples, running from 0.0 to 1.0.
     #[pill(
@@ -347,7 +346,7 @@ pub fn init(engine: &mut Engine) -> u32 {
 
     // The spline entity. `Spline` is registered by the linked `pill_spline`
     // crate, and the host may also be loading a separately built copy of that
-    // crate as a module DLL. `Spline` declares `#[pill(shared)]`, so both
+    // crate as a module DLL. `Spline` declares `shared`, so both
     // copies are one component with one column: this query sees the module's
     // spline as readily as the project's own, and whichever artifact
     // initialises first creates the entity while the other adopts it.
@@ -466,7 +465,7 @@ pub fn init(engine: &mut Engine) -> u32 {
     // The probe reports the spline entity's stable id, which is what the reload
     // suites compare across a reload: the entity handle names a slot the world
     // recycles, the id names the entity (W-0048 Stage 5). The spline is the
-    // witness because it is `#[pill(shared)]` and so is still there after a
+    // witness because it is `shared` and so is still there after a
     // project reload, while the project's own components are only carried over
     // when they are persistable.
     refresh_probe_entity_id(engine);
@@ -581,23 +580,23 @@ fn load_chain(assets: &mut AssetManager) -> Result<Handle<RenderingPipeline>, St
 // =============================================================================
 
 /// A per-frame counter, the component the counter system advances.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PillComponent)]
-#[pill(persistable)]
+#[component(persistable)]
+#[derive(Debug, Clone, Default)]
 struct FrameCounter {
     count: u64,
 }
 
 /// A two-axis position, the simplest shape a schema change can widen.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PillComponent)]
-#[pill(persistable)]
+#[component(persistable)]
+#[derive(Debug, Clone, Default)]
 struct SpatialPosition {
     horizontal: f32,
     vertical: f32,
 }
 
 /// A two-axis velocity, paired with [`SpatialPosition`] on one archetype.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PillComponent)]
-#[pill(persistable)]
+#[component(persistable)]
+#[derive(Debug, Clone, Default)]
 struct LinearVelocity {
     horizontal_speed: f32,
     vertical_speed: f32,
@@ -606,8 +605,8 @@ struct LinearVelocity {
 /// A component whose fields own heap data, so migration has to round-trip a
 /// `Vec`, a `String` and an engine-owned `DynamicBuffer` through JSON in both
 /// directions.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PillComponent)]
-#[pill(persistable)]
+#[component(persistable)]
+#[derive(Debug, Clone, Default)]
 struct MarkerTrail {
     points: Vec<f32>,
     label: String,

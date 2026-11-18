@@ -193,6 +193,18 @@ pub enum EditorCommand {
         /// The gizmos' new state.
         enabled: bool,
     },
+    /// Make one registered tool the active one, or clear the active tool with
+    /// `None`.
+    ///
+    /// This is how a component tool is entered from the UI: its toolbox row
+    /// queues this command. The built-in tool rows reach the registry through
+    /// `SetGizmoTool`, which also owns the gizmo's mode; a component tool has
+    /// no mode of its own, so its activation is this command alone.
+    SetTool {
+        /// The tool's registered name, as a command and the scripted channel
+        /// spell it.
+        tool: Option<String>,
+    },
     /// Show or hide one component type's gizmo, which is a row in the
     /// Preferences tab. The choice is written to the preferences file, so it
     /// survives a reload.
@@ -553,6 +565,7 @@ impl EditorCommand {
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::SetGizmos { .. }
+            | EditorCommand::SetTool { .. }
             | EditorCommand::SetGizmoTypeVisible { .. }
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce
@@ -651,6 +664,7 @@ impl EditorCommand {
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::SetGizmos { .. }
+            | EditorCommand::SetTool { .. }
             | EditorCommand::SetGizmoTypeVisible { .. }
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::RunElementMenu { .. }
@@ -702,6 +716,7 @@ impl EditorCommand {
             | EditorCommand::SetGizmoTool { .. }
             | EditorCommand::SetGrid { .. }
             | EditorCommand::SetGizmos { .. }
+            | EditorCommand::SetTool { .. }
             | EditorCommand::SetGizmoTypeVisible { .. }
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::RunElementMenu { .. }

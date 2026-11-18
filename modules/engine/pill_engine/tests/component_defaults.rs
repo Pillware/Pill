@@ -12,11 +12,12 @@
 
 // External crates
 use pill_engine::component_registry::register_all_components;
-use pill_engine::{FieldValue, PillComponent, TransformComponent, World};
+use pill_engine::{component, FieldValue, TransformComponent, World};
 
 /// A component whose default is not all zeros.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PillComponent)]
+#[derive(Debug, Clone, Copy)]
 struct SizedProbe {
     size: [f32; 3],
     weight: f32,
@@ -32,8 +33,9 @@ impl Default for SizedProbe {
 }
 
 /// A component with no `Default` at all.
+#[component]
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PillComponent)]
+#[derive(Debug, Clone, Copy)]
 struct PlainProbe {
     count: u32,
 }

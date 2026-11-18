@@ -18,8 +18,7 @@
 //! which live in that renderer's data crate.
 
 // External crates
-use pill_engine::{PillComponent, World};
-use serde::{Deserialize, Serialize};
+use pill_engine::{component, World};
 
 // =============================================================================
 // CameraComponent
@@ -36,15 +35,12 @@ use serde::{Deserialize, Serialize};
 /// A value the projection cannot use is replaced with a default while the
 /// renderer builds the matrix. That keeps a mistyped field of view or near/far
 /// pair from producing NaN values in the matrix.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PillComponent)]
-// Pinned rather than derived: the derive builds the name from `module_path!()`.
-// A derived name would register a different component, and the columns a
-// running world already holds for this one would be left with no owner.
-#[pill(
+#[component(
     shared = "pill_master_renderer::component::CameraComponent",
     persistable
 )]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct CameraComponent {
     /// Whether the renderer may pick this camera. A disabled camera stays in
     /// the world but is never picked for a surface.

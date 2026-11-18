@@ -395,6 +395,9 @@ impl OverlaySurface {
         mut textures: TexturesDelta,
         pixels_per_point: f32,
     ) -> Result<bool, OverlayError> {
+        // The overlay's paint and present, in one zone: the texture uploads,
+        // the recorded pass, its submission and the swapchain present.
+        let _zone = pill_core::profile_scope!("overlay paint and present");
         let has_content = !meshes.is_empty();
         if !has_content && !self.has_drawn_content {
             // Nothing is drawn, so nothing the shell uploaded is used: the
