@@ -76,7 +76,7 @@ from core.suite_common import *  # noqa: E402,F401,F403
 # Configuration
 # =============================================================================
 
-SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
+SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
 PROJECT_LIB_RS = NATIVE_PROJECT_LIB_RS
 
 # The component whose identity this suite is about, spelled as the engine

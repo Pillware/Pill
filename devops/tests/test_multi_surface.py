@@ -54,7 +54,7 @@ from core.suite_common import *  # noqa: E402,F401,F403
 
 PROJECT_PATH = SCENE_PROJECT_PATH
 GPU_MODULE_SOURCE = (
-    MODULES_ROOT / "extensions" / "master_renderer" / "modules" / "runtime" / "gpu" / "src" / "lib.rs"
+    MODULES_ROOT / "extensions" / "pill_master_renderer" / "modules" / "runtime" / "gpu" / "src" / "lib.rs"
 )
 
 PRIMARY_FIRST_FRAME_TOKEN = "[render] First frame"

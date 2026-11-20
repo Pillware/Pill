@@ -51,7 +51,7 @@ GENERATOR_PATH = DEVOPS_ROOT / "tools" / "generate_shipping_bundle.py"
 PROJECT_ROOT = NATIVE_PROJECT_ROOT
 RENDERER = "pill_master_renderer"
 DATA_CRATE_NAME = RENDERER + "_data"
-DATA_CRATE = REPOSITORY_ROOT / "modules" / "extensions" / "master_renderer" / "modules" / "runtime" / "data"
+DATA_CRATE = REPOSITORY_ROOT / "modules" / "extensions" / "pill_master_renderer" / "modules" / "runtime" / "data"
 BUNDLE_DIRECTORY = REPOSITORY_ROOT / "build" / "pill_shipping_bundle"
 
 

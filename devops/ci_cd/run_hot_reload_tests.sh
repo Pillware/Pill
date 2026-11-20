@@ -19,7 +19,7 @@
 #   automatically restore - the projects' project_settings.yaml files,
 #   devops/tests/projects/native/src/lib.rs,
 #   devops/tests/projects/managed/src/Systems.cs and
-#   modules/extensions/spline/modules/runtime/src/lib.rs, plus
+#   modules/extensions/pill_spline/modules/runtime/src/lib.rs, plus
 #   devops/tests/projects/scene's theme file and project source
 #   (the theme suite), so a normal developer workspace is left exactly as it
 #   was.

@@ -4,7 +4,7 @@ The tools framework is only worth anything if a real tool, in a real extension,
 edits a real component. These steps start two editor sessions of their own, each
 on an extension example project, and drive one tool end to end:
 
-- the spline tool on `extensions/spline/examples/uber_spline`: its row
+- the spline tool on `extensions/pill_spline/examples/uber_spline`: its row
   in the floating toolbox appearing for the entity that carries a spline and
   entering the tool, its points
   and tangents reported as elements, two points selected, the `Spline` frame
@@ -12,7 +12,7 @@ on an extension example project, and drive one tool end to end:
   as one step, a point inserted from the context menu and deleted with Delete,
   and the Uber extension's roll kind and row appearing only once its component
   is on the entity;
-- the collider tool on `extensions/physics/examples/collider_edit`: six
+- the collider tool on `extensions/pill_physics/examples/collider_edit`: six
   face handles on the cuboid, a face drag that changes `dimensions` and undoes
   in one step, and the ball's single radius handle.
 
@@ -62,10 +62,10 @@ from editor_step_support import (
 
 # The two extension examples these steps drive, by the path a host resolves.
 UBER_SPLINE_PROJECT = host_project_path(
-    EXTENSION_EXAMPLES_ROOT / "spline" / "examples" / "uber_spline"
+    EXTENSION_EXAMPLES_ROOT / "pill_spline" / "examples" / "uber_spline"
 )
 COLLIDER_PROJECT = host_project_path(
-    EXTENSION_EXAMPLES_ROOT / "physics" / "examples" / "collider_edit"
+    EXTENSION_EXAMPLES_ROOT / "pill_physics" / "examples" / "collider_edit"
 )
 
 # What the spline tool calls its elements, and what the collider tool calls its

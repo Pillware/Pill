@@ -42,7 +42,7 @@ EXAMPLE USAGE
   python devops/tests/test_coding_standards.py modules/engine/pill_core/src/lib.rs \
       devops/tests/projects/native/src/lib.rs --report local/lint.json
   python devops/tests/test_coding_standards.py --root modules \
-      --exclude modules/extensions/master_renderer
+      --exclude modules/extensions/pill_master_renderer
 
   Exit status: 0 when every checked file complies, 1 when at least one
   violation is reported, 2 on a usage error.
@@ -191,7 +191,7 @@ USE_CRATE_ROOTS = frozenset({"crate", "super", "self"})
 # tracked as follow-up work, and the order rule above keeps gating every
 # crate in the meantime.
 IMPORT_GROUP_CONTENT_SCOPE = (
-    "modules/extensions/master_renderer/",
+    "modules/extensions/pill_master_renderer/",
     "modules/rendering/",
     "modules/hosting/pill_player/",
 )
@@ -208,7 +208,7 @@ TESTS_PLACEMENT_MINIMUM_LINES = 20
 # tuple with its rename.
 OUTLINE_TEST_LEGACY_PATHS = (
     "modules/csharp/pill_csharp_bridge/src/lib.rs",
-    "modules/extensions/editor_shell_egui/modules/editor/src/shell.rs",
+    "modules/extensions/pill_editor_shell_egui/modules/editor/src/shell.rs",
     "modules/hosting/pill_development_host/src/hot_patch/mod.rs",
 )
 
@@ -349,7 +349,7 @@ COLOUR_LITERAL_PATTERN = re.compile(r"Color32::(from_[a-z_]+|[A-Z][A-Z_]+)")
 COLOUR_LITERAL_AREAS = (
     "modules/editor/pill_editor_core/src",
     "modules/editor/pill_editor/src",
-    "modules/extensions/editor_shell_egui/",
+    "modules/extensions/pill_editor_shell_egui/",
     "modules/frontends/pill_web/src",
     # The kit translates and draws from the same tokens: a literal here would
     # bypass the theme for both UIs at once.
@@ -1817,7 +1817,7 @@ def self_test() -> int:
     colour_cases = (
         (
             "a colour literal in the editor shell fails",
-            "modules/extensions/editor_shell_egui/modules/editor/src/shell/views.rs",
+            "modules/extensions/pill_editor_shell_egui/modules/editor/src/shell/views.rs",
             "let fill = egui::Color32::from_rgb(1, 2, 3);\n",
             1,
         ),
@@ -2092,7 +2092,7 @@ def self_test() -> int:
     # Shell re-export blocks: the shell root's re-export wall keeps one block
     # per module.
     shell_root = (
-        "modules/extensions/editor_shell_egui/modules/editor/src/shell.rs"
+        "modules/extensions/pill_editor_shell_egui/modules/editor/src/shell.rs"
     )
     reexport_cases = (
         (
@@ -2421,7 +2421,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  test_coding_standards.py --root modules/engine/pill_engine/src\n"
             "  test_coding_standards.py modules/engine/pill_core/src/lib.rs\n"
             "  test_coding_standards.py --root modules --exclude "
-            "modules/extensions/master_renderer\n"
+            "modules/extensions/pill_master_renderer\n"
         ),
     )
     parser.add_argument(

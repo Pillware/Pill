@@ -199,7 +199,7 @@ def main() -> int:
     shell_source = (
         MODULES_ROOT
         / "extensions"
-        / "editor_shell_egui"
+        / "pill_editor_shell_egui"
         / "modules"
         / "editor"
         / "src"

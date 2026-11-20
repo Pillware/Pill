@@ -22,4 +22,4 @@ editor_frontend = "egui"
 pill_core = { path = "../../../../../modules/engine/pill_core" }
 pill_engine = { path = "../../../../../modules/engine/pill_engine" }
 pill_editor_core = { path = "../../../../../modules/editor/pill_editor_core" }
-pill_test = { path = "../../../../../modules/extensions/test/modules/runtime", default-features = false }
+pill_test = { path = "../../../../../modules/extensions/pill_test/modules/runtime", default-features = false }

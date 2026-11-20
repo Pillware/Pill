@@ -256,6 +256,17 @@ pub enum ConfigError {
     )]
     RuntimeCrateNameMismatch { name: String },
 
+    /// An extension crate's package name does not spell the folder that holds
+    /// it, so a path no longer names the crate it holds.
+    #[message(
+        "extension crate ",
+        value(name),
+        " sits in ",
+        value(folder),
+        ", a folder that names a different crate"
+    )]
+    ExtensionFolderNameMismatch { folder: String, name: String },
+
     /// No extension folder holds the configured extension crate.
     #[message(
         "extension ",

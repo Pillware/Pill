@@ -44,8 +44,8 @@ members = [
     # `modules/runtime/data` and `modules/runtime/gpu`, so both are listed
     # explicitly and their parent is excluded: every path a member glob
     # matches must be a crate, and `runtime` itself is not one.
-    "extensions/master_renderer/modules/runtime/data",
-    "extensions/master_renderer/modules/runtime/gpu",
+    "extensions/pill_master_renderer/modules/runtime/data",
+    "extensions/pill_master_renderer/modules/runtime/gpu",
     # The host-generated `host_module_<crate>` wrappers, one per loaded
     # extension crate, in the `generated/` folder of the extension they wrap.
     "extensions/*/generated/*",
@@ -75,7 +75,7 @@ exclude = [
     "extensions/_workspace_anchor",
     # The master renderer's runtime folder holds the data and gpu crates and is
     # not a crate itself.
-    "extensions/master_renderer/modules/runtime",
+    "extensions/pill_master_renderer/modules/runtime",
     "projects_generated/README.md",
 ]
 resolver = "2"

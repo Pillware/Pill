@@ -54,7 +54,7 @@ API_EDITOR_CRATE_SOURCE = (
     REPOSITORY_ROOT
     / "modules"
     / "extensions"
-    / "test"
+    / "pill_test"
     / "modules"
     / "editor"
     / "src"

@@ -153,7 +153,7 @@ the crate's location, so the host needs no changes. The host **generates** the
 `cdylib` wrapper it actually loads under
 `modules/extensions/<name>/generated/host_module_<name>/` on startup: it is a
 build artifact, never written by hand. See
-`modules/extensions/spline/` for the reference implementation. An
+`modules/extensions/pill_spline/` for the reference implementation. An
 extension's optional editor part is the crate in its `modules/editor` folder,
 written against `pill_editor_core` (the old `pill_ui` editor part retired with
 W-0043).

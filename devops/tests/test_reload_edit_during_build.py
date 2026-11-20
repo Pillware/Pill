@@ -72,7 +72,7 @@ from core.suite_common import *  # noqa: E402,F401,F403
 # Configuration
 # =============================================================================
 
-MODULE_LIB_RS = MODULES_ROOT / "extensions" / "spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
+MODULE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
 MODULE_NAME = "pill_spline"
 
 # Launched through cargo because `-C prefer-dynamic` means the binary needs the

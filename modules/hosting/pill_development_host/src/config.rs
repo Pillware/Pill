@@ -1962,6 +1962,17 @@ impl ExtensionCrateLocation {
             .join(&self.folder)
             .join(&self.directory_in_folder)
     }
+
+    /// Whether the crate sits one level below `modules/runtime`, in a runtime
+    /// folder that groups crates instead of holding one (the master renderer's
+    /// `data` and `gpu`).
+    fn is_nested_runtime_crate(&self) -> bool {
+        self.directory_in_folder
+            .strip_prefix(EXTENSION_MODULES_DIRECTORY)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .and_then(|rest| rest.strip_prefix(RUNTIME_CRATE_DIRECTORY))
+            .is_some_and(|rest| rest.starts_with('/'))
+    }
 }
 
 /// Returns every extension crate under `extensions_root`, in folder order.
@@ -2046,10 +2057,20 @@ pub(crate) fn extension_crate_locations(extensions_root: &Path) -> Vec<Extension
 /// location while `modules:` or a shipping bundle selected it as a runtime
 /// module.
 ///
+/// The folder also spells the crate it holds: a runtime crate is named after
+/// its extension folder (`extensions/pill_audio/modules/runtime` holds
+/// `pill_audio`) and an editor crate after that folder plus the suffix
+/// (`pill_audio_editor`). A path therefore names the crate it holds, and the
+/// conventional path a missing crate falls back to resolves to a real
+/// directory. The master renderer's nested runtime crates are exempt, because
+/// `extensions/pill_master_renderer/modules/runtime` groups two crates whose
+/// names cannot both equal the folder name.
+///
 /// # Errors
 ///
-/// Returns [`ConfigError::EditorCrateNameMismatch`] or
-/// [`ConfigError::RuntimeCrateNameMismatch`], naming the crate.
+/// Returns [`ConfigError::EditorCrateNameMismatch`],
+/// [`ConfigError::RuntimeCrateNameMismatch`] or
+/// [`ConfigError::ExtensionFolderNameMismatch`], naming the crate.
 pub(crate) fn validate_extension_crate_names(extensions_root: &Path) -> Result<(), ConfigError> {
     for location in extension_crate_locations(extensions_root) {
         let has_editor_suffix = location.package_name.ends_with(EDITOR_CRATE_SUFFIX);
@@ -2060,6 +2081,20 @@ pub(crate) fn validate_extension_crate_names(extensions_root: &Path) -> Result<(
         }
         if !location.is_editor_crate && has_editor_suffix {
             return Err(ConfigError::RuntimeCrateNameMismatch {
+                name: location.package_name,
+            });
+        }
+        if location.is_nested_runtime_crate() {
+            continue;
+        }
+        let expected_package_name = if location.is_editor_crate {
+            format!("{}{EDITOR_CRATE_SUFFIX}", location.folder)
+        } else {
+            location.folder.clone()
+        };
+        if location.package_name != expected_package_name {
+            return Err(ConfigError::ExtensionFolderNameMismatch {
+                folder: format!("{EXTENSION_DIRECTORY}/{}", location.folder),
                 name: location.package_name,
             });
         }
@@ -2794,7 +2829,7 @@ name = "project"
 
 [dependencies]
 pill_engine = { path = "../../modules/engine/pill_engine" }
-pill_spline = { path = "../../modules/extensions/spline/modules/runtime" }
+pill_spline = { path = "../../modules/extensions/pill_spline/modules/runtime" }
 "#;
 
     /// A native project manifest with no extension dependency.
@@ -3198,13 +3233,13 @@ serde = { version = "1", features = ["derive"] }
         let _ = std::fs::remove_dir_all(&root);
         seed_crate_at(
             &root,
-            "master_renderer",
+            "pill_master_renderer",
             "modules/runtime/gpu",
             "pill_master_renderer",
         );
         seed_crate_at(
             &root,
-            "master_renderer",
+            "pill_master_renderer",
             "modules/runtime/data",
             "pill_master_renderer_data",
         );
@@ -3212,11 +3247,11 @@ serde = { version = "1", features = ["derive"] }
 
         assert_eq!(
             folder_holding(&root, "pill_master_renderer").as_deref(),
-            Some("master_renderer")
+            Some("pill_master_renderer")
         );
         assert_eq!(
             folder_holding(&root, "pill_master_renderer_data").as_deref(),
-            Some("master_renderer"),
+            Some("pill_master_renderer"),
             "a second crate in a folder is found by scanning the folders"
         );
         let data_location =
@@ -3228,16 +3263,16 @@ serde = { version = "1", features = ["derive"] }
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The index names a crate by the package its manifest declares, not by
-    /// the directory it sits in, and every path the host derives follows the
-    /// directory. The generated wrappers and the examples are not crates of
-    /// the extension.
+    /// The index names a crate by the package its manifest declares, and every
+    /// path the host derives follows the directory the crate sits in - here the
+    /// renderer's folder, which names only one of its two crates. The generated
+    /// wrappers and the examples are not crates of the extension.
     #[test]
     fn a_crate_is_found_by_its_package_name_whatever_its_directory() {
         let root = temp_root().join("package_name_not_directory");
         let _ = std::fs::remove_dir_all(&root);
         let write_crate = |directory_in_folder: &str, package_name: &str| {
-            let directory = root.join("widget").join(directory_in_folder);
+            let directory = root.join("pill_master_renderer").join(directory_in_folder);
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(
                 directory.join("Cargo.toml"),
@@ -3245,44 +3280,57 @@ serde = { version = "1", features = ["derive"] }
             )
             .unwrap();
         };
-        write_crate("modules/runtime", "pill_widget");
-        write_crate("modules/editor", "widget_editor");
+        write_crate("modules/runtime/gpu", "pill_master_renderer");
+        write_crate("modules/runtime/data", "pill_master_renderer_data");
         write_crate(
-            "generated/host_module_pill_widget",
-            "host_module_pill_widget",
+            "generated/host_module_pill_master_renderer",
+            "host_module_pill_master_renderer",
         );
-        std::fs::create_dir_all(root.join("widget").join("examples").join("demo")).unwrap();
+        std::fs::create_dir_all(
+            root.join("pill_master_renderer")
+                .join("examples")
+                .join("demo"),
+        )
+        .unwrap();
 
-        let runtime = find_extension_crate(&root, "pill_widget").expect("the runtime crate");
-        assert_eq!(runtime.folder, "widget");
-        assert_eq!(runtime.directory_in_folder, "modules/runtime");
-        assert!(!runtime.is_editor_crate);
-        let configuration = ExtensionConfig::workspace_member(&runtime);
-        assert_eq!(configuration.name, "pill_widget");
+        let gpu = find_extension_crate(&root, "pill_master_renderer").expect("the gpu crate");
+        assert_eq!(gpu.folder, "pill_master_renderer");
+        assert_eq!(gpu.directory_in_folder, "modules/runtime/gpu");
+        assert!(!gpu.is_editor_crate);
+        let configuration = ExtensionConfig::workspace_member(&gpu);
+        assert_eq!(configuration.name, "pill_master_renderer");
         assert_eq!(
             configuration.crate_directory,
-            "extensions/widget/modules/runtime"
+            "extensions/pill_master_renderer/modules/runtime/gpu"
         );
         assert_eq!(
             configuration.watch_directory,
-            "extensions/widget/modules/runtime/src"
+            "extensions/pill_master_renderer/modules/runtime/gpu/src"
         );
 
-        let editor = find_extension_crate(&root, "widget_editor").expect("the editor crate");
+        let data =
+            find_extension_crate(&root, "pill_master_renderer_data").expect("the data crate");
+        assert_eq!(data.directory_in_folder, "modules/runtime/data");
+        assert!(
+            !data.is_editor_crate,
+            "a runtime folder's child crate is not an editor crate"
+        );
+        seed_editor_crate(&root, "pill_widget", "pill_widget_editor");
+        let editor = find_extension_crate(&root, "pill_widget_editor").expect("the editor crate");
         assert_eq!(editor.directory_in_folder, "modules/editor");
         assert!(
             editor.is_editor_crate,
             "the crate in `modules/editor` is the folder's editor crate"
         );
         assert_eq!(
-            find_extension_crate(&root, "host_module_pill_widget"),
+            find_extension_crate(&root, "host_module_pill_master_renderer"),
             None,
             "a generated wrapper is not an extension crate"
         );
         assert_eq!(
             extension_crate_locations(&root).len(),
-            2,
-            "only the runtime and the editor crate are indexed"
+            3,
+            "the two runtime crates and the editor crate are indexed"
         );
 
         let _ = std::fs::remove_dir_all(&root);
@@ -3296,16 +3344,16 @@ serde = { version = "1", features = ["derive"] }
     fn resolves_editor_crates_by_convention() {
         let root = temp_root().join("editor_crates");
         let _ = std::fs::remove_dir_all(&root);
-        seed_runtime_crate(&root, "spline", "pill_spline");
-        seed_editor_crate(&root, "spline", "pill_spline_editor");
-        seed_runtime_crate(&root, "audio", "pill_audio");
-        seed_runtime_crate(&root, "test", "pill_test");
-        seed_editor_crate(&root, "test", "pill_test_editor");
-        seed_editor_crate(&root, "gadget_shell", "pill_gadget_shell_editor");
+        seed_runtime_crate(&root, "pill_spline", "pill_spline");
+        seed_editor_crate(&root, "pill_spline", "pill_spline_editor");
+        seed_runtime_crate(&root, "pill_audio", "pill_audio");
+        seed_runtime_crate(&root, "pill_test", "pill_test");
+        seed_editor_crate(&root, "pill_test", "pill_test_editor");
+        seed_editor_crate(&root, "pill_gadget_shell", "pill_gadget_shell_editor");
         seed_editor_crate(&root, "_workspace_anchor", "_workspace_anchor_editor");
 
         let (resolved, editor_only) = HostConfig::resolve_editor_crates(
-            &["audio".to_string(), "spline".to_string()],
+            &["pill_audio".to_string(), "pill_spline".to_string()],
             &root,
             "legacy",
         )
@@ -3325,11 +3373,11 @@ serde = { version = "1", features = ["derive"] }
             .all(|crate_config| crate_config.is_editor_crate));
         assert_eq!(
             resolved[0].watch_directory,
-            "extensions/spline/modules/editor/src"
+            "extensions/pill_spline/modules/editor/src"
         );
 
         let (none, none_optional) =
-            HostConfig::resolve_editor_crates(&["audio".to_string()], &root, "legacy")
+            HostConfig::resolve_editor_crates(&["pill_audio".to_string()], &root, "legacy")
                 .expect("a seeded tree resolves");
         assert_eq!(
             none.iter()
@@ -3343,7 +3391,7 @@ serde = { version = "1", features = ["derive"] }
         // A crate tagged for another editor frontend stays out of this
         // frontend's editor crates and loads under its own.
         let tagged = root
-            .join("gadget_shell")
+            .join("pill_gadget_shell")
             .join("modules")
             .join("editor")
             .join("Cargo.toml");
@@ -3351,12 +3399,12 @@ serde = { version = "1", features = ["derive"] }
         manifest.push_str("\n[package.metadata.pill]\neditor_frontend = \"egui\"\n");
         std::fs::write(&tagged, manifest).expect("tag the manifest");
         let (untagged_editor_crates, untagged_optional_names) =
-            HostConfig::resolve_editor_crates(&["audio".to_string()], &root, "legacy")
+            HostConfig::resolve_editor_crates(&["pill_audio".to_string()], &root, "legacy")
                 .expect("a seeded tree resolves");
         assert!(untagged_editor_crates.is_empty());
         assert!(untagged_optional_names.is_empty());
         let (tagged_editor_crates, tagged_optional_names) =
-            HostConfig::resolve_editor_crates(&["audio".to_string()], &root, "egui")
+            HostConfig::resolve_editor_crates(&["pill_audio".to_string()], &root, "egui")
                 .expect("a seeded tree resolves");
         assert_eq!(
             tagged_editor_crates
@@ -3377,10 +3425,10 @@ serde = { version = "1", features = ["derive"] }
     fn refuses_the_retired_editor_frontend_tag() {
         let root = temp_root().join("retired_frontend");
         let _ = std::fs::remove_dir_all(&root);
-        seed_runtime_crate(&root, "spline", "pill_spline");
-        seed_editor_crate(&root, "spline", "pill_spline_editor");
+        seed_runtime_crate(&root, "pill_spline", "pill_spline");
+        seed_editor_crate(&root, "pill_spline", "pill_spline_editor");
         let manifest_path = root
-            .join("spline")
+            .join("pill_spline")
             .join("modules")
             .join("editor")
             .join("Cargo.toml");
@@ -3389,7 +3437,7 @@ serde = { version = "1", features = ["derive"] }
         std::fs::write(&manifest_path, manifest).expect("tag the manifest");
 
         let refused = HostConfig::resolve_editor_crates(
-            &["spline".to_string()],
+            &["pill_spline".to_string()],
             &root,
             DEFAULT_EDITOR_FRONTEND,
         );
@@ -3406,7 +3454,7 @@ serde = { version = "1", features = ["derive"] }
     fn refuses_editor_crates_in_the_module_list() {
         let root = temp_root().join("editor_crate_listed");
         let _ = std::fs::remove_dir_all(&root);
-        seed_editor_crate(&root, "spline", "pill_spline_editor");
+        seed_editor_crate(&root, "pill_spline", "pill_spline_editor");
         let refused = HostConfig::resolve_extensions(&[String::from("pill_spline_editor")], &root);
         assert!(
             matches!(&refused, Err(ConfigError::EditorCrateListed { name }) if name == "pill_spline_editor"),
@@ -3421,9 +3469,9 @@ serde = { version = "1", features = ["derive"] }
     fn only_the_folders_editor_crate_is_flagged() {
         let root = temp_root().join("editor_crate_flag");
         let _ = std::fs::remove_dir_all(&root);
-        seed_runtime_crate(&root, "spline", "pill_spline");
-        seed_editor_crate(&root, "spline", "pill_spline_editor");
-        seed_runtime_crate(&root, "other", "pill_other_editor");
+        seed_runtime_crate(&root, "pill_spline", "pill_spline");
+        seed_editor_crate(&root, "pill_spline", "pill_spline_editor");
+        seed_runtime_crate(&root, "pill_other", "pill_other_editor");
         let is_editor_crate = |package_name: &str| {
             let location = find_extension_crate(&root, package_name).expect("a seeded crate");
             ExtensionConfig::workspace_member(&location).is_editor_crate
@@ -3436,14 +3484,16 @@ serde = { version = "1", features = ["derive"] }
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// An editor crate must carry the `_editor` suffix, and a runtime crate
-    /// must not: either mismatch is refused by name, so a crate cannot load as
-    /// an editor part by location while `modules:` selects it as a module.
+    /// An editor crate must carry the `_editor` suffix and a runtime crate
+    /// must not, and each crate must be named after the folder that holds it:
+    /// every mismatch is refused by name, so a crate cannot load as an editor
+    /// part by location while `modules:` selects it as a module, and a path
+    /// cannot stop naming the crate it holds.
     #[test]
     fn refuses_a_crate_whose_name_disagrees_with_its_folder() {
         let root = temp_root().join("crate_name_mismatch");
         let _ = std::fs::remove_dir_all(&root);
-        seed_crate_at(&root, "widget", "modules/editor", "pill_widget");
+        seed_crate_at(&root, "pill_widget", "modules/editor", "pill_widget");
         let editor_mismatch = validate_extension_crate_names(&root);
         assert!(
             matches!(
@@ -3454,7 +3504,12 @@ serde = { version = "1", features = ["derive"] }
         );
 
         let _ = std::fs::remove_dir_all(&root);
-        seed_crate_at(&root, "widget", "modules/runtime", "pill_widget_editor");
+        seed_crate_at(
+            &root,
+            "pill_widget",
+            "modules/runtime",
+            "pill_widget_editor",
+        );
         let runtime_mismatch = validate_extension_crate_names(&root);
         assert!(
             matches!(
@@ -3465,22 +3520,56 @@ serde = { version = "1", features = ["derive"] }
         );
 
         let _ = std::fs::remove_dir_all(&root);
+        seed_crate_at(&root, "pill_widget", "modules/runtime", "pill_gadget");
+        let runtime_folder_mismatch = validate_extension_crate_names(&root);
+        assert!(
+            matches!(
+                &runtime_folder_mismatch,
+                Err(ConfigError::ExtensionFolderNameMismatch { folder, name })
+                    if name == "pill_gadget" && folder == "extensions/pill_widget"
+            ),
+            "{runtime_folder_mismatch:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        seed_crate_at(&root, "pill_widget", "modules/editor", "pill_gadget_editor");
+        let editor_folder_mismatch = validate_extension_crate_names(&root);
+        assert!(
+            matches!(
+                &editor_folder_mismatch,
+                Err(ConfigError::ExtensionFolderNameMismatch { folder, name })
+                    if name == "pill_gadget_editor" && folder == "extensions/pill_widget"
+            ),
+            "{editor_folder_mismatch:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        seed_runtime_crate(&root, "pill_widget", "pill_widget");
+        seed_editor_crate(&root, "pill_widget", "pill_widget_editor");
+        assert!(
+            validate_extension_crate_names(&root).is_ok(),
+            "a folder that spells its crates is accepted"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The renderer's data crate may share the GPU module's folder.
+    /// The renderer's data crate may share the GPU module's folder: nested
+    /// runtime crates are exempt from the folder-names-the-crate rule, because
+    /// one folder cannot name both.
     #[test]
     fn a_renderer_with_both_crates_in_one_folder_resolves() {
         let root = temp_root().join("renderer_one_folder");
         let _ = std::fs::remove_dir_all(&root);
         seed_crate_at(
             &root,
-            "master_renderer",
+            "pill_master_renderer",
             "modules/runtime/gpu",
             "pill_master_renderer",
         );
         seed_crate_at(
             &root,
-            "master_renderer",
+            "pill_master_renderer",
             "modules/runtime/data",
             "pill_master_renderer_data",
         );
@@ -3489,6 +3578,10 @@ serde = { version = "1", features = ["derive"] }
                 .unwrap()
                 .as_deref(),
             Some("pill_master_renderer")
+        );
+        assert!(
+            validate_extension_crate_names(&root).is_ok(),
+            "the renderer's nested crates are exempt from the folder rule"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -3584,7 +3677,7 @@ serde = { version = "1", features = ["derive"] }
         let root = temp_root().join("extension_names");
         let _ = std::fs::remove_dir_all(&root);
         let extensions_root = root.join("extensions");
-        seed_runtime_crate(&extensions_root, "spline", "pill_spline");
+        seed_runtime_crate(&extensions_root, "pill_spline", "pill_spline");
 
         let traversal =
             HostConfig::resolve_extensions(&[String::from("../pill_spline")], &extensions_root);
@@ -3614,9 +3707,9 @@ serde = { version = "1", features = ["derive"] }
                 .expect("a real sibling directory resolves");
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].name, "pill_spline");
-        assert_eq!(resolved[0].folder, "spline");
+        assert_eq!(resolved[0].folder, "pill_spline");
         assert_eq!(
-            resolved[0].watch_directory, "extensions/spline/modules/runtime/src",
+            resolved[0].watch_directory, "extensions/pill_spline/modules/runtime/src",
             "the validated name still derives the documented watch path"
         );
 
@@ -3670,7 +3763,7 @@ serde = { version = "1", features = ["derive"] }
     fn renamed_dependency_is_detected() {
         let manifest = r#"
 [dependencies]
-spline_path = { package = "pill_spline", path = "../../modules/extensions/spline/modules/runtime" }
+spline_path = { package = "pill_spline", path = "../../modules/extensions/pill_spline/modules/runtime" }
 "#;
         assert!(manifest_depends_on_crate(manifest, "pill_spline"));
     }
@@ -3681,7 +3774,7 @@ spline_path = { package = "pill_spline", path = "../../modules/extensions/spline
     fn quoted_key_rename_is_detected() {
         let manifest = r#"
 [dependencies]
-"spline-path" = { package = "pill_spline", path = "../../modules/extensions/spline/modules/runtime" }
+"spline-path" = { package = "pill_spline", path = "../../modules/extensions/pill_spline/modules/runtime" }
 "#;
         assert!(manifest_depends_on_crate(manifest, "pill_spline"));
     }
@@ -3691,10 +3784,10 @@ spline_path = { package = "pill_spline", path = "../../modules/extensions/spline
     fn dev_and_build_dependencies_are_detected() {
         let manifest = r#"
 [dev-dependencies]
-pill_spline = { path = "../../modules/extensions/spline/modules/runtime" }
+pill_spline = { path = "../../modules/extensions/pill_spline/modules/runtime" }
 
 [build-dependencies]
-pill_spline = { path = "../../modules/extensions/spline/modules/runtime" }
+pill_spline = { path = "../../modules/extensions/pill_spline/modules/runtime" }
 "#;
         assert!(manifest_depends_on_crate(manifest, "pill_spline"));
     }
@@ -3704,7 +3797,7 @@ pill_spline = { path = "../../modules/extensions/spline/modules/runtime" }
     fn target_specific_dependency_is_detected() {
         let manifest = r#"
 [target.'cfg(windows)'.dependencies]
-pill_spline = { path = "../../modules/extensions/spline/modules/runtime" }
+pill_spline = { path = "../../modules/extensions/pill_spline/modules/runtime" }
 "#;
         assert!(manifest_depends_on_crate(manifest, "pill_spline"));
     }
@@ -3714,7 +3807,7 @@ pill_spline = { path = "../../modules/extensions/spline/modules/runtime" }
     fn sub_table_dependency_is_detected() {
         let manifest = r#"
 [dependencies.pill_spline]
-path = "../../modules/extensions/spline/modules/runtime"
+path = "../../modules/extensions/pill_spline/modules/runtime"
 "#;
         assert!(manifest_depends_on_crate(manifest, "pill_spline"));
     }
@@ -3734,7 +3827,7 @@ path = "../../modules/extensions/spline/modules/runtime"
     fn workspace_shared_dependency_is_not_a_project_dependency() {
         let manifest = r#"
 [workspace.dependencies]
-pill_spline = { path = "../../modules/extensions/spline/modules/runtime" }
+pill_spline = { path = "../../modules/extensions/pill_spline/modules/runtime" }
 
 [dependencies]
 pill_engine = { path = "../../modules/engine/pill_engine" }

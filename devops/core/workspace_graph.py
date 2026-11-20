@@ -125,7 +125,7 @@ class Crate:
 #
 # An explicitly listed member is kept even when an `exclude` covers a folder
 # above it; cargo does the same, and the master renderer's layout relies on it:
-# `extensions/master_renderer/modules/runtime` is excluded so the
+# `extensions/pill_master_renderer/modules/runtime` is excluded so the
 # `extensions/*/modules/*` glob does not take it for a crate, while its `data`
 # and `gpu` crates are listed as members.
 def workspace_members(modules: Path) -> List[Crate]:

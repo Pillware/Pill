@@ -10,7 +10,7 @@ workspace = true
 # camera and viewport, and window handles as data. Linked by the host in every
 # posture, by every renderer and (through a renderer's data crate) by projects,
 # so it must never depend on wgpu or winit. Renderer-specific data lives in each
-# renderer's data crate (`extensions/master_renderer/modules/runtime/data`), and the
+# renderer's data crate (`extensions/pill_master_renderer/modules/runtime/data`), and the
 # dependencies are limited to what the contract itself needs (rule 3 of the
 # renderer data split).
 [lib]

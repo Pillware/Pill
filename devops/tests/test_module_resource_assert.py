@@ -72,7 +72,7 @@ RESOURCE_NAME = "defaults/pill.pbr.material"
 MATERIAL_FILE = (
     MODULES_ROOT
     / "extensions"
-    / "master_renderer"
+    / "pill_master_renderer"
     / "modules"
     / "runtime"
     / "data"

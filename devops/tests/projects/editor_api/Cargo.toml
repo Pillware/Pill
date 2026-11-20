@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 pill_engine = { path = "../../../../modules/engine/pill_engine" }
 # The master renderer's data only - components, assets, pipelines. The GPU
 # renderer is the host's, so this project does not carry wgpu in its own DLL.
-pill_master_renderer_data = { path = "../../../../modules/extensions/master_renderer/modules/runtime/data", default-features = false }
+pill_master_renderer_data = { path = "../../../../modules/extensions/pill_master_renderer/modules/runtime/data", default-features = false }
 serde = { version = "1", features = ["derive"] }
 
 [features]
