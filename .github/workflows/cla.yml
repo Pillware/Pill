@@ -1,0 +1,40 @@
+# CLA verification - PLACEHOLDER WORKFLOW
+#
+# REQUIREMENTS:
+#   The CLA Assistant GitHub App (https://github.com/apps/cla-assistant)
+#   installed on this public repository, and a ruleset on `main` requiring
+#   the `license/cla` status check.
+#
+# DESCRIPTION:
+#   CLA verification is done by the CLA Assistant GitHub App, not by this
+#   workflow. The App posts the `license/cla` status on every pull request,
+#   runs no pull request code and needs no secrets. The Actions-based
+#   alternative (CLA Assistant Lite) is archived and unmaintained, so it is
+#   not used. This job only prints where verification happens and holds no
+#   permissions.
+#
+# USAGE:
+#   Run by hand from the Actions tab. No inputs.
+#
+# EXAMPLE USAGE:
+#   gh workflow run cla.yml
+#
+# --- SCRIPT ---
+name: CLA verification (placeholder)
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  explain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # Documents the setup when run by hand.
+      - name: Explain where CLA verification happens
+        run: |
+          echo "CLA verification is performed by the CLA Assistant GitHub App."
+          echo "Required status check on main: license/cla"
+          echo "Agreements: legal/contributing/CLA.md and legal/contributing/CCLA.md. See legal/contributing/CONTRIBUTING.md."

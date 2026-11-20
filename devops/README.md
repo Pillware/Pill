@@ -82,6 +82,13 @@ test drives it. `tools/wasm_size_report.py` explains a web build's size: the
 shipped module's sections, its gzip size, the embedded asset pack, and (with
 `twiggy` on PATH) the code by crate - engine, project, standard library and
 third-party families - from the binary wasm-opt has not stripped yet.
+`tools/generate_third_party_licenses.py` writes a build's `licenses/`
+directory: the license notices of every crate compiled in (through
+cargo-about, checked against the accepted list in `modules/about.toml`), the
+Rust standard library's notice file and, for a NativeAOT C# build, the .NET
+runtime's. `ci_cd/build_shipping.py` and `tools/build_web.py` run it after
+every build; an unaccepted license fails the build, a missing cargo-about only
+warns.
 `tools/comment_audit.py` ranks the Rust sources by comment debt for a cleanup
 pass: process references (work-item ids, stage numbers, plan decisions),
 history wording, overlong doc blocks and TODO markers, weighted by the file's

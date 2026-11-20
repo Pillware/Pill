@@ -40,6 +40,12 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
+      - name: Install cargo-about
+        # The `licenses` step checks every dependency's license against
+        # modules/about.toml, and shipping builds write their notices with it.
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
       - name: verify.py (every step)
         # One step runs the whole gate, so CI cannot drift from the list.
         # verify.py prints each check as a collapsible log group and writes

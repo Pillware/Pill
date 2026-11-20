@@ -29,6 +29,11 @@
 .gitattributes text eol=lf
 Dockerfile*    text eol=lf
 
+# License texts: the official texts are reproduced byte for byte, so their
+# line endings must not change on checkout.
+/LICENSE                  text eol=lf
+/legal/licenses/*.txt     text eol=lf
+
 # Binary fixtures: never normalize, never diff.
 *.dll binary
 *.exe binary

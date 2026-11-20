@@ -257,6 +257,27 @@ STEPS: List[Step] = [
         ],
     ),
     Step(
+        "licenses",
+        "Third-party licenses (whole workspace)",
+        # Every crate any workspace member compiles, for the native host and
+        # the browser, must be under a license `modules/about.toml` accepts, so
+        # a new dependency under an unreviewed license fails here rather than
+        # at the next shipping build. The notices are written to build scratch
+        # and discarded; shipping and web builds write their own, exact list
+        # beside the build. Needs cargo-about.
+        [
+            [
+                PYTHON, str(REPOSITORY_ROOT / "devops" / "tools" / "generate_third_party_licenses.py"),
+                "--manifest-path", str(REPOSITORY_ROOT / "modules" / "Cargo.toml"),
+                "--workspace", "--all-features",
+                "--target", "x86_64-pc-windows-msvc",
+                "--target", "wasm32-unknown-unknown",
+                "--output-directory", str(REPOSITORY_ROOT / "build" / "build_meta" / "license_check"),
+            ],
+        ],
+        working_directory=REPOSITORY_ROOT,
+    ),
+    Step(
         "check-rendering",
         "Clippy (rendering posture)",
         [["cargo", "clippy", "-p", "pill_standalone", "--features", "rendering", "--", "-D", "warnings"]],

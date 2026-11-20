@@ -1,3 +1,8 @@
+> **License:** by using Pill Engine you accept the
+> [Pill Engine Community License](legal/licenses/COMMUNITY_LICENSE.md),
+> unless you use it under the EUPL-1.2 or a Partner License. See
+> [`LICENSE`](LICENSE).
+
 - Hot-reloading (standalone console, standalone window, editor)
   - Engine
   - Project
@@ -178,3 +183,8 @@ binary was not rebuilt), the build script re-copies it on the next `cargo build`
 - `dotnet run --project modules/csharp/pill_csharp_runtime/tests/csharp_runtime_tests.csproj -c Release` â€” Run the C# system discovery and scheduler-access tests.
 - `cargo test --workspace` â€” Run all Rust workspace tests.
 - `cargo check --workspace` â€” Type-check the complete Rust workspace without producing release binaries.
+
+## Contributing
+
+Contributions are welcome. 
+Read [`CONTRIBUTING`](legal/contributing/CONTRIBUTING.md) to learn more.

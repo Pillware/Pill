@@ -2,8 +2,10 @@
 
 # REQUIREMENTS: Python 3.8+, Rust toolchain (cargo) on PATH, PyYAML (the build
 #               report reads the project's settings file; the bundle generator
-#               needs it too). Run from anywhere; the script locates the
-#               repository root itself.
+#               needs it too), and cargo-about for the license notices
+#               (`cargo install cargo-about --locked --features cli`; without
+#               it the build warns and ships no notices). Run from anywhere;
+#               the script locates the repository root itself.
 
 # DESCRIPTION: Builds a shipping build in the release profile, which a plain
 #   `cargo build --release` cannot do.
@@ -49,6 +51,13 @@
 #   to `<project_root>/build/build_meta/pill_build_data`, and the finished
 #   artifacts are copied to `<project_root>/build/<timestamp>/` (e.g.
 #   build/01-09-2026_16-57).
+#
+#   A shipping host build also writes the third-party license notices into
+#   `licenses/` beside the binary (devops/tools/generate_third_party_licenses.py:
+#   every crate compiled in, the Rust standard library and, with --csharp-aot,
+#   the .NET runtime). A crate under a license `modules/about.toml` does not
+#   accept fails the build; when cargo-about is not installed, the build warns
+#   and ships without the notices.
 #
 #   On success the script prints a build analysis report: the project (name,
 #   path, author, description, version, modules), the target platform and
@@ -133,6 +142,11 @@ MISC_ARTIFACT_SUFFIXES = (".pdb", ".exp", ".lib")
 # The `pill_standalone` feature that selects the shipping posture: the runtime
 # and the generated bundle, and no development host.
 SHIPPING_FEATURE = "shipping"
+
+# Writes the third-party license notices of a shipping build, and the exit
+# code it returns when cargo-about is not installed.
+LICENSE_GENERATOR = Path("devops") / "tools" / "generate_third_party_licenses.py"
+LICENSE_GENERATOR_TOOL_MISSING = 3
 
 
 def collect_requested_features(arguments: list) -> set:
@@ -1130,6 +1144,59 @@ def copy_and_prune_artifacts(
     return copied_artifacts
 
 
+# Returns the value of a `--target` cargo argument, or None for the host.
+def extract_target(arguments: List[str]) -> Optional[str]:
+    for index, argument in enumerate(arguments):
+        if argument == "--target" and index + 1 < len(arguments):
+            return arguments[index + 1]
+        if argument.startswith("--target="):
+            return argument[len("--target=") :]
+    return None
+
+
+def write_license_notices(
+    request: BuildRequest, completed: subprocess.CompletedProcess
+) -> Optional[List[str]]:
+    """Writes the third-party license notices beside a shipping binary.
+
+    Returns the written files relative to the artifacts directory (empty when
+    cargo-about is missing, which only warns), or None when the generation
+    failed and the build must fail with it.
+    """
+    if completed.returncode != 0 or not request.shipping:
+        return []
+    command = [
+        sys.executable,
+        str(request.repository_root / LICENSE_GENERATOR),
+        "--manifest-path",
+        str(request.workspace_directory / "frontends" / "pill_standalone" / "Cargo.toml"),
+        "--output-directory",
+        str(request.artifacts_directory),
+        "--features",
+        " ".join(sorted(request.requested_features)),
+        "--title",
+        f"{request.build_binary_name or 'Pill Engine'} - third-party licenses",
+    ]
+    if "--no-default-features" in request.arguments:
+        command.append("--no-default-features")
+    target = extract_target(request.arguments)
+    if target:
+        command += ["--target", target]
+    if request.aot:
+        command.append("--dotnet-runtime")
+    print("Writing the third-party license notices.")
+    generated = subprocess.run(command, cwd=str(request.repository_root))
+    if generated.returncode == LICENSE_GENERATOR_TOOL_MISSING:
+        return []
+    if generated.returncode != 0:
+        return None
+    licenses_directory = request.artifacts_directory / "licenses"
+    return sorted(
+        str(path.relative_to(request.artifacts_directory))
+        for path in licenses_directory.iterdir()
+    )
+
+
 def print_build_report(request: BuildRequest, copied_artifacts: List[str]) -> None:
     """Prints the build analysis tree for a successful build."""
     branches = []
@@ -1251,6 +1318,16 @@ def main() -> int:
     completed = run_cargo(request)
 
     copied_artifacts = copy_and_prune_artifacts(request, completed)
+
+    license_notices = write_license_notices(request, completed)
+    if license_notices is None:
+        print(
+            "error: the third-party license notices could not be written "
+            "(see above); the build is not shippable without them.",
+            file=sys.stderr,
+        )
+        return 1
+    copied_artifacts += license_notices
 
     if completed.returncode == 0:
         print_build_report(request, copied_artifacts)

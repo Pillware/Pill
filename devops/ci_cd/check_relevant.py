@@ -396,6 +396,12 @@ def area_checks(paths: Sequence[str]) -> List[Check]:
         selected.append(verify_check("engine-layout", "manifests changed"))
         selected.append(verify_check("wrapper-entry-points", "manifests changed"))
 
+    # A new or upgraded dependency can bring a license `modules/about.toml`
+    # does not accept; unlike feature resolution, a lockfile change alone can
+    # do that.
+    add(verify_check("licenses", "dependencies or accepted licenses changed"),
+        has("**/Cargo.toml", "modules/Cargo.lock", "modules/about.toml"))
+
     # The suites and the gate are code too: their own rules plus the suite
     # that was touched (a manual-tier suite is only suggested, never run).
     # A changed suite's tokens are checked against the Rust sources that
@@ -454,7 +460,7 @@ RULE_GLOBS: List[Tuple[str, Tuple[str, ...]]] = [
     ("extensions", ("modules/extensions/**",)),
     ("csharp", ("modules/csharp/**", "modules/pill_csharp_compiler/**", "modules/pill_csharp_runtime/**",
                 "**/*.cs", "**/*.csproj")),
-    ("manifests", ("**/Cargo.toml", "modules/.cargo/config.toml", "modules/clippy.toml")),
+    ("manifests", ("**/Cargo.toml", "modules/.cargo/config.toml", "modules/clippy.toml", "modules/about.toml")),
     ("devops-suites", ("devops/tests/**",)),
     ("devops-infrastructure", ("devops/ci_cd/**", "devops/core/**")),
     ("examples", ("examples/**",)),

@@ -6,6 +6,9 @@
 #               on PATH (`cargo install wasm-pack`). On its first run wasm-pack
 #               downloads the `wasm-bindgen` CLI matching the crate version,
 #               and in a shipping build also `wasm-opt` unless `--no-wasm-opt`.
+#               cargo-about for the license notices (`cargo install cargo-about
+#               --locked --features cli`; without it the build warns and
+#               writes no notices).
 
 # DESCRIPTION: Builds a Rust project for the browser. It regenerates the
 #   shipping bundle and the web app crate (`generate_shipping_bundle.py
@@ -24,6 +27,11 @@
 #   workspace's `Cargo.lock` is copied in first, so the browser build resolves
 #   the same dependency versions as the native one. `RUSTC_WRAPPER` is cleared
 #   because sccache cannot spawn `web-sys`'s very long command line on Windows.
+#
+#   The third-party license notices of the crates compiled into the module
+#   are written into `licenses/` beside the page
+#   (devops/tools/generate_third_party_licenses.py). A crate under a license
+#   `modules/about.toml` does not accept fails the build.
 #
 #   Like a shipping build, this regenerates `build/pill_shipping_bundle`;
 #   restore the committed stub afterwards with
@@ -75,6 +83,11 @@ WEB_MODULE_NAME = "pill_web_app_bg.wasm"
 ASSET_PACK_FILE_NAME = "assets.pillpack"
 BUNDLE_DIRECTORY = Path("build") / "pill_shipping_bundle"
 WEB_PACK_DIRECTORY = "pack"
+# Writes the third-party license notices, and the exit code it returns when
+# cargo-about is not installed.
+LICENSE_GENERATOR = Path("devops") / "tools" / "generate_third_party_licenses.py"
+LICENSE_GENERATOR_TOOL_MISSING = 3
+WEB_TARGET = "wasm32-unknown-unknown"
 
 
 def repository_root() -> Path:
@@ -193,6 +206,26 @@ def main() -> int:
         return 2
     pack_path = output_directory / ASSET_PACK_FILE_NAME
     shutil.copyfile(pack_source, pack_path)
+
+    # The license notices of every crate compiled into the module, beside the
+    # page. A missing cargo-about only warns; a license problem fails.
+    status = run(
+        [
+            sys.executable,
+            root / LICENSE_GENERATOR,
+            "--manifest-path",
+            web_app_directory / "Cargo.toml",
+            "--target",
+            WEB_TARGET,
+            "--output-directory",
+            output_directory,
+            "--title",
+            "Pill Engine web build - third-party licenses",
+        ],
+        root,
+    )
+    if status not in (0, LICENSE_GENERATOR_TOOL_MISSING):
+        return status
 
     # Step 4: report where it is and how to open it.
     module_path = package_directory / WEB_MODULE_NAME
