@@ -3024,19 +3024,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pill_spline_uber_editor"
-version = "0.1.0"
-dependencies = [
- "pill_core",
- "pill_editor_core",
- "pill_engine",
- "pill_hot_scan",
- "pill_spline",
- "pill_spline_editor",
- "serde",
-]
-
-[[package]]
 name = "pill_standalone"
 version = "0.1.0"
 dependencies = [
