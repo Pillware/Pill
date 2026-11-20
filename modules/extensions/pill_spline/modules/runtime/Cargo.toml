@@ -27,10 +27,6 @@ pill_hot_scan = { path = "../../../../hosting/pill_hot_scan" }
 pill_core = { path = "../../../../engine/pill_core" }
 pill_engine = { path = "../../../../engine/pill_engine" }
 serde = { version = "1", features = ["derive"] }
-# `default-features = false` is a defensive no-op today (`pill_dummy_color`
-# declares no defaults); it stays so a default added there cannot pull extra
-# code into this crate's copies behind its back.
-pill_dummy_color = { path = "../../../pill_dummy_color/modules/runtime", default-features = false }
 
 [features]
 default = []

@@ -102,6 +102,9 @@ from core.scenario import (  # noqa: E402
 # =============================================================================
 
 SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
+# The component's own file: the derive, the registration helper and the demo
+# sample offset live there, while `register`/`init` stay in the crate root.
+SPLINE_COMPONENT_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "component.rs"
 
 # A module the project does not link. Its persistable component is therefore
 # declared by this artifact alone, which makes it the only subject in the
@@ -270,7 +273,7 @@ pub fn register(engine: &mut Engine) -> u32 {
 # attribute would have, so the rest of both builds compiles and every other
 # type-keyed behavior is unchanged.
 SPLINE_DERIVE_ORIGINAL = """\
-#[component(persistable, shared, gizmo = draw_spline_gizmo)]
+#[component(persistable, shared, gizmo = crate::gizmo::draw_spline_gizmo)]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Spline {"""
@@ -550,6 +553,11 @@ SESSION_A_SCENARIOS = [
                                 SPLINE_REGISTER_ORIGINAL,
                                 SPLINE_REGISTER_STUB_NO_REGISTRATION,
                             ),
+                        ],
+                    ),
+                    (
+                        SPLINE_COMPONENT_RS,
+                        [
                             (
                                 SPLINE_DERIVE_ORIGINAL,
                                 SPLINE_DERIVE_STUB_NO_REGISTRATION,
@@ -559,7 +567,7 @@ SESSION_A_SCENARIOS = [
                                 SPLINE_REGISTER_COMPONENT_STUB_NO_REGISTRATION,
                             ),
                         ],
-                    )
+                    ),
                 ],
                 wait_token=RELOAD_MODULE_TOKEN,
                 required_tokens=[MODULE_FORGOTTEN_WARN_TOKEN, "pill_spline::Spline"],
@@ -635,7 +643,7 @@ SESSION_A_SCENARIOS = [
 
 # The offset bump the cascade scenario makes, planned against the module source
 # as it is now. Its `delta` is what the probe check below is derived from.
-CASCADE_OFFSET_EDIT = edit_spline_sample_offset(read_source(SPLINE_LIB_RS))
+CASCADE_OFFSET_EDIT = edit_spline_sample_offset(read_source(SPLINE_COMPONENT_RS))
 
 
 def session_b_scenarios(monitor: OutputMonitor) -> Optional[Sequence[Scenario]]:

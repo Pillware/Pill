@@ -45,7 +45,7 @@ rustflags = ["-C", "prefer-dynamic"]
 # Windows needs none of this: its loader searches the executable's directory for
 # every import, and a Unix run path cannot reach the toolchain's std dylib in
 # either case, so both platforms stage that one beside the executable - see
-# `build_support/stage_std_dylib.rs`.
+# `frontends/build_support/stage_std_dylib.rs`.
 #
 # This table replaces `build.rustflags` rather than extending it, so
 # `-C prefer-dynamic` is repeated. It carries no target triple, so every Unix

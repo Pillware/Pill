@@ -23,7 +23,9 @@ members = [
     "hosting/*",
     # The frontends - `pill_standalone`, `pill_web` - and the `pill_input`
     # gamepad glue they and the editor share. Every crate here is named
-    # `pill_*`, the same convention as the extensions.
+    # `pill_*`, the same convention as the extensions; the glob matches that
+    # prefix only, so `frontends/build_support/` (build-script source, not a
+    # crate) is left alone.
     "frontends/pill_*",
     # The egui editor: its executable and its shared core dylib, and the
     # browser editor frontend (`pill_web_editor`), in their own folder beside

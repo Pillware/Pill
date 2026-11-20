@@ -3,8 +3,8 @@
 //! # Responsibilities
 //!
 //! - Copy the toolchain's `std` dylib beside the executable.
-//! - Include the shared staging code from `modules/build_support`; this script
-//!   only wires it up.
+//! - Include the shared staging code from `modules/frontends/build_support`;
+//!   this script only wires it up.
 //!
 //! # Design
 //!
@@ -15,7 +15,7 @@
 //! dylib into the shared target directory.
 
 // The staging code shared by every executable's build script.
-#[path = "../../build_support/stage_std_dylib.rs"]
+#[path = "../../frontends/build_support/stage_std_dylib.rs"]
 mod stage_std_dylib;
 
 fn main() {

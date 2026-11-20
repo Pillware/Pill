@@ -83,6 +83,9 @@ from core.scenario import Scenario, ScenarioPhase, ScenarioRunner, run_scenario 
 # `MANAGED_PROJECT_SYSTEMS_CS` and `MANAGED_PROJECT_COMPONENTS_CS` come from
 # `core.projects` through the star import above.
 SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
+# The component and the mirrored value types live in their own module; only
+# `register`/`init` stay in the crate root.
+SPLINE_COMPONENT_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "component.rs"
 SPLINE_GENERATED_FILE = (
     MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "generated" / "pill_spline_Components.g.cs"
 )
@@ -1161,7 +1164,7 @@ SESSION_SCENARIOS = [
         phases=[
             ScenarioPhase(
                 edits=[(
-                    SPLINE_LIB_RS,
+                    SPLINE_COMPONENT_RS,
                     [
                         (
                             """    #[pill_mirror_method]

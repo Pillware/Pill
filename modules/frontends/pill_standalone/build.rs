@@ -2,7 +2,8 @@
 //!
 //! # Responsibilities
 //!
-//! - Stage the std dylib through the shared `build_support` staging code.
+//! - Stage the std dylib through the shared `frontends/build_support` staging
+//!   code.
 //! - Refuse a non-debug build that enables `development`.
 //!
 //! # Design
@@ -19,7 +20,7 @@
 //! The binary itself refuses a build with neither mode or with both.
 
 // The shared staging code every executable's build script includes.
-#[path = "../../build_support/stage_std_dylib.rs"]
+#[path = "../build_support/stage_std_dylib.rs"]
 mod stage_std_dylib;
 
 fn main() {

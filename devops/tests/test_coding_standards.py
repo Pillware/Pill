@@ -1181,7 +1181,7 @@ PLACEHOLDER_MESSAGE_FILES = ("modules/csharp/pill_csharp_bridge/src/abi.rs",)
 # before logging starts. Test code prints to the harness, not to the engine.
 PRINT_ALLOWED_PATH_FRAGMENTS = (
     "/build.rs",
-    "modules/build_support/",
+    "modules/frontends/build_support/",
     "_macros/src/",
     "modules/frontends/pill_standalone/src/main.rs",
     "modules/editor/pill_editor/src/main.rs",
