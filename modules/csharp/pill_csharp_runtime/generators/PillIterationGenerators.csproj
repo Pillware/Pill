@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Target framework, language settings, the Roslyn component flags and the
+       pinned Roslyn version, shared with the other two components. -->
+  <Import Project="../RoslynComponent.props" />
+
+</Project>

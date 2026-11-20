@@ -1,0 +1,11 @@
+/target
+graphify-out/
+.github/copilot-instructions.md
+
+benchmarks/
+
+# Cache measurement pipeline artifacts
+performance_benchmarks/cache/artifacts/
+__pycache__/
+
+local/

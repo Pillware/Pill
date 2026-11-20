@@ -1,0 +1,12 @@
+# The managed twin of `cube_rust`: same scene, same files under `res`.
+#
+# The C# project builds into `<project>/bin/<Configuration>/net8.0`, which is
+# where the host loads the assembly from; the asset files are shared shape, not
+# shared code, so each project keeps its own `res`.
+
+name: "Cube (C#)"
+build_binary_name: "CubeCsharp"
+version: "0.1.0"
+description: "A spinning cube whose mesh and material are files under res, in C#."
+
+modules: []

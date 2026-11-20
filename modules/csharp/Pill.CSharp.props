@@ -1,0 +1,207 @@
+<!--
+  Everything the engine needs from a C# gameplay project, in one import.
+
+  Responsibilities
+  - Set the build properties the Rust host relies on: the target framework the
+    loader runs, and the runtimeconfig.json hostfxr needs to load a library.
+  - Reference the managed runtime, the named-query-row generator and the
+    gameplay scripting analyzers.
+  - Compile the C# mirrors of exactly the extensions the project loads:
+    `generated/*.g.cs` and `managed/*.cs` of the renderer's data crate and of
+    every module `project_settings.yaml` lists.
+  - Switch on the NativeAOT shipping posture when `EnablePillAot=true`: the
+    `unsafe` keyword, the `PILL_AOT` define, the AOT registry generator (which
+    also emits the loader's export forwarders) and `PublishAot`.
+
+  Design
+  A project's .csproj imports this file and declares nothing else unless it
+  wants to:
+
+    <Project Sdk="Microsoft.NET.Sdk">
+      <PropertyGroup>
+        <PillEngineRoot Condition="'$(PillEngineRoot)' == ''">../../modules/</PillEngineRoot>
+      </PropertyGroup>
+      <Import Project="$(PillEngineRoot)csharp/Pill.CSharp.props" />
+    </Project>
+
+  `PillEngineRoot` is only how the project finds this file: the host and the
+  shipping build pass it as a global property, and the fallback serves an IDE
+  or a test that builds the project on its own. Once imported, this file
+  re-derives the root from its own location, so nothing below depends on where
+  the project sits.
+
+  The module list is read from `project_settings.yaml` while MSBuild evaluates
+  the project - no file is generated - so the host, the shipping build, the
+  IDE and the tests all compile the same mirrors. A module the project does not
+  load would otherwise compile fine and fail only when called.
+
+  Properties a project may set before the import:
+  - `PillExtensionMirrors` (default `true`): compile the extension mirrors.
+  - `PillProjectSettings`: the settings file, when it is not beside the project.
+  Any property set after the import overrides the default here.
+-->
+<Project>
+
+  <!-- =====================================================================
+       Locations
+       ===================================================================== -->
+
+  <PropertyGroup>
+    <!-- This file's own directory is `<root>/csharp/`. -->
+    <PillEngineRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..'))</PillEngineRoot>
+    <PillRuntimeDirectory>$(PillEngineRoot)csharp/pill_csharp_runtime/</PillRuntimeDirectory>
+    <PillProjectSettings Condition="'$(PillProjectSettings)' == ''">project_settings.yaml</PillProjectSettings>
+    <PillProjectSettings>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(PillProjectSettings)'))</PillProjectSettings>
+    <PillExtensionMirrors Condition="'$(PillExtensionMirrors)' == ''">true</PillExtensionMirrors>
+  </PropertyGroup>
+
+  <!-- =====================================================================
+       Build properties
+       ===================================================================== -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- The project is a library, but the Rust host loads it through hostfxr,
+         which needs a runtimeconfig.json describing the target framework. -->
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+
+    <!-- Deliberately off by default: AllowUnsafeBlocks. The JIT-reloaded
+         assembly is trusted code - it is your project, and the host compiles
+         and loads it with the same rights as anything else the user runs.
+         This switch guards the `unsafe` KEYWORD, not memory safety: the
+         runtime's safe surface still hands out raw addresses
+         (`Engine.Bind(IntPtr)`, `MirrorMethods.Address`, a ComponentChunk's
+         row base), and `System.Runtime.CompilerServices.Unsafe` is ordinary
+         safe-to-call API that the generated mirrors already use. Leaving the
+         keyword off keeps accidental pointer code out of the common path; it
+         is not a sandbox.
+
+         The NativeAOT shipping posture needs the keyword: the assembly is
+         compiled into a static image that is never hot-reloaded, and the
+         loader export forwarders the AOT generator emits into it (in memory -
+         no file in the project) need raw pointers to re-export the loader ABI
+         from the AOT root. -->
+    <AllowUnsafeBlocks Condition="'$(EnablePillAot)' == 'true'">true</AllowUnsafeBlocks>
+    <DefineConstants Condition="'$(EnablePillAot)' == 'true'">$(DefineConstants);PILL_AOT</DefineConstants>
+  </PropertyGroup>
+
+  <!-- =====================================================================
+       Runtime, generators and analyzers
+       ===================================================================== -->
+
+  <ItemGroup>
+    <!-- The safe ECS facade the project's systems are written against. -->
+    <ProjectReference Include="$(PillRuntimeDirectory)csharp_runtime.csproj" />
+
+    <!-- Named query-row iteration: `foreach (var row in query.Rows())` with
+         one named accessor per term. The wrappers must be generated into THIS
+         compilation, so the generator is referenced here rather than flowing
+         in with the runtime reference: project-referenced analyzers are not
+         transitive. It is a separate project from the AOT registry generator,
+         which stays opt-in with the AOT posture. -->
+    <ProjectReference Include="$(PillRuntimeDirectory)generators/PillIterationGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+
+    <!-- The gameplay scripting rules (PILLxxxx). They exist because this is the
+         assembly that hot-reloads: an await that escapes its frame, a static a
+         parallel batch races on, or a static event that roots the retiring load
+         context are all things the runtime either refuses a run later or cannot
+         detect at all. Reporting them here makes them build errors instead. -->
+    <ProjectReference Include="$(PillRuntimeDirectory)analyzers/PillScriptAnalyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- =====================================================================
+       NativeAOT shipping posture
+       ===================================================================== -->
+
+  <!-- ProjectHost cannot load or reflect over the gameplay assembly under AOT
+       (no dynamic code, no reflection invokers), so the source generator
+       emits a direct, compile-time system registry and installs it through a
+       module initializer, and re-declares the loader's exports in the project
+       (NativeAOT exports only from the root assembly of a library publish).
+       Full type metadata keeps the GetTypes()-based component-manifest
+       discovery working.
+
+       The shipping build script switches the posture on with
+       `-p:EnablePillAot=true`; `PublishAot` itself is set HERE (not on the
+       command line) so the flag does not propagate as a global property onto
+       the generator projects, which target netstandard2.0 and must never be
+       AOT-compiled. Ordinary JIT builds never set EnablePillAot and pay
+       nothing. The RuntimeIdentifier is supplied by the shipping build. -->
+  <ItemGroup Condition="'$(EnablePillAot)' == 'true'">
+    <ProjectReference Include="$(PillRuntimeDirectory)macros/PillCSharpRuntimeMacros.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(EnablePillAot)' == 'true'">
+    <PublishAot>true</PublishAot>
+    <IlcGenerateCompleteTypeMetadata>true</IlcGenerateCompleteTypeMetadata>
+    <IlcGenerateStackTraceData>true</IlcGenerateStackTraceData>
+  </PropertyGroup>
+
+  <!-- =====================================================================
+       Extension mirrors
+       ===================================================================== -->
+
+  <!-- The modules the project loads, read from `project_settings.yaml` the way
+       the host reads it (`pill_development_host::config`): the renderer's data crate
+       `<renderer>_data` first - `renderer:` absent means the master renderer,
+       `none` means no renderer - then every name under `modules:`, in either
+       YAML list style. Property functions return escaped text, which is why
+       the results are unescaped before they become paths. -->
+  <PropertyGroup Condition="'$(PillExtensionMirrors)' == 'true' And Exists('$(PillProjectSettings)')">
+    <_PillSettingsText>$([System.IO.File]::ReadAllText('$(PillProjectSettings)'))</_PillSettingsText>
+
+    <_PillRenderer>$([System.Text.RegularExpressions.Regex]::Match($(_PillSettingsText), '(?m)^renderer:[ \t]*["'']?([A-Za-z0-9_]+)').Groups[1].Value)</_PillRenderer>
+    <_PillRenderer Condition="'$(_PillRenderer)' == ''">pill_master_renderer</_PillRenderer>
+    <_PillRendererData Condition="'$(_PillRenderer)' != 'none'">$(_PillRenderer)_data</_PillRendererData>
+
+    <_PillModuleSection>$([System.Text.RegularExpressions.Regex]::Match($(_PillSettingsText), '(?m)^modules:[^\r\n]*(?:\r?\n[ \t]*-[^\r\n]*)*').Value)</_PillModuleSection>
+    <_PillModules>$([System.Text.RegularExpressions.Regex]::Replace($(_PillModuleSection), '#[^\r\n]*|^modules:|[\[\]"'' \t]', '', System.Text.RegularExpressions.RegexOptions.Multiline))</_PillModules>
+    <_PillModules>$([MSBuild]::Unescape($([System.Text.RegularExpressions.Regex]::Replace($(_PillModules), '[\r\n,-]+', ';').Trim(';'))))</_PillModules>
+
+    <!-- The data crate goes first and only once, as the host loads it. -->
+    <_PillModules Condition="'$(_PillRendererData)' != ''">$([MSBuild]::Unescape($([System.Text.RegularExpressions.Regex]::Replace(';$(_PillModules);', ';$(_PillRendererData)(?=;)', ''))))</_PillModules>
+    <_PillModules>$([MSBuild]::Unescape($([System.Text.RegularExpressions.Regex]::Replace('$(_PillRendererData);$(_PillModules)', ';+', ';').Trim(';'))))</_PillModules>
+
+    <_PillExtensions>$(PillEngineRoot)extensions/</_PillExtensions>
+    <!-- A mirror is `<crate>/generated/<module>_Components.g.cs`, and the
+         crate sits under `<extension>/modules/` (one level deeper for the
+         master renderer's data crate), so `**` spans those levels. -->
+    <_PillMirrorGlobs Condition="'$(_PillModules)' != ''">$([MSBuild]::Unescape('$(_PillExtensions)*/modules/**/generated/$(_PillModules.Replace(';', '_Components.g.cs;$(_PillExtensions)*/modules/**/generated/'))_Components.g.cs'))</_PillMirrorGlobs>
+  </PropertyGroup>
+
+  <!-- The mirrors are derived from each module's real registered layout by the
+       host, which writes `generated/<module>_Components.g.cs` inside the
+       extension crate before the project builds (a committed copy bootstraps
+       builds with no host run). A module's hand-written conveniences live in
+       the `managed/` folder beside its mirror's `generated/` folder; the
+       target below finds them from the mirrors, so only a loaded module's
+       helpers are compiled. -->
+  <ItemGroup Condition="'$(_PillModules)' != ''">
+    <_PillMirror Include="$(_PillMirrorGlobs)" />
+    <Compile Include="@(_PillMirror)" />
+  </ItemGroup>
+
+  <Target Name="PillCollectManagedHelpers" BeforeTargets="CoreCompile" Condition="'@(_PillMirror)' != ''">
+    <ItemGroup>
+      <!-- The mirror's crate is its `generated/` folder's parent; the module's
+           hand-written helpers sit in that crate's `managed/` folder. -->
+      <_PillCrateDirectory Include="@(_PillMirror->'%(RootDir)%(Directory)..')" />
+      <_PillManagedDirectory Include="@(_PillCrateDirectory->'%(Identity)\managed')" Condition="Exists('%(Identity)\managed')" />
+    </ItemGroup>
+    <ItemGroup Condition="'@(_PillManagedDirectory)' != ''">
+      <_PillManagedFile Include="$([System.IO.Directory]::GetFiles('%(_PillManagedDirectory.Identity)', '*.cs'))" />
+      <Compile Include="@(_PillManagedFile)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

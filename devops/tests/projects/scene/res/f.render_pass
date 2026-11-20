@@ -1,0 +1,18 @@
+asset:
+  blend: false
+  cull: Back
+  depth_write: true
+  enabled: true
+  extra_targets: []
+  inputs: {}
+  kind: Geometry
+  material: null
+  order: 0
+  parameters: {}
+  shader: null
+  target: Surface
+  target_scale: 1
+  textures: {}
+asset_type: pill_master_renderer::RenderPass
+format_version: 1
+guid: 72f78e7b11216f8b65870072ed1369ec

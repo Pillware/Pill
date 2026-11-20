@@ -1,0 +1,18 @@
+name: "Scene Test Project"
+build_binary_name: "SceneTestProject"
+version: "0.1.0"
+author: "Matt Szymonski"
+description: "Four meshes, a themed UI layer and a fixed scene for the editor suites."
+
+# No extension modules: this test project is the editor, picking, surface, web and
+# asset target, and a module list would only add build time to every suite that
+# drives it. The reload and patch anchors live in the `native` test project.
+modules: []
+
+# The editor suites locate widgets through the editor's rect dumps and pace
+# themselves on its heartbeats, and the web smoke waits for the test project's own
+# per-input lines; all of them log at debug.
+logging:
+  targets:
+    engine::editor: debug
+    project: debug

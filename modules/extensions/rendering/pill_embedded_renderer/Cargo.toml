@@ -1,0 +1,39 @@
+[package]
+name = "pill_embedded_renderer"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[lib]
+# A host-linked library under `extensions/`, never a hot-loadable module. A
+# renderer needs per-frame `World` access and a frontend driving it; the module
+# ABI is a one-shot component registration, so loading this as a DLL would mean
+# inventing a per-frame render ABI for no benefit. Same crate shape as
+# `pill_wgpu_renderer`: plain `rlib`, no C-ABI exports, no build script, not
+# listed in any `project_settings.yaml`.
+crate-type = ["rlib"]
+
+[dependencies]
+pill_engine = { path = "../../../engine/pill_engine" }
+# `impl_trait_accessible!` for the renderer components, so the ECS can reach
+# them through its type-erased `dyn Component` storage.
+
+# NOTE: deliberately nothing else.
+#
+# This crate rasterizes on the CPU into a buffer it owns, so it needs no
+# graphics stack (`wgpu`, `bytemuck`, `pollster`) and no async executor. It
+# also declares no error type - rasterizing into an owned buffer cannot fail -
+# so it needs neither `pill_core_macros` for `#[engine_error]` nor the
+# `thiserror` / `miette` crates that attribute expands into.
+#
+# Nor does it depend on any display driver. `Renderer::frame_rgb565` hands the
+# finished frame to the caller, who writes it to an ST7789 or anything else
+# taking RGB565. That is what keeps this crate buildable and unit-testable on
+# an ordinary desktop rather than only on the machine wired to a panel.
+
+[features]
+# Deliberately empty. This crate is selected by whichever frontend links it,
+# so it has nothing of its own to gate.
+default = []

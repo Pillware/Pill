@@ -1,0 +1,13 @@
+# The cube whose mesh and material are authored as files under `res`.
+#
+# Its sibling `cube_csharp` draws the same scene from the same files, and the
+# `cube_no_editor` pair ships the model without a `.meta` and builds the
+# material in code. The editor's Assets tab lists these files because they live under `res`; nothing about
+# them requires the editor, so a game build runs the same project unchanged.
+
+name: "Cube"
+build_binary_name: "CubeRust"
+version: "0.1.0"
+description: "A spinning cube whose mesh and material are files under res."
+
+modules: []

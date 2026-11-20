@@ -1,0 +1,13 @@
+[package]
+name = "pill_hot_scan"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# Deliberately dependency-free. This crate is used from build scripts, which
+# run on the host machine before anything else compiles, so every dependency
+# would be paid on every clean build of every crate that participates in hot
+# patching.
+[dependencies]

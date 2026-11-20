@@ -1,0 +1,4 @@
+name: "Native Test Project"
+build_binary_name: "NativeTestProject"
+modules:
+  - "pill_spline"

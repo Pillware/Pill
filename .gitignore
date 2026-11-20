@@ -1,0 +1,86 @@
+# Rust build output.
+/target
+/devops/tests/project/target
+/modules/target
+# An official example, an extension example or a fixture project builds into
+# its own folder when cargo is run there rather than through the host.
+/examples/*/*/target/
+/devops/tests/projects/*/target/
+/modules/extensions/*/examples/*/target/
+# An extension crate run from its own folder builds beside it, one level below
+# the extension's `modules/` folder (two for the master renderer's crates).
+/modules/extensions/*/modules/*/target/
+/modules/extensions/*/modules/runtime/*/target/
+
+# C# build output, wherever a project lives.
+bin/
+obj/
+
+# Cooked shader output: `build.rs` regenerates the `*.wgsl` beside each `*.hlsl`.
+*.wgsl
+
+# Hot-reload runtime temp copies.
+modules/pill_standalone_temp/
+
+# Captured run output.
+*.log
+
+# Downloaded packages and installers; nothing here is part of the source tree.
+*.deb
+
+# Host-generated workspace members. The tracked READMEs keep their member
+# globs from matching nothing.
+modules/extensions/*/generated/
+modules/extensions/*/*/generated/
+modules/extensions/**/generated/
+!modules/extensions/_workspace_anchor/generated/
+modules/projects_generated/*
+!modules/projects_generated/README.md
+modules/editor/generated/*
+!modules/editor/generated/README.md
+
+# Generated build scratch, except the shipping-bundle stub. `pill_standalone`
+# declares the stub as a path dependency, and Cargo resolves every manifest
+# before it evaluates features, so the directory must exist even in builds that
+# never enable `shipping`. A shipping build overwrites it; restore it with
+# `git checkout -- build/pill_shipping_bundle`.
+**/build/*
+!build/pill_shipping_bundle/
+build/pill_shipping_bundle/*
+!build/pill_shipping_bundle/Cargo.toml
+!build/pill_shipping_bundle/src/
+build/pill_shipping_bundle/src/*
+!build/pill_shipping_bundle/src/lib.rs
+
+# Python bytecode.
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor and IDE state.
+.vscode/settings.json
+.idea/
+
+# Local agent tooling and generated Copilot instructions.
+.agents/*
+.claude/*
+.github/skills/*
+.github/instructions/*
+AGENTS.md
+.github/copilot-instructions.md
+
+# Example projects are a local checkout the devops suites read from disk; a
+# fresh clone does not carry them.
+/examples/local/
+
+# Measurement and profiling output.
+performance_benchmarks/cache/artifacts/
+/devops/pill_lab/measurements/
+
+# Scratch notes, probes and one-off data.
+/local/
+/modules/local/
+
+# Workflow data, kept in its own repository.
+.construction_site/
+.github/hooks/construction-site.json

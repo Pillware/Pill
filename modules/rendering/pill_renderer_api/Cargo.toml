@@ -1,0 +1,42 @@
+[package]
+name = "pill_renderer_api"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The renderer contract: the backend trait, the frame and its vocabulary, the
+# camera and viewport, and window handles as data. Linked by the host in every
+# posture, by every renderer and (through a renderer's data crate) by projects,
+# so it must never depend on wgpu or winit. Renderer-specific data lives in each
+# renderer's data crate (`extensions/pill_master_renderer/modules/runtime/data`), and the
+# dependencies are limited to what the contract itself needs (rule 3 of the
+# renderer data split).
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+# `#[engine_error]`, which expands to the `thiserror` and `miette` derives below.
+pill_core_macros = { path = "../../engine/pill_core_macros" }
+pill_engine = { path = "../../engine/pill_engine" }
+# The UI draw data the frame carries (plan decision: the frame carries UI
+# draw lists per surface, Stage 12; W-0032 moved the types out of `pill_ui`
+# so this contract never names the UI library). A shared `dylib`, like
+# `pill_core`, so the lists are one type identity across every artifact that
+# builds or draws them.
+pill_ui_frame = { path = "../pill_ui_frame" }
+
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+miette = { version = "7", features = ["derive"] }
+# Window handles as plain data (`RawWindowData`): the standard the windowing
+# crates (winit, tao) and wgpu share, with no windowing crate behind it.
+#
+# The features are pinned because this crate is shared: the host links `wgpu`
+# (which asks for `alloc` and `std`) while a module build never does, so
+# without the pin the two resolves compile two differently featured copies of
+# this crate and the module's artifact cannot import against the host's
+# (`devops/tests/test_engine_feature_drift.py`).
+raw-window-handle = { version = "0.6", features = ["alloc", "std"] }

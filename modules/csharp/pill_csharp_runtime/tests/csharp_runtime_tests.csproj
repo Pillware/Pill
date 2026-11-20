@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The one Roslyn version every project in this workspace shares, read by
+       the generator test's in-memory compilation. -->
+  <Import Project="../../Roslyn.props" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Keep the nested test -> project -> C# runtime project chain serialized.
+         MSBuild can otherwise fail its project-reference traversal silently
+         when this project is built with a high global node count. -->
+    <BuildInParallel>false</BuildInParallel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The gameplay assembly is the suite's own fixture project, kept beside
+         the devops suites so a checkout ships it. -->
+    <ProjectReference Include="../../../../devops/tests/projects/managed/managed.csproj" />
+    <!-- Named query-row iteration for the test systems, mirroring how a
+         gameplay project references the generator. -->
+    <ProjectReference Include="../generators/PillIterationGenerators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <!-- The AOT registry generator, referenced as an ordinary assembly so the
+         test can drive it over an in-memory compilation. -->
+    <ProjectReference Include="../macros/PillCSharpRuntimeMacros.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp"
+                      Version="$(PillRoslynVersion)" />
+  </ItemGroup>
+
+</Project>

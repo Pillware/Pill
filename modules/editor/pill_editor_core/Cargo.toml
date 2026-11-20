@@ -1,0 +1,97 @@
+[package]
+name = "pill_editor_core"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[lib]
+name = "pill_editor_core"
+path = "src/lib.rs"
+# A shared `dylib`, like `pill_engine_core`: the editor executable (docking)
+# and the reloadable editor shell module (panels, commands) both use these
+# types, and one compiled copy per process is what lets the same layout model
+# and command values cross between them. With `-C prefer-dynamic` every user
+# imports `pill_editor_core.dll`. A change to this crate therefore rebuilds its
+# users and restarts the editor (plan decision D17).
+#
+# `rlib` is kept for the crate's own unit tests and any static build.
+crate-type = ["rlib", "dylib"]
+
+# Every dependency below is pinned to the features the editor's builds union
+# onto it - none beyond their defaults - so the host's graph-only dependency on
+# this crate (`pill_development_host`'s `editor_core_dependency_graph`) resolves the same
+# tree as a module that uses it.
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+pill_core_macros = { path = "../../engine/pill_core_macros" }
+pill_engine = { path = "../../engine/pill_engine" }
+pill_assets = { path = "../../assets/pill_assets" }
+# The renderer contract: the scene grid's switch lives beside the surface
+# camera bindings the command flips.
+pill_renderer_api = { path = "../../rendering/pill_renderer_api" }
+# egui (plan decisions E1, E3), on the stack W-0026 moved to: egui 0.36.2,
+# whose `egui-wgpu` 0.36.2 renders through the engine's pinned wgpu 30, with
+# `egui_dock` 0.21.1 as the newest docking release that names this egui.
+# `default_fonts` is the one feature the editor needs; every consumer names
+# egui through this crate's re-exports, so the frontend, the shell and this
+# crate resolve one pinned copy.
+egui = { version = "0.36.2", default-features = false, features = [
+    "default_fonts",
+] }
+# The theme pipeline (W-0127): the shared plain theme data, and the rlib
+# translator + variants compiled into this dylib's own link unit (so no egui
+# value crosses a DLL boundary). Only this crate and `pill_project_ui` may
+# depend on the kit; both re-export it as `kit`.
+pill_ui_theme = { path = "../../ui/pill_ui_theme" }
+pill_ui_kit = { path = "../../ui/pill_ui_kit" }
+# Docking (plan decision E2): tabs, splits and undocked windows. `serde`
+# lets the layout model persist the dock.
+egui_dock = { version = "0.21.1", default-features = false, features = [
+    "serde",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+miette = { version = "7", features = ["derive"] }
+
+# Feature pins, in the project's usual style: this `dylib`'s exported symbol
+# names hash the features of every crate below it, and the egui editor's
+# module world (this crate plus the shell) and host world (this crate plus the
+# frontend and `egui-wgpu`) must resolve this tree identically, or each
+# produces its own `pill_editor_core.dll` and the shell would load
+# against type identities the frontend does not have.
+#
+# `epaint` is requested with `bytemuck` because `egui-wgpu` asks for it (its
+# vertex buffer conversion) and the module world never links `egui-wgpu`;
+# neither `egui` nor `egui_dock` adds features beyond the requests above, so
+# those need no extra pins.
+epaint = { version = "0.36.2", default-features = false, features = [
+    "bytemuck",
+] }
+# `egui` asks `bitflags` for its own use and the egui world adds nothing on
+# top; the host world's resolve does (the retired `pill_ui` asked for `serde`
+# through `cosmic-text`, and one process resolve unifies the tree). Pinned here
+# so the module world resolves the same tree the host builds this DLL with.
+bitflags = { version = "2", features = ["serde"] }
+# The same argument for the rest of the editor's shared tree, found by the gate
+# on 2026-10-21 (fourteen drift reports against this crate and the editor UI
+# library it absorbed, all of them features the host world turns on and a
+# module or project build does not). None of them is used directly.
+arrayvec = { version = "0.7", features = ["std"] }
+hashbrown = { version = "0.17", features = ["inline-more"] }
+kurbo = "0.13"
+read-fonts = "0.41"
+skrifa = "0.44"
+uuid = { version = "1", features = ["std"] }
+# `profiling` reaches this tree from `wgpu`, and a module that links `rapier3d`
+# (the physics extension) names it with its default `procmacros` feature. The
+# world without that module resolved it without, which split this DLL. Naming
+# it here with the union keeps one build per posture.
+profiling = "1"
+
+[dev-dependencies]
+# The asset store's trait-object access for the test asset types, at the
+# engine's own pinned revision so the tests link one copy.
+trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }

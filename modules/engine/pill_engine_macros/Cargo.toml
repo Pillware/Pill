@@ -1,0 +1,23 @@
+[package]
+name = "pill_engine_macros"
+version = "0.1.0"
+edition = "2021"
+description = "Procedural macros for Pill registration: #[derive(PillComponent)], #[pill_module], #[pill_project]."
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# `span-locations` is the feature the editor's own macro graph unifies onto
+# proc-macro2. Proc-macro dependencies resolve separately from the target
+# ones (resolver v2), so the pin in `pill_core`'s manifest does not reach them;
+# without it here, a module's macro host units carry different metadata than
+# the editor's, which changes every symbol of the engine dylibs the editor
+# loads (`devops/tests/test_engine_feature_drift.py` covers the target side
+# only; the editor probe covers this one).
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"
+syn = { version = "2", features = ["full", "extra-traits"] }

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything the engine needs from a C# project comes from one shared
+       import. PillEngineRoot only locates it: the host and the shipping build
+       pass it, and this fallback serves an IDE build.
+
+       No extension mirrors: the project selects `renderer: none` and declares
+       no modules, so there is nothing to mirror. -->
+  <PropertyGroup>
+    <PillEngineRoot Condition="'$(PillEngineRoot)' == ''">../../../modules/</PillEngineRoot>
+    <PillExtensionMirrors>false</PillExtensionMirrors>
+  </PropertyGroup>
+  <Import Project="$(PillEngineRoot)csharp/Pill.CSharp.props" />
+
+</Project>

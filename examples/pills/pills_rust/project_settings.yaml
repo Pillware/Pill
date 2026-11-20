@@ -1,0 +1,26 @@
+# Two hundred thousand pills drifting through a curl noise field, watched
+# through a free flying camera, with an in-game tuning overlay.
+#
+# The Rust twin of `pills_csharp` runs the same field; the two projects differ
+# only in the language the systems are written in. There is no level geometry
+# and no sky: the pill mesh draws every entity in the scene, and the overlay is
+# what the theme and the font under `res` dress.
+
+name: "Pills"
+build_binary_name: "PillsRust"
+version: "0.1.0"
+description: "A curl noise field of two hundred thousand pills, in Rust."
+
+modules: []
+
+# Log levels over the engine's defaults: `level` sets every target at once,
+# `targets` sets one each (off, error, warn, info, debug, trace). The renderer
+# logs every draw at `debug`, which with this many pills buries everything else.
+logging:
+  targets:
+    engine::rendering: info
+
+# Shipping and web builds start with debug drawing off; this demo shows its
+# overlay (the field's bounds, the axes, the tuning values) everywhere. F3
+# toggles it at runtime in any build.
+debug_draw: true

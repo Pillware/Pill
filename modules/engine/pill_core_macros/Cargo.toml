@@ -1,0 +1,20 @@
+[package]
+name = "pill_core_macros"
+version = "0.1.0"
+edition = "2021"
+description = "Procedural macro implementing the Pill semantic error DSL (#[engine_error])."
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# `span-locations` for the same reason as in `pill_engine_macros`: the
+# editor's macro graph unifies it onto proc-macro2, and proc-macro deps
+# resolve separately from the target ones, so it must be requested here for
+# module builds to carry the editor's macro-host metadata.
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"
+syn = { version = "2", features = ["full", "extra-traits"] }

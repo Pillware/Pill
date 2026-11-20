@@ -1,0 +1,60 @@
+# Scheduled heavy lanes: the end-to-end hot-reload suites and the hot-reload
+# benchmark. These drive real host processes and real builds, so they are not
+# per-commit checks. Every run's log is uploaded so the comparison scripts in
+# devops/benchmarks/ have durable output to read.
+#
+# Requirements on the runner: Rust stable (cargo), Python 3, and the .NET 8
+# SDK that the C# runtime compiles against.
+name: Nightly hot reload + benchmarks
+
+on:
+  # The schedule is disabled for now; uncomment it to re-enable the nightly run.
+  # The workflow still runs manually from the Actions tab.
+  # schedule:
+  #   # 04:00 UTC daily.
+  #   - cron: "0 4 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  hot-reload:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: modules
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build the standalone host
+        working-directory: modules
+        run: cargo build -p pill_standalone --features rendering
+      - name: "Nightly suites (SETS: nightly)"
+        shell: pwsh
+        run: python devops/tests/run_all.py --set nightly --keep-going *> nightly-suites.log
+      - name: "Nightly suites allowed to fail (SETS: nightly-allowed-to-fail)"
+        # These carry a known drift (the main hot-reload suite's session B), so
+        # a failure is captured and uploaded rather than failing the nightly.
+        # Remove the set from a suite once its drift is fixed.
+        shell: pwsh
+        continue-on-error: true
+        run: python devops/tests/run_all.py --set nightly-allowed-to-fail --keep-going *> nightly-allowed-to-fail.log
+      - name: Hot-reload benchmark
+        shell: pwsh
+        continue-on-error: true
+        run: python devops/benchmarks/hot_reload.py --iterations 3 *> hot-reload-benchmark.log
+      - name: Upload run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hot-reload-logs
+          path: "*.log"
+          if-no-files-found: ignore

@@ -1,0 +1,22 @@
+[package]
+name = "pill_ui_kit"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The UI kit (W-0127): the translator from a theme's tokens to egui's `Style`
+# and font definitions, and the scoped style variants. An `rlib`, embedded into
+# each UI dylib, so the translator runs inside the link unit that owns the egui
+# `Context` it writes to; egui values never cross a DLL boundary. Only
+# `pill_editor_core` and `pill_project_ui` may depend on it, and each re-exports
+# it (`pill_editor_core::kit`, `pill_project_ui::kit`).
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+egui = { version = "0.36.2", default-features = false, features = [
+    "default_fonts",
+] }
+pill_ui_theme = { path = "../pill_ui_theme" }

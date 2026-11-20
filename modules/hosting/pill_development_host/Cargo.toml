@@ -1,0 +1,102 @@
+[package]
+name = "pill_development_host"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+pill_hot_scan = { path = "../pill_hot_scan" }
+# Pinned, not optional: every project and module build this host spawns receives
+# `pill_engine/development` (see `build_runner::host_engine_features`), and the
+# shared engine dylibs' exported names hash their feature set. A host whose own
+# graph lacked it could not load the modules it builds.
+pill_engine = { path = "../../engine/pill_engine", features = ["development"] }
+pill_core = { path = "../../engine/pill_core" }
+# The renderer contract - the backend trait, the frame, the camera, window
+# handles as data - with no wgpu. Linked in every posture.
+pill_renderer_api = { path = "../../rendering/pill_renderer_api" }
+# The Rust half of the C#/Rust ABI: hosting .NET and running a C# project.
+# The host adds C# development tooling on top (mirror generation, the
+# in-process compiler); a C# shipping bundle links the bridge alone.
+pill_csharp_bridge = { path = "../../csharp/pill_csharp_bridge", features = ["hot_reload"] }
+# Runs the game: the engine, its frames, the renderer's window. The host wraps
+# it with everything developing needs; in the shipping posture the host is only
+# a re-export of it.
+pill_player = { path = "../pill_player" }
+# Dependency GRAPH only - never named in code, and renamed so any use stands
+# out; the same reason as `renderer_dependency_graph` below, for headless
+# builds too. The master renderer's data crate is an extension the host loads
+# (first, in every posture), and its module build is resolved together with the
+# host. Its dependencies turn on features in crates `pill_core` shares (glam's
+# `bytemuck`, for one), and cargo folds those into `pill_core.dll`'s symbol
+# names: without this entry a headless host would resolve a different
+# `pill_core.dll` than the data module and could not load it. Nothing
+# references it, so nothing of it is linked into the host.
+renderer_data_dependency_graph = { package = "pill_master_renderer_data", path = "../../extensions/pill_master_renderer/modules/runtime/data" }
+# Graph-only, like the renderer crates: the egui editor's executable, its
+# reloadable shell module share the `pill_editor_core` dylib, so the
+# host's resolved graph must include its tree for the module builds - the
+# reload included - to resolve the same features. Nothing in the host's code
+# names it.
+editor_core_dependency_graph = { package = "pill_editor_core", path = "../../editor/pill_editor_core" }
+# Dependency GRAPH only - never named in code, and renamed so any use stands
+# out. Every module and project build is resolved together with the running
+# host (see `build_runner::apply_cargo_host_overrides`), and cargo folds each
+# dependency's resolution into `pill_core.dll`'s symbol names. The renderer
+# module's build includes wgpu; if the host's did not, the two would link
+# different `pill_core.dll`s and the renderer module could not load. Declaring
+# the renderer here puts wgpu's graph into the host's resolution without
+# linking any of it: rlibs link as archives, and nothing references this one.
+renderer_dependency_graph = { package = "pill_master_renderer", path = "../../extensions/pill_master_renderer/modules/runtime/gpu", optional = true }
+libloading = "0.8"
+# The source and shader watchers, and the cooker the shader watcher runs - the
+# one the renderer data crate's build script runs, so a runtime cook matches the
+# build's.
+notify = "6"
+pill_assets = { path = "../../assets/pill_assets" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+# TOML parsing and editing for the generated workspace-member manifest and for
+# reading a project's own Cargo.toml. A real parser replaces the string surgery
+# that used to model tables, renames and arrays by hand.
+toml_edit = "0.22"
+tracing = "0.1"
+
+[dev-dependencies]
+# Tests declare small asset types of their own (`impl_trait_accessible!`). The
+# same revision the engine uses, so nothing new enters the resolved graph.
+trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
+
+[features]
+# This crate only exists for development builds, so its code is not behind a
+# feature of its own: `default` stays empty and the three `PILL_*` switches
+# decide at startup which watchers a run starts.
+default = []
+# A windowed host: the renderer module it loads and attaches to a frontend's
+# window (the frontend owns the event loop and the window). The host itself
+# links no renderer and no wgpu: the graphics stack exists only inside that
+# module. Nothing is forwarded to
+# `pill_engine` or `pill_core` - neither has a `rendering` feature, which is
+# what lets a module and a hot patch link the same engine the host does.
+rendering = ["dep:renderer_dependency_graph", "pill_player/rendering"]
+# Enable Tracy profiling: engine profiling zones plus the Tracy tracing layer.
+profiling = [
+    "pill_engine/profiling",
+    "pill_core/tracy",
+    "pill_player/profiling",
+]
+# Investigative fine-grained profiling zones.
+profiling-fine = [
+    "profiling",
+    "pill_engine/profiling-fine",
+    "pill_player/profiling-fine",
+]
+# Profiling with instrumentation verification (~50% overhead).
+profiling-verify = ["profiling", "pill_engine/profiling-verify"]
+# Repeated numerical measurements through the shared metrics recorder.
+metrics = ["pill_engine/metrics", "pill_player/metrics"]
+# Compile the simple developer log macros (`log!`, `warn!`, `error!`).
+dev-logs = ["pill_core/dev-logs"]

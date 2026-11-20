@@ -1,0 +1,47 @@
+[package]
+name = "pill_engine"
+version = "0.1.0"
+edition = "2021"
+
+# The crate every project and extension depends on, and every macro expands to
+# (`::pill_engine::...`). It re-exports the engine core (`pill_engine_core`)
+# under the same paths and owns the eight `inventory` registries, whose answers
+# must be per DLL: this crate is compiled into each DLL, so each DLL's
+# registries hold exactly what that DLL declared.
+
+[lints]
+workspace = true
+
+[dependencies]
+pill_engine_core = { path = "../pill_engine_core" }
+pill_core = { path = "../pill_core" }
+inventory = "0.3"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+# The engine's asset traits require `TraitAccessible<dyn Asset>`, and a test
+# crate that declares its own asset type implements it the way every real asset
+# crate does - with this macro.
+trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
+
+# Every feature is the core's; they live here so dependents keep naming
+# `pill_engine/<feature>`.
+[features]
+profiling = ["pill_engine_core/profiling"]
+profiling-fine = ["profiling", "pill_engine_core/profiling-fine"]
+profiling-memory = ["profiling", "pill_engine_core/profiling-memory"]
+profiling-minimal = ["pill_engine_core/profiling-minimal"]
+profiling-verify = ["profiling", "pill_engine_core/profiling-verify"]
+development = ["pill_engine_core/development"]
+metrics = ["pill_engine_core/metrics"]
+
+[lib]
+name = "pill_engine"
+path = "src/lib.rs"
+# Always an `rlib`: every DLL must embed its own copy, so that its registries
+# hold only its own entries.
+crate-type = ["rlib"]
+
+[[bin]]
+name = "pill_engine"
+path = "src/main.rs"

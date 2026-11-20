@@ -1,0 +1,25 @@
+[package]
+name = "editor_api_editor"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# Named after the crate rather than `lib.rs`, like every loadable artifact's
+# crate. `rlib` only: the editor host builds the `cdylib` through the generated
+# `host_module_editor_api_editor` wrapper in `projects_generated/`.
+path = "src/editor_api_editor.rs"
+crate-type = ["rlib"]
+
+[package.metadata.pill]
+# The editor frontend this crate is written against. A host running another
+# frontend leaves it out.
+editor_frontend = "egui"
+
+# The editor_api project's own editor crate: the proving case for the editor
+# API a project reaches through its editor part. Only an editor host builds it,
+# after the project, and it reloads with the project.
+[dependencies]
+pill_core = { path = "../../../../../modules/engine/pill_core" }
+pill_engine = { path = "../../../../../modules/engine/pill_engine" }
+pill_editor_core = { path = "../../../../../modules/editor/pill_editor_core" }
+pill_test = { path = "../../../../../modules/extensions/pill_test/modules/runtime", default-features = false }

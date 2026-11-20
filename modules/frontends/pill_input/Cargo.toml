@@ -1,0 +1,31 @@
+[package]
+name = "pill_input"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# Input glue shared by the frontends: turns a platform's events into the
+# engine's `InputEvent`s, and owns the gamepads. The engine and `pill_player`
+# never link a windowing or gamepad library; this crate is where those meet
+# the engine's input vocabulary. Linked only by frontends (`pill_standalone`,
+# `pill_web`, `pill_editor`, `pill_web_editor`), each picking the half it needs.
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+pill_engine = { path = "../../engine/pill_engine" }
+# winit's window and device events, for the frontends built on winit.
+winit = { version = "0.30", optional = true }
+
+# Gamepads through the gilrs library, under a readable dependency name. Native
+# only: the browser build has no gamepad backend here yet, and gilrs is not
+# compiled for it.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+gamepad_library = { package = "gilrs", version = "0.11", optional = true }
+
+[features]
+# Translate winit window and device events (`winit_events`).
+winit = ["dep:winit"]
+# Poll gamepads and play rumble through the library (`gamepads`). Does
+# nothing on the web.
+gamepad = ["dep:gamepad_library"]

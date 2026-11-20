@@ -1,0 +1,37 @@
+[package]
+name = "pill_web"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The browser frontend: runs a statically linked project in a page's canvas.
+# Every dependency is wasm-only, so on native targets this crate compiles to
+# nothing and the workspace's native builds are unaffected. The editor lives in
+# its own crate under `modules/editor/` (`pill_web_editor`).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+pill_core = { path = "../../engine/pill_core" }
+# What runs the project: the engine, the linked project and the renderer
+# attached to the canvas.
+pill_player = { path = "../../hosting/pill_player", features = ["rendering"] }
+# The canvas window and the browser's event loop.
+winit = "0.30"
+# The canvas's keyboard and mouse events as engine input events.
+pill_input = { path = "../pill_input", features = ["winit"] }
+wasm-bindgen = "0.2"
+# Awaiting a browser promise - the asset pack fetch - without blocking the page.
+wasm-bindgen-futures = "0.4"
+# Raw JS for calls web-sys has no typed bindings for (focus with preventScroll).
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "Response",
+    "Window",
+] }
+# Panic messages in the browser console instead of `unreachable`.
+console_error_panic_hook = "0.1"

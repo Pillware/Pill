@@ -1,0 +1,43 @@
+# Line-ending policy: one representation in the repository, no editor decides it.
+#
+# `text=auto` normalizes text to LF when staged (git tells text from binary on
+# its own), so a CRLF writer cannot produce a whole-file diff again. Two files
+# already paid that cost inside 7b84b3b - modules/pill_engine/src/query/tests.rs
+# (2,901 phantom lines) and modules/pill_engine/src/dynamic_buffer.rs (1,230) -
+# when endings drifted between the index and the working copy.
+#
+# `eol=lf` additionally pins the working copy for source types the toolchain,
+# the suites and the generators read line by line. Everything else keeps the
+# platform convention.
+* text=auto
+
+*.rs       text eol=lf
+*.toml     text eol=lf
+*.lock     text eol=lf
+*.py       text eol=lf
+*.sh       text eol=lf
+*.cs       text eol=lf
+*.csproj   text eol=lf
+*.cjs      text eol=lf
+*.ts       text eol=lf
+*.json     text eol=lf
+*.yaml     text eol=lf
+*.yml      text eol=lf
+*.css      text eol=lf
+*.md       text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+Dockerfile*    text eol=lf
+
+# License texts: the official texts are reproduced byte for byte, so their
+# line endings must not change on checkout.
+/LICENSE                  text eol=lf
+/legal/licenses/*.txt     text eol=lf
+
+# Binary fixtures: never normalize, never diff.
+*.dll binary
+*.exe binary
+*.lib binary
+*.pdb binary
+*.png binary
+*.ico binary

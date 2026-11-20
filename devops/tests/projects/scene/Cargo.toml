@@ -1,0 +1,23 @@
+[package]
+name = "scene"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+glam = "0.33"
+pill_engine = { path = "../../../../modules/engine/pill_engine" }
+# The master renderer's data only - components, assets, pipelines. The GPU
+# renderer is the host's; a project that linked it would carry wgpu in its own
+# DLL. `default-features = false`, as for every extension, keeps its module
+# exports out of this project's DLL.
+pill_master_renderer_data = { path = "../../../../modules/extensions/pill_master_renderer/modules/runtime/data", default-features = false }
+# The game's UI layer: the egui context, the theme resource and the frame slot
+# the renderer draws through. `install_with_theme` is what logs the theme the
+# UI suites match on.
+pill_project_ui = { path = "../../../../modules/ui/pill_project_ui" }
+serde = { version = "1", features = ["derive"] }
+
+[features]

@@ -1,0 +1,28 @@
+[package]
+name = "pill_ui_theme"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The UI theme pipeline's plain data (W-0127): a complete base `Theme`, the
+# sparse `ThemeOverrides` document merged over it, the `.theme` standalone
+# asset and the game/editor path scopes. A shared `dylib` like the other
+# cross-artifact type crates, so a project, `pill_project_ui`, the editor shell
+# and `pill_editor_core` share one `Theme` identity; egui-free, because the
+# translator that turns tokens into egui types is compiled into each UI's link
+# unit instead (`pill_ui_kit`).
+[lib]
+crate-type = ["rlib", "dylib"]
+
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+pill_engine_core = { path = "../../engine/pill_engine_core" }
+# The `Asset`/`StandaloneAsset` traits are keyed by `trait_type_map`; the
+# pinned revision is the one the core uses, so the trait object identity
+# matches.
+trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

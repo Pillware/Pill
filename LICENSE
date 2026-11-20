@@ -1,0 +1,53 @@
+Pill Engine - Licensing
+=======================
+
+Copyright (c) Mateusz Szymoński and the Pill Engine contributors.
+
+Pill Engine is free for everyone who builds with it, from a solo developer
+to a large studio, and it grows through what its community gives back. It
+is offered under three alternative licensing routes. Choose the one that
+fits you; you need only one, and the conditions of one never apply to
+someone using another, except obligations already taken on under it.
+Commercial use is allowed under all three. Using Pill Engine without
+choosing another licensing route means accepting the Community License. A
+"User Project" is anything built with Pill Engine: a game, simulation,
+visualization or other application.
+
+1. Community License - legal/licenses/COMMUNITY_LICENSE.md
+   Free for everyone, for commercial User Projects too, and your own code
+   always stays private. Your changes to the engine (Pill Engine
+   Modifications) may stay private below USD 300,000 Annual Revenue; once you
+   grow past it, you are required to share them with the community within
+   3 months, or switch to the Open Source licensing route or a Partner
+   License. No forks or standalone engines without permission.
+   Source-available, not OSI-approved open source.
+
+2. Open Source License - legal/licenses/EUPL-1.2_LICENSE.txt
+   SPDX-License-Identifier: EUPL-1.2
+   Free for everyone, with no revenue limit, for proprietary User Projects
+   too. When you distribute a User Project or make it available over a
+   network, you must make the source code of the Pill Engine version it
+   contains available under the EUPL-1.2. For an unchanged Pill Engine, a
+   link to the official repository is enough; if you changed it, publish
+   your version with your Pill Engine Modifications, for example as a
+   public fork. Your User Code stays private, as the Licensor's statement
+   in that file confirms.
+
+3. Partner License - legal/licenses/PARTNER_LICENSE.md
+   A paid agreement with the Licensor for keeping Pill Engine
+   Modifications private at any revenue, without the Community License's
+   publishing duty, for the code it covers. Partner funding is meant to
+   support the further development of Pill Engine, giving both partners and
+   the community a stronger engine to build on, while keeping it free for
+   everyone. In the future, it will go to a non-profit foundation for Pill
+   Engine, independent of any company, once that foundation exists (see
+   legal/GOVERNANCE.md). The Partner License is always a choice, never a
+   requirement, includes no support or maintenance unless the agreement says
+   otherwise, and exists only once signed by both parties.
+
+Third-party components keep their own licenses (see
+legal/THIRD_PARTY_NOTICES.md), which none of these licensing routes
+overrides.
+
+This file is only a summary. If it differs from the full text of the license
+you choose, the full text applies.

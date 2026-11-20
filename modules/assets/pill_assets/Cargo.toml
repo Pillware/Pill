@@ -1,0 +1,16 @@
+[package]
+name = "pill_assets"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# Deliberately dependency-free, for the same reason `pill_hot_scan` is: this
+# crate runs from build scripts, which run on the host before anything else
+# compiles, so every dependency would be paid on every clean build of every
+# crate that cooks assets. Globbing and timestamps come from `std`; the one
+# path dependency is the zero-dependency crate holding the pack format
+# constants its reader also compiles against.
+[dependencies]
+pill_asset_format = { path = "../pill_asset_format" }

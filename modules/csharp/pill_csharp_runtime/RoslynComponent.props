@@ -1,0 +1,50 @@
+<!--
+  REQUIREMENTS: MSBuild (dotnet SDK). Imported explicitly by each component.
+
+  DESCRIPTION: The build posture shared by every Roslyn component in this
+  runtime - the analyzers, the iteration generators and the runtime macros.
+
+    All three are the same kind of artifact: a netstandard2.0 assembly consumed
+    only as an analyzer, never shipped or executed directly. They had three
+    verbatim copies of this posture, including the Roslyn version, which is the
+    part that must not drift - see Roslyn.props for why.
+
+    NOT named Directory.Build.props, deliberately. This file sits beside
+    csharp_runtime.csproj, which targets net8.0 and is not a Roslyn component;
+    an auto-imported props file here would retarget it to netstandard2.0. Being
+    reached only by an explicit <Import> is what keeps it off everything that
+    is not a component.
+
+  USAGE: <Import Project="../RoslynComponent.props" /> as the first element of
+         a Roslyn component project.
+
+  EXAMPLE USAGE:
+    <Project Sdk="Microsoft.NET.Sdk">
+      <Import Project="../RoslynComponent.props" />
+    </Project>
+-->
+<Project>
+
+  <Import Project="../Roslyn.props" />
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- These projects are Roslyn components; they are only ever consumed as
+         analyzers, never shipped or executed directly. -->
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <!-- `PublishAot` propagates from the project being AOT-published; an
+         analyzer on netstandard2.0 must never be AOT-compiled itself. -->
+    <PublishAot>false</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp"
+                      Version="$(PillRoslynVersion)"
+                      PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

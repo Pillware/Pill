@@ -1,0 +1,13 @@
+# A pure simulation: no renderer, no assets, no window.
+#
+# `renderer: none` keeps both the GPU module and its data crate out of the load
+# order, so a run opens no device and draws nothing; the same project runs in
+# the headless host and in a windowed one.
+
+name: "Headless"
+build_binary_name: "HeadlessRust"
+version: "0.1.0"
+description: "An ECS-only simulation with no renderer, no assets and no window."
+
+renderer: "none"
+modules: []

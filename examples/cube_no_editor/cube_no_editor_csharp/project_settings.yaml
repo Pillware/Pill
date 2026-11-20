@@ -1,0 +1,13 @@
+# The cube whose model is a shipped OBJ and whose material is code, on the
+# managed side: no `.meta`, no scene file, no editor layer.
+#
+# The mesh is imported from `res/models/cube.obj` with
+# `MetadataPolicy.ReadIfPresent`, and the material is built through the mirror of
+# the renderer's builder - the same two steps the Rust twin takes.
+
+name: "Cube (No Editor, C#)"
+build_binary_name: "CubeNoEditorCsharp"
+version: "0.1.0"
+description: "A spinning cube from one OBJ file with no metadata, in C#."
+
+modules: []

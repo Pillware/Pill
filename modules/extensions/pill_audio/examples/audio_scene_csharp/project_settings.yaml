@@ -1,0 +1,14 @@
+# The audio example, managed: a sound, a listener and a source that plays it.
+#
+# The renderer stays at its default here, unlike the Rust twin: a C# project
+# cannot register a component, and the renderer's data crate is what provides
+# `TransformComponent` to managed code. The GPU module is still absent from a
+# headless run, so nothing draws and no device opens.
+
+name: "Audio Scene (C#)"
+build_binary_name: "AudioSceneCSharp"
+version: "0.1.0"
+description: "The managed twin of the audio example: a sound, a listener and a playing source."
+
+modules:
+  - "pill_audio"

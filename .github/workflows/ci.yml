@@ -1,0 +1,54 @@
+# Fast per-commit checks: every feature posture compiles, the unit tests run,
+# the comment/layout lint passes, and rustdoc's intra-doc links resolve.
+#
+# The heavy end-to-end lanes (hot reload, benchmarks) run on a schedule in
+# nightly.yml instead: they drive real host processes and real builds.
+#
+# Every command lives in devops/ci_cd/verify.py, the one list CI and
+# AGENTS.md share. CI runs the script once, so a step added there runs here
+# with no edit to this file. `python devops/ci_cd/verify.py --list` prints the
+# steps, and a local run of the script executes the same commands.
+name: CI
+
+on:
+  # Automatic triggers are disabled for now; uncomment them to re-enable CI.
+  # The workflow still runs manually from the Actions tab.
+  # push:
+  # pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fast:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: modules
+      - name: Install cargo-nextest
+        # verify.py runs the Rust test lanes through nextest when it is
+        # installed (per-test processes and per-test times) and falls back to
+        # `cargo test` when it is not, so CI installs it rather than letting
+        # the fallback quietly become the CI lane.
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Install cargo-about
+        # The `licenses` step checks every dependency's license against
+        # modules/about.toml, and shipping builds write their notices with it.
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - name: verify.py (every step)
+        # One step runs the whole gate, so CI cannot drift from the list.
+        # verify.py prints each check as a collapsible log group and writes
+        # its PASS/FAIL table to the job summary; --keep-going reports every
+        # failing check, not only the first.
+        run: python devops/ci_cd/verify.py --keep-going

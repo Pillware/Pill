@@ -1,0 +1,52 @@
+[package]
+name = "pill_project_ui"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# A shared `dylib` (plan decision D2): a project's UI context
+# must outlive a project reload, and one compiled copy per process keeps the
+# egui context, its fonts and its textures single-instance across the DLL
+# boundary. With `-C prefer-dynamic` every user imports `pill_project_ui.dll`.
+#
+# `rlib` is kept so a shipping build, which clears `prefer-dynamic`, links the
+# library statically.
+[lib]
+name = "pill_project_ui"
+path = "src/lib.rs"
+crate-type = ["rlib", "dylib"]
+
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+# The engine's core, never the `pill_engine` facade: the core is a shared
+# `dylib`, while the facade is an `rlib` compiled into every artifact, and an
+# `rlib` embedded in a `dylib` breaks the dependency-format check of every
+# binary that links both.
+pill_engine_core = { path = "../../engine/pill_engine_core" }
+# The neutral frame the renderer contract carries (`RenderFrame.ui`): the
+# tessellated output becomes this crate's plain data, and no egui type ever
+# crosses into `pill_renderer_api` (plan decision D1).
+pill_ui_frame = { path = "../../rendering/pill_ui_frame" }
+# The theme pipeline (W-0127): the shared plain theme data, and the rlib
+# translator + variants compiled into this dylib's own link unit. Only this
+# crate and `pill_editor_core` may depend on the kit; both re-export it as
+# `kit`.
+pill_ui_theme = { path = "../pill_ui_theme" }
+pill_ui_kit = { path = "../pill_ui_kit" }
+# egui, pinned here alone: every consumer names it through this crate's
+# re-export, so the whole engine has one egui (W-0026 moved the world to
+# 0.36.2). `default_fonts` is the one feature needed; the docking crate the
+# editor uses is deliberately absent (D2).
+egui = { version = "0.36.2", default-features = false, features = [
+    "default_fonts",
+] }
+
+# Feature pins, in the style of `pill_core`'s pin block: this
+# crate is a `dylib`, and its exported symbol names hash the features of every
+# crate below it, so a posture that unions features onto a crate in this tree
+# would make the host and a module disagree about its symbols. Neither crate
+# is used directly.
+arrayvec = { version = "0.7", features = ["std"] }
+bitflags = { version = "2", features = ["serde"] }

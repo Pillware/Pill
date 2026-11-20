@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything the engine needs from a C# project - the runtime, the query
+       generator, the scripting analyzers, the mirrors of the extensions
+       project_settings.yaml loads, and the NativeAOT shipping posture - comes
+       from one shared import. PillEngineRoot only locates it: the host and the
+       release script pass it, and this fallback serves an IDE build. -->
+  <PropertyGroup>
+    <PillEngineRoot Condition="'$(PillEngineRoot)' == ''">../../../../modules/</PillEngineRoot>
+  </PropertyGroup>
+  <Import Project="$(PillEngineRoot)csharp/Pill.CSharp.props" />
+
+</Project>

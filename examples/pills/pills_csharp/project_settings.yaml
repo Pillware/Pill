@@ -1,0 +1,19 @@
+# Two hundred thousand pills drifting through a curl noise field, watched
+# through a free flying camera, with an in-game tuning overlay.
+#
+# The managed twin of `pills_rust`: the same field and the same camera, written
+# against the C# scripting surface. Its `res` holds the same model, map,
+# material, font and theme the Rust project ships.
+
+name: "Pills (C#)"
+build_binary_name: "PillsCsharp"
+version: "0.1.0"
+description: "A curl noise field of two hundred thousand pills, in C#."
+
+modules: []
+
+logging:
+  targets:
+    engine::rendering: info
+
+debug_draw: true

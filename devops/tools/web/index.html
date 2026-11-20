@@ -1,0 +1,76 @@
+<!doctype html>
+<!--
+  REQUIREMENTS: a browser with WebGPU (Chrome/Edge 113+, Safari 18+, Firefox 141+),
+                served over HTTP (module scripts do not load from file://).
+  DESCRIPTION:  The page a Pill web build runs in. `devops/tools/build_web.py` copies
+                it beside the generated `pkg/` directory. The game draws on the
+                canvas with id `pill-canvas` (the id `generate_shipping_bundle.py
+                --web` compiles in); without WebGPU the page says so instead.
+  USAGE:        serve the build directory, e.g. `python -m http.server -d <dir>`,
+                and open http://localhost:8000/
+  EXAMPLE USAGE: python -m http.server 8000 -d devops/tests/projects/master_renderer_test/build/web
+  - SCRIPT -
+-->
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pill</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: #111;
+      overflow: hidden;
+    }
+
+    #pill-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #pill-message {
+      display: none;
+      position: absolute;
+      inset: 0;
+      margin: auto;
+      height: fit-content;
+      max-width: 36rem;
+      padding: 1rem;
+      color: #eee;
+      font: 16px/1.5 system-ui, sans-serif;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="pill-canvas"></canvas>
+  <p id="pill-message"></p>
+  <script type="module">
+    // Show a message in place of the game.
+    function showMessage(text) {
+      const message = document.getElementById("pill-message");
+      message.textContent = text;
+      message.style.display = "block";
+    }
+
+    // The renderer needs WebGPU; say so rather than failing inside the module.
+    if (!navigator.gpu) {
+      showMessage("This game needs WebGPU, which this browser does not provide.");
+    } else {
+      // Instantiating the module runs its start function, which starts the game.
+      import("./pkg/pill_web_app.js")
+        .then((module) => module.default())
+        .catch((error) => {
+          console.error(error);
+          showMessage("The game failed to start; the browser console has the details.");
+        });
+    }
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,18 @@
+# The collider-editing example: one entity with a collider, and nothing else.
+#
+# The renderer stays on, because this is the project the editor drives when a
+# reader drags a collider's handles: the shape has to be visible for its handles
+# to mean anything.
+
+name: "Collider Edit"
+build_binary_name: "ColliderEditRust"
+version: "0.1.0"
+author: "Matt Szymonski"
+description: "One cuboid collider the editor's collider tool edits by dragging its faces."
+
+modules:
+  - "pill_physics"
+
+logging:
+  targets:
+    project: debug

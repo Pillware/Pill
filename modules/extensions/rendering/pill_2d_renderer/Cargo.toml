@@ -1,0 +1,38 @@
+[package]
+name = "pill_2d_renderer"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[lib]
+# A host-linked library under `extensions/`, never a hot-loadable module. A
+# renderer needs a live window handle, per-frame `World` access and the
+# frontend's event loop; the module ABI is a one-shot component registration,
+# so loading this as a DLL would mean inventing a per-frame render ABI for no
+# benefit. Same crate shape as a generated host project member
+# (`host_project_<name>`): plain `rlib`, no C-ABI exports, no build script, not
+# listed in any `project_settings.yaml`.
+crate-type = ["rlib"]
+
+[dependencies]
+pill_core = { path = "../../../engine/pill_core" }
+# The `#[engine_error]` attribute that declares `RendererError`; it renders
+# through `pill_core::error`, which is why both are needed.
+pill_core_macros = { path = "../../../engine/pill_core_macros" }
+pill_engine = { path = "../../../engine/pill_engine" }
+# `impl_trait_accessible!` for the renderer components, so the ECS can reach
+# them through its type-erased `dyn Component` storage.
+wgpu = "26.0.1"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+# Expanded into by `#[engine_error]`, which builds on `thiserror` for the
+# `Error` impl and `miette` for the diagnostic derive.
+thiserror = "2"
+miette = { version = "7", features = ["derive"] }
+
+[features]
+# Deliberately empty. This crate is reached only through `pill_development_host`'s
+# `rendering` feature, so it has nothing of its own to gate.
+default = []

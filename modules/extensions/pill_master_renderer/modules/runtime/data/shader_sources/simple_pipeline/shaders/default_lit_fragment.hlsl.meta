@@ -1,0 +1,21 @@
+format_version: 1
+asset_type: pill_master_renderer::Shader
+guid: 73cff470b05f0370f5e4fba32f4d9b09
+settings:
+  vertex: common_shaders/default_vertex.wgsl
+  parameters:
+  - name: tint
+    type: Color
+  - name: specularity
+    type: Scalar
+  textures:
+  - name: color
+    type: Color
+    texture_binding: 0
+    sampler_binding: 1
+  - name: normal
+    type: Normal
+    texture_binding: 2
+    sampler_binding: 3
+  engine_parameters: true
+  camera_parameters: true

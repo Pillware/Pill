@@ -1,0 +1,37 @@
+<!--
+  REQUIREMENTS: MSBuild (dotnet SDK). Imported explicitly; never auto-imported.
+
+  DESCRIPTION: The one Roslyn version every project in this workspace that
+  touches Roslyn is built against.
+
+    Four projects load into one process. `pill_csharp_compiler` hosts Roslyn to
+    compile a reloaded gameplay assembly, and it loads the analyzers, the
+    iteration generators and the runtime macros into its own load context while
+    doing so. A component built against a newer Roslyn than the compiler hosts
+    fails to bind its entry types - and it fails on a hot reload, not at build
+    time, which is the worst place to discover it.
+
+    Four independently editable version strings is how that agreement breaks,
+    so there is one, here.
+
+  USAGE: <Import Project="path/to/Roslyn.props" /> then reference
+         $(PillRoslynVersion) in the PackageReference. The runtime's three
+         components do not import it directly: their shared posture,
+         `pill_csharp_runtime/RoslynComponent.props`, imports it for them.
+
+  EXAMPLE USAGE:
+    <Import Project="../Roslyn.props" />
+    <ItemGroup>
+      <PackageReference Include="Microsoft.CodeAnalysis.CSharp"
+                        Version="$(PillRoslynVersion)" />
+    </ItemGroup>
+-->
+<Project>
+
+  <PropertyGroup>
+    <!-- Bumping this moves the compiler and all three Roslyn components
+         together, which is the only way they may move. -->
+    <PillRoslynVersion>4.8.0</PillRoslynVersion>
+  </PropertyGroup>
+
+</Project>

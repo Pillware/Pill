@@ -1,0 +1,4 @@
+# The editor's project layer, merged over the editor's default theme (and over
+# the user's own file) while this project is open. `res/editor/` is never
+# packed into a game build, so the theme stays a development-time document.
+editor_theme: "editor/editor.theme"

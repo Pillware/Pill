@@ -1,0 +1,39 @@
+[package]
+name = "pill_web_editor"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The browser editor frontend: the egui editor in a page, the scene on one
+# canvas and the shell's UI on a transparent canvas above it. The browser
+# counterpart of `pill_editor`, in the editor layer beside it. Every dependency
+# is wasm-only, so on native targets this crate compiles to nothing.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+pill_core = { path = "../../engine/pill_core" }
+# The project's own renderer, attached to the scene canvas.
+pill_player = { path = "../../hosting/pill_player", features = ["rendering"] }
+# The engine types the editor runner reads directly (`Engine`, `InputEvent`).
+pill_engine_core = { path = "../../engine/pill_engine_core" }
+# The egui editor's model and boundary types, and egui's own wgpu renderer.
+pill_editor_core = { path = "../pill_editor_core" }
+# The game frontend's start-up and canvas helpers, shared so the two browser
+# frontends cannot diverge.
+pill_web = { path = "../../frontends/pill_web" }
+egui-wgpu = "0.36.2"
+# The device the editor's UI canvas is drawn through.
+wgpu = "30.0.0"
+# The canvases' windows and the browser's event loop.
+winit = "0.30"
+# The canvases' keyboard and mouse events as engine input events.
+pill_input = { path = "../../frontends/pill_input", features = ["winit"] }
+# The scripted channel's wasm export.
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "Window",
+] }

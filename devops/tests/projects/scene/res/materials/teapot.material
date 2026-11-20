@@ -1,0 +1,22 @@
+format_version: 1
+asset_type: pill_master_renderer::Material
+guid: 7f1ddabadc5f43868b99f466e7437fd4
+asset:
+  shader: 8cedb4197c9f26a86708b1cd14399eab
+  textures: {}
+  parameters:
+    pbr_base:
+      Color:
+      - 0.871359
+      - 0.057805
+      - 0.057805
+    pbr_emissive:
+      Color:
+      - 0.0
+      - 0.0
+      - 0.0
+    pbr_metallic:
+      Scalar: 0.1
+    pbr_roughness:
+      Scalar: 0.45
+  rendering_order: 255

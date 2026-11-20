@@ -1,0 +1,10 @@
+# Workspace-wide clippy configuration, read by every member crate.
+#
+# `std::time::Instant::now()` panics on `wasm32-unknown-unknown`, and a use
+# that compiles natively only fails once the game runs in a browser. The
+# engine's clock is `pill_core::platform::Instant`, which works on every
+# target; `pill_core/src/platform/clock.rs` is the one place allowed to name
+# the `std` type.
+disallowed-types = [
+    { path = "std::time::Instant", reason = "panics on the web; use `pill_core::platform::Instant`" },
+]

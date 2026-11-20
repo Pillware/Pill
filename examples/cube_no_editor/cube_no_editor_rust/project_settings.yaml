@@ -1,0 +1,14 @@
+# The cube whose model is a shipped OBJ and whose material is code: no `.meta`,
+# no scene file, no editor layer.
+#
+# Its sibling `cube` ships the same model with a committed `cube.obj.meta`; this
+# project imports it with `MetadataPolicy::ReadIfPresent`, so nothing is written
+# beside it and the project runs the same from a cargo test, a headless host and
+# a windowed one.
+
+name: "Cube (No Editor)"
+build_binary_name: "CubeNoEditorRust"
+version: "0.1.0"
+description: "A spinning cube from one OBJ file with no metadata, in Rust."
+
+modules: []

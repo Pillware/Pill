@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Target framework, language settings, the Roslyn component flags and the
+       pinned Roslyn version, shared with the other two components. -->
+  <Import Project="../RoslynComponent.props" />
+
+  <!-- Release tracking: every rule is listed in AnalyzerReleases.Unshipped.md
+       so RS2008 is satisfied and the rule set stays reviewable in one place.
+       The one thing this project has that the other components do not. -->
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+</Project>

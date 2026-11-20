@@ -1,0 +1,7 @@
+asset:
+  enabled: true
+  gain: 1.0
+  label: fixture
+asset_type: native::FixtureSettingsAsset
+format_version: 1
+guid: 53ce7e9c8eb540edc653bbf33660219e

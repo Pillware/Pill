@@ -1,0 +1,18 @@
+[package]
+name = "headless_rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# `cdylib` for a hot-reloading build, where the host loads this as a DLL.
+# `rlib` so a shipping or web build can link the project straight into the
+# binary - a cdylib cannot be a Rust library dependency.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pill_engine = { path = "../../../modules/engine/pill_engine" }
+serde = { version = "1", features = ["derive"] }
+# The derive `PillComponent` expands through this map.
+trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
+
+[workspace]

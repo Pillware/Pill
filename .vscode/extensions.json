@@ -1,0 +1,19 @@
+{
+    // Extensions the debug and analysis setup in this folder relies on.
+    "recommendations": [
+        // Rust analysis; configured in settings.json.
+        "rust-lang.rust-analyzer",
+        // `cppvsdbg`, the native debugger for the MSVC toolchain's PDBs.
+        "ms-vscode.cpptools",
+        // C# language support and the `coreclr` managed debugger.
+        "ms-dotnettools.csharp",
+        // Solution explorer and project system for Pill.sln.
+        "ms-dotnettools.csdevkit",
+        // Backs "View Binary Data" on a variable in the native debugger.
+        "ms-vscode.hexeditor",
+        // Optional native debugger for GNU-toolchain builds.
+        "vadimcn.vscode-lldb",
+        // Cargo.toml support.
+        "tamasfe.even-better-toml"
+    ]
+}

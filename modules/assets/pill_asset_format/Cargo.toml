@@ -1,0 +1,13 @@
+[package]
+name = "pill_asset_format"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# Deliberately dependency-free: the asset cooker runs from build scripts,
+# before anything else compiles, and the engine's asset store is the other
+# consumer. A constants crate is the only place both can share one definition
+# of the pack format without either depending on the other.
+[dependencies]

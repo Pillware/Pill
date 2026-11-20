@@ -1,0 +1,14 @@
+# The physics example: a stack of boxes falling onto a fixed ground plane.
+#
+# `renderer: none` keeps the GPU module and its data crate out of the load
+# order, so the example opens no window. The simulation runs the same headless
+# and windowed; only the drawing of it needs a renderer.
+
+name: "Stacked Boxes"
+build_binary_name: "StackedBoxesRust"
+version: "0.1.0"
+description: "A ground plane and a stack of dynamic boxes simulated by pill_physics."
+
+renderer: "none"
+modules:
+  - "pill_physics"

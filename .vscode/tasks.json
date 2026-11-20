@@ -1,0 +1,105 @@
+{
+    // Build tasks used as `preLaunchTask` by the debug configurations in
+    // launch.json. Each mirrors the flags of the equivalent `cargo run`
+    // command, minus `run`, so the debugger launches the binary itself.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            // Debug build of the standalone host with the rendering backend.
+            // Matches `cargo run --package pill_standalone --features rendering --offline`.
+            "label": "build standalone (debug)",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "build",
+                "--package",
+                "pill_standalone",
+                "--features",
+                "rendering",
+                "--offline"
+            ],
+            // The cargo workspace is `modules/`, not the repository root.
+            "options": {
+                "cwd": "${workspaceFolder}/modules"
+            },
+            "group": "build"
+        },
+        {
+            // The windowed host with per-function hot patching switched off. Use
+            // this when setting breakpoints inside registered systems: a patched
+            // implementation runs at a new address, so a breakpoint bound to the
+            // original body stops being hit. Patching is a startup switch now, so
+            // this is the ordinary build plus `PILL_FUNCTION_HOT_PATCHING=0`.
+            "label": "run standalone (debug, hot patching off)",
+            "type": "process",
+            "command": "${workspaceFolder}/modules/target/debug/pill_standalone.exe",
+            "dependsOn": "build standalone (debug)",
+            "isBackground": true,
+            "options": {
+                "cwd": "${workspaceFolder}/modules",
+                "env": {
+                    "PROJECT_PATH": "../devops/tests/projects/native",
+                    "PILL_FUNCTION_HOT_PATCHING": "0"
+                }
+            }
+        },
+        {
+            // Start the windowed host on the C# example with everything the
+            // managed debugger needs, and hand control back once the runtime is
+            // waiting for it. Used as the `preLaunchTask` of the C# attach
+            // configuration in launch.json.
+            //
+            // - `PILL_CSHARP_CONFIGURATION=Debug`: build the project and the
+            //   runtime unoptimized, so locals survive into the IL.
+            // - `PILL_WAIT_FOR_MANAGED_DEBUGGER=1`: block in the runtime's
+            //   `Init` (up to two minutes) until a managed debugger attaches,
+            //   so breakpoints in startup code bind.
+            //
+            // The host keeps running after the debug session ends; close its
+            // window or kill the task to stop it.
+            "label": "run standalone (C# project, waiting for managed debugger)",
+            "type": "process",
+            "command": "${workspaceFolder}/modules/target/debug/pill_standalone.exe",
+            "dependsOn": "build standalone (debug)",
+            "isBackground": true,
+            "options": {
+                "cwd": "${workspaceFolder}/modules",
+                "env": {
+                    "PROJECT_PATH": "../devops/tests/projects/project_cs",
+                    "PILL_CSHARP_CONFIGURATION": "Debug",
+                    "PILL_WAIT_FOR_MANAGED_DEBUGGER": "1"
+                }
+            },
+            // A background task is "ready" when its end pattern prints; the
+            // pattern that would report problems never matches.
+            "problemMatcher": {
+                "owner": "pill-host",
+                "pattern": {
+                    "regexp": "^__pill_host_reports_no_problems__$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "ECS host starting",
+                    "endsPattern": "waiting up to .* for a managed debugger"
+                }
+            }
+        },
+        {
+            // Debug build of the editor executable. Matches
+            // `cargo build --package pill_editor --offline`.
+            "label": "build editor (debug)",
+            "type": "shell",
+            "command": "cargo",
+            "args": [
+                "build",
+                "--package",
+                "pill_editor",
+                "--offline"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/modules"
+            },
+            "group": "build"
+        }
+    ]
+}

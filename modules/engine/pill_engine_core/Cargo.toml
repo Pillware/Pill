@@ -1,0 +1,126 @@
+[package]
+name = "pill_engine_core"
+version = "0.1.0"
+edition = "2021"
+
+# The engine itself: World, queries, scheduler, assets, persistence and the
+# hot-patch machinery. Projects and extensions never name this crate; they
+# depend on `pill_engine`, the facade that re-exports it and owns the per-DLL
+# registries. This crate must never depend on `pill_engine`: rustc links a crate
+# once, so a facade inside the core would be shared with the core instead of
+# embedded in every DLL.
+
+[lints]
+workspace = true
+
+[dependencies]
+pill_asset_format = { path = "../../assets/pill_asset_format" }
+pill_core = { path = "../pill_core" }
+pill_core_macros = { path = "../pill_core_macros" }
+pill_engine_macros = { path = "../pill_engine_macros" }
+trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
+tracy-client = { version = "0.18", optional = true, default-features = false }
+metrics = { version = "0.24", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The asset file format (`.meta` sidecars and standalone asset documents).
+# Already in the workspace through the development host's project settings.
+serde_yaml = "0.9"
+thiserror = "2"
+miette = { version = "7", features = ["derive"] }
+tracing = "0.1"
+# Random asset guids (`AssetGuid::random`). Already in the graph at this
+# version through `trait_type_map` -> `ahash`; `std` is the feature the
+# editor's graph unions onto it, pinned here so the host, every module and
+# every project resolve it alike (see pill_core's feature-pin note).
+#
+# Pin: a crate in this dylib's subtree that some build's graph unions
+# features onto. Not used directly.
+zerocopy = { version = "0.8", features = ["derive"] }
+
+# Pin: `serde_yaml` pulls `indexmap` -> `hashbrown` into this dylib's tree.
+# A windowed host also reaches `hashbrown` through `wgpu`, which turns its
+# default features on; a module build without that crate would compile it
+# plain, and the two copies of this dylib would export different names.
+# Naming the defaults here gives every graph the same resolution.
+# Not used directly.
+hashbrown = "0.17"
+
+# On the web, `getrandom` has no default source of randomness; `wasm_js` makes
+# it read the browser's crypto. Target-only, so native builds - and the
+# host/project dependency graph - do not change.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+getrandom = { version = "0.3", features = ["std"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+# The doc examples are written as a project sees the engine, `use pill_engine::...`,
+# so the doctests need the facade. A dev-dependency never links into this
+# library, so it does not break the rule above.
+[dev-dependencies]
+pill_engine = { path = "../pill_engine" }
+
+[features]
+# Full profiling: zones, text, plots, messages, threads, frame marks,
+# plus Tracy system-level features (sampling, context switches, CPU info).
+profiling = [
+    "dep:tracy-client",
+    "tracy-client/enable",
+    "tracy-client/sampling",
+    "tracy-client/context-switch-tracing",
+    "tracy-client/system-tracing",
+    "tracy-client/ondemand",
+    "tracy-client/code-transfer",
+    "tracy-client/callstack-inlines",
+    "tracy-client/crash-handler",
+    "pill_core/profiling",
+    "pill_core/tracy",
+]
+# Investigative fine-grained zones (`profile_scope_fine!` -> profile::fine).
+profiling-fine = ["profiling", "pill_core/profiling-fine"]
+# Tracy's memory view through a profiled global allocator. Only links into a
+# single-image build, see `ALLOC` in `src/lib.rs`.
+profiling-memory = ["profiling"]
+# Minimal overhead: zones + frame marks only. No text, plots, messages, or threads.
+profiling-minimal = [
+    "dep:tracy-client",
+    "tracy-client/enable",
+    "tracy-client/sampling",
+    "tracy-client/ondemand",
+    "pill_core/profiling-minimal",
+]
+# Debug: full profiling + instrumentation verification (~50% overhead).
+profiling-verify = [
+    "profiling",
+    "tracy-client/verify",
+    "pill_core/profiling-verify",
+]
+# The development posture: this process is a development host, so the engine
+# keeps the code only such a host reaches - per-function hot patching, the
+# persistence migration and re-homing a module swap needs, and the relayout
+# APIs that reshape component, resource and asset storage. A shipping build
+# never enables it, so it has no way to change a registered type's layout; see
+# `src/hot_patch.rs` and `src/persistence/migration.rs`.
+#
+# NOTE: a module or project built WITHOUT this feature is still safe to load
+# into a host built WITH it - `HotPatchRegistry` is an unconditional field, so
+# `Engine`s layout does not change. Such a module simply registers systems that
+# are not hot-patchable.
+development = []
+
+# Emit repeated numerical measurements through the shared `metrics` recorder.
+metrics = ["dep:metrics", "pill_core/metrics"]
+
+[lib]
+name = "pill_engine_core"
+path = "src/lib.rs"
+# A `dylib`, like `pill_core`: with `-C prefer-dynamic` every module, project
+# and patch imports `pill_engine_core.dll` instead of embedding the engine, so
+# the engine's code and statics exist once per process. A Rust `dylib` exports
+# every symbol; the Windows limit is 65,535 per DLL, and `verify.py`'s
+# `engine-exports` step fails before the count gets near it.
+#
+# `rlib` is kept so a shipping build, which clears `prefer-dynamic`, links the
+# engine statically.
+crate-type = ["rlib", "dylib"]

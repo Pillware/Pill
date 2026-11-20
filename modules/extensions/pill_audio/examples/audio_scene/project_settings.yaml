@@ -1,0 +1,14 @@
+# The audio example: a sound, a listener and a source that plays it.
+#
+# `renderer: none` keeps the GPU module and its data crate out of the load
+# order, so the example opens no window and no device beyond the audio output
+# the extension owns. It runs the same headless and windowed.
+
+name: "Audio Scene"
+build_binary_name: "AudioSceneRust"
+version: "0.1.0"
+description: "A sound loaded from res/, an audio listener and a source that plays it."
+
+renderer: "none"
+modules:
+  - "pill_audio"

@@ -1,0 +1,193 @@
+schema_version: 6
+state:
+  focused_surface: null
+  surfaces:
+  - Main:
+      collapsed: false
+      collapsed_leaf_count: 0
+      focused_node: 22
+      nodes:
+      - Vertical:
+          collapsed_leaf_count: 0
+          fraction: 0.76
+          fully_collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Horizontal:
+          collapsed_leaf_count: 0
+          fraction: 0.22
+          fully_collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Leaf:
+          active: 0
+          collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+          scroll: 0.0
+          tabs:
+          - Assets
+          viewport:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Leaf:
+          active: 0
+          collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+          scroll: 0.0
+          tabs:
+          - Entities
+          viewport:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Horizontal:
+          collapsed_leaf_count: 0
+          fraction: 0.7179487
+          fully_collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Leaf:
+          active: 0
+          collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+          scroll: 0.0
+          tabs:
+          - Scene
+          - SecondScene
+          - Game
+          viewport:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Vertical:
+          collapsed_leaf_count: 0
+          fraction: 0.55
+          fully_collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Leaf:
+          active: 0
+          collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+          scroll: 0.0
+          tabs:
+          - Inspector
+          viewport:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Leaf:
+          active: 0
+          collapsed: false
+          rect:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+          scroll: 0.0
+          tabs:
+          - Systems
+          - Preferences
+          viewport:
+            max:
+              x: null
+              y: null
+            min:
+              x: null
+              y: null
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+      - Empty
+  translations:
+    leaf:
+      close_all_button: Close window
+      close_all_button_disabled_tooltip: This window contains non-closable tabs.
+      close_all_button_menu_hint: Right click to close this window.
+      close_all_button_modifier_hint: Press modifier keys (Shift by default) to close this window.
+      close_all_button_modifier_menu_hint: Press modifier keys (Shift by default) or right click to close this window.
+      close_button_disabled_tooltip: This leaf contains non-closable tabs.
+      minimize_button: Minimize window
+      minimize_button_menu_hint: Right click to minimize this window.
+      minimize_button_modifier_hint: Press modifier keys (Shift by default) to minimize this window.
+      minimize_button_modifier_menu_hint: Press modifier keys (Shift by default) or right click to minimize this window.
+    tab_context_menu:
+      close_button: Close
+      eject_button: Eject

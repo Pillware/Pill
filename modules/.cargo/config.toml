@@ -1,0 +1,63 @@
+# Link Rust dependencies dynamically wherever a `dylib` artifact exists, so the
+# host executable and every extension, project and hot patch built from this
+# workspace share one copy of the engine's two dylibs, `pill_core` and
+# `pill_engine_core`, instead of each embedding a private one. Sharing them is
+# what keeps the engine's statics, thread-locals, Rayon pool and the tracing
+# dispatcher single-instance across the DLL boundary. The `pill_engine` facade
+# stays an `rlib` on purpose: its per-DLL registries must be embedded in each
+# DLL.
+#
+# Scope: this applies to crates built from inside `modules/`, which is every
+# crate that shares this workspace's `Cargo.lock`. Shared dynamic linkage
+# requires the exact same dependency resolution on both sides, because a Rust
+# dylib exports symbols mangled with a metadata hash derived from the resolved
+# graph. Projects live outside `modules/`, but the host builds each one through
+# a generated `projects_generated/host_project_*` member of this workspace, so
+# a project shares this lockfile and links the engine dylibs like an extension.
+#
+# A release-profile build links everything into one binary, needs no shared
+# library, and cannot combine `-C prefer-dynamic` with the release profile's
+# `lto = "fat"` - rustc refuses that pairing outright on Windows. Build it
+# through `devops/ci_cd/build_shipping.py` (or `.sh`), which clears the flag;
+# see below.
+[build]
+rustflags = ["-C", "prefer-dynamic"]
+
+# A release-profile build must clear this flag, and no cargo setting can do
+# it: cargo MERGES config arrays under the same key, so `--config build.rustflags=[]`
+# joins with the list above and changes nothing. A `[target.*]` table is no
+# better: it replaces `build.rustflags` wholesale, so `-C prefer-dynamic` has to
+# be repeated there - which is what the Unix table below does. Only an empty
+# `RUSTFLAGS` in the environment removes the flag, which a cargo alias cannot
+# set.
+#
+# Use `devops/ci_cd/build_shipping.sh` instead. It forwards its arguments, so it
+# is a drop-in replacement for `cargo build --release`.
+
+# A Unix loader resolves an object's imports from that object's own run path:
+# the executable's is not consulted for the libraries its libraries need, so
+# `pill_editor` would have to find `libpill_editor_core.so`, and that dylib in
+# turn `libpill_core.so`, each on its own. Every object built here therefore
+# carries `$ORIGIN` - the directory it was written to: `target/<profile>` for
+# the host binary and the engine dylibs beside it, the staging directory for a
+# module copy, where the engine dylibs it was built against may also be.
+#
+# Windows needs none of this: its loader searches the executable's directory for
+# every import, and a Unix run path cannot reach the toolchain's std dylib in
+# either case, so both platforms stage that one beside the executable - see
+# `frontends/build_support/stage_std_dylib.rs`.
+#
+# This table replaces `build.rustflags` rather than extending it, so
+# `-C prefer-dynamic` is repeated. It carries no target triple, so every Unix
+# target this workspace builds for gets the same run path.
+[target.'cfg(unix)']
+rustflags = ["-C", "prefer-dynamic", "-C", "link-arg=-Wl,-rpath,$ORIGIN"]
+
+# Use the LLD linker (bundled with the Rust toolchain) instead of MSVC's
+# `link.exe` on Windows. LLD is typically 2-4x faster at linking, which
+# matters for the hot-reload loop: every module and project reload relinks a
+# cdylib, and `link.exe` was the slowest step in the build. `rust-lld` is the
+# lld-link-compatible driver, so it drops in for the MSVC target without any
+# extra install.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"

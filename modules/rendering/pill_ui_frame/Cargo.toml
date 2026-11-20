@@ -1,0 +1,24 @@
+[package]
+name = "pill_ui_frame"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The plain draw data the UI library produces and the renderer contract
+# carries (`pill_renderer_api::RenderFrame.ui`): draw lists, the per-surface
+# UI frame, its textures and the slot it travels through. Split out of `pill_ui` so
+# `pill_renderer_api` can name the frame's UI type without depending on the
+# UI library (W-0032); a shared `dylib`, like the other cross-artifact type
+# crates, so the data has one identity across every artifact that builds or
+# draws it.
+[lib]
+crate-type = ["rlib", "dylib"]
+
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+# The `Resource` trait the frame slot implements (`slot::UiFrameSlot`). The
+# core is a shared `dylib` too, so this embeds nothing; the core itself never
+# names this crate.
+pill_engine_core = { path = "../../engine/pill_engine_core" }

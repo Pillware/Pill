@@ -1,0 +1,32 @@
+# Configuration for cargo-about, which lists the third-party crates compiled
+# into a build and the licenses they ship under. Read by
+# devops/tools/generate_third_party_licenses.py; a shipping or web build runs
+# that script and packs the result beside the build as
+# THIRD_PARTY_LICENSES.html.
+
+# Licenses a third-party crate may use. A crate under any other license makes
+# the generation fail, so a new dependency with an unreviewed license is
+# noticed before it ships. For a dual-licensed crate the first accepted
+# license in this list is the one recorded.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+
+# Build scripts, proc-macro helpers used only at build time and test crates
+# are not part of a distributed binary, so they need no notice.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true

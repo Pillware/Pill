@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything the engine needs from a C# project comes from one shared
+       import. PillEngineRoot only locates it: the host and the shipping build
+       pass it, and this fallback serves an IDE build. -->
+  <PropertyGroup>
+    <PillEngineRoot Condition="'$(PillEngineRoot)' == ''">../../../modules/</PillEngineRoot>
+  </PropertyGroup>
+  <Import Project="$(PillEngineRoot)csharp/Pill.CSharp.props" />
+
+</Project>

@@ -1,0 +1,61 @@
+[package]
+name = "pill_standalone"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+# `#[engine_error]`, and the crates its expansion derives from.
+pill_core_macros = { path = "../../engine/pill_core_macros" }
+thiserror = "2"
+miette = { version = "7", features = ["derive"] }
+# The frame driver, telemetry and the engine, in both modes.
+pill_player = { path = "../../hosting/pill_player" }
+# Development mode only: building, loading and watching modules. A shipping
+# build does not compile it at all.
+pill_development_host = { path = "../../hosting/pill_development_host", default-features = false, optional = true }
+# Windowed runs only: the window, its input and the gamepads.
+winit = { version = "0.30", optional = true }
+pill_input = { path = "../pill_input", features = [
+    "winit",
+    "gamepad",
+], optional = true }
+
+# Shipping mode only: the generated project bundle. The path is shared scratch
+# space; the committed stub keeps it resolvable and refuses to compile until
+# `generate_shipping_bundle.py` writes a generation (`--restore-stub` puts it
+# back).
+pill_shipping_bundle = { path = "../../../build/pill_shipping_bundle", optional = true }
+
+
+[features]
+# Exactly one of `development` and `shipping`; `main.rs` refuses neither or both.
+default = ["development"]
+# Development mode: the host builds, loads, watches and reloads modules. Which
+# watchers a run starts is a startup switch (`PILL_HOT_RELOADING` and friends),
+# not a feature.
+development = ["dep:pill_development_host"]
+# Shipping mode: the bundle's project runs statically. Build with
+# `--package pill_standalone`, never `--workspace`, which would union the
+# editor's host dependency back in and re-enable `development`.
+shipping = ["dep:pill_shipping_bundle"]
+# Windowed runs: the loop and input here, the renderer attach in the runtime.
+rendering = [
+    "dep:winit",
+    "dep:pill_input",
+    "pill_player/rendering",
+    "pill_development_host?/rendering",
+]
+# Tracy profiling; `profiling-fine` adds the fine-grained zones.
+profiling = ["pill_player/profiling", "pill_development_host?/profiling"]
+profiling-fine = [
+    "pill_player/profiling-fine",
+    "pill_development_host?/profiling-fine",
+]
+# The shared metrics recorder, for repeated numerical measurements.
+metrics = ["pill_player/metrics", "pill_development_host?/metrics"]
+# The developer scratch log macros (`log!`, `dev_warn!`, `dev_error!`).
+dev-logs = ["pill_core/dev-logs"]

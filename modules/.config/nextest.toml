@@ -1,0 +1,29 @@
+# cargo-nextest configuration for this workspace's Rust tests. nextest reads
+# it from the workspace root, `modules/`, so every `cargo nextest` run in the
+# repository sees the same settings.
+#
+# `verify.py` runs the unit-test lanes through `cargo nextest run` when nextest
+# is installed: each test gets its own process and its own line with its
+# duration, which `cargo test` cannot report. nextest does not run doctests, so
+# the same step runs `cargo test --doc` beside it.
+
+[profile.default]
+# Report every failing test, not only the first. `cargo test` ran them all, and
+# stopping early hides a second, unrelated breakage behind the first.
+fail-fast = false
+# Never retry a failing test: a retry that turns a flake green is exactly the
+# signal this pipeline exists to keep visible.
+retries = 0
+# A test slower than this is marked slow in the run's output. No termination:
+# these are unit tests, and killing one would only hide which test hung.
+slow-timeout = { period = "60s" }
+
+[profile.ci]
+# The profile `verify.py` selects, so a local run of the gate and a CI run use
+# the same settings. Written out rather than inherited, so it does not depend
+# on which nextest version reads it.
+fail-fast = false
+retries = 0
+# Tighter than the default profile: in CI the job timeout is the real limit,
+# and a test past half a minute is worth seeing in the summary.
+slow-timeout = { period = "30s" }

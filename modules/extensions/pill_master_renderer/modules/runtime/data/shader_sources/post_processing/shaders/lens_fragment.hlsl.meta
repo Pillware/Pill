@@ -1,0 +1,25 @@
+format_version: 1
+asset_type: pill_master_renderer::Shader
+guid: b8bbefccee6c141e5d42ee2a9cb79377
+settings:
+  vertex: post_processing/shaders/fullscreen_vertex.wgsl
+  parameters:
+  - name: shape
+    type: Color
+  - name: gamma
+    type: Color
+  - name: grade
+    type: Color
+  - name: grain
+    type: Color
+  textures:
+  - name: source
+    type: Color
+    texture_binding: 0
+    sampler_binding: 1
+  - name: grain
+    type: Color
+    texture_binding: 2
+    sampler_binding: 3
+  engine_parameters: true
+  camera_parameters: true

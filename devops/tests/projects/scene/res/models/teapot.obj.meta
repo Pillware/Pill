@@ -1,0 +1,6 @@
+format_version: 1
+asset_type: pill_master_renderer::Mesh
+guid: e009f22f04944252ac36f4600f62ca72
+settings:
+  flip_v: true
+  calculate_tangents: true

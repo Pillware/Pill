@@ -1,0 +1,243 @@
+[package]
+name = "pill_core"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[lib]
+# `dylib` makes this one shared library that the host executable and every
+# dynamically loaded module link against instead of each embedding a private
+# copy. That is what keeps the process-global state living here
+# single-instance across the DLL boundary, most importantly the `tracing`
+# dispatcher: a module linking its own copy has no subscriber installed, so
+# every log line it emits is silently dropped.
+#
+# `rlib` is kept so a monolithic release-profile build can link everything statically.
+crate-type = ["rlib", "dylib"]
+
+[dependencies]
+# `bytemuck` is part of the feature pin below.
+# `approx` and `nostd-libm` are pinned here rather than left to whoever asks:
+# `pill_core.dll`'s symbol names hash the features of every crate below it, so
+# a module whose dependency graph requests `glam` with more features than the
+# host did gets a `glam` build of its own, and the host then refuses to load it
+# as an engine-dylib mismatch. `parry3d`/`glamx`, which a physics module pulls
+# in, request both, so the engine asks for them too and every posture resolves
+# one `glam`.
+glam = { version = "0.33", features = [
+    "serde",
+    "bytemuck",
+    "approx",
+    "nostd-libm",
+] }
+# The companion pin. `glam`'s `approx` feature makes it implement `approx`
+# traits, so `approx` is in this crate's tree; a module that also pulls
+# `nalgebra` requests `approx` with `std`, and that alone gives the two `glam`
+# builds different inputs even with the features above equal. Naming it here
+# with the union keeps one build per posture.
+approx = { version = "0.5", features = ["std"] }
+pill_core_macros = { path = "../pill_core_macros" }
+# This crate is the one `dylib` every posture links - the shipping and browser
+# builds included - so it names no development-host crate. `notify` (the source
+# watcher) and `libloading` (the module loader) stood here for eight error
+# variants that carried their concrete types; those fields are boxed sources
+# now, and the crates that own the failed operation construct the concrete
+# error. Adding either back puts a watcher and a loader in every shipped binary
+# (W-0114).
+# `FixedString64` serializes through `#[serde(into/from)]`; glam pulls serde
+# in already, but naming it here is what lets this crate's own types derive.
+# `rc` is part of the feature pin below (the egui editor's stack turns it on).
+serde = { version = "1", features = ["alloc", "derive", "rc"] }
+serde_json = "1"
+thiserror = "2"
+miette = { version = "7", features = ["derive", "fancy"] }
+colored = "2"
+# The local date and time in log lines. `clock` reads the time zone on every
+# target; the web build adds `wasmbind` below to read it from the browser.
+chrono = { version = "0.4", default-features = false, features = [
+    "clock",
+    "std",
+] }
+tracing = "0.1"
+tracing-log = "0.2"
+# The one Rayon every DLL uses, re-exported as `pill_core::rayon`, for the
+# reason `tracing` lives here: a crate linked into `pill_core.dll` has a
+# single copy, statics and all. Rayon's global thread pool is such a
+# static. With a copy per DLL, every project generation started a pool of
+# its own whose idle workers stayed parked in that DLL's code, and the host
+# crashed when the reload graveyard unmapped it. A crate that names `rayon`
+# itself still gets this copy (rustc links a crate once, and this dylib
+# already holds it), but only while the versions match: keep a second
+# Rayon major version out of the graph.
+rayon = "1.10"
+# The default `tracing-log` feature would auto-bridge `log` inside
+# `SubscriberInitExt::init`; the bridge is owned explicitly in the telemetry
+# builder instead, so it is installed exactly once and its failure is reported
+# as a no-op rather than a panic.
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "smallvec",
+    "fmt",
+    "ansi",
+    "std",
+    "registry",
+    "env-filter",
+    "json",
+] }
+tracing-tracy = { version = "0.11", optional = true }
+tracy-client = { version = "0.18", optional = true }
+metrics = { version = "0.24", optional = true }
+
+# Feature pin. pill_core is a `dylib`, and its exported symbol names hash the
+# features of every crate below it. Cargo enables features per build, so a
+# build that also contains, say, the renderer (whose graph turns on `glam/bytemuck`
+# and `smallvec/union`) would produce a `pill_core.dll` whose symbols a host
+# built without it cannot provide - modules then fail to load with "procedure
+# could not be found". Requesting here every feature any host, module or project
+# build adds keeps pill_core's resolution identical in all of them, so the host
+# does not need the renderer crates in its own graph. None of these crates is
+# used directly. Measured with `local/temp/pill_core_feature_union.py`; extend
+# the list if a new module adds a feature to pill_core's tree. The editor is
+# the other source: the egui editor's stack (W-0017) unions `serde`'s `rc`,
+# `ahash`'s `no-rng`+`serde` and `ttf-parser`'s `gvar-alloc`; the retired
+# dioxus editor used to union `either/std`, `proc-macro2`'s `span-locations`,
+# `syn`'s `full`+`visit-mut` and `time/macros`, which stay pinned.
+bytemuck = { version = "1", features = [
+    "aarch64_simd",
+    "derive",
+    "extern_crate_alloc",
+    "min_const_generics",
+    "wasm_simd",
+] }
+ahash = { version = "0.8", features = ["no-rng", "serde"] }
+# `bitflags` and `miniz_oxide` joined on 2026-11-06, from the same incident: a
+# windowed host and a module build resolved them differently and every module
+# failed to load on Linux with `undefined symbol` (the diagnosis then named the
+# two `libpill_core.so` builds). `bitflags/serde` comes from the UI/renderer
+# stack the host links and a module build does not; `miniz_oxide/simd` is
+# reached from `miette` -> `backtrace`, and only the host's graph asked for it.
+# Both are portable, so they are pinned everywhere. `simd-adler32` is the
+# optional dependency `miniz_oxide/simd` turns on: `miniz_oxide` asks for it
+# with `default-features = false`, while the host's graph asks for it with its
+# defaults, so it is pinned with them too.
+bitflags = { version = "2", features = ["serde"] }
+miniz_oxide = { version = "0.8", features = ["simd"] }
+simd-adler32 = "0.3"
+crossbeam-utils = "0.8"
+either = { version = "1", features = ["std", "use_std"] }
+libm = { version = "0.2", features = ["arch"] }
+memchr = "2"
+num-traits = { version = "0.2", features = ["i128", "libm", "std"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+serde_core = { version = "1", features = ["alloc"] }
+# `const_new` joined in W-0004 Stage 7, when `pill_ui`'s icon tree reached it
+# through `kurbo` and the host posture included `pill_ui` while a module build
+# did not (that crate retired in W-0043; the pin stays part of this set).
+#
+# `serde` joined on 2026-10-21: the windowed host's graph reaches it through
+# the rendering stack, while a module or project build does not, so the two
+# resolved `pill_engine_core` to different symbol hashes and every module
+# failed to load against the host ("built against a different engine dylib").
+# Requesting it here makes every posture resolve the one `smallvec`.
+smallvec = { version = "1", features = [
+    "const_generics",
+    "const_new",
+    "serde",
+    "union",
+] }
+syn = { version = "3", features = ["full", "visit-mut"] }
+time = { version = "0.3", features = ["macros"] }
+ttf-parser = { version = "0.25", features = ["gvar-alloc", "no-std-float"] }
+
+# Three `windows-sys` pins (0.59, 0.60, 0.61) stood here until 2026-10-06;
+# they are gone for cost, not for drift: `test_engine_feature_drift.py` passes
+# with none of them, and 0.60 had no dependent left in this crate's tree at
+# all. Every hot patch links this crate's dylib, and each pinned version made
+# rustc generate one import library per DLL its features name - 68 per patch
+# link against 24 through the crates that genuinely use windows-sys
+# (colored -> 0.59; terminal_size, nu-ansi-term, winapi-util -> 0.61). That
+# cost ~100-160 ms of `rustc` link setup on every patch. Before re-adding any
+# pin here, count the `_imports_indirect.lib` entries in a patch link and keep
+# it near 24.
+#
+# One feature of the 0.61 pin came back on 2026-10-26 (W-0114): removing
+# `notify` took `walkdir` and its `winapi-util` out of this crate's own graph,
+# so every other build still reached `Win32_System_SystemInformation` and this
+# one stopped, and the drift check failed. The feature alone costs nothing -
+# it names `kernel32`, which the rest of this tree already links - while the
+# whole version would cost the 68 import libraries above.
+windows-sys = { version = "0.61", features = [
+    "Win32_System_SystemInformation",
+] }
+
+# The platform layer (`src/platform`) on native: the rolling log file and
+# blocking on a future.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tracing-appender = "0.2"
+pollster = "0.4"
+
+# The Unix half of the feature pin, added on 2026-11-06 for the Linux-only
+# drift that made every module fail to load with `undefined symbol`.
+#
+# A module build contains neither the renderer stack nor `nix`, while the host
+# contains both. `nix` - which `gilrs-core` pulls in only on
+# linux/dragonfly/freebsd - turns on `libc/extra_traits`, and `nix`/`terminal_size`
+# turn on most of `rustix`; `terminal_size` reaches this crate through
+# `miette`. Those features change the `-C metadata` of `libc`, `getrandom`,
+# `ahash`, `miette`, `pill_core` and `pill_engine_core`, so the module's imports
+# named symbols the host's copies do not export. Naming the union here makes
+# every Unix posture resolve the same build. None of these crates is used
+# directly.
+libc = { version = "0.2", features = ["extra_traits"] }
+rustix = { version = "1", features = [
+    "event",
+    "fs",
+    "net",
+    "pipe",
+    "process",
+    "shm",
+    "system",
+    "time",
+] }
+
+# The platform layer on the web: `performance.now()`/`Date.now()` for the
+# clock, the browser console for logs, the browser's event loop for futures.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+chrono = { version = "0.4", default-features = false, features = ["wasmbind"] }
+web-time = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["console"] }
+
+[dev-dependencies]
+log = "0.4"
+
+[features]
+dev-logs = []
+tracy = ["dep:tracing-tracy", "dep:tracy-client"]
+metrics = ["dep:metrics"]
+# Full profiling: zones, text, plots, messages, threads, frame marks,
+# plus Tracy system-level features (sampling, context switches, CPU info).
+profiling = [
+    "dep:tracy-client",
+    "tracy-client/enable",
+    "tracy-client/sampling",
+    "tracy-client/context-switch-tracing",
+    "tracy-client/system-tracing",
+    "tracy-client/ondemand",
+    "tracy-client/code-transfer",
+    "tracy-client/callstack-inlines",
+    "tracy-client/crash-handler",
+]
+# Investigative fine-grained zones (`profile_scope_fine!` -> profile::fine).
+profiling-fine = ["profiling"]
+# Minimal overhead: zones + frame marks only. No text, plots, messages, or threads.
+profiling-minimal = [
+    "dep:tracy-client",
+    "tracy-client/enable",
+    "tracy-client/sampling",
+    "tracy-client/ondemand",
+]
+# Debug: full profiling + instrumentation verification (~50% overhead).
+profiling-verify = ["profiling", "tracy-client/verify"]

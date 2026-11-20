@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Unmanaged function pointers, [UnmanagedCallersOnly] entry points, and
+         the raw-pointer EngineApi/Engine facade all live in this project, the
+         only project in the C# path allowed to use them. The project assembly
+         is trusted because it is the user's own build output; AllowUnsafeBlocks
+         guards a keyword, not memory safety. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- This is a library, but the Rust host loads it via hostfxr, which needs
+         a runtimeconfig.json describing the target framework. -->
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+
+    <!-- The AOT shipping posture (EnablePillAot, a global build-script
+         property) drops the [UnmanagedCallersOnly] attributes from
+         LoaderInterop so the root-assembly export forwarders in the gameplay
+         project can call the methods directly. -->
+    <DefineConstants Condition="'$(EnablePillAot)' == 'true'">$(DefineConstants);PILL_AOT</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Tests live below this project directory but are a separate executable. -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <!-- The Roslyn source generators and the gameplay analyzer live below this
+         directory too but are their own projects (compiled as analyzers, never
+         into the runtime). -->
+    <Compile Remove="macros/**/*.cs" />
+    <Compile Remove="generators/**/*.cs" />
+    <Compile Remove="analyzers/**/*.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,108 @@
+<!doctype html>
+<!--
+  REQUIREMENTS: a browser with WebGPU (Chrome/Edge 113+, Safari 18+, Firefox 141+),
+                served over HTTP (module scripts do not load from file://).
+  DESCRIPTION:  The page a Pill *editor* web build runs in.
+                `devops/tools/build_web.py --editor` copies it beside the
+                generated `pkg/` directory; the shell it links is the egui
+                one. Two stacked, pixel-aligned canvases: `pill-canvas`
+                below (the scene), `pill-editor-ui` above (the shell's
+                panels and overlays, drawn transparent), the arrangement
+                the native composition overlay uses.
+                `window.pillEditor.command("<line>")` pushes one line into
+                the scripted channel (the web counterpart of
+                `PILL_EDITOR_TEST_COMMANDS`); the headless suite drives it.
+  USAGE:        serve the build directory, e.g. `python -m http.server -d <dir>`,
+                and open http://localhost:8000/
+  EXAMPLE USAGE: python -m http.server 8000 -d devops/tests/projects/native/build/web
+  - SCRIPT -
+-->
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pill</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            background: #111;
+            overflow: hidden;
+        }
+
+        #pill-stack {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Both canvases fill the stack; the UI one sits above and stays
+       transparent where the shell drew nothing. */
+        #pill-canvas,
+        #pill-editor-ui {
+            position: absolute;
+            inset: 0;
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #pill-editor-ui {
+            z-index: 1;
+        }
+
+        #pill-message {
+            display: none;
+            position: absolute;
+            inset: 0;
+            margin: auto;
+            height: fit-content;
+            max-width: 36rem;
+            padding: 1rem;
+            color: #eee;
+            font: 16px/1.5 system-ui, sans-serif;
+            text-align: center;
+            z-index: 2;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="pill-stack">
+        <canvas id="pill-canvas"></canvas>
+        <canvas id="pill-editor-ui"></canvas>
+    </div>
+    <p id="pill-message"></p>
+    <script type="module">
+        // Show a message in place of the editor.
+        function showMessage(text) {
+            const message = document.getElementById("pill-message");
+            message.textContent = text;
+            message.style.display = "block";
+        }
+
+        // The renderer needs WebGPU; say so rather than failing inside the module.
+        if (!navigator.gpu) {
+            showMessage("This editor needs WebGPU, which this browser does not provide.");
+        } else {
+            // Instantiating the module runs its start function, which starts the
+            // editor. The module's `editor_command` is the scripted channel; it
+            // is callable once the initializer (`default`) has resolved.
+            import("./pkg/pill_web_app.js")
+                .then((module) => module.default().then(() => module))
+                .then((module) => {
+                    window.pillEditor = {
+                        command: (line) => module.editor_command(line),
+                    };
+                })
+                .catch((error) => {
+                    console.error("loading the editor failed", error);
+                    showMessage("The editor failed to load; see the console.");
+                });
+        }
+    </script>
+</body>
+
+</html>

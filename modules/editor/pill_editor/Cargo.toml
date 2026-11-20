@@ -1,0 +1,105 @@
+[package]
+name = "pill_editor"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+# The `#[engine_error]` attribute behind this binary's error type.
+pill_core_macros = { path = "../../engine/pill_core_macros" }
+# The engine's input event types this executable translates winit events
+# into, the same shared dylib `pill_input` maps into: frontends name the
+# core, never the `pill_engine` facade with its per-DLL registries.
+pill_engine_core = { path = "../../engine/pill_engine_core" }
+thiserror = "2"
+miette = { version = "7", features = ["derive"] }
+tracing = "0.1"
+# What runs the game: the frame driver this executable's loop is written
+# against, for hosting the project and its extensions in every posture.
+pill_player = { path = "../../hosting/pill_player", features = ["rendering"] }
+# The development host: builds, loads, watches and hot-patches the project
+# and every extension, including the editor shell module. The editor has no
+# shipping posture yet (Stage 25 decides what a shipped editor is), so
+# unlike `pill_standalone` this dependency is unconditional.
+pill_development_host = { path = "../../hosting/pill_development_host", default-features = false, features = [
+    "rendering",
+] }
+# The window and event loop: only frontends link winit.
+winit = "0.30"
+# The `windows` crate is a Windows-target dependency: its `Win32` modules and
+# the `#[implement]`/`windows_core` machinery do not exist on another target,
+# where it compiles to an empty stub. The clipboard, the OLE drag-out and the
+# DirectComposition overlay are the three places that name it, and each has a
+# per-platform implementation (`clipboard.rs`, `drag_out.rs`, `overlay.rs`).
+# It is declared at the bottom of this file, for the Windows target alone.
+# Only this executable names the `windows` crate: its large raw-dylib import
+# set must never reach a shared dylib (AGENTS.md).
+# winit's keyboard and mouse events as engine input events, shared with the
+# standalone.
+pill_input = { path = "../../frontends/pill_input", features = ["winit"] }
+# The editor's own renderer for its UI: the executable owns its wgpu device
+# and presents the editor with it (D8, D19). The same wgpu the renderer
+# module uses - a second version in one process would bring a second copy of
+# its global types.
+wgpu = "30.0.0"
+# egui's wgpu painter: it draws the shell's frame meshes into the
+# composition overlay's swapchain. Pinned to the egui family's version; it
+# resolves the same `wgpu` 25 the line above pins.
+egui-wgpu = "0.36.2"
+# The egui editor's shared core: the boundary resources both this executable
+# and the reloadable egui shell module speak, the egui and docking libraries
+# the shell draws with, the docking layout, the shared selection and the
+# editor snapshot the shell's tabs read. A shared dylib, so both sides agree
+# on the resource types' identity across a reload; consumed by both the
+# executable's fallback UI and the reloadable shell.
+pill_editor_core = { path = "../pill_editor_core" }
+# The theme tokens and the `.theme` asset the editor's look is built from
+# (W-0127): this executable is the side that resolves the layers - the user's
+# file and the project's `res/editor/` file - and the shell installs the merge.
+# A shared dylib, so the `Theme` on the snapshot is the same type both sides
+# name.
+pill_ui_theme = { path = "../../ui/pill_ui_theme" }
+# The asset settings documents the Inspector's asset rows edit are JSON.
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+# The composition overlay and the popup placement (Stage 21, D23/D24): the
+# DirectComposition device, target and visual that put the overlay above the
+# scene's child window, and the monitor work area the popups flip inside.
+# Pinned to the version wgpu-hal's DX12 backend uses, so the visual pointer
+# it takes and the one this crate hands it are the same COM interface.
+windows = { version = "0.58", features = [
+    "implement",
+    "Win32_Foundation",
+    "Win32_Graphics_DirectComposition",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+] }
+# The `#[implement]` macro's generated code names `windows_core` directly, so
+# the crate it lives in has to be nameable here.
+windows-core = "0.58"
+
+[features]
+# Tracy profiling for the editor's own code: the UI refresh path carries zones
+# (one per dock tab, the egui pass, the tessellation, the overlay's paint and
+# present) and one frame mark per redraw, all on the one client inside
+# `pill_core`. The feature lives here because an editor host anchors every
+# module build to this package, so the pair is also what `build_runner` passes
+# on: `host_posture_features` forwards whichever level the running binary was
+# built with, and the anchor reproduces the union on the shared dylibs.
+# `profiling-fine` adds the fine-grained lane.
+profiling = ["pill_player/profiling", "pill_development_host/profiling"]
+profiling-fine = [
+    "pill_player/profiling-fine",
+    "pill_development_host/profiling-fine",
+]

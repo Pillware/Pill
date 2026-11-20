@@ -1,0 +1,39 @@
+[package]
+name = "pill_csharp_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The Rust half of the C#/Rust ABI: hosting .NET (CoreCLR through hostfxr, or a
+# NativeAOT library), the callback table managed code calls, and C# systems,
+# components and resources. `pill_csharp_runtime` is the managed half; the two
+# change together. Linked by every build that runs C# - the development host and
+# a C# shipping bundle - and never by a module DLL or a web build.
+[dependencies]
+pill_core = { path = "../../engine/pill_core" }
+pill_engine = { path = "../../engine/pill_engine" }
+# The runtime's `ProjectBackend`, which a C# project is started through in a
+# shipping build. The runtime never depends back on the bridge.
+pill_player = { path = "../../hosting/pill_player" }
+libloading = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+# The tests bind real renderer components (`MeshRendererComponent`) through the
+# renderer data crate - the one place anything here names it.
+renderer_data_dependency_graph = { package = "pill_master_renderer_data", path = "../../extensions/pill_master_renderer/modules/runtime/data" }
+
+[features]
+# The reloading posture: polling the collectible loader, applying a changed
+# component manifest, re-registering systems, republishing the asset exports.
+# Enabled by `pill_development_host`; a shipping bundle leaves it off.
+#
+# It also enables the engine's `development` feature, which is what makes the
+# relayout and re-homing APIs the reshape arms call exist at all. A shipping
+# build therefore compiles the arms out and refuses a changed manifest instead
+# of reshaping storage.
+hot_reload = ["pill_engine/development"]

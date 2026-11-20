@@ -1,0 +1,145 @@
+{
+    // Debug configurations for the standalone host.
+    //
+    // `cargo run` from a terminal attaches no debugger, so editor breakpoints
+    // never bind. Launch through the Run and Debug panel (F5) with one of
+    // these instead.
+    //
+    // `cppvsdbg` requires the "C/C++" extension (ms-vscode.cpptools) and is
+    // the right adapter for the `*-pc-windows-msvc` toolchain, which produces
+    // PDBs. The CodeLLDB alternative is included below for anyone on a GNU
+    // toolchain.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug standalone (rendering)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "build standalone (debug)",
+            "program": "${workspaceFolder}/modules/target/debug/pill_standalone.exe",
+            "args": [],
+            "stopAtEntry": false,
+            // The host resolves `extensions/` relative to the process working
+            // directory and expects to be launched from the engine workspace
+            // root, which is `modules/`. Launching from anywhere else fails
+            // with "extension <name> is in no extension folder under extensions/".
+            "cwd": "${workspaceFolder}/modules",
+            "environment": [
+                {
+                    // Required by `HostConfig::from_environment`; there is no
+                    // other source for it. Relative to the workspace root above.
+                    "name": "PROJECT_PATH",
+                    "value": "../devops/tests/projects/project_rs"
+                }
+            ],
+            // Extensions are built into `target/hot/build`, not
+            // `target/debug`, and are loaded from unique temporary copies that
+            // carry no PDB beside them. Naming both build outputs lets the
+            // debugger find module symbols when the host loads a module at
+            // runtime. Without them a line breakpoint in a module's `lib.rs`
+            // can bind to an unrelated crate's `lib.rs` by filename alone.
+            "symbolOptions": {
+                "searchPaths": [
+                    "${workspaceFolder}/modules/target/hot/build/debug",
+                    "${workspaceFolder}/modules/target/debug"
+                ],
+                "searchMicrosoftSymbolServer": false
+            },
+            "console": "integratedTerminal"
+        },
+        {
+            // Use this one for breakpoints inside registered systems.
+            "name": "Debug standalone (no hot patch)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "build standalone (debug, no hot patch)",
+            "program": "${workspaceFolder}/modules/target/debug/pill_standalone.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/modules",
+            "environment": [
+                {
+                    "name": "PROJECT_PATH",
+                    "value": "../devops/tests/projects/project_rs"
+                }
+            ],
+            "symbolOptions": {
+                "searchPaths": [
+                    "${workspaceFolder}/modules/target/hot/build/debug",
+                    "${workspaceFolder}/modules/target/debug"
+                ],
+                "searchMicrosoftSymbolServer": false
+            },
+            "console": "integratedTerminal"
+        },
+        {
+            // Managed (C#) debugging of the C# example project.
+            //
+            // The host boots the .NET runtime itself, so there is nothing for
+            // the managed debugger to launch: the pre-launch task starts the
+            // host with a Debug C# build and the runtime waiting in `Init`, and
+            // this configuration attaches to it by process name.
+            //
+            // Requires the C# extension (ms-dotnettools.csharp). Rust code is
+            // not debuggable from this session; use a `cppvsdbg`
+            // configuration above for that, or Visual Studio's mixed mode to
+            // step across the boundary in one session.
+            "name": "Debug C# project (managed attach)",
+            "type": "coreclr",
+            "request": "attach",
+            "processName": "pill_standalone.exe",
+            "preLaunchTask": "run standalone (C# project, waiting for managed debugger)"
+        },
+        {
+            // Attach the managed debugger to a host that is already running,
+            // picked from a list. Breakpoints only bind in code the host loaded
+            // with symbols - start it with `PILL_CSHARP_CONFIGURATION=Debug`.
+            "name": "Attach C# to running host (pick process)",
+            "type": "coreclr",
+            "request": "attach",
+            "processId": "${command:pickProcess}"
+        },
+        {
+            // Alternative adapter: CodeLLDB (vadimcn.vscode-lldb). Kept for
+            // GNU-toolchain builds; on windows-msvc prefer cppvsdbg above,
+            // whose PDB support is stronger.
+            "name": "Debug standalone (CodeLLDB)",
+            "type": "lldb",
+            "request": "launch",
+            "preLaunchTask": "build standalone (debug)",
+            "program": "${workspaceFolder}/modules/target/debug/pill_standalone.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/modules",
+            "env": {
+                "PROJECT_PATH": "../devops/tests/projects/project_rs"
+            }
+        },
+        {
+            // The editor executable (Stages 17-35 of W-0004). Module builds
+            // land in `target/hot/build` as usual, so the same symbol search
+            // paths as the standalone configurations apply.
+            "name": "Debug editor (rendering)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "preLaunchTask": "build editor (debug)",
+            "program": "${workspaceFolder}/modules/target/debug/pill_editor.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/modules",
+            "environment": [
+                {
+                    "name": "PROJECT_PATH",
+                    "value": "../devops/tests/projects/project_rs"
+                }
+            ],
+            "symbolOptions": {
+                "searchPaths": [
+                    "${workspaceFolder}/modules/target/hot/build/debug",
+                    "${workspaceFolder}/modules/target/debug"
+                ],
+                "searchMicrosoftSymbolServer": false
+            },
+            "console": "integratedTerminal"
+        }
+    ]
+}

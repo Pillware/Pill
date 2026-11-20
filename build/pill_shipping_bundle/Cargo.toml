@@ -1,0 +1,12 @@
+# The committed face of the shipping bundle: a crate with no dependencies that
+# exists so `pill_standalone`'s optional path dependency resolves on a fresh
+# clone. `devops/tools/generate_shipping_bundle.py` rewrites this manifest and
+# `src/lib.rs` for the project being shipped; a real generation is never
+# committed, because it would let a shipping build compile against another
+# project. `build = false` ignores a `build.rs` that an earlier generation left
+# behind (that file is gitignored, so restoring the stub does not remove it).
+[package]
+name = "pill_shipping_bundle"
+version = "0.0.0"
+edition = "2021"
+build = false

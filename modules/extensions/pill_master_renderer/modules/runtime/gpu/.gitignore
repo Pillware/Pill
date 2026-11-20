@@ -1,0 +1,3 @@
+# Hand-written WGSL, embedded with `include_str!`; nothing cooks these, so the
+# blanket `*.wgsl` rule at the repository root must not apply in this crate.
+!*.wgsl
