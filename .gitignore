@@ -36,6 +36,8 @@ modules/extensions/**/generated/
 !modules/extensions/_workspace_anchor/generated/
 modules/projects_generated/*
 !modules/projects_generated/README.md
+modules/editor/generated/*
+!modules/editor/generated/README.md
 
 # Generated build scratch, except the shipping-bundle stub. `pill_standalone`
 # declares the stub as a path dependency, and Cargo resolves every manifest

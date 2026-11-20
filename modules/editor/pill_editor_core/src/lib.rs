@@ -59,7 +59,7 @@
 //! crate: the shell's [`session::EguiShellState`], which a newly loaded shell
 //! generation finds in the world and keeps using. The shell clears egui's data
 //! map on the first frame of every generation
-//! (`pill_editor_shell_egui_editor::shell::claim`), because a value left there
+//! (`pill_editor_shell::shell::claim`), because a value left there
 //! by a previous generation would be read through the vtable of an image that
 //! is no longer loaded.
 

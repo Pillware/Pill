@@ -2822,7 +2822,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pill_editor_shell_egui_editor"
+name = "pill_editor_shell"
 version = "0.1.0"
 dependencies = [
  "pill_core",

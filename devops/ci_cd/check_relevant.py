@@ -120,9 +120,9 @@ def suite_check(name: str, reason: str, steps: str = "") -> Check:
 # shared session, an unmapped file - keeps the full suite, because the change
 # can reach steps no single area owns.
 EDITOR_AREA_TAB_BODIES = {
-    "modules/extensions/pill_editor_shell_egui/modules/editor/src/shell/tab_preferences*": "preferences_and_theme",
-    "modules/extensions/pill_editor_shell_egui/modules/editor/src/shell/tab_assets*": "assets_browser_and_pipeline",
-    "modules/extensions/pill_editor_shell_egui/modules/editor/src/shell/tab_systems*": "systems_components_and_entities",
+    "modules/editor/pill_editor_shell/src/shell/tab_preferences*": "preferences_and_theme",
+    "modules/editor/pill_editor_shell/src/shell/tab_assets*": "assets_browser_and_pipeline",
+    "modules/editor/pill_editor_shell/src/shell/tab_systems*": "systems_components_and_entities",
 }
 
 
@@ -137,7 +137,7 @@ def editor_area_for(paths: Sequence[str]) -> str:
         path
         for path in paths
         if matches(path, "modules/editor/pill_editor/**")
-        or matches(path, "modules/extensions/pill_editor_shell_egui/**")
+        or matches(path, "modules/editor/pill_editor_shell/**")
     ]
     if not editor_paths:
         return ""
@@ -234,12 +234,12 @@ def area_checks(paths: Sequence[str]) -> List[Check]:
     # drives the real executable - a frontend build plus a full scripted
     # session - so only the code that session exercises, the shell module and
     # the frontend, selects it; a model-only change keeps its unit tests.
-    if has("modules/editor/pill_editor_core/**", "modules/extensions/pill_editor_shell_egui/**"):
+    if has("modules/editor/pill_editor_core/**", "modules/editor/pill_editor_shell/**"):
         selected.append(cargo_check("test egui editor crates",
                                     ("test", "-p", "pill_editor_core",
-                                     "-p", "pill_editor_shell_egui_editor", "--offline"),
+                                     "-p", "pill_editor_shell", "--offline"),
                                     "egui editor crates changed"))
-    if has("modules/editor/pill_editor/**", "modules/extensions/pill_editor_shell_egui/**"):
+    if has("modules/editor/pill_editor/**", "modules/editor/pill_editor_shell/**"):
         area = editor_area_for(paths)
         if area:
             selected.append(
@@ -347,11 +347,9 @@ def area_checks(paths: Sequence[str]) -> List[Check]:
         selected.append(verify_check("check-shipping", "the shipping bundle changed"))
 
     # Extensions: reload through the host, so the reload suite is the net. The
-    # editor shell is an extension only in its build shape - no reload suite
-    # starts an editor host - and the editor lane below patches and reloads it.
-    extension_paths = [path for path in has("modules/extensions/**")
-                       if not matches(path, "modules/extensions/pill_editor_shell_egui/**")]
-    if extension_paths:
+    # editor shell lives under `modules/editor/`, and the editor lane patches
+    # and reloads it.
+    if has("modules/extensions/**"):
         selected.append(suite_check("test_hot_reload_suite.py", "extension changed"))
 
     # The renderer's data crate and GPU module: boundaries plus the asset
@@ -449,8 +447,8 @@ RULE_GLOBS: List[Tuple[str, Tuple[str, ...]]] = [
     ("theme-pipeline", ("modules/ui/pill_ui_theme/**", "modules/ui/pill_ui_kit/**",
                         "modules/editor/pill_editor_core/src/style.rs",
                         "modules/hosting/pill_development_host/src/config.rs")),
-    ("editor-crates", ("modules/editor/pill_editor_core/**", "modules/extensions/pill_editor_shell_egui/**")),
-    ("editor-frontend", ("modules/editor/pill_editor/**", "modules/extensions/pill_editor_shell_egui/**")),
+    ("editor-crates", ("modules/editor/pill_editor_core/**", "modules/editor/pill_editor_shell/**")),
+    ("editor-frontend", ("modules/editor/pill_editor/**", "modules/editor/pill_editor_shell/**")),
     ("web-frontend", ("modules/frontends/pill_web/**", "devops/tools/build_web.py", "devops/tools/web/**")),
     ("engine-core", ("modules/engine/pill_engine_core/**", "modules/engine/pill_engine/**", "modules/engine/pill_engine_macros/**")),
     ("pill-core", ("modules/engine/pill_core/**",)),

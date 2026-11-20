@@ -898,12 +898,41 @@ HOST_SOURCE_ROOTS = (
 # posture?" - it reads this record instead.
 HOST_BUILD_RECORD = MODULES_ROOT / "target" / "pill_suite_host_build.json"
 
+# Whether the crate in `directory` is one of the editor's own modules: its
+# manifest tags an editor frontend (`editor_frontend` under
+# `[package.metadata.pill]`), the host's convention for the shell. Text-scanned
+# like the host scans it, so the check needs no TOML reader.
+def _is_editor_module(directory: Path) -> bool:
+    try:
+        manifest = (directory / "Cargo.toml").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    in_pill_metadata = False
+    for line in manifest.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_pill_metadata = stripped == "[package.metadata.pill]"
+        elif in_pill_metadata and stripped.startswith("editor_frontend"):
+            return True
+    return False
+
+
 # What a `pill_editor` build compiles. The editor links the host and the
-# runtime, so every host source root counts, plus its own crates. Extension and
-# project sources are absent for the host's reason: the editor loads those as
-# DLLs, and this suite edits them.
-EDITOR_SOURCE_ROOTS = HOST_SOURCE_ROOTS + (
-    MODULES_ROOT / "editor",
+# runtime, so every host source root counts, plus its own crates under
+# `editor/`. Extension and project sources are absent for the host's reason:
+# the editor loads those as DLLs, and this suite edits them - and so are the
+# editor's own modules (the shell), which sit beside its crates but load and
+# reload the same way. The `generated/` folder there holds the wrappers the
+# host rewrites on every start, so it is no source either.
+EDITOR_SOURCE_ROOTS = HOST_SOURCE_ROOTS + tuple(
+    sorted(
+        directory
+        for directory in (MODULES_ROOT / "editor").iterdir()
+        if directory.is_dir()
+        and directory.name != "generated"
+        and not _is_editor_module(directory)
+    )
+) + (
     MODULES_ROOT / "csharp" / "pill_csharp_bridge",
 )
 

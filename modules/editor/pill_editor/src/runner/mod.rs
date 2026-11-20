@@ -154,8 +154,9 @@ pub const WAYLAND_ENV: &str = "PILL_EDITOR_WAYLAND";
 /// The environment variable that keeps a scene view in a top-level window.
 pub const DETACHED_SCENE_ENV: &str = "PILL_EDITOR_DETACHED_SCENE";
 
-/// The shell module's crate name - the editor-only module's convention.
-const SHELL_MODULE_NAME: &str = "pill_editor_shell_egui_editor";
+/// The shell module's crate name: the editor module under `editor/` that
+/// draws the docked UI.
+const SHELL_MODULE_NAME: &str = "pill_editor_shell";
 
 /// The window's initial size in logical pixels.
 const INITIAL_WINDOW_SIZE: LogicalSize<f64> = LogicalSize::new(1280.0, 800.0);

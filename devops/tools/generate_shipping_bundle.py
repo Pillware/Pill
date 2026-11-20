@@ -121,9 +121,13 @@ EXTENSION_DIRECTORY = Path("modules") / "extensions"
 # child of `modules/runtime`) and the editor crate in `modules/editor`.
 # Suffix of an extension's editor crate, which no shipped build ever links.
 EDITOR_CRATE_SUFFIX = "_editor"
-# An editor build also links the egui shell, an editor-only
-# extension crate, and compiles the UI canvas's element id into the web app.
-EDITOR_EGUI_SHELL_CRATE_NAME = "pill_editor_shell_egui_editor"
+# An editor build also links the editor's own modules - the crates directly
+# under `modules/editor/` tagged for its frontend (`editor_frontend` under
+# `[package.metadata.pill]`), the shell among them, found the way the host's
+# `resolve_editor_modules` finds them - and compiles the UI canvas's element id
+# into the web app. `generated/` beside them holds the host's wrappers.
+EDITOR_DIRECTORY = Path("modules") / "editor"
+EDITOR_GENERATED_DIRECTORY_NAME = "generated"
 EDITOR_FRONTENDS = ("egui",)
 DEFAULT_EDITOR_FRONTEND = "egui"
 EDITOR_UI_CANVAS_ID = "pill-editor-ui"
@@ -230,11 +234,49 @@ def extension_crate_directories(root: Path):
             yield editor_directory
 
 
-# Finds the directory of the extension crate whose manifest declares
-# `crate_name`, the way the host's `find_extension_crate` does. Falls back to
-# the conventional `modules/extensions/<crate>/modules/runtime` when no folder
-# holds the crate, so a missing crate is reported as missing.
-def extension_crate_directory(root: Path, crate_name: str) -> Path:
+# Returns the editor frontend `directory/Cargo.toml` tags itself for
+# (`editor_frontend` under `[package.metadata.pill]`), or None when the
+# directory holds no readable manifest or the manifest carries no tag.
+def declared_editor_frontend(directory: Path):
+    manifest_path = directory / PROJECT_MANIFEST_FILE_NAME
+    if not manifest_path.is_file():
+        return None
+    try:
+        with manifest_path.open("rb") as handle:
+            manifest = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    pill_metadata = manifest.get("package", {}).get("metadata", {}).get("pill", {})
+    editor_frontend = pill_metadata.get("editor_frontend")
+    return editor_frontend if isinstance(editor_frontend, str) else None
+
+
+# Yields the directory of every editor module, in directory name order: each
+# crate directly under `modules/editor/` whose manifest tags `editor_frontend`
+# (any frontend when it is None). The executables and the shared core carry no
+# tag, and the host's `generated/` wrappers are never searched.
+def editor_module_directories(root: Path, editor_frontend=None):
+    editor_root = root / EDITOR_DIRECTORY
+    if not editor_root.is_dir():
+        return
+    for directory in sorted(editor_root.iterdir()):
+        if not directory.is_dir() or directory.name == EDITOR_GENERATED_DIRECTORY_NAME:
+            continue
+        if declared_package_name(directory) is None:
+            continue
+        frontend_tag = declared_editor_frontend(directory)
+        if frontend_tag is None:
+            continue
+        if editor_frontend is None or frontend_tag == editor_frontend:
+            yield directory
+
+
+# Finds the directory of the module crate whose manifest declares
+# `crate_name`: an extension crate, the way the host's `find_extension_crate`
+# does, or one of the editor's own modules. Falls back to the conventional
+# `modules/extensions/<crate>/modules/runtime` when no folder holds the crate,
+# so a missing crate is reported as missing.
+def module_crate_directory(root: Path, crate_name: str) -> Path:
     conventional_directory = (
         root
         / EXTENSION_DIRECTORY
@@ -243,6 +285,9 @@ def extension_crate_directory(root: Path, crate_name: str) -> Path:
         / EXTENSION_RUNTIME_DIRECTORY
     )
     for crate_directory in extension_crate_directories(root):
+        if declared_package_name(crate_directory) == crate_name:
+            return crate_directory
+    for crate_directory in editor_module_directories(root):
         if declared_package_name(crate_directory) == crate_name:
             return crate_directory
     return conventional_directory
@@ -414,7 +459,7 @@ def module_asset_roots(root: Path, modules: list) -> list:
     """
     roots = []
     for name in modules:
-        crate_directory = extension_crate_directory(root, name)
+        crate_directory = module_crate_directory(root, name)
         for directory_name in MODULE_ROOT_DIRECTORY_NAMES:
             candidate = crate_directory / directory_name
             if candidate.is_dir():
@@ -633,7 +678,7 @@ def build_cargo_manifest(
             + " }",
         )
     for module in modules:
-        module_directory = extension_crate_directory(root, module)
+        module_directory = module_crate_directory(root, module)
         relative_path = manifest_relative_path(bundle_directory, module_directory)
         lines.append(
             f'{module} = {{ path = "{relative_path}", default-features = false }}'
@@ -643,7 +688,7 @@ def build_cargo_manifest(
         # depends on it for real, and hands the host its two entry points.
         # Nothing loads this binary as a module, so it carries no wrapper.
         renderer_path = manifest_relative_path(
-            bundle_directory, extension_crate_directory(root, renderer)
+            bundle_directory, module_crate_directory(root, renderer)
         )
         lines.append(
             f'{renderer} = {{ path = "{renderer_path}", default-features = false }}'
@@ -1284,9 +1329,17 @@ def main() -> int:
         return 1
 
     # Step 1b: refuse an editor crate. Editor crates (`<extension>_editor`) load
-    # only in an editor host, with their extension; a shipped game never links
-    # one, and the dev host refuses them in `modules:` for the same reason.
-    editor_crates = [name for name in modules if name.endswith(EDITOR_CRATE_SUFFIX)]
+    # only in an editor host, with their extension, and the editor's own
+    # modules under `modules/editor/` only in an editor session; a shipped game
+    # never links either, and the dev host refuses them in `modules:` too.
+    editor_module_names = {
+        declared_package_name(directory) for directory in editor_module_directories(root)
+    }
+    editor_crates = [
+        name
+        for name in modules
+        if name.endswith(EDITOR_CRATE_SUFFIX) or name.strip() in editor_module_names
+    ]
     if editor_crates:
         print(
             "error: editor crates cannot ship; remove them from `modules:`: "
@@ -1294,22 +1347,20 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    # Step 1c: an editor build links a shell beside the runtime modules. Only
-    # the egui posture exists: it links its editor-only shell and never an
-    # extension's editor crate (the retired `pill_ui` posture did, and those
-    # crates carried its panel contract). They register last: the shell's own
-    # resources exist either way (its `register` tolerates missing panels).
+    # Step 1c: an editor build links the editor's modules for its frontend - the
+    # shell - beside the runtime modules, and never an extension's editor crate
+    # (the retired `pill_ui` posture did, and those crates carried its panel
+    # contract). They register last: the shell's own resources exist either way
+    # (its `register` tolerates missing panels).
     if editor:
-        editor_modules = [EDITOR_EGUI_SHELL_CRATE_NAME]
-        missing_editor_crates = [
-            name
-            for name in editor_modules
-            if not (extension_crate_directory(root, name) / PROJECT_MANIFEST_FILE_NAME).is_file()
+        editor_modules = [
+            declared_package_name(directory)
+            for directory in editor_module_directories(root, editor_frontend)
         ]
-        if missing_editor_crates:
+        if not editor_modules:
             print(
-                "error: editor crates not found under "
-                f"{EXTENSION_DIRECTORY}: {', '.join(missing_editor_crates)}",
+                f"error: no editor module under {EDITOR_DIRECTORY} is tagged for the "
+                f"`{editor_frontend}` editor frontend",
                 file=sys.stderr,
             )
             return 1
@@ -1324,7 +1375,7 @@ def main() -> int:
     missing_modules = [
         name
         for name in modules + ([linked_renderer] if linked_renderer else [])
-        if not (extension_crate_directory(root, name) / PROJECT_MANIFEST_FILE_NAME).is_file()
+        if not (module_crate_directory(root, name) / PROJECT_MANIFEST_FILE_NAME).is_file()
     ]
     if missing_modules:
         print(

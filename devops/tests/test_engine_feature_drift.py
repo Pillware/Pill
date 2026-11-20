@@ -28,7 +28,8 @@ DESCRIPTION
     posture today loads every shared dylib.
 
     What is measured comes from tracked sources only - the extension crates by
-    their `extensions/<folder>/modules/{runtime,editor}` layout, the projects
+    their `extensions/<folder>/modules/{runtime,editor}` layout, the editor's
+    own modules by their `editor_frontend` tag under `editor/`, the projects
     from their `project_settings.yaml` and manifests - never from the generated
     `host_module_*` / `host_project_*` crates the host leaves behind, which are
     gitignored and pruned between runs. A fresh clone and a used checkout
@@ -42,7 +43,8 @@ DESCRIPTION
     engine features.
 
     Extensions are found by convention (every crate under an extension
-    folder's `modules/runtime` or `modules/editor`); the projects are every
+    folder's `modules/runtime` or `modules/editor`, and every crate directly
+    under `editor/` that tags an editor frontend); the projects are every
     example with both a `project_settings.yaml` and a `Cargo.toml`.
 
 USAGE
@@ -176,16 +178,24 @@ def dylib_tree(dylib, selection):
     return packages
 
 
-# Every extension crate built as a loadable module, as {package: manifest}:
-# the crates under each extension folder's `modules/runtime` (the master
-# renderer's data and gpu crates sit one level deeper) and its
-# `modules/editor`. `extensions/rendering` holds the old renderers, excluded
-# from the workspace, and never matches these globs.
+# Every crate built as a loadable module, as {package: manifest}: the crates
+# under each extension folder's `modules/runtime` (the master renderer's data
+# and gpu crates sit one level deeper) and its `modules/editor`, and the
+# editor's own modules - the crates directly under `editor/` that tag an
+# editor frontend, the shell among them. `extensions/rendering` holds the old
+# renderers, excluded from the workspace, and never matches these globs.
 def module_manifests():
     manifests = [
         *MODULES.glob("extensions/*/modules/runtime/Cargo.toml"),
         *MODULES.glob("extensions/*/modules/runtime/*/Cargo.toml"),
         *MODULES.glob("extensions/*/modules/editor/Cargo.toml"),
+        *(
+            manifest
+            for manifest in MODULES.glob("editor/*/Cargo.toml")
+            if "editor_frontend" in Crate(manifest).manifest.get("package", {})
+            .get("metadata", {})
+            .get("pill", {})
+        ),
     ]
     return {Crate(manifest).name: manifest for manifest in sorted(manifests)}
 

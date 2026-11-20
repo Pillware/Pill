@@ -2136,8 +2136,8 @@ mod tests {
                 command: ScriptedCommand::SafeModeRetry,
             },
             Accept {
-                line: "panel unload pill_editor_shell_egui_editor",
-                command: ScriptedCommand::PanelUnload("pill_editor_shell_egui_editor".to_string()),
+                line: "panel unload pill_editor_shell",
+                command: ScriptedCommand::PanelUnload("pill_editor_shell".to_string()),
             },
             Accept {
                 line: "dump panels",

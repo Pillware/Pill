@@ -42,7 +42,7 @@ REJECTION_PATTERN = re.compile(
 )
 
 EGUI_EDITOR_BINARY = executable_name("pill_editor")
-EGUI_SHELL_LOADED_TOKEN = "[editor] pill_editor_shell_egui_editor loaded"
+EGUI_SHELL_LOADED_TOKEN = "[editor] pill_editor_shell loaded"
 # Every shell generation clears the shared egui context's temporary data
 # before its first draw, so nothing a previous generation created is read
 # through an unloaded image.

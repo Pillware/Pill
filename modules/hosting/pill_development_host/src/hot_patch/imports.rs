@@ -473,11 +473,8 @@ mod tests {
     /// do not compile, and a patch that does not compile costs the fast path.
     #[test]
     fn a_re_export_the_body_names_is_imported_once() {
-        let module_path = vec![
-            String::from("pill_editor_shell_egui_editor"),
-            String::from("shell"),
-        ];
-        let scope = module_scope("pill_editor_shell_egui_editor", &module_path);
+        let module_path = vec![String::from("pill_editor_shell"), String::from("shell")];
+        let scope = module_scope("pill_editor_shell", &module_path);
         let file_source = "pub mod claim;\n\npub use claim::claim_shell_context;\n";
 
         let imports = scope.imports_for(
@@ -488,7 +485,7 @@ mod tests {
 
         assert_eq!(
             imports,
-            vec!["use pill_editor_shell_egui_editor::shell::claim_shell_context;"]
+            vec!["use pill_editor_shell::shell::claim_shell_context;"]
         );
     }
 
@@ -498,11 +495,8 @@ mod tests {
     /// statement binding the function collides with it and has to go.
     #[test]
     fn a_re_export_of_a_module_of_its_own_name_is_imported_once() {
-        let module_path = vec![
-            String::from("pill_editor_shell_egui_editor"),
-            String::from("shell"),
-        ];
-        let scope = module_scope("pill_editor_shell_egui_editor", &module_path);
+        let module_path = vec![String::from("pill_editor_shell"), String::from("shell")];
+        let scope = module_scope("pill_editor_shell", &module_path);
         let file_source =
             "pub mod panel_windows;\n\npub use panel_windows::{panel_windows, PanelFeed};\n";
 
@@ -517,8 +511,8 @@ mod tests {
         assert_eq!(
             imports,
             vec![
-                "use pill_editor_shell_egui_editor::shell::panel_windows;",
-                "use pill_editor_shell_egui_editor::shell::PanelFeed;",
+                "use pill_editor_shell::shell::panel_windows;",
+                "use pill_editor_shell::shell::PanelFeed;",
             ]
         );
     }
@@ -674,11 +668,8 @@ mod tests {
     /// patch import a module that is declared in test builds only.
     #[test]
     fn a_name_in_a_comment_is_not_a_use() {
-        let module_path = vec![
-            String::from("pill_editor_shell_egui_editor"),
-            String::from("shell"),
-        ];
-        let scope = module_scope("pill_editor_shell_egui_editor", &module_path);
+        let module_path = vec![String::from("pill_editor_shell"), String::from("shell")];
+        let scope = module_scope("pill_editor_shell", &module_path);
         let file_source = "#[cfg(test)]\npub mod tests;\n\npub fn run_frame() {}\n";
 
         let imports = scope.imports_for(

@@ -196,15 +196,7 @@ def main() -> int:
     refusal = verify_editor_binary(binary)
     if refusal:
         raise SystemExit(refusal)
-    shell_source = (
-        MODULES_ROOT
-        / "extensions"
-        / "pill_editor_shell_egui"
-        / "modules"
-        / "editor"
-        / "src"
-        / "shell.rs"
-    )
+    shell_source = MODULES_ROOT / "editor" / "pill_editor_shell" / "src" / "shell.rs"
     # Byte-faithful reads (`newline=""`): `EditorSession.edit_source` writes
     # the text back as given, so a translated read would rewrite every line's
     # ending and the host's patch classifier would see a whole-file change

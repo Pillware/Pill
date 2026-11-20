@@ -572,7 +572,7 @@ def step_14_module_panels(session: EditorSession, binary: Path, project: str) ->
         print_ok("a slow module panel armed its badge and queued a toast")
         # The module unloads: its marker is dropped, and its panel reads so.
         begin = panels.length()
-        panels.send("panel unload pill_editor_shell_egui_editor")
+        panels.send("panel unload pill_editor_shell")
         panels.wait(re.escape(PANEL_UNLOADED_TOKEN), 60, "the unload", begin)
         dump = panels.request(
             "dump panels", re.escape(PANELS_DUMP_TOKEN), 60, "the unloaded panel dump"
@@ -585,7 +585,7 @@ def step_14_module_panels(session: EditorSession, binary: Path, project: str) ->
             "the tab did not say the module is gone: {}".format(dump[-800:])
         )
         begin = panels.length()
-        panels.send("panel restore pill_editor_shell_egui_editor")
+        panels.send("panel restore pill_editor_shell")
         panels.wait(
             re.escape(PANEL_RESTORED_TOKEN), 60, "the restore", begin
         )
@@ -777,7 +777,7 @@ def step_14_module_panels(session: EditorSession, binary: Path, project: str) ->
             begin,
         )
         begin = panels.length()
-        panels.send("panel unload pill_editor_shell_egui_editor")
+        panels.send("panel unload pill_editor_shell")
         panels.wait(re.escape(PANEL_UNLOADED_TOKEN), 60, "the second unload", begin)
         dump = panels.request(
             "dump windows", re.escape(WINDOWS_DUMP_TOKEN), 60, "the unloaded windows"
@@ -786,7 +786,7 @@ def step_14_module_panels(session: EditorSession, binary: Path, project: str) ->
             "an unloaded module's window is still on screen: {}".format(dump[-600:])
         )
         begin = panels.length()
-        panels.send("panel restore pill_editor_shell_egui_editor")
+        panels.send("panel restore pill_editor_shell")
         panels.wait(
             re.escape(PANEL_RESTORED_TOKEN),
             60,
@@ -938,14 +938,7 @@ def step_14_module_panels(session: EditorSession, binary: Path, project: str) ->
     # Retry, and once the source is fixed Retry loads the shell - all without
     # restarting the process.
     shell_source = (
-        REPOSITORY_ROOT
-        / "modules"
-        / "extensions"
-        / "pill_editor_shell_egui"
-        / "modules"
-        / "editor"
-        / "src"
-        / "shell.rs"
+        REPOSITORY_ROOT / "modules" / "editor" / "pill_editor_shell" / "src" / "shell.rs"
     )
     shell_text = shell_source.read_bytes().decode("utf-8")
     safe = EditorSession(
@@ -957,7 +950,7 @@ def step_14_module_panels(session: EditorSession, binary: Path, project: str) ->
     # A staged DLL from the good build would load over the broken source and
     # there would be no safe mode to test: remove it so the failed build is the
     # only generation the editor can find. The retry below rebuilds it.
-    staged_shell = MODULES_ROOT / "target" / "hot" / "pill_editor_shell_egui_editor.dll"
+    staged_shell = MODULES_ROOT / "target" / "hot" / "pill_editor_shell.dll"
     staged_shell.unlink(missing_ok=True)
     try:
         safe.start(extra_env={"PILL_EDITOR_CONTINUOUS_REDRAW": "1"})

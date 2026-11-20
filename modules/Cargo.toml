@@ -27,10 +27,12 @@ members = [
     # prefix only, so `frontends/build_support/` (build-script source, not a
     # crate) is left alone.
     "frontends/pill_*",
-    # The egui editor: its executable and its shared core dylib, and the
-    # browser editor frontend (`pill_web_editor`), in their own folder beside
-    # the other layers.
-    "editor/*",
+    # The egui editor: its executable, its shared core dylib, its shell module
+    # (`pill_editor_shell`, the docked UI the editor loads and hot-reloads) and
+    # the browser editor frontend (`pill_web_editor`), in their own folder
+    # beside the other layers. Every crate here is named `pill_*`, so the glob
+    # leaves `editor/generated/` (the host-written wrappers, below) alone.
+    "editor/pill_*",
     # The C# half of the engine: the bridge crate, plus the managed runtime and
     # compiler that live beside it. This one is named explicitly rather than
     # globbed, because `csharp/` is not all crates - the other two are MSBuild
@@ -49,15 +51,17 @@ members = [
     "extensions/pill_master_renderer/modules/runtime/data",
     "extensions/pill_master_renderer/modules/runtime/gpu",
     # The host-generated `host_module_<crate>` wrappers, one per loaded
-    # extension crate, in the `generated/` folder of the extension they wrap.
+    # extension crate, in the `generated/` folder of the extension they wrap,
+    # and one per loaded editor module, in the editor folder's `generated/`.
     "extensions/*/generated/*",
+    "editor/generated/*",
     # The host-generated `host_project_<package>` members: projects live
     # outside this workspace, so their members are generated here instead.
     "projects_generated/*",
 ]
 # `extensions/rendering` holds the older renderer crates, which no build uses.
 #
-# The two anchors keep the generated-member globs above from ever matching
+# The three anchors keep the generated-member globs above from ever matching
 # nothing. Cargo reads a glob that matches nothing as a literal path and then
 # fails to load the workspace - which is exactly the state of a fresh clone,
 # before the host has generated anything. Each anchor is a tracked README the
@@ -79,6 +83,7 @@ exclude = [
     # not a crate itself.
     "extensions/pill_master_renderer/modules/runtime",
     "projects_generated/README.md",
+    "editor/generated/README.md",
 ]
 resolver = "2"
 

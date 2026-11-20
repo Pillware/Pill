@@ -114,9 +114,20 @@ pub(crate) const CSHARP_COMPILER_ARGUMENTS_FILE: &str = "pill_compiler_args.rsp"
 /// module is found by existing rather than by being listed anywhere.
 const EXTENSION_DIRECTORY: &str = "extensions";
 
-/// Folder, inside an extension's folder, holding the host-generated wrapper
-/// crates of that extension's crates.
+/// Folder, inside an extension's folder or the editor's folder, holding the
+/// host-generated wrapper crates of the crates beside it.
 const GENERATED_DIRECTORY: &str = "generated";
+
+/// Workspace-relative directory holding the editor's own crates: the editor
+/// executables, the shared editor core and the editor modules.
+///
+/// An editor module is a crate directly under it whose manifest tags the editor
+/// frontend it belongs to (`editor_frontend` under `[package.metadata.pill]`);
+/// the executables and the core carry no tag. Every editor session of that
+/// frontend loads it after the extensions' editor crates, and no game build
+/// compiles it. Its generated wrapper is written into this directory's
+/// [`GENERATED_DIRECTORY`], which the `editor/generated/*` workspace glob finds.
+const EDITOR_DIRECTORY: &str = "editor";
 
 /// Folder, inside an extension's folder, holding its crates: `runtime` holds
 /// the extension itself and `editor` its editor part.
@@ -359,16 +370,19 @@ pub struct ExtensionConfig {
     /// The crate's package name, also the log field and temporary-copy prefix.
     pub name: String,
 
-    /// The extension folder under `extensions/` that holds the crate.
+    /// The extension folder under `extensions/` that holds the crate, or
+    /// `editor` for one of the editor's own modules, which no runtime crate
+    /// shares.
     pub folder: String,
 
     /// The crate's directory, relative to the workspace root, with `/`
     /// separators.
     pub crate_directory: String,
 
-    /// Whether this is the folder's editor crate (`modules/editor`), which an
-    /// editor host loads after the folder's runtime crates and reloads whenever
-    /// one of them reloads.
+    /// Whether this is an editor crate: a folder's `modules/editor` crate,
+    /// which an editor host loads after the folder's runtime crates and reloads
+    /// whenever one of them reloads, or a crate only an editor host loads at
+    /// all (an editor module, a project's editor crate).
     pub is_editor_crate: bool,
 
     /// Library name of the artifact the host loads, which is the extension's
@@ -379,6 +393,12 @@ pub struct ExtensionConfig {
     /// Library name of the generated wrapper crate the build command selects;
     /// the artifact it produces is staged under [`Self::library_name`].
     pub wrapper_library_name: String,
+
+    /// Directory of that generated wrapper crate, relative to the workspace
+    /// root, with `/` separators: inside the `generated/` folder of the
+    /// extension folder or the editor folder that holds the crate, or under
+    /// `projects_generated/` for a project's editor crate.
+    pub wrapper_directory: String,
 
     /// Directory to watch for source changes, relative to the workspace root.
     pub watch_directory: String,
@@ -418,6 +438,10 @@ impl ExtensionConfig {
         // applies for every host-spawned build.
         let build_command = host_cargo_command(std::slice::from_ref(&wrapper_library_name));
         let crate_directory = location.workspace_relative_directory();
+        let wrapper_directory = format!(
+            "{EXTENSION_DIRECTORY}/{}/{GENERATED_DIRECTORY}/{wrapper_library_name}",
+            location.folder
+        );
 
         Self {
             name: name.to_string(),
@@ -426,6 +450,34 @@ impl ExtensionConfig {
             crate_directory,
             is_editor_crate: location.is_editor_crate,
             library_name: name.to_string(),
+            wrapper_library_name,
+            wrapper_directory,
+            build_command,
+            output_subdirectory: "target/hot".to_string(),
+        }
+    }
+
+    /// The configuration of one of the editor's own modules: the crate in
+    /// `editor/<directory_name>` whose manifest declares `package_name`.
+    ///
+    /// Its generated wrapper is the `host_module_<package>` member in
+    /// `editor/generated/`. `folder` is `editor`, which no extension folder's
+    /// runtime crate carries, so no runtime crate's reload cascades into the
+    /// module.
+    pub(crate) fn editor_module(directory_name: &str, package_name: &str) -> Self {
+        let wrapper_library_name = format!("{HOST_MODULE_MEMBER_PREFIX}{package_name}");
+        let build_command = host_cargo_command(std::slice::from_ref(&wrapper_library_name));
+        let crate_directory = format!("{EDITOR_DIRECTORY}/{directory_name}");
+        Self {
+            name: package_name.to_string(),
+            folder: EDITOR_DIRECTORY.to_string(),
+            watch_directory: format!("{crate_directory}/src"),
+            crate_directory,
+            is_editor_crate: true,
+            library_name: package_name.to_string(),
+            wrapper_directory: format!(
+                "{EDITOR_DIRECTORY}/{GENERATED_DIRECTORY}/{wrapper_library_name}"
+            ),
             wrapper_library_name,
             build_command,
             output_subdirectory: "target/hot".to_string(),
@@ -464,6 +516,7 @@ impl ExtensionConfig {
             crate_directory,
             build_command,
             output_subdirectory: "target/hot".to_string(),
+            wrapper_directory: format!("{PROJECT_MEMBER_DIRECTORY}/{wrapper_library_name}"),
             wrapper_library_name,
             folder: package_name.to_string(),
             name,
@@ -523,14 +576,16 @@ pub struct HostConfig {
     /// Only editor frontends set it, through
     /// [`Self::from_environment_for_editor_frontend`]. Every other build never
     /// builds or loads an editor crate. When set, [`Self::extensions`] ends
-    /// with the editor crates of the loaded extensions' folders and of every
-    /// editor-only folder.
+    /// with the editor crates of the loaded extensions' folders, then those of
+    /// every editor-only folder, then the editor's own modules (the crates
+    /// under `editor/` tagged for this frontend, the shell among them).
     pub load_editor_crates: bool,
 
     /// Editor-only modules (a folder holding only its `modules/editor`
-    /// crate) whose first load may fail without aborting setup; the embedder
-    /// handles their absence - the editor's safe mode covers the shell. Filled
-    /// by [`Self::from_environment_for_editor_frontend`], empty in every other
+    /// crate, and the editor's own modules under `editor/`) whose first load
+    /// may fail without aborting setup; the embedder handles their absence -
+    /// the editor's safe mode covers the shell. Filled by
+    /// [`Self::from_environment_for_editor_frontend`], empty in every other
     /// posture.
     pub first_load_optional: Vec<String>,
 
@@ -761,10 +816,18 @@ impl HostConfig {
             let (editor_crates, editor_only_crate_names) =
                 Self::resolve_editor_crates(&runtime_folders, &extensions_root, editor_frontend)?;
             extensions.extend(editor_crates);
+            // The editor's own modules (its shell) load last, after every
+            // extension's editor crate.
+            let editor_modules = Self::resolve_editor_modules(
+                &workspace_root.join(EDITOR_DIRECTORY),
+                editor_frontend,
+            )?;
             // The editor-only modules may fail their first load without
             // taking the editor down; the embedder surfaces the errors and
             // offers a retry.
             first_load_optional = editor_only_crate_names;
+            first_load_optional.extend(editor_modules.iter().map(|module| module.name.clone()));
+            extensions.extend(editor_modules);
         }
 
         // Step 4: Resolve the project's own editor crate, when it has one.
@@ -787,23 +850,19 @@ impl HostConfig {
             &workspace_root,
             project_editor
                 .as_ref()
-                .map(|configuration| {
-                    workspace_root
-                        .join(PROJECT_MEMBER_DIRECTORY)
-                        .join(&configuration.wrapper_library_name)
-                })
+                .map(|configuration| workspace_root.join(&configuration.wrapper_directory))
                 .as_deref(),
         );
 
-        // Step 5: Write every loaded extension crate's wrapper into its
-        // extension folder's `generated/` before the first build, and clear
-        // wrappers for crates this project no longer loads. The renderer
-        // module gets one too, with its renderer ABI entry points added to the
-        // generated source.
-        let mut kept_wrappers: Vec<(String, String)> = Vec::new();
+        // Step 5: Write every loaded crate's wrapper into the `generated/`
+        // folder beside it (its extension folder's, or the editor folder's)
+        // before the first build, and clear wrappers for crates this project
+        // no longer loads. The renderer module gets one too, with its renderer
+        // ABI entry points added to the generated source.
+        let mut kept_wrappers: Vec<PathBuf> = Vec::new();
         for extension in &extensions {
             materialize_host_module_wrapper(&workspace_root, extension, false)?;
-            kept_wrappers.push((extension.folder.clone(), extension.name.clone()));
+            kept_wrappers.push(workspace_root.join(&extension.wrapper_directory));
         }
         if let Some(renderer_name) = renderer.as_deref() {
             let renderer_location = find_extension_crate(&extensions_root, renderer_name)
@@ -812,7 +871,7 @@ impl HostConfig {
                 })?;
             let renderer_module = ExtensionConfig::workspace_member(&renderer_location);
             materialize_host_module_wrapper(&workspace_root, &renderer_module, true)?;
-            kept_wrappers.push((renderer_module.folder, renderer_module.name));
+            kept_wrappers.push(workspace_root.join(&renderer_module.wrapper_directory));
         }
         prune_stale_host_module_wrappers(&workspace_root, &kept_wrappers);
 
@@ -1076,6 +1135,56 @@ impl HostConfig {
             .map(ExtensionConfig::workspace_member)
             .collect();
         Ok((editor_crate_configs, editor_only_crate_names))
+    }
+
+    /// Returns the editor's own modules an editor host of `editor_frontend`
+    /// loads, in directory name order.
+    ///
+    /// An editor module is a crate directly under `editor_root` whose manifest
+    /// tags an editor frontend; an untagged crate there (an executable, the
+    /// shared core) is not a module, and a crate tagged for another frontend
+    /// loads only under that one. The `generated/` folder holds the wrappers
+    /// and is never searched.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::RetiredEditorFrontend`] when a crate is tagged for
+    /// the retired `pill_ui` frontend.
+    fn resolve_editor_modules(
+        editor_root: &Path,
+        editor_frontend: &str,
+    ) -> Result<Vec<ExtensionConfig>, ConfigError> {
+        let mut directory_names: Vec<String> = std::fs::read_dir(editor_root)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|entry| entry.path().is_dir())
+                    .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
+                    .filter(|directory_name| directory_name != GENERATED_DIRECTORY)
+                    .collect()
+            })
+            .unwrap_or_default();
+        directory_names.sort();
+        let mut editor_modules = Vec::new();
+        for directory_name in directory_names {
+            let directory = editor_root.join(&directory_name);
+            let Some(package_name) = declared_package_name(&directory) else {
+                continue;
+            };
+            match declared_editor_frontend(&directory) {
+                Some(frontend_tag) if frontend_tag == RETIRED_EDITOR_FRONTEND => {
+                    return Err(ConfigError::RetiredEditorFrontend { name: package_name });
+                }
+                Some(frontend_tag) if frontend_tag == editor_frontend => {
+                    editor_modules.push(ExtensionConfig::editor_module(
+                        &directory_name,
+                        &package_name,
+                    ));
+                }
+                _ => {}
+            }
+        }
+        Ok(editor_modules)
     }
 }
 
@@ -2454,11 +2563,13 @@ fn prune_stale_host_project_members(workspace_root: &Path, kept_member_directory
 /// Writes the wrapper workspace member that builds one extension crate's
 /// loadable artifact.
 ///
-/// The wrapper is a generated crate in the extension folder's `generated/`
-/// directory, found by the workspace glob. Its `cdylib` is the artifact the
-/// host loads, staged and addressed under the extension's own name. The
-/// extension stays a plain library inside it, so one rlib serves the module
-/// build and every project build.
+/// The wrapper is a generated crate at the configuration's
+/// [`ExtensionConfig::wrapper_directory`] - the `generated/` directory of the
+/// extension folder or the editor folder holding the crate - found by the
+/// workspace glob. Its `cdylib` is the artifact the host loads, staged and
+/// addressed under the extension's own name. The extension stays a plain
+/// library inside it, so one rlib serves the module build and every project
+/// build.
 ///
 /// The generated manifest enables every feature the extension declares except
 /// `default`, so its copy matches the copy projects link. The generated
@@ -2476,12 +2587,8 @@ fn materialize_host_module_wrapper(
     is_renderer_module: bool,
 ) -> Result<(), ConfigError> {
     let name = extension.name.as_str();
-    let member_name = format!("{HOST_MODULE_MEMBER_PREFIX}{name}");
-    let member_directory = workspace_root
-        .join(EXTENSION_DIRECTORY)
-        .join(&extension.folder)
-        .join(GENERATED_DIRECTORY)
-        .join(&member_name);
+    let member_name = extension.wrapper_library_name.as_str();
+    let member_directory = workspace_root.join(&extension.wrapper_directory);
     let extension_directory = workspace_root.join(&extension.crate_directory);
     let engine_directory = workspace_root.join("engine").join("pill_engine");
 
@@ -2758,56 +2865,54 @@ fn prune_stale_project_editor_wrappers(workspace_root: &Path, kept: Option<&Path
     }
 }
 
-/// Removes generated extension wrappers left behind by earlier runs.
+/// Removes generated module wrappers left behind by earlier runs.
 ///
-/// Every directory in an extension folder's `generated/` whose name carries
-/// [`HOST_MODULE_MEMBER_PREFIX`] was written by
-/// [`materialize_host_module_wrapper`]. Any one whose `(folder, crate)` pair
-/// is not in `kept_wrappers` belongs to a project the host no longer runs, or
-/// to a crate that moved to another folder. The workspace glob would still
-/// pick it up as a member whose dependency paths may not resolve, and Cargo
-/// then fails to load the workspace at all. A wrapper written straight into
-/// `extensions/` (an older layout) is removed too.
+/// Every directory in an extension folder's `generated/`, or in the editor
+/// folder's, whose name carries [`HOST_MODULE_MEMBER_PREFIX`] was written by
+/// [`materialize_host_module_wrapper`]. Any one that is not in
+/// `kept_wrappers` belongs to a crate this run does not load (another
+/// project's module, the editor's modules under a game host), or to a crate
+/// that moved to another folder. The workspace glob would still pick it up as
+/// a member whose dependency paths may not resolve, and Cargo then fails to
+/// load the workspace at all. A wrapper written straight into `extensions/`
+/// (an older layout) is removed too.
 ///
 /// Failures are ignored rather than returned: a stale member the host cannot
 /// remove is a housekeeping problem, not a reason to refuse to start.
-fn prune_stale_host_module_wrappers(workspace_root: &Path, kept_wrappers: &[(String, String)]) {
-    let extensions_root = workspace_root.join(EXTENSION_DIRECTORY);
-    let Ok(folders) = std::fs::read_dir(&extensions_root) else {
-        return;
+fn prune_stale_host_module_wrappers(workspace_root: &Path, kept_wrappers: &[PathBuf]) {
+    let is_wrapper = |path: &Path| {
+        path.is_dir()
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(HOST_MODULE_MEMBER_PREFIX))
     };
-    // The wrapper's crate name, when `path` is a generated wrapper directory.
-    let wrapped_crate = |path: &Path| -> Option<String> {
-        path.file_name()?
-            .to_str()?
-            .strip_prefix(HOST_MODULE_MEMBER_PREFIX)
-            .map(str::to_string)
-    };
-    for folder_entry in folders.flatten() {
-        let folder_path = folder_entry.path();
-        if !folder_path.is_dir() {
-            continue;
+    // Every `generated/` folder a wrapper can live in: each extension
+    // folder's, then the editor folder's.
+    let mut generated_directories = Vec::new();
+    if let Ok(folders) = std::fs::read_dir(workspace_root.join(EXTENSION_DIRECTORY)) {
+        for folder_entry in folders.flatten() {
+            let folder_path = folder_entry.path();
+            // A wrapper an older host left directly in `extensions/`.
+            if is_wrapper(&folder_path) {
+                let _ = std::fs::remove_dir_all(&folder_path);
+                continue;
+            }
+            generated_directories.push(folder_path.join(GENERATED_DIRECTORY));
         }
-        // A wrapper an older host left directly in `extensions/`.
-        if wrapped_crate(&folder_path).is_some() {
-            let _ = std::fs::remove_dir_all(&folder_path);
-            continue;
-        }
-        let Some(folder) = folder_entry.file_name().to_str().map(str::to_string) else {
-            continue;
-        };
-        let Ok(wrappers) = std::fs::read_dir(folder_path.join(GENERATED_DIRECTORY)) else {
+    }
+    generated_directories.push(
+        workspace_root
+            .join(EDITOR_DIRECTORY)
+            .join(GENERATED_DIRECTORY),
+    );
+    for generated_directory in generated_directories {
+        let Ok(wrappers) = std::fs::read_dir(&generated_directory) else {
             continue;
         };
         for wrapper_entry in wrappers.flatten() {
             let wrapper_path = wrapper_entry.path();
-            let Some(crate_name) = wrapped_crate(&wrapper_path) else {
-                continue;
-            };
-            let kept = kept_wrappers.iter().any(|(kept_folder, kept_crate)| {
-                *kept_folder == folder && *kept_crate == crate_name
-            });
-            if wrapper_path.is_dir() && !kept {
+            if is_wrapper(&wrapper_path) && !kept_wrappers.contains(&wrapper_path) {
                 let _ = std::fs::remove_dir_all(&wrapper_path);
             }
         }
@@ -4284,20 +4389,22 @@ mod hot_patch_manifest_tests {
 
 #[cfg(test)]
 mod host_module_wrapper_pruning_tests {
-    use super::{prune_stale_host_module_wrappers, EXTENSION_DIRECTORY, GENERATED_DIRECTORY};
+    use super::{
+        prune_stale_host_module_wrappers, EDITOR_DIRECTORY, EXTENSION_DIRECTORY,
+        GENERATED_DIRECTORY,
+    };
 
     use crate::scratch::ScratchDirectory;
 
-    /// Creates `extensions/<folder>/generated/<wrapper>/Cargo.toml` under
-    /// `root` and returns the wrapper's directory.
+    /// Creates `<parent>/generated/<wrapper>/Cargo.toml` under `root` and
+    /// returns the wrapper's directory.
     fn seed_wrapper(
         root: &std::path::Path,
-        folder: &str,
+        parent: &std::path::Path,
         wrapper_name: &str,
     ) -> std::path::PathBuf {
         let directory = root
-            .join(EXTENSION_DIRECTORY)
-            .join(folder)
+            .join(parent)
             .join(GENERATED_DIRECTORY)
             .join(wrapper_name);
         std::fs::create_dir_all(&directory).unwrap();
@@ -4305,15 +4412,48 @@ mod host_module_wrapper_pruning_tests {
         directory
     }
 
-    /// A kept wrapper survives. A wrapper of a crate no longer loaded, one in
-    /// a folder the crate no longer lives in, and one an older host left
-    /// directly in `extensions/` are removed. Real crates are never touched.
+    /// The extension folder `folder`, relative to the workspace root.
+    fn extension_folder(folder: &str) -> std::path::PathBuf {
+        std::path::Path::new(EXTENSION_DIRECTORY).join(folder)
+    }
+
+    /// A kept wrapper survives, in an extension folder and in the editor
+    /// folder alike. A wrapper of a crate no longer loaded, one in a folder the
+    /// crate no longer lives in, and one an older host left directly in
+    /// `extensions/` are removed. Real crates and the anchor are never touched.
     #[test]
     fn keeps_only_the_wrappers_of_loaded_crates() {
         let root = ScratchDirectory::new("prune_wrappers");
-        let kept_wrapper = seed_wrapper(&root, "pill_spline", "host_module_pill_spline");
-        let unloaded_wrapper = seed_wrapper(&root, "pill_audio", "host_module_pill_audio");
-        let moved_wrapper = seed_wrapper(&root, "pill_old_folder", "host_module_pill_spline");
+        let kept_wrapper = seed_wrapper(
+            &root,
+            &extension_folder("pill_spline"),
+            "host_module_pill_spline",
+        );
+        let unloaded_wrapper = seed_wrapper(
+            &root,
+            &extension_folder("pill_audio"),
+            "host_module_pill_audio",
+        );
+        let moved_wrapper = seed_wrapper(
+            &root,
+            &extension_folder("pill_old_folder"),
+            "host_module_pill_spline",
+        );
+        let kept_editor_wrapper = seed_wrapper(
+            &root,
+            std::path::Path::new(EDITOR_DIRECTORY),
+            "host_module_pill_editor_shell",
+        );
+        let unloaded_editor_wrapper = seed_wrapper(
+            &root,
+            std::path::Path::new(EDITOR_DIRECTORY),
+            "host_module_pill_editor_gadget",
+        );
+        let editor_anchor = root
+            .join(EDITOR_DIRECTORY)
+            .join(GENERATED_DIRECTORY)
+            .join("README.md");
+        std::fs::write(&editor_anchor, "anchor").unwrap();
         let flat_wrapper = root.join(EXTENSION_DIRECTORY).join("host_module_pill_test");
         std::fs::create_dir_all(&flat_wrapper).unwrap();
         let real_crate = root
@@ -4324,7 +4464,7 @@ mod host_module_wrapper_pruning_tests {
 
         prune_stale_host_module_wrappers(
             &root,
-            &[("pill_spline".to_string(), "pill_spline".to_string())],
+            &[kept_wrapper.clone(), kept_editor_wrapper.clone()],
         );
 
         assert!(
@@ -4332,8 +4472,16 @@ mod host_module_wrapper_pruning_tests {
             "the loaded crate's wrapper must survive"
         );
         assert!(
+            kept_editor_wrapper.exists(),
+            "the loaded editor module's wrapper must survive"
+        );
+        assert!(
             !unloaded_wrapper.exists(),
             "a wrapper of an unloaded crate must be gone"
+        );
+        assert!(
+            !unloaded_editor_wrapper.exists(),
+            "a wrapper of an unloaded editor module must be gone"
         );
         assert!(
             !moved_wrapper.exists(),
@@ -4344,6 +4492,158 @@ mod host_module_wrapper_pruning_tests {
             "a flat wrapper from an older host must be gone"
         );
         assert!(real_crate.exists(), "a real crate must never be removed");
+        assert!(
+            editor_anchor.exists(),
+            "the tracked anchor of the editor's generated folder must stay"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod editor_module_tests {
+    use super::{
+        materialize_host_module_wrapper, HostConfig, EDITOR_DIRECTORY, GENERATED_DIRECTORY,
+    };
+    use pill_core::error::ConfigError;
+
+    use crate::scratch::ScratchDirectory;
+
+    /// Creates `editor/<directory_name>/Cargo.toml` under `root`, declaring
+    /// `package_name` and, when given, the `editor_frontend` tag.
+    fn seed_editor_folder_crate(
+        root: &std::path::Path,
+        directory_name: &str,
+        package_name: &str,
+        editor_frontend: Option<&str>,
+    ) {
+        let directory = root.join(EDITOR_DIRECTORY).join(directory_name);
+        std::fs::create_dir_all(directory.join("src")).unwrap();
+        let mut manifest = format!("[package]\nname = \"{package_name}\"\nversion = \"0.1.0\"\n");
+        if let Some(tag) = editor_frontend {
+            manifest.push_str(&format!(
+                "\n[package.metadata.pill]\neditor_frontend = \"{tag}\"\n"
+            ));
+        }
+        std::fs::write(directory.join("Cargo.toml"), manifest).unwrap();
+    }
+
+    /// Only the crates tagged for this host's frontend are editor modules, in
+    /// directory name order: the untagged executables and core, a crate tagged
+    /// for another frontend, and the wrappers' `generated/` folder stay out.
+    #[test]
+    fn resolves_the_tagged_crates_of_the_editor_folder() {
+        let root = ScratchDirectory::new("editor_modules");
+        seed_editor_folder_crate(&root, "pill_editor", "pill_editor", None);
+        seed_editor_folder_crate(&root, "pill_editor_core", "pill_editor_core", None);
+        seed_editor_folder_crate(
+            &root,
+            "pill_editor_shell",
+            "pill_editor_shell",
+            Some("egui"),
+        );
+        seed_editor_folder_crate(
+            &root,
+            "pill_editor_alpha",
+            "pill_editor_alpha",
+            Some("egui"),
+        );
+        seed_editor_folder_crate(
+            &root,
+            "pill_editor_other",
+            "pill_editor_other",
+            Some("other"),
+        );
+        seed_editor_folder_crate(
+            &root,
+            &format!("{GENERATED_DIRECTORY}/host_module_pill_editor_shell"),
+            "host_module_pill_editor_shell",
+            Some("egui"),
+        );
+
+        let modules = HostConfig::resolve_editor_modules(&root.join(EDITOR_DIRECTORY), "egui")
+            .expect("a seeded editor folder resolves");
+
+        let names: Vec<&str> = modules.iter().map(|module| module.name.as_str()).collect();
+        assert_eq!(names, ["pill_editor_alpha", "pill_editor_shell"]);
+        let shell = &modules[1];
+        assert!(shell.is_editor_crate);
+        assert_eq!(shell.folder, EDITOR_DIRECTORY);
+        assert_eq!(shell.crate_directory, "editor/pill_editor_shell");
+        assert_eq!(shell.watch_directory, "editor/pill_editor_shell/src");
+        assert_eq!(shell.library_name, "pill_editor_shell");
+        assert_eq!(shell.wrapper_library_name, "host_module_pill_editor_shell");
+        assert_eq!(
+            shell.wrapper_directory,
+            "editor/generated/host_module_pill_editor_shell"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A workspace without an editor folder has no editor modules.
+    #[test]
+    fn a_missing_editor_folder_has_no_modules() {
+        let root = ScratchDirectory::new("editor_modules_missing");
+
+        let modules = HostConfig::resolve_editor_modules(&root.join(EDITOR_DIRECTORY), "egui")
+            .expect("a missing folder is not an error");
+
+        assert!(modules.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A crate in the editor folder still tagged for the `pill_ui` frontend is
+    /// refused rather than skipped, like an extension's editor crate.
+    #[test]
+    fn refuses_the_retired_editor_frontend_tag() {
+        let root = ScratchDirectory::new("editor_modules_retired");
+        seed_editor_folder_crate(&root, "pill_editor_old", "pill_editor_old", Some("pill_ui"));
+
+        let refused = HostConfig::resolve_editor_modules(&root.join(EDITOR_DIRECTORY), "egui");
+
+        assert!(
+            matches!(&refused, Err(ConfigError::RetiredEditorFrontend { name }) if name == "pill_editor_old"),
+            "{refused:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The module's wrapper is written into the editor folder's `generated/`,
+    /// linking the crate where it lives.
+    #[test]
+    fn writes_the_wrapper_into_the_editor_generated_folder() {
+        let root = ScratchDirectory::new("editor_modules_wrapper");
+        seed_editor_folder_crate(
+            &root,
+            "pill_editor_shell",
+            "pill_editor_shell",
+            Some("egui"),
+        );
+        let modules = HostConfig::resolve_editor_modules(&root.join(EDITOR_DIRECTORY), "egui")
+            .expect("a seeded editor folder resolves");
+
+        materialize_host_module_wrapper(&root, &modules[0], false).expect("the wrapper is written");
+
+        let wrapper = root
+            .join(EDITOR_DIRECTORY)
+            .join(GENERATED_DIRECTORY)
+            .join("host_module_pill_editor_shell");
+        let manifest = std::fs::read_to_string(wrapper.join("Cargo.toml")).unwrap();
+        assert!(
+            manifest.contains("name = \"host_module_pill_editor_shell\""),
+            "{manifest}"
+        );
+        assert!(
+            manifest.contains("pill_editor_shell = { path ="),
+            "the wrapper links the module by its path: {manifest}"
+        );
+        let source = std::fs::read_to_string(wrapper.join("src").join("lib.rs")).unwrap();
+        assert!(
+            source.contains("pill_editor_shell::__pill_module_entry_points!();"),
+            "{source}"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
