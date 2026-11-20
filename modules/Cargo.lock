@@ -1304,6 +1304,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "host_module_pill_physics"
+version = "0.1.0"
+dependencies = [
+ "pill_engine",
+ "pill_physics",
+]
+
+[[package]]
+name = "host_module_pill_physics_editor"
+version = "0.1.0"
+dependencies = [
+ "pill_engine",
+ "pill_physics_editor",
+]
+
+[[package]]
+name = "host_module_pill_spline"
+version = "0.1.0"
+dependencies = [
+ "pill_engine",
+ "pill_spline",
+]
+
+[[package]]
+name = "host_module_pill_spline_editor"
+version = "0.1.0"
+dependencies = [
+ "pill_engine",
+ "pill_spline_editor",
+]
+
+[[package]]
 name = "host_module_pill_spline_uber_editor"
 version = "0.1.0"
 dependencies = [
@@ -1312,14 +1344,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "host_project_scene"
+name = "host_project_cube_rust"
 version = "0.1.0"
 dependencies = [
  "glam 0.33.7",
  "pill_engine",
  "pill_master_renderer_data",
- "pill_project_ui",
- "serde",
 ]
 
 [[package]]
