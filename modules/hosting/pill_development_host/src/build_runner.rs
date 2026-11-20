@@ -616,9 +616,9 @@ pub(crate) fn declared_features(workspace_root: &Path, package_name: &str) -> Op
 /// Reads a package's declared features without caching them, for
 /// [`declared_features`].
 ///
-/// It first tries the extension manifest
-/// (`extensions/<folder>/<package>/Cargo.toml`), then every `Cargo.toml` up to
-/// [`MEMBER_SEARCH_DEPTH`] levels under `workspace_root`, and returns the
+/// It first tries the manifest of the extension crate the package names
+/// ([`crate::config::extension_crate_directory`]), then every `Cargo.toml` up
+/// to [`MEMBER_SEARCH_DEPTH`] levels under `workspace_root`, and returns the
 /// features of the first manifest whose package name matches.
 fn read_declared_features(workspace_root: &Path, package_name: &str) -> Option<Vec<String>> {
     let mut manifests =

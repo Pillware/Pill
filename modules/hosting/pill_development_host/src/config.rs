@@ -117,6 +117,10 @@ const EXTENSION_DIRECTORY: &str = "extensions";
 /// crates of that extension's crates.
 const GENERATED_DIRECTORY: &str = "generated";
 
+/// Folder, inside an extension's folder, holding the extension's runnable
+/// example projects. It holds no extension crate of its own.
+const EXAMPLES_DIRECTORY: &str = "examples";
+
 /// Suffix of an extension folder's editor crate. Folder `<extension>` holds
 /// its editor part in `<extension>/<extension>_editor/`; only an editor host
 /// loads it, after the folder's runtime crates, and no other build sees it.
@@ -337,12 +341,15 @@ pub struct ProjectModuleConfig {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ExtensionConfig {
-    /// Crate directory name, also the log field and temporary-copy prefix.
+    /// The crate's package name, also the log field and temporary-copy prefix.
     pub name: String,
 
-    /// The extension folder under `extensions/` that holds the crate; the
-    /// crate itself is `extensions/<folder>/<name>/`.
+    /// The extension folder under `extensions/` that holds the crate.
     pub folder: String,
+
+    /// The crate's directory, relative to the workspace root, with `/`
+    /// separators.
+    pub crate_directory: String,
 
     /// Whether this is the folder's editor crate (`<folder>_editor`), which an
     /// editor host loads after the folder's runtime crates and reloads whenever
@@ -375,34 +382,36 @@ pub struct ExtensionConfig {
 }
 
 impl ExtensionConfig {
-    /// Derives the configuration of an extension crate from its name and the
-    /// extension folder that holds it.
+    /// Derives the configuration of an extension crate from where it lives.
     ///
-    /// The folder and crate name determine everything: sources in
-    /// `extensions/<folder>/<name>/src`, the generated `host_module_<name>`
-    /// wrapper carrying the loadable artifact, and the private `target/hot`
-    /// directory it is copied into. Both are workspace members found by glob,
-    /// so a new module needs no manifest edit.
+    /// The location determines everything: sources in the crate directory's
+    /// `src`, the generated `host_module_<name>` wrapper carrying the loadable
+    /// artifact, and the private `target/hot` directory it is copied into.
+    /// Both are workspace members found by glob, so a new module needs no
+    /// manifest edit.
     ///
     /// Building inside the workspace is required, not merely convenient: it
     /// makes the module resolve the same dependency graph as the host. That
     /// keeps component type identities and the mangled symbol names of the
     /// shared `pill_core` library in agreement.
-    pub fn workspace_member(name: &str, folder: &str) -> Self {
+    pub(crate) fn workspace_member(location: &ExtensionCrateLocation) -> Self {
+        let name = location.package_name.as_str();
         let wrapper_library_name = format!("{HOST_MODULE_MEMBER_PREFIX}{name}");
         // The wrapper's manifest enables the extension's own features on its
         // dependency edge (`materialize_host_module_wrapper`). The command
         // line only mirrors the hot-patch feature, which [`host_cargo_command`]
         // applies for every host-spawned build.
         let build_command = host_cargo_command(std::slice::from_ref(&wrapper_library_name));
+        let crate_directory = location.workspace_relative_directory();
 
         Self {
             name: name.to_string(),
-            folder: folder.to_string(),
-            is_editor_crate: name == format!("{folder}{EDITOR_CRATE_SUFFIX}"),
+            folder: location.folder.clone(),
+            watch_directory: format!("{crate_directory}/src"),
+            crate_directory,
+            is_editor_crate: location.is_editor_crate,
             library_name: name.to_string(),
             wrapper_library_name,
-            watch_directory: format!("{EXTENSION_DIRECTORY}/{folder}/{name}/src"),
             build_command,
             output_subdirectory: "target/hot".to_string(),
         }
@@ -412,9 +421,9 @@ impl ExtensionConfig {
     /// folder under `workspace_root` holds it (the folder of its own name when
     /// none does yet, so a missing crate fails at its watch path).
     pub fn located_workspace_member(workspace_root: &Path, name: &str) -> Self {
-        let folder = locate_extension_folder(&workspace_root.join(EXTENSION_DIRECTORY), name)
-            .unwrap_or_else(|| name.to_string());
-        Self::workspace_member(name, &folder)
+        let location = find_extension_crate(&workspace_root.join(EXTENSION_DIRECTORY), name)
+            .unwrap_or_else(|| ExtensionCrateLocation::conventional(name));
+        Self::workspace_member(&location)
     }
 
     /// The configuration of a project's own editor crate.
@@ -432,10 +441,12 @@ impl ExtensionConfig {
         let name = format!("{package_name}{EDITOR_CRATE_SUFFIX}");
         let wrapper_library_name = format!("{HOST_MODULE_MEMBER_PREFIX}{name}");
         let build_command = host_cargo_command(std::slice::from_ref(&wrapper_library_name));
+        let crate_directory = format!("{project_path}/{name}");
         Self {
             is_editor_crate: true,
             library_name: name.clone(),
-            watch_directory: format!("{project_path}/{name}/src"),
+            watch_directory: format!("{crate_directory}/src"),
+            crate_directory,
             build_command,
             output_subdirectory: "target/hot".to_string(),
             wrapper_library_name,
@@ -725,10 +736,11 @@ impl HostConfig {
                 .iter()
                 .map(|extension| extension.folder.clone())
                 .collect();
-            if let Some(renderer_name) = renderer.as_deref() {
-                if let Some(folder) = locate_extension_folder(&extensions_root, renderer_name) {
-                    runtime_folders.push(folder);
-                }
+            if let Some(renderer_location) = renderer
+                .as_deref()
+                .and_then(|renderer_name| find_extension_crate(&extensions_root, renderer_name))
+            {
+                runtime_folders.push(renderer_location.folder);
             }
             let (editor_crates, editor_only_crate_names) =
                 Self::resolve_editor_crates(&runtime_folders, &extensions_root, editor_frontend)?;
@@ -774,23 +786,17 @@ impl HostConfig {
         // generated source.
         let mut kept_wrappers: Vec<(String, String)> = Vec::new();
         for extension in &extensions {
-            materialize_host_module_wrapper(
-                &workspace_root,
-                &extension.name,
-                &extension.folder,
-                false,
-            )?;
+            materialize_host_module_wrapper(&workspace_root, extension, false)?;
             kept_wrappers.push((extension.folder.clone(), extension.name.clone()));
         }
         if let Some(renderer_name) = renderer.as_deref() {
-            let folder =
-                locate_extension_folder(&extensions_root, renderer_name).ok_or_else(|| {
-                    ConfigError::ExtensionDirectoryMissing {
-                        name: renderer_name.to_string(),
-                    }
+            let renderer_location = find_extension_crate(&extensions_root, renderer_name)
+                .ok_or_else(|| ConfigError::ExtensionDirectoryMissing {
+                    name: renderer_name.to_string(),
                 })?;
-            materialize_host_module_wrapper(&workspace_root, renderer_name, &folder, true)?;
-            kept_wrappers.push((folder, renderer_name.to_string()));
+            let renderer_module = ExtensionConfig::workspace_member(&renderer_location);
+            materialize_host_module_wrapper(&workspace_root, &renderer_module, true)?;
+            kept_wrappers.push((renderer_module.folder, renderer_module.name));
         }
         prune_stale_host_module_wrappers(&workspace_root, &kept_wrappers);
 
@@ -892,7 +898,7 @@ impl HostConfig {
         }
         let data_crate_name = format!("{renderer_name}{RENDERER_DATA_SUFFIX}");
         for crate_name in [renderer_name, data_crate_name.as_str()] {
-            if locate_extension_folder(extensions_root, crate_name).is_none() {
+            if find_extension_crate(extensions_root, crate_name).is_none() {
                 return Err(ConfigError::ExtensionDirectoryMissing {
                     name: crate_name.to_string(),
                 });
@@ -965,12 +971,12 @@ impl HostConfig {
                     name: name.to_string(),
                 });
             }
-            let Some(folder) = locate_extension_folder(extensions_root, name) else {
+            let Some(location) = find_extension_crate(extensions_root, name) else {
                 return Err(ConfigError::ExtensionDirectoryMissing {
                     name: name.to_string(),
                 });
             };
-            let extension = ExtensionConfig::workspace_member(name, &folder);
+            let extension = ExtensionConfig::workspace_member(&location);
             extension.validate()?;
             extension_configs.push(extension);
         }
@@ -998,70 +1004,60 @@ impl HostConfig {
         extensions_root: &Path,
         editor_frontend: &str,
     ) -> Result<(Vec<ExtensionConfig>, Vec<String>), ConfigError> {
-        let editor_crate_of = |folder: &str| format!("{folder}{EDITOR_CRATE_SUFFIX}");
+        let crate_locations = extension_crate_locations(extensions_root);
+        let editor_crate_in = |folder: &str| {
+            crate_locations
+                .iter()
+                .find(|location| location.folder == folder && location.is_editor_crate)
+        };
         // A crate tagged for another editor frontend is left out; an untagged
         // one loads under every editor frontend. The `pill_ui` tag is refused
         // rather than skipped: no host runs that frontend, so skipping the
         // crate would silently drop its editor part.
-        let loads_editor_crate = |folder: &str| -> Result<bool, ConfigError> {
-            let directory = extensions_root.join(folder).join(editor_crate_of(folder));
-            if !directory.join("Cargo.toml").is_file() {
-                return Ok(false);
-            }
-            match declared_editor_frontend(&directory) {
+        let loads_editor_crate =
+            |editor_crate: &ExtensionCrateLocation| match declared_editor_frontend(
+                &editor_crate.directory_under(extensions_root),
+            ) {
                 Some(frontend_tag) if frontend_tag == RETIRED_EDITOR_FRONTEND => {
                     Err(ConfigError::RetiredEditorFrontend {
-                        name: editor_crate_of(folder),
+                        name: editor_crate.package_name.clone(),
                     })
                 }
                 Some(frontend_tag) => Ok(frontend_tag == editor_frontend),
                 None => Ok(true),
-            }
-        };
-        let mut folders: Vec<String> = Vec::new();
+            };
+        let mut editor_crates: Vec<&ExtensionCrateLocation> = Vec::new();
         for folder in runtime_folders {
-            if !folders.contains(folder) && loads_editor_crate(folder)? {
-                folders.push(folder.clone());
+            let Some(editor_crate) = editor_crate_in(folder) else {
+                continue;
+            };
+            if !editor_crates.contains(&editor_crate) && loads_editor_crate(editor_crate)? {
+                editor_crates.push(editor_crate);
             }
         }
         // Editor-only folders: the editor crate is the folder's only crate.
-        let mut all_folders: Vec<String> = std::fs::read_dir(extensions_root)
-            .map(|entries| {
-                entries
-                    .flatten()
-                    .filter(|entry| entry.path().is_dir())
-                    .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        all_folders.sort();
         let mut editor_only_crate_names: Vec<String> = Vec::new();
-        for folder in all_folders {
-            if folder.starts_with('_') || folder == "rendering" || folders.contains(&folder) {
+        for editor_crate in crate_locations
+            .iter()
+            .filter(|location| location.is_editor_crate)
+        {
+            if editor_crate.folder == "rendering" || editor_crates.contains(&editor_crate) {
                 continue;
             }
-            if !loads_editor_crate(&folder)? {
+            if !loads_editor_crate(editor_crate)? {
                 continue;
             }
-            let editor_crate = editor_crate_of(&folder);
-            let holds_runtime_crate = std::fs::read_dir(extensions_root.join(&folder))
-                .map(|entries| {
-                    entries.flatten().any(|entry| {
-                        let entry_name = entry.file_name().to_string_lossy().to_string();
-                        entry_name != editor_crate
-                            && entry_name != GENERATED_DIRECTORY
-                            && entry.path().join("Cargo.toml").is_file()
-                    })
-                })
-                .unwrap_or(false);
+            let holds_runtime_crate = crate_locations.iter().any(|location| {
+                location.folder == editor_crate.folder && !location.is_editor_crate
+            });
             if !holds_runtime_crate {
-                folders.push(folder);
-                editor_only_crate_names.push(editor_crate);
+                editor_crates.push(editor_crate);
+                editor_only_crate_names.push(editor_crate.package_name.clone());
             }
         }
-        let editor_crate_configs = folders
-            .iter()
-            .map(|folder| ExtensionConfig::workspace_member(&editor_crate_of(folder), folder))
+        let editor_crate_configs = editor_crates
+            .into_iter()
+            .map(ExtensionConfig::workspace_member)
             .collect();
         Ok((editor_crate_configs, editor_only_crate_names))
     }
@@ -1896,45 +1892,143 @@ fn is_valid_module_directory_name(module_directory_name: &str) -> bool {
         })
 }
 
-/// Returns the extension folder under `extensions_root` that holds
-/// `crate_name`, checked as `extensions/<folder>/<crate_name>/Cargo.toml`.
+/// Where one extension crate lives under `extensions/`, as its manifest
+/// declares it.
 ///
-/// The folder named like the crate is tried first, because most extensions
-/// hold one crate of their own name. Every other folder is then scanned in
-/// name order, because a folder may hold several crates (the master
-/// renderer's folder also holds its data crate). Folders starting with `_`
-/// are workspace bookkeeping, never extensions. Returns `None` when no folder
-/// holds the crate.
-pub(crate) fn locate_extension_folder(extensions_root: &Path, crate_name: &str) -> Option<String> {
-    let holds_crate = |folder: &str| {
-        extensions_root
-            .join(folder)
-            .join(crate_name)
-            .join("Cargo.toml")
-            .is_file()
-    };
-    if holds_crate(crate_name) {
-        return Some(crate_name.to_string());
-    }
-    let mut folders: Vec<String> = std::fs::read_dir(extensions_root)
-        .ok()?
-        .flatten()
-        .filter(|entry| entry.path().is_dir())
-        .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
-        .filter(|folder| !folder.starts_with('_'))
-        .collect();
-    folders.sort();
-    folders.into_iter().find(|folder| holds_crate(folder))
+/// Every question the host asks about an extension crate goes through this
+/// record: which folder holds it, where its sources are, and whether it is its
+/// folder's editor crate. The package name comes from the crate's own
+/// `Cargo.toml`, so the directory a crate sits in does not have to repeat it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtensionCrateLocation {
+    /// The package name the crate's manifest declares: the name `modules:`
+    /// lists, the cargo selector and the library name the host loads.
+    pub(crate) package_name: String,
+
+    /// The extension folder under `extensions/` that holds the crate.
+    pub(crate) folder: String,
+
+    /// The crate's directory inside its extension folder, with `/` separators.
+    pub(crate) directory_in_folder: String,
+
+    /// Whether this is the folder's editor crate (`<folder>_editor`), which an
+    /// editor host loads after the folder's runtime crates.
+    pub(crate) is_editor_crate: bool,
 }
 
-/// Returns the directory of the extension crate `crate_name`: either
-/// `extensions/<folder>/<crate_name>` for the folder that holds it, or the
-/// usual `extensions/<crate_name>/<crate_name>` when no folder holds it yet.
-pub(crate) fn extension_crate_directory(workspace_root: &Path, crate_name: &str) -> PathBuf {
+impl ExtensionCrateLocation {
+    /// The location a crate that no folder holds would have:
+    /// `extensions/<package>/<package>`. A configuration built from it fails at
+    /// its watch path, which names the crate that is missing.
+    fn conventional(package_name: &str) -> Self {
+        Self {
+            package_name: package_name.to_string(),
+            folder: package_name.to_string(),
+            directory_in_folder: package_name.to_string(),
+            is_editor_crate: false,
+        }
+    }
+
+    /// The crate's directory relative to the workspace root, with `/`
+    /// separators.
+    pub(crate) fn workspace_relative_directory(&self) -> String {
+        format!(
+            "{EXTENSION_DIRECTORY}/{}/{}",
+            self.folder, self.directory_in_folder
+        )
+    }
+
+    /// The crate's directory under `extensions_root`.
+    fn directory_under(&self, extensions_root: &Path) -> PathBuf {
+        extensions_root
+            .join(&self.folder)
+            .join(&self.directory_in_folder)
+    }
+}
+
+/// Returns every extension crate under `extensions_root`, in folder order and
+/// then in directory order inside each folder.
+///
+/// A crate is a directory of an extension folder that holds a `Cargo.toml`
+/// declaring a package name. Folders starting with `_` are workspace
+/// bookkeeping, never extensions, and the host-written `generated/` folder and
+/// the `examples/` folder hold no extension crate.
+pub(crate) fn extension_crate_locations(extensions_root: &Path) -> Vec<ExtensionCrateLocation> {
+    let sorted_directory_names = |directory: &Path| -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(directory)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|entry| entry.path().is_dir())
+                    .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
+    };
+    let mut locations = Vec::new();
+    for folder in sorted_directory_names(extensions_root) {
+        if folder.starts_with('_') {
+            continue;
+        }
+        let folder_directory = extensions_root.join(&folder);
+        for directory_name in sorted_directory_names(&folder_directory) {
+            if directory_name == GENERATED_DIRECTORY || directory_name == EXAMPLES_DIRECTORY {
+                continue;
+            }
+            let Some(package_name) = declared_package_name(&folder_directory.join(&directory_name))
+            else {
+                continue;
+            };
+            let is_editor_crate = package_name == format!("{folder}{EDITOR_CRATE_SUFFIX}");
+            locations.push(ExtensionCrateLocation {
+                package_name,
+                folder: folder.clone(),
+                directory_in_folder: directory_name,
+                is_editor_crate,
+            });
+        }
+    }
+    locations
+}
+
+/// Returns the extension crate whose manifest declares `package_name`, or
+/// `None` when no folder under `extensions_root` holds it.
+///
+/// A crate in the folder of its own name wins over any other, because most
+/// extensions hold one crate named like the folder.
+pub(crate) fn find_extension_crate(
+    extensions_root: &Path,
+    package_name: &str,
+) -> Option<ExtensionCrateLocation> {
+    let mut matching = extension_crate_locations(extensions_root)
+        .into_iter()
+        .filter(|location| location.package_name == package_name)
+        .peekable();
+    let first_match = matching.peek().cloned();
+    matching
+        .find(|location| location.folder == package_name)
+        .or(first_match)
+}
+
+/// Returns the absolute directory of the extension crate named
+/// `package_name`, or the conventional `extensions/<package>/<package>` when
+/// no folder holds it yet.
+pub(crate) fn extension_crate_directory(workspace_root: &Path, package_name: &str) -> PathBuf {
     let extensions_root = workspace_root.join(EXTENSION_DIRECTORY);
-    let folder = locate_extension_folder(&extensions_root, crate_name)
-        .unwrap_or_else(|| crate_name.to_string());
-    extensions_root.join(folder).join(crate_name)
+    find_extension_crate(&extensions_root, package_name)
+        .unwrap_or_else(|| ExtensionCrateLocation::conventional(package_name))
+        .directory_under(&extensions_root)
+}
+
+/// The package name `directory/Cargo.toml` declares, or `None` when the
+/// directory holds no manifest or its manifest declares no package.
+fn declared_package_name(directory: &Path) -> Option<String> {
+    let manifest_text = std::fs::read_to_string(directory.join("Cargo.toml")).ok()?;
+    let manifest = manifest_text.parse::<DocumentMut>().ok()?;
+    let package_name = manifest.get("package")?.get("name")?.as_str()?;
+    Some(package_name.to_string())
 }
 
 /// Reads the project's own settings file from the project root.
@@ -2267,16 +2361,17 @@ fn prune_stale_host_project_members(workspace_root: &Path, kept_member_directory
 /// file cannot be written.
 fn materialize_host_module_wrapper(
     workspace_root: &Path,
-    name: &str,
-    folder: &str,
+    extension: &ExtensionConfig,
     is_renderer_module: bool,
 ) -> Result<(), ConfigError> {
+    let name = extension.name.as_str();
     let member_name = format!("{HOST_MODULE_MEMBER_PREFIX}{name}");
-    let folder_directory = workspace_root.join(EXTENSION_DIRECTORY).join(folder);
-    let member_directory = folder_directory
+    let member_directory = workspace_root
+        .join(EXTENSION_DIRECTORY)
+        .join(&extension.folder)
         .join(GENERATED_DIRECTORY)
         .join(&member_name);
-    let extension_directory = folder_directory.join(name);
+    let extension_directory = workspace_root.join(&extension.crate_directory);
     let engine_directory = workspace_root.join("engine").join("pill_engine");
 
     // Every feature the extension declares, except the `default` key. If the
@@ -2997,28 +3092,90 @@ serde = { version = "1", features = ["derive"] }
         .unwrap();
     }
 
+    /// The folder that holds the crate `package_name`, as the index reports it.
+    fn folder_holding(extensions_root: &Path, package_name: &str) -> Option<String> {
+        find_extension_crate(extensions_root, package_name).map(|location| location.folder)
+    }
+
     /// A crate is found in the folder of its own name first, and otherwise in
     /// whichever folder holds it - the master renderer's folder holds its data
     /// crate too. Bookkeeping folders (`_...`) are never searched.
     #[test]
-    fn locates_crates_in_their_extension_folders() {
-        let root = temp_root().join("locate_extension_folder");
+    fn finds_crates_in_their_extension_folders() {
+        let root = temp_root().join("find_extension_crate");
         let _ = std::fs::remove_dir_all(&root);
         seed_extension_crate(&root, "pill_master_renderer", "pill_master_renderer");
         seed_extension_crate(&root, "pill_master_renderer", "pill_master_renderer_data");
         seed_extension_crate(&root, "_workspace_anchor", "pill_hidden");
 
         assert_eq!(
-            locate_extension_folder(&root, "pill_master_renderer").as_deref(),
+            folder_holding(&root, "pill_master_renderer").as_deref(),
             Some("pill_master_renderer")
         );
         assert_eq!(
-            locate_extension_folder(&root, "pill_master_renderer_data").as_deref(),
+            folder_holding(&root, "pill_master_renderer_data").as_deref(),
             Some("pill_master_renderer"),
             "a second crate in a folder is found by scanning the folders"
         );
-        assert_eq!(locate_extension_folder(&root, "pill_hidden"), None);
-        assert_eq!(locate_extension_folder(&root, "pill_absent"), None);
+        assert_eq!(folder_holding(&root, "pill_hidden"), None);
+        assert_eq!(folder_holding(&root, "pill_absent"), None);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The index names a crate by the package its manifest declares, not by
+    /// the directory it sits in, and every path the host derives follows the
+    /// directory. The generated wrappers and the examples are not crates of
+    /// the extension.
+    #[test]
+    fn a_crate_is_found_by_its_package_name_whatever_its_directory() {
+        let root = temp_root().join("package_name_not_directory");
+        let _ = std::fs::remove_dir_all(&root);
+        let write_crate = |directory_in_folder: &str, package_name: &str| {
+            let directory = root.join("widget").join(directory_in_folder);
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(
+                directory.join("Cargo.toml"),
+                format!("[package]\nname = \"{package_name}\"\n"),
+            )
+            .unwrap();
+        };
+        write_crate("runtime", "pill_widget");
+        write_crate("editor", "widget_editor");
+        write_crate(
+            "generated/host_module_pill_widget",
+            "host_module_pill_widget",
+        );
+        std::fs::create_dir_all(root.join("widget").join("examples").join("demo")).unwrap();
+
+        let runtime = find_extension_crate(&root, "pill_widget").expect("the runtime crate");
+        assert_eq!(runtime.folder, "widget");
+        assert_eq!(runtime.directory_in_folder, "runtime");
+        assert!(!runtime.is_editor_crate);
+        let configuration = ExtensionConfig::workspace_member(&runtime);
+        assert_eq!(configuration.name, "pill_widget");
+        assert_eq!(configuration.crate_directory, "extensions/widget/runtime");
+        assert_eq!(
+            configuration.watch_directory,
+            "extensions/widget/runtime/src"
+        );
+
+        let editor = find_extension_crate(&root, "widget_editor").expect("the editor crate");
+        assert_eq!(editor.directory_in_folder, "editor");
+        assert!(
+            editor.is_editor_crate,
+            "`<folder>_editor` is the folder's editor crate"
+        );
+        assert_eq!(
+            find_extension_crate(&root, "host_module_pill_widget"),
+            None,
+            "a generated wrapper is not an extension crate"
+        );
+        assert_eq!(
+            extension_crate_locations(&root).len(),
+            2,
+            "only the runtime and the editor crate are indexed"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -3148,16 +3305,25 @@ serde = { version = "1", features = ["derive"] }
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A runtime crate is never mistaken for an editor crate.
+    /// A runtime crate is never mistaken for an editor crate, and neither is
+    /// another folder's editor crate.
     #[test]
     fn only_the_folders_editor_crate_is_flagged() {
-        assert!(
-            ExtensionConfig::workspace_member("pill_spline_editor", "pill_spline").is_editor_crate
-        );
-        assert!(!ExtensionConfig::workspace_member("pill_spline", "pill_spline").is_editor_crate);
-        assert!(
-            !ExtensionConfig::workspace_member("pill_other_editor", "pill_spline").is_editor_crate
-        );
+        let root = temp_root().join("editor_crate_flag");
+        let _ = std::fs::remove_dir_all(&root);
+        seed_extension_crate(&root, "pill_spline", "pill_spline");
+        seed_extension_crate(&root, "pill_spline", "pill_spline_editor");
+        seed_extension_crate(&root, "pill_spline", "pill_other_editor");
+        let is_editor_crate = |package_name: &str| {
+            let location = find_extension_crate(&root, package_name).expect("a seeded crate");
+            ExtensionConfig::workspace_member(&location).is_editor_crate
+        };
+
+        assert!(is_editor_crate("pill_spline_editor"));
+        assert!(!is_editor_crate("pill_spline"));
+        assert!(!is_editor_crate("pill_other_editor"));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The renderer's data crate may share the GPU module's folder.

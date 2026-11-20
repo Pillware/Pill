@@ -416,9 +416,7 @@ mod slot {
         /// the parent of the source directory the watcher watches.
         #[cfg(feature = "rendering")]
         pub(crate) fn crate_directory(&self) -> &Path {
-            Path::new(&self.extension_config.watch_directory)
-                .parent()
-                .unwrap_or_else(|| Path::new(""))
+            Path::new(&self.extension_config.crate_directory)
         }
 
         /// The generation the watcher has signalled but nothing has handled

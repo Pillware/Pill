@@ -97,6 +97,7 @@
 # Standard library
 import os
 import sys
+import tomllib
 from pathlib import Path
 
 # Third-party
@@ -178,23 +179,53 @@ CSHARP_TARGET_FRAMEWORK = "net8.0"
 WORKSPACE_DIRECTORY = Path("modules")
 
 
-# Finds the directory of an extension crate: `modules/extensions/<folder>/<crate>`
-# for the folder that holds it, the folder of its own name first (as the host's
-# `locate_extension_folder` does). Falls back to that conventional path when no
-# folder holds the crate, so a missing crate is reported as missing.
+# Folders inside an extension's folder that hold no crate of the extension: the
+# host-written wrappers and the runnable example projects.
+EXTENSION_NON_CRATE_DIRECTORIES = ("generated", "examples")
+
+
+# Returns the package name `directory/Cargo.toml` declares, or None when the
+# directory holds no readable manifest or the manifest declares no package.
+def declared_package_name(directory: Path):
+    manifest_path = directory / PROJECT_MANIFEST_FILE_NAME
+    if not manifest_path.is_file():
+        return None
+    try:
+        with manifest_path.open("rb") as handle:
+            manifest = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    package_name = manifest.get("package", {}).get("name")
+    return package_name if isinstance(package_name, str) else None
+
+
+# Finds the directory of the extension crate whose manifest declares
+# `crate_name`, the way the host's `find_extension_crate` does: every crate
+# directory of every extension folder is read, and a crate in the folder of its
+# own name wins. Falls back to the conventional
+# `modules/extensions/<crate>/<crate>` when no folder holds the crate, so a
+# missing crate is reported as missing.
 def extension_crate_directory(root: Path, crate_name: str) -> Path:
     extensions_root = root / EXTENSION_DIRECTORY
-    own_folder = extensions_root / crate_name / crate_name
-    if (own_folder / PROJECT_MANIFEST_FILE_NAME).is_file():
-        return own_folder
+    conventional_directory = extensions_root / crate_name / crate_name
+    matching_directories = []
     if extensions_root.is_dir():
         for folder in sorted(extensions_root.iterdir()):
             if folder.name.startswith("_") or not folder.is_dir():
                 continue
-            candidate = folder / crate_name
-            if (candidate / PROJECT_MANIFEST_FILE_NAME).is_file():
-                return candidate
-    return own_folder
+            for crate_directory in sorted(folder.iterdir()):
+                if crate_directory.name in EXTENSION_NON_CRATE_DIRECTORIES:
+                    continue
+                if not crate_directory.is_dir():
+                    continue
+                if declared_package_name(crate_directory) == crate_name:
+                    matching_directories.append(crate_directory)
+    for crate_directory in matching_directories:
+        if crate_directory.parent.name == crate_name:
+            return crate_directory
+    if matching_directories:
+        return matching_directories[0]
+    return conventional_directory
 
 
 def repository_root() -> Path:
