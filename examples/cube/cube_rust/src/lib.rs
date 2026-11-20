@@ -25,8 +25,8 @@ use std::path::{Path, PathBuf};
 
 // External crates
 use pill_engine::{
-    pill_hot, pill_project, system, AssetLoader, AssetManager, Engine, Handle, Query, Res,
-    SystemError, Time, World,
+    pill_project, system, AssetLoader, AssetManager, Engine, Handle, Query, Res, SystemError, Time,
+    World,
 };
 use pill_master_renderer_data::{
     CameraComponent, Material, Mesh, MeshRendererComponent, TransformComponent,
