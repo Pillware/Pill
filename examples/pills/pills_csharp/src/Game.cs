@@ -16,7 +16,7 @@
 
 using System.Numerics;
 // The renderer's components, generated from their Rust registration.
-using pill_master_renderer.component;
+using pill_master_renderer;
 // The renderer's assets, builders and pipeline resource, generated from their
 // Rust declarations.
 using pill_master_renderer_data;

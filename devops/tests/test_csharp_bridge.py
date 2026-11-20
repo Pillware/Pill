@@ -1219,7 +1219,10 @@ SESSION_SCENARIOS = [
         ],
         # Restore the probe first so no build references GetE after the module
         # reverts (a transient reference would fail the intermediate build).
-        restore_after=[MANAGED_PROJECT_PROBE_CS, SPLINE_LIB_RS],
+        # The edited file is the component module, so that is what must be put
+        # back: leaving it edited would make the codegen-rebuild check compare
+        # a mirror regenerated from `get_e` against the committed bootstrap.
+        restore_after=[MANAGED_PROJECT_PROBE_CS, SPLINE_COMPONENT_RS],
     ),
 ]
 

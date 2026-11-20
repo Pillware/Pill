@@ -109,10 +109,8 @@ const TEST_WORLD_ENTITY_COUNT: usize = 100;
 /// lives in the project's `TracyLive` namespace.
 fn test_full_name(name: &str) -> String {
     match name {
-        "TransformComponent" => "pill_master_renderer.component.TransformComponent".to_owned(),
-        "MeshRendererComponent" => {
-            "pill_master_renderer.component.MeshRendererComponent".to_owned()
-        }
+        "TransformComponent" => "pill_master_renderer.TransformComponent".to_owned(),
+        "MeshRendererComponent" => "pill_master_renderer.MeshRendererComponent".to_owned(),
         other => format!("TracyLive.{other}"),
     }
 }
@@ -663,7 +661,7 @@ fn a_managed_handle_field_is_recorded_with_its_registered_asset_type() {
     let component_id = bindings[&stable_id].component_id();
     assert_eq!(
         engine.world().asset_field_type(component_id, "Mesh"),
-        Some("pill_master_renderer::assets::Mesh"),
+        Some("pill_master_renderer::Mesh"),
         "the Rust type path is recorded as the registered name"
     );
 
@@ -680,7 +678,7 @@ fn a_managed_handle_field_is_recorded_with_its_registered_asset_type() {
     assert_eq!(
         value,
         pill_engine::component_field::FieldValue::Asset {
-            asset_type: Some("pill_master_renderer::assets::Mesh".to_owned()),
+            asset_type: Some("pill_master_renderer::Mesh".to_owned()),
             index: 3,
             generation: 1,
         }
@@ -3203,11 +3201,10 @@ fn a_managed_resource_publishes_its_field_layout() {
 
 /// The qualified name that `#[pill_mirror_object]` records for the renderer's
 /// mesh.
-const MESH_TYPE: &str = "pill_master_renderer_data::assets::mesh::Mesh";
+const MESH_TYPE: &str = "pill_master_renderer_data::Mesh";
 
 /// The qualified name of the renderer's pipeline resource.
-const RENDERING_MANAGER_TYPE: &str =
-    "pill_master_renderer_data::rendering_manager::RenderingManager";
+const RENDERING_MANAGER_TYPE: &str = "pill_master_renderer_data::RenderingManager";
 
 /// The address of one mirrored function in this binary's own table.
 fn mirrored(type_name: &str, method: &str) -> usize {
@@ -3433,7 +3430,7 @@ fn a_failed_mirrored_call_reports_its_message() {
 fn the_render_pipeline_clears_through_its_mirrored_method() {
     let mut engine = Engine::new();
     pill_master_renderer_data::register(&mut engine);
-    let shared_name = "pill_master_renderer::resources::rendering_manager::RenderingManager";
+    let shared_name = "pill_master_renderer::RenderingManager";
     let manager = engine
         .world()
         .get_resource::<pill_master_renderer_data::RenderingManager>()

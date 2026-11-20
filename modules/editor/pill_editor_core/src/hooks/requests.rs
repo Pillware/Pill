@@ -109,7 +109,7 @@ impl Resource for EditorHookRequests {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_editor_core::hooks::EditorHookRequests")
+        Some("pill_editor_core::EditorHookRequests")
     }
 }
 

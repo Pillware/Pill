@@ -380,7 +380,7 @@ pub enum AssetKind {
     /// action writes to it.
     Folder,
     /// A file's type, as the host reported it: `Texture`, `file`, or a
-    /// registered path like `pill_master_renderer::assets::Material`.
+    /// registered path like `pill_master_renderer::Material`.
     Type(String),
 }
 
@@ -1966,7 +1966,7 @@ mod tests {
     ];
 
     fn demo_component_name() -> String {
-        std::any::type_name::<DemoComponent>().to_string()
+        pill_engine::component::ComponentRegistry::registered_name::<DemoComponent>()
     }
 
     fn demo_engine() -> Engine {
@@ -2142,7 +2142,7 @@ mod tests {
     }];
 
     fn array_component_name() -> String {
-        std::any::type_name::<ArrayComponent>().to_string()
+        pill_engine::component::ComponentRegistry::registered_name::<ArrayComponent>()
     }
 
     #[test]

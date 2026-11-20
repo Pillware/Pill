@@ -524,9 +524,9 @@ mod tests {
         assert_eq!(
             super::consumed_component_names(),
             [
-                "pill_master_renderer::component::TransformComponent",
-                "pill_master_renderer::component::CameraComponent",
-                "pill_master_renderer::component::MeshRendererComponent",
+                "pill_master_renderer::TransformComponent",
+                "pill_master_renderer::CameraComponent",
+                "pill_master_renderer::MeshRendererComponent",
             ]
         );
     }

@@ -72,7 +72,7 @@ impl PipelinePass {
 
 /// The passes a frame runs, in the order they were added.
 #[asset(standalone)]
-#[pill_mirror_object(asset, shared = "pill_master_renderer::assets::RenderingPipeline")]
+#[pill_mirror_object(asset, shared = "pill_master_renderer::RenderingPipeline")]
 #[derive(Clone, Debug)]
 pub struct RenderingPipeline {
     /// The passes, in the order they run. The renderer sorts the chain by each

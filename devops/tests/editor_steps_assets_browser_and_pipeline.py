@@ -467,7 +467,7 @@ def run_assets_browser_and_pipeline_steps(state: StepState) -> None:
         begin,
     )
     assert re.search(
-        r'type_name="pill_master_renderer::assets::RenderingPipeline"\s+'
+        r'type_name="pill_master_renderer::RenderingPipeline"\s+'
         r'display="RenderingPipeline"\s+extension="pipeline"',
         session.read_since(begin),
     ), "the create dialog does not offer .pipeline"
@@ -477,7 +477,7 @@ def run_assets_browser_and_pipeline_steps(state: StepState) -> None:
     begin = session.length()
     applied_before = occurrence_count(session, re.escape(ENGINE_COMMANDS_APPLIED_TOKEN))
     session.send(
-        "edit asset create pill_master_renderer::assets::RenderingPipeline textures s16_pipeline"
+        "edit asset create pill_master_renderer::RenderingPipeline textures s16_pipeline"
     )
     session.wait(
         log_layout.message_then_fields_pattern(re.escape(HISTORY_PUSH_TOKEN), r'\s+label="create asset s16_pipeline"'),
@@ -490,7 +490,7 @@ def run_assets_browser_and_pipeline_steps(state: StepState) -> None:
     document = yaml.safe_load(pipeline_path.read_text(encoding="utf-8"))
     assert (
         document["asset_type"]
-        == "pill_master_renderer::assets::RenderingPipeline"
+        == "pill_master_renderer::RenderingPipeline"
     ), document
     assert document["format_version"] == 1, document
     assert len(document["guid"]) == 32, document

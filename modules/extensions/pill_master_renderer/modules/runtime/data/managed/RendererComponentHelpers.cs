@@ -21,7 +21,7 @@ using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace pill_master_renderer.component
+namespace pill_master_renderer
 {
     /// <summary>Conveniences over the generated <c>MeshRendererComponent</c> mirror.</summary>
     public partial struct MeshRendererComponent

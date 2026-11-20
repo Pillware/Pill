@@ -64,11 +64,12 @@ use syn::{parse_macro_input, spanned::Spanned, DeriveInput, ItemFn};
 /// - `persistable` - the component survives a reload through schema migration.
 ///   The type must implement `Serialize + DeserializeOwned + Default`, the same
 ///   bounds [`World::register_persistable_component_with_layout`] requires.
-/// - `shared`, `shared = "crate::Name"` - gives the type one identity in every
+/// - `shared`, `shared = "prefix::Name"` - gives the type one identity in every
 ///   binary that links it. Without it, each binary has its own `TypeId` and its
 ///   own column, and neither binary sees the other's entities. The identity is
-///   `module_path!()::TypeName` unless pinned, and it must be unique across the
-///   whole process.
+///   `<crate>::<Type>` unless pinned, and must be unique across the whole
+///   process; a pin is `<prefix>::<Type>` too, for a type published under a
+///   family name rather than its crate's.
 ///
 /// Field decorators (`#[pill(...)]` on a field, Unity's vocabulary). A field
 /// may take several, comma-separated or as one attribute each. They change
@@ -118,39 +119,14 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
                     Ok(())
                 } else if meta.path.is_ident("shared") {
                     shared = true;
-                    // `shared` on its own derives the name from the module
-                    // path; `shared = "..."` pins it explicitly.
+                    // `shared` on its own names the type `<crate>::<Type>`;
+                    // `shared = "..."` pins another prefix explicitly. A shared
+                    // name is a process-wide identity: two types that hold it
+                    // become one component, one column and one set of rows, so
+                    // its shape is checked here, before a collision exists.
                     if meta.input.peek(syn::Token![=]) {
                         let literal: syn::LitStr = meta.value()?.parse()?;
-                        let name = literal.value();
-                        if name.is_empty() {
-                            return Err(syn::Error::new_spanned(
-                                &literal,
-                                "a shared component name cannot be empty",
-                            ));
-                        }
-                        // A shared name is a process-wide identity: two types
-                        // that hold it become one component, one column and one
-                        // set of rows. If their layouts also agree, nothing
-                        // downstream can tell them apart. So the check has to
-                        // happen here, before the collision exists. Requiring a
-                        // path separator turns an accidental `"Transform"` into
-                        // a compile error, and leaves a deliberate qualified
-                        // name - the only way two artifacts can legitimately
-                        // share one - untouched.
-                        if !name.contains("::") {
-                            return Err(syn::Error::new_spanned(
-                                &literal,
-                                format!(
-                                    "shared component name `{name}` is not namespaced. A shared \
-                                     name is a process-wide identity, so an unrelated crate \
-                                     declaring `{name}` too would bind to this component's \
-                                     column and read its rows. Qualify it (`my_crate::{name}`), \
-                                     or drop the argument to derive it from `module_path!()`."
-                                ),
-                            ));
-                        }
-                        shared_name_override = Some(name);
+                        shared_name_override = Some(validated_shared_name(&literal, "component")?);
                     }
                     Ok(())
                 } else if meta.path.is_ident("gizmo") {
@@ -272,9 +248,7 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
                 .record_clone_value(world);
         }
     };
-    let type_name = quote! {
-        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident))
-    };
+    let type_name = crate_qualified_type_name(ident);
 
     // A shared component reports a stable name that every binary linking it
     // computes identically. An ordinary component reports no name and keeps the
@@ -634,9 +608,7 @@ fn component_field_descriptors(
         ));
     }
 
-    let type_name = quote! {
-        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#type_ident))
-    };
+    let type_name = crate_qualified_type_name(type_ident);
 
     let mut field_descriptor_expressions = Vec::with_capacity(named_fields.len());
     let mut accessor_emissions: Vec<proc_macro2::TokenStream> = Vec::new();
@@ -1642,6 +1614,66 @@ fn emit_heap_field_accessor(
     }
 }
 
+/// The stored name of the type `ident` declares: `<crate>::<Type>`.
+///
+/// `CARGO_CRATE_NAME` is the crate's name as every artifact that links it
+/// compiles it, so a module's DLL and a project depending on the same crate
+/// spell the same name, and moving the type to another module leaves it
+/// unchanged. The engine's runtime rule
+/// (`pill_engine::type_names::stable_type_name`) produces the same string for
+/// a type that declares no name of its own, except for `pill_engine_core`'s
+/// own types, which it writes under the public `pill_engine` name - the core
+/// declares its types by hand, so no attribute expands there.
+///
+/// Type names are unique within a crate, which keeps the short form
+/// unambiguous; the artifact entry point refuses an artifact that declares one
+/// name twice.
+pub(crate) fn crate_qualified_type_name(ident: &syn::Ident) -> proc_macro2::TokenStream {
+    quote! {
+        ::core::concat!(::core::env!("CARGO_CRATE_NAME"), "::", ::core::stringify!(#ident))
+    }
+}
+
+/// Checks a pinned shared name and returns it: `<prefix>::<Type>`, two
+/// non-empty segments.
+///
+/// The prefix is the crate, or a family name several crates publish under
+/// (`pill_master_renderer::CameraComponent` is declared in
+/// `pill_renderer_api`). A name without a separator would let an unrelated
+/// crate declaring the same word bind to this type's identity; a name with a
+/// module path in the middle would break the rule every stored name follows,
+/// which is what lets a file written before it be read back
+/// (`pill_engine::type_names::names_same_type`).
+///
+/// # Errors
+///
+/// Returns a compile error on `literal` when the name is empty or does not
+/// have exactly two segments. `subject` names the declaration in the message
+/// (`component`, `resource`, `asset`).
+pub(crate) fn validated_shared_name(literal: &syn::LitStr, subject: &str) -> syn::Result<String> {
+    let name = literal.value();
+    if name.is_empty() {
+        return Err(syn::Error::new_spanned(
+            literal,
+            format!("a shared {subject} name cannot be empty"),
+        ));
+    }
+    let segments: Vec<&str> = name.split("::").collect();
+    if segments.len() != 2 || segments.iter().any(|segment| segment.is_empty()) {
+        return Err(syn::Error::new_spanned(
+            literal,
+            format!(
+                "shared {subject} name `{name}` must be `<prefix>::<Type>`: the crate (or the \
+                 family name it publishes under) and the type, with no module path between \
+                 them. The name is a process-wide identity, so it needs the prefix, and every \
+                 stored name has this shape so a type never changes name when it moves. Drop \
+                 the argument to use `<crate>::<Type>`."
+            ),
+        ));
+    }
+    Ok(name)
+}
+
 /// Joins a path's segments into one string, with `separator` between them.
 ///
 /// The result is a wire format in two places. One is the `struct:` tag a
@@ -1941,9 +1973,7 @@ pub fn derive_pill_mirror(input: TokenStream) -> TokenStream {
             Err(error) => return error.to_compile_error().into(),
         };
 
-    let type_name = quote! {
-        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident))
-    };
+    let type_name = crate_qualified_type_name(ident);
 
     let encodings = mirror::value_type_encodings(ident);
     let expanded = quote! {
@@ -1979,9 +2009,11 @@ pub fn derive_pill_mirror(input: TokenStream) -> TokenStream {
 /// into the calling artifact's registry. Managed code then gets typed members
 /// for the fields instead of an opaque byte blob.
 ///
-/// Spell the path exactly as the component field is written. The field tag is
-/// the path as spelled at the field site (`Vector3f` for a `[Vector3f; 16]`
-/// field), and the host resolves descriptors by exact name. A generated
+/// The declaration is stored under the path's first and last segment
+/// (`pill_core::Vector2f`), the `<crate>::<Type>` shape every stored name has.
+/// The field tag stays the path as spelled at the field site (`Vector3f` for a
+/// `[Vector3f; 16]` field), and the readers resolve it against the stored name
+/// by its last segment. A generated
 /// assertion fails the build when the last declared field does not end the
 /// type, so a field added behind the declaration cannot go unseen. The
 /// declaration belongs to the artifact whose mirror needs it: another module's
@@ -2027,9 +2059,28 @@ pub fn pill_value_type(input: TokenStream) -> TokenStream {
             Err(error) => return error.to_compile_error().into(),
         };
 
-    // Joined the same way the field tag is, so the descriptor name matches
-    // what a component field spelled with this path produces.
-    let type_name = flattened_path(&declaration.type_path, "::");
+    // `<crate>::<Type>`, the shape every stored name has: the first segment
+    // stands for the crate, and the module segments in between are left out so
+    // a field tag spelled with the full path still resolves.
+    let type_name = {
+        let first = declaration
+            .type_path
+            .segments
+            .first()
+            .map(|segment| segment.ident.to_string())
+            .unwrap_or_default();
+        let last = declaration
+            .type_path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string())
+            .unwrap_or_default();
+        if first == last {
+            first
+        } else {
+            format!("{first}::{last}")
+        }
+    };
     let type_path = &declaration.type_path;
     let last_field = declaration
         .fields
@@ -2810,9 +2861,9 @@ fn self_type_ident(self_type: &syn::Type) -> Option<&syn::Ident> {
 ///
 /// - `shared` - give the type a stable identity instead of a per-binary
 ///   `TypeId`, which is what lets a reload keep the value instead of retiring
-///   it. On its own the name is derived from `module_path!()`; `shared =
-///   "..."` pins it, and must be namespaced for the same reason
-///   `PillComponent`'s must be.
+///   it. On its own the name is `<crate>::<Type>`; `shared = "..."` pins
+///   another prefix, in the same `<prefix>::<Type>` shape `PillComponent`'s
+///   pin takes.
 /// - `layout_sources = ["..."]` - the files whose contents define the type's
 ///   layout. The development host fingerprints them, so an edit that changes
 ///   the layout rebuilds the value instead of keeping bytes that no longer
@@ -2845,30 +2896,11 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
             if meta.path.is_ident("shared") {
                 shared = true;
                 if meta.input.peek(syn::Token![=]) {
-                    let literal: syn::LitStr = meta.value()?.parse()?;
-                    let name = literal.value();
-                    if name.is_empty() {
-                        return Err(syn::Error::new_spanned(
-                            &literal,
-                            "a shared resource name cannot be empty",
-                        ));
-                    }
                     // The same rule a shared component name follows: the name
                     // is a process-wide identity, so an unrelated type
                     // declaring it too would read this resource's bytes.
-                    if !name.contains("::") {
-                        return Err(syn::Error::new_spanned(
-                            &literal,
-                            format!(
-                                "shared resource name `{name}` is not namespaced. A shared \
-                                 name is a process-wide identity, so an unrelated crate \
-                                 declaring `{name}` too would bind to this resource and read \
-                                 its bytes. Qualify it (`my_crate::{name}`), or drop the \
-                                 argument to derive it from `module_path!()`."
-                            ),
-                        ));
-                    }
-                    shared_name_override = Some(name);
+                    let literal: syn::LitStr = meta.value()?.parse()?;
+                    shared_name_override = Some(validated_shared_name(&literal, "resource")?);
                 }
                 return Ok(());
             }
@@ -2914,9 +2946,7 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
     }
 
     // Step 3: Emit the trait implementation and the descriptor.
-    let type_name = quote! {
-        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident))
-    };
+    let type_name = crate_qualified_type_name(ident);
     let shared_impl = if shared {
         let shared_name = match &shared_name_override {
             Some(name) => quote! { #name },
@@ -3090,9 +3120,7 @@ pub fn derive_pill_asset(input: TokenStream) -> TokenStream {
     }
 
     // Step 3: Emit the declaration the entry point walks.
-    let type_name = quote! {
-        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident))
-    };
+    let type_name = crate_qualified_type_name(ident);
     let register_ident = format_ident!("__pill_register_asset_{}", ident);
     let register_call = if standalone {
         quote! { world.register_standalone_asset::<#ident>(); }
@@ -3468,8 +3496,8 @@ fn asset_impl(
 /// - `persistable` - the component survives a reload through schema migration.
 ///   The type must implement `Serialize + DeserializeOwned + Default`; this
 ///   attribute derives only the serde half and leaves `Default` explicit.
-/// - `shared`, `shared = "crate::Name"` - one identity in every binary that
-///   links the type, derived from `module_path!()` or pinned.
+/// - `shared`, `shared = "prefix::Name"` - one identity in every binary that
+///   links the type, `<crate>::<Type>` or pinned.
 /// - `gizmo = <path>` - the function that draws this component's editor gizmo.
 /// - `gizmo_when = "always" | "selected"` - when that gizmo draws; declared
 ///   together with `gizmo`.
@@ -3502,7 +3530,7 @@ pub fn component(attribute: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// The arguments are the derive's, passed through unchanged:
 ///
-/// - `shared`, `shared = "crate::Name"` - a stable identity across generations
+/// - `shared`, `shared = "prefix::Name"` - a stable identity across generations
 ///   instead of a per-binary `TypeId`, which is what lets a reload keep the
 ///   value.
 /// - `layout_sources = ["..."]` - the files whose contents define the layout,

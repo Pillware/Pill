@@ -163,7 +163,7 @@ macro_rules! browser_fixture {
                 root: String::new(),
                 path: "models/cube.obj".to_string(),
                 read_only: false,
-                kind: AssetKind::parse("pill_master_renderer::assets::Mesh"),
+                kind: AssetKind::parse("pill_master_renderer::Mesh"),
                 standalone: false,
                 has_meta: true,
                 guid: None,
@@ -526,17 +526,11 @@ fn tiles_pick_an_icon_from_the_kind_and_the_extension() {
     };
     assert_eq!(asset_icon(&row("models", "folder")), icons::Icon::Folder);
     assert_eq!(
-        asset_icon(&row(
-            "models/cube.obj",
-            "pill_master_renderer::assets::Mesh"
-        )),
+        asset_icon(&row("models/cube.obj", "pill_master_renderer::Mesh")),
         icons::Icon::Cube
     );
     assert_eq!(
-        asset_icon(&row(
-            "textures/skin.png",
-            "pill_master_renderer::assets::Texture"
-        )),
+        asset_icon(&row("textures/skin.png", "pill_master_renderer::Texture")),
         icons::Icon::Image
     );
     assert_eq!(
@@ -556,19 +550,19 @@ fn tiles_pick_an_icon_from_the_kind_and_the_extension() {
 #[test]
 fn an_asset_type_names_its_row_icon() {
     assert_eq!(
-        asset_type_icon("pill_master_renderer::assets::Mesh"),
+        asset_type_icon("pill_master_renderer::Mesh"),
         icons::Icon::Cube
     );
     assert_eq!(
-        asset_type_icon("pill_master_renderer::assets::Material"),
+        asset_type_icon("pill_master_renderer::Material"),
         icons::Icon::Sphere
     );
     assert_eq!(
-        asset_type_icon("pill_master_renderer::assets::Texture"),
+        asset_type_icon("pill_master_renderer::Texture"),
         icons::Icon::Image
     );
     assert_eq!(
-        asset_type_icon("pill_master_renderer::assets::Shader"),
+        asset_type_icon("pill_master_renderer::Shader"),
         icons::Icon::Code
     );
     // A type with no shape of its own falls back to the plain file icon.
@@ -580,7 +574,7 @@ fn an_asset_type_names_its_row_icon() {
 /// the reference edit, through egui's drag-and-drop payload.
 #[test]
 fn a_dropped_asset_tile_queues_the_reference_edit() {
-    const MESH_TYPE: &str = "pill_master_renderer::assets::Mesh";
+    const MESH_TYPE: &str = "pill_master_renderer::Mesh";
     /// Draw the grid and the asset row, one frame.
     #[allow(clippy::too_many_arguments)]
     fn draw(
@@ -762,7 +756,7 @@ fn a_dropped_asset_tile_queues_the_reference_edit() {
 /// as a drop on the list instead of being taken by the picker.
 #[test]
 fn a_dragged_row_reorders_the_list() {
-    const PASS_TYPE: &str = "pill_master_renderer::assets::RenderPass";
+    const PASS_TYPE: &str = "pill_master_renderer::RenderPass";
     const ASSET_PATH: &str = "pipelines/main.pipeline";
 
     #[cfg(test)]

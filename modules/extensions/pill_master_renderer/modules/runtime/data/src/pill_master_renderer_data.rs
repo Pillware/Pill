@@ -318,7 +318,7 @@ mod tests {
             .unwrap();
         let component_name =
             pill_engine::component::ComponentRegistry::registered_name::<MeshRendererComponent>();
-        let mesh_type_name = "pill_master_renderer::assets::Mesh";
+        let mesh_type_name = "pill_master_renderer::Mesh";
         assert_eq!(
             world
                 .read_component_field(entity, &component_name, "mesh")
@@ -356,7 +356,7 @@ mod tests {
             &component_name,
             "mesh",
             pill_engine::FieldValue::Asset {
-                asset_type: Some("pill_master_renderer::assets::Material".to_owned()),
+                asset_type: Some("pill_master_renderer::Material".to_owned()),
                 index: 1,
                 generation: 0,
             },
@@ -426,11 +426,8 @@ f 1/1 2/2 3/3
             )
             .unwrap();
 
-        assert_eq!(
-            texture_import.type_name,
-            "pill_master_renderer::assets::Texture"
-        );
-        assert_eq!(mesh_import.type_name, "pill_master_renderer::assets::Mesh");
+        assert_eq!(texture_import.type_name, "pill_master_renderer::Texture");
+        assert_eq!(mesh_import.type_name, "pill_master_renderer::Mesh");
         assert!(assets.get_by_name::<Texture>("pixel.png").is_some());
         assert!(assets.get_by_name::<Mesh>("triangle.obj").is_some());
         std::fs::remove_dir_all(&asset_root_directory).unwrap();

@@ -110,7 +110,7 @@ impl pill_engine::StandaloneAsset for FixtureSettingsAsset {
 /// It keeps a shared name, so it holds one world id across a reload: an id
 /// built from `TypeId` differs in every generation, and the value would be
 /// retired instead of kept.
-#[resource(shared = "native::settings_probe::FixtureManager")]
+#[resource(shared = "native::FixtureManager")]
 pub struct FixtureManager {
     /// A flag the document sets.
     pub enabled: bool,

@@ -54,7 +54,7 @@ use crate::{Material, Shader, Texture};
 /// unmapped. Reading such a map afterwards faults. A `BTreeMap` holds no such
 /// pointer.
 #[asset(standalone)]
-#[pill_mirror_object(asset, standalone, shared = "pill_master_renderer::assets::RenderPass")]
+#[pill_mirror_object(asset, standalone, shared = "pill_master_renderer::RenderPass")]
 #[derive(Clone, Debug)]
 pub struct RenderPass {
     /// Label used in logs, profiling and error messages.

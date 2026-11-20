@@ -27,7 +27,7 @@ use pill_engine::{component, World};
 /// writes its own lights into its shaders - so the value is saved with the
 /// scene and never drawn.
 #[component(
-    shared = "pill_master_renderer::component::DirectionalLightComponent",
+    shared = "pill_master_renderer::DirectionalLightComponent",
     persistable
 )]
 #[repr(C)]

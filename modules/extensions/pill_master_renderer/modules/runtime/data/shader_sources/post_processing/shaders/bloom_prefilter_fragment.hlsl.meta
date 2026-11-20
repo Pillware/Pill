@@ -1,5 +1,5 @@
 format_version: 1
-asset_type: pill_master_renderer::assets::Shader
+asset_type: pill_master_renderer::Shader
 guid: 8cf45cb8fcc8501c07d8665419da6ff3
 settings:
   vertex: post_processing/shaders/fullscreen_vertex.wgsl

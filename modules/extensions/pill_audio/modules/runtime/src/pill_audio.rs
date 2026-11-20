@@ -292,7 +292,7 @@ mod tests {
             &component_name,
             "sound",
             pill_engine::FieldValue::Asset {
-                asset_type: Some("pill_master_renderer::assets::Mesh".to_owned()),
+                asset_type: Some("pill_master_renderer::Mesh".to_owned()),
                 index: 0,
                 generation: 0,
             },

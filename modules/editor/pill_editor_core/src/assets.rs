@@ -1093,7 +1093,7 @@ mod tests {
         selection.asset = Some("scenes".to_string());
         let mut scene_types = types();
         scene_types.push(StandaloneTypeInfo {
-            type_name: "pill_engine::scene::Scene".to_string(),
+            type_name: "pill_engine::Scene".to_string(),
             display_name: "Scene".to_string(),
             extension: "scene".to_string(),
         });
@@ -1109,7 +1109,7 @@ mod tests {
             dialog,
             Some(AssetDialog::Create {
                 folder: "scenes".to_string(),
-                type_name: "pill_engine::scene::Scene".to_string(),
+                type_name: "pill_engine::Scene".to_string(),
                 name: String::new(),
                 kind: CreateKind::SaveWorld,
                 overwrite: None,

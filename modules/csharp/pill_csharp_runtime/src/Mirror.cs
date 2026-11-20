@@ -78,7 +78,7 @@ public sealed class NativeResourceAttribute : Attribute
 /// <c>ResMut&lt;AssetManager&gt;</c> to add, find and remove assets with the
 /// <see cref="AssetManagerExtensions"/> methods.
 /// </summary>
-[NativeResource("pill_engine::asset::AssetManager")]
+[NativeResource("pill_engine::AssetManager")]
 public readonly struct AssetManager
 {
 }

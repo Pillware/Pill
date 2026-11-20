@@ -976,7 +976,7 @@ pub(crate) fn emit_function(function: MirroredFunction<'_>) -> syn::Result<Token
 
 /// The qualified name a type declared at the expansion site is known by.
 pub(crate) fn qualified_name(ident: &syn::Ident) -> TokenStream2 {
-    quote! { ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident)) }
+    crate::crate_qualified_type_name(ident)
 }
 
 // =============================================================================
@@ -1209,7 +1209,10 @@ fn object_flags(attribute: TokenStream2) -> syn::Result<ObjectFlags> {
             ));
         };
         match option_name.as_deref() {
-            Some("shared") => flags.shared_name = Some(shared_name.clone()),
+            Some("shared") => {
+                crate::validated_shared_name(shared_name, "object")?;
+                flags.shared_name = Some(shared_name.clone());
+            }
             other => {
                 return Err(syn::Error::new_spanned(
                     &option.path,
@@ -1441,6 +1444,9 @@ pub(crate) fn mirror_resource(
              `#[pill_mirror_resource(\"my_crate::MyResource\")]`",
         )
     })?;
+    // The name is a process-wide identity and a file value, so it takes the
+    // same `<prefix>::<Type>` shape every other shared name has.
+    crate::validated_shared_name(&name, "resource")?;
     // Step 2: check that the item is a non-generic struct.
     let ident = match &item {
         syn::Item::Struct(item) if item.generics.params.is_empty() => &item.ident,
@@ -1466,9 +1472,7 @@ pub(crate) fn mirror_resource(
         arg_names: vec![name.value()],
         trampoline: None,
     });
-    let type_name = quote! {
-        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident))
-    };
+    let type_name = crate::crate_qualified_type_name(ident);
     let register_ident = format_ident!("__pill_register_resource_{}", ident);
     Ok(quote! {
         #item

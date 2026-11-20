@@ -31,7 +31,7 @@ use crate::RenderingPipeline;
 
 /// The renderer's pipeline selection, carried as one optional handle.
 #[derive(Clone, Debug, Default)]
-#[pill_mirror_resource("pill_master_renderer::resources::rendering_manager::RenderingManager")]
+#[pill_mirror_resource("pill_master_renderer::RenderingManager")]
 pub struct RenderingManager {
     pipeline: Option<Handle<RenderingPipeline>>,
 }

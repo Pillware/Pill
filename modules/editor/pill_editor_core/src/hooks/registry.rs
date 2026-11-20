@@ -324,6 +324,6 @@ impl pill_engine::Resource for EditorHookRegistry {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_editor_core::hooks::EditorHookRegistry")
+        Some("pill_editor_core::EditorHookRegistry")
     }
 }

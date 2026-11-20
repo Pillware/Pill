@@ -1,5 +1,5 @@
 format_version: 1
-asset_type: pill_master_renderer::assets::Mesh
+asset_type: pill_master_renderer::Mesh
 guid: d0cf6046dbe5cf1590b6e9a45064a69a
 settings:
   flip_v: true

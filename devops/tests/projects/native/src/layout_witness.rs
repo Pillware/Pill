@@ -44,7 +44,7 @@ static DROPPED_WITNESS_COUNT: AtomicU32 = AtomicU32::new(0);
 /// It declares this file as its layout, and only this file, so the suites can
 /// edit the layout without touching anything else the module compiles.
 #[resource(
-    shared = "native::layout_witness::LayoutWitness",
+    shared = "native::LayoutWitness",
     layout_sources = ["src/layout_witness.rs"]
 )]
 pub struct LayoutWitness {

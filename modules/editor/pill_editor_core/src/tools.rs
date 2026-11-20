@@ -921,7 +921,7 @@ impl RegisteredExtension {
 // =============================================================================
 
 /// The name [`ToolRegistry`] registers under.
-pub const RESOURCE_NAME: &str = "pill_editor_core::tools::ToolRegistry";
+pub const RESOURCE_NAME: &str = "pill_editor_core::ToolRegistry";
 
 /// Whether `entity` carries a component named `required`.
 ///
@@ -1631,7 +1631,7 @@ impl fmt::Display for ToolRegistry {
 // =============================================================================
 
 /// The name [`ToolSpaceChoices`] registers under.
-pub const SPACE_CHOICES_RESOURCE_NAME: &str = "pill_editor_core::tools::ToolSpaceChoices";
+pub const SPACE_CHOICES_RESOURCE_NAME: &str = "pill_editor_core::ToolSpaceChoices";
 
 /// The gizmo space one tool was last on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

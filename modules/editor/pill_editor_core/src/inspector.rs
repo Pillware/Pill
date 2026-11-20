@@ -2051,7 +2051,7 @@ mod tests {
         let entity = Entity::from_raw(3, 0);
         let (command, label) = field_edit(
             entity,
-            "pill_master_renderer::component::TransformComponent",
+            "pill_master_renderer::TransformComponent",
             "speed",
             FieldValue::F32(1.0),
         );
@@ -2059,7 +2059,7 @@ mod tests {
         assert!(matches!(command, EditorCommand::SetField { .. }));
         let (_, label) = element_edit(
             entity,
-            "pill_master_renderer::component::TransformComponent",
+            "pill_master_renderer::TransformComponent",
             "translation",
             2,
             FieldValue::F32(1.0),
@@ -2273,10 +2273,7 @@ mod tests {
     #[test]
     fn component_add_and_remove_record_the_native_labels() {
         let entity = Entity::from_raw(3, 0);
-        let (add, add_label) = component_add(
-            entity,
-            "pill_master_renderer::component::TransformComponent",
-        );
+        let (add, add_label) = component_add(entity, "pill_master_renderer::TransformComponent");
         assert_eq!(add_label, "add TransformComponent");
         assert!(matches!(add, EditorCommand::AddComponent { .. }));
         let (remove, remove_label) =
@@ -2684,7 +2681,7 @@ mod tests {
     #[test]
     fn labels_drop_the_component_suffix_and_the_module_path() {
         assert_eq!(
-            component_label("pill_master_renderer::component::TransformComponent"),
+            component_label("pill_master_renderer::TransformComponent"),
             "Transform"
         );
         assert_eq!(component_label("TransformComponent"), "Transform");
@@ -2808,18 +2805,9 @@ mod tests {
             listing("passes/pbr.render_pass", "demo::RenderPass"),
         ];
         let engine_assets = vec![
-            built(
-                "pill.pbr.opaque",
-                "pill_master_renderer::assets::RenderPass",
-            ),
-            built(
-                "pill.pbr.skybox",
-                "pill_master_renderer::assets::RenderPass",
-            ),
-            built(
-                "pill.pbr.material",
-                "pill_master_renderer::assets::Material",
-            ),
+            built("pill.pbr.opaque", "pill_master_renderer::RenderPass"),
+            built("pill.pbr.skybox", "pill_master_renderer::RenderPass"),
+            built("pill.pbr.material", "pill_master_renderer::Material"),
         ];
         let (files, chosen) = picker_candidates(&assets, &engine_assets, Some("RenderPass"));
         let paths: Vec<&str> = files.iter().map(|row| row.path.as_str()).collect();

@@ -104,31 +104,31 @@ mod tests {
     fn every_contract_resource_pins_its_shared_name() {
         assert_eq!(
             RenderFrame::shared_name(),
-            Some("pill_master_renderer::frame::RenderFrame")
+            Some("pill_master_renderer::RenderFrame")
         );
         assert_eq!(
             SurfaceCameras::shared_name(),
-            Some("pill_renderer_api::surface::SurfaceCameras")
+            Some("pill_renderer_api::SurfaceCameras")
         );
         assert_eq!(
             SelectionOutlines::shared_name(),
-            Some("pill_renderer_api::picking::SelectionOutlines")
+            Some("pill_renderer_api::SelectionOutlines")
         );
         assert_eq!(
             PickRequests::shared_name(),
-            Some("pill_renderer_api::picking::PickRequests")
+            Some("pill_renderer_api::PickRequests")
         );
         assert_eq!(
             PickResults::shared_name(),
-            Some("pill_renderer_api::picking::PickResults")
+            Some("pill_renderer_api::PickResults")
         );
         assert_eq!(
             PreviewRequests::shared_name(),
-            Some("pill_renderer_api::preview::PreviewRequests")
+            Some("pill_renderer_api::PreviewRequests")
         );
         assert_eq!(
             PreviewResults::shared_name(),
-            Some("pill_renderer_api::preview::PreviewResults")
+            Some("pill_renderer_api::PreviewResults")
         );
     }
 }

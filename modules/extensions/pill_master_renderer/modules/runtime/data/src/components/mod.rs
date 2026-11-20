@@ -158,19 +158,19 @@ mod tests {
     fn the_components_keep_the_shared_names_they_were_pinned_to() {
         assert_eq!(
             TransformComponent::shared_name(),
-            Some("pill_master_renderer::component::TransformComponent")
+            Some("pill_master_renderer::TransformComponent")
         );
         assert_eq!(
             CameraComponent::shared_name(),
-            Some("pill_master_renderer::component::CameraComponent")
+            Some("pill_master_renderer::CameraComponent")
         );
         assert_eq!(
             MeshRendererComponent::shared_name(),
-            Some("pill_master_renderer::component::MeshRendererComponent")
+            Some("pill_master_renderer::MeshRendererComponent")
         );
         assert_eq!(
             DirectionalLightComponent::shared_name(),
-            Some("pill_master_renderer::component::DirectionalLightComponent")
+            Some("pill_master_renderer::DirectionalLightComponent")
         );
     }
 }

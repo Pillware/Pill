@@ -1,5 +1,5 @@
 format_version: 1
-asset_type: pill_master_renderer::assets::Material
+asset_type: pill_master_renderer::Material
 guid: 7f1ddabadc5f43868b99f466e7437fd4
 asset:
   shader: 8cedb4197c9f26a86708b1cd14399eab

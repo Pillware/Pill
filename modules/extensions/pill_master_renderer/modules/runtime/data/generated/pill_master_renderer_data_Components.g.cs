@@ -12,7 +12,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace pill_master_renderer.component {
+namespace pill_master_renderer {
 
 [StructLayout(LayoutKind.Explicit, Size = 56)]
 public partial struct MeshVertex
@@ -39,7 +39,7 @@ public partial struct MeshVertex
 
 }
 
-namespace pill_master_renderer.component {
+namespace pill_master_renderer {
 
 [StructLayout(LayoutKind.Explicit, Size = 12)]
 public partial struct PipelinePass
@@ -54,7 +54,7 @@ public partial struct PipelinePass
 
 }
 
-namespace pill_master_renderer.component {
+namespace pill_master_renderer {
 
 [StructLayout(LayoutKind.Explicit, Size = 20)]
 public partial struct CameraComponent
@@ -72,7 +72,7 @@ public partial struct CameraComponent
 
 }
 
-namespace pill_master_renderer.component {
+namespace pill_master_renderer {
 
 [StructLayout(LayoutKind.Explicit, Size = 16)]
 public partial struct DirectionalLightComponent
@@ -89,7 +89,7 @@ public partial struct DirectionalLightComponent
 
 }
 
-namespace pill_master_renderer.component {
+namespace pill_master_renderer {
 
 [StructLayout(LayoutKind.Explicit, Size = 16)]
 public partial struct MeshRendererComponent
@@ -104,7 +104,7 @@ public partial struct MeshRendererComponent
 
 }
 
-namespace pill_master_renderer.component {
+namespace pill_master_renderer {
 
 [StructLayout(LayoutKind.Explicit, Size = 40)]
 public partial struct TransformComponent
@@ -129,12 +129,12 @@ public partial struct TransformComponent
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::material::Material</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::Material</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class Material : global::TracyLive.RustObject, global::TracyLive.IRustObject<Material>, global::TracyLive.IRustAsset<Material>, global::TracyLive.IRustStandaloneAsset<Material>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::material::Material";
+    public const string RustType = "pill_master_renderer_data::Material";
 
     static string global::TracyLive.IRustObject<Material>.RustTypeName => RustType;
 
@@ -142,10 +142,10 @@ public sealed partial class Material : global::TracyLive.RustObject, global::Tra
 
     internal Material(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::material::Material::builder</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Material::builder</c>.</summary>
     public static global::pill_master_renderer_data.MaterialBuilder Builder(string name)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::material::Material", "builder");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Material", "builder");
         __call.PushString(name);
         __call.Invoke();
         return new global::pill_master_renderer_data.MaterialBuilder(__call.ResultObject(0));
@@ -156,12 +156,12 @@ public sealed partial class Material : global::TracyLive.RustObject, global::Tra
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::material::MaterialBuilder</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::MaterialBuilder</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class MaterialBuilder : global::TracyLive.RustObject, global::TracyLive.IRustObject<MaterialBuilder>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::material::MaterialBuilder";
+    public const string RustType = "pill_master_renderer_data::MaterialBuilder";
 
     static string global::TracyLive.IRustObject<MaterialBuilder>.RustTypeName => RustType;
 
@@ -169,10 +169,10 @@ public sealed partial class MaterialBuilder : global::TracyLive.RustObject, glob
 
     internal MaterialBuilder(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::material::MaterialBuilder::bool_parameter</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::MaterialBuilder::bool_parameter</c>.</summary>
     public global::pill_master_renderer_data.MaterialBuilder BoolParameter(string slot, bool value)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::material::MaterialBuilder", "bool_parameter");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::MaterialBuilder", "bool_parameter");
         __call.PushMoved(this);
         __call.PushString(slot);
         __call.Push(value);
@@ -180,19 +180,19 @@ public sealed partial class MaterialBuilder : global::TracyLive.RustObject, glob
         return new global::pill_master_renderer_data.MaterialBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::material::MaterialBuilder::build</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::MaterialBuilder::build</c>.</summary>
     public global::pill_master_renderer_data.Material Build()
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::material::MaterialBuilder", "build");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::MaterialBuilder", "build");
         __call.PushMoved(this);
         __call.Invoke();
         return new global::pill_master_renderer_data.Material(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::material::MaterialBuilder::color_parameter</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::MaterialBuilder::color_parameter</c>.</summary>
     public global::pill_master_renderer_data.MaterialBuilder ColorParameter(string slot, global::System.Numerics.Vector3 value)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::material::MaterialBuilder", "color_parameter");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::MaterialBuilder", "color_parameter");
         __call.PushMoved(this);
         __call.PushString(slot);
         __call.Push(value);
@@ -200,20 +200,20 @@ public sealed partial class MaterialBuilder : global::TracyLive.RustObject, glob
         return new global::pill_master_renderer_data.MaterialBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::material::MaterialBuilder::rendering_order</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::MaterialBuilder::rendering_order</c>.</summary>
     public global::pill_master_renderer_data.MaterialBuilder RenderingOrder(byte value)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::material::MaterialBuilder", "rendering_order");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::MaterialBuilder", "rendering_order");
         __call.PushMoved(this);
         __call.Push(value);
         __call.Invoke();
         return new global::pill_master_renderer_data.MaterialBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::material::MaterialBuilder::scalar_parameter</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::MaterialBuilder::scalar_parameter</c>.</summary>
     public global::pill_master_renderer_data.MaterialBuilder ScalarParameter(string slot, float value)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::material::MaterialBuilder", "scalar_parameter");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::MaterialBuilder", "scalar_parameter");
         __call.PushMoved(this);
         __call.PushString(slot);
         __call.Push(value);
@@ -221,20 +221,20 @@ public sealed partial class MaterialBuilder : global::TracyLive.RustObject, glob
         return new global::pill_master_renderer_data.MaterialBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::material::MaterialBuilder::shader</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::MaterialBuilder::shader</c>.</summary>
     public global::pill_master_renderer_data.MaterialBuilder Shader(global::TracyLive.Handle<global::pill_master_renderer_data.Shader> shader)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::material::MaterialBuilder", "shader");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::MaterialBuilder", "shader");
         __call.PushMoved(this);
         __call.Push(shader);
         __call.Invoke();
         return new global::pill_master_renderer_data.MaterialBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::material::MaterialBuilder::texture</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::MaterialBuilder::texture</c>.</summary>
     public global::pill_master_renderer_data.MaterialBuilder Texture(string slot, global::TracyLive.Handle<global::pill_master_renderer_data.Texture> texture)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::material::MaterialBuilder", "texture");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::MaterialBuilder", "texture");
         __call.PushMoved(this);
         __call.PushString(slot);
         __call.Push(texture);
@@ -247,12 +247,12 @@ public sealed partial class MaterialBuilder : global::TracyLive.RustObject, glob
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::mesh::Mesh</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::Mesh</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class Mesh : global::TracyLive.RustObject, global::TracyLive.IRustObject<Mesh>, global::TracyLive.IRustAsset<Mesh>, global::TracyLive.IRustImportedAsset<Mesh>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::mesh::Mesh";
+    public const string RustType = "pill_master_renderer_data::Mesh";
 
     static string global::TracyLive.IRustObject<Mesh>.RustTypeName => RustType;
 
@@ -260,10 +260,10 @@ public sealed partial class Mesh : global::TracyLive.RustObject, global::TracyLi
 
     internal Mesh(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::mesh::Mesh::from_data</c>.</summary>
-    public static global::pill_master_renderer_data.Mesh FromData(string name, global::System.ReadOnlySpan<global::pill_master_renderer.component.MeshVertex> vertices, global::System.ReadOnlySpan<uint> indices)
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Mesh::from_data</c>.</summary>
+    public static global::pill_master_renderer_data.Mesh FromData(string name, global::System.ReadOnlySpan<global::pill_master_renderer.MeshVertex> vertices, global::System.ReadOnlySpan<uint> indices)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::mesh::Mesh", "from_data");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Mesh", "from_data");
         __call.PushString(name);
         __call.PushSpan(vertices);
         __call.PushSpan(indices);
@@ -271,30 +271,30 @@ public sealed partial class Mesh : global::TracyLive.RustObject, global::TracyLi
         return new global::pill_master_renderer_data.Mesh(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::mesh::Mesh::from_obj_bytes</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Mesh::from_obj_bytes</c>.</summary>
     public static global::pill_master_renderer_data.Mesh FromObjBytes(string name, global::System.ReadOnlySpan<byte> bytes)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::mesh::Mesh", "from_obj_bytes");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Mesh", "from_obj_bytes");
         __call.PushString(name);
         __call.PushSpan(bytes);
         __call.Invoke();
         return new global::pill_master_renderer_data.Mesh(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::mesh::Mesh::from_obj_bytes_top_down</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Mesh::from_obj_bytes_top_down</c>.</summary>
     public static global::pill_master_renderer_data.Mesh FromObjBytesTopDown(string name, global::System.ReadOnlySpan<byte> bytes)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::mesh::Mesh", "from_obj_bytes_top_down");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Mesh", "from_obj_bytes_top_down");
         __call.PushString(name);
         __call.PushSpan(bytes);
         __call.Invoke();
         return new global::pill_master_renderer_data.Mesh(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::mesh::Mesh::triangle</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Mesh::triangle</c>.</summary>
     public static global::pill_master_renderer_data.Mesh Triangle()
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::mesh::Mesh", "triangle");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Mesh", "triangle");
         __call.Invoke();
         return new global::pill_master_renderer_data.Mesh(__call.ResultObject(0));
     }
@@ -304,12 +304,12 @@ public sealed partial class Mesh : global::TracyLive.RustObject, global::TracyLi
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::render_pass::RenderPass</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::RenderPass</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class RenderPass : global::TracyLive.RustObject, global::TracyLive.IRustObject<RenderPass>, global::TracyLive.IRustAsset<RenderPass>, global::TracyLive.IRustStandaloneAsset<RenderPass>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::render_pass::RenderPass";
+    public const string RustType = "pill_master_renderer_data::RenderPass";
 
     static string global::TracyLive.IRustObject<RenderPass>.RustTypeName => RustType;
 
@@ -322,12 +322,62 @@ public sealed partial class RenderPass : global::TracyLive.RustObject, global::T
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::rendering_pipeline::RenderingPipeline</c>, owned by this object until it is moved
+/// <summary>The Rust resource <c>pill_master_renderer_data::RenderingManager</c>. Declare <c>Res&lt;RenderingManager&gt;</c> or
+/// <c>ResMut&lt;RenderingManager&gt;</c> to reach it; its value stays in Rust.</summary>
+[global::TracyLive.NativeResource("pill_master_renderer::RenderingManager")]
+public readonly struct RenderingManager
+{
+}
+
+/// <summary>The mirrored functions of <see cref="RenderingManager"/>.</summary>
+public static class RenderingManagerMethods
+{
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::RenderingManager::clear</c>.</summary>
+    public static void Clear(this global::TracyLive.ResMut<global::pill_master_renderer_data.RenderingManager> self)
+    {
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::RenderingManager", "clear");
+        __call.PushResource<global::pill_master_renderer_data.RenderingManager>(global::TracyLive.QueryAccess.Write);
+        __call.Invoke();
+    }
+
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::RenderingManager::pipeline</c>.</summary>
+    public static global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline>? Pipeline(this global::TracyLive.Res<global::pill_master_renderer_data.RenderingManager> self)
+    {
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::RenderingManager", "pipeline");
+        __call.PushResource<global::pill_master_renderer_data.RenderingManager>(global::TracyLive.QueryAccess.Read);
+        __call.Invoke();
+        return __call.ResultPresent() ? __call.ResultAt<global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline>>(16) : null;
+    }
+
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::RenderingManager::pipeline</c>.</summary>
+    public static global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline>? Pipeline(this global::TracyLive.ResMut<global::pill_master_renderer_data.RenderingManager> self)
+    {
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::RenderingManager", "pipeline");
+        __call.PushResource<global::pill_master_renderer_data.RenderingManager>(global::TracyLive.QueryAccess.Read);
+        __call.Invoke();
+        return __call.ResultPresent() ? __call.ResultAt<global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline>>(16) : null;
+    }
+
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::RenderingManager::set_pipeline</c>.</summary>
+    public static void SetPipeline(this global::TracyLive.ResMut<global::pill_master_renderer_data.RenderingManager> self, global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline> pipeline)
+    {
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::RenderingManager", "set_pipeline");
+        __call.PushResource<global::pill_master_renderer_data.RenderingManager>(global::TracyLive.QueryAccess.Write);
+        __call.Push(pipeline);
+        __call.Invoke();
+    }
+}
+
+}
+
+namespace pill_master_renderer_data {
+
+/// <summary>The Rust value <c>pill_master_renderer_data::RenderingPipeline</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class RenderingPipeline : global::TracyLive.RustObject, global::TracyLive.IRustObject<RenderingPipeline>, global::TracyLive.IRustAsset<RenderingPipeline>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::rendering_pipeline::RenderingPipeline";
+    public const string RustType = "pill_master_renderer_data::RenderingPipeline";
 
     static string global::TracyLive.IRustObject<RenderingPipeline>.RustTypeName => RustType;
 
@@ -340,12 +390,12 @@ public sealed partial class RenderingPipeline : global::TracyLive.RustObject, gl
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::shader::Shader</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::Shader</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class Shader : global::TracyLive.RustObject, global::TracyLive.IRustObject<Shader>, global::TracyLive.IRustAsset<Shader>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::shader::Shader";
+    public const string RustType = "pill_master_renderer_data::Shader";
 
     static string global::TracyLive.IRustObject<Shader>.RustTypeName => RustType;
 
@@ -353,10 +403,10 @@ public sealed partial class Shader : global::TracyLive.RustObject, global::Tracy
 
     internal Shader(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::Shader::new</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Shader::new</c>.</summary>
     public static global::pill_master_renderer_data.ShaderBuilder New(string name)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::Shader", "new");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Shader", "new");
         __call.PushString(name);
         __call.Invoke();
         return new global::pill_master_renderer_data.ShaderBuilder(__call.ResultObject(0));
@@ -367,12 +417,12 @@ public sealed partial class Shader : global::TracyLive.RustObject, global::Tracy
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::shader::ShaderBuilder</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::ShaderBuilder</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class ShaderBuilder : global::TracyLive.RustObject, global::TracyLive.IRustObject<ShaderBuilder>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::shader::ShaderBuilder";
+    public const string RustType = "pill_master_renderer_data::ShaderBuilder";
 
     static string global::TracyLive.IRustObject<ShaderBuilder>.RustTypeName => RustType;
 
@@ -380,79 +430,79 @@ public sealed partial class ShaderBuilder : global::TracyLive.RustObject, global
 
     internal ShaderBuilder(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderBuilder::build</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderBuilder::build</c>.</summary>
     public global::pill_master_renderer_data.Shader Build()
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderBuilder", "build");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderBuilder", "build");
         __call.PushMoved(this);
         __call.Invoke();
         return new global::pill_master_renderer_data.Shader(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderBuilder::with_camera_parameters</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderBuilder::with_camera_parameters</c>.</summary>
     public global::pill_master_renderer_data.ShaderBuilder WithCameraParameters(bool pass_camera_parameters)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderBuilder", "with_camera_parameters");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderBuilder", "with_camera_parameters");
         __call.PushMoved(this);
         __call.Push(pass_camera_parameters);
         __call.Invoke();
         return new global::pill_master_renderer_data.ShaderBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderBuilder::with_engine_parameters</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderBuilder::with_engine_parameters</c>.</summary>
     public global::pill_master_renderer_data.ShaderBuilder WithEngineParameters(bool pass_engine_parameters)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderBuilder", "with_engine_parameters");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderBuilder", "with_engine_parameters");
         __call.PushMoved(this);
         __call.Push(pass_engine_parameters);
         __call.Invoke();
         return new global::pill_master_renderer_data.ShaderBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderBuilder::with_fragment_source</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderBuilder::with_fragment_source</c>.</summary>
     public global::pill_master_renderer_data.ShaderBuilder WithFragmentSource(global::TracyLive.AssetLoader source)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderBuilder", "with_fragment_source");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderBuilder", "with_fragment_source");
         __call.PushMoved(this);
         __call.PushLoader(source);
         __call.Invoke();
         return new global::pill_master_renderer_data.ShaderBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderBuilder::with_parameter_slots</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderBuilder::with_parameter_slots</c>.</summary>
     public global::pill_master_renderer_data.ShaderBuilder WithParameterSlots(global::System.ReadOnlySpan<global::pill_master_renderer_data.ShaderParameterSlot> parameter_slots)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderBuilder", "with_parameter_slots");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderBuilder", "with_parameter_slots");
         __call.PushMoved(this);
         __call.PushObjects(parameter_slots);
         __call.Invoke();
         return new global::pill_master_renderer_data.ShaderBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderBuilder::with_texture_slots</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderBuilder::with_texture_slots</c>.</summary>
     public global::pill_master_renderer_data.ShaderBuilder WithTextureSlots(global::System.ReadOnlySpan<global::pill_master_renderer_data.ShaderTextureSlot> texture_slots)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderBuilder", "with_texture_slots");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderBuilder", "with_texture_slots");
         __call.PushMoved(this);
         __call.PushObjects(texture_slots);
         __call.Invoke();
         return new global::pill_master_renderer_data.ShaderBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderBuilder::with_vertex_source</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderBuilder::with_vertex_source</c>.</summary>
     public global::pill_master_renderer_data.ShaderBuilder WithVertexSource(global::TracyLive.AssetLoader source)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderBuilder", "with_vertex_source");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderBuilder", "with_vertex_source");
         __call.PushMoved(this);
         __call.PushLoader(source);
         __call.Invoke();
         return new global::pill_master_renderer_data.ShaderBuilder(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderBuilder::with_wgsl</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderBuilder::with_wgsl</c>.</summary>
     public global::pill_master_renderer_data.ShaderBuilder WithWgsl(string vertex, string fragment)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderBuilder", "with_wgsl");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderBuilder", "with_wgsl");
         __call.PushMoved(this);
         __call.PushString(vertex);
         __call.PushString(fragment);
@@ -465,12 +515,12 @@ public sealed partial class ShaderBuilder : global::TracyLive.RustObject, global
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::shader::ShaderParameterSlot</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::ShaderParameterSlot</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class ShaderParameterSlot : global::TracyLive.RustObject, global::TracyLive.IRustObject<ShaderParameterSlot>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::shader::ShaderParameterSlot";
+    public const string RustType = "pill_master_renderer_data::ShaderParameterSlot";
 
     static string global::TracyLive.IRustObject<ShaderParameterSlot>.RustTypeName => RustType;
 
@@ -478,17 +528,17 @@ public sealed partial class ShaderParameterSlot : global::TracyLive.RustObject, 
 
     internal ShaderParameterSlot(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderParameterSlot::new</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderParameterSlot::new</c>.</summary>
     public static global::pill_master_renderer_data.ShaderParameterSlot New(string name, global::pill_master_renderer_data.ShaderParameterType parameter_type)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderParameterSlot", "new");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderParameterSlot", "new");
         __call.PushString(name);
         __call.Push(parameter_type);
         __call.Invoke();
         return new global::pill_master_renderer_data.ShaderParameterSlot(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderParameterSlot::new</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderParameterSlot::new</c>.</summary>
     public ShaderParameterSlot(string name, global::pill_master_renderer_data.ShaderParameterType parameter_type)
         : this(New(name, parameter_type).TakeHandle())
     {
@@ -499,7 +549,7 @@ public sealed partial class ShaderParameterSlot : global::TracyLive.RustObject, 
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust enum <c>pill_master_renderer_data::assets::shader::ShaderParameterType</c>.</summary>
+/// <summary>The Rust enum <c>pill_master_renderer_data::ShaderParameterType</c>.</summary>
 public enum ShaderParameterType : byte
 {
     Scalar = 0,
@@ -511,7 +561,7 @@ public enum ShaderParameterType : byte
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust enum <c>pill_master_renderer_data::assets::shader::ShaderTextureKind</c>.</summary>
+/// <summary>The Rust enum <c>pill_master_renderer_data::ShaderTextureKind</c>.</summary>
 public enum ShaderTextureKind : byte
 {
     Color = 0,
@@ -525,12 +575,12 @@ public enum ShaderTextureKind : byte
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::shader::ShaderTextureSlot</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::ShaderTextureSlot</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class ShaderTextureSlot : global::TracyLive.RustObject, global::TracyLive.IRustObject<ShaderTextureSlot>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::shader::ShaderTextureSlot";
+    public const string RustType = "pill_master_renderer_data::ShaderTextureSlot";
 
     static string global::TracyLive.IRustObject<ShaderTextureSlot>.RustTypeName => RustType;
 
@@ -538,10 +588,10 @@ public sealed partial class ShaderTextureSlot : global::TracyLive.RustObject, gl
 
     internal ShaderTextureSlot(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderTextureSlot::new</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderTextureSlot::new</c>.</summary>
     public static global::pill_master_renderer_data.ShaderTextureSlot New(string name, global::pill_master_renderer_data.ShaderTextureKind kind, (uint, uint) bindings)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::shader::ShaderTextureSlot", "new");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::ShaderTextureSlot", "new");
         __call.PushString(name);
         __call.Push(kind);
         __call.PushField(0, bindings.Item1); __call.PushField(4, bindings.Item2); __call.EndSlot();
@@ -549,7 +599,7 @@ public sealed partial class ShaderTextureSlot : global::TracyLive.RustObject, gl
         return new global::pill_master_renderer_data.ShaderTextureSlot(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::shader::ShaderTextureSlot::new</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::ShaderTextureSlot::new</c>.</summary>
     public ShaderTextureSlot(string name, global::pill_master_renderer_data.ShaderTextureKind kind, (uint, uint) bindings)
         : this(New(name, kind, bindings).TakeHandle())
     {
@@ -560,12 +610,12 @@ public sealed partial class ShaderTextureSlot : global::TracyLive.RustObject, gl
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust value <c>pill_master_renderer_data::assets::texture::Texture</c>, owned by this object until it is moved
+/// <summary>The Rust value <c>pill_master_renderer_data::Texture</c>, owned by this object until it is moved
 /// into a Rust call or disposed.</summary>
 public sealed partial class Texture : global::TracyLive.RustObject, global::TracyLive.IRustObject<Texture>, global::TracyLive.IRustAsset<Texture>, global::TracyLive.IRustImportedAsset<Texture>
 {
     /// <summary>The Rust type this class wraps.</summary>
-    public const string RustType = "pill_master_renderer_data::assets::texture::Texture";
+    public const string RustType = "pill_master_renderer_data::Texture";
 
     static string global::TracyLive.IRustObject<Texture>.RustTypeName => RustType;
 
@@ -573,10 +623,10 @@ public sealed partial class Texture : global::TracyLive.RustObject, global::Trac
 
     internal Texture(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::texture::Texture::from_rgba</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Texture::from_rgba</c>.</summary>
     public static global::pill_master_renderer_data.Texture FromRgba(string name, global::pill_master_renderer_data.TextureType texture_type, global::System.ReadOnlySpan<byte> rgba, uint width, uint height)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::texture::Texture", "from_rgba");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Texture", "from_rgba");
         __call.PushString(name);
         __call.Push(texture_type);
         __call.PushSpan(rgba);
@@ -586,10 +636,10 @@ public sealed partial class Texture : global::TracyLive.RustObject, global::Trac
         return new global::pill_master_renderer_data.Texture(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::texture::Texture::from_rgba_f32</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Texture::from_rgba_f32</c>.</summary>
     public static global::pill_master_renderer_data.Texture FromRgbaF32(string name, global::pill_master_renderer_data.TextureType texture_type, global::System.ReadOnlySpan<float> rgba, uint width, uint height)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::texture::Texture", "from_rgba_f32");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Texture", "from_rgba_f32");
         __call.PushString(name);
         __call.Push(texture_type);
         __call.PushSpan(rgba);
@@ -599,10 +649,10 @@ public sealed partial class Texture : global::TracyLive.RustObject, global::Trac
         return new global::pill_master_renderer_data.Texture(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::texture::Texture::new</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Texture::new</c>.</summary>
     public static global::pill_master_renderer_data.Texture New(string name, global::pill_master_renderer_data.TextureType texture_type, global::TracyLive.AssetLoader loader)
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::assets::texture::Texture", "new");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::Texture", "new");
         __call.PushString(name);
         __call.Push(texture_type);
         __call.PushLoader(loader);
@@ -610,7 +660,7 @@ public sealed partial class Texture : global::TracyLive.RustObject, global::Trac
         return new global::pill_master_renderer_data.Texture(__call.ResultObject(0));
     }
 
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::assets::texture::Texture::new</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_master_renderer_data::Texture::new</c>.</summary>
     public Texture(string name, global::pill_master_renderer_data.TextureType texture_type, global::TracyLive.AssetLoader loader)
         : this(New(name, texture_type, loader).TakeHandle())
     {
@@ -621,63 +671,13 @@ public sealed partial class Texture : global::TracyLive.RustObject, global::Trac
 
 namespace pill_master_renderer_data {
 
-/// <summary>The Rust enum <c>pill_master_renderer_data::assets::texture::TextureType</c>.</summary>
+/// <summary>The Rust enum <c>pill_master_renderer_data::TextureType</c>.</summary>
 public enum TextureType : byte
 {
     Color = 0,
     Normal = 1,
     Equirect = 2,
     Cubemap = 3,
-}
-
-}
-
-namespace pill_master_renderer_data {
-
-/// <summary>The Rust resource <c>pill_master_renderer_data::rendering_manager::RenderingManager</c>. Declare <c>Res&lt;RenderingManager&gt;</c> or
-/// <c>ResMut&lt;RenderingManager&gt;</c> to reach it; its value stays in Rust.</summary>
-[global::TracyLive.NativeResource("pill_master_renderer::resources::rendering_manager::RenderingManager")]
-public readonly struct RenderingManager
-{
-}
-
-/// <summary>The mirrored functions of <see cref="RenderingManager"/>.</summary>
-public static class RenderingManagerMethods
-{
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::rendering_manager::RenderingManager::clear</c>.</summary>
-    public static void Clear(this global::TracyLive.ResMut<global::pill_master_renderer_data.RenderingManager> self)
-    {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::rendering_manager::RenderingManager", "clear");
-        __call.PushResource<global::pill_master_renderer_data.RenderingManager>(global::TracyLive.QueryAccess.Write);
-        __call.Invoke();
-    }
-
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::rendering_manager::RenderingManager::pipeline</c>.</summary>
-    public static global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline>? Pipeline(this global::TracyLive.Res<global::pill_master_renderer_data.RenderingManager> self)
-    {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::rendering_manager::RenderingManager", "pipeline");
-        __call.PushResource<global::pill_master_renderer_data.RenderingManager>(global::TracyLive.QueryAccess.Read);
-        __call.Invoke();
-        return __call.ResultPresent() ? __call.ResultAt<global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline>>(16) : null;
-    }
-
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::rendering_manager::RenderingManager::pipeline</c>.</summary>
-    public static global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline>? Pipeline(this global::TracyLive.ResMut<global::pill_master_renderer_data.RenderingManager> self)
-    {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::rendering_manager::RenderingManager", "pipeline");
-        __call.PushResource<global::pill_master_renderer_data.RenderingManager>(global::TracyLive.QueryAccess.Read);
-        __call.Invoke();
-        return __call.ResultPresent() ? __call.ResultAt<global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline>>(16) : null;
-    }
-
-    /// <summary>Calls the Rust function <c>pill_master_renderer_data::rendering_manager::RenderingManager::set_pipeline</c>.</summary>
-    public static void SetPipeline(this global::TracyLive.ResMut<global::pill_master_renderer_data.RenderingManager> self, global::TracyLive.Handle<global::pill_master_renderer_data.RenderingPipeline> pipeline)
-    {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_master_renderer_data::rendering_manager::RenderingManager", "set_pipeline");
-        __call.PushResource<global::pill_master_renderer_data.RenderingManager>(global::TracyLive.QueryAccess.Write);
-        __call.Push(pipeline);
-        __call.Invoke();
-    }
 }
 
 }

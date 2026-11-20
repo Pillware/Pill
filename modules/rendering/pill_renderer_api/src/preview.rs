@@ -95,7 +95,7 @@ impl Resource for PreviewRequests {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_renderer_api::preview::PreviewRequests")
+        Some("pill_renderer_api::PreviewRequests")
     }
 }
 
@@ -166,7 +166,7 @@ impl Resource for PreviewResults {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_renderer_api::preview::PreviewResults")
+        Some("pill_renderer_api::PreviewResults")
     }
 }
 

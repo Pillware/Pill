@@ -214,6 +214,12 @@ def launch_host(project_path: str):
     """Launches the standalone host exe with PROJECT_PATH pinned to the session project."""
     environment = os.environ.copy()
     environment["PROJECT_PATH"] = project_path
+    # The suite measures the reload transaction, so the patch fast path stays
+    # out of the host it drives: an edited body rebuilds and reloads instead of
+    # installing a patch, which is what the scenarios wait for (`hot reload
+    # complete`, "crates rebuilt by cargo"). `test_hot_patch_coverage.py` is
+    # where the patch route is asserted.
+    environment["PILL_FUNCTION_HOT_PATCHING"] = "0"
     return launch_process([str(HOST_EXE)], MODULES_ROOT, environment)
 
 # The scenario model and runner are shared: `core/scenario.py`.

@@ -42,10 +42,12 @@ use crate::world::World;
 
 /// The shared name [`TransformComponent`] registers under.
 ///
-/// The name is pinned here and not derived from the module path. A derived
-/// name would register a different component, and a live world's stored column
-/// for this one would no longer be found.
-pub const TRANSFORM_SHARED_NAME: &str = "pill_master_renderer::component::TransformComponent";
+/// The renderer family publishes its components under one prefix, so the name
+/// is pinned to `pill_master_renderer` rather than derived from this crate.
+/// It must never change: a different name would register a different
+/// component, and a live world's stored column and every scene that names it
+/// would no longer be found.
+pub const TRANSFORM_SHARED_NAME: &str = "pill_master_renderer::TransformComponent";
 
 /// Placement of an entity in the scene: position, orientation and scale.
 ///
@@ -184,12 +186,12 @@ mod tests {
     fn the_transform_keeps_its_pinned_shared_name() {
         assert_eq!(
             TransformComponent::shared_name(),
-            Some("pill_master_renderer::component::TransformComponent")
+            Some("pill_master_renderer::TransformComponent")
         );
         assert_eq!(
             TransformComponent::shared_identity(),
             Some(crate::component::shared_component_identity(
-                "pill_master_renderer::component::TransformComponent"
+                "pill_master_renderer::TransformComponent"
             ))
         );
     }

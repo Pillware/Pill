@@ -327,10 +327,12 @@ pub type EnumLayoutResolver = fn(&str) -> Option<EnumLayout>;
 /// Returns the candidate name a `struct:<path>` field tag refers to.
 ///
 /// The tag is the path as written at the field site, usually an imported short
-/// name (`Color`). An exact match is tried first, then a unique `::<path>`
-/// suffix. `None` means no single candidate matches and the field shows as
-/// opaque. That is better than picking a wrong type, which would show the field
-/// as another type's value.
+/// name (`Color`). An exact match is tried first - including a tag that still
+/// carries the module path a type had before names dropped it
+/// ([`names_same_type`](crate::type_names::names_same_type)) - then a unique
+/// `::<path>` suffix. `None` means no single candidate matches and the field
+/// shows as opaque. That is better than picking a wrong type, which would show
+/// the field as another type's value.
 ///
 /// Both candidate sources - the world's registered component names and the
 /// facade's value-type names - answer through this one rule, so the two can
@@ -343,7 +345,7 @@ pub fn resolve_unique_name<'a>(
     let mut suffix_match = None;
     let mut suffix_match_count = 0usize;
     for name in candidates {
-        if name == path {
+        if name == path || crate::type_names::names_same_type(path, name) {
             return Some(name);
         }
         if name.ends_with(&suffix) {

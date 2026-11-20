@@ -669,13 +669,13 @@ pub struct AssetManager {
 }
 
 /// The shared name that the store's C# mirror registers the manager under
-/// (`[NativeResource("pill_engine::asset::AssetManager")]`).
+/// (`[NativeResource("pill_engine::AssetManager")]`).
 ///
 /// The name is shared instead of being keyed by `TypeId`, so both languages end
 /// up with the same identity: the managed mirror hashes the same string, and
 /// every artifact that links the engine agrees on the identity without comparing
 /// `TypeId`s.
-pub const ASSET_MANAGER_SHARED_NAME: &str = "pill_engine::asset::AssetManager";
+pub const ASSET_MANAGER_SHARED_NAME: &str = "pill_engine::AssetManager";
 
 impl Resource for AssetManager {
     /// Infrastructure, not game state: Play leaves this value alone and

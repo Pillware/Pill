@@ -92,12 +92,12 @@ mod tests {
         assert_eq!(
             shared_names,
             [
-                Some("pill_master_renderer::assets::Mesh"),
-                Some("pill_master_renderer::assets::Texture"),
-                Some("pill_master_renderer::assets::Shader"),
-                Some("pill_master_renderer::assets::Material"),
-                Some("pill_master_renderer::assets::RenderPass"),
-                Some("pill_master_renderer::assets::RenderingPipeline"),
+                Some("pill_master_renderer::Mesh"),
+                Some("pill_master_renderer::Texture"),
+                Some("pill_master_renderer::Shader"),
+                Some("pill_master_renderer::Material"),
+                Some("pill_master_renderer::RenderPass"),
+                Some("pill_master_renderer::RenderingPipeline"),
             ]
         );
     }

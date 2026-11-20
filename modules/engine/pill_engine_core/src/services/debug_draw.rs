@@ -572,7 +572,7 @@ impl Resource for DebugDraw {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_engine::debug_draw::DebugDraw")
+        Some("pill_engine::DebugDraw")
     }
 }
 

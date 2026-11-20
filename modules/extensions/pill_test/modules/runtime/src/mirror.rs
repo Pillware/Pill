@@ -119,7 +119,7 @@ mod tests {
             .into_iter()
             .find(|candidate| candidate.name == "value_as_u64")
             .expect("the mirrored method on Counter is registered");
-        assert_eq!(mirrored_method.type_name, "pill_test::mirror::Counter");
+        assert_eq!(mirrored_method.type_name, "pill_test::Counter");
         assert!(
             !mirrored_method.is_free_function,
             "a method, not a free function"
@@ -135,7 +135,7 @@ mod tests {
                 .iter()
                 .map(|value_type| value_type.type_name)
                 .collect();
-        for expected in ["pill_test::mirror::Tint", "pill_test::mirror::Counter"] {
+        for expected in ["pill_test::Tint", "pill_test::Counter"] {
             assert!(
                 declared_type_names.contains(&expected),
                 "{expected} is declared for the managed mirror: {declared_type_names:?}"

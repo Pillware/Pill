@@ -26,7 +26,7 @@
 //!
 //! ```yaml
 //! format_version: 1
-//! asset_type: pill_master_renderer::assets::Material
+//! asset_type: pill_master_renderer::Material
 //! guid: 5d1f0e2b9a8c4d3e7f6a5b4c3d2e1f00
 //! asset:
 //!   shader: materials/pill.pbr.hlsl
@@ -92,10 +92,11 @@ pub trait StandaloneAsset: Asset + TraitAccessible<dyn Asset> + Sized {
     const FILE_EXTENSION: &'static str;
 
     /// The stable name written to the file's `asset_type`. Defaults to
-    /// [`Asset::shared_name`]; a type without one should override it with a
-    /// pinned literal.
+    /// [`Asset::shared_name`], and without one to the type's stored name,
+    /// `<crate>::<Type>`
+    /// ([`stable_type_name`](crate::type_names::stable_type_name)).
     fn metadata_type_name() -> &'static str {
-        Self::shared_name().unwrap_or_else(std::any::type_name::<Self>)
+        Self::shared_name().unwrap_or_else(crate::type_names::stable_type_name::<Self>)
     }
 
     /// Build the asset named `name` from its document, resolving its

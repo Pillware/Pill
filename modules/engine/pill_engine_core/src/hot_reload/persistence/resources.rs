@@ -130,9 +130,9 @@ impl World {
         T: Resource + Serialize + DeserializeOwned + Default,
     {
         // A shared resource is known everywhere by its declared name; an
-        // ordinary one falls back to its Rust path. Both builds of one type
-        // derive the same string, which is what makes a snapshot portable
-        // across a reload and across a process.
+        // ordinary one falls back to its stored name, `<crate>::<Type>`. Both
+        // builds of one type derive the same string, which is what makes a
+        // snapshot portable across a reload and across a process.
         let type_name = T::shared_name()
             .map(str::to_owned)
             .unwrap_or_else(|| crate::type_names::stable_type_name::<T>().to_owned());
@@ -142,10 +142,10 @@ impl World {
     /// Register a persistable resource under a persistence name you choose.
     ///
     /// The name is the only thing a snapshot and a reload match on, so pinning
-    /// it separates save compatibility from the Rust path: moving a resource to
-    /// another module, or renaming the crate it lives in, then costs nothing.
-    /// The foreign registration takes a name for the same reason: a resource
-    /// declared by another language has no Rust type path to record.
+    /// it separates save compatibility from the Rust type: renaming the type,
+    /// or the crate it lives in, then costs nothing. The foreign registration
+    /// takes a name for the same reason: a resource declared by another
+    /// language has no Rust type to derive one from.
     ///
     /// Two different Rust types may share one persistence name. That is the
     /// reload case, not a mistake: the arriving build of a type is a different

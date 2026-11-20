@@ -316,7 +316,7 @@ pub struct ChainSource {
 /// renderer module find the same resource by this string across the artifact
 /// boundary. It spells the renderer module's path rather than this crate's, and
 /// that spelling is part of the identity, so leave it exactly as it is.
-#[resource(shared = "pill_master_renderer::frame::RenderFrame")]
+#[resource(shared = "pill_master_renderer::RenderFrame")]
 #[derive(Clone, Debug)]
 pub struct RenderFrame {
     /// Every drawable collected from the world this update, in traversal order.

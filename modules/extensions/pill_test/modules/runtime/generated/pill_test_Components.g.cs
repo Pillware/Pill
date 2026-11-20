@@ -22,10 +22,10 @@ public partial struct Counter
     public readonly Span<byte> Raw =>
         MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref Unsafe.AsRef(in this), 1));
 
-    /// <summary>Calls the Rust function <c>pill_test::mirror::Counter::value_as_u64</c>.</summary>
+    /// <summary>Calls the Rust function <c>pill_test::Counter::value_as_u64</c>.</summary>
     public ulong ValueAsU64()
     {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_test::mirror::Counter", "value_as_u64");
+        var __call = global::TracyLive.MirrorCall.Begin("pill_test::Counter", "value_as_u64");
         __call.PushAddress(ref global::System.Runtime.CompilerServices.Unsafe.AsRef(in this));
         __call.Invoke();
         return __call.Result<ulong>();

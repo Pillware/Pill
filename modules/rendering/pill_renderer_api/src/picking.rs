@@ -63,7 +63,7 @@ impl Resource for SelectionOutlines {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_renderer_api::picking::SelectionOutlines")
+        Some("pill_renderer_api::SelectionOutlines")
     }
 }
 
@@ -149,7 +149,7 @@ impl Resource for PickRequests {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_renderer_api::picking::PickRequests")
+        Some("pill_renderer_api::PickRequests")
     }
 }
 
@@ -179,7 +179,7 @@ impl Resource for PickResults {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_renderer_api::picking::PickResults")
+        Some("pill_renderer_api::PickResults")
     }
 }
 

@@ -12,7 +12,7 @@
 using System.Runtime.InteropServices;
 
 // The renderer's components the docs below refer to, generated from Rust.
-using pill_master_renderer.component;
+using pill_master_renderer;
 
 namespace TracyLive;
 

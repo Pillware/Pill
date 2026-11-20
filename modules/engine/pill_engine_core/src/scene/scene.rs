@@ -72,8 +72,32 @@ pub struct SceneEntity {
     pub id: EntityId,
     /// Its components by registered type name, each a map of field name to the
     /// value the field layer reads.
-    #[serde(default)]
+    ///
+    /// A name written before type names dropped their module path is read in
+    /// its current form (`crate::type_names::crate_qualified_name`), so an
+    /// older scene still finds its components.
+    #[serde(default, deserialize_with = "deserialize_component_map")]
     pub components: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
+}
+
+/// One entity's components as a scene document stores them: field values by
+/// field name, by component name.
+type ComponentMap = BTreeMap<String, BTreeMap<String, serde_json::Value>>;
+
+/// Reads an entity's component map with every component name in its current
+/// form. When an older and a current spelling of one component both appear,
+/// the first in name order is kept.
+fn deserialize_component_map<'de, D>(deserializer: D) -> Result<ComponentMap, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let stored = ComponentMap::deserialize(deserializer)?;
+    let mut components = ComponentMap::new();
+    for (name, fields) in stored {
+        let current_name = crate::type_names::crate_qualified_name(&name).into_owned();
+        components.entry(current_name).or_insert(fields);
+    }
+    Ok(components)
 }
 
 /// The body of a `.scene` file.
@@ -102,8 +126,10 @@ impl Scene {
 
 /// The shared name of [`Scene`], written as a literal: the key the import
 /// registry files the type under, and the name a `Handle<Scene>` field records
-/// as its asset type.
-const SCENE_SHARED_NAME: &str = "pill_engine::scene::Scene";
+/// as its asset type. It follows the `<crate>::<Type>` rule under the public
+/// crate name, and a file written with the older `pill_engine::scene::Scene`
+/// still reads as this type.
+const SCENE_SHARED_NAME: &str = "pill_engine::Scene";
 
 // Shared identity: each binary that compiles this type gets its own `TypeId`
 // for it, and the shared name is what gives the copies one asset column
@@ -1315,6 +1341,53 @@ mod tests {
         assert_eq!(actor.speed, 1.25);
         assert_eq!(actor.target, Entity::NULL, "an absent reference is unset");
         assert_eq!(actor.note, Handle::default(), "and so is an absent handle");
+    }
+
+    /// A scene written while component names kept their module path still
+    /// finds its components: the key is read in its current form.
+    #[test]
+    fn an_old_module_path_component_key_still_attaches() {
+        let mut scratch = Scratch::new("old-key");
+        let id = EntityId::from_name("hero");
+        let current_name = actor_component_name();
+        let type_name = current_name.rsplit("::").next().unwrap_or(&current_name);
+        let old_name = format!("pill_engine::old_module::{type_name}");
+        let mut components = BTreeMap::new();
+        components.insert(
+            old_name,
+            BTreeMap::from([("speed".to_string(), serde_json::json!(1.5))]),
+        );
+        let document = SceneDocument {
+            entities: vec![SceneEntity { id, components }],
+        };
+
+        // Through JSON, so the document field's own reader is what normalizes
+        // the key - the path a file takes.
+        let document: SceneDocument =
+            serde_json::from_str(&serde_json::to_string(&document).unwrap()).unwrap();
+        let stored_name = document.entities[0]
+            .components
+            .keys()
+            .next()
+            .expect("the entity carries one component");
+        assert_eq!(
+            stored_name, &current_name,
+            "the key reads in its current form"
+        );
+
+        let report = load_scene(&mut scratch.engine, &AssetDatabase::new(), &document);
+        assert_eq!(report.components, 1, "the old key still attaches");
+        assert!(
+            report.unknown_components.is_empty(),
+            "{:?}",
+            report.unknown_components
+        );
+        let world = scratch.engine.world_mut();
+        let hero = world.entity_by_id(id).expect("the entity exists");
+        let actor = world
+            .get_component::<Actor>(hero)
+            .expect("the actor exists");
+        assert_eq!(actor.speed, 1.5);
     }
 
     /// A component the world knows but cannot build an image for is reported

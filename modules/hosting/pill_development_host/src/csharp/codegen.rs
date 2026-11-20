@@ -800,10 +800,7 @@ fn emit_nested_struct(
             existing.qualified, qualified
         ));
     }
-    let definition = match value_types
-        .iter()
-        .find(|descriptor| descriptor.type_name == qualified)
-    {
+    let definition = match declared_value_type(value_types, qualified) {
         Some(descriptor) => {
             if descriptor.size != size || descriptor.align != align {
                 return Err(format!(
@@ -939,6 +936,27 @@ fn opaque_namespaces(exposed: &[ModuleExposedComponent], qualified: &str) -> Opt
         .map(|(namespace, _)| namespace.to_string())
 }
 
+/// The declared value type a `struct:<path>` field tag names, or `None` when
+/// the module declares no such type.
+///
+/// The tag is the path as written at the field site: a full path, or a short
+/// name an imported `#[derive(PillMirror)]` type brought into scope. The lookup
+/// goes through `resolve_unique_name`, the same rule the world uses to expand
+/// the field, so a tag that still carries a module path a type used to have
+/// finds the type too.
+fn declared_value_type<'a>(
+    value_types: &'a [PillValueTypeDescriptor],
+    path: &str,
+) -> Option<&'a PillValueTypeDescriptor> {
+    let resolved = pill_engine::component_registry::resolve_unique_name(
+        path,
+        value_types.iter().map(|descriptor| descriptor.type_name),
+    )?;
+    value_types
+        .iter()
+        .find(|descriptor| descriptor.type_name == resolved)
+}
+
 /// Works out the namespace of every value type before anything is written.
 ///
 /// A value type goes into the namespace of the first component that references
@@ -965,10 +983,7 @@ fn value_type_namespaces(
             let Some(path) = base.strip_prefix("struct:") else {
                 continue;
             };
-            let Some(descriptor) = value_types
-                .iter()
-                .find(|descriptor| descriptor.type_name == path)
-            else {
+            let Some(descriptor) = declared_value_type(value_types, path) else {
                 continue;
             };
             if assigned.contains_key(descriptor.type_name) {
@@ -1565,15 +1580,12 @@ fn resolve_span_element_type(
         return Ok(cs_type.to_string());
     }
     if let Some(qualified) = element_tag.strip_prefix("struct:") {
-        let descriptor = value_types
-            .iter()
-            .find(|descriptor| descriptor.type_name == qualified)
-            .ok_or_else(|| {
-                format!(
-                    "container field `{field_name}` of `{cs_name}` has element type `{qualified}`, \
-                     which must derive `PillMirror` so the generated span has a sized C# struct"
-                )
-            })?;
+        let descriptor = declared_value_type(value_types, qualified).ok_or_else(|| {
+            format!(
+                "container field `{field_name}` of `{cs_name}` has element type `{qualified}`, \
+                 which must derive `PillMirror` so the generated span has a sized C# struct"
+            )
+        })?;
         return emit_nested_struct(
             qualified,
             descriptor.size,

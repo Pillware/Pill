@@ -73,7 +73,7 @@ impl pill_engine::Resource for GizmoState {
 /// The name [`GizmoState`] registers under, which a `SetResourceField`
 /// command must also carry. Keeping them the same lets a command written by
 /// hand find the resource.
-pub const RESOURCE_NAME: &str = "pill_editor_core::gizmo::GizmoState";
+pub const RESOURCE_NAME: &str = "pill_editor_core::GizmoState";
 
 /// One editable field of the gizmo settings.
 ///

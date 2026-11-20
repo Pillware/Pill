@@ -11,7 +11,7 @@
 // live.
 
 using System.Numerics;
-using pill_master_renderer.component;
+using pill_master_renderer;
 // The ECS vocabulary (`Query`, `Res`) and `Handle`.
 using TracyLive;
 

@@ -60,6 +60,6 @@ impl Resource for EditorViewportState {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_editor_core::viewport::EditorViewportState")
+        Some("pill_editor_core::EditorViewportState")
     }
 }

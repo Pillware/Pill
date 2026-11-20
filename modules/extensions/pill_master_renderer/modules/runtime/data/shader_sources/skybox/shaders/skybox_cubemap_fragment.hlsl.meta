@@ -1,5 +1,5 @@
 format_version: 1
-asset_type: pill_master_renderer::assets::Shader
+asset_type: pill_master_renderer::Shader
 guid: a6dfb611b11dfb57c5039dd8b6fc1a46
 settings:
   vertex: skybox/shaders/skybox_vertex.wgsl

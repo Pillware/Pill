@@ -129,7 +129,7 @@ impl Resource for HookWatch {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_editor_core::hooks::HookWatch")
+        Some("pill_editor_core::HookWatch")
     }
 }
 

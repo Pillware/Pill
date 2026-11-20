@@ -89,7 +89,7 @@ impl Resource for HookNotices {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_editor_core::hooks::HookNotices")
+        Some("pill_editor_core::HookNotices")
     }
 }
 

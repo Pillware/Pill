@@ -122,7 +122,7 @@ impl Resource for SurfaceCameras {
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_renderer_api::surface::SurfaceCameras")
+        Some("pill_renderer_api::SurfaceCameras")
     }
 }
 

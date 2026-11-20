@@ -1,5 +1,5 @@
 format_version: 1
-asset_type: pill_master_renderer::assets::RenderingPipeline
+asset_type: pill_master_renderer::RenderingPipeline
 guid: 0f5e2c7a9b1d34c8a6e40b52d7c19f83
 asset:
   passes:

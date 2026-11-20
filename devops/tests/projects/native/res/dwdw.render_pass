@@ -13,6 +13,6 @@ asset:
   target: Surface
   target_scale: 1
   textures: {}
-asset_type: pill_master_renderer::assets::RenderPass
+asset_type: pill_master_renderer::RenderPass
 format_version: 1
 guid: 934c3ab57068b9afe5adc2c69beac3c8

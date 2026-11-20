@@ -49,8 +49,8 @@ use crate::{Engine, World};
 /// The derive macro submits one into this artifact's registry. Every field can
 /// be written in a `const`, so the descriptor can live in a `static`.
 pub struct PillComponentDescriptor {
-    /// Fully-qualified type path: the declaring module's path plus the type's
-    /// name.
+    /// The type's stored name, `<crate>::<Type>`: the crate the type is
+    /// compiled in and the type's own name, with no module path between them.
     pub type_name: &'static str,
     /// Whether the component is persistable (schema-migrated across reloads).
     pub persistable: bool,
@@ -79,8 +79,8 @@ pub struct PillComponentDescriptor {
 /// float payloads in a field's presentation decorators have no total equality.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PillValueTypeDescriptor {
-    /// Fully-qualified type path: the module path plus the type's name, or the
-    /// path a `pill_value_type!` declaration spells.
+    /// The type's stored name, `<crate>::<Type>`, or the name a
+    /// `pill_value_type!` declaration spells.
     pub type_name: &'static str,
     /// The package that declared the type, from `env!("CARGO_PKG_NAME")` at
     /// the macro's expansion site.
@@ -112,7 +112,7 @@ pub struct PillValueTypeDescriptor {
 /// allocate on the read path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PillFieldAccessorDescriptor {
-    /// Fully-qualified component type name the field belongs to.
+    /// Stored name of the component the field belongs to, `<crate>::<Type>`.
     pub type_name: &'static str,
     /// Rust field name (snake_case); the C# codegen derives member names from
     /// it.
@@ -180,8 +180,8 @@ pub struct PillFieldAccessorDescriptor {
 /// `arg_tags`, and the `__asset_*` rows are reached by name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PillMethodDescriptor {
-    /// Fully-qualified path of the owning type, written the way the macro
-    /// spells it: the module path plus the type's name (`pill_spline::OmoMO`).
+    /// Stored name of the owning type, `<crate>::<Type>` (`pill_spline::OmoMO`),
+    /// or the module path for a free function (`pill_test::mirror`).
     pub type_name: &'static str,
     /// Whether the declaration is a free function (`#[pill_mirror_fn]`) rather
     /// than a method (`#[pill_mirror_impl]`). A free-function entry's
@@ -487,6 +487,8 @@ impl Drop for ValueTypeLayoutScope {
 /// The order is the whole contract, and it lives here once so a DLL wrapper, a
 /// linked project and anything added later cannot disagree about it:
 ///
+/// 0. the artifact's declared type names are checked for a repeat within a
+///    kind, and an artifact that declares one twice is refused;
 /// 1. this artifact's value types become the world's field-layout resolver;
 /// 2. every component the artifact declares is registered;
 /// 3. every system the artifact declares is registered, in `(phase, order,
@@ -516,6 +518,11 @@ pub fn run_artifact_entry(
     register: fn(&mut Engine) -> u32,
     init: impl FnOnce(&mut Engine) -> u32,
 ) -> u32 {
+    // Step 0: refuse an artifact that declares one type name twice, before
+    // anything registers under the shared name.
+    if !declared_names_are_unique() {
+        return u32::MAX;
+    }
     // Step 1: install this artifact's value types as the world's layout
     // resolver.
     let scope = ValueTypeLayoutScope::install(engine);
@@ -565,6 +572,9 @@ pub fn run_artifact_init(
 ///
 /// Returns zero on success, exactly like the entry points it serves.
 pub fn run_artifact_registration(engine: &mut Engine, register: fn(&mut Engine) -> u32) -> u32 {
+    if !declared_names_are_unique() {
+        return u32::MAX;
+    }
     let scope = ValueTypeLayoutScope::install(engine);
     let mut status = match register_all_components(engine.world_mut()) {
         Ok(()) => {
@@ -582,6 +592,27 @@ pub fn run_artifact_registration(engine: &mut Engine, register: fn(&mut Engine) 
     }
     drop(scope);
     status
+}
+
+/// Whether this artifact declares every type name once per kind, logging the
+/// repeat when it does not.
+///
+/// A type name is `<crate>::<Type>`, so the repeat is two types of one name in
+/// different modules of one crate; the artifact must not register either.
+fn declared_names_are_unique() -> bool {
+    match crate::declarations::check_declared_names_unique() {
+        Ok(()) => true,
+        Err(duplicate) => {
+            pill_core::error!(
+                target: telemetry_target::ENGINE,
+                kind = duplicate.kind,
+                type_name = duplicate.type_name,
+                "an artifact declares one type name twice; rename one of the types, because \
+                 type names must be unique within a crate"
+            );
+            false
+        }
+    }
 }
 
 /// The registration function of an artifact that declares none.

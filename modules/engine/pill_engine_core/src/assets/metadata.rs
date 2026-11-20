@@ -31,7 +31,7 @@
 //!
 //! ```yaml
 //! format_version: 1
-//! asset_type: pill_master_renderer::assets::Texture
+//! asset_type: pill_master_renderer::Texture
 //! guid: 9c0e4b7a1f2d3e4c5b6a798812345678
 //! settings:
 //!   texture_type: Normal
@@ -224,10 +224,11 @@ pub trait ImportedAsset: Asset + TraitAccessible<dyn Asset> + Sized {
     /// file must match to be read as this type.
     ///
     /// Defaults to [`Asset::shared_name`]. A type without a shared name falls
-    /// back to its Rust type name, which changes when the type moves, so such
-    /// a type should override this with a pinned literal.
+    /// back to its stored type name, `<crate>::<Type>`
+    /// ([`stable_type_name`](crate::type_names::stable_type_name)), which does
+    /// not change when the type moves to another module.
     fn metadata_type_name() -> &'static str {
-        Self::shared_name().unwrap_or_else(std::any::type_name::<Self>)
+        Self::shared_name().unwrap_or_else(crate::type_names::stable_type_name::<Self>)
     }
 
     /// Decode `source_bytes` into an asset with the given settings.
@@ -514,7 +515,9 @@ pub(crate) fn parse_header(
         detail,
     };
     let (raw, header) = read_header(bytes).map_err(fail)?;
-    if raw.asset_type != expected_type {
+    // A file written while type names kept their module path still names the
+    // same type (`pill_master_renderer::Mesh` for `...::Mesh`).
+    if !crate::type_names::names_same_type(&raw.asset_type, expected_type) {
         return Err(fail(format!(
             "it describes a `{}`, not a `{expected_type}`",
             raw.asset_type

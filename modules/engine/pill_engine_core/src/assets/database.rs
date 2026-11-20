@@ -55,7 +55,9 @@ pub struct AssetRecord {
     pub guid: AssetGuid,
     /// The path the asset loads under, relative to `res` and separated by `/`.
     pub path: String,
-    /// The asset type its header names (`pill_master_renderer::assets::Mesh`).
+    /// The asset type its header names, in its current form
+    /// (`pill_master_renderer::Mesh`), even when the file still spells it with
+    /// the module path it was written with.
     pub asset_type: String,
     /// Whether the file is the asset itself and holds its own header, rather
     /// than a source with a `.meta` sidecar.
@@ -218,9 +220,9 @@ impl AssetDatabase {
         &'a self,
         asset_type: &'a str,
     ) -> impl Iterator<Item = &'a AssetRecord> + 'a {
-        self.records
-            .values()
-            .filter(move |record| record.asset_type == asset_type)
+        self.records.values().filter(move |record| {
+            crate::type_names::names_same_type(&record.asset_type, asset_type)
+        })
     }
 
     /// The guids that a second path claimed, as found by the build and by each
@@ -315,7 +317,10 @@ fn read_record(root: &Path, relative_path: &str, registry: &ImportRegistry) -> O
 /// no one to report a refusal to, so a refused header becomes `None`.
 fn read_identity(bytes: &[u8]) -> Option<(String, AssetGuid)> {
     let (header, _) = crate::asset_metadata::read_header(bytes).ok()?;
-    Some((header.asset_type, header.guid))
+    // Indexed in its current form, so a picker, an icon and a listing all see
+    // one spelling of a type whatever form the file was written with.
+    let asset_type = crate::type_names::crate_qualified_name(&header.asset_type).into_owned();
+    Some((asset_type, header.guid))
 }
 
 /// Whether the extension of `path` belongs to a standalone type.
@@ -409,7 +414,7 @@ mod tests {
         const SOURCE_EXTENSIONS: &'static [&'static str] = &["note"];
 
         fn metadata_type_name() -> &'static str {
-            "pill_engine::asset_database::tests::Note"
+            "pill_engine::Note"
         }
 
         fn import(_name: &str, bytes: &[u8], _settings: &NoteSettings) -> AssetLoadResult<Self> {
@@ -432,7 +437,7 @@ mod tests {
         const FILE_EXTENSION: &'static str = "card";
 
         fn metadata_type_name() -> &'static str {
-            "pill_engine::asset_database::tests::Card"
+            "pill_engine::Card"
         }
 
         fn from_document(
@@ -491,7 +496,7 @@ mod tests {
             self.write(relative_path, "hello");
             self.write(
                 &format!("{relative_path}.meta"),
-                &header("pill_engine::asset_database::tests::Note", guid, "settings"),
+                &header(Note::metadata_type_name(), guid, "settings"),
             );
         }
 
@@ -524,11 +529,7 @@ mod tests {
         scratch.note("notes/a.note", NOTE_GUID);
         scratch.write(
             "cards/b.card",
-            &header(
-                "pill_engine::asset_database::tests::Card",
-                CARD_GUID,
-                "asset",
-            ),
+            &header(Card::metadata_type_name(), CARD_GUID, "asset"),
         );
         // A source without a `.meta` has no guid yet, and a `.meta` is never
         // an asset of its own.
@@ -540,19 +541,39 @@ mod tests {
             .by_guid(guid(NOTE_GUID))
             .expect("the note is indexed");
         assert_eq!(note.path, "notes/a.note");
-        assert_eq!(note.asset_type, "pill_engine::asset_database::tests::Note");
+        assert_eq!(note.asset_type, "pill_engine::Note");
         assert!(!note.standalone);
         let card = database
             .by_path("cards\\b.card")
             .expect("either separator works");
         assert_eq!(card.guid, guid(CARD_GUID));
         assert!(card.standalone);
-        assert_eq!(
-            database
-                .records_of_type("pill_engine::asset_database::tests::Card")
-                .count(),
-            1
+        assert_eq!(database.records_of_type("pill_engine::Card").count(), 1);
+    }
+
+    /// A file written while stored names kept their module path still names
+    /// its type: the index records it under the current name, and a lookup
+    /// answers to either spelling.
+    #[test]
+    fn an_old_module_path_spelling_still_names_its_type() {
+        const OLD_NOTE: &str = "pill_engine::asset_database::tests::Note";
+        let scratch = Scratch::new("old-spelling");
+        scratch.write("notes/a.note", "hello");
+        scratch.write(
+            "notes/a.note.meta",
+            &header(OLD_NOTE, NOTE_GUID, "settings"),
         );
+
+        let database = AssetDatabase::from_directory(&scratch.root, &scratch.registry());
+        let note = database
+            .by_guid(guid(NOTE_GUID))
+            .expect("the note is indexed");
+        assert_eq!(
+            note.asset_type, "pill_engine::Note",
+            "the index records the current name whatever the file spells"
+        );
+        assert_eq!(database.records_of_type(OLD_NOTE).count(), 1);
+        assert_eq!(database.records_of_type("pill_engine::Note").count(), 1);
     }
 
     #[test]
@@ -685,7 +706,7 @@ mod tests {
                 MetadataPolicy::ReadIfPresent,
             )
             .unwrap();
-        let note_type = "pill_engine::asset_database::tests::Note";
+        let note_type = Note::metadata_type_name();
         let identity = registry
             .asset_identity(assets, note_type, loaded.index, loaded.generation)
             .expect("a live handle has an identity");
@@ -739,22 +760,12 @@ mod tests {
             ("a.note", b"hello".to_vec()),
             (
                 "a.note.meta",
-                header(
-                    "pill_engine::asset_database::tests::Note",
-                    NOTE_GUID,
-                    "settings",
-                )
-                .into_bytes(),
+                header(Note::metadata_type_name(), NOTE_GUID, "settings").into_bytes(),
             ),
             ("loose.txt", b"not an asset".to_vec()),
             (
                 "b.card",
-                header(
-                    "pill_engine::asset_database::tests::Card",
-                    CARD_GUID,
-                    "asset",
-                )
-                .into_bytes(),
+                header(Card::metadata_type_name(), CARD_GUID, "asset").into_bytes(),
             ),
         ]);
         let pack = AssetPack::parse(pack_bytes).unwrap();
@@ -775,12 +786,7 @@ mod tests {
     /// must not take the guid that its own asset holds.
     #[test]
     fn a_packed_metadata_temp_file_does_not_steal_the_guid() {
-        let meta = header(
-            "pill_engine::asset_database::tests::Note",
-            NOTE_GUID,
-            "settings",
-        )
-        .into_bytes();
+        let meta = header(Note::metadata_type_name(), NOTE_GUID, "settings").into_bytes();
         let pack_bytes = pack(&[
             ("textures/.a.note.meta.4242-0.tmp", meta.clone()),
             ("textures/a.note", b"hello".to_vec()),

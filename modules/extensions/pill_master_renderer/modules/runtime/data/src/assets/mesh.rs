@@ -72,7 +72,7 @@ pub struct MeshVertex {
 /// version moves. A game edits the mesh it holds and lets the renderer notice,
 /// instead of touching buffers itself.
 #[asset(imported)]
-#[pill_mirror_object(asset, import, shared = "pill_master_renderer::assets::Mesh")]
+#[pill_mirror_object(asset, import, shared = "pill_master_renderer::Mesh")]
 #[derive(Clone, Debug)]
 pub struct Mesh {
     /// Name used in logs and error messages, and as the label of the GPU
