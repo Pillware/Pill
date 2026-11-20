@@ -199,8 +199,9 @@ def main() -> int:
     shell_source = (
         MODULES_ROOT
         / "extensions"
-        / "pill_editor_shell_egui"
-        / "pill_editor_shell_egui_editor"
+        / "editor_shell_egui"
+        / "modules"
+        / "editor"
         / "src"
         / "shell.rs"
     )

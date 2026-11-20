@@ -176,29 +176,28 @@ def dylib_tree(dylib, selection):
     return packages
 
 
-# Every extension crate built as a loadable module: a crate in an extension
-# folder, `extensions/<folder>/<crate>/` (`extensions/rendering` holds the old
-# renderers, excluded from the workspace; `_`-folders are bookkeeping). Mapped
-# to the folder that holds it.
-def module_folders():
-    folders = {}
-    for manifest in sorted(MODULES.glob("extensions/*/*/Cargo.toml")):
-        folder = manifest.parent.parent.name
-        name = manifest.parent.name
-        if folder == "rendering" or folder.startswith("_") or name == "generated":
-            continue
-        folders[name] = folder
-    return folders
+# Every extension crate built as a loadable module, as {package: manifest}:
+# the crates under each extension folder's `modules/runtime` (the master
+# renderer's data and gpu crates sit one level deeper) and its
+# `modules/editor`. `extensions/rendering` holds the old renderers, excluded
+# from the workspace, and never matches these globs.
+def module_manifests():
+    manifests = [
+        *MODULES.glob("extensions/*/modules/runtime/Cargo.toml"),
+        *MODULES.glob("extensions/*/modules/runtime/*/Cargo.toml"),
+        *MODULES.glob("extensions/*/modules/editor/Cargo.toml"),
+    ]
+    return {Crate(manifest).name: manifest for manifest in sorted(manifests)}
 
 
 # The names of every extension crate, in name order.
 def module_names():
-    return sorted(module_folders())
+    return sorted(module_manifests())
 
 
 # The extension's manifest, read through the shared reader.
 def module_crate(name):
-    return Crate(MODULES / "extensions" / module_folders()[name] / name / "Cargo.toml")
+    return Crate(module_manifests()[name])
 
 
 # The feature names an extension declares, minus the `default` key: the set a

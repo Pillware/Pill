@@ -716,6 +716,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "editor_api_editor"
+version = "0.1.0"
+dependencies = [
+ "pill_core",
+ "pill_editor_core",
+ "pill_engine",
+ "pill_test",
+]
+
+[[package]]
 name = "egui"
 version = "0.36.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1280,6 +1290,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
+name = "host_module_editor_api_editor"
+version = "0.1.0"
+dependencies = [
+ "editor_api_editor",
+ "pill_engine",
+]
+
+[[package]]
 name = "host_module_pill_editor_shell_egui_editor"
 version = "0.1.0"
 dependencies = [
@@ -1304,38 +1322,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "host_module_pill_physics"
-version = "0.1.0"
-dependencies = [
- "pill_engine",
- "pill_physics",
-]
-
-[[package]]
-name = "host_module_pill_physics_editor"
-version = "0.1.0"
-dependencies = [
- "pill_engine",
- "pill_physics_editor",
-]
-
-[[package]]
-name = "host_module_pill_spline"
-version = "0.1.0"
-dependencies = [
- "pill_engine",
- "pill_spline",
-]
-
-[[package]]
-name = "host_module_pill_spline_editor"
-version = "0.1.0"
-dependencies = [
- "pill_engine",
- "pill_spline_editor",
-]
-
-[[package]]
 name = "host_module_pill_spline_uber_editor"
 version = "0.1.0"
 dependencies = [
@@ -1344,12 +1330,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "host_project_cube_rust"
+name = "host_module_pill_test"
 version = "0.1.0"
 dependencies = [
- "glam 0.33.7",
+ "pill_engine",
+ "pill_test",
+]
+
+[[package]]
+name = "host_module_pill_test_editor"
+version = "0.1.0"
+dependencies = [
+ "pill_engine",
+ "pill_test_editor",
+]
+
+[[package]]
+name = "host_project_editor_api"
+version = "0.1.0"
+dependencies = [
  "pill_engine",
  "pill_master_renderer_data",
+ "serde",
 ]
 
 [[package]]

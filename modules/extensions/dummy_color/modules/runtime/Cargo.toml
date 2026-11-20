@@ -1,0 +1,28 @@
+[package]
+name = "pill_dummy_color"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[lib]
+# The crate root is named after the crate rather than `lib.rs`. Every crate in
+# the dependency graph has a `src/lib.rs`, and the Windows debugger falls back
+# to matching a breakpoint by file name when the owning module is not mapped -
+# always true for a module the host loads at runtime - so a shared name gives
+# it hundreds of wrong candidates. `pill_hot_scan` reads this key to know
+# which file is the root and emits no module segment for it.
+path = "src/pill_dummy_color.rs"
+# `rlib` only: the artifact the host loads is built by the generated
+# `host_module_pill_dummy_color` wrapper, which links this crate as a library.
+# A project linking it directly then compiles one identical copy of the
+# sources.
+crate-type = ["rlib"]
+
+[build-dependencies]
+pill_hot_scan = { path = "../../../../hosting/pill_hot_scan" }
+
+[dependencies]
+pill_core = { path = "../../../../engine/pill_core" }
+pill_engine = { path = "../../../../engine/pill_engine" }

@@ -122,6 +122,12 @@ class Crate:
 
 # The workspace members under `modules/`, expanding glob members as cargo does
 # and skipping directories under an `exclude`d path.
+#
+# An explicitly listed member is kept even when an `exclude` covers a folder
+# above it; cargo does the same, and the master renderer's layout relies on it:
+# `extensions/master_renderer/modules/runtime` is excluded so the
+# `extensions/*/modules/*` glob does not take it for a crate, while its `data`
+# and `gpu` crates are listed as members.
 def workspace_members(modules: Path) -> List[Crate]:
     workspace = read_manifest(modules / "Cargo.toml")["workspace"]
     excluded = [(modules / path).resolve() for path in workspace.get("exclude", [])]
@@ -133,7 +139,7 @@ def workspace_members(modules: Path) -> List[Crate]:
         for directory in directories:
             manifest = directory / "Cargo.toml"
             resolved = directory.resolve()
-            if any(resolved == path or path in resolved.parents for path in excluded):
+            if is_glob and any(resolved == path or path in resolved.parents for path in excluded):
                 continue
             if not manifest.is_file() or resolved in seen:
                 continue

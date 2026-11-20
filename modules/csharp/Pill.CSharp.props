@@ -173,18 +173,35 @@
     <_PillModules>$([MSBuild]::Unescape($([System.Text.RegularExpressions.Regex]::Replace('$(_PillRendererData);$(_PillModules)', ';+', ';').Trim(';'))))</_PillModules>
 
     <_PillExtensions>$(PillEngineRoot)extensions/</_PillExtensions>
-    <_PillMirrorGlobs Condition="'$(_PillModules)' != ''">$([MSBuild]::Unescape('$(_PillExtensions)*/$(_PillModules.Replace(';', '/generated/*.g.cs;$(_PillExtensions)*/'))/generated/*.g.cs'))</_PillMirrorGlobs>
-    <_PillManagedGlobs Condition="'$(_PillModules)' != ''">$([MSBuild]::Unescape('$(_PillExtensions)*/$(_PillModules.Replace(';', '/managed/*.cs;$(_PillExtensions)*/'))/managed/*.cs'))</_PillManagedGlobs>
+    <!-- A mirror is `<crate>/generated/<module>_Components.g.cs`, and the
+         crate sits under `<extension>/modules/` (one level deeper for the
+         master renderer's data crate), so `**` spans those levels. -->
+    <_PillMirrorGlobs Condition="'$(_PillModules)' != ''">$([MSBuild]::Unescape('$(_PillExtensions)*/modules/**/generated/$(_PillModules.Replace(';', '_Components.g.cs;$(_PillExtensions)*/modules/**/generated/'))_Components.g.cs'))</_PillMirrorGlobs>
   </PropertyGroup>
 
   <!-- The mirrors are derived from each module's real registered layout by the
        host, which writes `generated/<module>_Components.g.cs` inside the
-       extension before the project builds (a committed copy bootstraps builds
-       with no host run). `managed/` holds the hand-written conveniences an
-       extension ships over its mirror. -->
+       extension crate before the project builds (a committed copy bootstraps
+       builds with no host run). A module's hand-written conveniences live in
+       the `managed/` folder beside its mirror's `generated/` folder; the
+       target below finds them from the mirrors, so only a loaded module's
+       helpers are compiled. -->
   <ItemGroup Condition="'$(_PillModules)' != ''">
-    <Compile Include="$(_PillMirrorGlobs)" />
-    <Compile Include="$(_PillManagedGlobs)" />
+    <_PillMirror Include="$(_PillMirrorGlobs)" />
+    <Compile Include="@(_PillMirror)" />
   </ItemGroup>
+
+  <Target Name="PillCollectManagedHelpers" BeforeTargets="CoreCompile" Condition="'@(_PillMirror)' != ''">
+    <ItemGroup>
+      <!-- The mirror's crate is its `generated/` folder's parent; the module's
+           hand-written helpers sit in that crate's `managed/` folder. -->
+      <_PillCrateDirectory Include="@(_PillMirror->'%(RootDir)%(Directory)..')" />
+      <_PillManagedDirectory Include="@(_PillCrateDirectory->'%(Identity)\managed')" Condition="Exists('%(Identity)\managed')" />
+    </ItemGroup>
+    <ItemGroup Condition="'@(_PillManagedDirectory)' != ''">
+      <_PillManagedFile Include="$([System.IO.Directory]::GetFiles('%(_PillManagedDirectory.Identity)', '*.cs'))" />
+      <Compile Include="@(_PillManagedFile)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

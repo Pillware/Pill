@@ -436,9 +436,10 @@ fn confirm_staged_artifacts(
 // =============================================================================
 
 /// How many directory levels below the workspace root a member manifest can
-/// sit. Three is the depth of `extensions/<extension>/<crate>`, the deepest
-/// member layout this search has to reach.
-const MEMBER_SEARCH_DEPTH: usize = 3;
+/// sit. Five is the depth of
+/// `extensions/master_renderer/modules/runtime/data`, the deepest member
+/// layout this search has to reach.
+const MEMBER_SEARCH_DEPTH: usize = 5;
 
 /// Applies the environment and argument overrides that every host-spawned
 /// cargo build needs, whichever path starts it.

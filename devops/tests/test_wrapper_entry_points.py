@@ -18,7 +18,7 @@ DESCRIPTION
     whole set, because the host resolves them by symbol exactly as it did
     before the wrapper existed.
 
-    The script writes `modules/extensions/pill_dummy_color/generated/host_module_wrapper_probe` (a
+    The script writes `modules/extensions/dummy_color/generated/host_module_wrapper_probe` (a
     throwaway workspace member wrapping `pill_dummy_color`), builds it, reads
     the DLL's export directory and compares the `pill_*` names against the
     expected set. The probe is deleted again afterwards, unless `--keep-probe`
@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_engine_exports import PortableExecutableError, parse_headers, rva_to_offset  # noqa: E402
 
 MODULES = Path(__file__).resolve().parents[2] / "modules"
-PROBE_DIRECTORY = MODULES / "extensions" / "pill_dummy_color" / "generated" / "host_module_wrapper_probe"
+PROBE_DIRECTORY = MODULES / "extensions" / "dummy_color" / "generated" / "host_module_wrapper_probe"
 
 # The extension both builds compile; it carries no extra features, so the
 # check isolates what the macro emits.
@@ -106,7 +106,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pill_engine = { path = "../../../../engine/pill_engine", features = ["development"] }
-pill_dummy_color = { path = "../../pill_dummy_color", default-features = false }
+pill_dummy_color = { path = "../../modules/runtime", default-features = false }
 """
 
 PROBE_SOURCE = """//! Loadable-artifact wrapper for the `pill_dummy_color` extension.

@@ -1,0 +1,45 @@
+[package]
+name = "pill_master_renderer"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# `cdylib` for the host to load and reload as a module; `rlib` for its tests
+# and a shipping build that links it statically.
+[lib]
+# `rlib` only: the artifact the host loads is built by the generated
+# `host_module_pill_master_renderer` wrapper, which links this crate as a
+# library; `pill_development_host` reaches the same hashed build through
+# `renderer_dependency_graph`.
+crate-type = ["rlib"]
+
+[dependencies]
+pill_core = { path = "../../../../../engine/pill_core" }
+pill_core_macros = { path = "../../../../../engine/pill_core_macros" }
+pill_engine = { path = "../../../../../engine/pill_engine" }
+trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
+
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+miette = { version = "7", features = ["derive"] }
+glam = { version = "0.33", features = ["serde", "bytemuck"] }
+bytemuck = { version = "1.4", features = ["derive"] }
+wgpu = "30.0.0"
+# A texture preview decodes the file the tile names: a project brings a
+# texture in under its own asset name, and a file nothing loaded still
+# previews (W-0049 Stage 11).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "hdr"] }
+# The GPU caches key their slot tables the way the shader assets do.
+indexmap = "2"
+# The renderer contract: the backend trait this crate implements, the frame it
+# draws, and the window it attaches to.
+pill_renderer_api = { path = "../../../../../rendering/pill_renderer_api" }
+# The game's UI (plan decision: a UI pass after post-processing, Stage 12):
+# the shared draw data the `ui` module paints with this module's own device
+# (D8). The renderer names no UI library: `pill_ui_frame` carries the lists.
+pill_ui_frame = { path = "../../../../../rendering/pill_ui_frame" }
+# This renderer's data crate: its components, assets, pipelines and shaders.
+# Everything wgpu-free that is specific to the master renderer lives there.
+pill_master_renderer_data = { path = "../data" }

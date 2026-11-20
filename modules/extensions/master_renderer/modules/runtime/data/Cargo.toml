@@ -1,0 +1,64 @@
+[package]
+name = "pill_master_renderer_data"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The master renderer's data: what a game says to this renderer. Components,
+# assets, the pipelines and their shaders, pipeline selection, and the C# mirror
+# of it all. Never links wgpu: projects, the host and headless builds link this,
+# and only the GPU module (`pill_master_renderer`) links the graphics stack.
+[lib]
+# Named after the crate rather than `lib.rs`, like every extension, so the
+# debugger's file-name fallback has one candidate.
+path = "src/pill_master_renderer_data.rs"
+# `rlib` only: the artifact the host loads is built by the generated
+# `host_module_pill_master_renderer_data` wrapper, which links this crate as a
+# library, and the GPU module links the same build.
+crate-type = ["rlib"]
+
+[dependencies]
+pill_core = { path = "../../../../../engine/pill_core" }
+pill_core_macros = { path = "../../../../../engine/pill_core_macros" }
+pill_engine = { path = "../../../../../engine/pill_engine" }
+# The renderer contract: the frame vocabulary the assets are written in
+# (pass kinds and targets, material parameters) and the camera.
+pill_renderer_api = { path = "../../../../../rendering/pill_renderer_api" }
+trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
+
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+# The chain's default material is a file this crate parses at runtime
+# (`config/pbr_pipeline`), not a value built in code (W-0136).
+serde_json = "1"
+miette = { version = "7", features = ["derive"] }
+glam = { version = "0.33", features = ["serde", "bytemuck"] }
+bytemuck = { version = "1.4", features = ["derive"] }
+# The shaders' slot tables: name-keyed like a map, with the declaration order
+# the uniform buffer packs in. `indexmap` is `ordermap`'s current name.
+indexmap = "2"
+# `jpeg` alongside `png`: a project may ship its PBR maps as JPEG, and
+# re-encoding them to PNG would multiply their size for no gain in fidelity.
+# `hdr` reads Radiance environment maps for skyboxes, whose values run past
+# what an 8-bit image can hold.
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "hdr",
+] }
+# Half floats: equirect and cubemap textures upload as `Rgba16Float`, the widest
+# format every backend can filter, so their texels are packed to `f16` here.
+half = "2"
+tobj = "3"
+
+[dev-dependencies]
+# Tests check the metadata files' JSON form. Test-only, and the workspace's
+# resolver 2 keeps dev-dependencies out of the graph a normal build resolves.
+serde_json = "1"
+
+[build-dependencies]
+# Turns `shaders/**/*.hlsl` into the WGSL this crate embeds, so a shader that
+# is not committed is still the one that compiles.
+pill_assets = { path = "../../../../../assets/pill_assets" }

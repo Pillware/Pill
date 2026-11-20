@@ -35,11 +35,17 @@ members = [
     # projects with no manifest for cargo to read.
     "csharp/pill_csharp_bridge",
     # Extensions: one folder per extension, `extensions/<extension>/`, holding
-    # that extension's crates. Every crate is named `pill_*`, which is the
-    # convention this glob relies on: a folder also holds non-crate
-    # directories (the host's `generated/`), and every path a member glob
-    # matches must be a crate. Adding an extension is just creating a folder.
-    "extensions/*/pill_*",
+    # that extension's crates under a `modules/` folder. A crate is either
+    # `modules/runtime` (the extension itself) or `modules/editor` (its editor
+    # part). Every crate is named `pill_*`; adding an extension is just
+    # creating the folder.
+    "extensions/*/modules/*",
+    # The master renderer's runtime folder holds two crates,
+    # `modules/runtime/data` and `modules/runtime/gpu`, so both are listed
+    # explicitly and their parent is excluded: every path a member glob
+    # matches must be a crate, and `runtime` itself is not one.
+    "extensions/master_renderer/modules/runtime/data",
+    "extensions/master_renderer/modules/runtime/gpu",
     # The host-generated `host_module_<crate>` wrappers, one per loaded
     # extension crate, in the `generated/` folder of the extension they wrap.
     "extensions/*/generated/*",
@@ -67,6 +73,9 @@ members = [
 exclude = [
     "extensions/rendering",
     "extensions/_workspace_anchor",
+    # The master renderer's runtime folder holds the data and gpu crates and is
+    # not a crate itself.
+    "extensions/master_renderer/modules/runtime",
     "projects_generated/README.md",
 ]
 resolver = "2"

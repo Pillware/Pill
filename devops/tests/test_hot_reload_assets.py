@@ -72,7 +72,7 @@ METADATA_FILE = SOURCE_FILE.with_name(SOURCE_FILE.name + ".meta")
 MATERIAL_NAME = "materials/teapot.material"
 MATERIAL_FILE = PROJECT_ROOT / "res" / MATERIAL_NAME
 DATA_CRATE_ROOT = (
-    MODULES_ROOT / "extensions" / "pill_master_renderer" / "pill_master_renderer_data" / "src" / "pill_master_renderer_data.rs"
+    MODULES_ROOT / "extensions" / "master_renderer" / "modules" / "runtime" / "data" / "src" / "pill_master_renderer_data.rs"
 )
 
 # Headless dev host: the project draws nothing here, and the asset path under

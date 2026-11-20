@@ -116,8 +116,9 @@ PROJECT_MANIFEST_FILE_NAME = "Cargo.toml"
 # `register` half of the project's entry point.
 PROJECT_SOURCE_DIRECTORY_NAME = "src"
 EXTENSION_DIRECTORY = Path("modules") / "extensions"
-# Extension crates live one level down, one folder per extension:
-# `modules/extensions/<extension>/<crate>/`.
+# Extension crates live under each extension folder's `modules/` folder: the
+# runtime crate in `modules/runtime` (for the master renderer, one crate per
+# child of `modules/runtime`) and the editor crate in `modules/editor`.
 # Suffix of an extension's editor crate, which no shipped build ever links.
 EDITOR_CRATE_SUFFIX = "_editor"
 # An editor build also links the egui shell, an editor-only
@@ -179,9 +180,12 @@ CSHARP_TARGET_FRAMEWORK = "net8.0"
 WORKSPACE_DIRECTORY = Path("modules")
 
 
-# Folders inside an extension's folder that hold no crate of the extension: the
-# host-written wrappers and the runnable example projects.
-EXTENSION_NON_CRATE_DIRECTORIES = ("generated", "examples")
+# Folders inside an extension folder, and inside its `modules/` folder.
+EXTENSION_MODULES_DIRECTORY = "modules"
+EXTENSION_RUNTIME_DIRECTORY = "runtime"
+EXTENSION_EDITOR_DIRECTORY = "editor"
+# The folder holding the renderers no build uses; the host's index skips it.
+OLD_RENDERERS_DIRECTORY = "rendering"
 
 
 # Returns the package name `directory/Cargo.toml` declares, or None when the
@@ -199,32 +203,48 @@ def declared_package_name(directory: Path):
     return package_name if isinstance(package_name, str) else None
 
 
-# Finds the directory of the extension crate whose manifest declares
-# `crate_name`, the way the host's `find_extension_crate` does: every crate
-# directory of every extension folder is read, and a crate in the folder of its
-# own name wins. Falls back to the conventional
-# `modules/extensions/<crate>/<crate>` when no folder holds the crate, so a
-# missing crate is reported as missing.
-def extension_crate_directory(root: Path, crate_name: str) -> Path:
+# Yields every extension crate directory, the way the host's index finds them:
+# `modules/runtime` (or one crate per child of it, for the master renderer)
+# and `modules/editor` inside every extension folder.
+def extension_crate_directories(root: Path):
     extensions_root = root / EXTENSION_DIRECTORY
-    conventional_directory = extensions_root / crate_name / crate_name
-    matching_directories = []
-    if extensions_root.is_dir():
-        for folder in sorted(extensions_root.iterdir()):
-            if folder.name.startswith("_") or not folder.is_dir():
-                continue
-            for crate_directory in sorted(folder.iterdir()):
-                if crate_directory.name in EXTENSION_NON_CRATE_DIRECTORIES:
-                    continue
-                if not crate_directory.is_dir():
-                    continue
-                if declared_package_name(crate_directory) == crate_name:
-                    matching_directories.append(crate_directory)
-    for crate_directory in matching_directories:
-        if crate_directory.parent.name == crate_name:
+    if not extensions_root.is_dir():
+        return
+    for folder in sorted(extensions_root.iterdir()):
+        if (
+            folder.name.startswith("_")
+            or folder.name == OLD_RENDERERS_DIRECTORY
+            or not folder.is_dir()
+        ):
+            continue
+        modules_directory = folder / EXTENSION_MODULES_DIRECTORY
+        runtime_directory = modules_directory / EXTENSION_RUNTIME_DIRECTORY
+        if declared_package_name(runtime_directory) is not None:
+            yield runtime_directory
+        elif runtime_directory.is_dir():
+            for crate_directory in sorted(runtime_directory.iterdir()):
+                if crate_directory.is_dir() and declared_package_name(crate_directory) is not None:
+                    yield crate_directory
+        editor_directory = modules_directory / EXTENSION_EDITOR_DIRECTORY
+        if declared_package_name(editor_directory) is not None:
+            yield editor_directory
+
+
+# Finds the directory of the extension crate whose manifest declares
+# `crate_name`, the way the host's `find_extension_crate` does. Falls back to
+# the conventional `modules/extensions/<crate>/modules/runtime` when no folder
+# holds the crate, so a missing crate is reported as missing.
+def extension_crate_directory(root: Path, crate_name: str) -> Path:
+    conventional_directory = (
+        root
+        / EXTENSION_DIRECTORY
+        / crate_name
+        / EXTENSION_MODULES_DIRECTORY
+        / EXTENSION_RUNTIME_DIRECTORY
+    )
+    for crate_directory in extension_crate_directories(root):
+        if declared_package_name(crate_directory) == crate_name:
             return crate_directory
-    if matching_directories:
-        return matching_directories[0]
     return conventional_directory
 
 

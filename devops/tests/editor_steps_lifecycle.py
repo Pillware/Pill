@@ -941,8 +941,9 @@ def step_14_module_panels(session: EditorSession, binary: Path, project: str) ->
         REPOSITORY_ROOT
         / "modules"
         / "extensions"
-        / "pill_editor_shell_egui"
-        / "pill_editor_shell_egui_editor"
+        / "editor_shell_egui"
+        / "modules"
+        / "editor"
         / "src"
         / "shell.rs"
     )

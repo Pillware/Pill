@@ -101,14 +101,14 @@ from core.scenario import (  # noqa: E402
 # Session configuration
 # =============================================================================
 
-SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "pill_spline" / "src" / "pill_spline.rs"
+SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
 
 # A module the project does not link. Its persistable component is therefore
 # declared by this artifact alone, which makes it the only subject in the
 # test project a forgotten type can be dropped for: `pill_spline`'s `Spline` is
 # `#[pill(shared)]` and the project registers it from its own copy, so that
 # column is the project's to keep (see `peer_component_names`).
-PILL_TEST_RS = MODULES_ROOT / "extensions" / "pill_test" / "pill_test" / "src" / "pill_test.rs"
+PILL_TEST_RS = MODULES_ROOT / "extensions" / "test" / "modules" / "runtime" / "src" / "pill_test.rs"
 
 # Session settings: only the extension list lives in a file now; the
 # project itself is selected by PROJECT_PATH per session.

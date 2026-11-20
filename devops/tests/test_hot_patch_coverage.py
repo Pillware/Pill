@@ -75,6 +75,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import suite_common as common  # noqa: E402
 from core.suite_common import *  # noqa: E402,F401,F403
+from core.workspace_graph import read_manifest  # noqa: E402
 
 # =============================================================================
 # Configuration
@@ -195,11 +196,17 @@ def discover_crates() -> List[Crate]:
         for name in re.findall(r'^\s*-\s*"([^"]+)"', modules_block.group(1), re.MULTILINE):
             crate_directory = next(
                 (
-                    folder / name
+                    candidate
                     for folder in sorted((MODULES_ROOT / "extensions").iterdir())
-                    if (folder / name / "Cargo.toml").is_file()
+                    for candidate in (
+                        folder / "modules" / "runtime",
+                        folder / "modules" / "runtime" / name,
+                        folder / "modules" / "editor",
+                    )
+                    if (candidate / "Cargo.toml").is_file()
+                    and read_manifest(candidate / "Cargo.toml").get("package", {}).get("name") == name
                 ),
-                MODULES_ROOT / "extensions" / name / name,
+                MODULES_ROOT / "extensions" / name / "modules" / "runtime",
             )
             crates.append(Crate(name, crate_directory / "src", "module"))
     return crates

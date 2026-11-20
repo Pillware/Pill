@@ -82,12 +82,12 @@ from core.scenario import Scenario, ScenarioPhase, ScenarioRunner, run_scenario 
 
 # `MANAGED_PROJECT_SYSTEMS_CS` and `MANAGED_PROJECT_COMPONENTS_CS` come from
 # `core.projects` through the star import above.
-SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "pill_spline" / "src" / "pill_spline.rs"
+SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
 SPLINE_GENERATED_FILE = (
-    MODULES_ROOT / "extensions" / "pill_spline" / "pill_spline" / "generated" / "pill_spline_Components.g.cs"
+    MODULES_ROOT / "extensions" / "spline" / "modules" / "runtime" / "generated" / "pill_spline_Components.g.cs"
 )
 DUMMY_GENERATED_FILE = (
-    MODULES_ROOT / "extensions" / "pill_dummy_color" / "pill_dummy_color" / "generated"
+    MODULES_ROOT / "extensions" / "dummy_color" / "modules" / "runtime" / "generated"
     / "pill_dummy_color_Components.g.cs"
 )
 

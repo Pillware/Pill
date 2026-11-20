@@ -195,7 +195,7 @@ mod tests {
         let output = "\
    Compiling pill_spline v0.1.0
 error[E0425]: cannot find value `speed` in this scope
-  --> extensions/pill_spline/pill_spline/src/pill_spline.rs:41:9
+  --> extensions/spline/modules/runtime/src/pill_spline.rs:41:9
    |
 41 |     let v = speed * dt;
    |             ^^^^^ not found in this scope
@@ -209,7 +209,7 @@ error: could not compile `pill_spline` (lib) due to 1 previous error
         assert_eq!(problem.message, "cannot find value `speed` in this scope");
         assert_eq!(
             problem.file.as_deref(),
-            Some("extensions/pill_spline/pill_spline/src/pill_spline.rs")
+            Some("extensions/spline/modules/runtime/src/pill_spline.rs")
         );
         assert_eq!((problem.line, problem.column), (Some(41), Some(9)));
     }

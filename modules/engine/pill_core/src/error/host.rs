@@ -238,6 +238,24 @@ pub enum ConfigError {
     )]
     RetiredEditorFrontend { name: String },
 
+    /// An editor crate's package name does not end in `_editor`, so nothing
+    /// else could tell it apart from a runtime crate.
+    #[message(
+        "editor crate ",
+        value(name),
+        " sits in an extension's `modules/editor` folder but its package name does not end in \"_editor\""
+    )]
+    EditorCrateNameMismatch { name: String },
+
+    /// A runtime crate's package name ends in `_editor`, which marks a crate an
+    /// editor host loads and no game build links.
+    #[message(
+        "runtime crate ",
+        value(name),
+        " sits in an extension's runtime folder but its package name ends in \"_editor\""
+    )]
+    RuntimeCrateNameMismatch { name: String },
+
     /// No extension folder holds the configured extension crate.
     #[message(
         "extension ",

@@ -7,6 +7,10 @@
 /examples/*/*/target/
 /devops/tests/projects/*/target/
 /modules/extensions/*/examples/*/target/
+# An extension crate run from its own folder builds beside it, one level below
+# the extension's `modules/` folder (two for the master renderer's crates).
+/modules/extensions/*/modules/*/target/
+/modules/extensions/*/modules/runtime/*/target/
 
 # C# build output, wherever a project lives.
 bin/

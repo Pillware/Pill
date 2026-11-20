@@ -1,0 +1,17 @@
+[package]
+name = "collider_edit"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# `cdylib` for a hot-reloading build, where the host loads this as a DLL, and
+# `rlib` so a shipping or web build can link the project into the binary.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pill_engine = { path = "../../../../engine/pill_engine" }
+pill_physics = { path = "../../modules/runtime", default-features = false }
+
+# A project is not a Cargo workspace member: the host generates a
+# `host_project_collider_edit` crate and builds it against this manifest.
+[workspace]

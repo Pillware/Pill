@@ -1709,13 +1709,23 @@ mod tests {
         }
     }
 
-    /// Creates a fresh temporary workspace and the module directory inside it.
+    /// Creates a fresh temporary workspace and the module's runtime crate
+    /// directory inside it, with the manifest the extension index reads.
     fn temp_workspace(test_name: &str, module_name: &str) -> PathBuf {
         let root =
             std::env::temp_dir().join(format!("pill_codegen_{}_{}", test_name, std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("extensions").join(module_name).join(module_name))
-            .expect("create temp module dir");
+        let crate_directory = root
+            .join("extensions")
+            .join(module_name)
+            .join("modules")
+            .join("runtime");
+        std::fs::create_dir_all(&crate_directory).expect("create temp module dir");
+        std::fs::write(
+            crate_directory.join("Cargo.toml"),
+            format!("[package]\nname = \"{module_name}\"\n"),
+        )
+        .expect("write temp module manifest");
         root
     }
 
@@ -1787,12 +1797,13 @@ mod tests {
 
     /// Returns the path of a module's mirror file inside a temporary workspace
     /// shaped like the real repository:
-    /// `<root>/extensions/<module>/<module>/generated/`.
+    /// `<root>/extensions/<module>/modules/runtime/generated/`.
     fn generated_path(workspace: &Path, module_name: &str) -> PathBuf {
         workspace
             .join("extensions")
             .join(module_name)
-            .join(module_name)
+            .join("modules")
+            .join("runtime")
             .join("generated")
             .join(format!("{module_name}_Components.g.cs"))
     }
@@ -1842,7 +1853,8 @@ mod tests {
             workspace
                 .join("extensions")
                 .join("pill_spline")
-                .join("pill_spline")
+                .join("modules")
+                .join("runtime")
         ));
     }
 
@@ -2312,11 +2324,15 @@ mod tests {
     #[test]
     fn writes_separate_files_per_module() {
         let workspace = temp_workspace("per_module", "pill_spline");
-        std::fs::create_dir_all(
-            workspace
-                .join("extensions")
-                .join("other_module")
-                .join("other_module"),
+        let other_directory = workspace
+            .join("extensions")
+            .join("other_module")
+            .join("modules")
+            .join("runtime");
+        std::fs::create_dir_all(&other_directory).unwrap();
+        std::fs::write(
+            other_directory.join("Cargo.toml"),
+            "[package]\nname = \"other_module\"\n",
         )
         .unwrap();
         call_codegen(

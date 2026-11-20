@@ -204,7 +204,7 @@ def report(repository: Path) -> int:
 # crate, the contract crate, a host with graph-only dependencies, a project.
 VALID_TREE = {
     "modules/Cargo.toml": '[workspace]\nmembers = ["pill_renderer_api", "pill_development_host", "pill_standalone", "pill_editor", '
-                          '"extensions/*/*", "extensions/*/generated/*", "projects_generated/*"]\n'
+                          '"extensions/*/modules/*", "extensions/*/generated/*", "projects_generated/*"]\n'
                           'exclude = ["extensions/rendering"]\n',
     "modules/pill_renderer_api/Cargo.toml": '[package]\nname = "pill_renderer_api"\n[dependencies]\n'
                                            'pill_engine = { path = "x" }\npill_ui_frame = { path = "x" }\nserde = "1"\n',
@@ -215,8 +215,8 @@ VALID_TREE = {
     "modules/pill_development_host/src/tests.rs": "use renderer_data_dependency_graph as r_data;\n",
     "modules/pill_standalone/Cargo.toml": '[package]\nname = "pill_standalone"\n[dependencies]\npill_host = { path = "x" }\n',
     "modules/pill_editor/Cargo.toml": '[package]\nname = "pill_editor"\n[dependencies]\nwgpu = "25"\n',
-    "modules/extensions/r/r/Cargo.toml": '[package]\nname = "r"\n[dependencies]\nwgpu = "25"\nr_data = { path = "x" }\n',
-    "modules/extensions/r/r_data/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\npill_renderer_api = { path = "x" }\n',
+    "modules/extensions/r/modules/runtime/Cargo.toml": '[package]\nname = "r"\n[dependencies]\nwgpu = "25"\nr_data = { path = "x" }\n',
+    "modules/extensions/r_data/modules/runtime/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\npill_renderer_api = { path = "x" }\n',
     "modules/extensions/r/generated/host_module_r/Cargo.toml": '[package]\nname = "host_module_r"\n[dependencies]\nr = { path = "x" }\n',
     "modules/extensions/rendering/old/Cargo.toml": '[package]\nname = "old"\n[dependencies]\nwgpu = "26"\n',
     "examples/local/p/Cargo.toml": '[package]\nname = "p"\n[dependencies]\nr_data = { path = "x" }\n',
@@ -224,8 +224,8 @@ VALID_TREE = {
 
 # One broken variant per rule: the files to overwrite, and the rule it breaks.
 BROKEN_VARIANTS = [
-    (1, {"modules/extensions/r/r_data/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\nwgpu = "25"\n'}),
-    (1, {"modules/extensions/r/r/Cargo.toml": '[package]\nname = "r"\n[dependencies]\nr_data = { path = "x" }\n'}),
+    (1, {"modules/extensions/r_data/modules/runtime/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\nwgpu = "25"\n'}),
+    (1, {"modules/extensions/r/modules/runtime/Cargo.toml": '[package]\nname = "r"\n[dependencies]\nr_data = { path = "x" }\n'}),
     (1, {"modules/pill_editor/Cargo.toml": '[package]\nname = "pill_not_editor"\n[dependencies]\nwgpu = "25"\n'}),
     (2, {"modules/pill_renderer_api/Cargo.toml": '[package]\nname = "pill_renderer_api"\n[dependencies]\nglam = "0.33"\n'}),
     (2, {"modules/pill_renderer_api/Cargo.toml": '[package]\nname = "pill_renderer_api"\n[dependencies]\nrand = "0.8"\n'}),
@@ -234,7 +234,7 @@ BROKEN_VARIANTS = [
     (3, {"modules/pill_development_host/src/lib.rs": "//! Host.\nuse renderer_data_dependency_graph::Mesh;\n"}),
     (4, {"examples/local/p/Cargo.toml": '[package]\nname = "p"\n[dependencies]\nr = { path = "x" }\n'}),
     (4, {"modules/extensions/o/generated/host_module_o/Cargo.toml": '[package]\nname = "host_module_o"\n[dependencies]\nr = { path = "x" }\n'}),
-    (5, {"modules/extensions/r/r_data/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\nr = { path = "x" }\n'}),
+    (5, {"modules/extensions/r_data/modules/runtime/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\nr = { path = "x" }\n'}),
 ]
 
 
