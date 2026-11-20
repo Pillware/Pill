@@ -28,8 +28,8 @@ DESCRIPTION
     posture today loads every shared dylib.
 
     What is measured comes from tracked sources only - the extension crates by
-    their `extensions/<folder>/<crate>` convention, the projects from their
-    `project_settings.yaml` and manifests - never from the generated
+    their `extensions/<folder>/modules/{runtime,editor}` layout, the projects
+    from their `project_settings.yaml` and manifests - never from the generated
     `host_module_*` / `host_project_*` crates the host leaves behind, which are
     gitignored and pruned between runs. A fresh clone and a used checkout
     therefore measure the same builds, and the count is printed so a drop is
@@ -41,9 +41,9 @@ DESCRIPTION
     and UI feature unions onto the engine dylibs; an anchored build ignores the
     engine features.
 
-    Extensions are found by convention (every `extensions/<folder>/<crate>`
-    crate); the projects are every example with both a `project_settings.yaml`
-    and a `Cargo.toml`.
+    Extensions are found by convention (every crate under an extension
+    folder's `modules/runtime` or `modules/editor`); the projects are every
+    example with both a `project_settings.yaml` and a `Cargo.toml`.
 
 USAGE
   python devops/tests/test_engine_feature_drift.py [--verbose]

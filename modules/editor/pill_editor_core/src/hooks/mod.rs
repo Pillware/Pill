@@ -29,11 +29,10 @@
 //! callbacks again, and nothing a callback queues survives a history replay:
 //! the step being replayed already holds the result.
 //!
-//! # Writing an `_editor` crate
+//! # Writing an editor crate
 //!
-//! An `_editor` crate is an ordinary extension crate with the suffix, living
-//! beside the runtime crate it extends
-//! (`extensions/<folder>/<folder>_editor`). It depends on `pill_editor_core`
+//! An editor crate is the crate in an extension's `modules/editor` folder, its
+//! package name ending in `_editor`. It depends on `pill_editor_core`
 //! next to its own runtime crate, declares `editor_frontend = "egui"` under
 //! `[package.metadata.pill]`, and only an editor host ever builds it. Nothing
 //! else has to be added: the host discovers the crate by its folder, loads it

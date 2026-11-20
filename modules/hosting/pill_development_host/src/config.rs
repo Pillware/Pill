@@ -527,7 +527,7 @@ pub struct HostConfig {
     /// editor-only folder.
     pub load_editor_crates: bool,
 
-    /// Editor-only modules (a folder holding only its `<folder>_editor`
+    /// Editor-only modules (a folder holding only its `modules/editor`
     /// crate) whose first load may fail without aborting setup; the embedder
     /// handles their absence - the editor's safe mode covers the shell. Filled
     /// by [`Self::from_environment_for_editor_frontend`], empty in every other
@@ -2554,8 +2554,8 @@ fn declared_editor_frontend(directory: &Path) -> Option<String> {
 /// Resolves the project's own editor crate, when it has one.
 ///
 /// The crate is discovered by convention: `<project_path>/<package>_editor/`,
-/// beside the project's `Cargo.toml`, the project-directory analogue of
-/// `extensions/<folder>/<folder>_editor`. A project without one has no editor
+/// beside the project's `Cargo.toml`, the project-directory analogue of an
+/// extension's `modules/editor` folder. A project without one has no editor
 /// part and no error, and a crate tagged for another editor frontend is left
 /// out the same way an extension's is.
 ///

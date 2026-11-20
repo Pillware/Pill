@@ -122,7 +122,7 @@ put the committed stub back with
 ## Extensions
 
 Engine extensions are crates inside `modules/extensions/`, one folder per
-extension (`modules/extensions/<extension>/<crate>/`), built into a `cdylib`
+extension (`modules/extensions/<extension>/modules/runtime/`), built into a `cdylib`
 and loaded by the host next to the project. Each is watched, rebuilt and swapped
 on its own, so editing one module reloads only that module and leaves the
 project and every other module running.
@@ -136,10 +136,10 @@ to load, in order. An absent or empty list loads none.
 
 ### Adding a module
 
-The workspace manifest globs `extensions/*/pill_*`, so a module is discovered
+The workspace manifest globs `extensions/*/modules/*`, so a module is discovered
 by existing; nothing lists it by name.
 
-1. Create `modules/extensions/<name>/<name>/` with a `Cargo.toml` declaring
+1. Create `modules/extensions/<name>/modules/runtime/` with a `Cargo.toml` declaring
    `crate-type = ["rlib"]` and depending on `pill_engine`. The crate root is
    `src/<name>.rs`, not `src/lib.rs`, so debuggers and the hot scanner can
    tell crate roots apart.
@@ -149,13 +149,14 @@ by existing; nothing lists it by name.
 3. Add `<name>` to the `modules` list in the project's `project_settings.yaml`.
 
 Everything else â€” watch directory, build command, output path â€” is derived from
-the directory name, so the host needs no changes. The host **generates** the
+the crate's location, so the host needs no changes. The host **generates** the
 `cdylib` wrapper it actually loads under
 `modules/extensions/<name>/generated/host_module_<name>/` on startup: it is a
 build artifact, never written by hand. See
-`modules/extensions/pill_spline/` for the reference implementation. An
-extension's optional editor part is written against `pill_editor_core`
-(the old `pill_ui` editor part retired with W-0043).
+`modules/extensions/spline/` for the reference implementation. An
+extension's optional editor part is the crate in its `modules/editor` folder,
+written against `pill_editor_core` (the old `pill_ui` editor part retired with
+W-0043).
 
 Modules must live in this directory rather than anywhere on disk: sharing the  
 workspace lockfile is what makes a module resolve the same dependency graph as  

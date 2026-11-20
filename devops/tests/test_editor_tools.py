@@ -6,10 +6,10 @@ SETS: editor
 
 The tools framework is proven where it matters: by the extension crates that
 ship a tool. Two sessions run in turn, each on an extension example project -
-`extensions/pill_spline/examples/uber_spline` and
-`extensions/pill_physics/examples/collider_edit` - because the editor suite's
+`extensions/spline/examples/uber_spline` and
+`extensions/physics/examples/collider_edit` - because the editor suite's
 shared project carries no extension modules, and because an editor host loads a
-folder's `<folder>_editor` crate only when the project lists that folder.
+folder's `modules/editor` crate only when the project lists that folder.
 
 The suite is its own file rather than an area of `test_editor_egui.py`: the
 harness runs one editor at a time (starting a session clears strays, which kills

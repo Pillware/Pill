@@ -19,11 +19,11 @@ plays the same scene from C#: it imports the same sound and writes
 From `modules/`:
 
 ```powershell
-$env:PROJECT_PATH = "extensions/pill_audio/examples/audio_scene"
+$env:PROJECT_PATH = "extensions/audio/examples/audio_scene"
 cargo run --package pill_standalone
 
 # The managed twin, on the same invocation.
-$env:PROJECT_PATH = "extensions/pill_audio/examples/audio_scene_csharp"
+$env:PROJECT_PATH = "extensions/audio/examples/audio_scene_csharp"
 cargo run --package pill_standalone
 ```
 
