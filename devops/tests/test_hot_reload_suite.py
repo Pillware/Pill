@@ -137,7 +137,7 @@ name: "Suite Session B"
 build_binary_name: "SuiteSessionB"
 modules:
   - "pill_spline"
-  - "pill_dummy_color"
+  - "pill_test"
 """
 
 # --- Suite-specific output tokens --------------------------------------------

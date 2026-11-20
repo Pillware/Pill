@@ -1016,8 +1016,8 @@ pub(super) fn emit_declared_type(
 ///
 /// `module_path` is the Rust module that declares them. The class takes its
 /// last segment in PascalCase as its name and sits in the namespace of the
-/// segments before it, so `pill_dummy_color::get_color_a` reaches C# as
-/// `pill_dummy_color.PillDummyColor.GetColorA()`.
+/// segments before it, so `pill_test::mirror::tint_alpha` reaches C# as
+/// `pill_test.Mirror.TintAlpha()`.
 ///
 /// # Errors
 ///

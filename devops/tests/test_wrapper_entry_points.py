@@ -18,8 +18,8 @@ DESCRIPTION
     whole set, because the host resolves them by symbol exactly as it did
     before the wrapper existed.
 
-    The script writes `modules/extensions/pill_dummy_color/generated/host_module_wrapper_probe` (a
-    throwaway workspace member wrapping `pill_dummy_color`), builds it, reads
+    The script writes `modules/extensions/pill_test/generated/host_module_wrapper_probe` (a
+    throwaway workspace member wrapping `pill_test`), builds it, reads
     the DLL's export directory and compares the `pill_*` names against the
     expected set. The probe is deleted again afterwards, unless `--keep-probe`
     is passed; it lives under the gitignored `host_module_*` name space.
@@ -53,12 +53,12 @@ from test_engine_exports import PortableExecutableError, parse_headers, rva_to_o
 
 MODULES = Path(__file__).resolve().parents[2] / "modules"
 PROBE_DIRECTORY = (
-    MODULES / "extensions" / "pill_dummy_color" / "generated" / "host_module_wrapper_probe"
+    MODULES / "extensions" / "pill_test" / "generated" / "host_module_wrapper_probe"
 )
 
 # The extension both builds compile; it carries no extra features, so the
 # check isolates what the macro emits.
-FIXTURE_EXTENSION = "pill_dummy_color"
+FIXTURE_EXTENSION = "pill_test"
 
 # Every name a wrapped extension must export; the set the host's loader and
 # the patch machinery resolve by symbol. Exact equality is the check: a
@@ -108,14 +108,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pill_engine = { path = "../../../../engine/pill_engine", features = ["development"] }
-pill_dummy_color = { path = "../../modules/runtime", default-features = false }
+pill_test = { path = "../../modules/runtime", default-features = false }
 """
 
-PROBE_SOURCE = """//! Loadable-artifact wrapper for the `pill_dummy_color` extension.
+PROBE_SOURCE = """//! Loadable-artifact wrapper for the `pill_test` extension.
 //!
 //! # Responsibilities
 //!
-//! - Builds the cdylib the export comparison reads, from `pill_dummy_color`
+//! - Builds the cdylib the export comparison reads, from `pill_test`
 //!   compiled as a plain library.
 //! - Carries the extension's entry points through
 //!   `__pill_module_entry_points!`, the macro `#[pill_module]` exports beside
@@ -124,7 +124,7 @@ PROBE_SOURCE = """//! Loadable-artifact wrapper for the `pill_dummy_color` exten
 //! The test writes this crate before the comparison and deletes it again
 //! afterwards; nothing else builds it.
 
-pill_dummy_color::__pill_module_entry_points!();
+pill_test::__pill_module_entry_points!();
 """
 
 

@@ -1,10 +1,13 @@
-//! Minimal extension module: one persistable component and one system.
+//! Minimal extension module: one persistable component, one system, and the
+//! C# mirror fixtures the bridge suite calls.
 //!
 //! # Responsibilities
 //!
 //! - Defines the `ModuleTest` component and the `module_test_processor` system.
 //! - Registers both through the extension ABI when the host loads it.
 //! - Keeps its entities filled to a target count across hot reloads.
+//! - Carries the mirrored value types and free function a C# project reaches
+//!   without a component row ([`mirror`]).
 //!
 //! # Design
 //!
@@ -25,6 +28,10 @@
 use pill_core::info;
 use pill_core::telemetry::telemetry_target;
 use pill_engine::*;
+
+/// The C# mirror fixtures: [`mirror::Tint`], [`mirror::Counter`] and
+/// [`mirror::tint_alpha`].
+pub mod mirror;
 
 // =============================================================================
 // Constants

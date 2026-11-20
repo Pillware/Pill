@@ -116,7 +116,6 @@ pub(crate) fn spline_probe_system(
     }
     let reference = Spline::from_points(&spawn_points);
     let midpoint = reference.get_location_at(0.5);
-    let color = reference.get_color_a();
     // The stable id is part of the report because it is what a reload must not
     // change: the entity handle names a slot the world recycles, while the id
     // names the entity itself (W-0048 Stage 5). `init` re-reads it from the
@@ -128,8 +127,8 @@ pub(crate) fn spline_probe_system(
     // end-to-end suites wait for.
     pill_engine::tracing::info!(
         target: "project",
-        "[project] 12xxsees {visible_spline_count} spline(s), midpoint ({:.1}, {:.1}), colorx {:.2}, entityid {entity_id}",
-        midpoint.x, midpoint.y, color
+        "[project] 12xxsees {visible_spline_count} spline(s), midpoint ({:.1}, {:.1}), entityid {entity_id}",
+        midpoint.x, midpoint.y
     );
 
     Ok(())

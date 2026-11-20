@@ -2175,10 +2175,10 @@ pub fn pill_mirror_method(_attribute: TokenStream, item: TokenStream) -> TokenSt
 /// Mirrors a free function to C#, as a static method on a static class.
 ///
 /// The free-function counterpart of [`pill_mirror_impl`]:
-/// `pill_dummy_color::get_color_a` becomes
-/// `pill_dummy_color.PillDummyColor.GetColorA()`. The class is the last path
-/// segment in PascalCase. Its namespace is the preceding segments joined with
-/// dots, or the whole module path when there is no preceding segment. The
+/// `pill_test::mirror::tint_alpha` becomes `pill_test.Mirror.TintAlpha()`. The
+/// class is the last segment of the function's module path, in PascalCase. Its
+/// namespace is the preceding segments joined with dots, or the whole module
+/// path when there is no preceding segment. The
 /// arguments and results follow [`pill_mirror_impl`]'s vocabulary: a free
 /// function may take a resource (`assets: &mut AssetManager` becomes a
 /// `ResMut<AssetManager>` parameter) as well as plain values.
@@ -2190,7 +2190,7 @@ pub fn pill_mirror_method(_attribute: TokenStream, item: TokenStream) -> TokenSt
 /// ```ignore
 /// #[pill_mirror_fn]
 /// #[pill_hot_fn]
-/// pub fn get_color_a() -> f32 {
+/// pub fn tint_alpha() -> f32 {
 ///     1.0
 /// }
 /// ```
@@ -3607,7 +3607,7 @@ fn parse_patch_arguments(attribute: TokenStream) -> Result<PatchArguments, syn::
 ///
 /// ```ignore
 /// #[pill_hot_fn]
-/// pub fn get_color_a() -> f32 {
+/// pub fn tint_alpha() -> f32 {
 ///     133.0
 /// }
 /// ```

@@ -452,8 +452,8 @@ fn qualified_names_follow_the_source_tree() {
 /// The name a method is registered under includes its type, because the
 /// build script can read the `impl` block when it records the name.
 ///
-/// The host has to ask for that same name: `pill_dummy_color::Tint::mix`,
-/// not `pill_dummy_color::mix`. The bare form finds no method at all, and the
+/// The host has to ask for that same name: `pill_test::mirror::Counter::value_as_u64`,
+/// not `pill_test::mirror::value_as_u64`. The bare form finds no method at all, and the
 /// refusal then blames the build script.
 #[test]
 fn a_method_is_named_through_its_type() {
@@ -691,30 +691,30 @@ fn a_slot_lookup_omits_the_type_the_macro_cannot_see() {
 /// refuses, and that module can never be patched again in that session.
 #[test]
 fn patch_artifact_names_do_not_collide_across_sessions() {
-    let color_directory = ScratchDirectory::new("names_first");
+    let test_module_directory = ScratchDirectory::new("names_first");
     let spline_directory = ScratchDirectory::new("names_second");
 
-    let mut color_session = session_over(&color_directory, PLAIN_SOURCE);
-    color_session.package = "pill_dummy_color".to_string();
+    let mut test_module_session = session_over(&test_module_directory, PLAIN_SOURCE);
+    test_module_session.package = "pill_test".to_string();
     let mut spline_session = session_over(&spline_directory, PLAIN_SOURCE);
     spline_session.package = "pill_spline".to_string();
 
-    color_session.counter += 1;
+    test_module_session.counter += 1;
     spline_session.counter += 1;
-    let color_patch_name = format!(
+    let test_module_patch_name = format!(
         "pill_hotpatch_{}_{}",
-        color_session.package, color_session.counter
+        test_module_session.package, test_module_session.counter
     );
     let spline_patch_name = format!(
         "pill_hotpatch_{}_{}",
         spline_session.package, spline_session.counter
     );
     assert_ne!(
-        color_patch_name, spline_patch_name,
+        test_module_patch_name, spline_patch_name,
         "each module's first patch must claim its own artifact"
     );
 
-    let _ = std::fs::remove_dir_all(&color_directory);
+    let _ = std::fs::remove_dir_all(&test_module_directory);
     let _ = std::fs::remove_dir_all(&spline_directory);
 }
 

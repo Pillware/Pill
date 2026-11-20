@@ -175,9 +175,9 @@ impl RedirectSlot for PatchCopy<'_> {
 ///
 /// A patch links its own copy of everything its body calls, and those copies go
 /// stale as soon as a callee is patched. This target is what keeps a chain of
-/// hot functions moving: patch a caller of `pill_dummy_color::get_color_a`, then
-/// patch `get_color_a` itself, and without this the caller's patch keeps running
-/// the `get_color_a` it was compiled with.
+/// hot functions moving: patch a caller of `pill_spline::math::hermite`, then
+/// patch `hermite` itself, and without this the caller's patch keeps running
+/// the `hermite` it was compiled with.
 pub(crate) struct LoadedPatch {
     /// The qualified name of the function this patch replaced. It also labels
     /// the patch in error messages.

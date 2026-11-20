@@ -791,7 +791,7 @@ mod tests {
          -L 'dependency=D:\\proj\\target\\debug\\deps' \
          --extern 'pill_engine=D:\\proj\\target\\debug\\deps\\libpill_engine-319.rlib' \
          --extern 'serde=D:\\proj\\target\\debug\\deps\\libserde-1094916a36d6bb5e.rlib' \
-         --extern 'pill_dummy_color=D:\\proj\\target\\debug\\deps\\libpill_dummy_color.rlib' \
+         --extern 'pill_test=D:\\proj\\target\\debug\\deps\\libpill_test.rlib' \
          -C prefer-dynamic -L 'native=C:\\reg\\windows_x86_64_msvc-0.52.6\\lib'`"
     }
 
@@ -1049,7 +1049,7 @@ mod tests {
     #[test]
     fn shared_slots_are_told_apart_from_hash_qualified_artifacts() {
         // Workspace crates: one slot per crate name, overwritten by any build.
-        assert!(is_shared_slot_rlib("libpill_dummy_color.rlib"));
+        assert!(is_shared_slot_rlib("libpill_test.rlib"));
         assert!(is_shared_slot_rlib("libpill_core.rlib"));
         // A crate name containing a hyphen is still a shared slot; only a
         // trailing 16-hex-digit suffix marks a configuration.
@@ -1069,19 +1069,19 @@ mod tests {
     #[test]
     fn only_staged_shared_slots_are_redirected() {
         let staged_directory = ScratchDirectory::new("staged_externs_test");
-        std::fs::write(staged_directory.join("libpill_dummy_color.rlib"), b"staged")
+        std::fs::write(staged_directory.join("libpill_test.rlib"), b"staged")
             .expect("write staged copy");
 
         // Staged shared slot: redirected.
         let redirected_entry = redirect_extern(
-            "pill_dummy_color=D:\\proj\\target\\debug\\deps\\libpill_dummy_color.rlib",
+            "pill_test=D:\\proj\\target\\debug\\deps\\libpill_test.rlib",
             &staged_directory,
         );
         assert!(
-            redirected_entry.ends_with("libpill_dummy_color.rlib"),
+            redirected_entry.ends_with("libpill_test.rlib"),
             "got: {redirected_entry}"
         );
-        assert!(redirected_entry.starts_with("pill_dummy_color="));
+        assert!(redirected_entry.starts_with("pill_test="));
         assert!(
             redirected_entry.contains("staged_externs_test"),
             "must point into the staging directory: {redirected_entry}"
@@ -1161,7 +1161,7 @@ mod tests {
     #[test]
     fn replay_redirects_a_staged_dependency() {
         let staged_directory = ScratchDirectory::new("staged_replay_test");
-        std::fs::write(staged_directory.join("libpill_dummy_color.rlib"), b"staged")
+        std::fs::write(staged_directory.join("libpill_test.rlib"), b"staged")
             .expect("write staged copy");
 
         let line = parsed_cargo_line();
@@ -1177,8 +1177,8 @@ mod tests {
 
         assert!(
             joined.contains(&format!(
-                "pill_dummy_color={}",
-                staged_directory.join("libpill_dummy_color.rlib").display()
+                "pill_test={}",
+                staged_directory.join("libpill_test.rlib").display()
             )),
             "the staged copy must be linked: {joined}"
         );

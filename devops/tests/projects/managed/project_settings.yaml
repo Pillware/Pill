@@ -17,4 +17,4 @@ description: "The C# test project: bridge surface, extension mirrors and the gat
 
 modules:
   - "pill_spline"
-  - "pill_dummy_color"
+  - "pill_test"

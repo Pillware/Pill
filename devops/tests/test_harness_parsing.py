@@ -24,8 +24,8 @@ DESCRIPTION
     name with `\\S+`, which silently dropped every line whose name contained a
     space or a comma:
 
-        pill_spline::<Spline as ColorTweak>::tweak                   trait method
-        pill_dummy_color::get_color_a, pill_dummy_color::Tint::mix   two bodies, one save
+        pill_spline::<Spline as ColorTweak>::tweak                                trait method
+        pill_test::mirror::tint_alpha, pill_test::mirror::Counter::value_as_u64   two bodies, one save
 
     Three of 128 real analytics lines were unparseable. The benchmark reported
     those reloads with no phase breakdown at all, which is indistinguishable
@@ -311,7 +311,7 @@ def check_shared_slot_detection_matches_cargo_naming() -> None:
     # Cargo's own names: the shared slot a patch can be linked against, one
     # configuration's artifact, a short suffix and a non-hex one.
     cases = {
-        "libpill_dummy_color.rlib": True,
+        "libpill_test.rlib": True,
         "libpill_engine-190d6c0e2d2eaf24.rlib": False,
         "libpill_engine-190d6c0e2d2eaf2.rlib": True,
         "libpill_engine-190d6c0e2d2eaf2Z.rlib": True,

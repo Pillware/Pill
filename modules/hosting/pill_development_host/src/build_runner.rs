@@ -1836,7 +1836,7 @@ pub(crate) const STAGED_DEPENDENCY_SUBDIRECTORY: &str = "target/hot/deps";
 /// Copies every shared per-crate rlib out of cargo's `deps` directory.
 ///
 /// Cargo gives a workspace crate's rlib an unhashed, per-crate path such as
-/// `deps/libpill_dummy_color.rlib`, and overwrites it in place on every build.
+/// `deps/libpill_test.rlib`, and overwrites it in place on every build.
 /// Third-party crates get a metadata hash and are safe. A workspace crate shares
 /// one slot per crate name across every feature configuration. The host builds
 /// modules with `--features pill_engine/development`, while a plain `cargo build`

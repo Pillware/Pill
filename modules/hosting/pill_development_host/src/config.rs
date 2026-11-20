@@ -3011,7 +3011,7 @@ serde = { version = "1", features = ["derive"] }
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(
             directory.join("project_settings.yaml"),
-            "name: \"Bouncing Balls\"\nbuild_binary_name: \"BouncingBalls\"\nmodules:\n  - \"pill_spline\"\n  - \"pill_dummy_math\"\n",
+            "name: \"Bouncing Balls\"\nbuild_binary_name: \"BouncingBalls\"\nmodules:\n  - \"pill_spline\"\n  - \"pill_test\"\n",
         )
         .unwrap();
         let settings = read_project_settings_file(&directory)
@@ -3019,7 +3019,7 @@ serde = { version = "1", features = ["derive"] }
             .expect("the settings file should parse");
         assert_eq!(settings.name.as_deref(), Some("Bouncing Balls"));
         assert_eq!(settings.build_binary_name.as_deref(), Some("BouncingBalls"));
-        assert_eq!(settings.modules, vec!["pill_spline", "pill_dummy_math"]);
+        assert_eq!(settings.modules, vec!["pill_spline", "pill_test"]);
     }
 
     /// The `startup_scene:` key reads a relative `.scene` path and refuses

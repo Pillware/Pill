@@ -805,7 +805,7 @@ struct ReloadEvent {
     /// Crates that actually compiled or linked in this reload's cargo
     /// invocations, with their wall times, sorted by time descending. This is
     /// how a dependent crate that was relinked shows up: editing
-    /// `pill_dummy_color`, for example, also relinks `pill_spline`.
+    /// `pill_spline`, for example, also relinks a project that depends on it.
     cargo_crates: Vec<(String, u64)>,
 }
 
@@ -2244,14 +2244,14 @@ const CONCURRENCY_DATA = [
         ));
         let fingerprint = root
             .join(cargo_fingerprint_directory())
-            .join("pill_dummy_math-0123456789abcdef");
+            .join("pill_test-0123456789abcdef");
         assert!(
             cargo_fingerprint_directory().contains("target/hot/build"),
             "fingerprints live in the private build tree the host actually fills"
         );
         std::fs::create_dir_all(&fingerprint).unwrap();
         std::fs::write(
-            fingerprint.join("lib-pill_dummy_math.json"),
+            fingerprint.join("lib-pill_test.json"),
             r#"{
                 "rustc": 1,
                 "features": "[]",
@@ -2271,7 +2271,7 @@ const CONCURRENCY_DATA = [
         )
         .unwrap();
 
-        let deps = read_cargo_deps(&root, "pill_dummy_math");
+        let deps = read_cargo_deps(&root, "pill_test");
         assert_eq!(
             deps,
             vec!["pill_engine".to_string(), "pill_core".to_string()]

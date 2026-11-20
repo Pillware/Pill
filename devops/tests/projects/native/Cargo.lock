@@ -680,15 +680,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pill_dummy_color"
-version = "0.1.0"
-dependencies = [
- "pill_core",
- "pill_engine",
- "pill_hot_scan",
-]
-
-[[package]]
 name = "pill_engine"
 version = "0.1.0"
 dependencies = [
@@ -771,7 +762,6 @@ name = "pill_spline"
 version = "0.1.0"
 dependencies = [
  "pill_core",
- "pill_dummy_color",
  "pill_engine",
  "pill_hot_scan",
  "serde",

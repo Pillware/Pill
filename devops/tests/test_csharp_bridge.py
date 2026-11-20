@@ -14,13 +14,13 @@ REQUIREMENTS
 DESCRIPTION
     End-to-end suite for the managed (C#) project backend and the extension
      -> C# component bridge. Launches the standalone host with
-    `devops/tests/projects/managed` and the `pill_spline` module plus a component-less
-    dummy module, then verifies from console output and on-disk artifacts:
+    `devops/tests/projects/managed` and the `pill_spline` and `pill_test`
+    modules, then verifies from console output and on-disk artifacts:
 
       1. csharp_bridge_startup  - the host starts the C# backend, the host
           auto-generates the module's C# mirror file (exact namespace, size,
-          alignment pad), a component-less dummy module still generates a
-          mirror from its standalone value type and mirrored free function,
+          alignment pad), `pill_test`'s mirror carries its standalone value
+          types and its mirrored free function,
           the managed build is warning-free (no CS8019 unused-using), and the
           bridge probe proves both directions of the Rust <-> C# connection:
             * Rust -> C#: C# reads the spline the Rust module seeded
@@ -89,9 +89,9 @@ SPLINE_COMPONENT_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / 
 SPLINE_GENERATED_FILE = (
     MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "generated" / "pill_spline_Components.g.cs"
 )
-DUMMY_GENERATED_FILE = (
-    MODULES_ROOT / "extensions" / "pill_dummy_color" / "modules" / "runtime" / "generated"
-    / "pill_dummy_color_Components.g.cs"
+TEST_MODULE_GENERATED_FILE = (
+    MODULES_ROOT / "extensions" / "pill_test" / "modules" / "runtime" / "generated"
+    / "pill_test_Components.g.cs"
 )
 
 # The tracked bootstrap's bytes, captured before the first host start so the
@@ -106,16 +106,16 @@ COMMITTED_MIRROR_BYTES = None
 # scenario that edits a declared order edits this file.
 MANAGED_PROJECT_PROBE_CS = MANAGED_PROJECT_BRIDGE_PROBE_CS
 
-# The C# project plus a component-less dummy module: the dummy exercises the
-# codegen paths a module without components takes - a standalone
-# `#[derive(PillMirror)]` value type and a `#[pill_mirror_fn]` free function -
-# inside the same session that asserts the real module's component mirror.
+# The C# project plus `pill_test`, whose `mirror` module exercises the codegen
+# paths no component row anchors - standalone `#[derive(PillMirror)]` value
+# types and a `#[pill_mirror_fn]` free function - inside the same session that
+# asserts `pill_spline`'s component mirror.
 CSHARP_SETTINGS = """\
 name: "C# Bridge Test"
 build_binary_name: "CSharpBridgeTest"
 modules:
   - "pill_spline"
-  - "pill_dummy_color"
+  - "pill_test"
 """
 
 # The C# half of the bridge assertions.
@@ -211,10 +211,10 @@ public static class ModuleSplineBridgeDemo
         ulong omoA = omo.GetA();
         ulong omoB = omo.GetB();
 
-        // The dummy module's mirrored free function: a plain static C# call
-        // into Rust, resolved through the module's exported trampoline with
-        // no component row involved.
-        float alpha = global::pill_dummy_color.PillDummyColor.GetColorA();
+        // pill_test's mirrored free function: a plain static C# call into
+        // Rust, resolved through the module's exported trampoline with no
+        // component row involved.
+        float alpha = global::pill_test.Mirror.TintAlpha();
 
         Console.WriteLine(
             $"[managed] cs spline bridge: sees {visibleSplines} spline(s), " +
@@ -399,8 +399,8 @@ CSHARP_MIRROR_REGEN_TOKEN = "module reload changed the C# mirror surface; queuin
 #   GetA()    = x + 1200   = 1212
 #   GetB()    = y + 1200   = 1234
 #   GetE()    = x + 9000   = 9012 (added live by the regeneration scenario)
-#   alpha=1 is the dummy module's mirrored free function `get_color_a`,
-#   reached from C# as `pill_dummy_color.PillDummyColor.GetColorA()`.
+#   alpha=1 is pill_test's mirrored free function `mirror::tint_alpha`,
+#   reached from C# as `pill_test.Mirror.TintAlpha()`.
 OMO_PROBE_SUM_A_B = "omo=(12,34) sum=47 a=1212 b=1234 alpha=1"
 OMO_PROBE_WITH_E = "omo=(12,34) sum=47 a=1212 b=1234 e=9012 alpha=1"
 
@@ -496,24 +496,24 @@ def verify_startup(
     ):
         return False
 
-    # The component-less dummy module still gets a mirror: with no component
-    # to anchor it, the file carries the module's standalone value type and
-    # its mirrored free function - the surface C# calls statically.
+    # pill_test's mirror carries, beside its component, the value types and
+    # the mirrored free function no component row anchors - the surface C#
+    # calls statically.
     if not verify_generated_mirror(
-        DUMMY_GENERATED_FILE,
+        TEST_MODULE_GENERATED_FILE,
         [
-            "namespace pill_dummy_color {",
+            "namespace pill_test {",
             "public partial struct Tint",
             "[FieldOffset(0)] public float R;",
             "[FieldOffset(8)] public float B;",
-            "public partial struct TestStruct",
-            "public ulong Aaa()",
-            "public static class PillDummyColor",
-            "public static float GetColorA()",
-            "var __call = global::TracyLive.MirrorCall.Begin(\"pill_dummy_color\", \"get_color_a\");",
+            "public partial struct Counter",
+            "public ulong ValueAsU64()",
+            "public static class Mirror",
+            "public static float TintAlpha()",
+            "var __call = global::TracyLive.MirrorCall.Begin(\"pill_test::mirror\", \"tint_alpha\");",
         ],
         should_exist=True,
-        description="pill_dummy_color mirror",
+        description="pill_test mirror",
     ):
         return False
 
@@ -1460,7 +1460,7 @@ def main() -> None:
         project_settings_yaml(MANAGED_PROJECT_ROOT),
         MANAGED_PROJECT_COMPONENTS_CS,
         SPLINE_GENERATED_FILE,
-        DUMMY_GENERATED_FILE,
+        TEST_MODULE_GENERATED_FILE,
     ):
         BACKUP.capture(path)
 

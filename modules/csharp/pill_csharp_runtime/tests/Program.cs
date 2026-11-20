@@ -803,8 +803,9 @@ internal static class Program
                 // of the modules the project loads: the renderer data's
                 // components and its `MeshVertex` value type, the spline
                 // extension's `Spline`, `Vector3f` and `OmoMO`, and the
-                // pill_dummy_color extension's `Tint` and `TestStruct`.
-                Equal(components.Length, 17, "unexpected manifest component count: " +
+                // pill_test extension's `ModuleTest` component and its `Tint`
+                // and `Counter` value types.
+                Equal(components.Length, 18, "unexpected manifest component count: " +
                     string.Join(" | ", components.Select(component =>
                         component.GetProperty("full_name").GetString())));
                 var transform = components.Single(component =>

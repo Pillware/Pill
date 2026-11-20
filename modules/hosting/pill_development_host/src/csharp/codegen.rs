@@ -174,7 +174,7 @@ fn split_csharp_name(csharp_name: &str) -> Option<(&str, &str)> {
 }
 
 /// Returns the C# namespace of a Rust path: every segment before the last,
-/// joined with dots (`pill_dummy_color::Tint` gives `pill_dummy_color`).
+/// joined with dots (`pill_test::Tint` gives `pill_test`).
 ///
 /// Returns `None` when the path has no `::` separator.
 fn path_namespace(qualified: &str) -> Option<String> {
@@ -2435,27 +2435,20 @@ mod tests {
     /// though it exposes no component.
     #[test]
     fn a_module_with_only_value_types_emits_them_in_their_crate_namespace() {
-        let workspace = temp_workspace("value_only", "pill_dummy_color");
+        let workspace = temp_workspace("value_only", "pill_test");
         let value_types = [PillValueTypeDescriptor {
-            type_name: "pill_dummy_color::Tint",
-            crate_name: "pill_dummy_color",
+            type_name: "pill_test::Tint",
+            crate_name: "pill_test",
             size: 12,
             align: 4,
             fields: TINT_FIELDS,
         }];
 
-        generate_module_components_csharp(
-            &workspace,
-            "pill_dummy_color",
-            &[],
-            &value_types,
-            &[],
-            &[],
-        )
-        .unwrap();
+        generate_module_components_csharp(&workspace, "pill_test", &[], &value_types, &[], &[])
+            .unwrap();
 
-        let content = read_generated(&workspace, "pill_dummy_color");
-        assert!(content.contains("namespace pill_dummy_color {"));
+        let content = read_generated(&workspace, "pill_test");
+        assert!(content.contains("namespace pill_test {"));
         assert!(content.contains("public partial struct Tint"));
         assert!(content.contains("Size = 12"));
         assert!(content.contains("[FieldOffset(0)] public float R;"));
@@ -2467,11 +2460,11 @@ mod tests {
     /// or value type has to exist for the file to be generated.
     #[test]
     fn free_functions_emit_a_static_class_in_the_module_namespace() {
-        let workspace = temp_workspace("free_fn", "pill_dummy_color");
+        let workspace = temp_workspace("free_fn", "pill_test");
         let methods = [
-            mirrored_free_function("pill_dummy_color", "get_color_a", "f32", &[], &[]),
+            mirrored_free_function("pill_test", "tint_alpha", "f32", &[], &[]),
             mirrored_free_function(
-                "pill_dummy_color",
+                "pill_test",
                 "blend",
                 "f32",
                 &["f32", "f32"],
@@ -2479,15 +2472,15 @@ mod tests {
             ),
         ];
 
-        generate_module_components_csharp(&workspace, "pill_dummy_color", &[], &[], &methods, &[])
+        generate_module_components_csharp(&workspace, "pill_test", &[], &[], &methods, &[])
             .unwrap();
 
-        let content = read_generated(&workspace, "pill_dummy_color");
-        assert!(content.contains("namespace pill_dummy_color {"));
-        assert!(content.contains("public static class PillDummyColor"));
-        assert!(content.contains("public static float GetColorA()"));
+        let content = read_generated(&workspace, "pill_test");
+        assert!(content.contains("namespace pill_test {"));
+        assert!(content.contains("public static class PillTest"));
+        assert!(content.contains("public static float TintAlpha()"));
         assert!(content.contains(
-            "var __call = global::TracyLive.MirrorCall.Begin(\"pill_dummy_color\", \"get_color_a\");"
+            "var __call = global::TracyLive.MirrorCall.Begin(\"pill_test\", \"tint_alpha\");"
         ));
         assert!(content.contains("return __call.Result<float>();"));
         // Argument names survive, and every argument is pushed in order; no
@@ -2501,20 +2494,20 @@ mod tests {
     /// crate's namespace.
     #[test]
     fn a_submodule_free_function_names_its_class_after_the_submodule() {
-        let workspace = temp_workspace("free_fn_nested", "pill_dummy_color");
+        let workspace = temp_workspace("free_fn_nested", "pill_test");
         let methods = [mirrored_free_function(
-            "pill_dummy_color::utils",
+            "pill_test::utils",
             "grade",
             "u8",
             &[],
             &[],
         )];
 
-        generate_module_components_csharp(&workspace, "pill_dummy_color", &[], &[], &methods, &[])
+        generate_module_components_csharp(&workspace, "pill_test", &[], &[], &methods, &[])
             .unwrap();
 
-        let content = read_generated(&workspace, "pill_dummy_color");
-        assert!(content.contains("namespace pill_dummy_color {"));
+        let content = read_generated(&workspace, "pill_test");
+        assert!(content.contains("namespace pill_test {"));
         assert!(content.contains("public static class Utils"));
         assert!(content.contains("public static byte Grade()"));
     }

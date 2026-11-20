@@ -432,8 +432,8 @@ def self_test():
     # A manifest declaring the removed feature fails too.
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
-        write_crate(root, "pill_dummy_color", [])
-        manifest = root / "modules" / ENGINE_FOLDER / "pill_dummy_color" / "Cargo.toml"
+        write_crate(root, "pill_test", [])
+        manifest = root / "modules" / ENGINE_FOLDER / "pill_test" / "Cargo.toml"
         manifest.write_text(
             manifest.read_text(encoding="utf-8") + "\n[features]\nmodule-abi = []\n",
             encoding="utf-8",
