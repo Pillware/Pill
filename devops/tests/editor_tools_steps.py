@@ -62,10 +62,10 @@ from editor_step_support import (
 
 # The two extension examples these steps drive, by the path a host resolves.
 UBER_SPLINE_PROJECT = host_project_path(
-    EXTENSION_EXAMPLES_ROOT / "pill_spline" / "examples" / "uber_spline"
+    EXTENSION_EXAMPLES_ROOT / "spline" / "examples" / "uber_spline"
 )
 COLLIDER_PROJECT = host_project_path(
-    EXTENSION_EXAMPLES_ROOT / "pill_physics" / "examples" / "collider_edit"
+    EXTENSION_EXAMPLES_ROOT / "physics" / "examples" / "collider_edit"
 )
 
 # What the spline tool calls its elements, and what the collider tool calls its
