@@ -936,7 +936,10 @@ impl State {
         render_queue: &[RenderQueueItem],
     ) -> Result<()> {
         // Step 1: Acquire the image and prepare everything the passes read.
-        let draw = self.begin_surface_frame(target, frame, camera, transform, render_queue)?;
+        let Some(draw) = self.begin_surface_frame(target, frame, camera, transform, render_queue)?
+        else {
+            return Ok(());
+        };
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -972,7 +975,7 @@ impl State {
         camera: &CameraComponent,
         transform: &TransformComponent,
         render_queue: &'a [RenderQueueItem],
-    ) -> Result<SurfaceDraw<'a>> {
+    ) -> Result<Option<SurfaceDraw<'a>>> {
         // Step 1: Refuse the frame when the device was lost. A lost device
         // draws nothing and reports nothing, so the loss the callback latched
         // is the frame path's only chance to say so. Returning it here ends
@@ -984,7 +987,9 @@ impl State {
         // The surface and the device are borrowed separately, so the surface
         // can reconfigure itself against the device that created it.
         let acquire_zone = pill_core::profile_scope!("renderer: acquire surface");
-        let image = target.surface.acquire(&self.device)?;
+        let Some(image) = target.surface.acquire(&self.device)? else {
+            return Ok(None);
+        };
         drop(acquire_zone);
         let size = target.surface.size();
         // Through the sRGB view the pipelines were built for, which is not the
@@ -1026,7 +1031,7 @@ impl State {
         if let Some(profiler) = &mut self.gpu_profiler {
             profiler.begin_frame(&self.device, &self.queue);
         }
-        Ok(SurfaceDraw {
+        Ok(Some(SurfaceDraw {
             surface_id: target.id.0,
             image,
             view,
@@ -1035,7 +1040,7 @@ impl State {
             camera: camera_handle,
             frame,
             render_queue,
-        })
+        }))
     }
 
     /// Record one pass of the chain into `encoder`.

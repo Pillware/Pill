@@ -407,10 +407,11 @@ impl Surface {
     /// Returns [`RendererError::Backend`] when the swapchain is still lost or
     /// outdated after one reconfiguration, and again with wgpu's status for any
     /// other acquisition failure.
-    pub fn acquire(&mut self, device: &wgpu::Device) -> Result<wgpu::SurfaceTexture> {
+    pub fn acquire(&mut self, device: &wgpu::Device) -> Result<Option<wgpu::SurfaceTexture>> {
         match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Ok(frame),
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Ok(Some(frame)),
+            wgpu::CurrentSurfaceTexture::Occluded => Ok(None),
             // A lost or outdated swapchain is recovered by reconfiguring and
             // retrying once; a second failure is reported, because waiting for
             // a later resize event leaves the renderer dead until one arrives.
@@ -418,7 +419,8 @@ impl Surface {
                 self.reconfigure(device)?;
                 match self.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(frame)
-                    | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Ok(frame),
+                    | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Ok(Some(frame)),
+                    wgpu::CurrentSurfaceTexture::Occluded => Ok(None),
                     wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
                         Err(RendererError::Backend {
                             detail: "the swapchain stayed lost or outdated after reconfiguring"
@@ -656,11 +658,12 @@ fn apply_and_probe(
     surface: &wgpu::Surface<'static>,
     device: &wgpu::Device,
     surface_configuration: &wgpu::SurfaceConfiguration,
-) -> std::result::Result<wgpu::SurfaceTexture, String> {
+) -> std::result::Result<Option<wgpu::SurfaceTexture>, String> {
     surface.configure(device, surface_configuration);
     match surface.get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(frame)
-        | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Ok(frame),
+        | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => Ok(Some(frame)),
+        wgpu::CurrentSurfaceTexture::Occluded => Ok(None),
         other => Err(format!("{other:?}")),
     }
 }
@@ -668,7 +671,7 @@ fn apply_and_probe(
 /// Why one configuration attempt failed, or `None` when it succeeded: a
 /// captured error first, else the probe's own failure.
 fn configuration_attempt_failure(
-    probe_outcome: std::result::Result<wgpu::SurfaceTexture, String>,
+    probe_outcome: std::result::Result<Option<wgpu::SurfaceTexture>, String>,
     errors: CapturedErrors,
 ) -> Option<String> {
     let reported_error = errors

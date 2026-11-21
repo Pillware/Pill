@@ -411,7 +411,6 @@ fn create_floating_overlay(
     device: &wgpu::Device,
     size: (u32, u32),
 ) -> Result<OverlaySurface, OverlayError> {
-    use winit::platform::x11::WindowAttributesExtX11;
     // Step 1: the window. It starts hidden so the first frame can place it
     // before it is ever shown, and it is transparent so the scene shows
     // through wherever the shell drew nothing.
@@ -421,8 +420,12 @@ fn create_floating_overlay(
         .with_decorations(false)
         .with_active(false)
         .with_visible(false)
-        .with_inner_size(LogicalSize::new(size.0 as f64, size.1 as f64))
-        .with_override_redirect(true);
+        .with_inner_size(LogicalSize::new(size.0 as f64, size.1 as f64));
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let attributes = {
+        use winit::platform::x11::WindowAttributesExtX11;
+        attributes.with_override_redirect(true)
+    };
     let window = Arc::new(
         event_loop
             .create_window(attributes)

@@ -488,7 +488,9 @@ impl EditorWindow {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             #[cfg(windows)]
             backends: wgpu::Backends::DX12,
-            #[cfg(not(windows))]
+            #[cfg(target_os = "macos")]
+            backends: wgpu::Backends::METAL,
+            #[cfg(all(unix, not(target_os = "macos")))]
             backends: wgpu::Backends::VULKAN | wgpu::Backends::GL,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });

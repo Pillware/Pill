@@ -61,3 +61,8 @@ rustflags = ["-C", "prefer-dynamic", "-C", "link-arg=-Wl,-rpath,$ORIGIN"]
 # extra install.
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld"
+
+# macOS: the editor and the renderer module each embed `raw-window-metal`;
+# this makes objc2 reuse its already-registered class instead of panicking.
+[env]
+UNSAFE_OBJC2_ALLOW_CLASS_OVERRIDE = "1"
