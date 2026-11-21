@@ -5,7 +5,7 @@ examples, tests and code are all welcome.
 
 Everything you need to get started, from the workflow and coding standards
 to the rules for third-party code, is in the
-[contributing guide](https://docs.pillengine.org/guide/contributing.html).
+[contributing guide](https://docs.pillengine.org/guide/other/contributing/getting-started).
 
 A few things to know before your first pull request:
 
