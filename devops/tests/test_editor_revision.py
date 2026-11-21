@@ -1,5 +1,5 @@
 """
-Editor Revision Integration Test for Rust-Hybrid-ECS.
+Editor Revision Integration Test for Pill.
 
 PROTECTS: A module reload bumps the editor revision counter, so the editor drops its caches.
 TIER: host

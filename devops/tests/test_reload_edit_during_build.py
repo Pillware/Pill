@@ -1,5 +1,5 @@
 """
-Edit-during-build regression test for Rust-Hybrid-ECS.
+Edit-during-build regression test for Pill.
 
 PROTECTS: A save made during a build wins: the newer edit is the one built and loaded.
 TIER: host

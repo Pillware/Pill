@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Runs Rust-Hybrid-ECS regression suites in sequence and prints one summary.
+Runs Pill regression suites in sequence and prints one summary.
 
 REQUIREMENTS
   - Python 3.8+.

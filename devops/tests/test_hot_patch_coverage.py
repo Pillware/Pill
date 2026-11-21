@@ -1,5 +1,5 @@
 """
-Hot-patch coverage test for Rust-Hybrid-ECS.
+Hot-patch coverage test for Pill.
 
 PROTECTS: Body-only edits in every loaded crate are live-patched rather than reloaded.
 TIER: host

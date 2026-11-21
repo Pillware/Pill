@@ -1,5 +1,5 @@
 """
-Asset metadata consistency check for Rust-Hybrid-ECS.
+Asset metadata consistency check for Pill.
 
 PROTECTS: Every .meta under each project's res directory has its asset, and no two assets share a guid.
 TIER: static

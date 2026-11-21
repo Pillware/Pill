@@ -1,5 +1,5 @@
 """
-Picking and selection outline integration test for Rust-Hybrid-ECS.
+Picking and selection outline integration test for Pill.
 
 PROTECTS: Picking returns the entity under the cursor, or nothing, and outlines the hit entity.
 TIER: host

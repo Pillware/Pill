@@ -1,5 +1,5 @@
 """
-Missing module resource assert suite for Rust-Hybrid-ECS.
+Missing module resource assert suite for Pill.
 
 PROTECTS: A module's declared asset root stops the host, naming the module and the path, when a required file is gone.
 TIER: host

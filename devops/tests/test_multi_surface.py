@@ -1,5 +1,5 @@
 """
-Multi-surface renderer integration test for Rust-Hybrid-ECS.
+Multi-surface renderer integration test for Pill.
 
 PROTECTS: One renderer drives two windows; a renderer reload reattaches the second surface.
 TIER: host

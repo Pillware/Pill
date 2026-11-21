@@ -1,5 +1,5 @@
 """
-Shared Component Identity Integration Test for Rust-Hybrid-ECS.
+Shared Component Identity Integration Test for Pill.
 
 PROTECTS: Types linked by two DLLs share one registration with #[pill(shared)], else startup fails.
 TIER: host
@@ -1219,7 +1219,7 @@ SCENARIOS = {
 def main() -> None:
     """Parses arguments and runs the shared-identity scenarios."""
     parser = argparse.ArgumentParser(
-        description="Shared component identity integration test for Rust-Hybrid-ECS"
+        description="Shared component identity integration test for Pill"
     )
     parser.add_argument(
         "--scenario",

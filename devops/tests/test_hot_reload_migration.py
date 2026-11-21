@@ -1,5 +1,5 @@
 """
-Hot-Reload Migration Integration Suite for Rust-Hybrid-ECS.
+Hot-Reload Migration Integration Suite for Pill.
 
 PROTECTS: Component schema changes on reload migrate the data, or are refused and rolled back.
 TIER: host
@@ -945,7 +945,7 @@ def main() -> None:
     global ORIGINAL_CONTENT
 
     parser = argparse.ArgumentParser(
-        description="Hot-reload migration integration suite for Rust-Hybrid-ECS"
+        description="Hot-reload migration integration suite for Pill"
     )
     parser.add_argument(
         "--cycles",

@@ -1,5 +1,5 @@
 """
-Full Hot-Reloading Integration Suite for Rust-Hybrid-ECS.
+Full Hot-Reloading Integration Suite for Pill.
 
 PROTECTS: Project and module hot reload keep data, migrate schemas, cascade and stay stable.
 TIER: host
@@ -946,7 +946,7 @@ def run_session(
 def main() -> None:
     """Parses arguments, runs both sessions, and reports the summary."""
     parser = argparse.ArgumentParser(
-        description="Full hot-reloading integration suite for Rust-Hybrid-ECS"
+        description="Full hot-reloading integration suite for Pill"
     )
     add_common_suite_arguments(parser)
     args = parser.parse_args()

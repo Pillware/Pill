@@ -1,6 +1,6 @@
 # devops
 
-All development tooling for Rust-Hybrid-ECS.
+All development tooling for Pill.
 
 ```
 devops/

@@ -26,7 +26,7 @@
 22. **The full gate.** `verify.py` runs this directory plus every other CI check - it is what CI calls.
 23. **Editor rule.** Build `pill_editor` right before its suite, with nothing in between.
 
-The pass/fail checks for Rust-Hybrid-ECS. Every script here asserts and
+The pass/fail checks for Pill. Every script here asserts and
 returns a non-zero exit code on failure, and every script runs standalone
 from any working directory. Performance measurement lives in the untracked
 `local/devops/` tree because it reports numbers instead of asserting on them.

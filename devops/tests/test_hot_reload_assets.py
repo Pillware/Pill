@@ -1,5 +1,5 @@
 """
-Live asset reimport suite for Rust-Hybrid-ECS.
+Live asset reimport suite for Pill.
 
 PROTECTS: Live asset reimport: .meta edits, broken and restored images, moved files, renderer reloads.
 TIER: host

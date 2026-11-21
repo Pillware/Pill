@@ -1,5 +1,5 @@
 """
-Gameplay scripting analyzer suite for Rust-Hybrid-ECS.
+Gameplay scripting analyzer suite for Pill.
 
 PROTECTS: The PILL Roslyn analyzer rules: the C# project builds clean and a rule-breaking probe fails.
 TIER: build
@@ -363,7 +363,7 @@ SCENARIOS = (
 def main() -> None:
     """Runs all three analyzer scenarios and reports one summary."""
     parser = argparse.ArgumentParser(
-        description="Gameplay scripting analyzer suite for Rust-Hybrid-ECS"
+        description="Gameplay scripting analyzer suite for Pill"
     )
     parser.add_argument(
         "--keep-probe",

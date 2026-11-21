@@ -1,5 +1,5 @@
 """
-Shared plumbing for the Rust-Hybrid-ECS hot-reload integration suites.
+Shared plumbing for the Pill hot-reload integration suites.
 
 REQUIREMENTS
   - Python 3.8+

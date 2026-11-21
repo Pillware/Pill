@@ -1,5 +1,5 @@
 """
-End-to-end theme suite for Rust-Hybrid-ECS.
+End-to-end theme suite for Pill.
 
 PROTECTS: The game half of the theme pipeline: the `.theme` override, live re-apply, refusals, fonts and packing.
 TIER: host

@@ -1,5 +1,5 @@
 """
-C# <-> Rust Bridge Integration Suite for Rust-Hybrid-ECS.
+C# <-> Rust Bridge Integration Suite for Pill.
 
 PROTECTS: C# hot reload: mirror layout, calls both ways, assembly swaps keeping state, layout migration.
 TIER: host
@@ -1432,7 +1432,7 @@ def verify_codegen_rebuild() -> bool:
 def main() -> None:
     """Parses arguments, runs the C# session and the codegen-rebuild check."""
     parser = argparse.ArgumentParser(
-        description="C# <-> Rust bridge integration suite for Rust-Hybrid-ECS"
+        description="C# <-> Rust bridge integration suite for Pill"
     )
     add_common_suite_arguments(parser)
     args = parser.parse_args()

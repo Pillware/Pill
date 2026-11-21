@@ -1,5 +1,5 @@
 """
-Patch bookkeeping survival test for Rust-Hybrid-ECS.
+Patch bookkeeping survival test for Pill.
 
 PROTECTS: A failed reload keeps the live patch records, so rolling the patch back still works.
 TIER: host

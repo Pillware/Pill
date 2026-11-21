@@ -1280,34 +1280,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
-name = "host_module_pill_master_renderer"
-version = "0.1.0"
-dependencies = [
- "pill_engine",
- "pill_master_renderer",
-]
-
-[[package]]
-name = "host_module_pill_master_renderer_data"
-version = "0.1.0"
-dependencies = [
- "pill_engine",
- "pill_master_renderer_data",
-]
-
-[[package]]
-name = "host_project_native"
-version = "0.1.0"
-dependencies = [
- "pill_core",
- "pill_engine",
- "pill_master_renderer_data",
- "pill_spline",
- "serde",
- "tracing",
-]
-
-[[package]]
 name = "hound"
 version = "3.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
