@@ -25,7 +25,6 @@
 //! offsets match the shader's attributes.
 
 // External crates
-use glam::{Quat, Vec3};
 use pill_core::rayon::prelude::*;
 
 // Current crate
@@ -67,37 +66,11 @@ impl Instance {
     /// Builds one instance's model matrix from a transform component: the
     /// scale is applied first, then the rotation, then the translation.
     ///
-    /// A rotation that is not finite or has no length is ignored, so the
-    /// instance draws unrotated rather than with a degenerate matrix.
+    /// The matrix itself is built by `pill_rendering_core`, which every
+    /// renderer shares; this is the type that carries it to a vertex shader.
     pub fn new(transform_component: &TransformComponent) -> Instance {
-        // Step 1: Read the rotation as a unit quaternion and build the whole
-        // affine matrix from the component's scale, rotation and translation.
-        let rotation = Quat::from_array(pill_engine::common_components::rotation_or_identity(
-            transform_component.rotation,
-        ));
-        let model = glam::Affine3A::from_scale_rotation_translation(
-            Vec3::from_array(transform_component.scale),
-            rotation,
-            Vec3::from_array(transform_component.translation),
-        );
-        // Step 2: Copy the matrix out by row. glam stores it by column, and the
-        // shader wants rows.
-        let axes = [
-            model.matrix3.x_axis,
-            model.matrix3.y_axis,
-            model.matrix3.z_axis,
-        ];
-        let translation = model.translation;
-        let row = |index: usize| {
-            [
-                axes[0][index],
-                axes[1][index],
-                axes[2][index],
-                translation[index],
-            ]
-        };
         Instance {
-            model_rows: [row(0), row(1), row(2)],
+            model_rows: pill_rendering_core::instance::model_rows(transform_component),
         }
     }
 }
@@ -182,6 +155,7 @@ pub(crate) fn build_queued_instances(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use glam::Quat;
     use pill_renderer_api::AssetKey;
 
     /// A queue item for `frame_instance_index`; the handles are irrelevant to
@@ -195,77 +169,6 @@ mod tests {
             material: crate::resources::RendererMaterialHandle::new(0, version),
             mesh: crate::resources::RendererMeshHandle::new(0, version),
         }
-    }
-
-    /// The world position the shader computes for a model-space `point`: each
-    /// of the three rows dotted with `(point, 1)`. That is what the shader's
-    /// `mul(model, v)` does once the fourth row is `0, 0, 0, 1`.
-    fn shader_transform(instance: &Instance, point: Vec3) -> Vec3 {
-        let homogeneous = point.extend(1.0);
-        let row =
-            |index: usize| glam::Vec4::from_array(instance.model_rows[index]).dot(homogeneous);
-        Vec3::new(row(0), row(1), row(2))
-    }
-
-    fn largest_difference(left: Vec3, right: Vec3) -> f32 {
-        (left - right).abs().max_element()
-    }
-
-    #[test]
-    fn the_shader_applies_the_rotation_the_component_holds() {
-        for rotation in [
-            Quat::IDENTITY,
-            Quat::from_rotation_x(0.4),
-            Quat::from_rotation_y(2.0),
-            Quat::from_rotation_z(-1.2),
-            Quat::from_rotation_y(0.7) * Quat::from_rotation_x(0.3),
-            // Past half a turn: the quaternion's scalar part is negative. The
-            // matrix comes straight from the quaternion, never from an angle
-            // wrapped into a shorter range.
-            Quat::from_rotation_y(4.5),
-        ] {
-            let instance = Instance::new(&TransformComponent {
-                translation: [0.0; 3],
-                rotation: rotation.to_array(),
-                scale: [1.0; 3],
-            });
-            for point in [Vec3::X, Vec3::Y, Vec3::Z, Vec3::new(0.3, -1.2, 2.5)] {
-                let difference =
-                    largest_difference(shader_transform(&instance, point), rotation * point);
-                assert!(
-                    difference < 1e-5,
-                    "the shader's point differs by {difference} for {rotation:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn scale_applies_before_rotation_and_translation_after() {
-        let rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
-        let instance = Instance::new(&TransformComponent {
-            translation: [1.0, 2.0, 3.0],
-            rotation: rotation.to_array(),
-            scale: [4.0, 5.0, 6.0],
-        });
-
-        // +X scaled by 4, turned a quarter about Z onto +Y, then moved.
-        let moved = shader_transform(&instance, Vec3::X);
-        assert!(
-            largest_difference(moved, Vec3::new(1.0, 6.0, 3.0)) < 1e-5,
-            "{moved:?}"
-        );
-    }
-
-    #[test]
-    fn a_broken_rotation_draws_unrotated() {
-        let instance = Instance::new(&TransformComponent {
-            translation: [0.0; 3],
-            rotation: [0.0; 4],
-            scale: [1.0; 3],
-        });
-
-        assert_eq!(shader_transform(&instance, Vec3::X), Vec3::X);
     }
 
     #[test]

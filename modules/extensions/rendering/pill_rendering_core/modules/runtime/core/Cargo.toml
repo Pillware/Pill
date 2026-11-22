@@ -1,0 +1,35 @@
+[package]
+name = "pill_rendering_core"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The rendering logic every renderer shares: building a frame from the world,
+# the camera and culling maths, the draw-order key, the CPU projection of debug
+# geometry, material reads by slot name and CPU picking. It links no graphics
+# stack and registers nothing with the world - no components, resources or
+# systems - so it is never loaded as a module: each renderer links it, and a
+# body edit here reaches a running renderer through that renderer's reload.
+[lib]
+# Named after the crate rather than `lib.rs`, like every extension crate, so the
+# debugger's file-name fallback has one candidate.
+path = "src/pill_rendering_core.rs"
+# `rlib` only: there is no artifact to load. The renderers compile it into
+# their own images.
+crate-type = ["rlib"]
+
+[dependencies]
+pill_core = { path = "../../../../../../engine/pill_core" }
+pill_engine = { path = "../../../../../../engine/pill_engine" }
+# The renderer contract: the frame a renderer fills, the camera it draws
+# through, and the pick and preview requests it answers.
+pill_renderer_api = { path = "../../../../../../rendering/pill_renderer_api" }
+# The rendering data: the components and the assets the frame is built from.
+pill_rendering = { path = "../data" }
+glam = { version = "0.33", features = ["serde", "bytemuck"] }
+bytemuck = { version = "1.4", features = ["derive"] }
+# The frame's UI lists are plain data from `pill_ui_frame`, which the frame
+# itself carries; nothing here builds a UI library.
+pill_ui_frame = { path = "../../../../../../rendering/pill_ui_frame" }

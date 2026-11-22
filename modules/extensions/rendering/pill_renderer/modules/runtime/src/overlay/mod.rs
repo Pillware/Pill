@@ -38,9 +38,12 @@ use std::collections::HashSet;
 
 // External crates
 use pill_core::math::Vector2f;
-use pill_engine::{DebugFrame, Entity, GizmoPoint, GizmoPointShape, LabelAnchor};
+use pill_engine::{DebugFrame, Entity, GizmoPointShape};
 use pill_renderer_api::{PickHit, PickRequest, PickResult, PICK_HANDLE_BIT};
 use pill_rendering::color_space::linear_to_srgb;
+use pill_rendering_core::projection::{
+    clip_polygon_to_near, expand_polygon, label_origin, line_quad, point_quad,
+};
 use pill_ui_frame::{Color, DrawList, Rect};
 
 // Current crate
@@ -76,9 +79,6 @@ const PICK_BUFFER_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const PICK_BUFFER_DEPTH_FORMAT: wgpu::TextureFormat = RendererTexture::DEPTH_FORMAT;
 /// The colour of the shadow under a label, so it reads over any background.
 const LABEL_SHADOW_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.85];
-/// The view-space distance from the camera below which a point counts as
-/// behind it and is clipped away.
-const NEAR_CLIP_DEPTH: f32 = 1e-3;
 /// The half width of a drawn overlay line, in pixels.
 const LINE_HALF_WIDTH: f32 = 1.0;
 /// How many pixels past the line's half width the anti-aliasing fade reaches.
@@ -95,9 +95,6 @@ const LINE_QUAD_SIDES: [f32; 6] = [1.0, -1.0, 1.0, 1.0, -1.0, -1.0];
 /// How far a gizmo triangle's corners are pushed out, in pixels, so its
 /// anti-aliasing has a band to fade in.
 const TRIANGLE_FEATHER: f32 = 1.0;
-/// The smallest sine of a corner's half-angle the expansion accepts. At a
-/// sharper corner the vertex would be pushed out without limit.
-const MINIMUM_MITER_SINE: f32 = 0.02;
 /// How far past a gizmo point's drawn size its pick quad reaches, in pixels.
 const PICK_POINT_SLACK: f32 = 1.0;
 
@@ -177,9 +174,10 @@ struct GridParameters {
     viewport: [f32; 4],
 }
 
-/// A vertex on its way to the screen: its clip-space position and the corner
-/// of the shape it belongs to, carried through clipping.
-type ClipVertex = ([f32; 4], [f32; 3]);
+/// A vertex on its way to the screen, as `pill_rendering_core` names it: its
+/// clip-space position and the corner of the shape it belongs to, carried
+/// through clipping.
+type ClipVertex = pill_rendering_core::projection::ClipVertex;
 
 // =============================================================================
 // Overlay Targets
@@ -1253,130 +1251,6 @@ fn line_vertices(
     (tested, on_top)
 }
 
-/// The six clip-space corners of the quad covering `start`-`end`, widened by
-/// `offset` pixels on each side. Returns `None` when the segment is behind the
-/// camera or shorter than a pixel on screen.
-fn line_quad(
-    start: [f32; 3],
-    end: [f32; 3],
-    view_projection: &pill_core::math::Matrix4f,
-    viewport_size: (f32, f32),
-    offset: f32,
-) -> Option<[[f32; 4]; 6]> {
-    let project = |position: [f32; 3]| {
-        (*view_projection * glam::Vec4::new(position[0], position[1], position[2], 1.0)).to_array()
-    };
-    let (start, end) = clip_segment_to_near(project(start), project(end))?;
-    let (start_pixel, end_pixel) = (
-        to_pixels(start, viewport_size),
-        to_pixels(end, viewport_size),
-    );
-    let along = [end_pixel.0 - start_pixel.0, end_pixel.1 - start_pixel.1];
-    let length = (along[0] * along[0] + along[1] * along[1]).sqrt();
-    if length < 1.0 {
-        return None;
-    }
-    let normal = [-along[1] / length * offset, along[0] / length * offset];
-    let corners = |clip_position: [f32; 4]| {
-        let pixel = to_pixels(clip_position, viewport_size);
-        [1.0, -1.0].map(|side| {
-            from_pixels(
-                (pixel.0 + normal[0] * side, pixel.1 + normal[1] * side),
-                viewport_size,
-                clip_position[2],
-                clip_position[3],
-            )
-        })
-    };
-    let [start_plus, start_minus] = corners(start);
-    let [end_plus, end_minus] = corners(end);
-    Some([
-        start_plus,
-        start_minus,
-        end_plus,
-        end_plus,
-        start_minus,
-        end_minus,
-    ])
-}
-
-/// A segment clipped to the camera's near side: `None` when both ends are
-/// behind it, otherwise the part that crosses into view.
-fn clip_segment_to_near(start: [f32; 4], end: [f32; 4]) -> Option<([f32; 4], [f32; 4])> {
-    match (start[3] >= NEAR_CLIP_DEPTH, end[3] >= NEAR_CLIP_DEPTH) {
-        (false, false) => None,
-        (true, true) => Some((start, end)),
-        (false, true) => Some((lerp4(start, end, near_side_crossing(start[3], end[3])), end)),
-        (true, false) => Some((
-            start,
-            lerp4(end, start, near_side_crossing(end[3], start[3])),
-        )),
-    }
-}
-
-/// A polygon clipped to the camera's near side, every vertex keeping the
-/// barycentric corner it stands for.
-fn clip_polygon_to_near(polygon: &[ClipVertex]) -> Vec<ClipVertex> {
-    let mut clipped = Vec::with_capacity(polygon.len() + 1);
-    for (index, current) in polygon.iter().enumerate() {
-        let next = polygon[(index + 1) % polygon.len()];
-        let current_inside = current.0[3] >= NEAR_CLIP_DEPTH;
-        if current_inside {
-            clipped.push(*current);
-        }
-        if current_inside != (next.0[3] >= NEAR_CLIP_DEPTH) {
-            let t = near_side_crossing(current.0[3], next.0[3]);
-            clipped.push((lerp4(current.0, next.0, t), lerp3(current.1, next.1, t)));
-        }
-    }
-    clipped
-}
-
-/// How far along the way from a point at `start_depth` to one at `end_depth`
-/// the camera's near side lies.
-fn near_side_crossing(start_depth: f32, end_depth: f32) -> f32 {
-    (NEAR_CLIP_DEPTH - start_depth) / (end_depth - start_depth)
-}
-
-/// Four components along the way from `start` to `end`.
-fn lerp4(start: [f32; 4], end: [f32; 4], t: f32) -> [f32; 4] {
-    std::array::from_fn(|index| start[index] + (end[index] - start[index]) * t)
-}
-
-/// Three components along the way from `start` to `end`.
-fn lerp3(start: [f32; 3], end: [f32; 3], t: f32) -> [f32; 3] {
-    std::array::from_fn(|index| start[index] + (end[index] - start[index]) * t)
-}
-
-/// A clip-space position in pixels from the centre of the drawn region.
-fn to_pixels(clip_position: [f32; 4], viewport_size: (f32, f32)) -> (f32, f32) {
-    let inverse = 1.0 / clip_position[3];
-    (
-        clip_position[0] * inverse * 0.5 * viewport_size.0,
-        clip_position[1] * inverse * 0.5 * viewport_size.1,
-    )
-}
-
-/// The clip-space position a pixel position maps back to at `depth`.
-fn from_pixels(point: (f32, f32), viewport_size: (f32, f32), depth: f32, w: f32) -> [f32; 4] {
-    [
-        point.0 * 2.0 / viewport_size.0 * w,
-        point.1 * 2.0 / viewport_size.1 * w,
-        depth,
-        w,
-    ]
-}
-
-/// Scales `direction` to unit length, or returns `None` when it is too short
-/// to have one.
-fn unit_direction(direction: [f32; 2]) -> Option<[f32; 2]> {
-    let length = (direction[0] * direction[0] + direction[1] * direction[1]).sqrt();
-    if length < 1e-6 {
-        return None;
-    }
-    Some([direction[0] / length, direction[1] / length])
-}
-
 /// The frame's gizmo triangles as screen-space triangles whose corners are
 /// pushed `TRIANGLE_FEATHER` pixels out, and which the fragment shader feathers
 /// back down to the silhouette the triangles really have. Returns an empty list
@@ -1438,7 +1312,13 @@ fn point_vertices(
     }
     let mut vertices = Vec::new();
     for point in &debug_frame.gizmo_points {
-        let Some(quad) = point_quad(point, view_projection, viewport_size, 0.0) else {
+        let Some(quad) = point_quad(
+            point.position,
+            point.size_pixels,
+            view_projection,
+            viewport_size,
+            0.0,
+        ) else {
             continue;
         };
         let half_size_pixels = point.size_pixels.max(1.0) * 0.5;
@@ -1470,112 +1350,6 @@ fn point_vertices(
     vertices
 }
 
-/// The six clip-space corners of a point's screen-aligned quad around its
-/// projected centre, its half extent being its half size plus
-/// `extra_pixels`. `None` when the point is behind the camera.
-fn point_quad(
-    point: &GizmoPoint,
-    view_projection: &pill_core::math::Matrix4f,
-    viewport_size: (f32, f32),
-    extra_pixels: f32,
-) -> Option<[[f32; 4]; 6]> {
-    let clip = (*view_projection
-        * glam::Vec4::new(point.position[0], point.position[1], point.position[2], 1.0))
-    .to_array();
-    if clip[3] < NEAR_CLIP_DEPTH {
-        return None;
-    }
-    let centre = to_pixels(clip, viewport_size);
-    let half = point.size_pixels.max(1.0) * 0.5 + extra_pixels;
-    let corner = |x: f32, y: f32| {
-        from_pixels(
-            (centre.0 + x * half, centre.1 + y * half),
-            viewport_size,
-            clip[2],
-            clip[3],
-        )
-    };
-    Some([
-        corner(-1.0, -1.0),
-        corner(1.0, -1.0),
-        corner(1.0, 1.0),
-        corner(-1.0, -1.0),
-        corner(1.0, 1.0),
-        corner(-1.0, 1.0),
-    ])
-}
-
-/// Moves every vertex of a projected polygon `offset` pixels away from its two
-/// edges. A straight corner moves along the edge normal; a sharp corner moves
-/// farther, so both edges clear the original shape by `offset` and the
-/// feathered band has no gaps at the joins.
-fn expand_polygon(
-    polygon: &[ClipVertex],
-    viewport_size: (f32, f32),
-    offset: f32,
-) -> Vec<ClipVertex> {
-    let points: Vec<(f32, f32)> = polygon
-        .iter()
-        .map(|vertex| to_pixels(vertex.0, viewport_size))
-        .collect();
-    let count = points.len();
-    // Step 1: Find which way the polygon winds, so every edge normal can point
-    // outwards.
-    let double_area: f32 = (0..count)
-        .map(|index| {
-            let current = points[index];
-            let next = points[(index + 1) % count];
-            current.0 * next.1 - next.0 * current.1
-        })
-        .sum();
-    let orientation = if double_area < 0.0 { -1.0 } else { 1.0 };
-    // Step 2: Move each corner outwards along the bisector of its two edges.
-    let mut expanded = Vec::with_capacity(count);
-    for index in 0..count {
-        let current = points[index];
-        let previous = points[(index + count - 1) % count];
-        let next = points[(index + 1) % count];
-        let incoming = unit_direction([current.0 - previous.0, current.1 - previous.1]);
-        let outgoing = unit_direction([next.0 - current.0, next.1 - current.1]);
-        let vertex = polygon[index];
-        let moved = match (incoming, outgoing) {
-            (Some(incoming), Some(outgoing)) => {
-                let incoming_normal = [incoming[1] * orientation, -incoming[0] * orientation];
-                let outgoing_normal = [outgoing[1] * orientation, -outgoing[0] * orientation];
-                let turn = incoming[0] * outgoing[1] - incoming[1] * outgoing[0];
-                let bisector = [
-                    incoming_normal[0] + outgoing_normal[0],
-                    incoming_normal[1] + outgoing_normal[1],
-                ];
-                match (turn * orientation > 0.0)
-                    .then(|| unit_direction(bisector))
-                    .flatten()
-                {
-                    Some(direction) => {
-                        let along = (direction[0] * outgoing_normal[0]
-                            + direction[1] * outgoing_normal[1])
-                            .max(MINIMUM_MITER_SINE);
-                        let reach = offset / along;
-                        (
-                            current.0 + direction[0] * reach,
-                            current.1 + direction[1] * reach,
-                        )
-                    }
-                    // A reflex corner of a clipped polygon sits on the cut,
-                    // where nothing needs widening.
-                    None => current,
-                }
-            }
-            _ => current,
-        };
-        expanded.push((
-            from_pixels(moved, viewport_size, vertex.0[2], vertex.0[3]),
-            vertex.1,
-        ));
-    }
-    expanded
-}
-
 /// The gizmo lines and point quads as the pick buffer draws them. Each is the
 /// same geometry as the drawn handle, widened to the band the editor's hover
 /// test accepts, so a pick covers the handle the pointer highlights.
@@ -1603,7 +1377,13 @@ fn handle_line_vertices(
     }
     for point in &debug_frame.gizmo_points {
         let value = PICK_HANDLE_BIT | point.handle;
-        let Some(quad) = point_quad(point, view_projection, viewport_size, PICK_POINT_SLACK) else {
+        let Some(quad) = point_quad(
+            point.position,
+            point.size_pixels,
+            view_projection,
+            viewport_size,
+            PICK_POINT_SLACK,
+        ) else {
             continue;
         };
         vertices.extend(quad.map(|clip_position| HandleLineVertex {
@@ -1676,32 +1456,6 @@ pub(crate) fn label_list(
     draw_list
 }
 
-/// Where a label's text starts, in surface pixels: a screen anchor as given,
-/// a world anchor projected through the camera into the viewport. `None` for
-/// a world point behind the camera.
-fn label_origin(
-    anchor: LabelAnchor,
-    view_projection: &pill_core::math::Matrix4f,
-    viewport: RenderViewport,
-) -> Option<(f32, f32)> {
-    match anchor {
-        LabelAnchor::Screen { x, y } => Some((x, y)),
-        LabelAnchor::World(position) => {
-            let clip =
-                *view_projection * glam::Vec4::new(position[0], position[1], position[2], 1.0);
-            if clip.w <= f32::EPSILON {
-                return None;
-            }
-            let normalized_x = clip.x / clip.w;
-            let normalized_y = clip.y / clip.w;
-            Some((
-                viewport.x as f32 + (normalized_x * 0.5 + 0.5) * viewport.width as f32,
-                viewport.y as f32 + (0.5 - normalized_y * 0.5) * viewport.height as f32,
-            ))
-        }
-    }
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -1710,27 +1464,7 @@ fn label_origin(
 mod tests {
     use super::*;
     use crate::ui::UiRenderer;
-
-    /// A world point straight ahead is drawn in the middle of the viewport,
-    /// and one behind the camera is not drawn.
-    #[test]
-    fn world_labels_project_into_the_viewport() {
-        let projection = glam::camera::rh::proj::directx::perspective(1.0, 2.0, 0.1, 100.0);
-        let viewport = RenderViewport::new(100, 50, 400, 200);
-        let (x, y) = label_origin(LabelAnchor::World([0.0, 0.0, -5.0]), &projection, viewport)
-            .expect("in front of the camera");
-        assert!((x - 300.0).abs() < 1e-3, "{x}");
-        assert!((y - 150.0).abs() < 1e-3, "{y}");
-        assert!(label_origin(LabelAnchor::World([0.0, 0.0, 5.0]), &projection, viewport).is_none());
-        assert_eq!(
-            label_origin(
-                LabelAnchor::Screen { x: 4.0, y: 8.0 },
-                &projection,
-                viewport
-            ),
-            Some((4.0, 8.0))
-        );
-    }
+    use pill_rendering_core::projection::to_pixels;
 
     /// Gizmo lines draw on top whatever their depth test says. Every line
     /// becomes a six-vertex quad, and the pick quad carries the handle.

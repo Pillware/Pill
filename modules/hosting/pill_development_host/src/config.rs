@@ -272,7 +272,7 @@ const RENDERER_ALIASES: &[(&str, &str)] = &[("pill_master_renderer", DEFAULT_REN
 /// names the data crate it draws with: `renderer_data = "pill_rendering"`.
 /// Naming it in the renderer's own manifest is what lets two renderers share
 /// one data crate.
-const RENDERER_DATA_TAG: &str = "renderer_data";
+pub(crate) const RENDERER_DATA_TAG: &str = "renderer_data";
 
 /// Directory at a module crate's root holding the resources it ships, its
 /// shader sources among them (under `shaders/`), relative to the crate.
@@ -2022,6 +2022,99 @@ fn declares_dependency(table: &Table, crate_name: &str) -> bool {
     })
 }
 
+/// The source directories of the crates `crate_directory` links by path, as
+/// `(package name, workspace-relative directory)` pairs.
+///
+/// A module compiles the crates it depends on by path into its own image, so a
+/// source save in one of them has to rebuild and reload the module too. The
+/// host watches a module's own `src`; this adds the libraries under it, which
+/// is what makes an edit in `pill_rendering_core` reach a running renderer.
+///
+/// Only crates that ship inside `extensions/` are listed. The engine's own
+/// crates are linked by the host as well, so the host image would have to be
+/// rebuilt with them: that is a host restart, not a module reload.
+///
+/// The list is read from the manifest every time a module starts, so adding a
+/// path dependency needs no host change. `skip_packages` names crates the host
+/// already watches as modules of their own; their sources must not move a
+/// second module's edit counter.
+pub(crate) fn linked_crate_source_directories(
+    workspace_root: &Path,
+    crate_directory: &str,
+    skip_packages: &[&str],
+) -> Vec<(String, String)> {
+    let crate_path = workspace_root.join(crate_directory);
+    // Both sides are resolved through the filesystem, so a `..` in a `path`
+    // dependency cannot make an outside crate look like one under
+    // `extensions/`.
+    let Ok(workspace_root) = workspace_root.canonicalize() else {
+        return Vec::new();
+    };
+    let Ok(manifest) = std::fs::read_to_string(crate_path.join("Cargo.toml")) else {
+        return Vec::new();
+    };
+    let Ok(document) = manifest.parse::<DocumentMut>() else {
+        return Vec::new();
+    };
+    let mut directories = Vec::new();
+    for table in linking_dependency_tables(&document) {
+        for (key, item) in table.iter() {
+            let Some((package, path)) = path_dependency(key, item) else {
+                continue;
+            };
+            if skip_packages.contains(&package.as_str()) {
+                continue;
+            }
+            // The watch path is relative to the workspace root, so a module's
+            // sources are named one way whatever the current directory is.
+            let Ok(linked_path) = crate_path.join(path).canonicalize() else {
+                continue;
+            };
+            let Ok(relative_directory) = linked_path.strip_prefix(&workspace_root) else {
+                continue;
+            };
+            // Only crates that ship inside `extensions/`: the engine's own
+            // crates are linked by the host too, so changing one needs a host
+            // rebuild, not a module reload.
+            if !relative_directory.starts_with(EXTENSION_DIRECTORY) {
+                continue;
+            }
+            let sources = relative_directory.join("src");
+            if !workspace_root.join(&sources).is_dir() {
+                continue;
+            }
+            directories.push((package, sources.to_string_lossy().replace('\\', "/")));
+        }
+    }
+    directories
+}
+
+/// The package name and path of a dependency entry that links a crate by path.
+///
+/// A path dependency may be a table, an inline table, renamed through
+/// `package = "..."`, or a plain version string that links nothing.
+fn path_dependency(key: &str, item: &Item) -> Option<(String, String)> {
+    let (package, path) = match item {
+        Item::Value(Value::InlineTable(inline_table)) => (
+            inline_table
+                .get("package")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            inline_table.get("path").and_then(Value::as_str),
+        ),
+        Item::Table(sub_table) => (
+            sub_table
+                .get("package")
+                .and_then(Item::as_str)
+                .map(str::to_string),
+            sub_table.get("path").and_then(Item::as_str),
+        ),
+        _ => return None,
+    };
+    let path = path?;
+    Some((package.unwrap_or_else(|| key.to_string()), path.to_string()))
+}
+
 /// Reads the editor's settings file from the project root.
 ///
 /// A project usually has no such file; the settings are then empty. Unknown
@@ -2799,7 +2892,7 @@ fn materialize_host_module_wrapper(
 ///
 /// The host reads one string per call from that table, so the manifest is
 /// text-scanned rather than parsed and the host gains no TOML dependency.
-fn declared_pill_tag(directory: &Path, key: &str) -> Option<String> {
+pub(crate) fn declared_pill_tag(directory: &Path, key: &str) -> Option<String> {
     let manifest = std::fs::read_to_string(directory.join("Cargo.toml")).ok()?;
     let mut in_pill_metadata = false;
     for line in manifest.lines() {

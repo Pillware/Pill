@@ -3,7 +3,7 @@
 // lines out in world space, so the grid never ends, never pops while the view
 // moves, and costs one draw per surface.
 
-// The camera uniform, in the layout of `CameraParametersData`.
+// The camera uniform, in the layout of `CameraParameters`.
 struct Camera {
     position: vec4<f32>,
     view_projection: mat4x4<f32>,

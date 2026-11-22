@@ -7,7 +7,8 @@
 //!   and mesh handles it binds, the instance it draws, and the key the queue
 //!   sorts on ([`RenderQueueItem`]).
 //! - Pack a draw's rendering order and the slot identity of its handles into
-//!   the one `u64` the queue sorts by ([`compose_render_queue_key`]).
+//!   the one `u64` the queue sorts by ([`compose_render_queue_key`]), which is
+//!   `pill_rendering_core`'s key with this renderer's handles unwrapped.
 //!
 //! # Design
 //!
@@ -86,42 +87,31 @@ impl Ord for RenderQueueItem {
 // =============================================================================
 
 /// Packs the rendering order of a draw and the resources it binds into one
-/// `u64` that sorts in the order the queue needs. The most significant byte
-/// comes first:
+/// `u64` that sorts in the order the queue needs.
 ///
-/// - bits 56-63: the material's rendering order, stored inverted
-///   (`u8::MAX - order`), so a higher order sorts earlier;
-/// - bits 48-55: the shader's slot index;
-/// - bits 40-47: the slot version the shader handle was issued with;
-/// - bits 32-39: the material's slot index;
-/// - bits 24-31: the slot version the material handle was issued with;
-/// - bits 16-23: the mesh's slot index;
-/// - bits 8-15: the slot version the mesh handle was issued with;
-/// - bits 0-7: unused and always zero.
-///
-/// Because each slot index sits next to its version, a key names one exact
-/// state of each slot.
-///
-/// The key is only ever compared. Every index and version is stored in a
-/// single byte, so a value above 255 keeps only its low byte and can match a
-/// lower value. A key never stands in for the handles a draw binds: those
-/// travel on [`RenderQueueItem`] beside it.
+/// The layout and its rules are
+/// [`compose_draw_key`](pill_rendering_core::draw_order::compose_draw_key)'s;
+/// this is the same key with this renderer's slot handles unwrapped.
 pub fn compose_render_queue_key(
     order: u8,
     shader: RendererShaderHandle,
     material: RendererMaterialHandle,
     mesh: RendererMeshHandle,
 ) -> u64 {
-    let shader = shader.data();
-    let material = material.data();
-    let mesh = mesh.data();
-    (u64::from(u8::MAX - order) << 56)
-        | (u64::from(shader.index as u8) << 48)
-        | (u64::from(shader.version.get() as u8) << 40)
-        | (u64::from(material.index as u8) << 32)
-        | (u64::from(material.version.get() as u8) << 24)
-        | (u64::from(mesh.index as u8) << 16)
-        | (u64::from(mesh.version.get() as u8) << 8)
+    pill_rendering_core::draw_order::compose_draw_key(
+        order,
+        slot_identity(shader.data()),
+        slot_identity(material.data()),
+        slot_identity(mesh.data()),
+    )
+}
+
+/// The slot identity a slot key names: its index and the version it was issued
+/// with.
+fn slot_identity(
+    data: pill_core::slot_map::KeyData,
+) -> pill_rendering_core::draw_order::SlotIdentity {
+    pill_rendering_core::draw_order::SlotIdentity::new(data.index, data.version.get())
 }
 
 // =============================================================================

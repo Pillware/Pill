@@ -43,6 +43,10 @@ pill_renderer_api = { path = "../../../../../rendering/pill_renderer_api" }
 # the shared draw data the `ui` module paints with this module's own device
 # (D8). The renderer names no UI library: `pill_ui_frame` carries the lists.
 pill_ui_frame = { path = "../../../../../rendering/pill_ui_frame" }
+# The rendering logic a renderer shares with every other one: frame building,
+# the camera and projection maths, the draw-order key, material reads by slot
+# name and CPU picking. Plain functions, linked into this image.
+pill_rendering_core = { path = "../../../pill_rendering_core/modules/runtime/core" }
 # The rendering data this crate draws: its components, assets and the material
 # vocabulary. Everything wgpu-free a renderer needs lives there, shared with any
 # other renderer that names the same crate. The pipelines and their shaders are

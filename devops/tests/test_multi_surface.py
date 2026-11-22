@@ -65,7 +65,10 @@ RENDERER_REATTACHED_TOKEN = "renderer reattached to the window"
 SURFACE_REATTACHED_TOKEN = "surface 1 reattached to the new renderer"
 SECOND_VIEW_CLOSED_TOKEN = "[second view] closed"
 SURFACE_DETACHED_TOKEN = "surface 1 detached"
-FRAME_STATISTICS_TOKEN = "FPS"
+# The engine's frame-statistics line (`pill_player`'s heartbeat), logged about
+# every three seconds while the frame loop runs. Seeing it after the second
+# window closed is what shows the main window is still being driven.
+FRAME_STATISTICS_TOKEN = "Heartbeat | fps="
 
 STARTUP_TIMEOUT = 600
 RELOAD_TIMEOUT = 300

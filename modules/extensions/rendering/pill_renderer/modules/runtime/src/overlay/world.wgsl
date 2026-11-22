@@ -1,7 +1,7 @@
 // Overlay shaders drawn through the surface's camera: debug lines and gizmos,
 // the selection mask, and the pick buffer.
 
-// The camera uniform, in the layout of `CameraParametersData`.
+// The camera uniform, in the layout of `CameraParameters`.
 struct Camera {
     position: vec4<f32>,
     view_projection: mat4x4<f32>,

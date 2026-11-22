@@ -150,6 +150,28 @@ impl RendererModule {
             Arc::clone(&source_edit_generation),
             None,
         )?;
+        // The renderer compiles the crates it depends on by path into its own
+        // image, so a save in one of them rebuilds and reloads the renderer.
+        // The data crate is left out: the host loads it as a module with a
+        // watcher of its own, and its reload already asks for this one.
+        let data_crate = crate::config::declared_pill_tag(
+            &workspace_root.join(&extension_config.crate_directory),
+            crate::config::RENDERER_DATA_TAG,
+        );
+        let skip_packages: Vec<&str> = data_crate.as_deref().into_iter().collect();
+        for (package, watch_directory) in crate::config::linked_crate_source_directories(
+            workspace_root,
+            &extension_config.crate_directory,
+            &skip_packages,
+        ) {
+            crate::watchers::spawn_source_watcher(
+                workspace_root.to_path_buf(),
+                &package,
+                &watch_directory,
+                Arc::clone(&source_edit_generation),
+                None,
+            )?;
+        }
         let mut module = Self {
             slot: None,
             extension_config: Some(extension_config),

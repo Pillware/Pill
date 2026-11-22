@@ -53,8 +53,11 @@ members = [
     # `modules/runtime` (`pill_rendering_core/modules/runtime/data`), deeper
     # than the group glob reaches, so it is listed explicitly and its parent is
     # excluded: every path a member glob matches must be a crate, and `runtime`
-    # itself is not one.
+    # itself is not one. The shared logic crate beside it
+    # (`.../runtime/core`, `pill_rendering_core`) is listed the same way, and it
+    # is a library the renderers link rather than a module anything loads.
     "extensions/rendering/pill_rendering_core/modules/runtime/data",
+    "extensions/rendering/pill_rendering_core/modules/runtime/core",
     # The host-generated `host_module_<crate>` wrappers, one per loaded
     # extension crate, in the `generated/` folder of the extension they wrap -
     # a grouped extension's wrappers live in its own `generated/` - and one per
@@ -84,8 +87,8 @@ members = [
 # crate is fixed by letting the host regenerate it, not by excluding it.
 exclude = [
     "extensions/_workspace_anchor",
-    # The rendering data crate's folder groups it with the crate in the sibling
-    # `core` directory to come, and `runtime` is not a crate itself.
+    # The rendering crates' folder groups them by layer - data, core - and
+    # `runtime` is not a crate itself.
     "extensions/rendering/pill_rendering_core/modules/runtime",
     "projects_generated/README.md",
     "editor/generated/README.md",
