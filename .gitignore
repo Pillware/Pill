@@ -34,6 +34,7 @@ modules/extensions/*/generated/
 modules/extensions/*/*/generated/
 modules/extensions/**/generated/
 !modules/extensions/_workspace_anchor/generated/
+!modules/extensions/_workspace_anchor/group_member/generated/
 modules/projects_generated/*
 !modules/projects_generated/README.md
 modules/editor/generated/*

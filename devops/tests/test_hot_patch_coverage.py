@@ -197,7 +197,7 @@ def discover_crates() -> List[Crate]:
             crate_directory = next(
                 (
                     candidate
-                    for folder in sorted((MODULES_ROOT / "extensions").iterdir())
+                    for folder in extension_folders()
                     for candidate in (
                         folder / "modules" / "runtime",
                         folder / "modules" / "runtime" / name,

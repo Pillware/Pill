@@ -86,20 +86,55 @@ OFFICIAL_EXAMPLE_PROJECTS = {
 # discovery walk looks for.
 PROJECT_SETTINGS_FILENAME = "project_settings.yaml"
 
+# The folder inside an extension folder that holds its crates. It is also what
+# tells an extension folder from a group folder.
+EXTENSION_MODULES_DIRECTORY_NAME = "modules"
+
 # Extension examples: an extension ships its own runnable projects under
-# `modules/extensions/<extension>/examples/<name>/`. Nothing lists them - a
-# directory holding a manifest is one - so an extension can add an example
-# without an edit anywhere under `devops/`.
+# `modules/extensions/<extension>/examples/<name>/`, or
+# `modules/extensions/<group>/<extension>/examples/<name>/` when the extension
+# sits in a group folder. Nothing lists them - a directory holding a manifest
+# is one - so an extension can add an example without an edit anywhere under
+# `devops/`.
 EXTENSION_EXAMPLES_ROOT = MODULES_ROOT / "extensions"
+
+
+def extension_folders(search_root=None) -> list[Path]:
+    """Returns every extension folder under `search_root`, in path order.
+
+    The rule is structural, not a list: a directory holding a `modules/` folder
+    is an extension folder, and any other directory is a group folder whose
+    direct children are extension folders - `extensions/<extension>/` or
+    `extensions/<group>/<extension>/`. A group never nests. Bookkeeping folders
+    (`_...`) are skipped at both levels.
+
+    `search_root` defaults to [`EXTENSION_EXAMPLES_ROOT`] and exists so a test
+    can point the same rule at a temporary tree.
+    """
+    root = EXTENSION_EXAMPLES_ROOT if search_root is None else search_root
+    folders: list[Path] = []
+    if not root.is_dir():
+        return folders
+    for folder in sorted(root.iterdir()):
+        if not folder.is_dir() or folder.name.startswith("_"):
+            continue
+        if (folder / EXTENSION_MODULES_DIRECTORY_NAME).is_dir():
+            folders.append(folder)
+            continue
+        for child in sorted(folder.iterdir()):
+            if child.is_dir() and not child.name.startswith("_"):
+                folders.append(child)
+    return folders
 
 
 def extension_example_roots(search_root=None) -> list[Path]:
     """Returns every project an extension ships under its `examples/` folder.
 
     The rule is the path, not a list:
-    `<search_root>/<extension>/examples/<name>/project_settings.yaml`.
-    `search_root` defaults to [`EXTENSION_EXAMPLES_ROOT`] and exists so a test
-    can point the same rule at a temporary tree.
+    `<search_root>/<extension>/examples/<name>/project_settings.yaml`, and one
+    level deeper for an extension inside a group folder. `search_root`
+    defaults to [`EXTENSION_EXAMPLES_ROOT`] and exists so a test can point the
+    same rule at a temporary tree.
 
     An extension with no `examples/` folder contributes nothing, and a
     directory inside `examples/` without a manifest of its own is skipped
@@ -109,10 +144,8 @@ def extension_example_roots(search_root=None) -> list[Path]:
     if not root.is_dir():
         return []
     roots: list[Path] = []
-    for extension in sorted(root.iterdir()):
-        if not extension.is_dir():
-            continue
-        for example in sorted((extension / "examples").glob("*")):
+    for examples in sorted((*root.glob("*/examples"), *root.glob("*/*/examples"))):
+        for example in sorted(examples.glob("*")):
             if example.is_dir() and project_settings_yaml(example).is_file():
                 roots.append(example)
     return roots

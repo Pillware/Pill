@@ -188,8 +188,6 @@ WORKSPACE_DIRECTORY = Path("modules")
 EXTENSION_MODULES_DIRECTORY = "modules"
 EXTENSION_RUNTIME_DIRECTORY = "runtime"
 EXTENSION_EDITOR_DIRECTORY = "editor"
-# The folder holding the renderers no build uses; the host's index skips it.
-OLD_RENDERERS_DIRECTORY = "rendering"
 
 
 # Returns the package name `directory/Cargo.toml` declares, or None when the
@@ -207,20 +205,31 @@ def declared_package_name(directory: Path):
     return package_name if isinstance(package_name, str) else None
 
 
+# Yields every extension folder under `extensions_root`, in path order: a
+# directory holding a `modules/` folder is an extension folder itself, and any
+# other directory is a group whose children are extension folders. Folders
+# starting with `_` are workspace bookkeeping and skipped at both levels.
+def extension_folders(extensions_root: Path):
+    for folder in sorted(extensions_root.iterdir()):
+        if not folder.is_dir() or folder.name.startswith("_"):
+            continue
+        if (folder / EXTENSION_MODULES_DIRECTORY).is_dir():
+            yield folder
+            continue
+        for child in sorted(folder.iterdir()):
+            if child.is_dir() and not child.name.startswith("_"):
+                yield child
+
+
 # Yields every extension crate directory, the way the host's index finds them:
 # `modules/runtime` (or one crate per child of it, for the master renderer)
-# and `modules/editor` inside every extension folder.
+# and `modules/editor` inside every extension folder, a group folder's children
+# included.
 def extension_crate_directories(root: Path):
     extensions_root = root / EXTENSION_DIRECTORY
     if not extensions_root.is_dir():
         return
-    for folder in sorted(extensions_root.iterdir()):
-        if (
-            folder.name.startswith("_")
-            or folder.name == OLD_RENDERERS_DIRECTORY
-            or not folder.is_dir()
-        ):
-            continue
+    for folder in extension_folders(extensions_root):
         modules_directory = folder / EXTENSION_MODULES_DIRECTORY
         runtime_directory = modules_directory / EXTENSION_RUNTIME_DIRECTORY
         if declared_package_name(runtime_directory) is not None:

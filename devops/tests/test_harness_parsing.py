@@ -606,15 +606,20 @@ def check_editor_edits_keep_lf_and_restore() -> None:
 
 def check_workspace_members_expand_globs_and_excludes() -> None:
     """The member globs expand as cargo's do: the explicit crates, the
-    `frontends/*` and `extensions/*/modules/*` globs - and nothing under the
-    excluded `extensions/rendering`, whose old renderers no build uses."""
+    `frontends/*`, `extensions/*/modules/*` and grouped
+    `extensions/*/*/modules/*` globs - and the excluded master renderer
+    `runtime` folder and the workspace anchors stay out."""
     members = workspace_members(MODULES_ROOT)
     names = [member.name for member in members]
     for expected in ("pill_engine_core", "pill_engine", "pill_standalone", "pill_spline"):
         if expected not in names:
             fail(f"{expected} is missing from the expanded workspace members")
-    if any("extensions/rendering" in member.directory.as_posix() for member in members):
-        fail("a member under the excluded extensions/rendering was kept")
+    if any(
+        member.directory.resolve()
+        == (MODULES_ROOT / "extensions" / "pill_master_renderer" / "modules" / "runtime").resolve()
+        for member in members
+    ):
+        fail("the excluded master renderer runtime folder was kept as a member")
     if any(not name or name.startswith("_") for name in names):
         fail(f"a workspace anchor leaked in as a member: {names}")
     if len(names) != len(set(names)):

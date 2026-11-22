@@ -16,8 +16,10 @@ DESCRIPTION
 
     The extension half of the rule is the newest and the least obvious, because
     nothing named in `devops/` points at it: a module ships
-    `modules/extensions/<extension>/examples/<name>/`, and the walk finds it. The
-    checks below pin that rule against a temporary tree, so they hold whether or
+    `modules/extensions/<extension>/examples/<name>/` - one level deeper when
+    the extension sits in a group folder - and the walk finds it. The checks
+    below pin that rule, and the extension-folder rule it rests on, against a
+    temporary tree, so they hold whether or
     not an extension currently ships an example, and they pin the real tree
     against handing out a path that does not exist.
 
@@ -48,6 +50,7 @@ from core.projects import (  # noqa: E402
     PROJECT_SETTINGS_FILENAME,
     example_project_roots,
     extension_example_roots,
+    extension_folders,
     project_settings_yaml,
 )
 
@@ -62,9 +65,13 @@ def check(condition: bool, message: str, failures: list[str]) -> None:
 def build_extension_tree(root: Path) -> None:
     """Creates the temporary extension tree the discovery checks run against.
 
-    Covers the four shapes the rule has to tell apart: a shipped example, a
+    Covers the five shapes the rule has to tell apart: a shipped example, a
     directory under `examples/` that is not a project, an extension with no
-    `examples/` folder, and an extension whose `examples/` folder is empty.
+    `examples/` folder, an extension whose `examples/` folder is empty, and an
+    extension inside a group folder.
+
+    The trees carry no `modules/` folder: the example rule is the path, so a
+    folder is extension-shaped exactly when it holds `examples/`.
     """
     (root / "audio" / "examples" / "demo").mkdir(parents=True)
     project_settings_yaml(root / "audio" / "examples" / "demo").write_text(
@@ -73,6 +80,9 @@ def build_extension_tree(root: Path) -> None:
     (root / "audio" / "examples" / "not_a_project").mkdir()
     (root / "spline").mkdir()
     (root / "empty" / "examples").mkdir(parents=True)
+    grouped_example = root / "rendering" / "embedded" / "examples" / "preview"
+    grouped_example.mkdir(parents=True)
+    project_settings_yaml(grouped_example).write_text('name: "Preview"\n', encoding="utf-8")
 
 
 def check_extension_glob(failures: list[str]) -> None:
@@ -83,8 +93,12 @@ def check_extension_glob(failures: list[str]) -> None:
 
         discovered = extension_example_roots(root)
         check(
-            discovered == [root / "audio" / "examples" / "demo"],
-            f"the glob finds exactly the shipped example, got {discovered}",
+            discovered
+            == [
+                root / "audio" / "examples" / "demo",
+                root / "rendering" / "embedded" / "examples" / "preview",
+            ],
+            f"the glob finds exactly the shipped examples, got {discovered}",
             failures,
         )
 
@@ -97,8 +111,9 @@ def check_extension_glob(failures: list[str]) -> None:
         )
         discovered = extension_example_roots(root)
         check(
-            [path.name for path in discovered] == ["demo", "second"],
-            f"two extensions are discovered in sorted order, got {[path.name for path in discovered]}",
+            [path.name for path in discovered] == ["demo", "preview", "second"],
+            f"every extension folder is discovered in sorted order, got "
+            f"{[path.name for path in discovered]}",
             failures,
         )
 
@@ -126,6 +141,29 @@ def check_real_tree(failures: list[str]) -> None:
     )
 
 
+def build_extension_folder_tree(root: Path) -> None:
+    """A tree of extension folders: one directly under the root, one inside a
+    group folder, and a bookkeeping folder at each level."""
+    (root / "audio" / "modules" / "runtime").mkdir(parents=True)
+    (root / "rendering" / "embedded" / "modules" / "runtime").mkdir(parents=True)
+    (root / "rendering" / "_hidden" / "modules" / "runtime").mkdir(parents=True)
+    (root / "_anchor" / "group" / "modules" / "runtime").mkdir(parents=True)
+
+
+def check_extension_folders(failures: list[str]) -> None:
+    """Checks that the rule tells an extension folder from a group folder."""
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory)
+        build_extension_folder_tree(root)
+
+        discovered = extension_folders(root)
+        check(
+            discovered == [root / "audio", root / "rendering" / "embedded"],
+            f"an extension folder and a group's child are found, got {discovered}",
+            failures,
+        )
+
+
 def check_catalogue(failures: list[str]) -> None:
     """Checks that every curated official entry still names a project on disk."""
     missing = [
@@ -144,14 +182,16 @@ def main() -> int:
     """Runs the discovery checks and returns the suite's exit code."""
     failures: list[str] = []
     check_extension_glob(failures)
+    check_extension_folders(failures)
     check_real_tree(failures)
     check_catalogue(failures)
     if failures:
         return 1
     print(
         "  PASS  example discovery: the extension glob finds a shipped example and "
-        "ignores a bare directory, the real tree hands out no missing project, and "
-        "every curated official entry exists"
+        "ignores a bare directory, the extension-folder rule finds a group's child, "
+        "the real tree hands out no missing project, and every curated official "
+        "entry exists"
     )
     return 0
 

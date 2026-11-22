@@ -22,6 +22,8 @@ DESCRIPTION
       - `devops/tests/projects/native` selects the renderer data crate's `res`
         as its one root, and a module that ships nothing beside its code
         contributes no root;
+      - a group folder's extension crates are found, and the group itself is
+        never read as an extension;
       - the emitted build script calls `write_asset_pack_with_roots`, names
         the root relative to the bundle, cooks each module root's shaders
         before packing it, and cooks the project's own shader sources too - a
@@ -39,6 +41,7 @@ EXAMPLE USAGE
 
 import importlib.util
 import sys
+import tempfile
 from pathlib import Path
 
 DEVOPS_ROOT = Path(__file__).resolve().parent.parent
@@ -92,6 +95,37 @@ def main() -> int:
         "a module that ships nothing beside its code contributes no root",
         generator.module_asset_roots(REPOSITORY_ROOT, ["pill_spline"]) == [],
     )
+
+    # A group folder - a directory under `extensions/` with no `modules/` folder
+    # of its own - holds extension folders, and their crates are found exactly
+    # as the host's index finds them. Bookkeeping folders are skipped.
+    with tempfile.TemporaryDirectory() as temporary:
+        extensions = Path(temporary) / "modules" / "extensions"
+        for relative in (
+            "audio/modules/runtime",
+            "rendering/embedded/modules/runtime",
+            "rendering/embedded/modules/editor",
+            "rendering/_hidden/modules/runtime",
+            "_anchor/group/modules/runtime",
+        ):
+            directory = extensions / relative
+            directory.mkdir(parents=True)
+            (directory / "Cargo.toml").write_text(
+                '[package]\nname = "x"\n', encoding="utf-8"
+            )
+        found = [
+            directory.relative_to(extensions).as_posix()
+            for directory in generator.extension_crate_directories(Path(temporary))
+        ]
+        expect(
+            "a group folder's extension crates are found, and the group is never read as one",
+            found
+            == [
+                "audio/modules/runtime",
+                "rendering/embedded/modules/runtime",
+                "rendering/embedded/modules/editor",
+            ],
+        )
 
     script = generator.build_build_script(
         BUNDLE_DIRECTORY, PROJECT_ROOT / "res", roots, web=False

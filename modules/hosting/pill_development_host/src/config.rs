@@ -141,10 +141,6 @@ const RUNTIME_CRATE_DIRECTORY: &str = "runtime";
 /// Folder, inside an extension's `modules/` folder, holding its editor crate.
 const EDITOR_CRATE_DIRECTORY: &str = "editor";
 
-/// Folder under `extensions/` holding the older renderer crates. No build
-/// uses them, so the extension index never reads it.
-const OLD_RENDERERS_DIRECTORY: &str = "rendering";
-
 /// Suffix every editor crate's package name carries. The host pairs an
 /// extension's editor part by location (`modules/editor`) and refuses a crate
 /// there whose name lacks the suffix, so the two markers cannot disagree. The
@@ -1067,9 +1063,9 @@ impl HostConfig {
     /// crates. Then every editor-only folder - a folder whose only crate is its
     /// editor crate - in name order, loaded unconditionally. A folder without an
     /// editor crate contributes nothing, silently. Bookkeeping folders (`_...`)
-    /// and the older renderers folder (`rendering`) are never searched. The
-    /// second half of the return names the editor-only crates, which an editor
-    /// host may load tolerantly (`HostConfig::first_load_optional`).
+    /// are never searched. The second half of the return names the editor-only
+    /// crates, which an editor host may load tolerantly
+    /// (`HostConfig::first_load_optional`).
     ///
     /// # Errors
     ///
@@ -2031,7 +2027,9 @@ pub(crate) struct ExtensionCrateLocation {
     /// lists, the cargo selector and the library name the host loads.
     pub(crate) package_name: String,
 
-    /// The extension folder under `extensions/` that holds the crate.
+    /// The extension folder under `extensions/` that holds the crate, with `/`
+    /// separators: `pill_audio`, or `rendering/pill_renderer` for an extension
+    /// inside a group folder.
     pub(crate) folder: String,
 
     /// The crate's directory inside its extension folder, with `/`
@@ -2066,6 +2064,16 @@ impl ExtensionCrateLocation {
         )
     }
 
+    /// The extension folder's own name, without the group prefix [`Self::folder`]
+    /// carries: `pill_renderer` for `rendering/pill_renderer`. This is the name
+    /// the folder spells for the crate it holds.
+    fn directory_name(&self) -> &str {
+        self.folder
+            .rsplit('/')
+            .next()
+            .unwrap_or(self.folder.as_str())
+    }
+
     /// The crate's directory under `extensions_root`.
     fn directory_under(&self, extensions_root: &Path) -> PathBuf {
         extensions_root
@@ -2085,33 +2093,62 @@ impl ExtensionCrateLocation {
     }
 }
 
-/// Returns every extension crate under `extensions_root`, in folder order.
+/// The names of the directories in `directory`, sorted, or an empty list when
+/// it cannot be read.
+fn sorted_directory_names(directory: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(directory)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| entry.path().is_dir())
+                .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
+/// Every extension folder under `extensions_root`, as a `/`-separated path
+/// relative to it, in folder order.
 ///
-/// A folder holds its extension in `modules/runtime` and its editor part in
-/// `modules/editor`; the master renderer's `modules/runtime` groups two
-/// crates, one per child directory. A crate is a directory holding a
-/// `Cargo.toml` that declares a package name. Folders starting with `_` are
-/// workspace bookkeeping, and `rendering` holds the older renderers no build
-/// uses; neither is read.
-pub(crate) fn extension_crate_locations(extensions_root: &Path) -> Vec<ExtensionCrateLocation> {
-    let sorted_directory_names = |directory: &Path| -> Vec<String> {
-        let mut names: Vec<String> = std::fs::read_dir(directory)
-            .map(|entries| {
-                entries
-                    .flatten()
-                    .filter(|entry| entry.path().is_dir())
-                    .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default();
-        names.sort();
-        names
-    };
-    let mut locations = Vec::new();
+/// The rule is structural. A directory directly under `extensions_root` that
+/// holds a `modules/` folder is an extension folder itself (`pill_audio`); any
+/// other directory is a group, and its direct children are extension folders
+/// (`rendering/pill_renderer`). A group holds no extension crates of its own
+/// and does not nest, so a directory is extension or group, never both.
+/// Bookkeeping folders (`_...`) are skipped at both levels.
+fn extension_folders(extensions_root: &Path) -> Vec<String> {
+    let mut folders = Vec::new();
     for folder in sorted_directory_names(extensions_root) {
-        if folder.starts_with('_') || folder == OLD_RENDERERS_DIRECTORY {
+        if folder.starts_with('_') {
             continue;
         }
+        let folder_path = extensions_root.join(&folder);
+        if folder_path.join(EXTENSION_MODULES_DIRECTORY).is_dir() {
+            folders.push(folder);
+            continue;
+        }
+        for child in sorted_directory_names(&folder_path) {
+            if !child.starts_with('_') {
+                folders.push(format!("{folder}/{child}"));
+            }
+        }
+    }
+    folders
+}
+
+/// Returns every extension crate under `extensions_root`, in folder order.
+///
+/// An extension folder holds its extension in `modules/runtime` and its editor
+/// part in `modules/editor`; the master renderer's `modules/runtime` groups two
+/// crates, one per child directory. A crate is a directory holding a
+/// `Cargo.toml` that declares a package name. [`extension_folders`] decides
+/// which folders are extension folders, so a crate in a group folder reports it
+/// with the group prefix (`rendering/pill_renderer`).
+pub(crate) fn extension_crate_locations(extensions_root: &Path) -> Vec<ExtensionCrateLocation> {
+    let mut locations = Vec::new();
+    for folder in extension_folders(extensions_root) {
         let modules_directory = extensions_root
             .join(&folder)
             .join(EXTENSION_MODULES_DIRECTORY);
@@ -2170,9 +2207,11 @@ pub(crate) fn extension_crate_locations(extensions_root: &Path) -> Vec<Extension
 /// The folder also spells the crate it holds: a runtime crate is named after
 /// its extension folder (`extensions/pill_audio/modules/runtime` holds
 /// `pill_audio`) and an editor crate after that folder plus the suffix
-/// (`pill_audio_editor`). A path therefore names the crate it holds, and the
-/// conventional path a missing crate falls back to resolves to a real
-/// directory. The master renderer's nested runtime crates are exempt, because
+/// (`pill_audio_editor`). A grouped extension spells only its own directory, so
+/// `extensions/rendering/pill_renderer/modules/runtime` holds `pill_renderer`.
+/// A path therefore names the crate it holds, and the conventional path a
+/// missing crate falls back to resolves to a real directory. The master
+/// renderer's nested runtime crates are exempt, because
 /// `extensions/pill_master_renderer/modules/runtime` groups two crates whose
 /// names cannot both equal the folder name.
 ///
@@ -2198,9 +2237,9 @@ pub(crate) fn validate_extension_crate_names(extensions_root: &Path) -> Result<(
             continue;
         }
         let expected_package_name = if location.is_editor_crate {
-            format!("{}{EDITOR_CRATE_SUFFIX}", location.folder)
+            format!("{}{EDITOR_CRATE_SUFFIX}", location.directory_name())
         } else {
-            location.folder.clone()
+            location.directory_name().to_string()
         };
         if location.package_name != expected_package_name {
             return Err(ConfigError::ExtensionFolderNameMismatch {
@@ -2217,8 +2256,9 @@ pub(crate) fn validate_extension_crate_names(extensions_root: &Path) -> Result<(
 ///
 /// A crate in a folder named after the package wins, which is what a crate
 /// seeded outside the layout looks like; otherwise the first match in folder
-/// order is returned. Package names are unique across the workspace, so the
-/// real tree has exactly one match.
+/// order is returned. The folder's own name counts, so a grouped crate in
+/// `rendering/pill_renderer` is that folder's namesake. Package names are
+/// unique across the workspace, so the real tree has exactly one match.
 pub(crate) fn find_extension_crate(
     extensions_root: &Path,
     package_name: &str,
@@ -2229,7 +2269,7 @@ pub(crate) fn find_extension_crate(
         .peekable();
     let first_match = matching.peek().cloned();
     matching
-        .find(|location| location.folder == package_name)
+        .find(|location| location.directory_name() == package_name)
         .or(first_match)
 }
 
@@ -2878,6 +2918,9 @@ fn prune_stale_project_editor_wrappers(workspace_root: &Path, kept: Option<&Path
 /// load the workspace at all. A wrapper written straight into `extensions/`
 /// (an older layout) is removed too.
 ///
+/// A group folder keeps each of its extensions' wrappers in that extension's
+/// own `generated/`, so the group's children are walked as well.
+///
 /// Failures are ignored rather than returned: a stale member the host cannot
 /// remove is a housekeeping problem, not a reason to refuse to start.
 fn prune_stale_host_module_wrappers(workspace_root: &Path, kept_wrappers: &[PathBuf]) {
@@ -2889,7 +2932,8 @@ fn prune_stale_host_module_wrappers(workspace_root: &Path, kept_wrappers: &[Path
                 .is_some_and(|name| name.starts_with(HOST_MODULE_MEMBER_PREFIX))
     };
     // Every `generated/` folder a wrapper can live in: each extension
-    // folder's, then the editor folder's.
+    // folder's - a group folder's children included - then the editor
+    // folder's.
     let mut generated_directories = Vec::new();
     if let Ok(folders) = std::fs::read_dir(workspace_root.join(EXTENSION_DIRECTORY)) {
         for folder_entry in folders.flatten() {
@@ -2900,6 +2944,20 @@ fn prune_stale_host_module_wrappers(workspace_root: &Path, kept_wrappers: &[Path
                 continue;
             }
             generated_directories.push(folder_path.join(GENERATED_DIRECTORY));
+            if folder_path.join(EXTENSION_MODULES_DIRECTORY).is_dir() {
+                continue;
+            }
+            // A directory without a `modules/` folder is a group: its
+            // children are the extension folders.
+            let Ok(children) = std::fs::read_dir(&folder_path) else {
+                continue;
+            };
+            for child_entry in children.flatten() {
+                let child_path = child_entry.path();
+                if child_path.is_dir() {
+                    generated_directories.push(child_path.join(GENERATED_DIRECTORY));
+                }
+            }
         }
     }
     generated_directories.push(
@@ -3365,6 +3423,63 @@ serde = { version = "1", features = ["derive"] }
         assert_eq!(data_location.directory_in_folder, "modules/runtime/data");
         assert_eq!(folder_holding(&root, "pill_hidden"), None);
         assert_eq!(folder_holding(&root, "pill_absent"), None);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A group folder - a directory under `extensions/` with no `modules/`
+    /// folder of its own - holds extension folders, and every path derived from
+    /// a grouped crate carries the group prefix. Bookkeeping folders are
+    /// skipped at both levels.
+    #[test]
+    fn finds_crates_in_a_group_folder() {
+        let root = temp_root().join("group_folder");
+        let _ = std::fs::remove_dir_all(&root);
+        seed_runtime_crate(&root, "rendering/pill_renderer", "pill_renderer");
+        seed_crate_at(
+            &root,
+            "rendering/pill_rendering_core",
+            "modules/runtime/data",
+            "pill_rendering",
+        );
+        seed_editor_crate(&root, "rendering/pill_renderer", "pill_renderer_editor");
+        seed_runtime_crate(&root, "_bookkeeping/group_member", "pill_hidden");
+        seed_runtime_crate(&root, "rendering/_hidden", "pill_also_hidden");
+
+        validate_extension_crate_names(&root).expect("a grouped folder names its own crate");
+
+        let renderer = find_extension_crate(&root, "pill_renderer").expect("the grouped crate");
+        assert_eq!(renderer.folder, "rendering/pill_renderer");
+        assert_eq!(
+            renderer.workspace_relative_directory(),
+            "extensions/rendering/pill_renderer/modules/runtime"
+        );
+        let configuration = ExtensionConfig::workspace_member(&renderer);
+        assert_eq!(
+            configuration.crate_directory,
+            "extensions/rendering/pill_renderer/modules/runtime"
+        );
+        assert_eq!(
+            configuration.wrapper_directory,
+            "extensions/rendering/pill_renderer/generated/host_module_pill_renderer",
+            "the wrapper lives in the grouped extension's own folder"
+        );
+
+        let data = find_extension_crate(&root, "pill_rendering").expect("the data crate");
+        assert_eq!(data.folder, "rendering/pill_rendering_core");
+        assert_eq!(data.directory_in_folder, "modules/runtime/data");
+
+        let editor = find_extension_crate(&root, "pill_renderer_editor").expect("the editor crate");
+        assert!(editor.is_editor_crate);
+        assert_eq!(editor.folder, "rendering/pill_renderer");
+
+        assert_eq!(find_extension_crate(&root, "pill_hidden"), None);
+        assert_eq!(find_extension_crate(&root, "pill_also_hidden"), None);
+        assert_eq!(
+            extension_crate_locations(&root).len(),
+            3,
+            "the two runtime crates and the editor crate are indexed"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -4421,7 +4536,9 @@ mod host_module_wrapper_pruning_tests {
     /// A kept wrapper survives, in an extension folder and in the editor
     /// folder alike. A wrapper of a crate no longer loaded, one in a folder the
     /// crate no longer lives in, and one an older host left directly in
-    /// `extensions/` are removed. Real crates and the anchor are never touched.
+    /// `extensions/` are removed. A grouped extension's wrappers are pruned in
+    /// the extension's own `generated/`. Real crates and the anchor are never
+    /// touched.
     #[test]
     fn keeps_only_the_wrappers_of_loaded_crates() {
         let root = ScratchDirectory::new("prune_wrappers");
@@ -4439,6 +4556,16 @@ mod host_module_wrapper_pruning_tests {
             &root,
             &extension_folder("pill_old_folder"),
             "host_module_pill_spline",
+        );
+        let kept_group_wrapper = seed_wrapper(
+            &root,
+            &extension_folder("rendering/pill_renderer"),
+            "host_module_pill_renderer",
+        );
+        let unloaded_group_wrapper = seed_wrapper(
+            &root,
+            &extension_folder("rendering/pill_audio"),
+            "host_module_pill_audio",
         );
         let kept_editor_wrapper = seed_wrapper(
             &root,
@@ -4465,12 +4592,24 @@ mod host_module_wrapper_pruning_tests {
 
         prune_stale_host_module_wrappers(
             &root,
-            &[kept_wrapper.clone(), kept_editor_wrapper.clone()],
+            &[
+                kept_wrapper.clone(),
+                kept_editor_wrapper.clone(),
+                kept_group_wrapper.clone(),
+            ],
         );
 
         assert!(
             kept_wrapper.exists(),
             "the loaded crate's wrapper must survive"
+        );
+        assert!(
+            kept_group_wrapper.exists(),
+            "a grouped crate's wrapper must survive"
+        );
+        assert!(
+            !unloaded_group_wrapper.exists(),
+            "a grouped crate the run does not load must lose its wrapper"
         );
         assert!(
             kept_editor_wrapper.exists(),

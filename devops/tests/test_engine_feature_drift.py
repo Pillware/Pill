@@ -28,9 +28,11 @@ DESCRIPTION
     posture today loads every shared dylib.
 
     What is measured comes from tracked sources only - the extension crates by
-    their `extensions/<folder>/modules/{runtime,editor}` layout, the editor's
-    own modules by their `editor_frontend` tag under `editor/`, the projects
-    from their `project_settings.yaml` and manifests - never from the generated
+    their `extensions/<folder>/modules/{runtime,editor}` layout (or that layout
+    inside a group folder, `extensions/<group>/<folder>/modules/...`), the
+    editor's own modules by their `editor_frontend` tag under `editor/`, the
+    projects from their `project_settings.yaml` and manifests - never from the
+    generated
     `host_module_*` / `host_project_*` crates the host leaves behind, which are
     gitignored and pruned between runs. A fresh clone and a used checkout
     therefore measure the same builds, and the count is printed so a drop is
@@ -43,9 +45,10 @@ DESCRIPTION
     engine features.
 
     Extensions are found by convention (every crate under an extension
-    folder's `modules/runtime` or `modules/editor`, and every crate directly
-    under `editor/` that tags an editor frontend); the projects are every
-    example with both a `project_settings.yaml` and a `Cargo.toml`.
+    folder's `modules/runtime` or `modules/editor`, a group folder's children
+    included, and every crate directly under `editor/` that tags an editor
+    frontend); the projects are every example with both a
+    `project_settings.yaml` and a `Cargo.toml`.
 
 USAGE
   python devops/tests/test_engine_feature_drift.py [--verbose]
@@ -180,15 +183,18 @@ def dylib_tree(dylib, selection):
 
 # Every crate built as a loadable module, as {package: manifest}: the crates
 # under each extension folder's `modules/runtime` (the master renderer's data
-# and gpu crates sit one level deeper) and its `modules/editor`, and the
-# editor's own modules - the crates directly under `editor/` that tag an
-# editor frontend, the shell among them. `extensions/rendering` holds the old
-# renderers, excluded from the workspace, and never matches these globs.
+# and gpu crates sit one level deeper) and its `modules/editor`, and, in a
+# group folder, the same layout one level further down, and the editor's own
+# modules - the crates directly under `editor/` that tag an editor frontend,
+# the shell among them.
 def module_manifests():
     manifests = [
         *MODULES.glob("extensions/*/modules/runtime/Cargo.toml"),
         *MODULES.glob("extensions/*/modules/runtime/*/Cargo.toml"),
         *MODULES.glob("extensions/*/modules/editor/Cargo.toml"),
+        *MODULES.glob("extensions/*/*/modules/runtime/Cargo.toml"),
+        *MODULES.glob("extensions/*/*/modules/runtime/*/Cargo.toml"),
+        *MODULES.glob("extensions/*/*/modules/editor/Cargo.toml"),
         *(
             manifest
             for manifest in MODULES.glob("editor/*/Cargo.toml")

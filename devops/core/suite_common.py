@@ -83,6 +83,7 @@ from .projects import (
     THEMED_PROJECT_SRC,
     THEMED_PROJECT_THEME,
     example_project_roots,
+    extension_folders,
     project_roots,
     test_project_roots,
     host_project_path,
