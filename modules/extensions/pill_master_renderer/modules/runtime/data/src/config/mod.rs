@@ -10,7 +10,8 @@
 //! - Hold the pipelines the renderer defines itself - [`simple_pipeline`], and
 //!   [`pbr_pipeline`] with its [`post_processing`] and [`skybox`] parts - so a
 //!   project can run a frame without declaring one. Each pipeline keeps its
-//!   stages under a `shaders/` directory in the crate's `shader_sources/` tree.
+//!   stages under a `shaders/` directory in its own folder of the crate's
+//!   `res/shaders/` tree.
 //! - Import every one of their shaders from its `.hlsl` source and `.hlsl.meta`
 //!   ([`import_shader`]), the same way a project's own shaders are imported.
 //! - Name the cooked files each shader was built from ([`all_shader_sources`]),
@@ -78,7 +79,7 @@ pub const MATERIAL_TEXTURES_BIND_GROUP_LAYOUT_INDEX: u32 = 3;
 // ConfigShaderFile
 // =============================================================================
 
-/// Declares a [`ConfigShaderFile`] constant for a cooked file under `shader_sources/`.
+/// Declares a [`ConfigShaderFile`] constant for a cooked file under `res/`.
 ///
 /// One literal feeds both halves. `include_str!` embeds the file at build time,
 /// and the same path lets a runtime reload find the file again. It has to be a
@@ -90,7 +91,7 @@ macro_rules! config_shader_file {
             relative_path: $path,
             embedded_source: include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/shader_sources/",
+                "/res/",
                 $path
             )),
         };
@@ -108,8 +109,8 @@ macro_rules! config_shader_file {
 /// module builds its stand-in shader from is read back out of a constant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConfigShaderFile {
-    /// Path relative to the crate's `shader_sources/`, e.g.
-    /// `pbr_pipeline/shaders/pbr_fragment.wgsl`.
+    /// Path relative to the crate's `res/`, which is also the stage's asset
+    /// path, e.g. `shaders/pbr_pipeline/pbr_fragment.wgsl`.
     pub relative_path: &'static str,
     /// The file's text as `include_str!` embedded it when the crate was built.
     pub embedded_source: &'static str,
@@ -117,7 +118,7 @@ pub struct ConfigShaderFile {
 
 config_shader_file!(
     /// The vertex stage every lit pass in the crate starts from.
-    pub DEFAULT_VERTEX, "common_shaders/default_vertex.wgsl"
+    pub DEFAULT_VERTEX, "shaders/common_shaders/default_vertex.wgsl"
 );
 
 // =============================================================================
@@ -162,8 +163,8 @@ pub mod skybox;
 /// Imports one of the renderer's own shaders, or hands back the one the store
 /// already holds.
 ///
-/// `relative_path` is the `.hlsl` source, relative to this crate's
-/// `shader_sources/`. The settings come from the `.hlsl.meta` beside it, so the
+/// `relative_path` is the `.hlsl` source, relative to this crate's `res/`.
+/// The settings come from the `.hlsl.meta` beside it, so the
 /// slots, the bindings and the guid are declared once, next to the source,
 /// exactly as a project's shader declares them.
 ///
@@ -224,9 +225,10 @@ mod tests {
     use pill_engine::{AssetManager, Engine};
     use std::path::PathBuf;
 
-    /// The crate's own `shader_sources/` directory.
-    fn sources_directory() -> PathBuf {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("shader_sources")
+    /// The crate's own `res/` directory, which the record and stage paths
+    /// are relative to.
+    fn resources_directory() -> PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("res")
     }
 
     /// Every record names a shader the pipelines really install, and the two
@@ -246,13 +248,13 @@ mod tests {
         // `register` installs the PBR chain. The simple one is opt-in.
         simple_pipeline::install(assets).expect("a free name");
 
-        let shader_sources_directory = sources_directory();
+        let resources_directory = resources_directory();
         for record in all_shader_sources() {
             let shader = assets
                 .get_by_name::<Shader>(record.shader_asset_name)
                 .unwrap_or_else(|| panic!("{} is not installed", record.shader_asset_name));
             for path in [record.vertex_path, record.fragment_path] {
-                let file_text = std::fs::read_to_string(shader_sources_directory.join(path))
+                let file_text = std::fs::read_to_string(resources_directory.join(path))
                     .unwrap_or_else(|error| panic!("{path}: {error}"));
                 let stage = if path == record.vertex_path {
                     &shader.vertex_wgsl
@@ -268,10 +270,10 @@ mod tests {
     /// hide behind an `include_str!` of some other file.
     #[test]
     fn every_embedded_stage_is_the_file_it_names() {
-        let shader_sources_directory = sources_directory();
+        let resources_directory = resources_directory();
         for stage_file in [DEFAULT_VERTEX, simple_pipeline::DEFAULT_LIT_FRAGMENT] {
             let file_text =
-                std::fs::read_to_string(shader_sources_directory.join(stage_file.relative_path))
+                std::fs::read_to_string(resources_directory.join(stage_file.relative_path))
                     .unwrap_or_else(|error| panic!("{}: {error}", stage_file.relative_path));
             assert_eq!(
                 file_text, stage_file.embedded_source,

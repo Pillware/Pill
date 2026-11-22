@@ -20,7 +20,7 @@ use pill_engine::RunMode;
 
 // Current crate
 use crate::assets;
-use crate::commands::CommandView;
+use crate::commands::{CommandInvocation, CommandView};
 use crate::editor_state::{EditorCommand, EditorSelection, EditorSnapshot};
 use crate::entities;
 use crate::layout::EditorTab;
@@ -188,6 +188,9 @@ pub enum MenuAction {
     /// Copy, cut or paste. The shell queues the request, and the executable's
     /// OS clipboard bridge carries it out.
     Clipboard(crate::clipboard::ClipboardAction),
+    /// Run a command a module registered. The click reaches the owning module
+    /// through [`crate::commands::CommandInbox`].
+    Invoke(CommandInvocation),
 }
 
 // =============================================================================
@@ -266,9 +269,10 @@ fn selected_scene_path(selection: &EditorSelection) -> Option<String> {
 /// asks the editor to do.
 ///
 /// The label is the command's title, except where the row shows the current
-/// state (the gizmo's space). Returns `None` when the command's id names no
-/// action here and no dock tab. That is a gap in this model, not a disabled
-/// row, and [`entries`] and [`action_for`] both treat it that way.
+/// state (the gizmo's space). Returns `None` when a built-in command's id names
+/// no action here and no dock tab. That is a gap in this model, not a disabled
+/// row, and [`entries`] and [`action_for`] both treat it that way. A command a
+/// module registered always gets a row, whose action runs it in that module.
 fn menu_entry_for_command(command: &CommandView, view: &MenuView<'_>) -> Option<MenuEntry> {
     let toolbox_state = ToolboxState {
         gizmo: view.snapshot.gizmo,
@@ -408,12 +412,17 @@ fn menu_entry_for_command(command: &CommandView, view: &MenuView<'_>) -> Option<
             commands: vec![EditorCommand::StepOnce],
         },
         // The Window menu's rows: one per tab, found by the name in
-        // `editor.window_<name>`.
+        // `editor.window_<name>`. Anything else is a module's own command: its
+        // row runs it in that module, and the click travels through the
+        // command inbox. A built-in with no action keeps no row.
         id => match id
             .strip_prefix("editor.window_")
             .and_then(|name| EditorTab::ALL.into_iter().find(|tab| tab.name() == name))
         {
             Some(tab) => MenuAction::ActivateTab(tab),
+            None if !command.is_builtin() => {
+                MenuAction::Invoke(CommandInvocation::plain(command.id.clone()))
+            }
             None => return None,
         },
     };
@@ -800,6 +809,9 @@ mod tests {
             title: "Unimplemented".to_string(),
             menu_path: vec!["Edit".to_string(), "Unimplemented".to_string()],
             separator_before: false,
+            owner: crate::commands::BUILTIN_OWNER.to_string(),
+            icon: None,
+            placements: Vec::new(),
         });
         let snapshot = snapshot_fixture();
         let selection = EditorSelection::default();
@@ -815,6 +827,44 @@ mod tests {
             .find(|command| command.id == "editor.unimplemented")
             .expect("the fixture pushed it");
         assert_eq!(action_for(unknown_command, &snapshot, &selection), None);
+    }
+
+    #[test]
+    fn a_modules_command_draws_a_row_that_runs_it_in_the_module() {
+        let mut commands = commands_fixture();
+        commands.push(CommandView {
+            id: "test_editor.run".to_string(),
+            title: "Run".to_string(),
+            menu_path: vec!["Edit".to_string(), "Run".to_string()],
+            separator_before: false,
+            owner: "test_editor".to_string(),
+            icon: None,
+            placements: Vec::new(),
+        });
+        let snapshot = snapshot_fixture();
+        let selection = EditorSelection::default();
+        let menu_entries = entries(Menu::Edit, &view_over(&snapshot, &selection, &commands));
+        let row = menu_entries
+            .iter()
+            .find_map(|entry| match entry {
+                MenuEntry::Action {
+                    label,
+                    action,
+                    enabled,
+                    ..
+                } if label == "Run" => Some((action.clone(), *enabled)),
+                _ => None,
+            })
+            .expect("the module's command must draw its row");
+        assert!(
+            row.1,
+            "a module's row is enabled: it is the module's business"
+        );
+        assert_eq!(
+            row.0,
+            MenuAction::Invoke(crate::commands::CommandInvocation::plain("test_editor.run")),
+            "the row must reach the module that registered it"
+        );
     }
 
     #[test]

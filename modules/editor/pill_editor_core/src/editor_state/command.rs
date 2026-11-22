@@ -469,6 +469,24 @@ pub enum EditorCommand {
         /// The scene's path below the asset directory.
         path: String,
     },
+    /// Hand a state back to the editor extension that recorded it on
+    /// `channel`.
+    ///
+    /// Applying it changes nothing in the world: the payload is queued in
+    /// `ExtensionEditInbox`, and the extension applies it on its next update.
+    /// Its inverse swaps the two payloads, so an extension records the step
+    /// once (see `extension_edits::extension_edit_entry`) and Undo and Redo
+    /// both work.
+    ExtensionEdit {
+        /// The channel the extension takes its states from.
+        channel: String,
+        /// What the edit is about, in the extension's own terms.
+        subject: String,
+        /// The state this command applies.
+        payload: crate::extension_edits::ExtensionPayload,
+        /// The state it replaces, which the inverse applies.
+        previous_payload: crate::extension_edits::ExtensionPayload,
+    },
 }
 
 impl EditorCommand {
@@ -514,6 +532,7 @@ impl EditorCommand {
                 | EditorCommand::SetElementSelection { .. }
                 | EditorCommand::SelectResource { .. }
                 | EditorCommand::RestoreSelection { .. }
+                | EditorCommand::ExtensionEdit { .. }
         )
     }
 
@@ -590,7 +609,8 @@ impl EditorCommand {
             | EditorCommand::SceneNew
             | EditorCommand::SceneOpen { .. }
             | EditorCommand::SceneSave
-            | EditorCommand::SceneSaveAs { .. } => {}
+            | EditorCommand::SceneSaveAs { .. }
+            | EditorCommand::ExtensionEdit { .. } => {}
         }
         identifiers
     }
@@ -683,7 +703,8 @@ impl EditorCommand {
             | EditorCommand::SceneNew
             | EditorCommand::SceneOpen { .. }
             | EditorCommand::SceneSave
-            | EditorCommand::SceneSaveAs { .. } => {}
+            | EditorCommand::SceneSaveAs { .. }
+            | EditorCommand::ExtensionEdit { .. } => {}
         }
     }
 
@@ -741,6 +762,7 @@ impl EditorCommand {
             | EditorCommand::MoveAssetFile { .. }
             | EditorCommand::WriteAssetMeta { .. }
             | EditorCommand::SetAssetSettings { .. } => CommandFamily::Asset,
+            EditorCommand::ExtensionEdit { .. } => CommandFamily::Extension,
         }
     }
 }
@@ -804,4 +826,6 @@ pub enum CommandFamily {
     Document,
     /// Asset-file reads and writes, and their rollbacks.
     Asset,
+    /// States handed back to the editor extension that recorded them.
+    Extension,
 }

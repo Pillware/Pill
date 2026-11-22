@@ -45,13 +45,18 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
         component_tools: &viewer.snapshot.component_tools,
     };
     let drawn = toolbox::rows(&state);
+    // The commands modules placed in this view's toolbox, in registration
+    // order. A hidden one takes no row, so the panel closes up.
+    let target = CommandTarget::View(view as u8);
+    let placed = toolbox_rows(&viewer.snapshot.commands, viewer.command_states, &target);
+    let row_count = drawn.len() + placed.len();
     let mut origin = toolbox::clamped_origin(
         viewer
             .toolbox
             .origin(view)
             .unwrap_or_else(|| toolbox::default_origin(viewport)),
         viewport,
-        drawn.len(),
+        row_count,
     );
     // Step 2: Drag the panel by its handle, which is the one part of the panel
     // a press drags. A click on a row below it still reaches the row's button.
@@ -62,7 +67,7 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
         egui::Sense::drag(),
     );
     if response.dragged() {
-        origin = toolbox::clamped_origin(origin + response.drag_delta(), viewport, drawn.len());
+        origin = toolbox::clamped_origin(origin + response.drag_delta(), viewport, row_count);
         viewer.toolbox.set_origin(view, origin);
     }
     if response.drag_stopped() {
@@ -75,7 +80,7 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
         );
     }
     // Step 3: Paint the panel's background and its title, then draw its rows.
-    let panel = toolbox::panel_rect(origin, drawn.len());
+    let panel = toolbox::panel_rect(origin, row_count);
     ui.painter().rect(
         panel,
         egui::CornerRadius::same(5),
@@ -95,7 +100,7 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
     // the theme's selection colour, and the rest keep the widget's idle fill.
     // Each button's rectangle is recorded for the layout test, and the
     // scripted suite clicks the centre of each row's logged rectangle.
-    let mut faces = Vec::with_capacity(drawn.len());
+    let mut faces = Vec::with_capacity(row_count);
     for (index, item) in drawn.iter().enumerate() {
         let rect = toolbox::item_rect(index, origin);
         let button = ui
@@ -117,6 +122,37 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
             );
         }
     }
+    // The commands modules placed here come after the tool rows, drawn from
+    // data: the label the module published, or the command's own title.
+    for (offset, command) in placed.iter().enumerate() {
+        let rect = toolbox::item_rect(drawn.len() + offset, origin);
+        let published = viewer.command_states.state(&command.id, &target);
+        let label = published
+            .and_then(|published| published.label.clone())
+            .unwrap_or_else(|| command.title.clone());
+        let checked = published
+            .and_then(|published| published.checked)
+            .unwrap_or(false);
+        let enabled = viewer.command_states.is_enabled(&command.id, &target);
+        let button = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                ui.add_enabled(enabled, egui::Button::new(label.as_str()).selected(checked))
+            })
+            .inner;
+        faces.push(button.rect);
+        if button.clicked() && enabled {
+            viewer.requests.invocations.push(CommandInvocation {
+                id: command.id.clone(),
+                target: target.clone(),
+            });
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                view,
+                item = command.id.as_str(),
+                "[editor] toolbox click"
+            );
+        }
+    }
     // Step 4: Record the panel's rectangle as an overlay region and store the
     // rectangles the row buttons drew in the session. Each time the panel's
     // rectangle changes, the panel and every row are logged once.
@@ -132,12 +168,20 @@ pub fn toolbox_overlay(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, view
             height = panel.height(),
             "[editor] toolbox rect"
         );
-        for (item, rect) in std::iter::once(("handle", handle)).chain(
-            drawn
-                .iter()
-                .enumerate()
-                .map(|(index, item)| (item.name(&state), toolbox::item_rect(index, origin))),
-        ) {
+        for (item, rect) in std::iter::once(("handle", handle))
+            .chain(
+                drawn
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| (item.name(&state), toolbox::item_rect(index, origin))),
+            )
+            .chain(placed.iter().enumerate().map(|(offset, command)| {
+                (
+                    command.id.as_str(),
+                    toolbox::item_rect(drawn.len() + offset, origin),
+                )
+            }))
+        {
             pill_core::debug!(
                 target: telemetry_target::EDITOR,
                 view,

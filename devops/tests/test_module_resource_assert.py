@@ -16,13 +16,13 @@ DESCRIPTION
 
     This suite proves the failing startup end to end, on the one real module
     resource: `pill_master_renderer_data` requires
-    `res/defaults/pill.pbr.material`, the PBR chain's default material.
+    `res/materials/pill.pbr.material`, the PBR chain's default material.
 
       1. The file is moved aside and the headless dev host is started on
          `devops/tests/projects/native`.
       2. The host must exit non-zero, and its output must carry
          `module 'pill_master_renderer_data' requires its resource
-         'defaults/pill.pbr.material', which is missing at` - the module and the
+         'materials/pill.pbr.material', which is missing at` - the module and the
          path, which is what makes the failure diagnosable. The declaration
          asserts inside the module's init, so the loader reports the panic and
          then fails the host; `verify_module_roots` is the same assertion for a
@@ -68,7 +68,7 @@ PROJECT_ROOT = NATIVE_PROJECT_ROOT
 HOST_POSTURE = HOST_DEV_HOT_PATCH
 
 MODULE_NAME = "pill_master_renderer_data"
-RESOURCE_NAME = "defaults/pill.pbr.material"
+RESOURCE_NAME = "materials/pill.pbr.material"
 MATERIAL_FILE = (
     MODULES_ROOT
     / "extensions"
@@ -77,7 +77,7 @@ MATERIAL_FILE = (
     / "runtime"
     / "data"
     / "res"
-    / "defaults"
+    / "materials"
     / "pill.pbr.material"
 )
 # Where the file waits while the host is started without it; same directory, so

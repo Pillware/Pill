@@ -5,8 +5,9 @@
 //! - [`panel_windows`]: draw every open panel window. Each window calls the
 //!   draw function of the panel that opened it and passes the window's id, so
 //!   a panel's dialog body and its tab body are the same code.
-//! - Answer a modal with Enter or Escape, or with its Apply and Cancel
-//!   buttons, and leave the answer for the panel.
+//! - Draw a modal as a [`Prompt`] around the panel's body and answer it with
+//!   Enter or Escape, or with its Apply and Cancel buttons, and leave the
+//!   answer for the panel.
 //! - Close the windows of a module whose panels are gone, on every pass, so a
 //!   window is never drawn through a draw function from an image that has
 //!   unloaded.
@@ -31,6 +32,25 @@ use pill_editor_shell::shell::prelude::*;
 // there.
 #[allow(unused_imports)]
 use pill_editor_shell::shell::*;
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+/// A panel modal's buttons, Apply before Cancel.
+pub const PANEL_MODAL_BUTTONS: [PromptButton<'static>; 2] =
+    [PromptButton::new("Apply"), PromptButton::new("Cancel")];
+
+/// Apply's index in [`PANEL_MODAL_BUTTONS`]; Enter presses it, and it is the
+/// answer that accepts the modal.
+pub const PANEL_MODAL_APPLY_BUTTON: usize = 0;
+
+/// Cancel's index in [`PANEL_MODAL_BUTTONS`]; Escape presses it.
+pub const PANEL_MODAL_CANCEL_BUTTON: usize = 1;
+
+// =============================================================================
+// Types
+// =============================================================================
 
 /// The data a module panel reads while it draws, collected once per pass.
 pub struct PanelFeed {
@@ -107,37 +127,18 @@ pub fn panel_windows(
             // layer darkens what is behind it and handles the clicks first, so
             // neither the dock nor the chips it published can be clicked. That
             // is also why this path publishes no rectangle for the window.
-            let modal_answer =
-                egui::Modal::new(egui::Id::new(("pill_editor.panel_modal", &window.id)))
-                    .show(context, |ui| {
-                        ui.set_width(window.width);
-                        ui.heading(window.title.as_str());
-                        ui.separator();
-                        draw_panel_body(ui, panel_commands);
-                        ui.separator();
-                        // Plain egui buttons, with Apply before Cancel.
-                        let button_clicks = ui
-                            .horizontal(|ui| {
-                                let apply_clicked = ui.button("Apply").clicked();
-                                let cancel_clicked = ui.button("Cancel").clicked();
-                                (apply_clicked, cancel_clicked)
-                            })
-                            .inner;
-                        let key_presses = ui.input(|input| {
-                            (
-                                input.key_pressed(egui::Key::Enter),
-                                input.key_pressed(egui::Key::Escape),
-                            )
-                        });
-                        if button_clicks.0 || key_presses.0 {
-                            return Some(true);
-                        }
-                        if button_clicks.1 || key_presses.1 {
-                            return Some(false);
-                        }
-                        None
-                    })
-                    .inner;
+            let prompt = Prompt::new(
+                egui::Id::new(("pill_editor.panel_modal", &window.id)),
+                window.title.as_str(),
+                window.width,
+                &PANEL_MODAL_BUTTONS,
+            )
+            .with_enter(PANEL_MODAL_APPLY_BUTTON)
+            .with_escape(PANEL_MODAL_CANCEL_BUTTON);
+            let modal_answer = prompt_window(context, &prompt, &mut |ui| {
+                draw_panel_body(ui, panel_commands);
+            })
+            .map(|button_index| button_index == PANEL_MODAL_APPLY_BUTTON);
             if let Some(accepted) = modal_answer {
                 pill_core::info!(
                     target: telemetry_target::EDITOR,

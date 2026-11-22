@@ -270,13 +270,14 @@ const NO_RENDERER: &str = "none";
 /// Suffix of a renderer's data crate: renderer `X`'s data is `X_data`.
 pub(crate) const RENDERER_DATA_SUFFIX: &str = "_data";
 
-/// Directory at a renderer data crate's root holding the shader sources it
-/// cooks, relative to the crate.
+/// Directory at a module crate's root holding the resources it ships, its
+/// shader sources among them (under `shaders/`), relative to the crate.
 ///
-/// The crate's build script and the shader reload code must name the same
-/// directory, or an edited shader changes a file that nothing rebuilds.
+/// The renderer data crate's build script cooks this tree and the shader
+/// watcher re-cooks the same one, so a stage's path relative to it is the
+/// same in both, and it is the stage's asset path too.
 #[cfg(feature = "rendering")]
-pub(crate) const RENDERER_SHADER_SOURCES_DIRECTORY: &str = "shader_sources";
+pub(crate) const MODULE_RESOURCES_DIRECTORY: &str = "res";
 
 /// Dependency tables whose entries link code into the build.
 ///

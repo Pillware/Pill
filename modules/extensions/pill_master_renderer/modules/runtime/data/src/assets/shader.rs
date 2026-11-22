@@ -523,7 +523,7 @@ mod tests {
     fn a_meta_declares_its_slots_as_the_slot_types() {
         let settings: ShaderImportSettings = serde_json::from_str(
             r#"{
-                "vertex": "common_shaders/default_vertex.hlsl",
+                "vertex": "shaders/common_shaders/default_vertex.hlsl",
                 "parameters": [
                     { "name": "tint", "type": "Color" },
                     { "name": "exposure", "type": "Scalar" }

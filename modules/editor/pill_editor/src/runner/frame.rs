@@ -217,8 +217,14 @@ impl EditorWindow {
         // one frame behind.
         self.apply_recovered_state();
         self.autosave_recovery();
+        // The commands the loaded modules queued, before the panels whose
+        // rows draw them.
+        self.sync_commands();
         self.sync_panels();
         self.apply_panel_commands();
+        // The quit prompt's answer, and a save it started, after the panel
+        // commands so a module's save notices show before the editor quits.
+        self.drive_quit_prompt();
         // The clipboard request the shell queued in the last frame: the OS half
         // belongs to this executable, so it is applied here like every other
         // queued request.

@@ -50,7 +50,9 @@ from core.suite_common import *  # noqa: E402,F401,F403
 # Configuration
 # =============================================================================
 
-MODULE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
+# The source the revision test edits: `pill_spline`'s runtime crate, where the
+# sample offset constant lives.
+MODULE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "component.rs"
 
 # The host reads extensions from the project settings file, so the test
 # backs up and installs its own minimal list, exactly like the auto-reload

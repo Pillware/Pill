@@ -2,7 +2,7 @@ format_version: 1
 asset_type: pill_master_renderer::Shader
 guid: 8cedb4197c9f26a86708b1cd14399eab
 settings:
-  vertex: common_shaders/default_vertex.wgsl
+  vertex: shaders/common_shaders/default_vertex.wgsl
   parameters:
   - name: pbr_base
     type: Color

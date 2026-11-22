@@ -414,7 +414,7 @@ mod tests {
     fn listing_with_a_module() -> Vec<AssetListing> {
         let mut assets = listing();
         assets.push(module_row("pill_master_renderer_data", ""));
-        assets.push(module_row("pill_master_renderer_data", "defaults"));
+        assets.push(module_row("pill_master_renderer_data", "materials"));
         assets
     }
 
@@ -452,12 +452,12 @@ mod tests {
             .collect();
         assert_eq!(
             inside,
-            vec!["extensions/pill_master_renderer_data/defaults".to_string()]
+            vec!["extensions/pill_master_renderer_data/materials".to_string()]
         );
 
         // A browser opened inside a module's tree keeps the folder it lists.
         let mut browser = ProjectBrowser::default();
-        assert!(browser.open("extensions/pill_master_renderer_data/defaults"));
+        assert!(browser.open("extensions/pill_master_renderer_data/materials"));
         assert!(!browser.settle(&assets));
     }
 
@@ -478,7 +478,7 @@ mod tests {
     /// segment opens that root.
     #[test]
     fn the_breadcrumb_names_the_root_the_folder_belongs_to() {
-        let segments = breadcrumb("extensions/pill_master_renderer_data/defaults");
+        let segments = breadcrumb("extensions/pill_master_renderer_data/materials");
         let paths: Vec<&str> = segments.iter().map(|(path, _)| path.as_str()).collect();
         let labels: Vec<&str> = segments.iter().map(|(_, label)| label.as_str()).collect();
         assert_eq!(
@@ -486,12 +486,12 @@ mod tests {
             vec![
                 "extensions",
                 "extensions/pill_master_renderer_data",
-                "extensions/pill_master_renderer_data/defaults",
+                "extensions/pill_master_renderer_data/materials",
             ]
         );
         assert_eq!(
             labels,
-            vec!["extensions", "pill_master_renderer_data", "defaults"]
+            vec!["extensions", "pill_master_renderer_data", "materials"]
         );
         assert_eq!(
             breadcrumb(EXTENSIONS_ROOT),

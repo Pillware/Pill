@@ -114,6 +114,15 @@ HOOK_ELEMENT_TOKEN = "[test] hook element-selection"
 HOOK_COMMAND_ADD_COMPONENT_TOKEN = "[test] hook command add-component"
 HOOK_COMMAND_SELECTION_TOKEN = "[test] hook command selection"
 
+# Module commands: the set a module registered, the invocation the executable
+# routed, and the module that took it with its target.
+COMMAND_REGISTERED_TOKEN = "[editor] command registered"
+COMMAND_OWNER_DROPPED_TOKEN = "[editor] command owner dropped"
+COMMAND_INVOKED_TOKEN = "[editor] command invoked"
+COMMAND_DRAW_REGISTERED_TOKEN = "[editor] command draw registered"
+COMMAND_DRAW_DROPPED_TOKEN = "[editor] command draw dropped"
+TEST_COMMAND_INVOKED_TOKEN = "[test] command invoked"
+
 # A project's own editor crate: the lines its proving crate and the host print.
 PROJECT_HOOK_REGISTERED_TOKEN = "[test] project hook registered"
 PROJECT_HOOK_TOKEN = "[test] project hook field-edit-after"

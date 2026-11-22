@@ -89,12 +89,15 @@ pub fn entity_row_height(ui: &egui::Ui) -> f32 {
 /// that is clicked.
 ///
 /// `entity` is the row the menu was opened on, or `None` for the strip below
-/// the rows, where only New Entity is offered. Undo reverses either edit.
+/// the rows, where only New Entity is offered. Undo reverses either edit. The
+/// commands modules placed in an entity's menu come last, with that entity as
+/// their target; the empty strip has no target, so it offers none.
 pub fn entity_menu_items(
     ui: &mut egui::Ui,
     entity: Option<Entity>,
     selection: &EditorSelection,
     pending: &mut PendingEditorCommands,
+    placements: &mut PlacementHost<'_>,
 ) {
     if ui
         .add(icons::IconButton::new(icons::Icon::Plus, "New Entity"))
@@ -123,6 +126,22 @@ pub fn entity_menu_items(
             ui.close();
         }
     }
+    // The commands modules placed in an entity's menu, with that entity as
+    // their target. The empty strip below the rows has no entity, so it offers
+    // none.
+    if let Some(entity) = entity {
+        let target = CommandTarget::Entity {
+            entity,
+            component: None,
+        };
+        let rows = entity_menu_rows(placements.commands, placements.states, &target);
+        if !rows.is_empty() {
+            ui.separator();
+        }
+        for command in &rows {
+            placements.draw_row(ui, command, &UiSlot::EntityContextMenu, &target);
+        }
+    }
 }
 
 /// Draws the Entities tab: one row per live entity, then an empty strip that
@@ -144,6 +163,7 @@ pub fn entities_tab(
     pending: &mut PendingEditorCommands,
     overlay_regions: &mut Vec<ShellRect>,
     session: &mut InspectorSession,
+    placements: &mut PlacementHost<'_>,
 ) {
     let total_rows = snapshot.entities.len();
     let row_height = entity_row_height(ui);
@@ -183,7 +203,7 @@ pub fn entities_tab(
                 select_entity(selection, entity);
             }
             context_menu("entities", &row_interaction, overlay_regions, &mut |ui| {
-                entity_menu_items(ui, Some(entity), selection, pending)
+                entity_menu_items(ui, Some(entity), selection, pending, placements)
             });
         }
         // Step 2: the empty strip below the rows, once the last row is on
@@ -192,7 +212,7 @@ pub fn entities_tab(
         if reaches_last_row {
             let empty = ui.allocate_response(empty_area(ui), egui::Sense::click());
             context_menu("entities", &empty, overlay_regions, &mut |ui| {
-                entity_menu_items(ui, None, selection, pending)
+                entity_menu_items(ui, None, selection, pending, placements)
             });
         }
     });

@@ -555,11 +555,12 @@ impl RenderingResourcesManager {
         epoch_moved
     }
 
-    /// Drops and rebuilds the meshes whose asset changed.
+    /// Updates or rebuilds the meshes whose asset changed.
     ///
-    /// Meshes need no epoch increase. The draw path resolves a mesh handle per
-    /// frame, so a rebuilt mesh is picked up without any pipeline going out of
-    /// date.
+    /// A mesh that kept its vertex and index counts is written into its
+    /// existing buffers; any other change replaces them. Meshes need no epoch
+    /// increase. The draw path resolves a mesh handle per frame, so a rebuilt
+    /// mesh is picked up without any pipeline going out of date.
     fn sync_meshes(&mut self, assets: &AssetManager, state: &mut State) {
         self.live_asset_keys.clear();
 
@@ -570,6 +571,19 @@ impl RenderingResourcesManager {
             if self.meshes.is_current(key, version) {
                 continue;
             }
+            // Step 1: a same-sized change goes into the buffers it has.
+            if let Some(gpu_handle) = self.meshes.handle(key) {
+                let updated_in_place = state
+                    .renderer_resource_storage
+                    .meshes
+                    .get(gpu_handle)
+                    .is_some_and(|mesh_object| mesh_object.update_in_place(&state.queue, mesh));
+                if updated_in_place {
+                    self.meshes.insert(key, gpu_handle, version);
+                    continue;
+                }
+            }
+            // Step 2: anything else replaces them.
             if let Some(old_handle) = self.meshes.remove(key) {
                 state.renderer_resource_storage.meshes.remove(old_handle);
             }
@@ -684,8 +698,8 @@ impl RenderingResourcesManager {
 /// one that is not loaded. The two are built together and kept as one pair.
 ///
 /// The WGSL is the shipped pipeline's own text rather than a copy: the vertex
-/// stage comes from `shader_sources/common_shaders/default_vertex.wgsl` and the
-/// fragment from `shader_sources/simple_pipeline/shaders/default_lit_fragment.wgsl`.
+/// stage comes from `res/shaders/common_shaders/default_vertex.wgsl` and the
+/// fragment from `res/shaders/simple_pipeline/default_lit_fragment.wgsl`.
 /// `simple_pipeline` names the same shader with the same declared slots, so a
 /// material written for this fallback draws there without being rebuilt.
 ///

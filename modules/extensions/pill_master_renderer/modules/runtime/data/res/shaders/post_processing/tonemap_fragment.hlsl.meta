@@ -2,7 +2,7 @@ format_version: 1
 asset_type: pill_master_renderer::Shader
 guid: 24e12b2b8b69f414616e6b7b35ed2b2b
 settings:
-  vertex: post_processing/shaders/fullscreen_vertex.wgsl
+  vertex: shaders/post_processing/fullscreen_vertex.wgsl
   parameters:
   - name: contrast
     type: Scalar

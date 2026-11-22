@@ -808,6 +808,7 @@ fn scripted_name(command: &ScriptedCommand) -> &'static str {
         ScriptedCommand::PanelRestore(_) => "panel restore",
         ScriptedCommand::PanelWindow { .. } => "panel window",
         ScriptedCommand::PanelField { .. } => "panel field",
+        ScriptedCommand::Command { .. } => "command",
         ScriptedCommand::Undock(_) => "undock",
         ScriptedCommand::ActivateTab(_) => "tab",
         ScriptedCommand::Click { .. } => "click",

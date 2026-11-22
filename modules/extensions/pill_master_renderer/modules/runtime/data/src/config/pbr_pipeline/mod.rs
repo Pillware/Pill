@@ -28,12 +28,12 @@
 //! The shaders are cooked from HLSL to WGSL at build time and embedded, and
 //! installing the chain still imports each one from its `.hlsl` source through
 //! the store, the way a project's shader is imported. The geometry fragment
-//! stage is `pbr_fragment.hlsl`, under `shader_sources/pbr_pipeline/shaders/`,
+//! stage is `pbr_fragment.hlsl`, under `res/shaders/pbr_pipeline/`,
 //! and includes the crate's shared header. The vertex stage is the shared
-//! `common_shaders/default_vertex.wgsl`, named from the `shader_sources` root by
-//! each shader's `.hlsl.meta`, because every lit pass in the crate starts from
-//! the same instance layout. The four post-processing stages are under
-//! `shader_sources/post_processing/shaders/`.
+//! `shaders/common_shaders/default_vertex.wgsl`, named from the crate's `res`
+//! root by each shader's `.hlsl.meta`, because every lit pass in the crate
+//! starts from the same instance layout. The four post-processing stages are
+//! under `res/shaders/post_processing/`.
 
 // Standard library
 use std::collections::BTreeMap;
@@ -67,7 +67,7 @@ pub const PIPELINE_NAME: &str = "pill.pbr.pipeline";
 
 /// The shader the geometry pass draws through: the path its `.hlsl` source is
 /// imported under. An imported asset is named by the path it came from.
-pub const SHADER_PATH: &str = "pbr_pipeline/shaders/pbr_fragment.hlsl";
+pub const SHADER_PATH: &str = "shaders/pbr_pipeline/pbr_fragment.hlsl";
 
 /// The guid the PBR shader is stored under, so a material file can name it.
 pub const SHADER_GUID: AssetGuid = AssetGuid::from_name(SHADER_GUID_NAME);
@@ -80,7 +80,7 @@ pub const SHADER_GUID: AssetGuid = AssetGuid::from_name(SHADER_GUID_NAME);
 /// is imported like any other standalone `.material` - named by this path and
 /// keyed by the guid in its own header, so a reference to it survives the file
 /// being renamed.
-pub const DEFAULT_MATERIAL_PATH: &str = "defaults/pill.pbr.material";
+pub const DEFAULT_MATERIAL_PATH: &str = "materials/pill.pbr.material";
 
 /// Asset name of the skybox pass, which [`set_skybox`] gives a material.
 pub const SKYBOX_PASS: &str = "pill.pbr.pass.skybox";
@@ -88,7 +88,7 @@ pub const SKYBOX_PASS: &str = "pill.pbr.pass.skybox";
 config_shader_file!(
     /// The geometry pass's fragment stage, cooked from `pbr_fragment.hlsl` and
     /// embedded with its path, so the shader reload can find the file again.
-    PBR_FRAGMENT, "pbr_pipeline/shaders/pbr_fragment.wgsl"
+    pub PBR_FRAGMENT, "shaders/pbr_pipeline/pbr_fragment.wgsl"
 );
 
 /// The name the PBR shader's guid is derived from.
@@ -145,7 +145,7 @@ fn default_sky_pass() -> RenderPass {
 /// Imports the chain's shader from its source, or returns the one the store
 /// already holds.
 ///
-/// The source lives under this module's `shader_sources` root, which
+/// The source lives under this module's `res` root, which
 /// [`register`](crate::register) declares. The `.hlsl.meta` beside it carries
 /// the guid every material file names and the slots the pass reads.
 ///
@@ -399,7 +399,7 @@ mod tests {
     fn the_shader_file_carries_the_guid_every_material_names() {
         let source = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("shader_sources")
+                .join("res")
                 .join(format!("{SHADER_PATH}.meta")),
         )
         .expect("the shipped meta is in the crate");
@@ -457,5 +457,30 @@ mod tests {
         let chain = &assets.get(pipeline).unwrap().passes;
         assert_eq!(chain.len(), 6);
         assert_eq!(chain[1].pass, pass);
+    }
+
+    /// The cooked fragment keeps the shading as a function of its own and its
+    /// entry point calls it, which is the shape a WGSL reader looks for.
+    #[test]
+    fn the_cooked_fragment_shades_through_its_own_function() {
+        let cooked = PBR_FRAGMENT.embedded_source;
+        assert!(
+            cooked.contains("struct PbrSurface_0"),
+            "the cooked fragment declares the surface struct"
+        );
+        let shading_offset = cooked
+            .find("fn shade_pbr_surface_0")
+            .expect("the cook keeps shade_pbr_surface as its own function");
+        let entry_offset = cooked
+            .find("fn fs_main")
+            .expect("the cooked fragment keeps its entry point");
+        assert!(
+            shading_offset < entry_offset,
+            "the shading function precedes the entry point"
+        );
+        assert!(
+            cooked[entry_offset..].contains("shade_pbr_surface_0("),
+            "the entry point calls the shading function"
+        );
     }
 }

@@ -54,7 +54,10 @@ pub mod asset_move;
 
 pub use asset_move::{metadata_path_of, move_asset, MoveAssetError};
 
-pub use shader_tree::{cook_shader_tree, shader_tree_layout, ShaderTreeLayout, ShaderTreeReport};
+pub use shader_tree::{
+    cook_shader_tree, cook_shader_tree_with_include_directories, shader_tree_layout,
+    ShaderTreeLayout, ShaderTreeReport,
+};
 
 // =============================================================================
 // Errors
@@ -766,28 +769,33 @@ mod tests {
         fs::create_dir_all(&source).expect("scratch directory");
         fs::write(source.join("project.txt"), b"project").expect("input");
         let resources = directory.join("module").join("res");
-        fs::create_dir_all(resources.join("defaults")).expect("scratch directory");
+        fs::create_dir_all(resources.join("materials")).expect("scratch directory");
         fs::write(
-            resources.join("defaults").join("pill.pbr.material"),
+            resources.join("materials").join("pill.pbr.material"),
             b"material",
         )
         .expect("input");
-        let shaders = directory.join("module").join("shader_sources");
-        fs::create_dir_all(shaders.join("pbr").join("shaders")).expect("scratch directory");
-        fs::write(shaders.join("pbr").join("shaders").join("x.wgsl"), b"stage").expect("input");
+        // A second module's root, holding a cooked stage under `shaders/`.
+        let other_resources = directory.join("other_module").join("res");
+        let stage_directory = other_resources.join("shaders").join("pbr");
+        fs::create_dir_all(&stage_directory).expect("scratch directory");
+        fs::write(stage_directory.join("x.wgsl"), b"stage").expect("input");
         let output = directory.join("assets.pillpack");
 
-        let packed =
-            write_asset_pack_with_roots(&source, &[resources.clone(), shaders.clone()], &output)
-                .expect("pack");
+        let packed = write_asset_pack_with_roots(
+            &source,
+            &[resources.clone(), other_resources.clone()],
+            &output,
+        )
+        .expect("pack");
         let pack = fs::read(&output).expect("written");
 
         assert_eq!(packed.len(), 3);
         assert_eq!(&pack[12..16], &3u32.to_le_bytes());
         for key in [
             "project.txt",
-            "defaults/pill.pbr.material",
-            "pbr/shaders/x.wgsl",
+            "materials/pill.pbr.material",
+            "shaders/pbr/x.wgsl",
         ] {
             assert!(
                 pack.windows(key.len())
@@ -805,17 +813,17 @@ mod tests {
     fn a_project_file_shadows_a_module_resource_of_the_same_name() {
         let directory = scratch("shadowed_module_resource");
         let source = directory.join("res");
-        fs::create_dir_all(source.join("defaults")).expect("scratch directory");
-        fs::write(source.join("defaults").join("x.material"), b"project").expect("input");
+        fs::create_dir_all(source.join("materials")).expect("scratch directory");
+        fs::write(source.join("materials").join("x.material"), b"project").expect("input");
         let resources = directory.join("module").join("res");
-        fs::create_dir_all(resources.join("defaults")).expect("scratch directory");
-        fs::write(resources.join("defaults").join("x.material"), b"module").expect("input");
+        fs::create_dir_all(resources.join("materials")).expect("scratch directory");
+        fs::write(resources.join("materials").join("x.material"), b"module").expect("input");
         let output = directory.join("assets.pillpack");
 
         let packed = write_asset_pack_with_roots(&source, &[resources], &output).expect("pack");
         let pack = fs::read(&output).expect("written");
 
-        assert_eq!(packed, [source.join("defaults").join("x.material")]);
+        assert_eq!(packed, [source.join("materials").join("x.material")]);
         assert!(pack.windows(7).any(|window| window == b"project"));
         assert!(!pack.windows(6).any(|window| window == b"module"));
         let _ = fs::remove_dir_all(&directory);

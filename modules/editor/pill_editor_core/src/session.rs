@@ -443,6 +443,9 @@ pub struct MenubarSession {
     /// The strip's and each title's last logged rectangle, keyed by slot: the
     /// bar reports a placement once, and a title that moves is reported again.
     pub geometry: LoggedRects<MenubarSlot>,
+    /// Each placed command button's last logged rectangle, keyed by
+    /// `place@command`: what a suite clicks to run a module's command.
+    pub command_rects: LoggedRects<String>,
     /// Each open menu entry's last logged rectangle, keyed `menu/label`; a
     /// menu's entries log while it is open, so their presence is the proof it
     /// opened.
@@ -779,6 +782,9 @@ pub struct InspectorSession {
     pub collapsed: std::collections::BTreeSet<String>,
     /// Each section header's last logged rectangle, keyed by type name.
     pub section_rects: LoggedRects<String>,
+    /// Each placed command button's last logged rectangle, keyed by
+    /// `component@command`: what a suite clicks to run a module's command.
+    pub command_rects: LoggedRects<String>,
     /// The Add Component button's last logged rectangle.
     pub add_rect: Option<Rect>,
     /// Whether the Add Component popup is open.

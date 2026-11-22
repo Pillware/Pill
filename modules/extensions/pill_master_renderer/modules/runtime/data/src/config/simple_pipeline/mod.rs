@@ -21,16 +21,16 @@
 //!
 //! # Where the shaders are
 //!
-//! The lit fragment stage is in `shader_sources/simple_pipeline/shaders/`. It
+//! The lit fragment stage is in `res/shaders/simple_pipeline/`. It
 //! is imported from its `.hlsl` source the way a project's own shader is, and
 //! its slots and guid live in the `.hlsl.meta` beside that source.
 //!
-//! The vertex stage it pairs with lives in `shader_sources/common_shaders/`,
+//! The vertex stage it pairs with lives in `res/shaders/common_shaders/`,
 //! because it is shared: the renderer's fallback material, the PBR geometry
 //! pass and this pipeline all build on it. Every lit pass in the crate starts
 //! from the same instance layout, so the crate keeps one copy of the stage.
 //!
-//! The build script cooks the whole `shader_sources/` tree in one call. Every
+//! The build script cooks the crate's whole `res/` tree in one call. Every
 //! directory that directly holds `.hlsl` files is a source directory, and every
 //! `include/` directory in the tree is on every source's include path.
 //!
@@ -55,7 +55,7 @@ use crate::{
 config_shader_file!(
     /// The pass's fragment stage, cooked from `default_lit_fragment.hlsl`. It
     /// is also the fragment stage of the renderer's built-in fallback shader.
-    pub DEFAULT_LIT_FRAGMENT, "simple_pipeline/shaders/default_lit_fragment.wgsl"
+    pub DEFAULT_LIT_FRAGMENT, "shaders/simple_pipeline/default_lit_fragment.wgsl"
 );
 
 /// The shader assets [`install`] creates, and the cooked files each is built
@@ -71,7 +71,7 @@ pub const PIPELINE_NAME: &str = "pill.simple.pipeline";
 
 /// The path the pass's shader source is imported under. An imported asset is
 /// named by the path it came from, so this is also the shader's asset name.
-pub const SHADER_PATH: &str = "simple_pipeline/shaders/default_lit_fragment.hlsl";
+pub const SHADER_PATH: &str = "shaders/simple_pipeline/default_lit_fragment.hlsl";
 
 /// The guid the shader is stored under.
 ///

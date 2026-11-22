@@ -76,6 +76,9 @@ pub struct RendererMesh {
     pub index_buffer: wgpu::Buffer,
     /// How many indices a draw of this mesh passes, taken from the asset.
     pub index_count: u32,
+    /// How many vertices the vertex buffer holds, so a same-sized update can
+    /// be written into it instead of replacing it.
+    pub vertex_count: u32,
 }
 
 impl RendererMesh {
@@ -103,13 +106,14 @@ impl RendererMesh {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("{:?}_vertex_buffer", name)),
             contents: bytemuck::cast_slice(&mesh.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
+            // `COPY_DST` lets a same-sized update be written in place.
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("{:?}_index_buffer", name)),
             contents: bytemuck::cast_slice(&mesh.indices),
-            usage: wgpu::BufferUsages::INDEX,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
 
         // Step 3: Keep the buffers, the name and the index count for the draw.
@@ -118,9 +122,29 @@ impl RendererMesh {
             vertex_buffer,
             index_buffer,
             index_count: mesh.indices.len() as u32,
+            vertex_count: mesh.vertices.len() as u32,
         };
 
         Ok(renderer_mesh)
+    }
+
+    /// Writes a changed mesh into the existing buffers when it has exactly as
+    /// many vertices and indices as they hold. Returns whether it did; a mesh
+    /// of another size needs [`Self::new`].
+    ///
+    /// A mesh edited live - a vertex dragged in a modelling tool - keeps its
+    /// size on every update, so this spares the allocation of two buffers per
+    /// frame. The queue orders the writes before the next submitted draw.
+    pub fn update_in_place(&self, queue: &wgpu::Queue, mesh: &Mesh) -> bool {
+        if mesh.vertices.len() as u32 != self.vertex_count
+            || mesh.indices.len() as u32 != self.index_count
+            || mesh.vertices.is_empty()
+        {
+            return false;
+        }
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh.vertices));
+        queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&mesh.indices));
+        true
     }
 }
 

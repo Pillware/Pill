@@ -47,7 +47,7 @@ pill_core::define_slot_key!(RendererCameraHandle);
 ///
 /// The struct here and the HLSL structure are one layout written twice. The
 /// HLSL side is the `pill_master_renderer_data` crate's
-/// `shader_sources/common_shaders/include/common.hlsl`. A field changed here
+/// `res/shaders/common_shaders/include/common.hlsl`. A field changed here
 /// has to be changed there in the same pass, or every value after it is read
 /// from the wrong place.
 #[repr(C)]

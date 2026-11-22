@@ -12,9 +12,9 @@
 //!
 //! # Design
 //!
-//! Two trees are watched with this worker: the renderer data crate's
-//! `shader_sources/`, whose outputs the data crate's own export applies to the
-//! shaders built from that tree, and the project's `res`, whose outputs are
+//! Two trees are watched with this worker: the renderer data crate's `res/`,
+//! whose outputs the data crate's own export applies to the shaders built
+//! from that tree, and the project's `res`, whose outputs are
 //! read by the shader asset's import and therefore only need the asset to be
 //! reimported.
 //!
@@ -66,8 +66,7 @@ pub(crate) struct CookedShader {
     /// The shader asset's import reads the file beside this one, so a project
     /// shader is reimported by this path.
     pub(crate) source_relative_path: String,
-    /// The file relative to the watched `shader_sources/` tree, using `/` as
-    /// the separator.
+    /// The file relative to the watched tree, using `/` as the separator.
     pub(crate) relative_path: String,
     /// The file's new text.
     pub(crate) wgsl: String,
@@ -84,6 +83,9 @@ impl ShaderWatcher {
     /// Starts a worker thread that watches `shaders_directory` and cooks the
     /// tree when an edit settles. `tree_label` names the tree in the log line
     /// that announces the watch - the data crate's name, or the project.
+    /// `extra_include_directories` join every source's include path after the
+    /// tree's own: the project's watcher passes the loaded modules' header
+    /// directories, so a project shader can include a header a module ships.
     ///
     /// Returns `Ok(None)` when the directory does not exist: a tree with no
     /// shaders has nothing to reload.
@@ -96,6 +98,7 @@ impl ShaderWatcher {
     pub(crate) fn spawn(
         tree_label: &str,
         shaders_directory: PathBuf,
+        extra_include_directories: Vec<PathBuf>,
     ) -> Result<Option<Self>, WatcherError> {
         if !shaders_directory.is_dir() {
             return Ok(None);
@@ -123,7 +126,12 @@ impl ShaderWatcher {
             is_relevant_event,
             is_shader_source,
             move |root, edited_paths| {
-                for shader in cook_edited_shaders(root, &edited_paths, &mut known_outputs) {
+                for shader in cook_edited_shaders(
+                    root,
+                    &edited_paths,
+                    &mut known_outputs,
+                    &extra_include_directories,
+                ) {
                     if cooked_sender.send(shader).is_err() {
                         // The host dropped the watcher, so stop the worker.
                         return false;
@@ -191,6 +199,8 @@ fn read_output_texts(shaders_directory: &Path) -> HashMap<PathBuf, String> {
 /// The texts that are returned are also recorded in `known_outputs`, so the
 /// same text is not queued twice. `edited_paths` is the batch of files whose
 /// events started the cook; it is only used for the count in the log line.
+/// `extra_include_directories` are the caller's header directories, which the
+/// cook searches after the tree's own.
 ///
 /// Every discovered source is compared, not only the outputs this cook
 /// rebuilt. The data crate's build script cooks the same tree, so it can reach
@@ -202,11 +212,15 @@ fn cook_edited_shaders(
     shaders_directory: &Path,
     edited_paths: &[PathBuf],
     known_outputs: &mut HashMap<PathBuf, String>,
+    extra_include_directories: &[PathBuf],
 ) -> Vec<CookedShader> {
     // Step 1: Cook the tree. A failed cook queues nothing, so the shaders
     // already loaded keep drawing.
     let cook_started_at = Instant::now();
-    let report = match pill_assets::cook_shader_tree(shaders_directory) {
+    let report = match pill_assets::cook_shader_tree_with_include_directories(
+        shaders_directory,
+        extra_include_directories,
+    ) {
         Ok(report) => report,
         Err(error) => {
             warn!(
@@ -282,15 +296,15 @@ mod tests {
 
     #[test]
     fn a_relative_path_uses_forward_slashes() {
-        let root = Path::new("crate").join("shaders");
+        let root = Path::new("crate").join("res");
         let output = root
-            .join("pbr_pipeline")
             .join("shaders")
+            .join("pbr_pipeline")
             .join("pbr_fragment.wgsl");
 
         assert_eq!(
             relative_path_from_root(&root, &output).as_deref(),
-            Some("pbr_pipeline/shaders/pbr_fragment.wgsl")
+            Some("shaders/pbr_pipeline/pbr_fragment.wgsl")
         );
         assert_eq!(
             relative_path_from_root(&root, Path::new("elsewhere.wgsl")),
@@ -312,7 +326,7 @@ mod tests {
     fn a_missing_directory_starts_no_watcher() {
         let missing = std::env::temp_dir().join("pill_host_shader_watcher_missing_directory");
 
-        let watcher = ShaderWatcher::spawn("test", missing).expect("not an error");
+        let watcher = ShaderWatcher::spawn("test", missing, Vec::new()).expect("not an error");
 
         assert!(watcher.is_none());
     }

@@ -58,7 +58,7 @@ pub const SHADER_CHANGE_REFUSED: u32 = u32::MAX;
 /// Replaces one stage's WGSL in every recorded shader asset built from
 /// `relative_path` and returns the names of the assets whose text changed.
 ///
-/// `relative_path` is relative to the crate's `shader_sources/` and uses `/`
+/// `relative_path` is relative to the crate's `res/` and uses `/`
 /// separators, which is how the records spell it. A record whose asset is not
 /// in the store is skipped, which happens for a pipeline this project never
 /// installed (the opt-in simple pipeline, for example).
@@ -101,9 +101,9 @@ pub fn apply_shader_source<'a>(
 /// Writes one re-cooked WGSL file into the shader assets built from it, in
 /// `world`'s `AssetManager`.
 ///
-/// `path` is the cooked file's path relative to the crate's `shader_sources/`,
-/// with `/` separators (for example
-/// `pbr_pipeline/shaders/pbr_fragment.wgsl`), and `wgsl` is its text. The
+/// `path` is the cooked file's path relative to the crate's `res/`, with `/`
+/// separators (for example
+/// `shaders/pbr_pipeline/pbr_fragment.wgsl`), and `wgsl` is its text. The
 /// return value is the number of shader assets that changed, or
 /// [`SHADER_CHANGE_REFUSED`].
 ///

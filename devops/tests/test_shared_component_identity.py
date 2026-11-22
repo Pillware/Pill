@@ -77,6 +77,9 @@ from core.suite_common import *  # noqa: E402,F401,F403
 # =============================================================================
 
 SPLINE_LIB_RS = MODULES_ROOT / "extensions" / "pill_spline" / "modules" / "runtime" / "src" / "pill_spline.rs"
+# The component itself lives in its own file, so the attribute and the sample
+# offset the scenarios edit are read from there.
+SPLINE_COMPONENT_RS = SPLINE_LIB_RS.parent / "component.rs"
 PROJECT_LIB_RS = NATIVE_PROJECT_LIB_RS
 
 # The component whose identity this suite is about, spelled as the engine
@@ -86,8 +89,8 @@ PROJECT_LIB_RS = NATIVE_PROJECT_LIB_RS
 SHARED_COMPONENT_NAME = "pill_spline::Spline"
 
 # The declaration under test, and the form it takes with sharing removed.
-SHARED_ATTRIBUTE = "#[component(persistable, shared, gizmo = draw_spline_gizmo)]"
-UNSHARED_ATTRIBUTE = "#[component(persistable, gizmo = draw_spline_gizmo)]"
+SHARED_ATTRIBUTE = "#[component(persistable, shared, gizmo = crate::gizmo::draw_spline_gizmo)]"
+UNSHARED_ATTRIBUTE = "#[component(persistable, gizmo = crate::gizmo::draw_spline_gizmo)]"
 
 # The project must load `pill_spline` as a module *and* link it directly, which
 # is exactly the arrangement that produces two `TypeId`s. `devops/tests/projects/native`
@@ -342,17 +345,17 @@ def set_shared_identity(enabled: bool) -> None:
     Written atomically, as every source edit in these suites is, so the host's
     watcher never sees a half-written file.
     """
-    content = read_source(SPLINE_LIB_RS)
+    content = read_source(SPLINE_COMPONENT_RS)
     wanted = SHARED_ATTRIBUTE if enabled else UNSHARED_ATTRIBUTE
     other = UNSHARED_ATTRIBUTE if enabled else SHARED_ATTRIBUTE
     if wanted not in content:
         if content.count(other) != 1:
             raise RuntimeError(
-                f"Expected exactly one {other!r} in {SPLINE_LIB_RS.name}, "
+                f"Expected exactly one {other!r} in {SPLINE_COMPONENT_RS.name}, "
                 f"found {content.count(other)}"
             )
         content = content.replace(other, wanted, 1)
-    atomic_write(SPLINE_LIB_RS, content)
+    atomic_write(SPLINE_COMPONENT_RS, content)
 
 
 def edit_sample_offset() -> None:
@@ -363,8 +366,8 @@ def edit_sample_offset() -> None:
     rather than a schema migration - which is what this scenario wants to
     observe the shared column surviving.
     """
-    edit = edit_spline_sample_offset(read_source(SPLINE_LIB_RS))
-    apply_replacements(SPLINE_LIB_RS, edit.replacements)
+    edit = edit_spline_sample_offset(read_source(SPLINE_COMPONENT_RS))
+    apply_replacements(SPLINE_COMPONENT_RS, edit.replacements)
 
 
 def restore_then_install(*paths: Path) -> None:
@@ -389,9 +392,9 @@ def install_shared_resource_in_module() -> None:
     """
     restore_then_install(SPLINE_LIB_RS)
     module = read_source(SPLINE_LIB_RS)
-    anchor = "// =============================================================================\n// Component\n"
+    anchor = "// =============================================================================\n// Registration\n"
     if anchor not in module:
-        raise RuntimeError(f"Component section anchor missing from {SPLINE_LIB_RS.name}")
+        raise RuntimeError(f"Registration section anchor missing from {SPLINE_LIB_RS.name}")
     module = module.replace(anchor, RESOURCE_DECLARATION + anchor, 1)
 
     register_anchor = "pub fn register(engine: &mut Engine) -> u32 {\n"
@@ -447,14 +450,21 @@ def install_resource_conflict() -> None:
 
     restore_then_install(PROJECT_LIB_RS)
     project = read_source(PROJECT_LIB_RS)
-    attribute_anchor = "#[pill_project]\npub fn init(engine: &mut Engine) -> u32 {\n"
     init_anchor = "pub fn init(engine: &mut Engine) -> u32 {\n"
-    if project.count(attribute_anchor) != 1:
+    # The attribute may carry arguments (`register = register`), so it is found
+    # by its prefix rather than as one fixed line.
+    attribute = re.search(
+        r"#\[pill_project[^\]]*\]\n(?=pub fn init\(engine: &mut Engine\) -> u32 \{\n)",
+        project,
+    )
+    if attribute is None:
         raise RuntimeError(f"`#[pill_project]` anchor missing from {PROJECT_LIB_RS.name}")
     if project.count(init_anchor) != 1:
         raise RuntimeError(f"`init` anchor missing from {PROJECT_LIB_RS.name}")
-    project = project.replace(
-        attribute_anchor, RESOURCE_CONFLICT_DECLARATION + attribute_anchor, 1
+    project = (
+        project[: attribute.start()]
+        + RESOURCE_CONFLICT_DECLARATION
+        + project[attribute.start() :]
     )
     project = project.replace(init_anchor, init_anchor + RESOURCE_CONFLICT_INSERT, 1)
     atomic_write(PROJECT_LIB_RS, project)
@@ -490,9 +500,9 @@ def install_failing_reload_with_resource() -> None:
     """
     restore_then_install(SPLINE_LIB_RS, PROJECT_LIB_RS)
     module = read_source(SPLINE_LIB_RS)
-    anchor = "// =============================================================================\n// Component\n"
+    anchor = "// =============================================================================\n// Registration\n"
     if anchor not in module:
-        raise RuntimeError(f"Component section anchor missing from {SPLINE_LIB_RS.name}")
+        raise RuntimeError(f"Registration section anchor missing from {SPLINE_LIB_RS.name}")
     module = module.replace(anchor, ROLLBACK_RESOURCE_DECLARATION + anchor, 1)
 
     register_anchor = "pub fn register(engine: &mut Engine) -> u32 {\n"
@@ -1233,8 +1243,8 @@ def main() -> None:
         print("ERROR: --timeout-scale must be > 0")
         sys.exit(1)
 
-    if not SPLINE_LIB_RS.exists():
-        print(f"ERROR: Missing module source: {SPLINE_LIB_RS}")
+    if not SPLINE_LIB_RS.exists() or not SPLINE_COMPONENT_RS.exists():
+        print(f"ERROR: Missing module source: {SPLINE_LIB_RS} / {SPLINE_COMPONENT_RS}")
         sys.exit(1)
 
     global STARTUP_TIMEOUT, PREBUILD_TIMEOUT, REPORT_TIMEOUT, COLLISION_TIMEOUT
@@ -1266,6 +1276,7 @@ def main() -> None:
     # The suite edits the module source and the project's settings; both are
     # captured now and restored whatever happens below.
     BACKUP.capture(SPLINE_LIB_RS)
+    BACKUP.capture(SPLINE_COMPONENT_RS)
     BACKUP.capture(PROJECT_LIB_RS)
     settings_path = project_settings_yaml(NATIVE_PROJECT_ROOT)
     BACKUP.capture(settings_path)

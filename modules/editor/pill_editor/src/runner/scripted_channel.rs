@@ -1175,6 +1175,9 @@ impl EditorWindow {
                 field,
                 value,
             } => reject_on_failure(line, self.scripted_panel_field(&component, &field, &value)),
+            ScriptedCommand::Command { id, target } => {
+                reject_on_failure(line, self.scripted_command_invocation(&id, &target))
+            }
             ScriptedCommand::Reveal(path) => {
                 let world = self.host.host_mut().engine_mut().world_mut();
                 if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
@@ -2346,6 +2349,58 @@ impl EditorWindow {
                 );
             }
         }
+    }
+
+    /// Runs `command <id> [entity <name> | asset <path>]` for a command a
+    /// module registered.
+    ///
+    /// The line names its subject the way a person would ("the Mesh"); this
+    /// resolves it to the handle the module reads, so a module never sees a
+    /// name and a suite never sees a handle it cannot predict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when nothing registers `id`, or when the line names an
+    /// entity that does not exist.
+    pub(super) fn scripted_command_invocation(
+        &mut self,
+        id: &str,
+        target: &ScriptedTarget,
+    ) -> Result<(), String> {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let registered = world
+            .get_resource::<CommandRegistry>()
+            .is_some_and(|registry| registry.command(id).is_some());
+        if !registered {
+            return Err(format!("no command is registered as {id}"));
+        }
+        let resolved = match target {
+            ScriptedTarget::None => CommandTarget::None,
+            ScriptedTarget::Entity(name) => {
+                let Some(entity) = resolve_display_entity(world, name) else {
+                    return Err(format!("no entity named '{name}'"));
+                };
+                CommandTarget::Entity {
+                    entity,
+                    component: None,
+                }
+            }
+            ScriptedTarget::Asset(key) => CommandTarget::Asset(key.clone()),
+        };
+        let Some(inbox) = world.get_resource_mut::<CommandInbox>() else {
+            return Err("the command inbox is missing".to_string());
+        };
+        inbox.push(CommandInvocation {
+            id: id.to_string(),
+            target: resolved.clone(),
+        });
+        info!(
+            target: telemetry_target::EDITOR,
+            command = id,
+            target = command_target_label(&resolved).as_str(),
+            "[editor] command invoked"
+        );
+        Ok(())
     }
 
     /// Queues the component-field write a module panel's own row would queue

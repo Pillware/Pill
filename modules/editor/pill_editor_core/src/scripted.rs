@@ -40,6 +40,18 @@ use crate::layout::EditorTab;
 // The command
 // =============================================================================
 
+/// What a scripted `command` line names as the subject of the invocation,
+/// before the executable resolves it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScriptedTarget {
+    /// No subject: the line ran a command the way a menu row does.
+    None,
+    /// An entity, by the display handle the Entities list shows.
+    Entity(String),
+    /// An asset, by its project-relative key.
+    Asset(String),
+}
+
 /// One parsed scripted line.
 ///
 /// Every variant names a side effect the runner performs; the values are
@@ -59,6 +71,15 @@ pub enum ScriptedCommand {
     ProblemOpen(usize),
     /// `safe_mode retry` - press the safe-mode panel's Retry button.
     SafeModeRetry,
+    /// `command <id> [entity <name> | asset <path>]` - run a command a module
+    /// registered, with the subject the line names. The editor's own ids keep
+    /// their concrete verbs below.
+    Command {
+        /// The id the command registered under.
+        id: String,
+        /// What the command is asked about.
+        target: ScriptedTarget,
+    },
     /// `panel unload <source>` - drop one module's liveness marker (the value
     /// that says the module is loaded), so its panels read "module not
     /// loaded" as they do after an unload.
@@ -1357,12 +1378,16 @@ fn asset_edit(cursor: &mut Cursor<'_>) -> Result<AssetEdit, ParseError> {
     }
 }
 
-/// `command <id>` - the recorded editor actions the suites drive.
+/// `command <id> [entity <name> | asset <path>]` - the recorded editor actions
+/// the suites drive, and the commands a module registered.
 ///
 /// # Errors
 ///
-/// Returns an error when the id is missing, or names an action this editor
-/// does not run; the reason quotes the id.
+/// Returns an error when the id is missing, when a built-in id carries any
+/// argument, or when the target is neither `entity <name>` nor `asset <path>`.
+/// An id this build does not know is not an error here: the executable rejects
+/// it when nothing has registered it, so a module's command reads the same
+/// whether this parser predates it or not.
 fn command(cursor: &mut Cursor<'_>) -> Result<ScriptedCommand, ParseError> {
     let id = cursor
         .word()
@@ -1387,14 +1412,34 @@ fn command(cursor: &mut Cursor<'_>) -> Result<ScriptedCommand, ParseError> {
         "editor.paste" => ScriptedCommand::Paste,
         // One more scene view, the Window menu's own row.
         "editor.scene_new_view" => ScriptedCommand::NewSceneView,
-        other => {
-            return Err(ParseError::new(format!(
-                "command '{other}' is not executable in the egui editor"
-            )));
-        }
+        other => ScriptedCommand::Command {
+            id: other.to_string(),
+            target: scripted_target(cursor)?,
+        },
     };
     cursor.finish("command")?;
     Ok(command)
+}
+
+/// The optional subject a scripted `command` line names.
+///
+/// # Errors
+///
+/// Returns an error when the target word is not `entity` or `asset`, or when
+/// the name or path after it is missing.
+fn scripted_target(cursor: &mut Cursor<'_>) -> Result<ScriptedTarget, ParseError> {
+    match cursor.word() {
+        None => Ok(ScriptedTarget::None),
+        Some("entity") => Ok(ScriptedTarget::Entity(
+            cursor.text("command entity needs an entity name")?,
+        )),
+        Some("asset") => Ok(ScriptedTarget::Asset(
+            cursor.text("command asset needs a path")?,
+        )),
+        Some(other) => Err(ParseError::new(format!(
+            "command takes `entity <name>` or `asset <path>`, got '{other}'"
+        ))),
+    }
 }
 
 /// `toolbar <action>`.
@@ -2623,8 +2668,20 @@ mod tests {
                 reason: "edit set needs a value",
             },
             Refuse {
-                line: "command editor.explode",
-                reason: "command 'editor.explode' is not executable in the egui editor",
+                line: "command",
+                reason: "command needs an id",
+            },
+            Refuse {
+                line: "command editor.undo entity 3v1",
+                reason: "command takes no more arguments, got 'entity 3v1'",
+            },
+            Refuse {
+                line: "command pill_test.run viewport 2",
+                reason: "command takes `entity <name>` or `asset <path>`, got 'viewport'",
+            },
+            Refuse {
+                line: "command pill_test.run entity",
+                reason: "command entity needs an entity name",
             },
             Refuse {
                 line: "camera spin 1",
@@ -2644,6 +2701,37 @@ mod tests {
                 .expect_err(&format!("{:?} should be refused", case.line));
             assert_eq!(error.reason, case.reason, "refusing {:?}", case.line);
         }
+    }
+
+    #[test]
+    fn a_modules_command_parses_with_its_target() {
+        assert_eq!(
+            ScriptedCommand::parse("command pill_test.run").expect("a plain invocation"),
+            ScriptedCommand::Command {
+                id: "pill_test.run".to_string(),
+                target: ScriptedTarget::None,
+            }
+        );
+        assert_eq!(
+            ScriptedCommand::parse("command pill_test.run entity the mesh").expect("an entity"),
+            ScriptedCommand::Command {
+                id: "pill_test.run".to_string(),
+                target: ScriptedTarget::Entity("the mesh".to_string()),
+            }
+        );
+        assert_eq!(
+            ScriptedCommand::parse("command pill_test.run asset res/a.scene").expect("an asset"),
+            ScriptedCommand::Command {
+                id: "pill_test.run".to_string(),
+                target: ScriptedTarget::Asset("res/a.scene".to_string()),
+            }
+        );
+        // A built-in keeps its own verb, so the executable's own actions do
+        // not turn into an invocation.
+        assert_eq!(
+            ScriptedCommand::parse("command editor.undo").expect("a built-in"),
+            ScriptedCommand::Undo
+        );
     }
 
     #[test]

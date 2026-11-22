@@ -104,7 +104,26 @@ pub use tab_demo::demo_panel;
 /// shell for.
 pub mod panel_windows;
 
-pub use panel_windows::{panel_windows, PanelFeed};
+pub use panel_windows::{
+    panel_windows, PanelFeed, PANEL_MODAL_APPLY_BUTTON, PANEL_MODAL_BUTTONS,
+    PANEL_MODAL_CANCEL_BUTTON,
+};
+
+/// The [`prompt`] module: the modal prompt every editor prompt is built from -
+/// a title, a body the caller draws, and a row of answers.
+pub mod prompt;
+
+pub use prompt::{prompt_buttons, prompt_window, Prompt, PromptButton};
+
+/// The [`quit_prompt`] module: the prompt shown while unsaved module work
+/// holds a quit back.
+pub mod quit_prompt;
+
+pub use quit_prompt::{
+    quit_prompt_window, unsaved_items_body, QUIT_PROMPT_ANSWERS, QUIT_PROMPT_BUTTONS,
+    QUIT_PROMPT_ENTER_BUTTON, QUIT_PROMPT_ESCAPE_BUTTON, QUIT_PROMPT_ITEMS_SHOWN,
+    QUIT_PROMPT_WIDTH,
+};
 
 /// The [`spline_tool`] module: the Spline Tool panel and its re-seed modal.
 pub mod spline_tool;
@@ -160,9 +179,19 @@ pub use chrome::SelectionClick;
 
 /// The [`menus`] module: the context menus the tabs open.
 pub mod menus;
-
 pub use menus::component_menu_items;
 pub use menus::scene_context_menu;
+
+/// The button every place draws a placed command with.
+pub mod placed_commands;
+pub use placed_commands::hover_with;
+pub use placed_commands::paint_state_dots;
+pub use placed_commands::remember_command_rect;
+pub use placed_commands::PLACED_COMMAND_SIZE;
+pub use placed_commands::{
+    asset_menu_rows, component_menu_rows, draw_placed_command, draw_placed_menu_row,
+    entity_menu_rows, rows_for_slot, toolbox_rows, PlacementHost,
+};
 
 /// The [`toolbox_panel`] module: the floating toolbox over a scene viewport.
 pub mod toolbox_panel;
@@ -219,6 +248,7 @@ pub use tab_inspector::addable_components;
 pub use tab_inspector::entity_inspector;
 pub use tab_inspector::inspector_add_popup;
 pub use tab_inspector::inspector_header;
+pub use tab_inspector::inspector_section_commands;
 pub use tab_inspector::inspector_section_header;
 pub use tab_inspector::inspector_tab;
 pub use tab_inspector::INSPECTOR_VECTOR_FIELD_HEIGHT;
@@ -424,6 +454,12 @@ pub struct EditorTabViewer<'a> {
     /// The marquee the executable is holding open over a scene viewport, when
     /// it is.
     pub marquee: Option<ShellMarquee>,
+    /// The states the modules published for their commands.
+    pub command_states: &'a CommandStates,
+    /// The draw functions the modules registered for a free-form place.
+    pub command_draws: &'a CommandDraws,
+    /// The asset files (relative to `res`) whose module work is unsaved.
+    pub unsaved_asset_paths: &'a [String],
 }
 
 // The dock's tab methods, forwarded to the free functions below.
@@ -507,6 +543,9 @@ pub fn run_frame(
     panel_commands: &mut Vec<PanelCommand>,
     clipboard: &mut pill_editor_core::clipboard::EditorClipboard,
     popout_inputs: &pill_editor_core::boundary::EguiPopoutInputs,
+    command_states: &CommandStates,
+    command_draws: &CommandDraws,
+    unsaved_work: &mut pill_editor_core::unsaved_work::UnsavedWork,
 ) {
     state.frame_index = state.frame_index.wrapping_add(1);
     let frame_index = state.frame_index;
@@ -688,6 +727,12 @@ pub fn run_frame(
         .iter_leaves()
         .filter_map(|(_path, leaf)| leaf.tabs.get(leaf.active.0).copied())
         .collect();
+    // The asset files with unsaved module work, which the Assets tab marks.
+    let unsaved_asset_paths: Vec<String> = unsaved_work
+        .items()
+        .iter()
+        .filter_map(|item| item.asset_path.clone())
+        .collect();
     // Named through the package path rather than as a file-local item: a hot
     // patch compiles this body in a crate of its own, where only the package's
     // public items exist (the crate header has the details).
@@ -724,6 +769,9 @@ pub fn run_frame(
         previews,
         badges: &shell_input.badges,
         marquee: shell_input.marquee,
+        command_states,
+        command_draws,
+        unsaved_asset_paths: &unsaved_asset_paths,
     };
     // The whole egui pass - layout, widgets and the dock - as one Tracy zone.
     // It closes before the settle stage below, so the span is the pass itself.
@@ -818,6 +866,9 @@ pub fn run_frame(
                 &mut *viewer.panel_commands,
                 &mut viewer.overlay_regions,
             );
+            // The quit prompt sits above everything while the executable holds
+            // a quit back for unsaved work.
+            pill_editor_shell::shell::quit_prompt_window(ui.ctx(), unsaved_work);
         })
     };
     let mut shell_frame = frame_from_output(&context, output);
@@ -1054,6 +1105,12 @@ pub fn tab_body(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, tab: Editor
             viewer.pending,
             &mut viewer.overlay_regions,
             viewer.inspector,
+            &mut PlacementHost {
+                commands: &viewer.snapshot.commands,
+                states: viewer.command_states,
+                draws: viewer.command_draws,
+                invocations: &mut viewer.requests.invocations,
+            },
         ),
         EditorTab::Systems => systems_tab(ui, viewer.snapshot, viewer.pending),
         EditorTab::Inspector => inspector_tab(
@@ -1063,6 +1120,12 @@ pub fn tab_body(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, tab: Editor
             viewer.pending,
             &mut viewer.overlay_regions,
             viewer.inspector,
+            &mut PlacementHost {
+                commands: &viewer.snapshot.commands,
+                states: viewer.command_states,
+                draws: viewer.command_draws,
+                invocations: &mut viewer.requests.invocations,
+            },
         ),
         EditorTab::Assets => {
             // One bundle of the handles the Assets tab writes through, the same
@@ -1074,6 +1137,13 @@ pub fn tab_body(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, tab: Editor
                 overlay_regions: &mut viewer.overlay_regions,
                 drag_out: &mut viewer.deferred.drag_out,
                 previews: viewer.previews,
+                unsaved_paths: viewer.unsaved_asset_paths,
+                placements: &mut PlacementHost {
+                    commands: &viewer.snapshot.commands,
+                    states: viewer.command_states,
+                    draws: viewer.command_draws,
+                    invocations: &mut viewer.requests.invocations,
+                },
             };
             assets_tab(ui, viewer.snapshot, viewer.browser, &mut writes);
         }

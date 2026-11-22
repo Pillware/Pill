@@ -18,13 +18,15 @@ use pill_editor_shell::shell::*;
 /// Remove row detaches it. The Add Component submenu lists every registered
 /// component marked addable that the entity does not carry. Both picks go
 /// through the shared `inspector` builders and are labelled `add {short}` /
-/// `remove {short}`.
+/// `remove {short}`. The commands modules placed in this component's menu come
+/// last, with the entity and component as their target.
 pub fn component_menu_items(
     ui: &mut egui::Ui,
     snapshot: &EditorSnapshot,
     detail: &EntityDetail,
     current: Option<&str>,
     pending: &mut PendingEditorCommands,
+    placements: &mut PlacementHost<'_>,
 ) {
     // Step 1: the Remove row, when the menu was opened on a component heading.
     if let Some(component) = current {
@@ -60,6 +62,21 @@ pub fn component_menu_items(
             }
         },
     );
+    // Step 3: the commands modules placed in this component's menu.
+    if let Some(component) = current {
+        let target = CommandTarget::Entity {
+            entity: detail.entity,
+            component: Some(component.to_string()),
+        };
+        let slot = UiSlot::component_context_menu(component);
+        let rows = component_menu_rows(placements.commands, placements.states, component, &target);
+        if !rows.is_empty() {
+            ui.separator();
+        }
+        for command in &rows {
+            placements.draw_row(ui, command, &slot, &target);
+        }
+    }
 }
 
 /// Draws the scene viewport's context menu: the three transform tools,

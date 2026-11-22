@@ -24,6 +24,7 @@ use super::*;
 mod asset;
 mod document;
 mod engine;
+mod extension;
 mod selection;
 mod world;
 
@@ -84,8 +85,12 @@ impl EditorCommand {
                 Ok(command_outcome) => {
                     // Only an undoable edit makes the document unsaved. Pause,
                     // step, the gizmo tool and the grid leave the marker
-                    // alone, and the scene commands clear it themselves.
-                    if working_commands[index].recordable() {
+                    // alone, and the scene commands clear it themselves. An
+                    // extension edit changes the extension's own state, not
+                    // the scene, so it leaves the marker alone too.
+                    if working_commands[index].recordable()
+                        && working_commands[index].family() != CommandFamily::Extension
+                    {
                         crate::scene_workflow::mark_dirty(engine.world_mut());
                     }
                     let CommandOutcome { inverse, remap } = command_outcome;
@@ -214,6 +219,7 @@ impl EditorCommand {
             CommandFamily::Selection => selection::apply(engine, command),
             CommandFamily::Engine => engine::apply(engine, command),
             CommandFamily::Document => document::apply(engine, command),
+            CommandFamily::Extension => extension::apply(engine, command),
         }
     }
 }

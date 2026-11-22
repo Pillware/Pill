@@ -173,6 +173,19 @@ impl Mesh {
         Self::decode_obj(name.into(), bytes, &settings)
     }
 
+    /// Rebuilds every vertex's tangent and bitangent from the triangles and
+    /// their texture coordinates, the same derivation an OBJ import runs.
+    ///
+    /// For geometry built outside the decoders - a live link from a modelling
+    /// tool, a procedural mesh - that still wants normal mapping to work.
+    pub fn calculate_tangents(&mut self) {
+        for vertex in &mut self.vertices {
+            vertex.tangent = [0.0; 3];
+            vertex.bitangent = [0.0; 3];
+        }
+        calculate_tangent_space(&mut self.vertices, &self.indices);
+    }
+
     /// The OBJ decode behind [`Self::from_obj_bytes`] and the metadata import.
     ///
     /// `settings` says whether the decode flips V and whether it derives

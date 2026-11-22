@@ -24,6 +24,11 @@ use egui;
 // Constants
 // =============================================================================
 
+/// The editor's name, and the title its main window opens with. An extension
+/// that shows the editor inside another application uses it too, so the
+/// person reads the same name in both.
+pub const PILL_EDITOR_WINDOW_TITLE: &str = "Pill";
+
 /// The mark's width and height in texels. The image is square, and every
 /// texel takes one byte of coverage.
 pub const MARK_SIDE: usize = 48;

@@ -22,7 +22,9 @@ pub use pill_editor_core::boundary::{
     BADGES_PER_VIEW_MAX, DEFAULT_SCENE_VIEWS, SCENE_VIEWS_MAX,
 };
 pub use pill_editor_core::browser::{self, ProjectBrowser};
-pub use pill_editor_core::commands::{CommandView, PendingEditorCommands};
+pub use pill_editor_core::commands::{
+    CommandInvocation, CommandTarget, CommandView, PendingEditorCommands,
+};
 pub use pill_editor_core::console::{
     self as console, ConsoleChannel, ConsoleFilterSettings, ConsoleLine, ConsoleView,
 };
@@ -47,6 +49,9 @@ pub use pill_editor_core::panels::{
     PanelCommand, PanelComponentValues, PanelContext, PanelDrawFn, PanelEntityDetail,
     PanelEntityRow, PanelFieldValue, PanelRegistry, PanelWindowRequest,
 };
+pub use pill_editor_core::placements::{
+    CommandDrawContext, CommandDraws, CommandState, CommandStates, UiSlot,
+};
 pub use pill_editor_core::preferences;
 pub use pill_editor_core::requests::{HistoryRequest, ShellRequests};
 pub use pill_editor_core::session::{
@@ -58,6 +63,7 @@ pub use pill_editor_core::session::{
 pub use pill_editor_core::style;
 pub use pill_editor_core::systems;
 pub use pill_editor_core::toolbox;
+pub use pill_editor_core::unsaved_work::{QuitAnswer, QuitPromptState, UnsavedItem, UnsavedWork};
 pub use pill_engine::FieldDecorator;
 pub use pill_engine::{pill_hot_fn, Entity, FieldValue, Input};
 pub use serde_json::Value as JsonValue;

@@ -871,7 +871,7 @@ mod tests {
             listing("shaders/plain.hlsl", "Shader", false, false),
             module_row(
                 "pill_master_renderer_data",
-                "defaults/pill.pbr.material",
+                "materials/pill.pbr.material",
                 "pill_master_renderer::Material",
             ),
             listing("shaders", "folder", false, false),
@@ -890,7 +890,7 @@ mod tests {
         assert!(can_delete(&sidecar, &rows));
         let sourced = select("shaders/plain.hlsl");
         assert!(can_write_meta(&sourced, &rows));
-        let module = select("extensions/pill_master_renderer_data/defaults/pill.pbr.material");
+        let module = select("extensions/pill_master_renderer_data/materials/pill.pbr.material");
         assert!(
             !can_write_meta(&module, &rows),
             "a module's resources are read-only, so the row must not offer a write"
@@ -951,10 +951,10 @@ mod tests {
     fn a_module_tree_is_read_only() {
         let rows = vec![
             module_row("pill_master_renderer_data", "", "folder"),
-            module_row("pill_master_renderer_data", "defaults", "folder"),
+            module_row("pill_master_renderer_data", "materials", "folder"),
             module_row(
                 "pill_master_renderer_data",
-                "defaults/pill.pbr.material",
+                "materials/pill.pbr.material",
                 "pill_master_renderer::Material",
             ),
             listing("textures/rock.png", "Texture", false, true),
@@ -967,11 +967,11 @@ mod tests {
         ));
         assert!(is_read_only_key(
             &rows,
-            "extensions/pill_master_renderer_data/defaults"
+            "extensions/pill_master_renderer_data/materials"
         ));
         assert!(is_read_only_key(
             &rows,
-            "extensions/pill_master_renderer_data/defaults/pill.pbr.material"
+            "extensions/pill_master_renderer_data/materials/pill.pbr.material"
         ));
         // A project folder of the same name is its own key, not the module's.
         assert!(!is_read_only_key(&rows, "textures/rock.png"));
@@ -985,12 +985,12 @@ mod tests {
     fn a_module_resource_is_never_written() {
         let rows = vec![module_row(
             "pill_master_renderer_data",
-            "defaults/pill.pbr.material",
+            "materials/pill.pbr.material",
             "pill_master_renderer::Material",
         )];
         let mut selection = EditorSelection::default();
         selection.asset =
-            Some("extensions/pill_master_renderer_data/defaults/pill.pbr.material".to_string());
+            Some("extensions/pill_master_renderer_data/materials/pill.pbr.material".to_string());
         assert!(selected_row(&selection, &rows).is_some(), "found by key");
 
         let mut pending = PendingEditorCommands::default();

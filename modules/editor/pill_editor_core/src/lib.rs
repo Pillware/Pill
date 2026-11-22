@@ -20,6 +20,9 @@
 //!   crate registers, their payloads, the context they run with - the world,
 //!   the editor state ([`viewport`]), the commands they queue and their
 //!   notices - and the frame-boundary dispatch that applies their answers.
+//! - Own where a module's commands appear ([`placements`]): the placements, the
+//!   state a module publishes for a command and target, and the draw functions
+//!   it registers for a free-form place.
 //! - Own the tools layer ([`tools`]): the element selection, the tool registry
 //!   and the chain of extensions that add to a tool another crate owns, so a
 //!   component tool reports its own elements, frames, menu rows and keys and
@@ -105,6 +108,9 @@ pub mod editor_state;
 pub mod entities;
 /// Layout persistence failures.
 pub mod error;
+/// Undoable edits whose state only an editor extension understands, and the
+/// inbox that hands replayed states back to that extension.
+pub mod extension_edits;
 /// Transform gizmos: handle geometry, the drag calculations and snapping.
 pub mod gizmo;
 /// The undo and redo history of editor edits.
@@ -129,6 +135,10 @@ pub mod notices;
 /// that says whether their module is still loaded, and the dock tab slot they
 /// fill.
 pub mod panels;
+/// Where a module's commands appear and what they look like there: the
+/// placements, the per-target state modules publish and the draw functions
+/// they register.
+pub mod placements;
 /// The editor state a play session keeps aside and puts back at Stop.
 pub mod play_session;
 /// The Preferences tab's shared vocabulary: the file's editable keys and their
@@ -162,6 +172,8 @@ pub mod toolbox;
 /// The tool layer: the modes a scene view can be in, the registry that holds
 /// them and which one is active.
 pub mod tools;
+/// The work modules hold unsaved in memory, and the quit prompt about it.
+pub mod unsaved_work;
 /// The viewport state a callback reads.
 pub mod viewport;
 

@@ -25,10 +25,10 @@
 //!
 //! # Where the shaders are
 //!
-//! In `shader_sources/post_processing/shaders/`: the fullscreen vertex stage
+//! In `res/shaders/post_processing/`: the fullscreen vertex stage
 //! each pass here draws through, and the four fragment stages. The fragment
 //! stages `#include` nothing. The vertex stage includes `common.hlsl`, which
-//! lives in `shader_sources/common_shaders/include/`.
+//! lives in `res/shaders/common_shaders/include/`.
 
 // External crates
 use pill_engine::{AssetGuid, AssetManager, Handle};
@@ -55,30 +55,30 @@ const LDR_TARGET: &str = "ldr";
 pub const GRAIN_TEXTURE_NAME: &str = "pill.pbr.grain";
 
 /// The cooked fullscreen vertex stage every pass here draws through.
-const FULLSCREEN_VERTEX: &str = "post_processing/shaders/fullscreen_vertex.wgsl";
+const FULLSCREEN_VERTEX: &str = "shaders/post_processing/fullscreen_vertex.wgsl";
 
 /// The bloom prefilter's fragment stage, named twice: once as the `.hlsl`
 /// source path it is imported from, and once as the cooked file beside it.
-const PREFILTER_SHADER: &str = "post_processing/shaders/bloom_prefilter_fragment.hlsl";
-const PREFILTER_FRAGMENT: &str = "post_processing/shaders/bloom_prefilter_fragment.wgsl";
+const PREFILTER_SHADER: &str = "shaders/post_processing/bloom_prefilter_fragment.hlsl";
+const PREFILTER_FRAGMENT: &str = "shaders/post_processing/bloom_prefilter_fragment.wgsl";
 /// The bloom prefilter shader's guid, which its meta repeats.
 const PREFILTER_GUID: AssetGuid = AssetGuid::from_name("pill.pbr.shader.bloom.prefilter");
 
 /// The bloom composite's fragment stage.
-const COMPOSITE_SHADER: &str = "post_processing/shaders/bloom_composite_fragment.hlsl";
-const COMPOSITE_FRAGMENT: &str = "post_processing/shaders/bloom_composite_fragment.wgsl";
+const COMPOSITE_SHADER: &str = "shaders/post_processing/bloom_composite_fragment.hlsl";
+const COMPOSITE_FRAGMENT: &str = "shaders/post_processing/bloom_composite_fragment.wgsl";
 /// The bloom composite shader's guid, which its meta repeats.
 const COMPOSITE_GUID: AssetGuid = AssetGuid::from_name("pill.pbr.shader.bloom.composite");
 
 /// The tonemap's fragment stage.
-const TONEMAP_SHADER: &str = "post_processing/shaders/tonemap_fragment.hlsl";
-const TONEMAP_FRAGMENT: &str = "post_processing/shaders/tonemap_fragment.wgsl";
+const TONEMAP_SHADER: &str = "shaders/post_processing/tonemap_fragment.hlsl";
+const TONEMAP_FRAGMENT: &str = "shaders/post_processing/tonemap_fragment.wgsl";
 /// The tonemap shader's guid, which its meta repeats.
 const TONEMAP_GUID: AssetGuid = AssetGuid::from_name("pill.pbr.shader.tonemap");
 
 /// The lens pass's fragment stage.
-const LENS_SHADER: &str = "post_processing/shaders/lens_fragment.hlsl";
-const LENS_FRAGMENT: &str = "post_processing/shaders/lens_fragment.wgsl";
+const LENS_SHADER: &str = "shaders/post_processing/lens_fragment.hlsl";
+const LENS_FRAGMENT: &str = "shaders/post_processing/lens_fragment.wgsl";
 /// The lens shader's guid, which its meta repeats.
 const LENS_GUID: AssetGuid = AssetGuid::from_name("pill.pbr.shader.lens");
 

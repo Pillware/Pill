@@ -53,7 +53,7 @@ offers no create, rename, move, delete or settings write there, and a file the
 module declares that goes missing stops the host naming the module and the
 path (`test_module_resource_assert.py` drives exactly that). The engine's
 default material, `pill_master_renderer_data`'s
-`res/defaults/pill.pbr.material`, is the resource the editor and the suite both
+`res/materials/pill.pbr.material`, is the resource the editor and the suite both
 show.
 
 `test_coding_standards.py` lints every `.rs` file against the Pill comment and

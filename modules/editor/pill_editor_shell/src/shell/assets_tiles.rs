@@ -79,7 +79,16 @@ pub struct AssetTileWrites<'a> {
     /// and its type icon otherwise, and records itself as drawn so the
     /// executable asks only for the previews that are on screen.
     pub previews: &'a mut pill_editor_core::session::PreviewStates,
+    /// The asset files (relative to `res`) whose module work is unsaved; their
+    /// tiles carry a dot.
+    pub unsaved_paths: &'a [String],
+    /// The commands modules placed in an asset file's menu.
+    pub placements: &'a mut PlacementHost<'a>,
 }
+
+/// The radius of the dot that marks a tile with unsaved module work, in
+/// points.
+pub const ASSETS_TILE_UNSAVED_DOT_RADIUS: f32 = 3.5;
 
 // =============================================================================
 // Free Functions
@@ -185,6 +194,19 @@ pub fn asset_tile(
         ui.painter()
             .rect_filled(rect, ASSETS_TILE_CORNER_RADIUS, fill);
     }
+    // A file a module changed in memory but has not written carries a dot in
+    // its tile's corner, like an unsaved tab.
+    if writes.unsaved_paths.contains(&row.path) {
+        let dot_center = egui::pos2(
+            rect.max.x - ASSETS_TILE_UNSAVED_DOT_RADIUS * 2.0,
+            rect.min.y + ASSETS_TILE_UNSAVED_DOT_RADIUS * 2.0,
+        );
+        ui.painter()
+            .circle_filled(dot_center, ASSETS_TILE_UNSAVED_DOT_RADIUS, style::warning());
+        response
+            .clone()
+            .on_hover_text("Unsaved changes in memory (not written to the file yet)");
+    }
     // Step 2: draw the preview image, or the type icon alone, then the name
     // under it.
     let icon_side = (cell.x - ASSETS_TILE_GAP - ASSETS_TILE_ICON_INSET * 2.0).max(8.0);
@@ -286,6 +308,7 @@ pub fn asset_tile(
                         writes.selection,
                         writes.dialog,
                         writes.pending,
+                        writes.placements,
                     );
                 }
             },
@@ -381,15 +404,17 @@ pub fn tile_name_job(
     job
 }
 
-/// Draws the menu a file tile offers: rename and delete. Creating an asset and
-/// opening a folder belong to a container's menu ([`asset_container_menu`]), so
-/// a file's menu never carries them.
+/// Draws the menu a file tile offers: rename and delete, then the commands
+/// modules placed in a file's menu for this asset's extension. Creating an
+/// asset and opening a folder belong to a container's menu
+/// ([`asset_container_menu`]), so a file's menu never carries them.
 pub fn asset_menu_items(
     ui: &mut egui::Ui,
     snapshot: &EditorSnapshot,
     selection: &EditorSelection,
     dialog: &mut Option<AssetDialog>,
     pending: &mut PendingEditorCommands,
+    placements: &mut PlacementHost<'_>,
 ) {
     if ui
         .add(icons::IconButton::new(
@@ -410,6 +435,28 @@ pub fn asset_menu_items(
     {
         assets::delete_selection(pending, selection, &snapshot.assets);
         ui.close();
+    }
+    // The commands modules placed in a file's menu, for the extension of the
+    // file this menu belongs to.
+    let Some(key) = selection.asset.as_deref() else {
+        return;
+    };
+    let Some(extension) = std::path::Path::new(key)
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(|extension| format!(".{}", extension.to_lowercase()))
+    else {
+        return;
+    };
+    let target = CommandTarget::Asset(key.to_string());
+    let slot = UiSlot::asset_context_menu(&extension);
+    let rows = asset_menu_rows(placements.commands, placements.states, &extension, &target);
+    if rows.is_empty() {
+        return;
+    }
+    ui.separator();
+    for command in &rows {
+        placements.draw_row(ui, command, &slot, &target);
     }
 }
 

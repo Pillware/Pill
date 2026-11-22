@@ -159,6 +159,44 @@ pub fn play_toolbar(
                 if play_button(ui, "Step", "F10") {
                     run_play_control("step", EditorCommand::StepOnce, viewer);
                 }
+                // After the play controls, the commands modules placed here,
+                // in registration order, drawn from data or through their own
+                // draw function.
+                let placed: Vec<&CommandView> = viewer
+                    .snapshot
+                    .commands
+                    .iter()
+                    .filter(|command| {
+                        command
+                            .placements
+                            .iter()
+                            .any(|slot| matches!(slot, UiSlot::Toolbar))
+                    })
+                    .collect();
+                let slot = UiSlot::Toolbar;
+                for command in placed {
+                    let rect = draw_placed_command(
+                        ui,
+                        command,
+                        &slot,
+                        &CommandTarget::None,
+                        viewer.command_states,
+                        viewer.command_draws,
+                        &mut viewer.requests.invocations,
+                    );
+                    let Some(rect) = rect else {
+                        continue;
+                    };
+                    let key = format!("toolbar@{}", command.id);
+                    remember_command_rect(
+                        &mut session.command_rects,
+                        true,
+                        &key,
+                        &command.id,
+                        &slot,
+                        rect,
+                    );
+                }
             });
             group_rect = Some(ui.min_rect());
         });
@@ -330,6 +368,17 @@ pub fn run_menu_action(
         // The dock is borrowed by the `DockArea` while this menu draws, so the
         // new view is docked after the pass.
         menubar::MenuAction::NewSceneView => viewer.deferred.new_scene_view = true,
+        // A command a module owns runs in that module. The shell cannot reach
+        // it, so the invocation leaves with the pass and the executable hands
+        // it to the inbox.
+        menubar::MenuAction::Invoke(invocation) => {
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                command = invocation.id.as_str(),
+                "[editor] command requested"
+            );
+            viewer.requests.invoke(invocation);
+        }
         menubar::MenuAction::About => session.about_open = true,
         menubar::MenuAction::Quit => viewer.deferred.quit_requested = true,
         // The shell cannot reach the OS clipboard. This call builds the

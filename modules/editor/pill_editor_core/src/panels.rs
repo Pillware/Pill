@@ -93,6 +93,14 @@ pub enum PanelCommand {
     /// Write a line the editor's log shows. A module's only way to say what
     /// it did without owning a log of its own.
     Log(String),
+    /// Show a toast. A module's way to tell the person something happened -
+    /// a save that worked or failed - without owning a notice list.
+    Notify {
+        /// Whether the toast is a warning rather than information.
+        warning: bool,
+        /// The toast's text.
+        text: String,
+    },
 }
 
 /// One window a panel asks the shell for.

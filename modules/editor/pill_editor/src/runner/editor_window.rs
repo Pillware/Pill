@@ -466,7 +466,7 @@ impl EditorWindow {
         // Step 1: the main window. A minimum size keeps an accidental drag of
         // the window's own edge from squeezing the dock unusable.
         let window_attributes = Window::default_attributes()
-            .with_title("Pill")
+            .with_title(pill_editor_core::brand::PILL_EDITOR_WINDOW_TITLE)
             .with_inner_size(INITIAL_WINDOW_SIZE)
             .with_min_inner_size(MINIMUM_WINDOW_SIZE);
         let window = Arc::new(

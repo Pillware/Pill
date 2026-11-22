@@ -535,6 +535,14 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
                 kind.len() + elements.len() * std::mem::size_of::<u64>()
             }
             EditorCommand::RunElementMenu { item } => item.len(),
+            // An extension edit keeps both states alive: the one it applies and
+            // the one its inverse puts back.
+            EditorCommand::ExtensionEdit {
+                channel,
+                subject,
+                payload,
+                previous_payload,
+            } => channel.len() + subject.len() + payload.len() + previous_payload.len(),
             EditorCommand::SetPreferences { values } => values
                 .iter()
                 .map(|(key, text)| key.len() + text.len())

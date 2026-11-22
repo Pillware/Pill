@@ -37,8 +37,15 @@ DESCRIPTION
     project initializes, so an edit written the moment the project is alive
     would land before anything watches the tree and would never be seen.
 
-    Both files are restored byte for byte afterwards - the source, and the
-    cooked output the host rewrites from it. The host is terminated on every
+    A second project shader is part of the startup check:
+    `shaders/surface_include_probe_fragment.hlsl` includes the renderer data
+    crate's `pbr_surface.hlsl`. The host puts a module's header directories on
+    the project cook's path, so the probe's cooked output must appear at
+    startup and hold `shade_pbr_surface`, which only compiles when that
+    include resolves.
+
+    Every file the suite touches is restored byte for byte afterwards - the
+    edited source, both cooked outputs - and the host is terminated on every
     path.
 
 USAGE
@@ -87,6 +94,14 @@ SHADER_DIRECTORY = PROJECT_ROOT / "res" / "shaders"
 SHADER_ASSET = "shaders/reload_probe_fragment.hlsl"
 SOURCE_FILE = PROJECT_ROOT / "res" / SHADER_ASSET
 COOKED_FILE = SOURCE_FILE.with_suffix(".wgsl")
+
+# A second project shader whose source includes a header the renderer data
+# crate ships. `shade_pbr_surface` in its cooked output only appears when the
+# module's include directories are on the project cook's path.
+INCLUDE_PROBE_ASSET = "shaders/surface_include_probe_fragment.hlsl"
+INCLUDE_PROBE_SOURCE = PROJECT_ROOT / "res" / INCLUDE_PROBE_ASSET
+INCLUDE_PROBE_COOKED = INCLUDE_PROBE_SOURCE.with_suffix(".wgsl")
+INCLUDE_COOKED_TOKEN = "shade_pbr_surface_0"
 
 # What the suite changes: the constant the fragment multiplies by, and what the
 # cooked WGSL shows instead once the host has re-cooked it.
@@ -141,22 +156,31 @@ def first_line_with(text: str, token: str) -> str:
     return matches[0] if matches else ""
 
 
-def check_startup_cook(text: str) -> list:
+def check_startup_cook(text: str, include_cooked_text: str) -> list:
     """One `(ok, description)` pair per assertion about the startup cook."""
     cook_lines = lines_with(text, COOKED_TOKEN)
-    rebuilt_one = [line for line in cook_lines if "rebuilt=1" in line]
+    rebuilt_all = [
+        line
+        for line in cook_lines
+        if (match := re.search(r"rebuilt=(\d+)", line)) and int(match.group(1)) >= 2
+    ]
     return [
         (
             bool(cook_lines),
             "the host cooked the project's shader sources at startup",
         ),
         (
-            bool(rebuilt_one),
-            "the cook rebuilt the missing cooked output (rebuilt=1)",
+            bool(rebuilt_all),
+            "the cook rebuilt both missing cooked outputs (rebuilt>=2)",
         ),
         (
             bool(lines_with(text, PROJECT_ALIVE_TOKEN)),
             "the project initialized and its systems run",
+        ),
+        (
+            INCLUDE_COOKED_TOKEN in include_cooked_text,
+            "the shader that includes a module header cooked "
+            "({})".format(INCLUDE_COOKED_TOKEN),
         ),
     ]
 
@@ -237,11 +261,15 @@ def main() -> int:
     print("\n  Project shader recompile suite")
     print("  Project: {}".format(PROJECT_ROOT))
 
-    # Step 1: Take the bytes of both files, then remove the cooked output so
-    # the host has to cook it at startup. The anchor is read before the write
-    # it guards, and both files are restored in the `finally` below.
+    # Step 1: Take the bytes of every file the suite touches, then remove the
+    # cooked outputs so the host has to cook them at startup. The anchors are
+    # read before the writes they guard, and every file is restored in the
+    # `finally` below.
     source_bytes = SOURCE_FILE.read_bytes()
     cooked_bytes = COOKED_FILE.read_bytes()
+    include_cooked_bytes = (
+        INCLUDE_PROBE_COOKED.read_bytes() if INCLUDE_PROBE_COOKED.is_file() else None
+    )
     edited_source = source_bytes.replace(
         ORIGINAL_CONSTANT.encode("utf-8"), EDITED_CONSTANT.encode("utf-8")
     )
@@ -259,6 +287,7 @@ def main() -> int:
     failures = 0
     try:
         COOKED_FILE.unlink()
+        INCLUDE_PROBE_COOKED.unlink(missing_ok=True)
         process, monitor = launch_process(
             host_command(HOST_DEV_RENDERING), MODULES_ROOT, environment
         )
@@ -272,7 +301,14 @@ def main() -> int:
             print("  [FAIL] the project never started; the last output was:")
             print(monitor.output_since(0)[-1500:])
             return 1
-        failures += report(check_startup_cook(monitor.output_since(0)))
+        include_cooked_text = (
+            INCLUDE_PROBE_COOKED.read_text(encoding="utf-8")
+            if INCLUDE_PROBE_COOKED.is_file()
+            else ""
+        )
+        failures += report(
+            check_startup_cook(monitor.output_since(0), include_cooked_text)
+        )
 
         # Step 2: Wait for the project's own shader watch before editing. The
         # renderer attaches after the project initializes, so its watch is the
@@ -301,6 +337,10 @@ def main() -> int:
     finally:
         SOURCE_FILE.write_bytes(source_bytes)
         COOKED_FILE.write_bytes(cooked_bytes)
+        if include_cooked_bytes is None:
+            INCLUDE_PROBE_COOKED.unlink(missing_ok=True)
+        else:
+            INCLUDE_PROBE_COOKED.write_bytes(include_cooked_bytes)
         if process is not None and monitor is not None:
             print("\n  [CLEANUP] Stopping the windowed host...")
             terminate_process(process, monitor)

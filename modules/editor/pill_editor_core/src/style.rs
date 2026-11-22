@@ -334,6 +334,15 @@ pub fn log_error() -> Color32 {
     palette().log_error
 }
 
+/// A colour a module published for its own command's dots.
+///
+/// The module owns these values, so the theme does not: it names a status in
+/// RGBA and the editor paints it as given. The conversion stays here, beside
+/// the token-to-egui one, so the shell never spells a colour itself.
+pub fn published(rgba: [u8; 4]) -> Color32 {
+    Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3])
+}
+
 /// Paints the selected row's tinted background and its left accent bar over
 /// `rect`.
 ///

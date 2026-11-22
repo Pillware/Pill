@@ -1,0 +1,13 @@
+format_version: 1
+asset_type: pill_master_renderer::Shader
+guid: 7e2a41c9b3d85f60a1c4b9d27b6f0831
+settings:
+  vertex: shaders/common_shaders/default_vertex.wgsl
+  parameters:
+  - name: tint
+    type: Color
+  - name: roughness
+    type: Scalar
+  textures: []
+  engine_parameters: true
+  camera_parameters: true

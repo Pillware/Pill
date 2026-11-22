@@ -24,8 +24,8 @@
 //! shares: the backend trait, the frame, the pass vocabulary and the camera.
 //! The types a game needs from it are re-exported here.
 //!
-//! The shader sources live at the crate root (`shader_sources/`), not under
-//! `src/`, so a shader edit is not a Rust source edit. The [`shader_hot_reload`]
+//! The shader sources live in the crate's `res/shaders/`, not under `src/`,
+//! so a shader edit is not a Rust source edit. The [`shader_hot_reload`]
 //! module handles live reload in native development builds: the development
 //! host re-cooks an edited source and hands the result to that module's export.
 
@@ -159,7 +159,7 @@ pub fn register(engine: &mut Engine) -> u32 {
 
     // Step 4: Declare this crate's own assets - the default material the chain
     // draws with - from the crate's directory. The store then answers
-    // `defaults/pill.pbr.material` by name and the editor lists the folder
+    // `materials/pill.pbr.material` by name and the editor lists the folder
     // read-only. A file that went missing stops the engine here instead of
     // leaving a scene unlit.
     //
@@ -199,64 +199,55 @@ pub fn init(engine: &mut Engine) -> u32 {
 // Free Functions
 // =============================================================================
 
-/// Declares the read-only roots this crate ships, from its own directory.
+/// Declares the read-only root this crate ships, its own `res`.
 ///
-/// Under `res` sits the default material; under `shader_sources` sit the
-/// sources the chain's shaders are cooked from. The `.wgsl` beside each source
-/// is this crate's build product: the store answers it because a shader's
-/// stages are read from it by path, and the editor's tree leaves it out so a
-/// person sees only what they author.
+/// It holds the default material, the default textures and, under
+/// `shaders/`, the sources the chain's shaders are cooked from. The `.wgsl`
+/// beside each source is this crate's build product: the store answers it
+/// because a shader's stages are read from it by path, and the editor's tree
+/// leaves it out so a person sees only what they author.
 ///
-/// Declaring the same roots again is what a reload does, and it changes
+/// Declaring the same root again is what a reload does, and it changes
 /// nothing. It is also what lets this crate's own tests read the same files a
 /// running module reads.
 ///
 /// # Panics
 ///
-/// Panics when `res` or `shader_sources` exists but one of the files this
-/// function names below it is missing; the message names the module and the
-/// path.
+/// Panics when `res` exists but one of the files this function names below it
+/// is missing; the message names the module and the path.
 fn declare_crate_roots() {
     let resources_directory = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/res"));
     if resources_directory.is_dir() {
-        pill_engine::asset_store::declare_module_root(
+        pill_engine::asset_store::declare_module_root_hiding(
             MODULE_NAME,
             resources_directory,
             &[
                 config::pbr_pipeline::DEFAULT_MATERIAL_PATH,
                 assets::DEFAULT_COLOR_TEXTURE,
                 assets::DEFAULT_NORMAL_TEXTURE,
-            ],
-        );
-    }
-    let sources_directory = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/shader_sources"));
-    if sources_directory.is_dir() {
-        pill_engine::asset_store::declare_module_root_hiding(
-            MODULE_NAME,
-            sources_directory,
-            &[
-                "common_shaders/default_vertex.hlsl",
-                "common_shaders/include/common.hlsl",
-                "common_shaders/include/lit_common.hlsl",
-                "pbr_pipeline/shaders/pbr_fragment.hlsl",
-                "pbr_pipeline/shaders/pbr_fragment.hlsl.meta",
-                "post_processing/shaders/bloom_composite_fragment.hlsl",
-                "post_processing/shaders/bloom_composite_fragment.hlsl.meta",
-                "post_processing/shaders/bloom_prefilter_fragment.hlsl",
-                "post_processing/shaders/bloom_prefilter_fragment.hlsl.meta",
-                "post_processing/shaders/fullscreen_vertex.hlsl",
-                "post_processing/shaders/lens_fragment.hlsl",
-                "post_processing/shaders/lens_fragment.hlsl.meta",
-                "post_processing/shaders/tonemap_fragment.hlsl",
-                "post_processing/shaders/tonemap_fragment.hlsl.meta",
-                "simple_pipeline/shaders/default_lit_fragment.hlsl",
-                "simple_pipeline/shaders/default_lit_fragment.hlsl.meta",
-                "skybox/include/skybox_common.hlsl",
-                "skybox/shaders/skybox_cubemap_fragment.hlsl",
-                "skybox/shaders/skybox_cubemap_fragment.hlsl.meta",
-                "skybox/shaders/skybox_equirect_fragment.hlsl",
-                "skybox/shaders/skybox_equirect_fragment.hlsl.meta",
-                "skybox/shaders/skybox_vertex.hlsl",
+                "shaders/common_shaders/default_vertex.hlsl",
+                "shaders/common_shaders/include/common.hlsl",
+                "shaders/common_shaders/include/lit_common.hlsl",
+                "shaders/pbr_pipeline/include/pbr_surface.hlsl",
+                "shaders/pbr_pipeline/pbr_fragment.hlsl",
+                "shaders/pbr_pipeline/pbr_fragment.hlsl.meta",
+                "shaders/post_processing/bloom_composite_fragment.hlsl",
+                "shaders/post_processing/bloom_composite_fragment.hlsl.meta",
+                "shaders/post_processing/bloom_prefilter_fragment.hlsl",
+                "shaders/post_processing/bloom_prefilter_fragment.hlsl.meta",
+                "shaders/post_processing/fullscreen_vertex.hlsl",
+                "shaders/post_processing/lens_fragment.hlsl",
+                "shaders/post_processing/lens_fragment.hlsl.meta",
+                "shaders/post_processing/tonemap_fragment.hlsl",
+                "shaders/post_processing/tonemap_fragment.hlsl.meta",
+                "shaders/simple_pipeline/default_lit_fragment.hlsl",
+                "shaders/simple_pipeline/default_lit_fragment.hlsl.meta",
+                "shaders/skybox/include/skybox_common.hlsl",
+                "shaders/skybox/skybox_cubemap_fragment.hlsl",
+                "shaders/skybox/skybox_cubemap_fragment.hlsl.meta",
+                "shaders/skybox/skybox_equirect_fragment.hlsl",
+                "shaders/skybox/skybox_equirect_fragment.hlsl.meta",
+                "shaders/skybox/skybox_vertex.hlsl",
             ],
             &["wgsl"],
         );

@@ -45,8 +45,9 @@ use pill_editor_core::camera::{self, CameraButton, CameraNavigation, Modifiers, 
 use pill_editor_core::clipboard::{self, ClipboardAction, ClipboardRequest, EditorClipboard};
 use pill_editor_core::commands::{
     ensure_command_resources, read_gizmo_settings, write_gizmo_hidden_types,
-    write_gizmo_preferences, CommandRegistry, EditorPreferences, KeybindingsFile, KeymapPreset,
-    PendingEditorCommands, KEYBINDINGS_FILE, PREFERENCES_FILE,
+    write_gizmo_preferences, CommandInbox, CommandInvocation, CommandRegistrations,
+    CommandRegistry, CommandTarget, EditorPreferences, KeybindingsFile, KeymapPreset,
+    PendingEditorCommands, BUILTIN_OWNER, KEYBINDINGS_FILE, PREFERENCES_FILE,
 };
 use pill_editor_core::console::{ConsoleChannel, ConsoleLine, ConsoleState};
 use pill_editor_core::drain::{self, HistoryDirection};
@@ -70,12 +71,13 @@ use pill_editor_core::notices::{EditorNotices, Notice, NoticeLevel, ProblemRow};
 use pill_editor_core::panels::{
     ModuleLiveness, PanelCommand, PanelCommands, PanelRegistrations, PanelRegistry, PanelRequest,
 };
+use pill_editor_core::placements::CommandDraws;
 use pill_editor_core::preferences::{self, PreferencesView};
 use pill_editor_core::previews;
 use pill_editor_core::problems::{self as problem_parser, Severity};
 use pill_editor_core::requests::HistoryRequest;
 use pill_editor_core::scripted::{
-    AssetEdit, Dump, KeyChord, PaletteRequest, ScriptedCommand, ToolbarAction,
+    AssetEdit, Dump, KeyChord, PaletteRequest, ScriptedCommand, ScriptedTarget, ToolbarAction,
 };
 use pill_editor_core::session::EguiShellState;
 use pill_editor_core::state_watch::StateFileWatch;
@@ -84,6 +86,7 @@ use pill_editor_core::style::{
 };
 use pill_editor_core::systems;
 use pill_editor_core::tools;
+use pill_editor_core::unsaved_work::{QuitAnswer, QuitPromptState, UnsavedWork};
 use pill_editor_core::viewport::EditorViewportState;
 use pill_engine_core::common_components::TRANSFORM_SHARED_NAME;
 use pill_engine_core::debug_draw::{DebugDraw, DebugStyle};
@@ -157,6 +160,10 @@ pub const DETACHED_SCENE_ENV: &str = "PILL_EDITOR_DETACHED_SCENE";
 /// The shell module's crate name: the editor module under `editor/` that
 /// draws the docked UI.
 const SHELL_MODULE_NAME: &str = "pill_editor_shell";
+
+/// How many frames the quit prompt's save waits for the modules before it
+/// gives up and keeps the editor open (about five seconds at 60 frames).
+const QUIT_SAVE_WAIT_FRAMES: u32 = 300;
 
 /// The window's initial size in logical pixels.
 const INITIAL_WINDOW_SIZE: LogicalSize<f64> = LogicalSize::new(1280.0, 800.0);
@@ -319,6 +326,10 @@ fn choose_display_backend() {
 /// The overlay that draws the UI above the scene is the normal case and the
 /// window's own surface is the fallback. A refusal is logged once and the
 /// editor keeps running, with the UI on the window surface.
+///
+/// `event_loop` is what the floating overlay is created from, so Windows - whose
+/// overlay is a composition visual - has nothing to do with it.
+#[cfg_attr(windows, allow(unused_variables))]
 fn create_overlay(
     event_loop: &ActiveEventLoop,
     no_overlay: bool,
@@ -563,7 +574,9 @@ impl ApplicationHandler for EditorApplication {
         let redraw_request = matches!(event, WindowEvent::RedrawRequested);
         match event {
             WindowEvent::CloseRequested => {
-                if is_main {
+                // A module's unsaved work holds the close back and opens the
+                // quit prompt; the prompt's answer quits through the frame.
+                if is_main && !editor.hold_quit_for_unsaved_work() {
                     event_loop.exit();
                 }
             }
@@ -1688,11 +1701,9 @@ impl EditorWindow {
                 CommandAction::PlayToggle => self.scripted_play_toggle(),
             }
         } else {
-            info!(
-                target: telemetry_target::EDITOR,
-                command = command.as_str(),
-                "[editor] shortcut has no action yet"
-            );
+            // The registry only resolves ids something registered, so an id
+            // this executable does not implement belongs to a module.
+            self.invoke_command(CommandInvocation::plain(command));
         }
         true
     }
@@ -1798,6 +1809,113 @@ impl EditorWindow {
             return;
         }
         self.queue_settings_value(path, key, patched);
+    }
+
+    /// Apply the command sets the loaded modules queued.
+    ///
+    /// A set is plain data, but its rows must go with the module that
+    /// registered it: each owner is bound to that module's liveness marker and
+    /// a module-owned set whose marker is gone is forgotten, so a menu never
+    /// offers a command nothing answers.
+    fn sync_commands(&mut self) {
+        // Step 1: register what the modules queued, replacing their old sets.
+        let (registrations, draw_requests) = {
+            let world = self.host.host_mut().engine_mut().world_mut();
+            world
+                .get_resource_mut::<CommandRegistrations>()
+                .map(|registrations| (registrations.drain(), registrations.drain_draws()))
+                .unwrap_or_default()
+        };
+        for registration in registrations {
+            // Holding the marker is what keeps the owner live until the
+            // module unloads; the map's key is the owner's liveness.
+            self.module_markers
+                .entry(registration.owner.clone())
+                .or_default();
+            let count = registration.commands.len();
+            let world = self.host.host_mut().engine_mut().world_mut();
+            let Some(registry) = world.get_resource_mut::<CommandRegistry>() else {
+                continue;
+            };
+            registry.register(&registration.owner, registration.commands);
+            info!(
+                target: telemetry_target::EDITOR,
+                owner = registration.owner.as_str(),
+                commands = count,
+                "[editor] command registered"
+            );
+        }
+        // Step 2: bind the draw functions to the same markers, so a place
+        // never calls into a module that unloaded.
+        for request in draw_requests {
+            let marker = self
+                .module_markers
+                .entry(request.source.to_string())
+                .or_default();
+            let world = self.host.host_mut().engine_mut().world_mut();
+            let Some(draws) = world.get_resource_mut::<CommandDraws>() else {
+                continue;
+            };
+            draws.register(&request, marker);
+            info!(
+                target: telemetry_target::EDITOR,
+                command = request.id,
+                slot = request.slot.name(),
+                source = request.source,
+                "[editor] command draw registered"
+            );
+        }
+        // Step 3: forget the sets whose module is gone. The built-ins belong
+        // to no module and are kept.
+        let live: std::collections::BTreeSet<String> =
+            self.module_markers.keys().cloned().collect();
+        let world = self.host.host_mut().engine_mut().world_mut();
+        if let Some(draws) = world.get_resource_mut::<CommandDraws>() {
+            let dropped = draws.prune();
+            if dropped > 0 {
+                info!(
+                    target: telemetry_target::EDITOR,
+                    dropped,
+                    "[editor] command draw dropped"
+                );
+            }
+        }
+        let Some(registry) = world.get_resource_mut::<CommandRegistry>() else {
+            return;
+        };
+        let gone: Vec<String> = registry
+            .owners()
+            .filter(|owner| *owner != BUILTIN_OWNER && !live.contains(*owner))
+            .map(str::to_string)
+            .collect();
+        for owner in gone {
+            registry.forget(&owner);
+            info!(
+                target: telemetry_target::EDITOR,
+                owner = owner.as_str(),
+                "[editor] command owner dropped"
+            );
+        }
+    }
+
+    /// Hands one invocation to the modules and logs it.
+    ///
+    /// The module that owns the id takes it from
+    /// [`pill_editor_core::commands::CommandInbox`] on its next update; one
+    /// nobody takes ages out there.
+    fn invoke_command(&mut self, invocation: CommandInvocation) {
+        let target = command_target_label(&invocation.target);
+        let id = invocation.id.clone();
+        let world = self.host.host_mut().engine_mut().world_mut();
+        if let Some(inbox) = world.get_resource_mut::<CommandInbox>() {
+            inbox.push(invocation);
+        }
+        info!(
+            target: telemetry_target::EDITOR,
+            command = id.as_str(),
+            target = target.as_str(),
+            "[editor] command invoked"
+        );
     }
 
     /// Apply the module panels' registration requests.
@@ -2049,6 +2167,23 @@ impl EditorWindow {
                 .map(|queue| queue.drain())
                 .unwrap_or_default()
         };
+        // Clicks no module took within their lifetime are dropped here, once
+        // per frame, so an action whose module unloaded cannot fill the inbox.
+        {
+            let world = self.host.host_mut().engine_mut().world_mut();
+            // The command invocations age the same way: a module that never
+            // takes one (it unloaded, or the row outlived it) leaves nothing.
+            if let Some(inbox) = world.get_resource_mut::<CommandInbox>() {
+                let dropped = inbox.age();
+                if dropped > 0 {
+                    info!(
+                        target: telemetry_target::EDITOR,
+                        dropped,
+                        "[editor] command invocation dropped"
+                    );
+                }
+            }
+        }
         for command in commands {
             match command {
                 PanelCommand::SelectEntity(entity) => {
@@ -2085,6 +2220,14 @@ impl EditorWindow {
                     text = text.as_str(),
                     "[editor] panel log"
                 ),
+                PanelCommand::Notify { warning, text } => {
+                    let level = if warning {
+                        NoticeLevel::Warning
+                    } else {
+                        NoticeLevel::Note
+                    };
+                    self.push_toast(level, text);
+                }
             }
         }
     }
@@ -3426,6 +3569,15 @@ impl EditorWindow {
                     // functions and its hook callbacks are stale addresses.
                     // Dropping the marker makes both read "not loaded" until
                     // the new generation's requests arrive this same frame.
+                    // The arriving generation reports its unsaved work again
+                    // on its first update; a module that stopped reporting
+                    // leaves nothing behind.
+                    {
+                        let world = self.host.host_mut().engine_mut().world_mut();
+                        if let Some(unsaved_work) = world.get_resource_mut::<UnsavedWork>() {
+                            unsaved_work.forget(module);
+                        }
+                    }
                     if self.module_markers.remove(module).is_some() {
                         info!(
                             target: telemetry_target::EDITOR,
@@ -3625,12 +3777,120 @@ impl EditorWindow {
         if let Some(index) = requests.problem_open {
             self.open_problem(index);
         }
+        // The commands a place asked a module to run, in click order.
+        for invocation in requests.invocations {
+            self.invoke_command(invocation);
+        }
         if quit_requested {
             info!(
                 target: telemetry_target::EDITOR,
                 "[editor] quit requested"
             );
-            self.request_quit();
+            if !self.hold_quit_for_unsaved_work() {
+                self.request_quit();
+            }
+        }
+    }
+
+    /// Opens the quit prompt instead of quitting while a module reports
+    /// unsaved work. Returns whether the quit was held back.
+    ///
+    /// Only a quit the person asked for comes here - the File menu and the
+    /// main window's close button. The scripted channel and the test deadline
+    /// quit without asking.
+    pub(super) fn hold_quit_for_unsaved_work(&mut self) -> bool {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let Some(unsaved_work) = world.get_resource_mut::<UnsavedWork>() else {
+            return false;
+        };
+        if !unsaved_work.has_unsaved() {
+            return false;
+        }
+        if unsaved_work.prompt() == QuitPromptState::Closed {
+            unsaved_work.set_prompt(QuitPromptState::Asking);
+            info!(
+                target: telemetry_target::EDITOR,
+                items = unsaved_work.items().len(),
+                "[editor] quit held for unsaved work"
+            );
+        }
+        true
+    }
+
+    /// Acts on the quit prompt: the answer the shell recorded, and a save the
+    /// prompt started, which quits once no module reports unsaved work.
+    pub(super) fn drive_quit_prompt(&mut self) {
+        let (answer, prompt, has_unsaved, unsaved_labels) = {
+            let world = self.host.host_mut().engine_mut().world_mut();
+            let Some(unsaved_work) = world.get_resource_mut::<UnsavedWork>() else {
+                return;
+            };
+            let labels: Vec<String> = unsaved_work
+                .items()
+                .iter()
+                .map(|item| item.label.clone())
+                .collect();
+            (
+                unsaved_work.take_answer(),
+                unsaved_work.prompt(),
+                unsaved_work.has_unsaved(),
+                labels,
+            )
+        };
+        // Step 1: the answer the person gave this frame.
+        let next_prompt = match (answer, prompt) {
+            (Some(QuitAnswer::Cancel), _) => {
+                info!(target: telemetry_target::EDITOR, "[editor] quit cancelled");
+                QuitPromptState::Closed
+            }
+            (Some(QuitAnswer::QuitWithoutSaving), _) => {
+                info!(
+                    target: telemetry_target::EDITOR,
+                    items = unsaved_labels.len(),
+                    "[editor] quit without saving"
+                );
+                self.request_quit();
+                QuitPromptState::Closed
+            }
+            (Some(QuitAnswer::SaveAndQuit), _) => {
+                info!(
+                    target: telemetry_target::EDITOR,
+                    items = unsaved_labels.len(),
+                    "[editor] saving before quit"
+                );
+                let world = self.host.host_mut().engine_mut().world_mut();
+                if let Some(unsaved_work) = world.get_resource_mut::<UnsavedWork>() {
+                    unsaved_work.request_save();
+                }
+                QuitPromptState::Saving { frames_waited: 0 }
+            }
+            // Step 2: a save in progress quits once nothing is unsaved, and
+            // gives up with a toast when the modules do not finish.
+            (None, QuitPromptState::Saving { frames_waited }) => {
+                if !has_unsaved {
+                    info!(target: telemetry_target::EDITOR, "[editor] saved; quitting");
+                    self.request_quit();
+                    QuitPromptState::Closed
+                } else if frames_waited >= QUIT_SAVE_WAIT_FRAMES {
+                    self.push_toast(
+                        NoticeLevel::Warning,
+                        format!(
+                            "Not saved, so the editor stays open: {}",
+                            unsaved_labels.join(", ")
+                        ),
+                    );
+                    QuitPromptState::Closed
+                } else {
+                    QuitPromptState::Saving {
+                        frames_waited: frames_waited + 1,
+                    }
+                }
+            }
+            (None, unchanged) => unchanged,
+        };
+        let world = self.host.host_mut().engine_mut().world_mut();
+        if let Some(unsaved_work) = world.get_resource_mut::<UnsavedWork>() {
+            unsaved_work.set_prompt(next_prompt);
         }
     }
 
@@ -4460,6 +4720,19 @@ enum CommandAction {
     PlayToggle,
 }
 
+/// What an invocation is about, as the log line spells it.
+fn command_target_label(target: &CommandTarget) -> String {
+    match target {
+        CommandTarget::None => "none".to_string(),
+        CommandTarget::Entity { entity, component } => match component {
+            Some(component) => format!("entity {entity} ({component})"),
+            None => format!("entity {entity}"),
+        },
+        CommandTarget::Asset(key) => format!("asset {key}"),
+        CommandTarget::View(view) => format!("view {view}"),
+    }
+}
+
 /// Split a command line into a program and its arguments.
 ///
 /// Whitespace separates the parts, except inside one pair of double quotes:
@@ -4836,13 +5109,13 @@ mod tests {
             guid: guid.map(str::to_string),
         };
         let listing = [
-            row("defaults/pill.pbr.material", None),
+            row("materials/pill.pbr.material", None),
             row("materials/unlit.material", Some("6a1e")),
             row("shaders/pbr_fragment.hlsl", Some("7b2f")),
         ];
 
         assert!(
-            listing_shows_asset(&listing, None, "defaults/pill.pbr.material"),
+            listing_shows_asset(&listing, None, "materials/pill.pbr.material"),
             "the store's own path is the same row"
         );
         assert!(

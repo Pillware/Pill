@@ -32,6 +32,7 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 
 // External crates
+use pill_engine::Entity;
 use serde::{Deserialize, Serialize};
 
 // Current crate
@@ -428,6 +429,13 @@ pub struct CommandSpec {
     /// Whether a menu draws a rule above this command's row, grouping it
     /// with the rows after it.
     pub separator_before: bool,
+    /// The icon a place draws for the command, when the place has room for
+    /// one.
+    pub icon: Option<crate::icons::Icon>,
+    /// Every place besides the menu bar the command appears in. The menu bar
+    /// placement is derived from [`Self::menu_path`], so the two cannot
+    /// disagree.
+    pub placements: Vec<crate::placements::UiSlot>,
 }
 
 impl CommandSpec {
@@ -440,7 +448,21 @@ impl CommandSpec {
             shortcuts: BTreeMap::new(),
             global: false,
             separator_before: false,
+            icon: None,
+            placements: Vec::new(),
         }
+    }
+
+    /// Sets the icon a place draws for the command.
+    pub fn icon(mut self, icon: crate::icons::Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    /// Adds one place the command appears in.
+    pub fn place(mut self, slot: crate::placements::UiSlot) -> Self {
+        self.placements.push(slot);
+        self
     }
 
     /// Adds a menu path.
@@ -491,6 +513,13 @@ pub struct CommandRegistry {
     preset: KeymapPreset,
 }
 
+/// The owner the editor's own commands register under.
+///
+/// A command with this owner is one this build implements; every other owner
+/// is a module, and its commands reach that module through
+/// [`CommandInbox`] instead of a table in the executable.
+pub const BUILTIN_OWNER: &str = "editor";
+
 impl CommandRegistry {
     /// Builds a registry holding only the built-in commands, under owner
     /// `editor`.
@@ -500,7 +529,7 @@ impl CommandRegistry {
             overrides: BTreeMap::new(),
             preset: KeymapPreset::default(),
         };
-        registry.register("editor", builtin_commands());
+        registry.register(BUILTIN_OWNER, builtin_commands());
         registry
     }
 
@@ -516,6 +545,17 @@ impl CommandRegistry {
     /// Replaces `owner`'s registrations with `commands`.
     pub fn register(&mut self, owner: &str, commands: Vec<CommandSpec>) {
         self.owners.insert(owner.to_string(), commands);
+    }
+
+    /// Drops `owner`'s registrations, as the executable does when the module
+    /// that registered them has gone.
+    pub fn forget(&mut self, owner: &str) {
+        self.owners.remove(owner);
+    }
+
+    /// Every owner that holds commands, in key order.
+    pub fn owners(&self) -> impl Iterator<Item = &str> {
+        self.owners.keys().map(String::as_str)
     }
 
     /// Iterates every command, owners in key order; the built-in commands
@@ -620,12 +660,32 @@ impl CommandRegistry {
     /// frame's snapshot carries these rows, so the menus and the palette build
     /// themselves without touching the world.
     pub fn views(&self) -> Vec<CommandView> {
-        self.commands()
-            .map(|spec| CommandView {
-                id: spec.id.clone(),
-                title: spec.title.clone(),
-                menu_path: spec.menu_path.clone(),
-                separator_before: spec.separator_before,
+        self.owners
+            .iter()
+            .flat_map(|(owner, specs)| {
+                specs.iter().map(move |spec| {
+                    // The menu path is the one spelling of "this command is in
+                    // a menu"; the placement list reports it.
+                    let mut placements = spec.placements.clone();
+                    if !spec.menu_path.is_empty()
+                        && !placements
+                            .iter()
+                            .any(|slot| matches!(slot, crate::placements::UiSlot::MenuBar { .. }))
+                    {
+                        placements.push(crate::placements::UiSlot::MenuBar {
+                            path: spec.menu_path.clone(),
+                        });
+                    }
+                    CommandView {
+                        id: spec.id.clone(),
+                        title: spec.title.clone(),
+                        menu_path: spec.menu_path.clone(),
+                        separator_before: spec.separator_before,
+                        owner: owner.clone(),
+                        icon: spec.icon,
+                        placements,
+                    }
+                })
             })
             .collect()
     }
@@ -646,6 +706,85 @@ pub struct CommandView {
     pub menu_path: Vec<String>,
     /// Whether a rule is drawn above the row.
     pub separator_before: bool,
+    /// The crate that registered the command: `editor` for a built-in, the
+    /// module name for everything a module owns.
+    pub owner: String,
+    /// The icon a place draws for the command, when it has one.
+    pub icon: Option<crate::icons::Icon>,
+    /// Every place the command appears in, including the menu bar row its
+    /// path produces.
+    pub placements: Vec<crate::placements::UiSlot>,
+}
+
+impl CommandView {
+    /// Whether the editor's own code implements this command.
+    ///
+    /// A built-in draws a row only when the menu model has an action for it;
+    /// a module's command always does, because running it is the module's own
+    /// business.
+    pub fn is_builtin(&self) -> bool {
+        self.owner == BUILTIN_OWNER
+    }
+}
+
+/// One module's command set, as it queues it during `register`.
+///
+/// A module cannot write the registry itself: the executable binds each set to
+/// the module's liveness marker, so a set whose module unloaded is dropped
+/// instead of leaving rows nothing answers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CommandRegistration {
+    /// The crate registering the commands.
+    pub owner: String,
+    /// The complete set, which replaces whatever that owner registered before.
+    pub commands: Vec<CommandSpec>,
+}
+
+/// The command registrations queued since the executable last looked.
+#[derive(Debug, Default)]
+pub struct CommandRegistrations {
+    /// The registrations, oldest first.
+    pending: Vec<CommandRegistration>,
+    /// The draw functions the modules asked for, oldest first.
+    pending_draws: Vec<crate::placements::CommandDrawRequest>,
+}
+
+impl CommandRegistrations {
+    /// Queues one set, as a module's `register` does.
+    pub fn push(&mut self, registration: CommandRegistration) {
+        self.pending.push(registration);
+    }
+
+    /// Takes every queued registration and leaves the queue empty.
+    pub fn drain(&mut self) -> Vec<CommandRegistration> {
+        std::mem::take(&mut self.pending)
+    }
+
+    /// Queues one draw function a module wants used for one place.
+    pub fn push_draw(&mut self, request: crate::placements::CommandDrawRequest) {
+        self.pending_draws.push(request);
+    }
+
+    /// Takes every queued draw request and leaves the queue empty.
+    pub fn drain_draws(&mut self) -> Vec<crate::placements::CommandDrawRequest> {
+        std::mem::take(&mut self.pending_draws)
+    }
+
+    /// Registers the resource in `world` and inserts it when it is absent.
+    pub fn ensure(world: &mut pill_engine::World) {
+        world.register_resource::<Self>();
+        if world.get_resource::<Self>().is_none() {
+            world.insert_resource(Self::default());
+        }
+    }
+}
+
+impl pill_engine::Resource for CommandRegistrations {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
 }
 
 impl pill_engine::Resource for CommandRegistry {
@@ -1120,16 +1259,125 @@ pub fn write_gizmo_hidden_types(
     })
 }
 
-/// The world resource that carries a frame's executed command ids to the
-/// modules that own them.
+/// What a command invocation is about: the entity, asset or view the person
+/// acted on.
+///
+/// A place that draws a command knows its subject (`InspectorComponentHeader`
+/// its entity and component, `AssetContextMenu` the file, `ViewportToolbox` the
+/// view); a place that names one of the editor's own commands has none.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum CommandTarget {
+    /// Nothing: a menu row, the palette or a shortcut.
+    #[default]
+    None,
+    /// An entity, and the component when the place belongs to one component.
+    Entity {
+        /// The entity the place was drawn for.
+        entity: Entity,
+        /// The component's registered type name, when the place is per
+        /// component.
+        component: Option<String>,
+    },
+    /// An asset, by its project-relative key.
+    Asset(String),
+    /// A scene view, by index.
+    View(u8),
+}
+
+/// One command the person asked for, with the subject it was asked about.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommandInvocation {
+    /// The id the command registered under.
+    pub id: String,
+    /// What the invocation is about.
+    pub target: CommandTarget,
+}
+
+impl CommandInvocation {
+    /// An invocation of `id` with no subject, which is what a menu row, the
+    /// palette and a shortcut produce.
+    pub fn plain(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            target: CommandTarget::None,
+        }
+    }
+
+    /// The entity the invocation is about, when it is about one.
+    pub fn entity(&self) -> Option<Entity> {
+        match self.target {
+            CommandTarget::Entity { entity, .. } => Some(entity),
+            _ => None,
+        }
+    }
+
+    /// The component the invocation is about, when the place is per component.
+    pub fn component(&self) -> Option<&str> {
+        match &self.target {
+            CommandTarget::Entity { component, .. } => component.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+/// The world resource that carries the commands the person ran to the modules
+/// that own them.
 ///
 /// A module reads its own ids in a system of its own. The shell cannot call
 /// into a module's code, and a reloadable module must not hand function
-/// pointers across the reload boundary.
+/// pointers across the reload boundary. An invocation no module takes within
+/// [`COMMAND_INVOCATION_LIFETIME`] frames is dropped, so the queue cannot grow
+/// without bound.
 #[derive(Clone, Debug, Default)]
 pub struct CommandInbox {
-    /// Command ids executed this frame, in execution order.
-    pub executed: Vec<String>,
+    /// The invocations, oldest first, each with the number of frames it has
+    /// waited.
+    pending: Vec<(CommandInvocation, u32)>,
+}
+
+/// How many frames an invocation waits for its module to take it.
+pub const COMMAND_INVOCATION_LIFETIME: u32 = 120;
+
+impl CommandInbox {
+    /// Queues one invocation, as the executable does when a place reports it.
+    pub fn push(&mut self, invocation: CommandInvocation) {
+        self.pending.push((invocation, 0));
+    }
+
+    /// Takes every queued invocation of the command registered under `id`.
+    pub fn take(&mut self, id: &str) -> Vec<CommandInvocation> {
+        let mut taken = Vec::new();
+        self.pending.retain(|(invocation, _)| {
+            if invocation.id == id {
+                taken.push(invocation.clone());
+                false
+            } else {
+                true
+            }
+        });
+        taken
+    }
+
+    /// Ages every waiting invocation by one frame and drops the ones nobody
+    /// took, returning how many were dropped.
+    pub fn age(&mut self) -> usize {
+        let before = self.pending.len();
+        self.pending.retain_mut(|(_, frames_waited)| {
+            *frames_waited += 1;
+            *frames_waited < COMMAND_INVOCATION_LIFETIME
+        });
+        before - self.pending.len()
+    }
+
+    /// Returns how many invocations are waiting.
+    pub fn len(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Returns whether no invocation is waiting.
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
 }
 
 impl pill_engine::Resource for CommandInbox {
@@ -1302,6 +1550,7 @@ pub fn ensure_command_resources(world: &mut pill_engine::World) {
     if world.get_resource::<CommandInbox>().is_none() {
         world.insert_resource(CommandInbox::default());
     }
+    CommandRegistrations::ensure(world);
     world.register_resource::<PendingEditorCommands>();
     if world.get_resource::<PendingEditorCommands>().is_none() {
         world.insert_resource(PendingEditorCommands::default());
@@ -1324,6 +1573,13 @@ pub fn ensure_command_resources(world: &mut pill_engine::World) {
     crate::hooks::HookNotices::ensure(world);
     crate::hooks::HookWatch::ensure(world);
     crate::viewport::EditorViewportState::ensure(world);
+    // The resources editor extensions meet the editor through: replayed
+    // extension edits, the unsaved work the quit prompt asks about, and the
+    // state and draw functions module commands are drawn from.
+    crate::extension_edits::ExtensionEditInbox::ensure(world);
+    crate::unsaved_work::UnsavedWork::ensure(world);
+    crate::placements::CommandStates::ensure(world);
+    crate::placements::CommandDraws::ensure(world);
 }
 
 // =============================================================================
@@ -1524,5 +1780,75 @@ mod tests {
         assert!(registry
             .resolve(pill_engine::KeyCode::KeyQ, modifiers)
             .is_none());
+    }
+
+    #[test]
+    fn views_carry_the_owner_and_a_forgotten_owner_loses_its_rows() {
+        let mut registry = CommandRegistry::with_builtins();
+        registry.register(
+            "pill_gadget_editor",
+            vec![CommandSpec::new("gadget.snap", "Snap to Gadget").menu(&["Gadget", "Snap"])],
+        );
+        let gadget = registry
+            .views()
+            .into_iter()
+            .find(|view| view.id == "gadget.snap")
+            .expect("the module's command is a view");
+        assert_eq!(gadget.owner, "pill_gadget_editor");
+        assert!(!gadget.is_builtin());
+        let built_in = registry
+            .views()
+            .into_iter()
+            .find(|view| view.id == "editor.pause_toggle")
+            .expect("the built-ins are views");
+        assert!(built_in.is_builtin());
+        // The owners list is what the executable prunes against its markers.
+        assert!(registry.owners().any(|owner| owner == "pill_gadget_editor"));
+        registry.forget("pill_gadget_editor");
+        assert!(registry.command("gadget.snap").is_none());
+        assert!(registry.command("editor.pause_toggle").is_some());
+        assert!(!registry.owners().any(|owner| owner == "pill_gadget_editor"));
+    }
+
+    #[test]
+    fn an_invocation_waiting_for_its_module_ages_out() {
+        let entity = pill_engine::Entity::from_raw(1, 0);
+        let mut inbox = CommandInbox::default();
+        inbox.push(CommandInvocation::plain("gadget.snap"));
+        inbox.push(CommandInvocation {
+            id: "gadget.open".to_string(),
+            target: CommandTarget::Entity {
+                entity,
+                component: Some("GadgetComponent".to_string()),
+            },
+        });
+        // A module takes its own ids and leaves the rest waiting.
+        let taken = inbox.take("gadget.snap");
+        assert_eq!(taken, vec![CommandInvocation::plain("gadget.snap")]);
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(taken[0].entity(), None);
+        // The one nobody took is dropped after its lifetime, not left forever.
+        let mut waited = 0;
+        while !inbox.is_empty() {
+            inbox.age();
+            waited += 1;
+            assert!(waited <= COMMAND_INVOCATION_LIFETIME);
+        }
+        assert_eq!(waited, COMMAND_INVOCATION_LIFETIME);
+    }
+
+    #[test]
+    fn an_entity_target_carries_its_component() {
+        let entity = pill_engine::Entity::from_raw(7, 0);
+        let invocation = CommandInvocation {
+            id: "gadget.open".to_string(),
+            target: CommandTarget::Entity {
+                entity,
+                component: Some("GadgetComponent".to_string()),
+            },
+        };
+        assert_eq!(invocation.entity(), Some(entity));
+        assert_eq!(invocation.component(), Some("GadgetComponent"));
+        assert_eq!(CommandTarget::default(), CommandTarget::None);
     }
 }

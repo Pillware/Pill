@@ -12,6 +12,9 @@ import re
 
 from core import log_layout
 from core.editor_log_tokens import (
+    COMMAND_INVOKED_TOKEN,
+    COMMAND_OWNER_DROPPED_TOKEN,
+    COMMAND_REGISTERED_TOKEN,
     DELETE_ENTITY_TOKEN,
     EDITOR_WINDOW_CREATED_TOKEN,
     EGUI_SHELL_LOADED_TOKEN,
@@ -38,11 +41,36 @@ from core.editor_log_tokens import (
     PROJECT_EDITOR_RELOADED_TOKEN,
     PROJECT_HOOK_TOKEN,
     PROJECT_RELOAD_TOKEN,
+    SELECTION_CHANGED_TOKEN,
+    TAB_ACTIVATED_TOKEN,
+    TEST_COMMAND_INVOKED_TOKEN,
+    VIEWPORT_DUMP_TOKEN,
 )
-from core.editor_session import EditorSession
+from core.editor_session import EditorSession, ScriptedCommandRejected
 from core.projects import REPOSITORY_ROOT
 from editor_step_areas import StepArea, StepContext
-from editor_step_support import print_ok
+from editor_step_support import menu_click, print_ok, toolbox_click
+
+# The command the proving crate registers, and the row its menu path adds.
+MODULE_COMMAND = "pill_test.editor_command"
+MODULE_COMMAND_ROW = "Test Editor Command"
+# The chord the command binds in every preset.
+MODULE_COMMAND_CHORD = "ctrl+alt+t"
+# The command the crate places in the context menus and the viewport toolbox.
+CONTEXT_COMMAND = "pill_test.editor_context_command"
+
+# The rectangle the shell logs for a placed command's button, once per
+# placement, so a suite can click it the way a person does.
+COMMAND_BUTTON_RECT = re.compile(
+    r'\[editor\] command button rect \|[^\n]*command="?pill_test\.editor_command"?'
+    r'[^\n]*slot="?inspector_component_header"?[^\n]*'
+    r"x=([-\d.]+)\s+y=([-\d.]+)\s+width=([\d.]+)\s+height=([\d.]+)"
+)
+TOOLBAR_COMMAND_RECT = re.compile(
+    r'\[editor\] command button rect \|[^\n]*command="?pill_test\.editor_command"?'
+    r'[^\n]*slot="?toolbar"?[^\n]*'
+    r"x=([-\d.]+)\s+y=([-\d.]+)\s+width=([\d.]+)\s+height=([\d.]+)"
+)
 
 # The project this area runs, beside the other test projects.
 API_PROJECT = REPOSITORY_ROOT / "devops" / "tests" / "projects" / "editor_api"
@@ -160,6 +188,18 @@ def _drive_api(session: EditorSession) -> None:
         begin,
     )
     print_ok("the selection callback heard the pick")
+
+    # Step 2b: a module's command is registered, drawn in its menu, run from
+    # the menu, the scripted channel and a shortcut, and dropped with its
+    # module.
+    _module_commands(session, entity)
+
+    # Step 2c: the buttons the module placed on the Inspector header and the
+    # toolbar report the target their place was drawn for, and so does the row
+    # it placed in the viewport toolbox.
+    _module_header_button(session, entity)
+    _module_toolbar_button(session)
+    _module_toolbox_row(session)
 
     # Step 3: a committed field edit reports the phase, the primary flag and
     # the state the callback read.
@@ -315,6 +355,192 @@ def _drive_api(session: EditorSession) -> None:
         begin,
     )
     print_ok("the scene callback heard the new scene")
+
+    # Step 14: a module that unloads takes its command set with it, last
+    # because dropping the marker also silences the crate's callbacks.
+    _module_command_pruned(session)
+
+
+def _invoked_line(line: str) -> str:
+    """The field block of the last `[test] command invoked` line, or ""."""
+    matches = re.findall(r"\[test\] command invoked \|([^\n]*)", line)
+    return matches[-1] if matches else ""
+
+
+def _module_commands(session: EditorSession, entity: str) -> None:
+    """Proves a module's command from registration to invocation."""
+    # The set is queued in `register` and bound at the frame boundary.
+    session.wait_for_match(
+        log_layout.message_then_fields_pattern(
+            re.escape(COMMAND_REGISTERED_TOKEN), r'\s+owner="?pill_test_editor"?'
+        ),
+        60,
+        "the module's command registration",
+    )
+    # The row its menu path asked for, clicked the way a person clicks it.
+    begin = session.length()
+    menu_click(session, "edit", MODULE_COMMAND_ROW, MODULE_COMMAND_ROW)
+    session.wait(re.escape(TEST_COMMAND_INVOKED_TOKEN), 30, "the module's command", begin)
+    fields = _invoked_line(session.read_since(begin))
+    assert 'target="none"' in fields, "the menu row carried no target: {}".format(fields)
+    print_ok("the module's command drew its menu row and ran in the module")
+
+    # The scripted channel names the subject: an entity by its display handle.
+    begin = session.length()
+    session.send("command {} entity {}".format(MODULE_COMMAND, entity))
+    session.wait(re.escape(TEST_COMMAND_INVOKED_TOKEN), 30, "the entity invocation", begin)
+    fields = _invoked_line(session.read_since(begin))
+    assert 'target="entity ' in fields, "the entity target reached the module: {}".format(fields)
+    print_ok("the scripted command carried its entity target to the module")
+
+    # ... and an asset by its key.
+    begin = session.length()
+    session.send("command {} asset res/api_probe.scene".format(MODULE_COMMAND))
+    session.wait(re.escape(TEST_COMMAND_INVOKED_TOKEN), 30, "the asset invocation", begin)
+    fields = _invoked_line(session.read_since(begin))
+    assert 'target="asset res/api_probe.scene"' in fields, (
+        "the asset target reached the module: {}".format(fields)
+    )
+    print_ok("the scripted command carried its asset target to the module")
+
+    # A chord the command binds in every preset reaches it the same way.
+    begin = session.length()
+    session.send("key {}".format(MODULE_COMMAND_CHORD))
+    session.wait(re.escape(COMMAND_INVOKED_TOKEN), 30, "the shortcut's invocation", begin)
+    session.wait(re.escape(TEST_COMMAND_INVOKED_TOKEN), 30, "the shortcut in the module", begin)
+    print_ok("a bound chord reached the module's command")
+
+    # An id nothing registers is refused when it runs, not when it parses.
+    begin = session.length()
+    session.send("command pill_test.not_registered")
+    try:
+        session.wait(re.escape(TEST_COMMAND_INVOKED_TOKEN), 30, "the refused invocation", begin)
+    except ScriptedCommandRejected as error:
+        refusal = error
+    else:
+        refusal = None
+    assert refusal is not None, "an unregistered command id was accepted"
+    assert "no command is registered" in refusal.reason, (
+        "the refusal named the registry: {}".format(refusal.reason)
+    )
+    print_ok("an unregistered command id was refused with its reason")
+
+
+def _module_header_button(session: EditorSession, entity: str) -> None:
+    """Clicks the button a module placed on a component's Inspector header."""
+    begin = session.length()
+    session.send("tab inspector")
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(TAB_ACTIVATED_TOKEN), r'\s+tab="inspector"'
+        ),
+        30,
+        "the Inspector tab shown",
+        begin,
+    )
+    session.send("select entity {}".format(entity))
+    # A frame drawn while the Inspector shows the probe entity places the
+    # button. Its rectangle logs once per placement, so it is read from the
+    # whole log rather than from this step's window.
+    frame_begin = session.length()
+    session.send("dump viewport")
+    session.wait(re.escape(VIEWPORT_DUMP_TOKEN), 30, "a frame drawn", frame_begin)
+    # A synthetic click that lands while the tab is still laying out is
+    # swallowed, so a second attempt re-reads the rectangle once.
+    for attempt in (1, 2):
+        matches = COMMAND_BUTTON_RECT.findall(session.text())
+        assert matches, "the Inspector header never placed the module's command button"
+        x, y, width, height = (float(value) for value in matches[-1])
+        click_begin = session.length()
+        session.send("click {:.0f} {:.0f}".format(x + width / 2.0, y + height / 2.0))
+        try:
+            session.wait(
+                re.escape(TEST_COMMAND_INVOKED_TOKEN),
+                30,
+                "the header button's invocation",
+                click_begin,
+            )
+            break
+        except TimeoutError:
+            if attempt == 2:
+                raise
+    fields = _invoked_line(session.read_since(click_begin))
+    assert 'target="entity ' in fields and "ModuleTest" in fields, (
+        "the header button's target: {}".format(fields)
+    )
+    print_ok("the Inspector header button reported its entity and component")
+
+
+def _module_toolbar_button(session: EditorSession) -> None:
+    """Clicks the button a module placed in the top toolbar."""
+    matches = TOOLBAR_COMMAND_RECT.findall(session.text())
+    assert matches, "the toolbar never placed the module's command button"
+    for attempt in (1, 2):
+        x, y, width, height = (float(value) for value in matches[-1])
+        click_begin = session.length()
+        session.send("click {:.0f} {:.0f}".format(x + width / 2.0, y + height / 2.0))
+        try:
+            session.wait(
+                re.escape(TEST_COMMAND_INVOKED_TOKEN),
+                30,
+                "the toolbar button's invocation",
+                click_begin,
+            )
+            break
+        except TimeoutError:
+            if attempt == 2:
+                raise
+    fields = _invoked_line(session.read_since(click_begin))
+    assert 'target="none"' in fields, "the toolbar button's target: {}".format(fields)
+    print_ok("the toolbar button reported the command with no target")
+
+
+def _module_toolbox_row(session: EditorSession) -> None:
+    """Clicks the row a module placed in the floating viewport toolbox."""
+    # A frame drawn with the scene viewport on screen lays the panel and its
+    # rows out. Their rectangles log once per placement, so they are read from
+    # the whole log rather than from this step's window.
+    frame_begin = session.length()
+    session.send("dump viewport")
+    session.wait(re.escape(VIEWPORT_DUMP_TOKEN), 30, "a frame drawn", frame_begin)
+    begin = session.length()
+    toolbox_click(session, 0, CONTEXT_COMMAND, "the toolbox row's click")
+    session.wait(
+        re.escape(TEST_COMMAND_INVOKED_TOKEN),
+        30,
+        "the toolbox row's invocation",
+        begin,
+    )
+    fields = _invoked_line(session.read_since(begin))
+    assert 'target="view 0"' in fields, "the toolbox row's target: {}".format(fields)
+    print_ok("the viewport toolbox row reported the view it was drawn over")
+
+
+def _module_command_pruned(session: EditorSession) -> None:
+    """Drops the module's marker and proves its command set went with it."""
+    begin = session.length()
+    session.send("panel unload pill_test_editor")
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(COMMAND_OWNER_DROPPED_TOKEN), r'\s+owner="?pill_test_editor"?'
+        ),
+        60,
+        "the dropped command set",
+        begin,
+    )
+    begin = session.length()
+    session.send("command {}".format(MODULE_COMMAND))
+    try:
+        session.wait(re.escape(COMMAND_INVOKED_TOKEN), 30, "the invocation after the unload", begin)
+    except ScriptedCommandRejected as error:
+        refusal = error
+    else:
+        refusal = None
+    assert refusal is not None, "the unloaded module's command still ran"
+    assert "no command is registered" in refusal.reason, (
+        "the unloaded module's command still ran: {}".format(refusal.reason)
+    )
+    print_ok("an unloaded module's command set left the registry with it")
 
 
 def _bare_entity(session: EditorSession) -> str:

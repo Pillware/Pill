@@ -124,8 +124,24 @@ def run_systems_components_and_entities_steps(state: StepState) -> None:
     states, paused = dump_systems_state()
     assert states, "the systems dump carried no rows"
     assert all(states.values()), f"a system started disabled: {states}"
-    assert not paused, "the engine started paused"
     first_index = min(states)
+    # The areas share one editor, and under some keymap presets a key pressed
+    # in a viewport by an earlier area pauses the engine, so this area sets its
+    # own precondition instead of assuming the session it inherits: a running
+    # engine, which is what the toggle checks below measure from.
+    if paused:
+        begin = session.length()
+        session.send("command editor.pause_toggle")
+        session.wait(
+            log_layout.message_then_fields_pattern(
+                re.escape(PAUSE_TOGGLED_TOKEN), r"\s+paused=false"
+            ),
+            30,
+            "the engine resumed before the pause checks",
+            begin,
+        )
+        states, paused = dump_systems_state()
+        assert not paused, "the engine stayed paused after the resume"
     print_ok(f"systems dumped: {len(states)} rows, index {first_index} first")
 
     # One toggle off is a recorded edit; the dump is the tab's data, so

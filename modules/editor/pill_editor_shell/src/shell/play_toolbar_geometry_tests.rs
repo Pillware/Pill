@@ -92,6 +92,8 @@ fn toolbar_pass(
                 panels: &panels,
                 panel_budget: &mut budget,
                 panel_commands: &mut panel_commands,
+                command_states: &pill_editor_core::placements::CommandStates::default(),
+                command_draws: &pill_editor_core::placements::CommandDraws::default(),
                 panel_entities: &[],
                 panel_detail: None,
                 panel_answer: None,
@@ -102,6 +104,7 @@ fn toolbar_pass(
                 previews: &mut previews,
                 badges: &[],
                 marquee: None,
+                unsaved_asset_paths: &[],
             };
             play_toolbar(ui, session, &mut viewer);
             group = viewer.overlay_regions.last().copied();
@@ -189,6 +192,8 @@ fn run_control(
         panels: &panels,
         panel_budget: &mut budget,
         panel_commands: &mut panel_commands,
+        command_states: &pill_editor_core::placements::CommandStates::default(),
+        command_draws: &pill_editor_core::placements::CommandDraws::default(),
         panel_entities: &[],
         panel_detail: None,
         panel_answer: None,
@@ -199,6 +204,7 @@ fn run_control(
         previews: &mut previews,
         badges: &[],
         marquee: None,
+        unsaved_asset_paths: &[],
     };
     run_play_control(control, command, &mut viewer);
     assert_eq!(pending.batches.len(), 1, "one press queues one batch");

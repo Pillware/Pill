@@ -6,6 +6,9 @@
 //!   ones that hold headers ([`shader_tree_layout`]).
 //! - Cook every stale source in one call ([`cook_shader_tree`]), with every
 //!   header directory on the include path.
+//! - Cook a project's tree with the header directories other trees ship
+//!   ([`cook_shader_tree_with_include_directories`]), so a project shader can
+//!   include a header a module ships.
 //!
 //! # Design
 //!
@@ -114,18 +117,51 @@ pub fn shader_tree_layout(root: &Path) -> Result<ShaderTreeLayout, CookError> {
 /// place, so a caller that keeps the previous shaders on failure still finds
 /// them on disk.
 pub fn cook_shader_tree(root: &Path) -> Result<ShaderTreeReport, CookError> {
-    // Step 1: Find the layout and list every header file.
+    cook_shader_tree_with_include_directories(root, &[])
+}
+
+/// Cooks every stale stage source under `root`, searching
+/// `extra_include_directories` for the headers they include.
+///
+/// This is how a project's tree reaches a header a module ships: the caller
+/// passes the `include` directories of the loaded modules' shader trees, so a
+/// project shader can include a header a module ships by its name. The
+/// extra directories are searched after the tree's own, in the order given, so
+/// a project header shadows a module header of the same name. Their files
+/// count as inputs, so editing one makes the sources that include it stale.
+///
+/// # Errors
+///
+/// Returns the first [`CookError`]: a source `slangc` rejects, a missing
+/// `slangc`, or an I/O failure. Outputs cooked before the failure stay in
+/// place, so a caller that keeps the previous shaders on failure still finds
+/// them on disk.
+pub fn cook_shader_tree_with_include_directories(
+    root: &Path,
+    extra_include_directories: &[PathBuf],
+) -> Result<ShaderTreeReport, CookError> {
+    // Step 1: Find the layout and list every header file, including the ones
+    // the caller's directories hold.
     let layout = shader_tree_layout(root)?;
     let mut report = ShaderTreeReport::default();
     for include_directory in &layout.include_directories {
         report.header_files.extend(walk_files(include_directory)?);
     }
+    for include_directory in extra_include_directories {
+        report.header_files.extend(walk_files(include_directory)?);
+    }
 
-    // Step 2: Cook each source directory, with every header directory in the
-    // tree on the include path, in sorted path order.
+    // Step 2: Cook each source directory, with the tree's own header
+    // directories first and the caller's after them, in sorted path order.
+    let mut include_directories = layout.include_directories.clone();
+    for include_directory in extra_include_directories {
+        if !include_directories.contains(include_directory) {
+            include_directories.push(include_directory.clone());
+        }
+    }
     for source_directory in &layout.source_directories {
         let mut rule = HlslToWgsl::flat_tree();
-        for include_directory in &layout.include_directories {
+        for include_directory in &include_directories {
             rule = rule.with_include_directory(include_directory);
         }
         let rules: Vec<Box<dyn Rule>> = vec![Box::new(rule)];
@@ -249,6 +285,126 @@ mod tests {
         assert_eq!(
             shader_tree_layout(&root).expect("not an error"),
             ShaderTreeLayout::default()
+        );
+    }
+
+    /// Creates a project-shaped tree and a separate module-shaped header
+    /// directory outside it. Returns the project root and the module's
+    /// `include/` directory.
+    fn create_cook_tree(
+        scenario_name: &str,
+        source: &str,
+        project_header: Option<&str>,
+        module_header: &str,
+    ) -> (PathBuf, PathBuf) {
+        let base = std::env::temp_dir()
+            .join("pill_assets_shader_cook")
+            .join(format!("{}_{scenario_name}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let project_root = base.join("project");
+        let module_include = base.join("module/include");
+        fs::create_dir_all(project_root.join("shaders")).expect("scratch directory");
+        fs::create_dir_all(&module_include).expect("scratch directory");
+        fs::write(project_root.join("shaders/probe_fragment.hlsl"), source).expect("source");
+        if let Some(header) = project_header {
+            fs::create_dir_all(project_root.join("shaders/include")).expect("scratch directory");
+            fs::write(
+                project_root.join("shaders/include/shared_tint.hlsl"),
+                header,
+            )
+            .expect("header");
+        }
+        fs::write(module_include.join("shared_tint.hlsl"), module_header).expect("header");
+        (project_root, module_include)
+    }
+
+    /// A source that includes a header from another tree cooks when that
+    /// directory is on the include path.
+    #[test]
+    fn a_source_cooks_with_an_extra_include_directory() {
+        let (project_root, module_include) = create_cook_tree(
+            "extra_include",
+            "#include \"shared_tint.hlsl\"\n\
+             float4 fs_main() : SV_TARGET { return float4(shared_tint(), 1.0); }\n",
+            None,
+            "float3 shared_tint() { return float3(0.25, 0.5, 0.75); }\n",
+        );
+
+        let report = cook_shader_tree_with_include_directories(
+            &project_root,
+            std::slice::from_ref(&module_include),
+        )
+        .expect("the module header is on the include path");
+
+        let output = project_root.join("shaders/probe_fragment.wgsl");
+        assert!(
+            output.is_file(),
+            "the cook wrote the stage beside its source"
+        );
+        assert!(report.rebuilt_outputs.contains(&output));
+    }
+
+    /// Editing a header the caller supplied makes the source that includes it
+    /// stale, so the next cook rebuilds it.
+    #[test]
+    fn an_extra_header_edit_makes_the_source_stale() {
+        let (project_root, module_include) = create_cook_tree(
+            "extra_header_staleness",
+            "#include \"shared_tint.hlsl\"\n\
+             float4 fs_main() : SV_TARGET { return float4(shared_tint(), 1.0); }\n",
+            None,
+            "float3 shared_tint() { return float3(0.25, 0.5, 0.75); }\n",
+        );
+        let output = project_root.join("shaders/probe_fragment.wgsl");
+        cook_shader_tree_with_include_directories(
+            &project_root,
+            std::slice::from_ref(&module_include),
+        )
+        .expect("first cook");
+        assert!(output.is_file());
+
+        // The output is written before this, so the header is the newer file.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(
+            module_include.join("shared_tint.hlsl"),
+            "float3 shared_tint() { return float3(0.75, 0.5, 0.25); }\n",
+        )
+        .expect("header edit");
+
+        let report = cook_shader_tree_with_include_directories(
+            &project_root,
+            std::slice::from_ref(&module_include),
+        )
+        .expect("second cook");
+
+        assert!(
+            report.rebuilt_outputs.contains(&output),
+            "a header the caller supplied is an input of the source"
+        );
+    }
+
+    /// The project's own header wins over a module header of the same name.
+    #[test]
+    fn the_project_header_shadows_a_module_header_of_the_same_name() {
+        let (project_root, module_include) = create_cook_tree(
+            "shadowing",
+            "#include \"shared_tint.hlsl\"\n\
+             float4 fs_main() : SV_TARGET { return float4(shared_tint(), 1.0); }\n",
+            Some("float3 shared_tint() { return float3(0.25, 0.25, 0.25); }\n"),
+            "float3 shared_tint() { return float3(0.75, 0.75, 0.75); }\n",
+        );
+
+        cook_shader_tree_with_include_directories(
+            &project_root,
+            std::slice::from_ref(&module_include),
+        )
+        .expect("both headers compile");
+
+        let cooked = fs::read_to_string(project_root.join("shaders/probe_fragment.wgsl"))
+            .expect("the cook wrote the stage");
+        assert!(
+            cooked.contains("0.25f") && !cooked.contains("0.75f"),
+            "the project's own include directory is searched first"
         );
     }
 }

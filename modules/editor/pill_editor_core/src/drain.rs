@@ -260,6 +260,14 @@ pub fn apply_pending(engine: &mut Engine, now_millis: u64) -> DrainOutcome {
     // path, then drop the history entries the rebuilt registry cannot resolve.
     hook_session.publish_notices(engine.world_mut());
     prune_history(engine);
+    // Step 5: Drop the replayed extension states no extension took in time,
+    // so an extension that unloaded cannot fill the inbox.
+    if let Some(inbox) = engine
+        .world_mut()
+        .get_resource_mut::<crate::extension_edits::ExtensionEditInbox>()
+    {
+        inbox.age();
+    }
     drain_outcome
 }
 

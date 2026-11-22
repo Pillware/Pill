@@ -96,8 +96,8 @@ const ROLLBACK_REQUEST_FILE: &str = "target/hot/rollback.request";
 // =============================================================================
 
 /// Signature of [`SHADER_CHANGED_EXPORT`]: the world, the re-cooked file's
-/// path relative to the crate's `shader_sources/`, and its WGSL; returns how
-/// many shader assets changed.
+/// path relative to the crate's `res/`, and its WGSL; returns how many shader
+/// assets changed.
 #[cfg(feature = "rendering")]
 type ShaderChangedFunction = unsafe extern "C" fn(
     world: *mut pill_engine::World,
@@ -748,7 +748,7 @@ pub struct RenderingHost {
     /// Whether the last frame drew the surfaces; the frontend clears its
     /// scene-changed flag on the frames this is true.
     scene_drawn_last_frame: bool,
-    /// Watches the renderer data crate's `shader_sources/` tree and queues
+    /// Watches the renderer data crate's `res/` tree and queues
     /// what it re-cooks. `None` without a renderer, or when its data crate has
     /// no shaders or the watch could not start.
     shader_watcher: Option<crate::watchers::ShaderWatcher>,
@@ -1305,23 +1305,47 @@ fn assert_unique_owners(subjects: &[(&str, SystemOwner)]) {
     }
 }
 
+/// Every `include/` directory below the asset roots the loaded modules
+/// declared.
+///
+/// A project shader may include a header a module ships, so the project's
+/// cook searches these after the project's own include directories, in
+/// module declaration order. A root with no `include/` below it contributes
+/// nothing.
+fn module_shader_include_directories() -> Vec<PathBuf> {
+    let mut include_directories = Vec::new();
+    for root in pill_engine::asset_store::module_roots() {
+        if let Ok(layout) = pill_assets::shader_tree_layout(&root.directory) {
+            include_directories.extend(layout.include_directories);
+        }
+    }
+    include_directories
+}
+
 /// Cook every stale shader source under the project's asset directory, beside
 /// itself, and log what it did.
 ///
 /// The project's shaders follow the cooker's conventions: a source is a stage
 /// by its file name, and a directory named `include` holds the headers it can
-/// `#include`. The output goes next to the source, which is where the shader
-/// import reads it from.
+/// `#include`. The loaded modules' include directories join that path after the
+/// project's own, so a project shader may include a header a module ships. The
+/// output goes next to the source, which is where the shader import reads it
+/// from.
 ///
 /// A failed cook is logged and otherwise ignored. The outputs cooked before
 /// the failure stay on disk, and so do the ones from an earlier run, which is
 /// what the shaders already built draw.
 fn cook_project_shader_sources(asset_directory: &Path) {
     let cook_started_at = Instant::now();
-    match pill_assets::cook_shader_tree(asset_directory) {
+    let include_directories = module_shader_include_directories();
+    match pill_assets::cook_shader_tree_with_include_directories(
+        asset_directory,
+        &include_directories,
+    ) {
         Ok(report) => info!(
             target: telemetry_target::HOT_RELOAD,
             directory = %asset_directory.display(),
+            include_directories = include_directories.len(),
             rebuilt = report.rebuilt_outputs.len(),
             cook_ms = cook_started_at.elapsed().as_millis() as u64,
             "[assets] cooked the project's shader sources"
@@ -2036,7 +2060,7 @@ fn unsupported_render_components(
 }
 
 /// Start watching the renderer data crate's shader sources, when the host has
-/// a renderer and its data crate has a `shader_sources/` directory.
+/// a renderer and its data crate has a `res/` directory.
 ///
 /// A watch that cannot start is reported and leaves the host without shader
 /// reload; nothing else depends on it.
@@ -2056,14 +2080,15 @@ fn start_shader_watcher(host: &DevHost) -> Option<crate::watchers::ShaderWatcher
         crate::config::RENDERER_DATA_SUFFIX
     );
     let slot = host.extensions.iter().find(|slot| slot.name() == data)?;
-    // The tree the data crate cooks from, at its crate root. The build script
-    // and the watcher have to name the same directory, or a shader edit
-    // changes a file that nothing rebuilds.
+    // The tree the data crate cooks from, its `res` at the crate root. The
+    // build script and the watcher have to name the same directory, or a
+    // shader edit changes a file that nothing rebuilds, and the paths the
+    // watcher reports relative to it are the stages' asset paths.
     let shaders_directory = host
         .workspace_root
         .join(slot.crate_directory())
-        .join(crate::config::RENDERER_SHADER_SOURCES_DIRECTORY);
-    match crate::watchers::ShaderWatcher::spawn(&data, shaders_directory) {
+        .join(crate::config::MODULE_RESOURCES_DIRECTORY);
+    match crate::watchers::ShaderWatcher::spawn(&data, shaders_directory, Vec::new()) {
         Ok(watcher) => watcher,
         Err(error) => {
             warn!(
@@ -2085,8 +2110,7 @@ type RendererModule = crate::renderer_module::RendererModule;
 /// A project has no build script to cook its shaders, so the watcher that
 /// keeps the renderer data crate's tree current keeps the project's too. The
 /// tree is the project's asset directory, the same root the asset watcher
-/// watches and the same conventions the cooker applies to a crate's
-/// `shader_sources/`.
+/// watches and the same conventions the cooker applies to a module's `res/`.
 ///
 /// A watch that cannot start is reported and leaves the host running the
 /// shaders it already loaded.
@@ -2102,7 +2126,9 @@ fn start_project_shader_watcher(host: &DevHost) -> Option<crate::watchers::Shade
     }
     let shaders_directory = host.asset_directory()?.to_owned();
     let tree_label = host.project_module_config.name.clone();
-    match crate::watchers::ShaderWatcher::spawn(&tree_label, shaders_directory) {
+    let include_directories = module_shader_include_directories();
+    match crate::watchers::ShaderWatcher::spawn(&tree_label, shaders_directory, include_directories)
+    {
         Ok(watcher) => watcher,
         Err(error) => {
             warn!(

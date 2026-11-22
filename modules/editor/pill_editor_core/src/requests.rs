@@ -4,7 +4,8 @@
 //!
 //! - [`ShellRequests`]: the one-shot requests a pass raises for the
 //!   executable - a Problems row to open, an undo or redo, a dock tab to
-//!   show - taken in one call at the frame boundary.
+//!   show, a command a module should run - taken in one call at the frame
+//!   boundary.
 //! - [`HistoryRequest`]: which history walk, undo or redo, a request asks for.
 //!
 //! # Design
@@ -28,6 +29,7 @@
 //! `settle_pass` applies after the pass.
 
 // Current crate
+use crate::commands::CommandInvocation;
 use crate::layout::EditorTab;
 
 /// The one-shot requests one shell pass raises for the editor executable.
@@ -44,6 +46,9 @@ pub struct ShellRequests {
     /// The dock tab a menu item asked to show. A tab the dock no longer holds
     /// is re-docked by the executable rather than dropped.
     pub pending_tab: Option<EditorTab>,
+    /// The commands a click asked the owning modules to run, in click order.
+    /// The executable moves them into [`crate::commands::CommandInbox`].
+    pub invocations: Vec<CommandInvocation>,
 }
 
 impl ShellRequests {
@@ -57,10 +62,18 @@ impl ShellRequests {
         std::mem::take(self)
     }
 
+    /// Queues one command the person asked a module to run.
+    pub fn invoke(&mut self, invocation: CommandInvocation) {
+        self.invocations.push(invocation);
+    }
+
     /// Returns `true` when the pass raised no request.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.problem_open.is_none() && self.history.is_empty() && self.pending_tab.is_none()
+        self.problem_open.is_none()
+            && self.history.is_empty()
+            && self.pending_tab.is_none()
+            && self.invocations.is_empty()
     }
 }
 
@@ -83,6 +96,7 @@ mod tests {
             problem_open: Some(3),
             history: vec![HistoryRequest::Undo, HistoryRequest::Redo],
             pending_tab: Some(EditorTab::Assets),
+            invocations: vec![CommandInvocation::plain("test.run")],
         };
         let drained = requests.drain();
         assert_eq!(drained.problem_open, Some(3));
@@ -91,6 +105,10 @@ mod tests {
             vec![HistoryRequest::Undo, HistoryRequest::Redo]
         );
         assert_eq!(drained.pending_tab, Some(EditorTab::Assets));
+        assert_eq!(
+            drained.invocations,
+            vec![CommandInvocation::plain("test.run")]
+        );
         assert!(requests.is_empty());
         assert_eq!(requests, ShellRequests::default());
     }
@@ -98,5 +116,12 @@ mod tests {
     #[test]
     fn an_empty_value_is_empty() {
         assert!(ShellRequests::default().is_empty());
+    }
+
+    #[test]
+    fn an_invocation_is_a_request_of_its_own() {
+        let mut requests = ShellRequests::default();
+        requests.invoke(CommandInvocation::plain("test.run"));
+        assert!(!requests.is_empty());
     }
 }

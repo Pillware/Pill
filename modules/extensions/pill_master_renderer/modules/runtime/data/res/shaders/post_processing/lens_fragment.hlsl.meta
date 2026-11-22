@@ -1,20 +1,24 @@
 format_version: 1
 asset_type: pill_master_renderer::Shader
-guid: 73cff470b05f0370f5e4fba32f4d9b09
+guid: b8bbefccee6c141e5d42ee2a9cb79377
 settings:
-  vertex: common_shaders/default_vertex.wgsl
+  vertex: shaders/post_processing/fullscreen_vertex.wgsl
   parameters:
-  - name: tint
+  - name: shape
     type: Color
-  - name: specularity
-    type: Scalar
+  - name: gamma
+    type: Color
+  - name: grade
+    type: Color
+  - name: grain
+    type: Color
   textures:
-  - name: color
+  - name: source
     type: Color
     texture_binding: 0
     sampler_binding: 1
-  - name: normal
-    type: Normal
+  - name: grain
+    type: Color
     texture_binding: 2
     sampler_binding: 3
   engine_parameters: true

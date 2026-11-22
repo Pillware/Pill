@@ -2,10 +2,10 @@
 //!
 //! # Responsibilities
 //!
-//! - Cook every HLSL source under `shader_sources/` to the WGSL the crate
-//!   embeds. The cook is the same routine the development host's shader
-//!   watcher runs, so a shader is cooked the same way at build time and at run
-//!   time.
+//! - Cook every HLSL source under `res/` (the shaders sit in `res/shaders/`)
+//!   to the WGSL the crate embeds. The cook is the same routine the
+//!   development host's shader watcher runs, over the same root, so a shader
+//!   is cooked the same way at build time and at run time.
 //! - Tell cargo which directories, headers and sources to watch, so that a
 //!   shader edit rebuilds the crate.
 //!
@@ -27,17 +27,19 @@
 use std::path::PathBuf;
 
 fn main() {
-    // Step 1: Build the path to the shader tree. It sits at the crate root
-    // instead of under `src/`, because the development host rebuilds this
-    // module when a file under `src/` changes. A shader edit reaches the
-    // running game through the shader watcher instead.
-    let shaders_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shader_sources");
+    // Step 1: Build the path to the crate's resource root, whose `shaders/`
+    // holds the shader tree. It sits at the crate root instead of under
+    // `src/`, because the development host rebuilds this module when a file
+    // under `src/` changes. A shader edit reaches the running game through
+    // the shader watcher instead. The whole root is cooked, as the host cooks
+    // a project's `res`: only directories that hold `.hlsl` take part.
+    let resources_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("res");
 
     println!("cargo:rerun-if-changed=build.rs");
 
     // Step 2: Cook every source that has no up-to-date output. A cook that
     // fails stops the build.
-    let report = pill_assets::cook_shader_tree(&shaders_directory)
+    let report = pill_assets::cook_shader_tree(&resources_directory)
         .unwrap_or_else(|error| panic!("shader cooking failed: {error}"));
 
     // Step 3: Tell cargo what to watch. A watched directory reports a file

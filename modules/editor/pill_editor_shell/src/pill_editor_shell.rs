@@ -206,6 +206,15 @@ pub fn egui_shell_update(
         ),
         // Each popped-out window's input.
         Res<EguiPopoutInputs>,
+        // What the modules publish for the shell to draw: their Inspector
+        // header actions' states, the state of the commands they placed, the
+        // draw functions they registered, and the unsaved work the quit prompt
+        // and the Assets tab show.
+        (
+            Res<pill_editor_core::placements::CommandStates>,
+            Res<pill_editor_core::placements::CommandDraws>,
+            ResMut<pill_editor_core::unsaved_work::UnsavedWork>,
+        ),
     ),
 ) {
     // The resources are this crate's own registrations. A world without them
@@ -217,6 +226,7 @@ pub fn egui_shell_update(
         (editor_snapshot, mut editor_selection, editor_notices),
         (mut pending_commands, panel_registry, mut panel_commands, mut editor_clipboard),
         popout_window_inputs,
+        (command_states, command_draws, mut unsaved_work),
     ) = resources;
     let (
         Some(mut shell_state),
@@ -230,6 +240,7 @@ pub fn egui_shell_update(
             Some(mut editor_clipboard),
         ),
         Some(popout_window_inputs),
+        (Some(command_states), Some(command_draws), Some(mut unsaved_work)),
     ) = (
         shell_state.get_mut(),
         shell_input.get_mut(),
@@ -246,6 +257,11 @@ pub fn egui_shell_update(
             editor_clipboard.get_mut(),
         ),
         popout_window_inputs.get(),
+        (
+            command_states.get(),
+            command_draws.get(),
+            unsaved_work.get_mut(),
+        ),
     )
     else {
         return;
@@ -262,5 +278,8 @@ pub fn egui_shell_update(
         &mut panel_commands.commands,
         &mut editor_clipboard,
         popout_window_inputs,
+        command_states,
+        command_draws,
+        &mut unsaved_work,
     );
 }

@@ -7,6 +7,8 @@
 //!   shared selection's moves and the Inspector's rows and settings.
 //! - The shared chrome: the popup's dismissal rule, the left-aligned row, the
 //!   logged row placements and the floating toolbox's rows.
+//! - The prompts: the generic modal prompt's keys and busy state, and the
+//!   quit prompt's answers built on it.
 //!
 //! # Design
 //!
@@ -364,6 +366,12 @@ fn drawing_every_tab_body_queues_nothing() {
                 &mut pending,
                 &mut regions,
                 &mut inspector_session,
+                &mut PlacementHost {
+                    commands: &[],
+                    states: &pill_editor_core::placements::CommandStates::default(),
+                    draws: &pill_editor_core::placements::CommandDraws::default(),
+                    invocations: &mut Vec::new(),
+                },
             );
             systems_tab(ui, &snapshot, &mut pending);
             inspector_tab(
@@ -373,6 +381,12 @@ fn drawing_every_tab_body_queues_nothing() {
                 &mut pending,
                 &mut regions,
                 &mut inspector_session,
+                &mut PlacementHost {
+                    commands: &[],
+                    states: &pill_editor_core::placements::CommandStates::default(),
+                    draws: &pill_editor_core::placements::CommandDraws::default(),
+                    invocations: &mut Vec::new(),
+                },
             );
             {
                 let mut writes = AssetTileWrites {
@@ -382,6 +396,13 @@ fn drawing_every_tab_body_queues_nothing() {
                     overlay_regions: &mut regions,
                     drag_out: &mut drag_out,
                     previews: &mut previews,
+                    unsaved_paths: &[],
+                    placements: &mut PlacementHost {
+                        commands: &[],
+                        states: &pill_editor_core::placements::CommandStates::default(),
+                        draws: &pill_editor_core::placements::CommandDraws::default(),
+                        invocations: &mut Vec::new(),
+                    },
                 };
                 assets_tab(ui, &snapshot, &mut browser, &mut writes);
             }
@@ -478,6 +499,13 @@ fn the_assets_panel_wraps_a_long_tile_caption_and_queues_nothing() {
                     overlay_regions: &mut regions,
                     drag_out: &mut drag_out,
                     previews: &mut previews,
+                    unsaved_paths: &[],
+                    placements: &mut PlacementHost {
+                        commands: &[],
+                        states: &pill_editor_core::placements::CommandStates::default(),
+                        draws: &pill_editor_core::placements::CommandDraws::default(),
+                        invocations: &mut Vec::new(),
+                    },
                 };
                 assets_grid(ui, &snapshot, &mut browser, &mut writes);
             }
@@ -602,6 +630,13 @@ fn a_dropped_asset_tile_queues_the_reference_edit() {
                         overlay_regions: regions,
                         drag_out,
                         previews: &mut previews,
+                        unsaved_paths: &[],
+                        placements: &mut PlacementHost {
+                            commands: &[],
+                            states: &pill_editor_core::placements::CommandStates::default(),
+                            draws: &pill_editor_core::placements::CommandDraws::default(),
+                            invocations: &mut Vec::new(),
+                        },
                     };
                     assets_grid(ui, snapshot, browser, &mut writes);
                 });
@@ -1031,6 +1066,12 @@ fn the_inspector_lists_the_selections_components_and_fields() {
                 &mut pending,
                 &mut regions,
                 &mut inspector_session,
+                &mut PlacementHost {
+                    commands: &[],
+                    states: &pill_editor_core::placements::CommandStates::default(),
+                    draws: &pill_editor_core::placements::CommandDraws::default(),
+                    invocations: &mut Vec::new(),
+                },
             );
         });
     });
@@ -1193,6 +1234,8 @@ fn the_toolbox_rows_fill_their_width() {
                     panels: &PanelRegistry::default(),
                     panel_budget: &mut PanelBudget::default(),
                     panel_commands: &mut Vec::new(),
+                    command_states: &pill_editor_core::placements::CommandStates::default(),
+                    command_draws: &pill_editor_core::placements::CommandDraws::default(),
                     panel_entities: &[],
                     panel_detail: None,
                     panel_answer: None,
@@ -1203,6 +1246,7 @@ fn the_toolbox_rows_fill_their_width() {
                     previews: &mut pill_editor_core::session::PreviewStates::default(),
                     badges: &[],
                     marquee: None,
+                    unsaved_asset_paths: &[],
                 };
                 toolbox_overlay(&mut viewer, ui, 0);
                 *regions = std::mem::take(&mut viewer.overlay_regions);
@@ -1301,6 +1345,8 @@ fn the_toolbox_rows_fill_their_width() {
                     panels: &PanelRegistry::default(),
                     panel_budget: &mut PanelBudget::default(),
                     panel_commands: &mut Vec::new(),
+                    command_states: &pill_editor_core::placements::CommandStates::default(),
+                    command_draws: &pill_editor_core::placements::CommandDraws::default(),
                     panel_entities: &[],
                     panel_detail: None,
                     panel_answer: None,
@@ -1311,6 +1357,7 @@ fn the_toolbox_rows_fill_their_width() {
                     previews: &mut pill_editor_core::session::PreviewStates::default(),
                     badges: &[],
                     marquee: None,
+                    unsaved_asset_paths: &[],
                 };
                 toolbox_overlay(&mut viewer, ui, 0);
             });
@@ -1596,6 +1643,14 @@ fn a_narrow_inspector_tab_lays_everything_out_inside_the_tab() {
                                     &mut pending,
                                     &mut regions,
                                     &mut inspector_session,
+                                    &mut PlacementHost {
+                                        commands: &[],
+                                        states:
+                                            &pill_editor_core::placements::CommandStates::default(),
+                                        draws: &pill_editor_core::placements::CommandDraws::default(
+                                        ),
+                                        invocations: &mut Vec::new(),
+                                    },
                                 );
                                 content_right = ui.min_rect().right();
                             });
@@ -1679,6 +1734,12 @@ fn every_narrow_tab_body_stays_inside_the_tab() {
                 &mut pending,
                 &mut regions,
                 &mut inspector_session,
+                &mut PlacementHost {
+                    commands: &[],
+                    states: &pill_editor_core::placements::CommandStates::default(),
+                    draws: &pill_editor_core::placements::CommandDraws::default(),
+                    invocations: &mut Vec::new(),
+                },
             );
         }),
     ));
@@ -1698,6 +1759,13 @@ fn every_narrow_tab_body_stays_inside_the_tab() {
                 overlay_regions: &mut regions,
                 drag_out: &mut drag_out,
                 previews: &mut previews,
+                unsaved_paths: &[],
+                placements: &mut PlacementHost {
+                    commands: &[],
+                    states: &pill_editor_core::placements::CommandStates::default(),
+                    draws: &pill_editor_core::placements::CommandDraws::default(),
+                    invocations: &mut Vec::new(),
+                },
             };
             assets_tab(ui, &snapshot, &mut browser, &mut writes);
         }),
@@ -1774,5 +1842,565 @@ fn a_field_fits_its_row_with_even_padding() {
     assert!(
         (room_above - room_below).abs() <= 1.0,
         "the field sits off centre: {room_above} above, {room_below} below"
+    );
+}
+
+/// One press of `key`, with no modifier held, as the editor's input bridge
+/// hands it to egui.
+///
+/// Gated like [`run_pass`], so the hot-patch inventory never names it.
+#[cfg(test)]
+fn key_press(key: egui::Key) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+/// A prompt answers Enter and Escape with the buttons bound to them, draws
+/// the caller's body, and answers nothing on a frame with no input.
+#[test]
+fn a_prompt_answers_its_keys_with_their_buttons() {
+    let context = egui::Context::default();
+    let buttons = [
+        PromptButton::new("Keep"),
+        PromptButton::destructive("Discard"),
+        PromptButton::new("Cancel"),
+    ];
+    let prompt = Prompt::new(egui::Id::new("test.prompt"), "Question", 300.0, &buttons)
+        .with_enter(0)
+        .with_escape(2);
+    for (events, expected_answer) in [
+        (vec![key_press(egui::Key::Enter)], Some(0)),
+        (vec![key_press(egui::Key::Escape)], Some(2)),
+        (Vec::new(), None),
+    ] {
+        let mut answer = None;
+        let mut body_drawn = false;
+        run_pass_with(&context, events, &mut |ui| {
+            answer = prompt_window(ui.ctx(), &prompt, &mut |_ui| body_drawn = true);
+        });
+        assert_eq!(answer, expected_answer);
+        assert!(body_drawn, "the prompt draws the caller's body");
+    }
+}
+
+/// A busy prompt still draws its body but takes no answer, and a key bound to
+/// a button the prompt does not have answers nothing.
+#[test]
+fn a_busy_prompt_and_an_unbound_key_answer_nothing() {
+    let context = egui::Context::default();
+    let buttons = [PromptButton::new("Apply")];
+    let busy_prompt = Prompt::new(egui::Id::new("test.busy"), "Busy", 300.0, &buttons)
+        .with_enter(0)
+        .with_busy_text("Working");
+    let unbound_prompt =
+        Prompt::new(egui::Id::new("test.unbound"), "Unbound", 300.0, &buttons).with_enter(3);
+    for prompt in [busy_prompt, unbound_prompt] {
+        let mut answer = Some(usize::MAX);
+        let mut body_drawn = false;
+        run_pass_with(&context, vec![key_press(egui::Key::Enter)], &mut |ui| {
+            answer = prompt_window(ui.ctx(), &prompt, &mut |_ui| body_drawn = true);
+        });
+        assert_eq!(answer, None, "{}", prompt.title);
+        assert!(body_drawn, "{}", prompt.title);
+    }
+}
+
+/// The quit prompt answers Enter with Save and quit and Escape with Cancel,
+/// and records nothing while it is closed or while a save it started runs.
+#[test]
+fn the_quit_prompt_records_the_answer_its_keys_stand_for() {
+    let context = egui::Context::default();
+    let mut unsaved_work = UnsavedWork::default();
+    unsaved_work.report(
+        "test",
+        vec![UnsavedItem {
+            source: "test".to_string(),
+            label: "cube - edited outside the editor".to_string(),
+            asset_path: Some("models/cube.obj".to_string()),
+        }],
+    );
+    for (prompt_state, key, expected_answer) in [
+        (QuitPromptState::Closed, egui::Key::Enter, None),
+        (
+            QuitPromptState::Asking,
+            egui::Key::Enter,
+            Some(QuitAnswer::SaveAndQuit),
+        ),
+        (
+            QuitPromptState::Asking,
+            egui::Key::Escape,
+            Some(QuitAnswer::Cancel),
+        ),
+        (
+            QuitPromptState::Saving { frames_waited: 0 },
+            egui::Key::Enter,
+            None,
+        ),
+    ] {
+        unsaved_work.set_prompt(prompt_state);
+        run_pass_with(&context, vec![key_press(key)], &mut |ui| {
+            quit_prompt_window(ui.ctx(), &mut unsaved_work);
+        });
+        assert_eq!(
+            unsaved_work.take_answer(),
+            expected_answer,
+            "{prompt_state:?} answered {key:?}"
+        );
+    }
+}
+
+/// Only the button that loses the unsaved work is drawn as destructive.
+#[test]
+fn only_quitting_without_saving_is_destructive() {
+    for (button, answer) in QUIT_PROMPT_BUTTONS.iter().zip(QUIT_PROMPT_ANSWERS) {
+        assert_eq!(
+            button.destructive,
+            answer == QuitAnswer::QuitWithoutSaving,
+            "{}",
+            button.label
+        );
+    }
+}
+
+/// A command a module placed on a component header draws from data, follows
+/// the state published for its target, and reports that target on a click.
+#[test]
+fn a_placed_command_draws_from_data_and_reports_its_target() {
+    let context = egui::Context::default();
+    style::apply(&context);
+    let entity = Entity::from_raw(3, 0);
+    let slot = UiSlot::inspector_component_header("ModuleTest");
+    let target = CommandTarget::Entity {
+        entity,
+        component: Some("pill_test::ModuleTest".to_string()),
+    };
+    let command = CommandView {
+        id: "test_editor.open".to_string(),
+        title: "Open".to_string(),
+        menu_path: Vec::new(),
+        separator_before: false,
+        owner: "test_editor".to_string(),
+        icon: Some(icons::Icon::CheckCircle),
+        placements: vec![slot.clone()],
+    };
+    let states = CommandStates::default();
+    let draws = CommandDraws::default();
+    let mut invocations: Vec<CommandInvocation> = Vec::new();
+
+    // Step 1: the button draws, and its rectangle is what a click aims at.
+    let mut drawn = None;
+    run_pass(&context, &mut |ui| {
+        drawn = draw_placed_command(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &states,
+            &draws,
+            &mut invocations,
+        );
+    });
+    let center = drawn.expect("a visible command draws a button").center();
+    assert!(invocations.is_empty(), "drawing reports no click");
+
+    // Step 2: a click reports the command and the target it was drawn for.
+    let click = vec![
+        egui::Event::PointerMoved(center),
+        egui::Event::PointerButton {
+            pos: center,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::default(),
+        },
+        egui::Event::PointerButton {
+            pos: center,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::default(),
+        },
+    ];
+    run_pass_with(&context, click, &mut |ui| {
+        draw_placed_command(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &states,
+            &draws,
+            &mut invocations,
+        );
+    });
+    assert_eq!(
+        invocations,
+        vec![CommandInvocation {
+            id: "test_editor.open".to_string(),
+            target: target.clone(),
+        }]
+    );
+
+    // Step 3: a hidden command draws nothing and reserves nothing.
+    let mut hidden = CommandStates::default();
+    hidden.publish(
+        "test_editor.open",
+        std::collections::HashMap::from([(target.clone(), CommandState::hidden())]),
+    );
+    invocations.clear();
+    let mut drawn = None;
+    run_pass(&context, &mut |ui| {
+        drawn = draw_placed_command(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &hidden,
+            &draws,
+            &mut invocations,
+        );
+    });
+    assert!(drawn.is_none(), "a hidden command draws nothing");
+}
+
+// -----------------------------------------------------------------------------
+// A module's own draw function
+// -----------------------------------------------------------------------------
+
+/// How many times the test draw function below ran.
+static DRAWN_COMMAND_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A registered draw function is the exception the place uses instead of the
+/// data button, and its click reports through the same invocation path.
+#[test]
+fn a_registered_draw_function_replaces_the_data_button() {
+    let context = egui::Context::default();
+    style::apply(&context);
+    let entity = Entity::from_raw(4, 0);
+    let slot = UiSlot::inspector_component_header("ModuleTest");
+    let target = CommandTarget::Entity {
+        entity,
+        component: Some("pill_test::ModuleTest".to_string()),
+    };
+    let command = CommandView {
+        id: "test_editor.drawn".to_string(),
+        title: "Drawn".to_string(),
+        menu_path: Vec::new(),
+        separator_before: false,
+        owner: "test_editor".to_string(),
+        icon: Some(icons::Icon::CheckCircle),
+        placements: vec![slot.clone()],
+    };
+    // A closure that touches only a static captures nothing, so it can be
+    // the fn pointer the registry stores.
+    let test_drawer: fn(&mut egui::Ui, &mut CommandDrawContext<'_>) = |ui, context| {
+        DRAWN_COMMAND_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if ui.button("drawn").clicked() {
+            context.invoke();
+        }
+    };
+    let mut draws = CommandDraws::default();
+    let marker = std::sync::Arc::new(pill_editor_core::panels::ModuleLiveness::default());
+    draws.register(
+        &pill_editor_core::placements::CommandDrawRequest {
+            id: "test_editor.drawn",
+            slot: slot.clone(),
+            source: "test_editor",
+            draw: test_drawer,
+        },
+        &marker,
+    );
+    let states = CommandStates::default();
+    let mut invocations: Vec<CommandInvocation> = Vec::new();
+    let before = DRAWN_COMMAND_CALLS.load(std::sync::atomic::Ordering::Relaxed);
+
+    // Step 1: the module drew it, so the place reports no rectangle of its own.
+    let mut drawn = Some(egui::Rect::NOTHING);
+    run_pass(&context, &mut |ui| {
+        drawn = draw_placed_command(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &states,
+            &draws,
+            &mut invocations,
+        );
+    });
+    assert!(drawn.is_none(), "a module draw reports no rectangle");
+    assert_eq!(
+        DRAWN_COMMAND_CALLS.load(std::sync::atomic::Ordering::Relaxed),
+        before + 1,
+        "the registered draw ran instead of the data button"
+    );
+    assert!(invocations.is_empty(), "drawing reports no click");
+
+    // Step 2: its own button reports the click through the same path.
+    let click = vec![
+        egui::Event::PointerMoved(egui::pos2(10.0, 10.0)),
+        egui::Event::PointerButton {
+            pos: egui::pos2(10.0, 10.0),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::default(),
+        },
+        egui::Event::PointerButton {
+            pos: egui::pos2(10.0, 10.0),
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::default(),
+        },
+    ];
+    run_pass_with(&context, click, &mut |ui| {
+        draw_placed_command(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &states,
+            &draws,
+            &mut invocations,
+        );
+    });
+    assert_eq!(
+        invocations,
+        vec![CommandInvocation {
+            id: "test_editor.drawn".to_string(),
+            target,
+        }]
+    );
+}
+
+// -----------------------------------------------------------------------------
+// The remaining places
+// -----------------------------------------------------------------------------
+
+/// A pointer click at `pos`: the press and the release the tests send.
+#[cfg(test)]
+fn click_at(pos: egui::Pos2) -> Vec<egui::Event> {
+    vec![
+        egui::Event::PointerMoved(pos),
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::default(),
+        },
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::default(),
+        },
+    ]
+}
+
+/// One registered command carrying the placements named, as the frame's
+/// snapshot carries it.
+#[cfg(test)]
+fn placed_command_view(id: &str, placements: Vec<UiSlot>) -> CommandView {
+    CommandView {
+        id: id.to_string(),
+        title: "Placed".to_string(),
+        menu_path: Vec::new(),
+        separator_before: false,
+        owner: "test_editor".to_string(),
+        icon: Some(icons::Icon::CheckCircle),
+        placements,
+    }
+}
+
+/// The command ids of `rows`, in the order the place draws them.
+#[cfg(test)]
+fn row_ids(rows: Vec<CommandView>) -> Vec<String> {
+    rows.into_iter().map(|row| row.id).collect()
+}
+
+/// A menu row draws from data, a click on it reports the command and its
+/// target, and the published state can grey it out or take it away.
+#[test]
+fn a_menu_row_invokes_with_its_target_and_a_state_can_restate_it() {
+    let context = egui::Context::default();
+    style::apply(&context);
+    let entity = Entity::from_raw(7, 0);
+    let slot = UiSlot::component_context_menu("ModuleTest");
+    let target = CommandTarget::Entity {
+        entity,
+        component: Some("pill_test::ModuleTest".to_string()),
+    };
+    let command = placed_command_view("test_editor.menu", vec![slot.clone()]);
+    let draws = CommandDraws::default();
+    let states = CommandStates::default();
+    let mut invocations = Vec::new();
+
+    // Step 1: the row draws, and the rectangle it drew is where a click lands.
+    let mut drawn = false;
+    let mut row = egui::Rect::NOTHING;
+    run_pass(&context, &mut |ui| {
+        drawn = draw_placed_menu_row(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &states,
+            &draws,
+            &mut invocations,
+        );
+        row = ui.min_rect();
+    });
+    assert!(drawn, "a visible command draws a row");
+    assert!(invocations.is_empty(), "drawing reports no click");
+    run_pass_with(&context, click_at(row.center()), &mut |ui| {
+        draw_placed_menu_row(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &states,
+            &draws,
+            &mut invocations,
+        );
+    });
+    assert_eq!(
+        invocations,
+        vec![CommandInvocation {
+            id: command.id.clone(),
+            target: target.clone(),
+        }]
+    );
+
+    // Step 2: a disabled row keeps its place and swallows the click.
+    let mut disabled = CommandStates::default();
+    disabled.publish(
+        &command.id,
+        std::collections::HashMap::from([(target.clone(), CommandState::disabled())]),
+    );
+    invocations.clear();
+    let mut row = egui::Rect::NOTHING;
+    run_pass(&context, &mut |ui| {
+        drawn = draw_placed_menu_row(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &disabled,
+            &draws,
+            &mut invocations,
+        );
+        row = ui.min_rect();
+    });
+    assert!(drawn, "a disabled command still takes its row");
+    run_pass_with(&context, click_at(row.center()), &mut |ui| {
+        draw_placed_menu_row(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &disabled,
+            &draws,
+            &mut invocations,
+        );
+    });
+    assert!(invocations.is_empty(), "a disabled row reports no click");
+
+    // Step 3: a hidden row takes no place at all.
+    let mut hidden = CommandStates::default();
+    hidden.publish(
+        &command.id,
+        std::collections::HashMap::from([(target.clone(), CommandState::hidden())]),
+    );
+    let mut drawn = true;
+    run_pass(&context, &mut |ui| {
+        drawn = draw_placed_menu_row(
+            ui,
+            &command,
+            &slot,
+            &target,
+            &hidden,
+            &draws,
+            &mut invocations,
+        );
+    });
+    assert!(!drawn, "a hidden command takes no row");
+}
+
+/// Each place offers exactly the commands placed in it, in registration order,
+/// and a state hidden for one target leaves the other targets alone.
+#[test]
+fn each_place_offers_only_the_commands_placed_there() {
+    let entity = Entity::from_raw(8, 0);
+    let entity_target = CommandTarget::Entity {
+        entity,
+        component: None,
+    };
+    let component_target = CommandTarget::Entity {
+        entity,
+        component: Some("pill_test::ModuleTest".to_string()),
+    };
+    let asset_target = CommandTarget::Asset("scenes/main.scene".to_string());
+    let view_target = CommandTarget::View(0);
+    let commands = vec![
+        placed_command_view(
+            "menu.bar",
+            vec![UiSlot::MenuBar {
+                path: vec!["Edit".to_string()],
+            }],
+        ),
+        placed_command_view(
+            "header",
+            vec![UiSlot::inspector_component_header("ModuleTest")],
+        ),
+        placed_command_view(
+            "component.menu",
+            vec![UiSlot::component_context_menu("ModuleTest")],
+        ),
+        placed_command_view(
+            "component.menu.late",
+            vec![UiSlot::component_context_menu("ModuleTest")],
+        ),
+        placed_command_view("entity.menu", vec![UiSlot::entity_context_menu()]),
+        placed_command_view("asset.menu", vec![UiSlot::asset_context_menu(".scene")]),
+        placed_command_view("toolbox", vec![UiSlot::ViewportToolbox]),
+    ];
+    let states = CommandStates::default();
+    assert_eq!(
+        row_ids(component_menu_rows(
+            &commands,
+            &states,
+            "ModuleTest",
+            &component_target
+        )),
+        vec!["component.menu", "component.menu.late"],
+        "a component's menu lists its own rows in registration order"
+    );
+    assert_eq!(
+        row_ids(entity_menu_rows(&commands, &states, &entity_target)),
+        vec!["entity.menu"]
+    );
+    assert_eq!(
+        row_ids(asset_menu_rows(&commands, &states, ".scene", &asset_target)),
+        vec!["asset.menu"]
+    );
+    assert_eq!(
+        row_ids(toolbox_rows(&commands, &states, &view_target)),
+        vec!["toolbox"]
+    );
+
+    // A state hidden for one view leaves every other view's row in place.
+    let mut hidden = CommandStates::default();
+    hidden.publish(
+        "toolbox",
+        std::collections::HashMap::from([(view_target.clone(), CommandState::hidden())]),
+    );
+    assert!(
+        toolbox_rows(&commands, &hidden, &view_target).is_empty(),
+        "a hidden row takes no place"
+    );
+    assert_eq!(
+        row_ids(toolbox_rows(&commands, &hidden, &CommandTarget::View(1))),
+        vec!["toolbox"],
+        "the same command stays on another view"
     );
 }

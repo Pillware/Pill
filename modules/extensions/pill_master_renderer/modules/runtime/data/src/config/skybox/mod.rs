@@ -56,20 +56,20 @@ use crate::config::ShaderSourceRecord;
 
 config_shader_file!(
     /// The skybox vertex stage: a fullscreen triangle at the far plane.
-    SKYBOX_VERTEX, "skybox/shaders/skybox_vertex.wgsl"
+    SKYBOX_VERTEX, "shaders/skybox/skybox_vertex.wgsl"
 );
 config_shader_file!(
     /// The fragment stage that samples an equirectangular panorama.
-    EQUIRECT_FRAGMENT, "skybox/shaders/skybox_equirect_fragment.wgsl"
+    EQUIRECT_FRAGMENT, "shaders/skybox/skybox_equirect_fragment.wgsl"
 );
 config_shader_file!(
     /// The fragment stage that samples a cubemap.
-    CUBEMAP_FRAGMENT, "skybox/shaders/skybox_cubemap_fragment.wgsl"
+    CUBEMAP_FRAGMENT, "shaders/skybox/skybox_cubemap_fragment.wgsl"
 );
 
 /// The asset name of the skybox shader that samples an equirectangular
 /// panorama. It is the path the shader's `.hlsl` source is imported under.
-pub const EQUIRECT_SHADER_PATH: &str = "skybox/shaders/skybox_equirect_fragment.hlsl";
+pub const EQUIRECT_SHADER_PATH: &str = "shaders/skybox/skybox_equirect_fragment.hlsl";
 
 /// The guid the equirect skybox shader is stored under, so a sky material file
 /// can name it.
@@ -82,7 +82,7 @@ pub const EQUIRECT_SHADER_GUID: AssetGuid = AssetGuid::from_name("pill.skybox.sh
 
 /// The asset name of the skybox shader that samples a cubemap. It is the path
 /// the shader's `.hlsl` source is imported under.
-pub const CUBEMAP_SHADER_PATH: &str = "skybox/shaders/skybox_cubemap_fragment.hlsl";
+pub const CUBEMAP_SHADER_PATH: &str = "shaders/skybox/skybox_cubemap_fragment.hlsl";
 
 /// The guid the cubemap skybox shader is stored under. See
 /// [`EQUIRECT_SHADER_GUID`] for how each of the two is derived.

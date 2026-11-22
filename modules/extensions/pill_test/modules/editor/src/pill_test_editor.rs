@@ -13,6 +13,10 @@
 //! - Change the editor from callbacks: a follow-up field write inside the step
 //!   being applied, and the shared command builders for a component and a
 //!   selection.
+//! - Register one command and log every invocation of it, under
+//!   `[test] command invoked`, so the suite proves a module's command reaches
+//!   it with its target. A second command proves the free-form draw function,
+//!   and a third is placed in the context menus and the viewport toolbox.
 //!
 //! # Design
 //!
@@ -26,7 +30,8 @@
 //! registry: the executable drains the queue, ties each request to this
 //! crate's liveness marker and drops both together, so an unloaded image is
 //! never called. The callbacks are plain functions because the registry holds
-//! a function address, not a closure.
+//! a function address, not a closure. The command is queued the same way, so
+//! its row disappears when this image does.
 //!
 //! The magic values exist so a suite can name a behaviour with one number: a
 //! write of [`MAGIC_CLAMP`] applies as [`MAGIC_CLAMPED`], a write of
@@ -34,15 +39,27 @@
 //! after-callback queue a second write that joins the same undo step.
 
 // External crates
+use std::collections::HashMap;
+
 use pill_core::telemetry::telemetry_target;
+use pill_editor_core::commands::{
+    CommandInbox, CommandRegistration, CommandRegistrations, CommandSpec, CommandTarget,
+    KeymapPreset,
+};
 use pill_editor_core::editor_state::EditorCommand;
+use pill_editor_core::egui;
 use pill_editor_core::hooks::{
     AssetEdit, ComponentEdit, EditorHookRequests, ElementSelectionChanged, EntityEdit, FieldEdit,
     FieldEditHookRequest, HistoryEdit, HookContext, HookRequest, HookVerdict, PlayEdit, SceneEdit,
     SelectionChanged, ToolActivatedEdit,
 };
+use pill_editor_core::icons::Icon;
+use pill_editor_core::placements::{
+    CommandDrawContext, CommandDrawRequest, CommandState, CommandStates, UiSlot,
+};
 use pill_engine::component::ComponentRegistry;
-use pill_engine::{pill_module, Engine, FieldValue};
+use pill_engine::system;
+use pill_engine::{pill_module, Engine, Entity, FieldValue, Query, ResMut};
 use pill_test::{ModuleTest, ModuleTestField};
 
 // The build script scans this crate and emits one address entry per function
@@ -58,6 +75,21 @@ include!(concat!(env!("OUT_DIR"), "/function_inventory.rs"));
 /// marker are keyed by.
 pub const SOURCE: &str = env!("CARGO_PKG_NAME");
 
+/// The command this crate registers: the one the suite runs to prove a
+/// module's command reaches it.
+pub const COMMAND_ID: &str = "pill_test.editor_command";
+
+/// The command whose widget this crate draws itself, the free-form exception.
+pub const DRAWN_COMMAND_ID: &str = "pill_test.editor_drawn_command";
+
+/// The command placed in the places that need no Inspector header: the
+/// component, entity and asset context menus and the viewport toolbox.
+pub const CONTEXT_COMMAND_ID: &str = "pill_test.editor_context_command";
+
+/// The component both commands place a button on, named by its last segment so
+/// this crate does not depend on the crate that defines it.
+pub const PROBE_COMPONENT: &str = "ModuleTest";
+
 /// The value the before-callback replaces with [`MAGIC_CLAMPED`].
 pub const MAGIC_CLAMP: f32 = 999.0;
 
@@ -72,6 +104,10 @@ pub const MAGIC_FOLLOW_UP: f32 = 5.0;
 
 /// The `processed_frame_count` the follow-up writes.
 pub const FOLLOW_UP_COUNT: u64 = 42;
+
+/// The highest view index this crate publishes a toolbox state for, so a
+/// layout with several scene views still shows a labelled row in each.
+pub const MAX_TESTED_VIEWS: u8 = 3;
 
 // =============================================================================
 // Field callbacks
@@ -287,6 +323,102 @@ pub fn on_element_selection(_context: &mut HookContext<'_>, edit: &ElementSelect
 }
 
 // =============================================================================
+// The registered commands
+// =============================================================================
+
+/// Takes every invocation of this crate's commands and logs it with its target.
+///
+/// It also publishes the state the places draw for each entity that carries
+/// the probe component (the Inspector header and the component and entity
+/// menus) and for the editor's views (the toolbox): a label override, a toggle
+/// mark and a status dot. A post-project system that runs in edit mode, like
+/// the shell, so a command run from a menu, the palette, a shortcut, a header
+/// button, a toolbox row or the scripted channel arrives here on the frame it
+/// ran.
+#[system(
+    name = "test_editor_commands",
+    run_phase = "post_project",
+    run_in_edit_mode = true
+)]
+pub fn test_editor_commands(
+    mut inbox: ResMut<CommandInbox>,
+    mut states: ResMut<CommandStates>,
+    mut probe_entities: Query<(Entity, &ModuleTest)>,
+) {
+    let (Some(mut inbox), Some(mut states)) = (inbox.get_mut(), states.get_mut()) else {
+        return;
+    };
+    let component = probe_component_name();
+    let mut header_states = HashMap::new();
+    let mut context_states = HashMap::new();
+    for (entity, _) in probe_entities.iter_mut() {
+        header_states.insert(
+            CommandTarget::Entity {
+                entity,
+                component: Some(component.clone()),
+            },
+            CommandState::default()
+                .with_label("Test Command")
+                .with_checked(true)
+                .with_indicator([0x4a, 0xd9, 0x91, 0xff])
+                .with_tooltip(vec!["The test editor crate's command".to_string()]),
+        );
+        // An entity's own menu names no component, so the state is published
+        // for that target too.
+        context_states.insert(
+            CommandTarget::Entity {
+                entity,
+                component: None,
+            },
+            CommandState::default()
+                .with_label("Test Context Command")
+                .with_tooltip(vec!["The test editor crate's menu command".to_string()]),
+        );
+    }
+    // The toolbox is drawn once per view, so its rows carry a view target.
+    for view in 0..=MAX_TESTED_VIEWS {
+        context_states.insert(
+            CommandTarget::View(view),
+            CommandState::default().with_label("Test Context Command"),
+        );
+    }
+    states.publish(COMMAND_ID, header_states.clone());
+    states.publish(DRAWN_COMMAND_ID, header_states);
+    states.publish(CONTEXT_COMMAND_ID, context_states);
+    for id in [COMMAND_ID, DRAWN_COMMAND_ID, CONTEXT_COMMAND_ID] {
+        for invocation in inbox.take(id) {
+            let target = match &invocation.target {
+                CommandTarget::None => "none".to_string(),
+                CommandTarget::Entity { entity, component } => match component {
+                    Some(component) => format!("entity {entity} {component}"),
+                    None => format!("entity {entity}"),
+                },
+                CommandTarget::Asset(key) => format!("asset {key}"),
+                CommandTarget::View(view) => format!("view {view}"),
+            };
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                command = invocation.id.as_str(),
+                target = target.as_str(),
+                "[test] command invoked"
+            );
+        }
+    }
+}
+
+/// Draws [`DRAWN_COMMAND_ID`]'s own widget: the free-form exception, drawn by
+/// the module rather than from data.
+pub fn draw_test_command(ui: &mut egui::Ui, context: &mut CommandDrawContext<'_>) {
+    let label = context
+        .state
+        .and_then(|state| state.label.as_deref())
+        .unwrap_or("Test Mark");
+    if ui.add(egui::Button::new(label).small()).clicked() {
+        context.invoke();
+    }
+}
+
+// =============================================================================
 // Registration
 // =============================================================================
 
@@ -323,6 +455,48 @@ pub fn register(engine: &mut Engine) -> u32 {
     };
     for request in requests_to_queue {
         requests.push(request);
+    }
+    // The commands the suite runs: one with an Edit row and a chord in every
+    // preset, one whose widget this crate draws itself. Both place a button on
+    // the probe component's Inspector header. The queues are claimed here the
+    // same way the hooks' is, so the sets are bound to this image's liveness
+    // marker.
+    CommandRegistrations::ensure(world);
+    let mut command = CommandSpec::new(COMMAND_ID, "Test Editor Command")
+        .menu(&["Edit", "Test Editor Command"])
+        .icon(Icon::CheckCircle)
+        .place(UiSlot::inspector_component_header(PROBE_COMPONENT))
+        .place(UiSlot::Toolbar);
+    for preset in [
+        KeymapPreset::Blender,
+        KeymapPreset::Unity,
+        KeymapPreset::Godot,
+        KeymapPreset::Unreal,
+    ] {
+        command = command.bind(preset, "ctrl+alt+t");
+    }
+    let drawn = CommandSpec::new(DRAWN_COMMAND_ID, "Test Drawn Command")
+        .place(UiSlot::inspector_component_header(PROBE_COMPONENT));
+    // The remaining places: the two context menus around the probe component,
+    // the menu of a scene asset and the viewport toolbox. One command, so the
+    // target the invocation carries says which place it came from.
+    let context = CommandSpec::new(CONTEXT_COMMAND_ID, "Test Context Command")
+        .icon(Icon::CheckCircle)
+        .place(UiSlot::component_context_menu(PROBE_COMPONENT))
+        .place(UiSlot::entity_context_menu())
+        .place(UiSlot::asset_context_menu(".scene"))
+        .place(UiSlot::ViewportToolbox);
+    if let Some(registrations) = world.get_resource_mut::<CommandRegistrations>() {
+        registrations.push(CommandRegistration {
+            owner: SOURCE.to_string(),
+            commands: vec![command, drawn, context],
+        });
+        registrations.push_draw(CommandDrawRequest {
+            id: DRAWN_COMMAND_ID,
+            slot: UiSlot::inspector_component_header(PROBE_COMPONENT),
+            source: SOURCE,
+            draw: draw_test_command,
+        });
     }
     pill_core::info!(
         target: telemetry_target::EDITOR,

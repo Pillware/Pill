@@ -14,7 +14,7 @@
 //! frame: [`EngineParameters::update`] rewrites the whole buffer, so the CPU
 //! copy and the GPU buffer always match and no code has to track which fields
 //! changed. The fog values come first because the HLSL `EngineParams` in
-//! `pill_master_renderer_data/shader_sources/common_shaders/include/common.hlsl`
+//! `pill_master_renderer_data`'s `res/shaders/common_shaders/include/common.hlsl`
 //! declares them at the same offsets. The frame size and time follow; the
 //! engine adds them, and no shipped shader declares them.
 
@@ -28,7 +28,7 @@ use wgpu::util::DeviceExt;
 /// disagree.
 ///
 /// The first 16 bytes must match the HLSL `EngineParams` in
-/// `pill_master_renderer_data/shader_sources/common_shaders/include/common.hlsl`,
+/// `pill_master_renderer_data`'s `res/shaders/common_shaders/include/common.hlsl`,
 /// which declares the fog pair and nothing after it. The rest is the engine's
 /// own addition, and no shipped shader declares it: `frame_size` at offset 16
 /// (xy = pixels, zw = their reciprocal) and `time` at offset 32 (x = seconds,

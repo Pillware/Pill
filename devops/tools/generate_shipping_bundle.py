@@ -30,7 +30,7 @@
 #
 #   A project with a `res` directory, and any linked module with asset roots,
 #   gets a `build.rs` in the bundle: it packs the project's `res` and every
-#   module's `res` and `shader_sources` with
+#   module's `res` (its shader tree included, under `shaders/`) with
 #   `pill_assets::write_asset_pack_with_roots` at build time, and the bundle
 #   embeds the pack as `StaticProject::asset_pack`, which the runtime mounts in
 #   the engine's asset store. A shipped game then reads its assets - its own
@@ -151,11 +151,11 @@ RENDERING_FEATURE = "rendering"
 # crate whose build-time writer packs it.
 ASSETS_DIRECTORY_NAME = "res"
 # The directories a module ships beside its code and declares as its asset
-# roots at runtime (`declare_module_root`): its `res` and the shader tree its
-# build script cooks. A packed build has no module directory to declare, so the
-# pack carries both under the same root-relative names.
-SHADER_SOURCES_DIRECTORY_NAME = "shader_sources"
-MODULE_ROOT_DIRECTORY_NAMES = (ASSETS_DIRECTORY_NAME, SHADER_SOURCES_DIRECTORY_NAME)
+# roots at runtime (`declare_module_root`): its `res`, which also holds the
+# shader tree its build script cooks. A packed build has no module directory
+# to declare, so the pack carries the files under the same root-relative
+# names.
+MODULE_ROOT_DIRECTORY_NAMES = (ASSETS_DIRECTORY_NAME,)
 ASSETS_CRATE_DIRECTORY = Path("modules") / "assets" / "pill_assets"
 ASSET_PACK_FILE_NAME = "assets.pillpack"
 # Where a web bundle's build script packs it: beside the crate, because a
@@ -761,8 +761,8 @@ def build_build_script(
         "fn main() {",
         "    let manifest_directory = std::path::PathBuf::from(env!(\"CARGO_MANIFEST_DIR\"));",
         f'    let source = manifest_directory.join("{relative_assets}");',
-        "    // The directories a linked module ships beside its code: its `res` and",
-        "    // its shader tree. A packed build has no module directory left to",
+        "    // The directories a linked module ships beside its code: its `res`,",
+        "    // shader tree included. A packed build has no module directory left to",
         "    // declare, so the pack carries them under the same relative names.",
         "    let module_roots: Vec<std::path::PathBuf> = vec![",
     ]
@@ -775,20 +775,31 @@ def build_build_script(
         "    // The module's build script cooks the same tree; cargo does not order",
         "    // two crates' build scripts, so a clean build cooks here before packing",
         "    // rather than pack a stage file that is not on disk yet.",
+        "    // A root without shaders has nothing to cook.",
         "    for root in &module_roots {",
-        f'        if root.file_name().is_some_and(|name| name == "{SHADER_SOURCES_DIRECTORY_NAME}") {{',
-        "            pill_assets::cook_shader_tree(root).unwrap_or_else(|error| {",
-        '                panic!("cannot cook shaders at {}: {error}", root.display())',
-        "            });",
-        "        }",
+        "        pill_assets::cook_shader_tree(root).unwrap_or_else(|error| {",
+        '            panic!("cannot cook shaders at {}: {error}", root.display())',
+        "        });",
         "    }",
+        "    // A project shader may include a header a module ships, so the",
+        "    // modules' include directories join the project's include path after",
+        "    // its own.",
+        "    let module_include_directories: Vec<std::path::PathBuf> = module_roots",
+        "        .iter()",
+        "        .flat_map(|root| {",
+        "            pill_assets::shader_tree_layout(root)",
+        "                .map(|layout| layout.include_directories)",
+        "                .unwrap_or_default()",
+        "        })",
+        "        .collect();",
         "    // The project's own shader sources have no build script either, and the",
         "    // shader importer reads the cooked file rather than the source: cook",
         "    // them beside themselves so the pack carries the same WGSL a",
         "    // development host cooks.",
-        "    pill_assets::cook_shader_tree(&source).unwrap_or_else(|error| {",
-        '        panic!("cannot cook the project\'s shaders at {}: {error}", source.display())',
-        "    });",
+        "    pill_assets::cook_shader_tree_with_include_directories(&source, &module_include_directories)",
+        "        .unwrap_or_else(|error| {",
+        '            panic!("cannot cook the project\'s shaders at {}: {error}", source.display())',
+        "        });",
         "    let packed = pill_assets::write_asset_pack_with_roots(&source, &module_roots, &output)",
         "        .unwrap_or_else(|error| panic!(\"cannot pack {}: {error}\", source.display()));",
         "    // The directories themselves too, so an added or removed file repacks.",

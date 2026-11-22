@@ -6,6 +6,8 @@
 //!   Component popup.
 //! - `entity_inspector` and its section headers: one collapsible section per
 //!   component, with the rows the inspector's row model asks for.
+//! - `inspector_section_commands`: the commands modules place on a component's
+//!   registered, drawn at the right end of their component's header bar.
 //! - `addable_components`: the components the Add popup and the component menu
 //!   offer.
 //! - The vector row metrics (`INSPECTOR_VECTOR_FIELD_WIDTH`,
@@ -52,6 +54,14 @@ pub const SECTION_LINE_GAP: f32 = 3.0;
 /// the group that holds it are both this tall.
 pub const INSPECTOR_VECTOR_FIELD_HEIGHT: f32 = ROW_HEIGHT;
 
+/// The side of the square each Inspector header action gets on a component's
+/// header bar, in points.
+pub const INSPECTOR_ACTION_SIZE: f32 = 16.0;
+
+// =============================================================================
+// Types
+// =============================================================================
+
 // =============================================================================
 // Free Functions
 // =============================================================================
@@ -72,6 +82,7 @@ pub fn inspector_tab(
     pending: &mut PendingEditorCommands,
     overlay_regions: &mut Vec<ShellRect>,
     session: &mut InspectorSession,
+    commands: &mut PlacementHost<'_>,
 ) {
     // This tab has no scroll area of its own. The dock already wraps the tab
     // body in one, and a nested area sizes itself to its content instead of
@@ -98,7 +109,15 @@ pub fn inspector_tab(
     match snapshot.detail.as_ref() {
         Some(detail) => {
             inspector_header(ui, snapshot, detail, pending, overlay_regions, session);
-            entity_inspector(ui, snapshot, detail, pending, overlay_regions, session);
+            entity_inspector(
+                ui,
+                snapshot,
+                detail,
+                pending,
+                overlay_regions,
+                session,
+                commands,
+            );
         }
         None => match selection.primary() {
             Some(entity) => {
@@ -171,7 +190,7 @@ pub fn inspector_tab(
     if let Some(detail) = snapshot.detail.as_ref() {
         let empty = ui.allocate_response(empty_area(ui), egui::Sense::click());
         context_menu("inspector", &empty, overlay_regions, &mut |ui| {
-            component_menu_items(ui, snapshot, detail, None, pending)
+            component_menu_items(ui, snapshot, detail, None, pending, commands)
         });
     }
 }
@@ -331,7 +350,8 @@ pub fn addable_components<'a>(snapshot: &'a EditorSnapshot, detail: &EntityDetai
 /// Draws one entity's components as collapsible sections. Each one has a
 /// header bar (a caret, the component's duotone icon and its label) that
 /// toggles the section and opens the component menu on a right-click, then
-/// the rows the inspector's row model asks for.
+/// the rows the inspector's row model asks for. The Inspector header actions
+/// modules registered for a component sit at the right end of its bar.
 pub fn entity_inspector(
     ui: &mut egui::Ui,
     snapshot: &EditorSnapshot,
@@ -339,10 +359,25 @@ pub fn entity_inspector(
     pending: &mut PendingEditorCommands,
     overlay_regions: &mut Vec<ShellRect>,
     session: &mut InspectorSession,
+    commands: &mut PlacementHost<'_>,
 ) {
     for component in &detail.components {
         let collapsed = session.collapsed.contains(&component.type_name);
-        let header = inspector_section_header(ui, component, collapsed, session);
+        let command_count = header_commands(commands.commands, &component.type_name).count();
+        let (header, commands_rect) =
+            inspector_section_header(ui, component, collapsed, session, command_count);
+        // Drawn after the bar's own click area, so a command's button sits on
+        // top of it and a click on the button never toggles the section.
+        if let Some(commands_rect) = commands_rect {
+            inspector_section_commands(
+                ui,
+                commands_rect,
+                detail.entity,
+                &component.type_name,
+                commands,
+                session,
+            );
+        }
         context_menu("inspector", &header, overlay_regions, &mut |ui| {
             component_menu_items(
                 ui,
@@ -350,6 +385,7 @@ pub fn entity_inspector(
                 detail,
                 Some(component.type_name.as_str()),
                 pending,
+                commands,
             )
         });
         if header.clicked() {
@@ -415,15 +451,18 @@ pub fn inspector_targets(
 /// then the foldout caret, the component's duotone icon and its label, with no
 /// fill behind them.
 ///
-/// Returns the header's response. The whole header is clickable, and the
-/// caller toggles the section when the response reports a click. The header
-/// logs its rectangle once per placement.
+/// Returns the header's response and, when `action_count` is above zero, the
+/// space reserved at its right end for that many Inspector header actions.
+/// The whole header is clickable, and the caller toggles the section when the
+/// response reports a click. The header logs its rectangle once per placement.
 pub fn inspector_section_header(
     ui: &mut egui::Ui,
     component: &ComponentView,
     collapsed: bool,
     session: &mut InspectorSession,
-) -> egui::Response {
+    action_count: usize,
+) -> (egui::Response, Option<egui::Rect>) {
+    let mut actions_rect = None;
     let caret = if collapsed {
         icons::Icon::CaretRight
     } else {
@@ -458,6 +497,19 @@ pub fn inspector_section_header(
                 ui.label(
                     egui::RichText::new(inspector::component_label(&component.type_name)).strong(),
                 );
+                // The actions' space is only reserved here; the caller draws
+                // them once the bar's click area exists.
+                if action_count > 0 {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let width = action_count as f32 * INSPECTOR_ACTION_SIZE
+                            + (action_count - 1) as f32 * ui.spacing().item_spacing.x;
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::vec2(width, INSPECTOR_ACTION_SIZE),
+                            egui::Sense::hover(),
+                        );
+                        actions_rect = Some(rect);
+                    });
+                }
             });
         });
     let rect = frame.response.rect;
@@ -472,11 +524,97 @@ pub fn inspector_section_header(
             "[editor] inspector section rect"
         );
     }
-    ui.interact(
-        rect,
-        ui.id()
-            .with(("inspector-section", component.type_name.as_str())),
-        egui::Sense::click(),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    let response = ui
+        .interact(
+            rect,
+            ui.id()
+                .with(("inspector-section", component.type_name.as_str())),
+            egui::Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    (response, actions_rect)
+}
+
+/// Draws the commands the modules placed on one component's header into the
+/// space its header bar reserved, right to left in registration order.
+///
+/// Each command draws from data - its icon, title and the state published for
+/// this entity and component - or through the draw function its module
+/// registered for that command and place. A click joins the pass's invocation
+/// list, which the executable hands to the module that owns the id.
+pub fn inspector_section_commands(
+    ui: &mut egui::Ui,
+    commands_rect: egui::Rect,
+    entity: Entity,
+    component_type_name: &str,
+    commands: &mut PlacementHost<'_>,
+    session: &mut InspectorSession,
+) {
+    // A child that allocates nothing in the parent, so the reserved space is
+    // not counted twice in the Inspector's layout.
+    let mut buttons_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(commands_rect)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    // The commands the modules placed on this header, in registration order.
+    let target = CommandTarget::Entity {
+        entity,
+        component: Some(component_type_name.to_string()),
+    };
+    let placed: Vec<(String, UiSlot)> = header_commands(commands.commands, component_type_name)
+        .filter_map(|command| {
+            command
+                .placements
+                .iter()
+                .find(|slot| {
+                    matches!(slot, UiSlot::InspectorComponentHeader { .. })
+                        && slot.matches_component(component_type_name)
+                })
+                .map(|slot| (command.id.clone(), slot.clone()))
+        })
+        .collect();
+    for (command_id, slot) in placed {
+        let Some(command) = commands
+            .commands
+            .iter()
+            .find(|command| command.id == command_id)
+        else {
+            continue;
+        };
+        let rect = draw_placed_command(
+            &mut buttons_ui,
+            command,
+            &slot,
+            &target,
+            commands.states,
+            commands.draws,
+            commands.invocations,
+        );
+        let Some(rect) = rect else {
+            continue;
+        };
+        let key = format!("{component_type_name}@{}", command.id);
+        remember_command_rect(
+            &mut session.command_rects,
+            session.log_rects,
+            &key,
+            &command.id,
+            &slot,
+            rect,
+        );
+    }
+}
+
+/// The registered commands that place a button on `type_name`'s header.
+pub fn header_commands<'a>(
+    commands: &'a [CommandView],
+    type_name: &'a str,
+) -> impl Iterator<Item = &'a CommandView> + 'a {
+    commands.iter().filter(move |command| {
+        command.placements.iter().any(|slot| {
+            matches!(slot, UiSlot::InspectorComponentHeader { .. })
+                && slot.matches_component(type_name)
+        })
+    })
 }
