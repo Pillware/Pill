@@ -43,3 +43,9 @@ pill_ui_frame = { path = "../../../../../rendering/pill_ui_frame" }
 # This renderer's data crate: its components, assets, pipelines and shaders.
 # Everything wgpu-free that is specific to the master renderer lives there.
 pill_master_renderer_data = { path = "../data" }
+
+[package.metadata.pill]
+# The data crate this renderer draws with: its components, asset types and
+# materials. Naming it here rather than deriving `<renderer>_data` is what lets
+# two renderers share one data crate.
+renderer_data = "pill_master_renderer_data"

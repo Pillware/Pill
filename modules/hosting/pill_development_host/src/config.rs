@@ -263,8 +263,11 @@ const DEFAULT_RENDERER: &str = "pill_master_renderer";
 /// crate nor its GPU module loads.
 const NO_RENDERER: &str = "none";
 
-/// Suffix of a renderer's data crate: renderer `X`'s data is `X_data`.
-pub(crate) const RENDERER_DATA_SUFFIX: &str = "_data";
+/// Manifest key, under `[package.metadata.pill]`, through which a renderer
+/// names the data crate it draws with: `renderer_data = "pill_rendering"`.
+/// Naming it in the renderer's own manifest is what lets two renderers share
+/// one data crate.
+const RENDERER_DATA_TAG: &str = "renderer_data";
 
 /// Directory at a module crate's root holding the resources it ships, its
 /// shader sources among them (under `shaders/`), relative to the crate.
@@ -539,6 +542,19 @@ impl ExtensionConfig {
     }
 }
 
+/// The renderer a project draws with: the GPU module the windowed host loads
+/// and the data crate that module's manifest names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RendererSelection {
+    /// The renderer's GPU module crate.
+    pub(crate) renderer: String,
+
+    /// The data crate from the module's `renderer_data` tag. It loads first
+    /// among the modules, in every posture, so a project's render components
+    /// exist whether or not anything draws them.
+    pub(crate) data_crate: String,
+}
+
 /// Complete host configuration: the project module plus every extension
 /// the host should build, watch and load.
 ///
@@ -564,8 +580,8 @@ pub struct HostConfig {
     pub project: ProjectModuleConfig,
 
     /// Extensions selected by the project's `project_settings.yaml`,
-    /// loaded before the project. When a renderer is selected, its data crate
-    /// (`<renderer>_data`) comes first, whatever the settings list.
+    /// loaded before the project. When a renderer is selected, the data crate
+    /// its manifest names comes first, whatever the settings list.
     pub extensions: Vec<ExtensionConfig>,
 
     /// Whether this host loads extension editor crates: the editor posture.
@@ -589,10 +605,14 @@ pub struct HostConfig {
     /// The renderer's GPU module, from the settings' `renderer:` key
     /// (`pill_master_renderer` when absent); `None` for `renderer: none`.
     ///
-    /// Only a windowed host loads it. Its data crate is among
-    /// [`Self::extensions`] in every build, headless included, so a project's
-    /// render components exist whether or not anything draws them.
+    /// Only a windowed host loads it. Its data crate ([`Self::renderer_data`])
+    /// is among [`Self::extensions`] in every build, headless included, so a
+    /// project's render components exist whether or not anything draws them.
     pub renderer: Option<String>,
+
+    /// The data crate the renderer's manifest names through `renderer_data`;
+    /// `None` for `renderer: none`. It is the first module that loads.
+    pub renderer_data: Option<String>,
 
     /// The settings' `assets:` section: what the development host does with
     /// the project's source assets.
@@ -793,8 +813,12 @@ impl HostConfig {
         validate_extension_crate_names(&extensions_root)?;
         let renderer =
             Self::resolve_renderer(project_settings.renderer.as_deref(), &extensions_root)?;
-        let module_names =
-            Self::module_names_with_renderer_data(renderer.as_deref(), &project_settings.modules);
+        let module_names = Self::module_names_with_renderer_data(
+            renderer
+                .as_ref()
+                .map(|selection| selection.data_crate.as_str()),
+            &project_settings.modules,
+        );
         let mut extensions = Self::resolve_extensions(&module_names, &extensions_root)?;
         let mut first_load_optional: Vec<String> = Vec::new();
         // An editor host also loads the editor crates, after every runtime
@@ -805,8 +829,8 @@ impl HostConfig {
                 .map(|extension| extension.folder.clone())
                 .collect();
             if let Some(renderer_location) = renderer
-                .as_deref()
-                .and_then(|renderer_name| find_extension_crate(&extensions_root, renderer_name))
+                .as_ref()
+                .and_then(|selection| find_extension_crate(&extensions_root, &selection.renderer))
             {
                 runtime_folders.push(renderer_location.folder);
             }
@@ -861,7 +885,10 @@ impl HostConfig {
             materialize_host_module_wrapper(&workspace_root, extension, false)?;
             kept_wrappers.push(workspace_root.join(&extension.wrapper_directory));
         }
-        if let Some(renderer_name) = renderer.as_deref() {
+        if let Some(renderer_name) = renderer
+            .as_ref()
+            .map(|selection| selection.renderer.as_str())
+        {
             let renderer_location = find_extension_crate(&extensions_root, renderer_name)
                 .ok_or_else(|| ConfigError::ExtensionDirectoryMissing {
                     name: renderer_name.to_string(),
@@ -885,7 +912,12 @@ impl HostConfig {
             extensions,
             load_editor_crates,
             first_load_optional,
-            renderer,
+            renderer: renderer
+                .as_ref()
+                .map(|selection| selection.renderer.clone()),
+            renderer_data: renderer
+                .as_ref()
+                .map(|selection| selection.data_crate.clone()),
             assets: project_settings.assets,
             logging,
             shipping_debug_draw: project_settings.debug_draw.unwrap_or(false),
@@ -942,23 +974,25 @@ impl HostConfig {
         Ok(Some(path.to_string()))
     }
 
-    /// Resolve the settings' `renderer:` value to a renderer name.
+    /// Resolve the settings' `renderer:` value to the renderer and the data
+    /// crate it draws with.
     ///
     /// Absent means [`DEFAULT_RENDERER`]; [`NO_RENDERER`] means none. A named
-    /// renderer must have both of its crates in an extension folder under
-    /// `extensions/`: the GPU module `<renderer>` and the data crate
-    /// `<renderer>_data`. A missing one is a configuration error here rather
-    /// than a failed build later.
+    /// renderer must be an extension crate under `extensions/`, its manifest
+    /// must name its data crate ([`RENDERER_DATA_TAG`]), and that crate must be
+    /// an extension crate too. Anything else is a configuration error here
+    /// rather than a failed build later.
     ///
     /// # Errors
     ///
     /// Returns [`ConfigError::InvalidExtensionName`] when the name is not a
-    /// usable directory name, and [`ConfigError::ExtensionDirectoryMissing`]
-    /// when either crate has no folder.
+    /// usable directory name, [`ConfigError::ExtensionDirectoryMissing`] when
+    /// either crate has no folder, and [`ConfigError::RendererDataTagMissing`]
+    /// when the renderer's manifest carries no tag.
     fn resolve_renderer(
         setting: Option<&str>,
         extensions_root: &Path,
-    ) -> Result<Option<String>, ConfigError> {
+    ) -> Result<Option<RendererSelection>, ConfigError> {
         let renderer_name = setting.map(str::trim).unwrap_or(DEFAULT_RENDERER);
         if renderer_name == NO_RENDERER {
             return Ok(None);
@@ -968,15 +1002,25 @@ impl HostConfig {
                 name: renderer_name.to_string(),
             });
         }
-        let data_crate_name = format!("{renderer_name}{RENDERER_DATA_SUFFIX}");
-        for crate_name in [renderer_name, data_crate_name.as_str()] {
-            if find_extension_crate(extensions_root, crate_name).is_none() {
-                return Err(ConfigError::ExtensionDirectoryMissing {
-                    name: crate_name.to_string(),
-                });
-            }
+        let Some(location) = find_extension_crate(extensions_root, renderer_name) else {
+            return Err(ConfigError::ExtensionDirectoryMissing {
+                name: renderer_name.to_string(),
+            });
+        };
+        let renderer_directory = location.directory_under(extensions_root);
+        let data_crate =
+            declared_pill_tag(&renderer_directory, RENDERER_DATA_TAG).ok_or_else(|| {
+                ConfigError::RendererDataTagMissing {
+                    name: renderer_name.to_string(),
+                }
+            })?;
+        if find_extension_crate(extensions_root, &data_crate).is_none() {
+            return Err(ConfigError::ExtensionDirectoryMissing { name: data_crate });
         }
-        Ok(Some(renderer_name.to_string()))
+        Ok(Some(RendererSelection {
+            renderer: renderer_name.to_string(),
+            data_crate,
+        }))
     }
 
     /// The module load order: the renderer's data crate first, when a renderer
@@ -985,14 +1029,13 @@ impl HostConfig {
     /// First because extensions and the project may use its components. A
     /// project that also lists the data crate gets it once, not twice.
     fn module_names_with_renderer_data(
-        renderer: Option<&str>,
+        renderer_data: Option<&str>,
         listed_module_names: &[String],
     ) -> Vec<String> {
-        let Some(renderer) = renderer else {
+        let Some(data_crate_name) = renderer_data else {
             return listed_module_names.to_vec();
         };
-        let data_crate_name = format!("{renderer}{RENDERER_DATA_SUFFIX}");
-        std::iter::once(data_crate_name.clone())
+        std::iter::once(data_crate_name.to_string())
             .chain(
                 listed_module_names
                     .iter()
@@ -1200,6 +1243,7 @@ impl From<ProjectModuleConfig> for HostConfig {
             load_editor_crates: false,
             first_load_optional: Vec::new(),
             renderer: None,
+            renderer_data: None,
             assets: ProjectAssetSettings::default(),
             logging: pill_player::LoggingSettings::default(),
             shipping_debug_draw: false,
@@ -1481,8 +1525,8 @@ struct ProjectSettingsFile {
     /// is the selected renderer's data crate, which loads first by convention.
     modules: Vec<String>,
     /// The renderer the project draws with: the name of its GPU module under
-    /// `extensions/` (`pill_master_renderer` when absent), or `none`. Its data
-    /// crate, `<renderer>_data`, loads in every build.
+    /// `extensions/` (`pill_master_renderer` when absent), or `none`. The data
+    /// crate its manifest names through `renderer_data` loads in every build.
     renderer: Option<String>,
     /// What the development host does with the project's source assets.
     assets: ProjectAssetSettings,
@@ -2709,11 +2753,12 @@ fn materialize_host_module_wrapper(
     write_module_member(&member_directory, &manifest, &source)
 }
 
-/// The editor frontend a crate's manifest tags itself for, if any.
+/// The value of `key = "<value>"` under `[package.metadata.pill]` in a crate's
+/// manifest, if any.
 ///
-/// `editor_frontend = "<name>"` under `[package.metadata.pill]`. Text-scanned
-/// rather than parsed, so the host gains no TOML dependency for one string.
-fn declared_editor_frontend(directory: &Path) -> Option<String> {
+/// The host reads one string per call from that table, so the manifest is
+/// text-scanned rather than parsed and the host gains no TOML dependency.
+fn declared_pill_tag(directory: &Path, key: &str) -> Option<String> {
     let manifest = std::fs::read_to_string(directory.join("Cargo.toml")).ok()?;
     let mut in_pill_metadata = false;
     for line in manifest.lines() {
@@ -2725,13 +2770,20 @@ fn declared_editor_frontend(directory: &Path) -> Option<String> {
         if !in_pill_metadata {
             continue;
         }
-        let Some(after_key) = trimmed.strip_prefix("editor_frontend") else {
+        let Some(after_key) = trimmed.strip_prefix(key) else {
             continue;
         };
         let tag_value = after_key.split_once('=')?.1.trim();
         return Some(tag_value.trim_matches('"').to_string());
     }
     None
+}
+
+/// The editor frontend a crate's manifest tags itself for, if any.
+///
+/// `editor_frontend = "<name>"` under `[package.metadata.pill]`.
+fn declared_editor_frontend(directory: &Path) -> Option<String> {
+    declared_pill_tag(directory, "editor_frontend")
 }
 
 /// Resolves the project's own editor crate, when it has one.
@@ -3361,6 +3413,27 @@ serde = { version = "1", features = ["derive"] }
         seed_crate_at(extensions_root, folder, "modules/runtime", crate_name);
     }
 
+    /// Appends `renderer_data = "<data_crate>"` under `[package.metadata.pill]`
+    /// to a seeded renderer's manifest.
+    fn tag_renderer_data(extensions_root: &Path, renderer: &str, data_crate: &str) {
+        let manifest_path = extensions_root
+            .join(renderer)
+            .join("modules/runtime/Cargo.toml");
+        let mut manifest = std::fs::read_to_string(&manifest_path).unwrap();
+        manifest.push_str(&format!(
+            "\n[package.metadata.pill]\nrenderer_data = \"{data_crate}\"\n"
+        ));
+        std::fs::write(&manifest_path, manifest).unwrap();
+    }
+
+    /// An `extensions/` directory holding a renderer crate that names
+    /// `data_crate` through its `renderer_data` tag, and that data crate.
+    fn extensions_root_with_renderer(name: &str, renderer: &str, data_crate: &str) -> PathBuf {
+        let root = extensions_root_with(name, &[renderer, data_crate]);
+        tag_renderer_data(&root, renderer, data_crate);
+        root
+    }
+
     /// Creates `<extensions_root>/<folder>/modules/editor/Cargo.toml`.
     fn seed_editor_crate(extensions_root: &Path, folder: &str, crate_name: &str) {
         seed_crate_at(extensions_root, folder, "modules/editor", crate_name);
@@ -3794,11 +3867,17 @@ serde = { version = "1", features = ["derive"] }
             "modules/runtime/data",
             "pill_master_renderer_data",
         );
+        let gpu_manifest = root.join("pill_master_renderer/modules/runtime/gpu/Cargo.toml");
+        let mut manifest = std::fs::read_to_string(&gpu_manifest).unwrap();
+        manifest
+            .push_str("\n[package.metadata.pill]\nrenderer_data = \"pill_master_renderer_data\"\n");
+        std::fs::write(&gpu_manifest, manifest).unwrap();
         assert_eq!(
-            HostConfig::resolve_renderer(None, &root)
-                .unwrap()
-                .as_deref(),
-            Some("pill_master_renderer")
+            HostConfig::resolve_renderer(None, &root).unwrap(),
+            Some(RendererSelection {
+                renderer: "pill_master_renderer".to_string(),
+                data_crate: "pill_master_renderer_data".to_string(),
+            })
         );
         assert!(
             validate_extension_crate_names(&root).is_ok(),
@@ -3807,19 +3886,21 @@ serde = { version = "1", features = ["derive"] }
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// No `renderer:` key selects the master renderer, whose two crates must
-    /// both exist.
+    /// No `renderer:` key selects the master renderer, whose data crate comes
+    /// from its manifest's tag.
     #[test]
     fn an_absent_renderer_key_selects_the_master_renderer() {
-        let root = extensions_root_with(
+        let root = extensions_root_with_renderer(
             "renderer_default",
-            &["pill_master_renderer", "pill_master_renderer_data"],
+            "pill_master_renderer",
+            "pill_master_renderer_data",
         );
         assert_eq!(
-            HostConfig::resolve_renderer(None, &root)
-                .unwrap()
-                .as_deref(),
-            Some("pill_master_renderer")
+            HostConfig::resolve_renderer(None, &root).unwrap(),
+            Some(RendererSelection {
+                renderer: "pill_master_renderer".to_string(),
+                data_crate: "pill_master_renderer_data".to_string(),
+            })
         );
     }
 
@@ -3833,10 +3914,27 @@ serde = { version = "1", features = ["derive"] }
         );
     }
 
-    /// A renderer whose data crate is missing is refused, naming that crate.
+    /// A renderer whose manifest carries no `renderer_data` tag is refused,
+    /// naming the renderer.
     #[test]
-    fn a_renderer_without_its_data_crate_is_refused() {
-        let root = extensions_root_with("renderer_no_data", &["other_renderer"]);
+    fn a_renderer_without_its_data_tag_is_refused() {
+        let root = extensions_root_with(
+            "renderer_no_tag",
+            &["other_renderer", "other_renderer_data"],
+        );
+        let error = HostConfig::resolve_renderer(Some("other_renderer"), &root).unwrap_err();
+        assert!(
+            matches!(&error, ConfigError::RendererDataTagMissing { name } if name == "other_renderer"),
+            "{error:?}"
+        );
+    }
+
+    /// A renderer whose tag names a crate that no folder holds is refused,
+    /// naming that crate.
+    #[test]
+    fn a_renderer_tagging_a_missing_data_crate_is_refused() {
+        let root = extensions_root_with("renderer_tag_missing", &["other_renderer"]);
+        tag_renderer_data(&root, "other_renderer", "other_renderer_data");
         let error = HostConfig::resolve_renderer(Some("other_renderer"), &root).unwrap_err();
         assert!(
             matches!(&error, ConfigError::ExtensionDirectoryMissing { name } if name == "other_renderer_data"),
@@ -3854,7 +3952,7 @@ serde = { version = "1", features = ["derive"] }
             "pill_audio".to_string(),
         ];
         assert_eq!(
-            HostConfig::module_names_with_renderer_data(Some("pill_master_renderer"), &listed),
+            HostConfig::module_names_with_renderer_data(Some("pill_master_renderer_data"), &listed),
             ["pill_master_renderer_data", "pill_spline", "pill_audio"]
         );
         assert_eq!(

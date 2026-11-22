@@ -138,13 +138,16 @@ RUNTIME_CRATE_DIRECTORY = Path("modules") / "hosting" / "pill_player"
 CSHARP_BRIDGE_CRATE_DIRECTORY = Path("modules") / "csharp" / "pill_csharp_bridge"
 # The renderer, chosen by the project's `renderer:` setting exactly as the host
 # chooses it (`pill_development_host::config`): absent means the master renderer, `none`
-# means no renderer. Its data crate, `<renderer>_data`, is linked as the first
-# static module in every shipping build, headless included; a windowed build
-# also links the GPU crate `<renderer>` and hands the host its entry points as
+# means no renderer. A renderer names its data crate in its own manifest
+# (`renderer_data` under `[package.metadata.pill]`), and that crate is linked as
+# the first static module in every shipping build, headless included; a windowed
+# build also links the GPU module and hands the host its entry points as
 # `StaticRenderer`.
 DEFAULT_RENDERER = "pill_master_renderer"
 NO_RENDERER = "none"
-RENDERER_DATA_SUFFIX = "_data"
+# The manifest key, under `[package.metadata.pill]`, through which a renderer
+# names its data crate. Two renderers can share one.
+RENDERER_DATA_TAG = "renderer_data"
 # The requested feature that makes a shipping build windowed.
 RENDERING_FEATURE = "rendering"
 # The project's asset directory, packed into the binary when it exists, and the
@@ -258,6 +261,23 @@ def declared_editor_frontend(directory: Path):
     pill_metadata = manifest.get("package", {}).get("metadata", {}).get("pill", {})
     editor_frontend = pill_metadata.get("editor_frontend")
     return editor_frontend if isinstance(editor_frontend, str) else None
+
+
+# Returns the data crate `directory/Cargo.toml` names through `renderer_data`
+# under `[package.metadata.pill]`, or None when the directory holds no readable
+# manifest or the manifest carries no tag.
+def declared_renderer_data(directory: Path):
+    manifest_path = directory / PROJECT_MANIFEST_FILE_NAME
+    if not manifest_path.is_file():
+        return None
+    try:
+        with manifest_path.open("rb") as handle:
+            manifest = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    pill_metadata = manifest.get("package", {}).get("metadata", {}).get("pill", {})
+    renderer_data = pill_metadata.get(RENDERER_DATA_TAG)
+    return renderer_data if isinstance(renderer_data, str) else None
 
 
 # Yields the directory of every editor module, in directory name order: each
@@ -451,11 +471,22 @@ def build_logging_literal(logging) -> str:
     )
 
 
-def modules_with_renderer_data(renderer, modules: list) -> list:
-    """Puts the renderer's data crate first in the module list, once."""
+def modules_with_renderer_data(root: Path, renderer, modules: list) -> list:
+    """Puts the renderer's data crate first in the module list, once.
+
+    The data crate is the one the renderer's manifest names through
+    `renderer_data`; a renderer that names none is an error rather than a
+    silently different module set.
+    """
     if renderer is None:
         return list(modules)
-    data = renderer + RENDERER_DATA_SUFFIX
+    data = declared_renderer_data(module_crate_directory(root, renderer))
+    if data is None:
+        raise ValueError(
+            f"renderer {renderer} does not name its data crate: add "
+            f'`{RENDERER_DATA_TAG} = "<crate>"` under [package.metadata.pill] '
+            "in its manifest"
+        )
     return [data] + [name for name in modules if name.strip() != data]
 
 
@@ -1317,7 +1348,9 @@ def main() -> int:
     try:
         kind = project_kind(project_root)
         renderer_name = load_renderer(project_root)
-        modules = modules_with_renderer_data(renderer_name, load_module_list(project_root))
+        modules = modules_with_renderer_data(
+            root, renderer_name, load_module_list(project_root)
+        )
         project_name = load_project_name(project_root)
         build_binary_name = load_build_binary_name(project_root)
         if kind == "managed":

@@ -275,6 +275,15 @@ pub enum ConfigError {
     )]
     ExtensionDirectoryMissing { name: String },
 
+    /// A renderer crate's manifest does not name the data crate it draws with,
+    /// so nothing can tell which crate to load first.
+    #[message(
+        "renderer ",
+        value(name),
+        " does not name its data crate: add `renderer_data = \"<crate>\"` under [package.metadata.pill]"
+    )]
+    RendererDataTagMissing { name: String },
+
     /// The asset pack a shipped build mounts is not a valid pack.
     #[message(
         "the embedded asset pack of ",

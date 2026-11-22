@@ -139,6 +139,11 @@ pub struct DevHost {
     /// is already among `extensions`.
     #[cfg(feature = "rendering")]
     renderer: Option<String>,
+    /// The data crate the renderer's manifest names; `None` when the project
+    /// selects no renderer. Its `res` tree is the shader sources' home, so the
+    /// shader watcher needs it by name.
+    #[cfg(feature = "rendering")]
+    renderer_data: Option<String>,
     /// The engine and its frame. Declared before the loaded images: the world
     /// holds values whose drop functions live in those images, so it has to be
     /// gone before any of them unmaps. The engine is boxed, so the raw pointer
@@ -1914,6 +1919,8 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
         project_module_config,
         #[cfg(feature = "rendering")]
         renderer: host_config.renderer.clone(),
+        #[cfg(feature = "rendering")]
+        renderer_data: host_config.renderer_data.clone(),
         runtime,
         engine_api,
         loaded_project,
@@ -2074,11 +2081,7 @@ fn start_shader_watcher(host: &DevHost) -> Option<crate::watchers::ShaderWatcher
         );
         return None;
     }
-    let data = format!(
-        "{}{}",
-        host.renderer.as_deref()?,
-        crate::config::RENDERER_DATA_SUFFIX
-    );
+    let data = host.renderer_data.clone()?;
     let slot = host.extensions.iter().find(|slot| slot.name() == data)?;
     // The tree the data crate cooks from, its `res` at the crate root. The
     // build script and the watcher have to name the same directory, or a

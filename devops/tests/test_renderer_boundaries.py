@@ -9,11 +9,13 @@ TIER: static
 REQUIREMENTS: Python 3.11+ (standard library only).
 
 DESCRIPTION
-    Each renderer comes as two crates: a GPU module (`<renderer>`) and its
-    data crate (`<renderer>_data`), both in an extension folder under
-    `extensions/` - either directly, or inside a group folder, which holds
-    extension folders and no crates of its own. Both are found by that naming
-    convention, never listed here. The shared contract crate is
+    Each renderer is a GPU module that names its data crate in its own
+    manifest: `renderer_data = "<crate>"` under `[package.metadata.pill]`.
+    Both crates sit in an extension folder under `extensions/` - either
+    directly, or inside a group folder, which holds extension folders and no
+    crates of its own. The pairs are found by that tag, never listed here, and
+    a data crate's name does not have to match its renderer's. The shared
+    contract crate is
     `pill_renderer_api`. This check reads the workspace members' manifests
     (and the example projects') and enforces:
 
@@ -88,9 +90,12 @@ API_ALLOWED_DEPENDENCIES = {
 # Crates that must not name renderer data or GPU code (rule 3).
 HOST_CRATES = ("pill_player", "pill_csharp_bridge", "pill_development_host", "pill_standalone")
 
-# Suffix that marks a data crate, and one that marks a graph-only dependency.
-DATA_SUFFIX = "_data"
+# Suffix that marks a graph-only dependency.
 GRAPH_ONLY_SUFFIX = "_dependency_graph"
+
+# The manifest key, under `[package.metadata.pill]`, through which a renderer
+# names its data crate.
+RENDERER_DATA_TAG = "renderer_data"
 
 # The graphics crate only a GPU module may link (rule 1).
 GRAPHICS_CRATE = "wgpu"
@@ -104,14 +109,26 @@ GRAPHICS_CRATE = "wgpu"
 WGPU_EXCEPTION_CRATES = {"pill_editor", "pill_web_editor"}
 
 
+# The data crate a renderer's manifest names, or None when it names none.
+def declared_renderer_data(crate: Crate):
+    pill_metadata = crate.manifest.get("package", {}).get("metadata", {}).get("pill", {})
+    data_crate = pill_metadata.get(RENDERER_DATA_TAG)
+    return data_crate if isinstance(data_crate, str) else None
+
+
 # Every broken rule under `repository`, as (rule number, message) pairs.
 def check(repository: Path):
     modules = repository / "modules"
     members = workspace_members(modules)
     by_name = {crate.name: crate for crate in members}
-    data_crates = {name for name in by_name if name.endswith(DATA_SUFFIX)}
-    gpu_modules = {name[: -len(DATA_SUFFIX)] for name in data_crates if name[: -len(DATA_SUFFIX)] in by_name}
-    renderer_crates = data_crates | gpu_modules
+    renderer_data = {}
+    for crate in members:
+        data_crate = declared_renderer_data(crate)
+        if data_crate:
+            renderer_data[crate.name] = data_crate
+    gpu_modules = set(renderer_data)
+    data_crates = {name for name in renderer_data.values() if name in by_name}
+    renderer_crates = gpu_modules | data_crates
     problems = []
 
     # Rule 1: wgpu only in GPU modules (or a named exception), and in at
@@ -202,10 +219,11 @@ def report(repository: Path) -> int:
 
 # --- Self test ---------------------------------------------------------------
 
-# A minimal repository that satisfies every rule: a renderer `r` with its data
-# crate, the contract crate, a host with graph-only dependencies, a project.
-# The renderer pair sits in a group folder, so the self test proves the globs
-# reach into one; a plain extension `s` covers the folder-level layout.
+# A minimal repository that satisfies every rule: a renderer `r` that names its
+# data crate `r_assets` (a name that does not match the renderer's, so the tag
+# is what finds it), the contract crate, a host with graph-only dependencies, a
+# project. The renderer pair sits in a group folder, so the self test proves the
+# globs reach into one; a plain extension `s` covers the folder-level layout.
 VALID_TREE = {
     "modules/Cargo.toml": '[workspace]\nmembers = ["pill_renderer_api", "pill_development_host", "pill_standalone", "pill_editor", '
                           '"extensions/*/modules/*", "extensions/*/*/modules/*", '
@@ -214,36 +232,38 @@ VALID_TREE = {
     "modules/pill_renderer_api/Cargo.toml": '[package]\nname = "pill_renderer_api"\n[dependencies]\n'
                                            'pill_engine = { path = "x" }\npill_ui_frame = { path = "x" }\nserde = "1"\n',
     "modules/pill_development_host/Cargo.toml": '[package]\nname = "pill_development_host"\n[dependencies]\n'
-                                   'renderer_data_dependency_graph = { package = "r_data", path = "x" }\n'
+                                   'renderer_data_dependency_graph = { package = "r_assets", path = "x" }\n'
                                    'renderer_dependency_graph = { package = "r", path = "x" }\n',
     "modules/pill_development_host/src/lib.rs": "//! Host.\n",
-    "modules/pill_development_host/src/tests.rs": "use renderer_data_dependency_graph as r_data;\n",
+    "modules/pill_development_host/src/tests.rs": "use renderer_data_dependency_graph as r_assets;\n",
     "modules/pill_standalone/Cargo.toml": '[package]\nname = "pill_standalone"\n[dependencies]\npill_host = { path = "x" }\n',
     "modules/pill_editor/Cargo.toml": '[package]\nname = "pill_editor"\n[dependencies]\nwgpu = "25"\n',
     "modules/extensions/s/modules/runtime/Cargo.toml": '[package]\nname = "s"\n[dependencies]\n'
                                                        'pill_renderer_api = { path = "x" }\n',
-    "modules/extensions/group/r/modules/runtime/Cargo.toml": '[package]\nname = "r"\n[dependencies]\nwgpu = "25"\nr_data = { path = "x" }\n',
-    "modules/extensions/group/r_data/modules/runtime/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\npill_renderer_api = { path = "x" }\n',
+    "modules/extensions/group/r/modules/runtime/Cargo.toml": '[package]\nname = "r"\n[dependencies]\nwgpu = "25"\nr_assets = { path = "x" }\n'
+                                                             '[package.metadata.pill]\nrenderer_data = "r_assets"\n',
+    "modules/extensions/group/r_assets/modules/runtime/Cargo.toml": '[package]\nname = "r_assets"\n[dependencies]\npill_renderer_api = { path = "x" }\n',
     "modules/extensions/group/r/generated/host_module_r/Cargo.toml": '[package]\nname = "host_module_r"\n[dependencies]\nr = { path = "x" }\n',
     "modules/extensions/o/modules/runtime/Cargo.toml": '[package]\nname = "o"\n[dependencies]\n'
                                                        'pill_renderer_api = { path = "x" }\n',
     "modules/extensions/o/generated/host_module_o/Cargo.toml": '[package]\nname = "host_module_o"\n[dependencies]\no = { path = "x" }\n',
-    "examples/local/p/Cargo.toml": '[package]\nname = "p"\n[dependencies]\nr_data = { path = "x" }\n',
+    "examples/local/p/Cargo.toml": '[package]\nname = "p"\n[dependencies]\nr_assets = { path = "x" }\n',
 }
 
 # One broken variant per rule: the files to overwrite, and the rule it breaks.
 BROKEN_VARIANTS = [
-    (1, {"modules/extensions/group/r_data/modules/runtime/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\nwgpu = "25"\n'}),
-    (1, {"modules/extensions/group/r/modules/runtime/Cargo.toml": '[package]\nname = "r"\n[dependencies]\nr_data = { path = "x" }\n'}),
+    (1, {"modules/extensions/group/r_assets/modules/runtime/Cargo.toml": '[package]\nname = "r_assets"\n[dependencies]\nwgpu = "25"\n'}),
+    (1, {"modules/extensions/group/r/modules/runtime/Cargo.toml": '[package]\nname = "r"\n[dependencies]\nr_assets = { path = "x" }\n'
+                                                                  '[package.metadata.pill]\nrenderer_data = "r_assets"\n'}),
     (1, {"modules/pill_editor/Cargo.toml": '[package]\nname = "pill_not_editor"\n[dependencies]\nwgpu = "25"\n'}),
     (2, {"modules/pill_renderer_api/Cargo.toml": '[package]\nname = "pill_renderer_api"\n[dependencies]\nglam = "0.33"\n'}),
     (2, {"modules/pill_renderer_api/Cargo.toml": '[package]\nname = "pill_renderer_api"\n[dependencies]\nrand = "0.8"\n'}),
     (2, {"modules/pill_renderer_api/Cargo.toml": '[package]\nname = "pill_renderer_api"\n[build-dependencies]\npill_assets = "1"\n'}),
-    (3, {"modules/pill_standalone/Cargo.toml": '[package]\nname = "pill_standalone"\n[dependencies]\nr_data = { path = "x" }\n'}),
+    (3, {"modules/pill_standalone/Cargo.toml": '[package]\nname = "pill_standalone"\n[dependencies]\nr_assets = { path = "x" }\n'}),
     (3, {"modules/pill_development_host/src/lib.rs": "//! Host.\nuse renderer_data_dependency_graph::Mesh;\n"}),
     (4, {"examples/local/p/Cargo.toml": '[package]\nname = "p"\n[dependencies]\nr = { path = "x" }\n'}),
     (4, {"modules/extensions/o/generated/host_module_o/Cargo.toml": '[package]\nname = "host_module_o"\n[dependencies]\nr = { path = "x" }\n'}),
-    (5, {"modules/extensions/group/r_data/modules/runtime/Cargo.toml": '[package]\nname = "r_data"\n[dependencies]\nr = { path = "x" }\n'}),
+    (5, {"modules/extensions/group/r_assets/modules/runtime/Cargo.toml": '[package]\nname = "r_assets"\n[dependencies]\nr = { path = "x" }\n'}),
 ]
 
 

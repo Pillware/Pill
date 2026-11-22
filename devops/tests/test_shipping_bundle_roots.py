@@ -78,11 +78,20 @@ def main() -> int:
             failures.append(description)
 
     modules = generator.modules_with_renderer_data(
-        generator.load_renderer(PROJECT_ROOT), generator.load_module_list(PROJECT_ROOT)
+        REPOSITORY_ROOT,
+        generator.load_renderer(PROJECT_ROOT),
+        generator.load_module_list(PROJECT_ROOT),
     )
     expect(
         "the renderer's data crate leads the module list",
         bool(modules) and modules[0] == DATA_CRATE_NAME,
+    )
+    expect(
+        "the renderer names its data crate in its own manifest",
+        generator.declared_renderer_data(
+            generator.module_crate_directory(REPOSITORY_ROOT, RENDERER)
+        )
+        == DATA_CRATE_NAME,
     )
 
     expected_roots = [DATA_CRATE / "res"]
