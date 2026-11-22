@@ -1,0 +1,23 @@
+# Adapted from the README usage of mathieudutour/github-tag-action, without
+# the GitHub Release step: tag only.
+name: Bump version
+
+on:
+  schedule:
+    # Mondays 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump version and push tag
+        uses: mathieudutour/github-tag-action@af99e60ce8132224b8e6ebab5023449fe256ed46 # v7.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: false
