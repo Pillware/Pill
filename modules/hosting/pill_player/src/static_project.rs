@@ -123,11 +123,11 @@ pub enum StaticProjectBackend {
 /// renderer, fills this in.
 #[derive(Clone, Copy)]
 pub struct StaticRenderer {
-    /// The renderer's registration (`pill_master_renderer::register`), which
-    /// adds the `rendering` system.
+    /// The renderer's registration (`pill_renderer::register`), which adds the
+    /// `rendering` system.
     pub init: fn(&mut Engine) -> u32,
-    /// Builds a backend on a window (`pill_master_renderer::attach`), as a
-    /// future: a native frontend blocks on it once, a web frontend awaits it.
+    /// Builds a backend on a window (`pill_renderer::attach`), as a future: a
+    /// native frontend blocks on it once, a web frontend awaits it.
     ///
     /// # Safety
     ///

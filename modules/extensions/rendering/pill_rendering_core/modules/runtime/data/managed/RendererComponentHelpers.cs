@@ -21,7 +21,7 @@ using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace pill_master_renderer
+namespace pill_rendering
 {
     /// <summary>Conveniences over the generated <c>MeshRendererComponent</c> mirror.</summary>
     public partial struct MeshRendererComponent
@@ -52,8 +52,16 @@ namespace pill_master_renderer
             Material = material,
         };
     }
+}
 
+namespace pill_engine
+{
     /// <summary>Conveniences over the generated <c>TransformComponent</c> mirror.</summary>
+    /// <remarks>
+    /// The transform belongs to the engine, so its mirror is generated in the
+    /// namespace the engine's own types are written in (<c>pill_engine</c>);
+    /// this half of it follows the struct there.
+    /// </remarks>
     public partial struct TransformComponent
     {
         /// <summary>Position in world space.</summary>
@@ -90,7 +98,10 @@ namespace pill_master_renderer
             return transform;
         }
     }
+}
 
+namespace pill_rendering
+{
     /// <summary>Conveniences over the generated <c>DirectionalLightComponent</c> mirror.</summary>
     public partial struct DirectionalLightComponent
     {

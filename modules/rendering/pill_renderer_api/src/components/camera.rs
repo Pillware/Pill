@@ -35,7 +35,11 @@ use pill_engine::{component, World};
 /// A value the projection cannot use is replaced with a default while the
 /// renderer builds the matrix. That keeps a mistyped field of view or near/far
 /// pair from producing NaN values in the matrix.
-#[component(shared = "pill_master_renderer::CameraComponent", persistable)]
+#[component(
+    shared = "pill_rendering::CameraComponent",
+    former = "pill_master_renderer::CameraComponent",
+    persistable
+)]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct CameraComponent {

@@ -32,7 +32,8 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 
 // The renderer's components, generated from their Rust registration.
-using pill_master_renderer;
+using pill_engine;
+using pill_rendering;
 
 using static TracyLive.ProjectConstants;
 using Spline = pill_spline.Spline;

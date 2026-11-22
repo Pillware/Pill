@@ -56,8 +56,9 @@ pub struct AssetRecord {
     /// The path the asset loads under, relative to `res` and separated by `/`.
     pub path: String,
     /// The asset type its header names, in its current form
-    /// (`pill_master_renderer::Mesh`), even when the file still spells it with
-    /// the module path it was written with.
+    /// (`pill_rendering::Mesh`), even when the file still spells it with the
+    /// module path it was written with or with a name the type has since
+    /// declared as a former one.
     pub asset_type: String,
     /// Whether the file is the asset itself and holds its own header, rather
     /// than a source with a `.meta` sidecar.
@@ -149,10 +150,13 @@ impl AssetDatabase {
         for path in paths {
             let sidecar_identity = pack
                 .get(&format!("{path}.{METADATA_EXTENSION}"))
-                .and_then(read_identity);
+                .and_then(|bytes| read_identity(bytes, None));
             let (identity, standalone) = match sidecar_identity {
                 Some(identity) => (Some(identity), false),
-                None => (pack.get(path).and_then(read_identity), true),
+                None => (
+                    pack.get(path).and_then(|bytes| read_identity(bytes, None)),
+                    true,
+                ),
             };
             if let Some((asset_type, guid)) = identity {
                 database.insert(AssetRecord {
@@ -298,7 +302,7 @@ fn read_record(root: &Path, relative_path: &str, registry: &ImportRegistry) -> O
         root.join(format!("{relative_path}.{METADATA_EXTENSION}"))
     };
     let bytes = std::fs::read(header_path).ok()?;
-    let (asset_type, guid) = read_identity(&bytes)?;
+    let (asset_type, guid) = read_identity(&bytes, Some(registry))?;
     Some(AssetRecord {
         guid,
         path: to_slash_path(relative_path),
@@ -315,11 +319,21 @@ fn read_record(root: &Path, relative_path: &str, registry: &ImportRegistry) -> O
 /// index and the importer agree on which format versions are readable and what
 /// a guid looks like. The index needs only the identity, not the body, and has
 /// no one to report a refusal to, so a refused header becomes `None`.
-fn read_identity(bytes: &[u8]) -> Option<(String, AssetGuid)> {
+///
+/// `registry` is the one that knows which types have declared former names. A
+/// shipping build indexes its pack before any module registers a type, so it
+/// passes `None` and keeps the name the file spells.
+fn read_identity(bytes: &[u8], registry: Option<&ImportRegistry>) -> Option<(String, AssetGuid)> {
     let (header, _) = crate::asset_metadata::read_header(bytes).ok()?;
     // Indexed in its current form, so a picker, an icon and a listing all see
-    // one spelling of a type whatever form the file was written with.
-    let asset_type = crate::type_names::crate_qualified_name(&header.asset_type).into_owned();
+    // one spelling of a type whatever form the file was written with: the
+    // module path names used to keep, and the names a type declares it was
+    // stored under before.
+    let asset_type =
+        match registry.and_then(|registry| registry.current_type_name(&header.asset_type)) {
+            Some(current) => current.to_owned(),
+            None => crate::type_names::crate_qualified_name(&header.asset_type).into_owned(),
+        };
     Some((asset_type, header.guid))
 }
 
@@ -406,7 +420,11 @@ mod tests {
     /// An imported test asset: the text of a `.note` file.
     #[derive(Debug)]
     struct Note(String);
-    impl Asset for Note {}
+    impl Asset for Note {
+        fn former_shared_names() -> &'static [&'static str] {
+            &["pill_legacy::Note"]
+        }
+    }
     impl_trait_accessible!(dyn Asset; Note);
 
     impl ImportedAsset for Note {
@@ -573,6 +591,27 @@ mod tests {
             "the index records the current name whatever the file spells"
         );
         assert_eq!(database.records_of_type(OLD_NOTE).count(), 1);
+        assert_eq!(database.records_of_type("pill_engine::Note").count(), 1);
+    }
+
+    /// A file whose header names the type by the name it declared it was
+    /// stored under before is indexed under the current one, so a picker and a
+    /// listing show it beside the others instead of under a type nothing
+    /// declares any more.
+    #[test]
+    fn a_declared_former_name_is_indexed_under_the_current_name() {
+        let scratch = Scratch::new("former-name");
+        scratch.write("notes/a.note", "hello");
+        scratch.write(
+            "notes/a.note.meta",
+            &header("pill_legacy::Note", NOTE_GUID, "settings"),
+        );
+
+        let database = AssetDatabase::from_directory(&scratch.root, &scratch.registry());
+        let note = database
+            .by_guid(guid(NOTE_GUID))
+            .expect("the note is indexed");
+        assert_eq!(note.asset_type, "pill_engine::Note");
         assert_eq!(database.records_of_type("pill_engine::Note").count(), 1);
     }
 

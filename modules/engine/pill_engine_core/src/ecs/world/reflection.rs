@@ -258,7 +258,10 @@ impl World {
             .component_types
             .iter()
             .copied()
-            .find(|component_id| self.component_registry.get_name(component_id) == Some(type_name))
+            .find(|component_id| {
+                self.component_registry
+                    .name_matches(component_id, type_name)
+            })
     }
 
     /// Returns the byte size and alignment of a registered component's

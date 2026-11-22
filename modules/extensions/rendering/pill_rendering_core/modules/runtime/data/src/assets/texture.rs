@@ -133,7 +133,12 @@ impl TextureType {
 /// changes. A game therefore edits the texture it holds and never touches GPU
 /// state.
 #[asset(imported)]
-#[pill_mirror_object(asset, import, shared = "pill_master_renderer::Texture")]
+#[pill_mirror_object(
+    asset,
+    import,
+    shared = "pill_rendering::Texture",
+    former = "pill_master_renderer::Texture"
+)]
 #[derive(Clone, Debug)]
 pub struct Texture {
     /// Label for the GPU resource. The logs and error messages use it too.

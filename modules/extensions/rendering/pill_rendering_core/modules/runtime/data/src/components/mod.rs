@@ -158,19 +158,42 @@ mod tests {
     fn the_components_keep_the_shared_names_they_were_pinned_to() {
         assert_eq!(
             TransformComponent::shared_name(),
-            Some("pill_master_renderer::TransformComponent")
+            Some("pill_engine::TransformComponent")
         );
         assert_eq!(
             CameraComponent::shared_name(),
-            Some("pill_master_renderer::CameraComponent")
+            Some("pill_rendering::CameraComponent")
         );
         assert_eq!(
             MeshRendererComponent::shared_name(),
-            Some("pill_master_renderer::MeshRendererComponent")
+            Some("pill_rendering::MeshRendererComponent")
         );
         assert_eq!(
             DirectionalLightComponent::shared_name(),
-            Some("pill_master_renderer::DirectionalLightComponent")
+            Some("pill_rendering::DirectionalLightComponent")
+        );
+    }
+
+    /// Each component also declares the name it was stored under before the
+    /// rename, which is what makes a scene written then load: the scene names
+    /// its components by these strings.
+    #[test]
+    fn the_components_declare_the_names_they_were_stored_under() {
+        assert_eq!(
+            TransformComponent::former_shared_names(),
+            ["pill_master_renderer::TransformComponent"]
+        );
+        assert_eq!(
+            CameraComponent::former_shared_names(),
+            ["pill_master_renderer::CameraComponent"]
+        );
+        assert_eq!(
+            MeshRendererComponent::former_shared_names(),
+            ["pill_master_renderer::MeshRendererComponent"]
+        );
+        assert_eq!(
+            DirectionalLightComponent::former_shared_names(),
+            ["pill_master_renderer::DirectionalLightComponent"]
         );
     }
 }

@@ -60,7 +60,10 @@ impl World {
         let mut candidates = self
             .component_registry
             .registered_components()
-            .filter(|(_, _, name)| *name == type_name)
+            .filter(|(component_id, _, _)| {
+                self.component_registry
+                    .name_matches(component_id, type_name)
+            })
             .filter(|(id, _, _)| self.persist_inserters.contains_key(id))
             .map(|(id, _, _)| id);
 

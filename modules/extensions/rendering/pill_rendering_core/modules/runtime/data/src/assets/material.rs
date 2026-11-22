@@ -67,7 +67,12 @@ pub struct MaterialTexture {
 /// it reloads and its old image is eventually unloaded - so reading such a map
 /// afterwards would fault. A `BTreeMap` keeps no such pointer.
 #[asset(standalone)]
-#[pill_mirror_object(asset, standalone, shared = "pill_master_renderer::Material")]
+#[pill_mirror_object(
+    asset,
+    standalone,
+    shared = "pill_rendering::Material",
+    former = "pill_master_renderer::Material"
+)]
 #[derive(Clone, Debug)]
 pub struct Material {
     /// Label used in logs and error messages.

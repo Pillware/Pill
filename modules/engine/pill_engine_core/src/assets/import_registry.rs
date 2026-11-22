@@ -554,6 +554,9 @@ struct ImportedTypeEntry {
     /// The type's metadata type name, owned: a `&'static str` would point
     /// into the registering binary.
     type_name: String,
+    /// The names the type was stored under before this one, as its declaration
+    /// lists them, owned for the same reason.
+    former_names: Vec<String>,
     registrations: Vec<Registration>,
 }
 
@@ -641,6 +644,7 @@ impl ImportRegistry {
     ) -> Result<(), ImportRegistrationError> {
         self.record(
             T::metadata_type_name(),
+            T::former_shared_names(),
             T::SOURCE_EXTENSIONS,
             ImportFunctions::for_type::<T>(),
             alive,
@@ -659,6 +663,7 @@ impl ImportRegistry {
     ) -> Result<(), ImportRegistrationError> {
         self.record(
             T::metadata_type_name(),
+            T::former_shared_names(),
             &[T::FILE_EXTENSION],
             ImportFunctions::for_standalone_type::<T>(),
             alive,
@@ -669,6 +674,7 @@ impl ImportRegistry {
     fn record(
         &mut self,
         type_name: &str,
+        former_names: &[&str],
         extensions: &[&str],
         functions: ImportFunctions,
         alive: Weak<()>,
@@ -708,10 +714,26 @@ impl ImportRegistry {
             Some(entry) => entry.registrations.push(registration),
             None => self.entries.push(ImportedTypeEntry {
                 type_name: type_name.to_owned(),
+                former_names: former_names.iter().map(|name| (*name).to_owned()).collect(),
                 registrations: vec![registration],
             }),
         }
         Ok(())
+    }
+
+    /// The type name a stored name belongs to: the current name of the type
+    /// that declares `stored` as a former name, when one does.
+    ///
+    /// The asset index uses it to record a file under the name its type has
+    /// today, so a `.meta` written before a rename lists beside the others
+    /// instead of under a type nothing declares any more.
+    pub fn current_type_name(&self, stored: &str) -> Option<&str> {
+        self.entries
+            .iter()
+            .find(|entry| {
+                entry.type_name == stored || entry.former_names.iter().any(|name| name == stored)
+            })
+            .map(|entry| entry.type_name.as_str())
     }
 
     /// Drop every registration whose generation is gone, and every entry left
@@ -1429,7 +1451,11 @@ mod tests {
     /// A second type, which also wants `.txt`.
     #[derive(Debug)]
     struct Script;
-    impl Asset for Script {}
+    impl Asset for Script {
+        fn former_shared_names() -> &'static [&'static str] {
+            &["pill_legacy::Script"]
+        }
+    }
     impl_trait_accessible!(dyn Asset; Script);
 
     impl ImportedAsset for Script {
@@ -1502,6 +1528,31 @@ mod tests {
             Some(Text::metadata_type_name())
         );
         assert_eq!(assets.get_by_name::<Text>("a.TXT").unwrap().0, "hello");
+    }
+
+    /// The registry knows which type a name written before a rename belongs
+    /// to, which is how the asset index records such a file under its type's
+    /// current name.
+    #[test]
+    fn a_declared_former_name_resolves_to_the_registered_type() {
+        let script = ImportRegistrationMarker::<Script>::new();
+        let mut registry = ImportRegistry::default();
+        registry.register::<Script>(script.alive()).unwrap();
+
+        assert_eq!(
+            registry.current_type_name(Script::metadata_type_name()),
+            Some(Script::metadata_type_name())
+        );
+        assert_eq!(
+            registry.current_type_name("pill_legacy::Script"),
+            Some(Script::metadata_type_name()),
+            "the name the type declared it was stored under before"
+        );
+        assert_eq!(
+            registry.current_type_name("pill_legacy::Text"),
+            None,
+            "a name no live type declares belongs to nothing"
+        );
     }
 
     #[test]

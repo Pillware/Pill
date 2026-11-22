@@ -951,6 +951,30 @@ mod tests {
     /// The persistence name both builds of the settings resource register under.
     const PROBE_SETTINGS_NAME: &str = "probe::Settings";
 
+    /// A resource that was renamed between builds: it is stored under
+    /// `probe_renamed::Tally` today and declares `probe::Tally` as the name a
+    /// snapshot taken before the rename used.
+    #[derive(Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct PersistProbeRenamedTally {
+        count: u32,
+    }
+    impl crate::resource::Resource for PersistProbeRenamedTally {
+        fn shared_name() -> Option<&'static str> {
+            Some("probe_renamed::Tally")
+        }
+
+        fn former_shared_names() -> &'static [&'static str] {
+            &["probe::Tally"]
+        }
+    }
+
+    /// The build of that resource from before the rename, with the same shape.
+    #[derive(Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct PersistProbeTallyBefore {
+        count: u32,
+    }
+    impl crate::resource::Resource for PersistProbeTallyBefore {}
+
     /// A registered resource's value survives a snapshot and a restore.
     /// Without the resource half of persistence, a loaded world comes back
     /// with every resource missing while looking complete.
@@ -980,6 +1004,32 @@ mod tests {
                 label: "wave three".to_string(),
             }),
             "every field comes back"
+        );
+    }
+
+    /// A snapshot taken before a rename names the resource by the name it was
+    /// stored under then, and the new build still restores the value through
+    /// that name.
+    #[test]
+    fn a_resource_renamed_since_the_snapshot_restores_through_its_former_name() {
+        // The previous build's snapshot: the same shape, registered under the
+        // name the type had before the rename.
+        let mut previous = World::new();
+        previous.register_persistable_resource_as::<PersistProbeTallyBefore>("probe::Tally");
+        previous.insert_resource(PersistProbeTallyBefore { count: 4 });
+        let snapshot = previous.snapshot_resources();
+        assert!(snapshot.payload("probe::Tally").is_some());
+
+        // The arriving build registers the renamed type under its own name and
+        // declares the old one as a former name.
+        let mut loaded = World::new();
+        loaded.register_persistable_resource::<PersistProbeRenamedTally>();
+        loaded.restore_resources(&snapshot);
+
+        assert_eq!(
+            loaded.get_resource::<PersistProbeRenamedTally>(),
+            Some(&PersistProbeRenamedTally { count: 4 }),
+            "the value written under the former name comes back"
         );
     }
 

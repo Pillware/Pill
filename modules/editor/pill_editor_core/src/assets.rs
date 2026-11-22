@@ -855,8 +855,8 @@ mod tests {
             path: path.to_string(),
             read_only: true,
             kind: AssetKind::parse(kind),
-            standalone: kind == "pill_master_renderer::Material",
-            has_meta: kind == "pill_master_renderer::Material",
+            standalone: kind == "pill_rendering::Material",
+            has_meta: kind == "pill_rendering::Material",
             guid: None,
         }
     }
@@ -872,7 +872,7 @@ mod tests {
             module_row(
                 "pill_rendering",
                 "materials/pill.pbr.material",
-                "pill_master_renderer::Material",
+                "pill_rendering::Material",
             ),
             listing("shaders", "folder", false, false),
         ];
@@ -955,7 +955,7 @@ mod tests {
             module_row(
                 "pill_rendering",
                 "materials/pill.pbr.material",
-                "pill_master_renderer::Material",
+                "pill_rendering::Material",
             ),
             listing("textures/rock.png", "Texture", false, true),
             listing("pill_rendering", "folder", false, false),
@@ -983,7 +983,7 @@ mod tests {
         let rows = vec![module_row(
             "pill_rendering",
             "materials/pill.pbr.material",
-            "pill_master_renderer::Material",
+            "pill_rendering::Material",
         )];
         let mut selection = EditorSelection::default();
         selection.asset = Some("extensions/pill_rendering/materials/pill.pbr.material".to_string());
@@ -1002,12 +1002,12 @@ mod tests {
     fn types() -> Vec<StandaloneTypeInfo> {
         vec![
             StandaloneTypeInfo {
-                type_name: "pill_master_renderer::Material".to_string(),
+                type_name: "pill_rendering::Material".to_string(),
                 display_name: "Material".to_string(),
                 extension: "material".to_string(),
             },
             StandaloneTypeInfo {
-                type_name: "pill_master_renderer::Skybox".to_string(),
+                type_name: "pill_rendering::Skybox".to_string(),
                 display_name: "Skybox".to_string(),
                 extension: "skybox".to_string(),
             },
@@ -1032,7 +1032,7 @@ mod tests {
             dialog,
             Some(AssetDialog::Create {
                 folder: String::new(),
-                type_name: "pill_master_renderer::Material".to_string(),
+                type_name: "pill_rendering::Material".to_string(),
                 name: String::new(),
                 kind: CreateKind::Asset,
                 overwrite: None,
@@ -1058,7 +1058,7 @@ mod tests {
     fn submitting_create_queues_the_batch_and_closes() {
         let mut dialog = Some(AssetDialog::Create {
             folder: "textures".to_string(),
-            type_name: "pill_master_renderer::Material".to_string(),
+            type_name: "pill_rendering::Material".to_string(),
             name: "rock".to_string(),
             kind: CreateKind::Asset,
             overwrite: None,
@@ -1072,7 +1072,7 @@ mod tests {
         assert_eq!(
             batch.commands,
             vec![EditorCommand::CreateStandaloneAsset {
-                type_name: "pill_master_renderer::Material".to_string(),
+                type_name: "pill_rendering::Material".to_string(),
                 folder: "textures".to_string(),
                 name: "rock".to_string(),
                 overwrite: None,
@@ -1169,7 +1169,7 @@ mod tests {
     fn submitting_create_needs_a_name_and_keeps_the_dialog() {
         let mut dialog = Some(AssetDialog::Create {
             folder: String::new(),
-            type_name: "pill_master_renderer::Material".to_string(),
+            type_name: "pill_rendering::Material".to_string(),
             name: "   ".to_string(),
             kind: CreateKind::Asset,
             overwrite: None,

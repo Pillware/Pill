@@ -1,5 +1,5 @@
 format_version: 1
-asset_type: pill_master_renderer::Texture
+asset_type: pill_rendering::Texture
 guid: e5563cb06bb16148943b2da7de466e1d
 settings:
   texture_type: Color

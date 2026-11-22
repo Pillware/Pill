@@ -70,6 +70,11 @@ use syn::{parse_macro_input, spanned::Spanned, DeriveInput, ItemFn};
 ///   `<crate>::<Type>` unless pinned, and must be unique across the whole
 ///   process; a pin is `<prefix>::<Type>` too, for a type published under a
 ///   family name rather than its crate's.
+/// - `former = "old::Name"` (repeatable) - a name the type was stored under
+///   before this one. A scene written then still names the type by that name,
+///   and the name-keyed lookups read it as this type; the next save writes the
+///   current name. It is not an identity: nothing registers under it, and it
+///   does not hash to the type's `ComponentId`.
 ///
 /// Field decorators (`#[pill(...)]` on a field, Unity's vocabulary). A field
 /// may take several, comma-separated or as one attribute each. They change
@@ -108,6 +113,7 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
     let mut persistable = false;
     let mut shared = false;
     let mut shared_name_override: Option<String> = None;
+    let mut former_shared_names: Vec<String> = Vec::new();
     let mut gizmo_path: Option<syn::Path> = None;
     let mut gizmo_selected_only = false;
     let mut gizmo_when_declared = false;
@@ -128,6 +134,13 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
                         let literal: syn::LitStr = meta.value()?.parse()?;
                         shared_name_override = Some(validated_shared_name(&literal, "component")?);
                     }
+                    Ok(())
+                } else if meta.path.is_ident("former") {
+                    // A name the type was stored under before this one. A file
+                    // written then still names it, so the name-keyed lookups
+                    // accept it; it never becomes an identity of its own.
+                    let literal: syn::LitStr = meta.value()?.parse()?;
+                    former_shared_names.push(validated_shared_name(&literal, "component")?);
                     Ok(())
                 } else if meta.path.is_ident("gizmo") {
                     // The function the engine calls to draw this component in
@@ -158,7 +171,7 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
                 } else {
                     Err(meta.error(
                         "unknown `pill` attribute; expected `persistable`, `shared`, \
-                         `gizmo` or `gizmo_when`",
+                         `former`, `gizmo` or `gizmo_when`",
                     ))
                 }
             }) {
@@ -277,6 +290,7 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
     } else {
         quote! {}
     };
+    let former_names_impl = former_shared_names_impl(&former_shared_names);
 
     // Step 5: a type that declared a gizmo gets a wrapper that walks its own
     // entities. The walk belongs here, in the declaring artifact, because only
@@ -341,6 +355,8 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl ::pill_engine::Component for #ident {
             #shared_name_impl
+
+            #former_names_impl
 
             fn declared_schema_hash() -> ::core::option::Option<u64> {
                 // These are the same descriptors the registration hashes, so a
@@ -1638,8 +1654,8 @@ pub(crate) fn crate_qualified_type_name(ident: &syn::Ident) -> proc_macro2::Toke
 /// non-empty segments.
 ///
 /// The prefix is the crate, or a family name several crates publish under
-/// (`pill_master_renderer::CameraComponent` is declared in
-/// `pill_renderer_api`). A name without a separator would let an unrelated
+/// (`pill_rendering::CameraComponent` is declared in `pill_renderer_api`). A
+/// name without a separator would let an unrelated
 /// crate declaring the same word bind to this type's identity; a name with a
 /// module path in the middle would break the rule every stored name follows,
 /// which is what lets a file written before it be read back
@@ -2885,6 +2901,7 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
     // Step 1: Parse the `#[pill(...)]` helper attribute.
     let mut shared = false;
     let mut shared_name_override: Option<String> = None;
+    let mut former_shared_names: Vec<String> = Vec::new();
     let mut layout_sources: Option<Vec<String>> = None;
     let mut layout_dependencies: Option<Vec<String>> = None;
     let mut play_state: Option<String> = None;
@@ -2902,6 +2919,13 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
                     let literal: syn::LitStr = meta.value()?.parse()?;
                     shared_name_override = Some(validated_shared_name(&literal, "resource")?);
                 }
+                return Ok(());
+            }
+            if meta.path.is_ident("former") {
+                // The names this resource was stored under before, so a
+                // snapshot taken then still finds the value.
+                let literal: syn::LitStr = meta.value()?.parse()?;
+                former_shared_names.push(validated_shared_name(&literal, "resource")?);
                 return Ok(());
             }
             if meta.path.is_ident("layout_sources") {
@@ -2926,7 +2950,7 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
                 return Ok(());
             }
             Err(meta.error(
-                "unknown `pill` attribute; expected `shared`, `layout_sources`, \
+                "unknown `pill` attribute; expected `shared`, `former`, `layout_sources`, \
                  `layout_dependencies` or `play_state`",
             ))
         }) {
@@ -3003,10 +3027,13 @@ pub fn derive_pill_resource(input: TokenStream) -> TokenStream {
     };
     let register_ident = format_ident!("__pill_register_resource_{}", ident);
     let register_call = quote! { world.register_resource::<#ident>(); };
+    let former_names_impl = former_shared_names_impl(&former_shared_names);
 
     let expanded = quote! {
         impl ::pill_engine::Resource for #ident {
             #shared_impl
+
+            #former_names_impl
 
             #clone_erased_impl
 
@@ -3158,6 +3185,22 @@ fn layout_field_impl(method: &str, values: Option<&[String]>) -> proc_macro2::To
     quote! {
         fn #method() -> ::core::option::Option<&'static [&'static str]> {
             ::core::option::Option::Some(&[#(#values),*])
+        }
+    }
+}
+
+/// The `former_shared_names` method a declaration emits, when it declared any
+/// former name.
+///
+/// A type that declares none emits nothing and keeps the trait's default, which
+/// is the empty slice.
+fn former_shared_names_impl(former_shared_names: &[String]) -> proc_macro2::TokenStream {
+    if former_shared_names.is_empty() {
+        return quote! {};
+    }
+    quote! {
+        fn former_shared_names() -> &'static [&'static str] {
+            &[#(#former_shared_names),*]
         }
     }
 }
@@ -3408,11 +3451,12 @@ fn derive_type_names(attribute: &syn::Attribute) -> Vec<syn::Ident> {
 const COMPONENT_DECLARATION: DeclarationAttribute = DeclarationAttribute {
     attribute_name: "component",
     derive_name: "PillComponent",
-    accepted_keys: &["persistable", "shared", "gizmo", "gizmo_when"],
+    accepted_keys: &["persistable", "shared", "former", "gizmo", "gizmo_when"],
     accepted_spellings: &[
         "persistable",
         "shared",
         "shared = \"...\"",
+        "former = \"...\"",
         "gizmo = <path>",
         "gizmo_when = \"always\" | \"selected\"",
     ],
@@ -3424,6 +3468,7 @@ const RESOURCE_DECLARATION: DeclarationAttribute = DeclarationAttribute {
     derive_name: "PillResource",
     accepted_keys: &[
         "shared",
+        "former",
         "layout_sources",
         "layout_dependencies",
         "play_state",
@@ -3431,6 +3476,7 @@ const RESOURCE_DECLARATION: DeclarationAttribute = DeclarationAttribute {
     accepted_spellings: &[
         "shared",
         "shared = \"...\"",
+        "former = \"...\"",
         "layout_sources = [\"...\"]",
         "layout_dependencies = [\"...\"]",
         "play_state = \"keep\" | \"rebuild\"",
@@ -3498,6 +3544,8 @@ fn asset_impl(
 ///   attribute derives only the serde half and leaves `Default` explicit.
 /// - `shared`, `shared = "prefix::Name"` - one identity in every binary that
 ///   links the type, `<crate>::<Type>` or pinned.
+/// - `former = "old::Name"` (repeatable) - a name the type was stored under
+///   before this one, which a scene written then still uses.
 /// - `gizmo = <path>` - the function that draws this component's editor gizmo.
 /// - `gizmo_when = "always" | "selected"` - when that gizmo draws; declared
 ///   together with `gizmo`.
@@ -3533,6 +3581,8 @@ pub fn component(attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// - `shared`, `shared = "prefix::Name"` - a stable identity across generations
 ///   instead of a per-binary `TypeId`, which is what lets a reload keep the
 ///   value.
+/// - `former = "old::Name"` (repeatable) - a name the value was stored under
+///   before this one, which a reload snapshot taken then still uses.
 /// - `layout_sources = ["..."]` - the files whose contents define the layout,
 ///   fingerprinted so an edit that changes it rebuilds the value.
 /// - `layout_dependencies = ["..."]` - the crates whose version can change the

@@ -353,6 +353,13 @@ pub fn save_asset_settings(
         .as_object_mut()
         .ok_or_else(|| format!("`{}` is not a YAML mapping", settings_file.display()))?;
     settings_object.insert(body_field.to_owned(), normalized.clone());
+    // The save is also when a file written before a rename picks up the type's
+    // current name: the header is otherwise kept as it was, and the next load
+    // reads either name.
+    settings_object.insert(
+        "asset_type".to_owned(),
+        serde_json::Value::String(type_name.clone()),
+    );
     let bytes = pill_engine::asset_document::render(&settings_document)
         .map_err(|error| error.to_string())?;
     replace_atomically(&settings_file, &bytes)?;
@@ -841,7 +848,12 @@ mod tests {
     /// A sourced test asset with one setting.
     #[derive(Debug)]
     struct Swatch;
-    impl pill_engine::Asset for Swatch {}
+    impl pill_engine::Asset for Swatch {
+        /// The name the type was stored under before it moved to this crate.
+        fn former_shared_names() -> &'static [&'static str] {
+            &["pill_legacy::asset_browser::tests::Swatch"]
+        }
+    }
     trait_type_map::impl_trait_accessible!(dyn pill_engine::Asset; Swatch);
 
     /// `Swatch`'s import settings: one switch a save has to round-trip.
@@ -933,6 +945,50 @@ mod tests {
             root.join("moved/b.swatch").is_file() && root.join("moved/b.swatch.meta").is_file()
         );
         assert!(move_asset(&root, "moved/b.swatch", "../escape.swatch").is_err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A `.meta` written before a rename names the type by its old name, and
+    /// the next save writes the name the type has now.
+    #[test]
+    fn a_save_rewrites_a_former_asset_type_name() {
+        let _mounted = mount_lock();
+        let root =
+            std::env::temp_dir().join(format!("pill-asset-browser-former-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("a.swatch"), b"x").unwrap();
+        std::fs::write(
+            root.join("a.swatch.meta"),
+            br#"{"format_version": 1, "asset_type": "pill_legacy::asset_browser::tests::Swatch",
+                 "guid": "000000000000000000000000000000a5", "settings": {"bright": false}}"#,
+        )
+        .unwrap();
+        pill_engine::asset_store::mount_directory(&root);
+        let mut world = World::new();
+        world.insert_resource(AssetManager::new());
+        world.register_imported_asset::<Swatch>();
+
+        save_asset_settings(
+            &mut world,
+            &root,
+            "a.swatch",
+            serde_json::json!({"bright": true}),
+        )
+        .expect("the file written under the former name saves");
+
+        let meta_document =
+            pill_engine::asset_document::parse(&std::fs::read(root.join("a.swatch.meta")).unwrap())
+                .expect("the sidecar is YAML");
+        assert_eq!(
+            meta_document["asset_type"],
+            Swatch::metadata_type_name(),
+            "the save writes the type's current name"
+        );
+        assert_eq!(
+            meta_document["guid"], "000000000000000000000000000000a5",
+            "and keeps the identity the file already had"
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 

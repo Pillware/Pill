@@ -31,7 +31,10 @@ use crate::RenderingPipeline;
 
 /// The renderer's pipeline selection, carried as one optional handle.
 #[derive(Clone, Debug, Default)]
-#[pill_mirror_resource("pill_master_renderer::RenderingManager")]
+#[pill_mirror_resource(
+    "pill_rendering::RenderingManager",
+    former = "pill_master_renderer::RenderingManager"
+)]
 pub struct RenderingManager {
     pipeline: Option<Handle<RenderingPipeline>>,
 }
@@ -97,7 +100,15 @@ mod tests {
 
     #[test]
     fn the_resource_crosses_the_module_boundary_by_name() {
-        assert!(RenderingManager::shared_name().is_some());
+        assert_eq!(
+            RenderingManager::shared_name(),
+            Some("pill_rendering::RenderingManager")
+        );
+        assert_eq!(
+            RenderingManager::former_shared_names(),
+            ["pill_master_renderer::RenderingManager"],
+            "a snapshot taken before the rename still finds the manager"
+        );
     }
 
     #[test]

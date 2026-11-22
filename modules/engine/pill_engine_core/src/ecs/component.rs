@@ -128,6 +128,27 @@ pub trait Component: Send + 'static {
         None
     }
 
+    /// The names this type was stored under before its current one, or an
+    /// empty slice.
+    ///
+    /// A file written before a rename still names the type by its old name: a
+    /// scene's component key, a `.meta` file's `asset_type`. Declaring the old
+    /// name here - with `former = "old::Name"` on `#[component]` - makes the
+    /// name-keyed lookups read those files instead of reporting an unknown
+    /// type. The next save writes the current name, so the list is a way in,
+    /// not a second identity: a former name never hashes to this type's
+    /// [`ComponentId`], and nothing registers under it.
+    ///
+    /// Only the type itself declares its former names. The engine holds no
+    /// table of them, because it cannot name a type that lives in an
+    /// extension.
+    fn former_shared_names() -> &'static [&'static str]
+    where
+        Self: Sized,
+    {
+        &[]
+    }
+
     /// The stable identity that [`Self::shared_name`] hashes to, or `None`.
     ///
     /// The default builds it from `shared_name`, so an implementor only writes
@@ -612,6 +633,11 @@ pub struct ComponentRegistry {
     /// Registered name of each component type, by id. Diagnostics print it, and
     /// so do the name-keyed lookups persistence and the C# bindings make.
     names_by_id: HashMap<ComponentId, String>,
+    /// The names each type declared it was stored under before its current
+    /// one, by id. Owned for the same reason [`Self::shared_declaring_types`]
+    /// is: the strings point into the declaring artifact's data, which dangles
+    /// once a module DLL is unloaded.
+    former_names_by_id: HashMap<ComponentId, Vec<String>>,
     /// Layout record of each registered component type, by id.
     layouts_by_id: HashMap<ComponentId, ComponentRegistration>,
     /// The Rust type name that claimed each shared identity, so a second claim
@@ -675,6 +701,7 @@ impl ComponentRegistry {
         Self {
             bit_indices_by_id: HashMap::new(),
             names_by_id: HashMap::new(),
+            former_names_by_id: HashMap::new(),
             layouts_by_id: HashMap::new(),
             shared_declaring_types: HashMap::new(),
             shared_without_layout_reported: std::collections::HashSet::new(),
@@ -848,6 +875,10 @@ impl ComponentRegistry {
                 }
             }
             self.layouts_by_id.insert(component_id, merged_layout);
+            // A reload can also add or drop a declared former name, and a file
+            // written before the rename has to keep loading, so the recorded
+            // list follows the definition now in force.
+            self.record_former_names::<T>(component_id);
             return Ok(Registration::AlreadyPresent(bit));
         }
         // Step 2: Assign the next bit - either one reclaimed by `remove`, or a
@@ -867,6 +898,7 @@ impl ComponentRegistry {
         // bindings, the editor - has to find it by.
         self.names_by_id
             .insert(component_id, Self::registered_name::<T>());
+        self.record_former_names::<T>(component_id);
         self.layouts_by_id.insert(component_id, layout);
         if T::shared_name().is_some() {
             self.shared_declaring_types
@@ -913,8 +945,28 @@ impl ComponentRegistry {
         path.rsplit("::").next().unwrap_or(path)
     }
 
-    /// The name a component type is registered under.
+    /// Records the names `T` declares it was stored under before its current
+    /// one, dropping the entry when the definition declares none.
     ///
+    /// A reload re-registers the type under the same id, so this runs on both
+    /// registration paths and the registry's copy always follows the definition
+    /// the running binary holds.
+    fn record_former_names<T: Component>(&mut self, component_id: ComponentId) {
+        let former_shared_names = T::former_shared_names();
+        if former_shared_names.is_empty() {
+            self.former_names_by_id.remove(&component_id);
+            return;
+        }
+        self.former_names_by_id.insert(
+            component_id,
+            former_shared_names
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
+        );
+    }
+
+    /// The name a component type is registered under.    ///
     /// Its declared shared name when it has one, otherwise its
     /// [`stable_type_name`](crate::type_names::stable_type_name); the engine's
     /// own types read `pill_engine::...`. A shared component has to be findable
@@ -998,6 +1050,7 @@ impl ComponentRegistry {
             self.free_bits.push(bit);
         }
         self.names_by_id.remove(component_id);
+        self.former_names_by_id.remove(component_id);
         self.layouts_by_id.remove(component_id);
         self.shared_declaring_types.remove(component_id);
     }
@@ -1020,6 +1073,26 @@ impl ComponentRegistry {
     /// Returns the registered name of a component, or `None`.
     pub fn get_name(&self, component_id: &ComponentId) -> Option<&str> {
         self.names_by_id.get(component_id).map(|s| s.as_str())
+    }
+
+    /// Whether `type_name` names the component registered under `component_id`:
+    /// the name it is registered under now, or one it declares as a former
+    /// name.
+    ///
+    /// Every lookup that reads a name out of a file goes through this, so a
+    /// document written before a rename still finds its type. A former name
+    /// never registers anything, so it cannot make two components out of one.
+    pub fn name_matches(&self, component_id: &ComponentId, type_name: &str) -> bool {
+        if self
+            .names_by_id
+            .get(component_id)
+            .is_some_and(|name| name == type_name)
+        {
+            return true;
+        }
+        self.former_names_by_id
+            .get(component_id)
+            .is_some_and(|former_names| former_names.iter().any(|name| name == type_name))
     }
 
     /// Returns the layout a Rust type declared when it registered.

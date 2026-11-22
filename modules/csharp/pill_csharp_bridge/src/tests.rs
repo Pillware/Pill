@@ -25,7 +25,7 @@ use std::sync::Mutex;
 use pill_core::error::EngineMessage;
 use pill_engine::component_registry::FieldDecorator;
 use pill_engine::{
-    ComponentId, ComponentTicks, Engine, Entity, RunPhase, SystemAccess, SystemError,
+    ComponentId, ComponentTicks, Engine, Entity, Handle, RunPhase, SystemAccess, SystemError,
     SystemScheduler,
 };
 
@@ -109,8 +109,8 @@ const TEST_WORLD_ENTITY_COUNT: usize = 100;
 /// lives in the project's `TracyLive` namespace.
 fn test_full_name(name: &str) -> String {
     match name {
-        "TransformComponent" => "pill_master_renderer.TransformComponent".to_owned(),
-        "MeshRendererComponent" => "pill_master_renderer.MeshRendererComponent".to_owned(),
+        "TransformComponent" => "pill_engine.TransformComponent".to_owned(),
+        "MeshRendererComponent" => "pill_rendering.MeshRendererComponent".to_owned(),
         other => format!("TracyLive.{other}"),
     }
 }
@@ -661,7 +661,7 @@ fn a_managed_handle_field_is_recorded_with_its_registered_asset_type() {
     let component_id = bindings[&stable_id].component_id();
     assert_eq!(
         engine.world().asset_field_type(component_id, "Mesh"),
-        Some("pill_master_renderer::Mesh"),
+        Some("pill_rendering::Mesh"),
         "the Rust type path is recorded as the registered name"
     );
 
@@ -678,7 +678,7 @@ fn a_managed_handle_field_is_recorded_with_its_registered_asset_type() {
     assert_eq!(
         value,
         pill_engine::component_field::FieldValue::Asset {
-            asset_type: Some("pill_master_renderer::Mesh".to_owned()),
+            asset_type: Some("pill_rendering::Mesh".to_owned()),
             index: 3,
             generation: 1,
         }
@@ -3425,20 +3425,20 @@ fn a_failed_mirrored_call_reports_its_message() {
 }
 
 /// The resource's mirrored `clear` runs against the world's own manager,
-/// returning the renderer to its built-in frame.
+/// clearing the chain the game selected.
 #[test]
 fn the_render_pipeline_clears_through_its_mirrored_method() {
     let mut engine = Engine::new();
     pill_rendering::register(&mut engine);
-    let shared_name = "pill_master_renderer::RenderingManager";
-    let manager = engine
-        .world()
-        .get_resource::<pill_rendering::RenderingManager>()
-        .expect("register inserts the manager");
-    assert!(
-        manager.pipeline().is_some(),
-        "register installs the PBR chain as the default"
-    );
+    let shared_name = "pill_rendering::RenderingManager";
+    // The renderer installs its default chain, and a game sets the one it
+    // wants; this test stands in for that with a handle the manager holds.
+    let selected_pipeline = Handle::from_raw(2, 0);
+    engine
+        .world_mut()
+        .get_resource_mut::<pill_rendering::RenderingManager>()
+        .expect("register inserts the manager")
+        .set_pipeline(selected_pipeline);
     let declared = [native_resource_write(shared_name)];
     let bindings = ComponentBindings::default();
     {

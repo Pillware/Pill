@@ -177,8 +177,14 @@ unsafe fn apply_settings_bytes_of<T: SettingsAssetManager>(
     // Step 1: Read the document out of the file, naming the asset type when it
     // does not fit.
     let asset_type_name = <T::Settings as StandaloneAsset>::metadata_type_name();
-    let (_guid, body) = parse_header(path, bytes, asset_type_name, STANDALONE_BODY_FIELD)
-        .map_err(|error| error.to_string())?;
+    let (_guid, body) = parse_header(
+        path,
+        bytes,
+        asset_type_name,
+        <T::Settings as crate::asset::Asset>::former_shared_names(),
+        STANDALONE_BODY_FIELD,
+    )
+    .map_err(|error| error.to_string())?;
     let settings: <T::Settings as StandaloneAsset>::Document = match body {
         Some(body) => serde_json::from_value(body)
             .map_err(|error| format!("the document does not fit {asset_type_name}: {error}"))?,

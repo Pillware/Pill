@@ -1157,16 +1157,21 @@ struct ObjectFlags {
     /// The type's pinned shared name, when it declares one: an `Asset` whose
     /// copies in several binaries are one column.
     shared_name: Option<syn::LitStr>,
+    /// The names the asset type was stored under before its pinned one, as
+    /// `asset_type` in the files written then.
+    former_names: Vec<syn::LitStr>,
 }
 
-/// Parse the attribute's comma-separated flags and `shared = "..."` option.
+/// Parse the attribute's comma-separated flags and `shared = "..."` and
+/// `former = "..."` options.
 ///
 /// # Errors
 ///
-/// Returns an error for an unknown flag or option, for a `shared` value that is
-/// not a string, and for `shared` without `asset`.
+/// Returns an error for an unknown flag or option, for a `shared` or `former`
+/// value that is not a string, for `shared` without `asset`, and for `former`
+/// without `shared`.
 fn object_flags(attribute: TokenStream2) -> syn::Result<ObjectFlags> {
-    // Step 1: read each flag and each `shared = "..."` option.
+    // Step 1: read each flag and each option.
     let mut flags = ObjectFlags::default();
     let parser = syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated;
     let items = syn::parse::Parser::parse2(parser, attribute)?;
@@ -1175,7 +1180,8 @@ fn object_flags(attribute: TokenStream2) -> syn::Result<ObjectFlags> {
             let Some(ident) = path.get_ident() else {
                 return Err(syn::Error::new_spanned(
                     path,
-                    "expected `asset`, `import`, `standalone` or `shared = \"...\"`",
+                    "expected `asset`, `import`, `standalone`, `shared = \"...\"` or \
+                     `former = \"...\"`",
                 ));
             };
             match ident.to_string().as_str() {
@@ -1187,7 +1193,7 @@ fn object_flags(attribute: TokenStream2) -> syn::Result<ObjectFlags> {
                         ident,
                         format!(
                             "unknown `#[pill_mirror_object]` flag `{other}`; expected `asset`, \
-                             `import`, `standalone` or `shared = \"...\"`"
+                             `import`, `standalone`, `shared = \"...\"` or `former = \"...\"`"
                         ),
                     ))
                 }
@@ -1195,35 +1201,43 @@ fn object_flags(attribute: TokenStream2) -> syn::Result<ObjectFlags> {
             continue;
         }
         let syn::Meta::NameValue(option) = item else {
-            return Err(syn::Error::new_spanned(item, "expected `shared = \"...\"`"));
+            return Err(syn::Error::new_spanned(
+                item,
+                "expected `shared = \"...\"` or `former = \"...\"`",
+            ));
         };
         let option_name = option.path.get_ident().map(|ident| ident.to_string());
         let syn::Expr::Lit(syn::ExprLit {
-            lit: syn::Lit::Str(shared_name),
+            lit: syn::Lit::Str(literal),
             ..
         }) = &option.value
         else {
             return Err(syn::Error::new_spanned(
                 &option.value,
-                "`shared` takes a string: `shared = \"my_crate::MyAsset\"`",
+                "`shared` and `former` take a string: `former = \"old::MyAsset\"`",
             ));
         };
         match option_name.as_deref() {
             Some("shared") => {
-                crate::validated_shared_name(shared_name, "object")?;
-                flags.shared_name = Some(shared_name.clone());
+                crate::validated_shared_name(literal, "object")?;
+                flags.shared_name = Some(literal.clone());
+            }
+            Some("former") => {
+                crate::validated_shared_name(literal, "object")?;
+                flags.former_names.push(literal.clone());
             }
             other => {
                 return Err(syn::Error::new_spanned(
                     &option.path,
                     format!(
-                        "unknown `#[pill_mirror_object]` option `{other:?}`; expected `shared`"
+                        "unknown `#[pill_mirror_object]` option `{other:?}`; expected `shared` \
+                         or `former`"
                     ),
                 ))
             }
         }
     }
-    // Step 2: fill in the flags another flag implies, and check the pair.
+    // Step 2: fill in the flags another flag implies, and check the pairs.
     if (flags.is_imported_asset || flags.is_standalone_asset) && !flags.is_asset {
         flags.is_asset = true;
     }
@@ -1231,6 +1245,13 @@ fn object_flags(attribute: TokenStream2) -> syn::Result<ObjectFlags> {
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
             "`shared` describes an `Asset`, so it goes with `asset`",
+        ));
+    }
+    if !flags.former_names.is_empty() && flags.shared_name.is_none() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`former` names the stored names an `Asset` had before its `shared` one, so the \
+             two are declared together",
         ));
     }
     Ok(flags)
@@ -1250,7 +1271,10 @@ fn object_flags(attribute: TokenStream2) -> syn::Result<ObjectFlags> {
 ///
 /// `shared = "my_crate::MyAsset"` pins the identity that every binary's copy of
 /// an asset type is known by, and emits its `Asset` impl from it: the name and
-/// the identity hashed from that name at compile time.
+/// the identity hashed from that name at compile time. `former = "old::Name"`
+/// (repeatable, beside `shared`) declares the names the type was stored under
+/// before, so a `.meta` file or standalone document written then still loads as
+/// this type.
 ///
 /// # Errors
 ///
@@ -1348,23 +1372,37 @@ pub(crate) fn mirror_object(attribute: TokenStream2, item: syn::Item) -> syn::Re
     // column. Its correct form is the same for every asset - a name, hashed at
     // compile time - so it is stated once here instead of once per type.
     let shared_identity = match &flags.shared_name {
-        Some(name) => quote! {
-            impl ::pill_engine::Asset for #ident {
-                fn shared_name() -> ::core::option::Option<&'static str> {
-                    ::core::option::Option::Some(#name)
+        Some(name) => {
+            let former_names = &flags.former_names;
+            let former_names_impl = if former_names.is_empty() {
+                quote! {}
+            } else {
+                quote! {
+                    fn former_shared_names() -> &'static [&'static str] {
+                        &[#(#former_names),*]
+                    }
                 }
+            };
+            quote! {
+                impl ::pill_engine::Asset for #ident {
+                    fn shared_name() -> ::core::option::Option<&'static str> {
+                        ::core::option::Option::Some(#name)
+                    }
 
-                fn shared_identity() -> ::core::option::Option<u128> {
-                    // A `const` item, not the trait's default. The default would
-                    // hash the name on every `AssetManager` lookup, and the
-                    // renderer makes several of those per drawn entity, every
-                    // frame. Bound here, the hash is folded at compile time.
-                    const IDENTITY: u128 =
-                        ::pill_engine::component::shared_component_identity(#name);
-                    ::core::option::Option::Some(IDENTITY)
+                    #former_names_impl
+
+                    fn shared_identity() -> ::core::option::Option<u128> {
+                        // A `const` item, not the trait's default. The default would
+                        // hash the name on every `AssetManager` lookup, and the
+                        // renderer makes several of those per drawn entity, every
+                        // frame. Bound here, the hash is folded at compile time.
+                        const IDENTITY: u128 =
+                            ::pill_engine::component::shared_component_identity(#name);
+                        ::core::option::Option::Some(IDENTITY)
+                    }
                 }
             }
-        },
+        }
         None => quote! {},
     };
 
@@ -1417,6 +1455,41 @@ pub(crate) fn mirror_object(attribute: TokenStream2, item: syn::Item) -> syn::Re
 // #[pill_mirror_resource]
 // =============================================================================
 
+/// The attribute of `#[pill_mirror_resource]`: the resource's shared name and
+/// the names it was stored under before.
+struct ResourceAttribute {
+    /// The name C# and every binary know the resource by.
+    name: syn::LitStr,
+    /// The names the resource was stored under before `name`.
+    former_names: Vec<syn::LitStr>,
+}
+
+impl syn::parse::Parse for ResourceAttribute {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        // The shared name comes first: every existing declaration names only
+        // it, so it stays the one argument a reader has to understand.
+        let name: syn::LitStr = input.parse()?;
+        let mut former_names = Vec::new();
+        while input.peek(syn::Token![,]) {
+            input.parse::<syn::Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+            let key: syn::Ident = input.parse()?;
+            if key != "former" {
+                return Err(syn::Error::new_spanned(
+                    &key,
+                    format!("unknown `#[pill_mirror_resource]` option `{key}`; expected `former`"),
+                ));
+            }
+            input.parse::<syn::Token![=]>()?;
+            let literal: syn::LitStr = input.parse()?;
+            former_names.push(literal);
+        }
+        Ok(Self { name, former_names })
+    }
+}
+
 /// Expand `#[pill_mirror_resource("shared::Name")]` on a struct.
 ///
 /// Implements `Resource` with that shared name, which is the identity C#
@@ -1424,29 +1497,37 @@ pub(crate) fn mirror_object(attribute: TokenStream2, item: syn::Item) -> syn::Re
 /// `#[pill_mirror_impl]` methods become extension methods on `Res<T>` and
 /// `ResMut<T>`, and a mirrored function can take it as `&T` or `&mut T`.
 ///
+/// `former = "old::Name"` (repeatable) declares the names the resource was
+/// stored under before, which a reload snapshot taken then still uses.
+///
 /// The emitted `Resource` impl resolves a `Clone` probe at the type's own site,
 /// so the editor's play mode can copy the value at Play and put it back at
 /// Stop. A mirrored resource that does not derive `Clone` refuses Play by name.
 ///
 /// # Errors
 ///
-/// Returns an error when the attribute is not a string literal, and when the
-/// item is not a non-generic struct.
+/// Returns an error when the attribute does not start with a string literal or
+/// names an option other than `former`, and when the item is not a non-generic
+/// struct.
 pub(crate) fn mirror_resource(
     attribute: TokenStream2,
     item: syn::Item,
 ) -> syn::Result<TokenStream2> {
-    // Step 1: read the shared name the attribute carries.
-    let name: syn::LitStr = syn::parse2(attribute).map_err(|error| {
-        syn::Error::new(
-            error.span(),
-            "`#[pill_mirror_resource]` takes the resource's shared name: \
+    // Step 1: read the shared name and former names the attribute carries.
+    let ResourceAttribute { name, former_names } = syn::parse2::<ResourceAttribute>(attribute)
+        .map_err(|error| {
+            syn::Error::new(
+                error.span(),
+                "`#[pill_mirror_resource]` takes the resource's shared name: \
              `#[pill_mirror_resource(\"my_crate::MyResource\")]`",
-        )
-    })?;
+            )
+        })?;
     // The name is a process-wide identity and a file value, so it takes the
     // same `<prefix>::<Type>` shape every other shared name has.
     crate::validated_shared_name(&name, "resource")?;
+    for former_name in &former_names {
+        crate::validated_shared_name(former_name, "resource")?;
+    }
     // Step 2: check that the item is a non-generic struct.
     let ident = match &item {
         syn::Item::Struct(item) if item.generics.params.is_empty() => &item.ident,
@@ -1474,6 +1555,15 @@ pub(crate) fn mirror_resource(
     });
     let type_name = crate::crate_qualified_type_name(ident);
     let register_ident = format_ident!("__pill_register_resource_{}", ident);
+    let former_names_impl = if former_names.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            fn former_shared_names() -> &'static [&'static str] {
+                &[#(#former_names),*]
+            }
+        }
+    };
     Ok(quote! {
         #item
 
@@ -1481,6 +1571,8 @@ pub(crate) fn mirror_resource(
             fn shared_name() -> ::core::option::Option<&'static str> {
                 ::core::option::Option::Some(#name)
             }
+
+            #former_names_impl
 
             /// A copy of this value for the editor's play mode.
             ///

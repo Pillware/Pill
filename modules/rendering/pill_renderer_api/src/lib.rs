@@ -98,13 +98,18 @@ mod tests {
     /// The names are identities, not paths: the host and a renderer module
     /// resolve the same resource by them across the artifact boundary, so a
     /// "corrected" path would silently register a second resource and leave
-    /// the first stale. Some of them name a module this crate does not
-    /// contain, and those spellings are deliberate.
+    /// the first stale. A resource that was published under another name
+    /// declares that name as a former one, which is how a stored document
+    /// written then still reads.
     #[test]
     fn every_contract_resource_pins_its_shared_name() {
         assert_eq!(
             RenderFrame::shared_name(),
-            Some("pill_master_renderer::RenderFrame")
+            Some("pill_rendering::RenderFrame")
+        );
+        assert_eq!(
+            RenderFrame::former_shared_names(),
+            ["pill_master_renderer::RenderFrame"]
         );
         assert_eq!(
             SurfaceCameras::shared_name(),

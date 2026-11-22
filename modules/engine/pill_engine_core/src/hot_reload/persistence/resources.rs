@@ -195,6 +195,22 @@ impl World {
         );
         self.persist_resource_schema_hashes
             .insert(type_name.clone(), calculate_resource_schema_hash::<T>());
+        // A snapshot taken before a rename names the value by the name the type
+        // declared it was stored under then, so that name has to find the same
+        // restorer. Nothing registers under it: it is only a way in, and the
+        // manifest still lists the current name.
+        for former_name in T::former_shared_names() {
+            let former_name = (*former_name).to_owned();
+            if former_name == type_name {
+                continue;
+            }
+            self.persist_resource_restorers.insert(
+                former_name.clone(),
+                restore_resource::<T> as RestoreResourceFn,
+            );
+            self.persist_resource_schema_hashes
+                .insert(former_name, calculate_resource_schema_hash::<T>());
+        }
         self.persist_resource_names.insert(id, type_name);
     }
 

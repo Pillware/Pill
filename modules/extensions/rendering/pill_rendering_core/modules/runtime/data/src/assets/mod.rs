@@ -95,14 +95,46 @@ mod tests {
         assert_eq!(
             shared_names,
             [
-                Some("pill_master_renderer::Mesh"),
-                Some("pill_master_renderer::Texture"),
-                Some("pill_master_renderer::Shader"),
-                Some("pill_master_renderer::Material"),
-                Some("pill_master_renderer::RenderPass"),
-                Some("pill_master_renderer::RenderingPipeline"),
+                Some("pill_rendering::Mesh"),
+                Some("pill_rendering::Texture"),
+                Some("pill_rendering::Shader"),
+                Some("pill_rendering::Material"),
+                Some("pill_rendering::RenderPass"),
+                Some("pill_rendering::RenderingPipeline"),
             ]
         );
+    }
+
+    /// Every rendering asset keeps the name it was published under before the
+    /// crate was renamed, so a `.meta` file or a standalone document written
+    /// then still loads as the same type.
+    #[test]
+    fn the_asset_types_declare_the_names_they_were_stored_under() {
+        for (former_names, former_name) in [
+            (Mesh::former_shared_names(), "pill_master_renderer::Mesh"),
+            (
+                Texture::former_shared_names(),
+                "pill_master_renderer::Texture",
+            ),
+            (
+                Shader::former_shared_names(),
+                "pill_master_renderer::Shader",
+            ),
+            (
+                Material::former_shared_names(),
+                "pill_master_renderer::Material",
+            ),
+            (
+                RenderPass::former_shared_names(),
+                "pill_master_renderer::RenderPass",
+            ),
+            (
+                RenderingPipeline::former_shared_names(),
+                "pill_master_renderer::RenderingPipeline",
+            ),
+        ] {
+            assert_eq!(former_names, [former_name]);
+        }
     }
 
     /// An asset type's identity is the hash of its pinned name, not the

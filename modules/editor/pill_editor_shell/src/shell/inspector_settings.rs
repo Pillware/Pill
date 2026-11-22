@@ -1252,22 +1252,14 @@ mod tests {
         let assets = vec![
             row(
                 "materials/a.material",
-                "pill_master_renderer::Material",
+                "pill_rendering::Material",
                 Some("m"),
             ),
-            row(
-                "shaders/pbr.hlsl",
-                "pill_master_renderer::Shader",
-                Some("s"),
-            ),
-            row(
-                "textures/rock.png",
-                "pill_master_renderer::Texture",
-                Some("t"),
-            ),
+            row("shaders/pbr.hlsl", "pill_rendering::Shader", Some("s")),
+            row("textures/rock.png", "pill_rendering::Texture", Some("t")),
             row(
                 "passes/opaque.render_pass",
-                "pill_master_renderer::RenderPass",
+                "pill_rendering::RenderPass",
                 Some("p"),
             ),
         ];
@@ -1277,10 +1269,7 @@ mod tests {
                 .map(|row| row.path.clone())
                 .collect()
         };
-        assert_eq!(
-            shaders("pill_master_renderer::Shader"),
-            vec!["shaders/pbr.hlsl"]
-        );
+        assert_eq!(shaders("pill_rendering::Shader"), vec!["shaders/pbr.hlsl"]);
         assert_eq!(shaders("Texture"), vec!["textures/rock.png"]);
         assert_eq!(shaders("RenderPass"), vec!["passes/opaque.render_pass"]);
     }
@@ -1351,7 +1340,7 @@ mod tests {
     fn a_list_entry_reads_its_own_field() {
         let references = vec![AssetReferenceField {
             key: "passes[0]".to_string(),
-            target: "pill_master_renderer::RenderPass".to_string(),
+            target: "pill_rendering::RenderPass".to_string(),
             guid: Some("first".to_string()),
             nested: true,
             label: None,

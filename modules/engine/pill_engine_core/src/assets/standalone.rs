@@ -26,7 +26,7 @@
 //!
 //! ```yaml
 //! format_version: 1
-//! asset_type: pill_master_renderer::Material
+//! asset_type: pill_rendering::Material
 //! guid: 5d1f0e2b9a8c4d3e7f6a5b4c3d2e1f00
 //! asset:
 //!   shader: materials/pill.pbr.hlsl
@@ -288,7 +288,13 @@ pub fn render_standalone<T: StandaloneAsset>(
 fn read_standalone<T: StandaloneAsset>(name: &str) -> AssetLoadResult<(AssetGuid, T::Document)> {
     let path = Path::new(name);
     let bytes = asset_store::read(path)?;
-    let (guid, body) = parse_header(path, &bytes, T::metadata_type_name(), STANDALONE_BODY_FIELD)?;
+    let (guid, body) = parse_header(
+        path,
+        &bytes,
+        T::metadata_type_name(),
+        T::former_shared_names(),
+        STANDALONE_BODY_FIELD,
+    )?;
     let document = match body {
         None => T::Document::default(),
         Some(body) => serde_json::from_value(body).map_err(|error| AssetLoadError::Metadata {

@@ -511,7 +511,7 @@ mod tests {
     fn a_component_placement_matches_its_last_segment() {
         let slot = UiSlot::inspector_component_header("MeshRendererComponent");
         assert!(slot.matches_component("MeshRendererComponent"));
-        assert!(slot.matches_component("pill_master_renderer::MeshRendererComponent"));
+        assert!(slot.matches_component("pill_rendering::MeshRendererComponent"));
         assert!(!slot.matches_component("OtherMeshRendererComponent"));
         assert!(!slot.matches_component("MeshRenderer"));
         // An extension filter ignores case and is written with its dot.

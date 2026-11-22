@@ -2074,7 +2074,7 @@ mod tests {
             vec![field("translation", "f32", 0, 12, 4)],
         );
         let second_component = exposed_typed(
-            "pill_master_renderer.component.Path",
+            "pill_demo.component.Path",
             16,
             4,
             vec![
@@ -2099,12 +2099,11 @@ mod tests {
 
         let content = read_generated(&workspace, "pill_spline");
         assert!(content.contains(
-            "namespace pill_master_renderer.component {\n\n[StructLayout(LayoutKind.Explicit, Size = 8)]\npublic partial struct Vector2f"
+            "namespace pill_demo.component {\n\n[StructLayout(LayoutKind.Explicit, Size = 8)]\npublic partial struct Vector2f"
         ));
-        assert!(content.contains(
-            "namespace pill_engine.common_components {\n\nusing pill_master_renderer.component;\n"
-        ));
-        assert!(!content.contains("namespace pill_master_renderer.component {\n\nusing"));
+        assert!(content
+            .contains("namespace pill_engine.common_components {\n\nusing pill_demo.component;\n"));
+        assert!(!content.contains("namespace pill_demo.component {\n\nusing"));
     }
 
     /// A `struct:` field with no `PillMirror` descriptor - a foreign type, an

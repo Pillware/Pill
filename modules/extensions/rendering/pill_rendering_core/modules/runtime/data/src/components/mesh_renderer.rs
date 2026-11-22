@@ -59,7 +59,11 @@ impl MeshRendererComponentBuilder {
 /// carrying this component and emits one instance for each pair whose handles
 /// still resolve in the asset manager. A dangling handle therefore draws
 /// nothing instead of failing the frame.
-#[component(shared = "pill_master_renderer::MeshRendererComponent", persistable)]
+#[component(
+    shared = "pill_rendering::MeshRendererComponent",
+    former = "pill_master_renderer::MeshRendererComponent",
+    persistable
+)]
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MeshRendererComponent {

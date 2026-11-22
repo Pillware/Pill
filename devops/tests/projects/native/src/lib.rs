@@ -773,6 +773,21 @@ mod tests {
         __pill_register_PhysicsState(engine.world_mut());
         __pill_register_SplineSample(engine.world_mut());
 
+        // The probe shader's vertex stage is the renderer module's own cooked
+        // file, so a host declares that module's `res` before a project's entry
+        // points run. A unit test has no host, so it declares the same root
+        // when the renderer is checked out beside this project.
+        let renderer_resources_directory = project_root
+            .join("../../../../modules/extensions/rendering/pill_renderer/modules/runtime/res");
+        if renderer_resources_directory.is_dir() {
+            pill_engine::asset_store::declare_module_root_hiding(
+                "pill_renderer",
+                &renderer_resources_directory,
+                &[],
+                &["wgsl"],
+            );
+        }
+
         // The chain loads straight from the project's files, so a broken file
         // fails here with its own message rather than as a status code.
         let imported = {

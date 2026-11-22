@@ -20,8 +20,8 @@
 // External crates
 use pill_engine::component_registry::{no_registration, register_all_components};
 use pill_engine::{
-    asset, component, resource, Asset, AssetLoadResult, AssetManager, Engine, ImportRegistry,
-    ImportedAsset, PlayState, Resource, ResourceId, StandaloneAsset,
+    asset, component, resource, Asset, AssetLoadResult, AssetManager, Component, Engine,
+    ImportRegistry, ImportedAsset, PlayState, Resource, ResourceId, StandaloneAsset,
 };
 
 // =============================================================================
@@ -30,7 +30,11 @@ use pill_engine::{
 
 /// A persistable component: `persistable` is what asks for its serde derives,
 /// and the field decorator below is what the Inspector draws.
-#[component(persistable, shared = "attribute_declarations::PersistedProbe")]
+#[component(
+    persistable,
+    shared = "attribute_declarations::PersistedProbe",
+    former = "attribute_declarations_legacy::PersistedProbe"
+)]
 #[derive(Debug, Clone, Copy, Default)]
 struct PersistedProbe {
     /// A slider between the two values, declared the way the derive reads it.
@@ -51,6 +55,7 @@ struct PlainProbe {
 /// file that defines its layout, and what a play session does with it.
 #[resource(
     shared = "attribute_declarations::SessionProbe",
+    former = "attribute_declarations_legacy::SessionProbe",
     layout_sources = ["src/attribute_declarations.rs"],
     play_state = "keep"
 )]
@@ -162,6 +167,11 @@ fn attribute_components_are_registered_by_the_entry_point() {
             max: 10.0,
         }]
     );
+    assert_eq!(
+        PersistedProbe::former_shared_names(),
+        ["attribute_declarations_legacy::PersistedProbe"],
+        "the declared former name reaches the trait"
+    );
 }
 
 /// `persistable` is what feeds the schema fingerprint, so this binary's single
@@ -200,6 +210,10 @@ fn an_attribute_resource_is_declared_and_carries_its_arguments() {
     assert_eq!(
         SessionProbe::shared_name(),
         Some("attribute_declarations::SessionProbe")
+    );
+    assert_eq!(
+        SessionProbe::former_shared_names(),
+        ["attribute_declarations_legacy::SessionProbe"]
     );
     assert_eq!(
         SessionProbe::layout_sources(),

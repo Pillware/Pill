@@ -127,7 +127,7 @@ def run_material_and_entity_references_steps(state: StepState) -> None:
             (
                 (name, float(logged.group(3)))
                 for name, logged in headers.items()
-                if name != "pill_master_renderer::MeshRendererComponent"
+                if name != "pill_rendering::MeshRendererComponent"
                 and name not in collapsed_sections
             ),
             key=lambda entry: entry[1],

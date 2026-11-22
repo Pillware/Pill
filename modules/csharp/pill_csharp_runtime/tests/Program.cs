@@ -14,7 +14,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using TracyLive;
 using TracyLive.Loader;
 // The renderer's components, generated from their Rust registration.
-using pill_master_renderer;
+using pill_rendering;
 
 namespace TracyLive.Tests;
 
@@ -809,9 +809,9 @@ internal static class Program
                     string.Join(" | ", components.Select(component =>
                         component.GetProperty("full_name").GetString())));
                 var transform = components.Single(component =>
-                    component.GetProperty("full_name").GetString() == "pill_master_renderer.TransformComponent");
+                    component.GetProperty("full_name").GetString() == "pill_engine.TransformComponent");
                 var renderable = components.Single(component =>
-                    component.GetProperty("full_name").GetString() == "pill_master_renderer.MeshRendererComponent");
+                    component.GetProperty("full_name").GetString() == "pill_rendering.MeshRendererComponent");
                 var physics = components.Single(component =>
                     component.GetProperty("full_name").GetString() == "TracyLive.PhysicsState");
                 var sample = components.Single(component =>

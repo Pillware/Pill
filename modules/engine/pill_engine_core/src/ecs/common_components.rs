@@ -42,12 +42,17 @@ use crate::world::World;
 
 /// The shared name [`TransformComponent`] registers under.
 ///
-/// The renderer family publishes its components under one prefix, so the name
-/// is pinned to `pill_master_renderer` rather than derived from this crate.
-/// It must never change: a different name would register a different
-/// component, and a live world's stored column and every scene that names it
-/// would no longer be found.
-pub const TRANSFORM_SHARED_NAME: &str = "pill_master_renderer::TransformComponent";
+/// Every renderer and every project reads the transform, so it is named after
+/// the engine rather than after the renderer family it used to live in. The
+/// name it was pinned to before (the renderer family's) is declared as a
+/// former name, so a scene written then still finds this component; changing
+/// the name again is the same trade: a new name registers a different
+/// component, and only a declared former name keeps old files readable.
+pub const TRANSFORM_SHARED_NAME: &str = "pill_engine::TransformComponent";
+
+/// The names [`TransformComponent`] was stored under before
+/// [`TRANSFORM_SHARED_NAME`], newest first.
+pub const TRANSFORM_FORMER_SHARED_NAMES: &[&str] = &["pill_master_renderer::TransformComponent"];
 
 /// Placement of an entity in the scene: position, orientation and scale.
 ///
@@ -71,6 +76,10 @@ pub struct TransformComponent {
 impl Component for TransformComponent {
     fn shared_name() -> Option<&'static str> {
         Some(TRANSFORM_SHARED_NAME)
+    }
+
+    fn former_shared_names() -> &'static [&'static str] {
+        TRANSFORM_FORMER_SHARED_NAMES
     }
 
     fn shared_identity() -> Option<u128> {
@@ -181,18 +190,23 @@ mod tests {
     }
 
     /// The transform's pinned string is its identity across binaries, so the
-    /// test holds the name in place.
+    /// test holds the name in place - and holds the name it had before as a
+    /// declared former name, which is what keeps a scene written then readable.
     #[test]
     fn the_transform_keeps_its_pinned_shared_name() {
         assert_eq!(
             TransformComponent::shared_name(),
-            Some("pill_master_renderer::TransformComponent")
+            Some("pill_engine::TransformComponent")
         );
         assert_eq!(
             TransformComponent::shared_identity(),
             Some(crate::component::shared_component_identity(
-                "pill_master_renderer::TransformComponent"
+                "pill_engine::TransformComponent"
             ))
+        );
+        assert_eq!(
+            TransformComponent::former_shared_names(),
+            ["pill_master_renderer::TransformComponent"]
         );
     }
 

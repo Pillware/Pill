@@ -31,7 +31,7 @@
 //!
 //! ```yaml
 //! format_version: 1
-//! asset_type: pill_master_renderer::Texture
+//! asset_type: pill_rendering::Texture
 //! guid: 9c0e4b7a1f2d3e4c5b6a798812345678
 //! settings:
 //!   texture_type: Normal
@@ -436,7 +436,13 @@ fn parse_metadata<T: ImportedAsset>(
     path: &Path,
     bytes: &[u8],
 ) -> AssetLoadResult<StoredMetadata<T::ImportSettings>> {
-    let (guid, settings) = parse_header(path, bytes, T::metadata_type_name(), "settings")?;
+    let (guid, settings) = parse_header(
+        path,
+        bytes,
+        T::metadata_type_name(),
+        T::former_shared_names(),
+        "settings",
+    )?;
     let settings = match settings {
         None => T::ImportSettings::default(),
         Some(settings) => {
@@ -502,12 +508,17 @@ pub(crate) fn read_header(
 /// Check the header every asset file shares and return its guid and the value
 /// under `body_field` (`None` when absent or `null`).
 ///
+/// `expected_type` is the type's current name and `former_types` the names it
+/// declares as the ones it was stored under before: a file naming either is
+/// this type's file.
+///
 /// The header is checked before the body is looked at, so the error says what
 /// is actually wrong: a newer format, another asset type, or a bad guid.
 pub(crate) fn parse_header(
     path: &Path,
     bytes: &[u8],
     expected_type: &str,
+    former_types: &[&str],
     body_field: &str,
 ) -> AssetLoadResult<(AssetGuid, Option<serde_json::Value>)> {
     let fail = |detail: String| AssetLoadError::Metadata {
@@ -515,9 +526,10 @@ pub(crate) fn parse_header(
         detail,
     };
     let (raw, header) = read_header(bytes).map_err(fail)?;
-    // A file written while type names kept their module path still names the
-    // same type (`pill_master_renderer::Mesh` for `...::Mesh`).
-    if !crate::type_names::names_same_type(&raw.asset_type, expected_type) {
+    // A file written while type names kept their module path, or before the
+    // type was renamed, still names the same type (`pill_rendering::Mesh` and
+    // its declared former names for `...::Mesh`).
+    if !crate::type_names::names_same_type_or_former(&raw.asset_type, expected_type, former_types) {
         return Err(fail(format!(
             "it describes a `{}`, not a `{expected_type}`",
             raw.asset_type
@@ -1267,14 +1279,53 @@ mod tests {
         AssetImport::new(path, policy).with_initial_settings(settings(1, "initial"))
     }
 
+    /// A note type that was renamed: it is stored under `RenamedNote` today and
+    /// was stored under `LegacyNote` before.
+    #[derive(Debug, PartialEq)]
+    struct RenamedNote {
+        settings: NoteSettings,
+    }
+
+    impl Asset for RenamedNote {
+        fn former_shared_names() -> &'static [&'static str] {
+            &["pill_legacy::RenamedNote"]
+        }
+    }
+    impl_trait_accessible!(dyn Asset; RenamedNote);
+
+    impl ImportedAsset for RenamedNote {
+        type ImportSettings = NoteSettings;
+        const SOURCE_EXTENSIONS: &'static [&'static str] = &["renamed"];
+
+        fn metadata_type_name() -> &'static str {
+            "pill_engine::RenamedNote"
+        }
+
+        fn import(
+            _name: &str,
+            _source_bytes: &[u8],
+            settings: &NoteSettings,
+        ) -> AssetLoadResult<Self> {
+            Ok(Self {
+                settings: settings.clone(),
+            })
+        }
+    }
+
     /// One metadata file's YAML text: the shared header around the JSON-shaped
     /// `settings` fragment the tests pass.
     fn metadata_yaml(guid: &str, settings: &str) -> String {
+        metadata_yaml_for("pill_engine::asset_metadata::tests::Note", guid, settings)
+    }
+
+    /// [`metadata_yaml`] for a header that names `type_name` instead of the
+    /// `Note` fixture's own name.
+    fn metadata_yaml_for(type_name: &str, guid: &str, settings: &str) -> String {
         let settings: serde_json::Value =
             serde_json::from_str(settings).expect("the test fragment is JSON");
         let document = serde_json::json!({
             "format_version": 1,
-            "asset_type": "pill_engine::asset_metadata::tests::Note",
+            "asset_type": type_name,
             "guid": guid,
             "settings": settings,
         });
@@ -1370,6 +1421,63 @@ mod tests {
         assert_eq!(
             assets.get(outcome.handle).unwrap().settings,
             settings(3, "file")
+        );
+    }
+
+    /// A `.meta` file written before the type was renamed names the type by its
+    /// old name, and is read as this type because the type declares that name.
+    #[test]
+    fn metadata_written_under_a_former_type_name_is_read() {
+        let res = ScratchRes::new("former-name");
+        res.write("a.renamed", "hello");
+        res.write(
+            "a.renamed.meta",
+            &metadata_yaml_for(
+                "pill_legacy::RenamedNote",
+                GUID_A,
+                r#"{"volume": 3, "label": "file"}"#,
+            ),
+        );
+        let mut assets = AssetManager::new();
+
+        let outcome = assets
+            .import(AssetImport::<RenamedNote>::new(
+                "a.renamed",
+                MetadataPolicy::ReadIfPresent,
+            ))
+            .unwrap();
+
+        assert_eq!(outcome.guid, Some(AssetGuid::parse(GUID_A).unwrap()));
+        assert_eq!(outcome.metadata, MetadataSource::ReadFromFile);
+        assert_eq!(
+            assets.get(outcome.handle).unwrap().settings,
+            settings(3, "file")
+        );
+    }
+
+    /// A name that is neither the type's current one nor one it declares is
+    /// still another type's file.
+    #[test]
+    fn a_metadata_type_name_no_declaration_covers_is_refused() {
+        let res = ScratchRes::new("undeclared-name");
+        res.write("a.renamed", "hello");
+        res.write(
+            "a.renamed.meta",
+            &metadata_yaml_for("pill_legacy::Other", GUID_A, "{}"),
+        );
+        let mut assets = AssetManager::new();
+
+        let result = assets.import(AssetImport::<RenamedNote>::new(
+            "a.renamed",
+            MetadataPolicy::ReadIfPresent,
+        ));
+
+        assert!(
+            matches!(
+                result,
+                Err(AssetImportError::Load(AssetLoadError::Metadata { .. }))
+            ),
+            "{result:?}"
         );
     }
 
@@ -2002,6 +2110,7 @@ mod tests {
                 Path::new("a.note.meta"),
                 bytes.as_bytes(),
                 "Note",
+                &[],
                 "settings"
             ),
             Err(AssetLoadError::Metadata { .. })

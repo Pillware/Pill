@@ -314,9 +314,13 @@ pub struct ChainSource {
 ///
 /// The shared name is a fixed identity rather than a path: the host and the
 /// renderer module find the same resource by this string across the artifact
-/// boundary. It spells the renderer module's path rather than this crate's, and
-/// that spelling is part of the identity, so leave it exactly as it is.
-#[resource(shared = "pill_master_renderer::RenderFrame")]
+/// boundary. It is published under the renderer family's name, which the crate
+/// that used to own the frame spelled differently, so the old spelling is
+/// declared as a former name for the snapshots taken then.
+#[resource(
+    shared = "pill_rendering::RenderFrame",
+    former = "pill_master_renderer::RenderFrame"
+)]
 #[derive(Clone, Debug)]
 pub struct RenderFrame {
     /// Every drawable collected from the world this update, in traversal order.

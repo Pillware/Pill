@@ -1390,6 +1390,88 @@ mod tests {
         assert_eq!(actor.speed, 1.5);
     }
 
+    /// A scene written before a component was renamed names it by the old
+    /// name. The load attaches it through the former name the type declares,
+    /// and the next save writes the current one.
+    #[test]
+    fn a_component_key_written_under_a_former_name_attaches_and_saves_current() {
+        static RENAMED_FIELDS: &[ComponentFieldDescriptor] = &[ComponentFieldDescriptor {
+            name: "speed",
+            type_tag: "f32",
+            offset: 0,
+            size: std::mem::size_of::<f32>(),
+            align: std::mem::align_of::<f32>(),
+            element_count: 0,
+            decorators: Cow::Borrowed(&[]),
+        }];
+
+        #[repr(C)]
+        #[derive(Debug, Clone, Copy)]
+        struct RenamedActor {
+            speed: f32,
+        }
+        impl Component for RenamedActor {
+            fn shared_name() -> Option<&'static str> {
+                Some("demo::RenamedActor")
+            }
+
+            fn former_shared_names() -> &'static [&'static str] {
+                &["demo_legacy::RenamedActor"]
+            }
+        }
+
+        let mut scratch = Scratch::new("former-key");
+        scratch
+            .engine
+            .world_mut()
+            .register_component_with_layout::<RenamedActor>(RENAMED_FIELDS);
+        let id = EntityId::from_name("hero");
+        let document = SceneDocument {
+            entities: vec![SceneEntity {
+                id,
+                components: BTreeMap::from([(
+                    "demo_legacy::RenamedActor".to_string(),
+                    BTreeMap::from([("speed".to_string(), serde_json::json!(2.5))]),
+                )]),
+            }],
+        };
+
+        let report = load_scene(&mut scratch.engine, &AssetDatabase::new(), &document);
+        assert_eq!(report.components, 1, "the old name still attaches");
+        assert!(
+            report.unknown_components.is_empty(),
+            "{:?}",
+            report.unknown_components
+        );
+        let hero = scratch
+            .engine
+            .world_mut()
+            .entity_by_id(id)
+            .expect("the entity exists");
+        assert_eq!(
+            scratch
+                .engine
+                .world()
+                .get_component::<RenamedActor>(hero)
+                .map(|component| component.speed),
+            Some(2.5)
+        );
+
+        let registry = scratch.registry();
+        let (saved, _) = {
+            let world = scratch.engine.world();
+            let assets = world.get_resource::<AssetManager>().unwrap();
+            save_scene(world, assets, &registry, None)
+        };
+        assert!(
+            saved.entities[0]
+                .components
+                .contains_key(&ComponentRegistry::registered_name::<RenamedActor>()),
+            "the save writes the name the type registers under now: {:?}",
+            saved.entities[0].components
+        );
+    }
+
     /// A component the world knows but cannot build an image for is reported
     /// in its own list with the reason, not as an unknown type.
     ///

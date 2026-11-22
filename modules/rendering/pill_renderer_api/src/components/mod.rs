@@ -62,7 +62,11 @@ mod tests {
         assert_eq!(field_count(ComponentId::of::<CameraComponent>()), 5);
         assert_eq!(
             CameraComponent::shared_name(),
-            Some("pill_master_renderer::CameraComponent")
+            Some("pill_rendering::CameraComponent")
+        );
+        assert_eq!(
+            CameraComponent::former_shared_names(),
+            ["pill_master_renderer::CameraComponent"]
         );
     }
 }

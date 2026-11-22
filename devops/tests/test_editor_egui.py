@@ -235,7 +235,7 @@ def main() -> int:
         yaml.safe_dump(
             {
                 "format_version": 1,
-                "asset_type": "pill_master_renderer::Material",
+                "asset_type": "pill_rendering::Material",
                 "guid": "5f16a9c2d47b4e0f8a1b2c3d4e5f6a7b",
                 "asset": {
                     "shader": "8cedb4197c9f26a86708b1cd14399eab",

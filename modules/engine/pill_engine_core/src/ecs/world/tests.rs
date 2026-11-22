@@ -2791,9 +2791,61 @@ mod artifact_a {
     }
 }
 
-/// An ordinary resource keeps its strict identity check: its id is its
-/// `TypeId`, and the box compares that exactly.
+// =============================================================================
+// Former stored names
+// =============================================================================
+
+/// A component that was renamed: it registers under `demo::Widget` and declares
+/// that it used to be `demo_legacy::Widget`.
+#[derive(Debug, Default)]
+struct RenamedWidget;
+
+impl Component for RenamedWidget {
+    fn shared_name() -> Option<&'static str> {
+        Some("demo::Widget")
+    }
+
+    fn former_shared_names() -> &'static [&'static str] {
+        &["demo_legacy::Widget"]
+    }
+}
+
+/// A document written before a rename names the type by its old name, so the
+/// name-keyed lookups have to find the type under both names - and only those.
 #[test]
+fn a_component_is_found_by_its_current_and_its_former_name() {
+    let mut world = World::new();
+    world.register_component::<RenamedWidget>();
+    let component_id = ComponentId::of::<RenamedWidget>();
+
+    assert_eq!(
+        world
+            .resolve_component_id_by_name_any("demo::Widget")
+            .unwrap(),
+        Some(component_id)
+    );
+    assert_eq!(
+        world
+            .resolve_component_id_by_name_any("demo_legacy::Widget")
+            .unwrap(),
+        Some(component_id),
+        "the name the type declared it was stored under before"
+    );
+    assert_eq!(
+        world
+            .resolve_component_id_by_name_any("demo_legacy::Other")
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        world.component_registry().get_name(&component_id),
+        Some("demo::Widget"),
+        "the former name is a way in, not a second registered name"
+    );
+}
+
+/// An ordinary resource keeps its strict identity check: its id is its
+/// `TypeId`, and the box compares that exactly.#[test]
 fn an_ordinary_resource_keeps_the_strict_identity_check() {
     let mut world = World::new();
     world.insert_resource(rehome_probe().0);

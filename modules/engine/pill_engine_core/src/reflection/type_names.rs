@@ -123,6 +123,18 @@ pub fn names_same_type(stored: &str, current: &str) -> bool {
         || stored == crate_qualified_name(current)
 }
 
+/// Whether `stored`, a type name read back from a file, names the type whose
+/// current name is `current` and which declares `former` as the names it was
+/// stored under before.
+///
+/// [`names_same_type`] answers it for a name written before names dropped their
+/// module path; this adds the names a type declares for itself, so a file
+/// written before a rename still reads. `former` is what the type's declaration
+/// says (`former = "old::Name"`), never a table the engine keeps.
+pub fn names_same_type_or_former(stored: &str, current: &str, former: &[&str]) -> bool {
+    names_same_type(stored, current) || former.contains(&stored)
+}
+
 /// Appends the short form of one path to `output`. Returns whether the short
 /// form differs from `path`.
 fn push_short_path(path: &str, output: &mut String) -> bool {
@@ -241,24 +253,51 @@ mod tests {
             "pill_spline::Spline"
         ));
         assert!(names_same_type(
-            "pill_master_renderer::component::TransformComponent",
-            "pill_master_renderer::TransformComponent"
+            "pill_spline::component::Spline",
+            "pill_spline::Spline"
         ));
         assert!(names_same_type(
-            "pill_master_renderer::TransformComponent",
-            "pill_master_renderer::component::TransformComponent"
+            "pill_spline::Spline",
+            "pill_spline::component::Spline"
         ));
         assert!(names_same_type(
-            "pill_master_renderer::assets::Mesh",
-            "pill_master_renderer::Mesh"
+            "pill_physics::components::RigidBodyComponent",
+            "pill_physics::RigidBodyComponent"
         ));
         assert!(!names_same_type(
-            "pill_master_renderer::assets::Mesh",
-            "pill_master_renderer::Texture"
+            "pill_spline::components::Spline",
+            "pill_spline::Track"
         ));
         assert!(!names_same_type(
             "pill_spline::Spline",
             "pill_physics::Spline"
+        ));
+    }
+
+    /// A type's own declaration of the names it was stored under before is
+    /// what makes a file written then read as the type under its new name.
+    #[test]
+    fn a_former_name_is_read_as_the_type_that_declared_it() {
+        let former = ["pill_renderer_legacy::Mesh"];
+        assert!(names_same_type_or_former(
+            "pill_renderer_legacy::Mesh",
+            "pill_rendering::Mesh",
+            &former
+        ));
+        assert!(names_same_type_or_former(
+            "pill_rendering::Mesh",
+            "pill_rendering::Mesh",
+            &former
+        ));
+        assert!(!names_same_type_or_former(
+            "pill_renderer_legacy::Texture",
+            "pill_rendering::Mesh",
+            &former
+        ));
+        assert!(!names_same_type_or_former(
+            "pill_renderer_legacy::Mesh",
+            "pill_rendering::Mesh",
+            &[]
         ));
     }
 }

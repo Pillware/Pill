@@ -12,7 +12,8 @@
 using System.Runtime.InteropServices;
 
 // The renderer's components the docs below refer to, generated from Rust.
-using pill_master_renderer;
+using pill_engine;
+using pill_rendering;
 
 namespace TracyLive;
 

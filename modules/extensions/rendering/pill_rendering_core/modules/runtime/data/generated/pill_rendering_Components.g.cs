@@ -12,7 +12,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace pill_master_renderer {
+namespace pill_rendering {
 
 [StructLayout(LayoutKind.Explicit, Size = 56)]
 public partial struct MeshVertex
@@ -39,7 +39,7 @@ public partial struct MeshVertex
 
 }
 
-namespace pill_master_renderer {
+namespace pill_rendering {
 
 [StructLayout(LayoutKind.Explicit, Size = 12)]
 public partial struct PipelinePass
@@ -54,7 +54,7 @@ public partial struct PipelinePass
 
 }
 
-namespace pill_master_renderer {
+namespace pill_rendering {
 
 [StructLayout(LayoutKind.Explicit, Size = 20)]
 public partial struct CameraComponent
@@ -72,7 +72,7 @@ public partial struct CameraComponent
 
 }
 
-namespace pill_master_renderer {
+namespace pill_rendering {
 
 [StructLayout(LayoutKind.Explicit, Size = 16)]
 public partial struct DirectionalLightComponent
@@ -89,7 +89,7 @@ public partial struct DirectionalLightComponent
 
 }
 
-namespace pill_master_renderer {
+namespace pill_rendering {
 
 [StructLayout(LayoutKind.Explicit, Size = 16)]
 public partial struct MeshRendererComponent
@@ -104,7 +104,9 @@ public partial struct MeshRendererComponent
 
 }
 
-namespace pill_master_renderer {
+namespace pill_engine {
+
+using pill_rendering;
 
 [StructLayout(LayoutKind.Explicit, Size = 40)]
 public partial struct TransformComponent
@@ -261,7 +263,7 @@ public sealed partial class Mesh : global::TracyLive.RustObject, global::TracyLi
     internal Mesh(global::TracyLive.RustObjectHandle handle) : base(handle, RustType) { }
 
     /// <summary>Calls the Rust function <c>pill_rendering::Mesh::from_data</c>.</summary>
-    public static global::pill_rendering.Mesh FromData(string name, global::System.ReadOnlySpan<global::pill_master_renderer.MeshVertex> vertices, global::System.ReadOnlySpan<uint> indices)
+    public static global::pill_rendering.Mesh FromData(string name, global::System.ReadOnlySpan<global::pill_rendering.MeshVertex> vertices, global::System.ReadOnlySpan<uint> indices)
     {
         var __call = global::TracyLive.MirrorCall.Begin("pill_rendering::Mesh", "from_data");
         __call.PushString(name);
@@ -324,7 +326,7 @@ namespace pill_rendering {
 
 /// <summary>The Rust resource <c>pill_rendering::RenderingManager</c>. Declare <c>Res&lt;RenderingManager&gt;</c> or
 /// <c>ResMut&lt;RenderingManager&gt;</c> to reach it; its value stays in Rust.</summary>
-[global::TracyLive.NativeResource("pill_master_renderer::RenderingManager")]
+[global::TracyLive.NativeResource("pill_rendering::RenderingManager")]
 public readonly struct RenderingManager
 {
 }
@@ -678,26 +680,6 @@ public enum TextureType : byte
     Normal = 1,
     Equirect = 2,
     Cubemap = 3,
-}
-
-}
-
-
-namespace pill_rendering.config {
-
-/// Static mirror of the free functions the Rust module `pill_rendering::config::pbr_pipeline` declares;
-/// each member calls its trampoline through `TracyLive.MirrorCall`.
-public static class PbrPipeline
-{
-    /// <summary>Calls the Rust function <c>pill_rendering::config::pbr_pipeline::set_skybox</c>.</summary>
-    public static global::TracyLive.Handle<global::pill_rendering.RenderPass> SetSkybox(global::TracyLive.ResMut<global::TracyLive.AssetManager> assets, global::TracyLive.Handle<global::pill_rendering.Material>? material)
-    {
-        var __call = global::TracyLive.MirrorCall.Begin("pill_rendering::config::pbr_pipeline", "set_skybox");
-        __call.PushResource<global::TracyLive.AssetManager>(global::TracyLive.QueryAccess.Write);
-        __call.PushOptional(material);
-        __call.Invoke();
-        return __call.Result<global::TracyLive.Handle<global::pill_rendering.RenderPass>>();
-    }
 }
 
 }

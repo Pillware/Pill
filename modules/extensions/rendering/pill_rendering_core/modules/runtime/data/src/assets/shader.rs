@@ -219,7 +219,11 @@ impl SlotName for ShaderTextureSlot {
 /// the sources go to the pipeline, and the slots say how that pipeline's
 /// uniform buffer and texture bindings must be laid out.
 #[asset(imported)]
-#[pill_mirror_object(asset, shared = "pill_master_renderer::Shader")]
+#[pill_mirror_object(
+    asset,
+    shared = "pill_rendering::Shader",
+    former = "pill_master_renderer::Shader"
+)]
 #[derive(Clone, Debug)]
 pub struct Shader {
     /// Name used in logs and error messages.

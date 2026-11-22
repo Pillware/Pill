@@ -141,6 +141,21 @@ pub trait Resource: Send + Sync + 'static {
         None
     }
 
+    /// The names this resource was stored under before its current one, or an
+    /// empty slice.
+    ///
+    /// The resource counterpart of
+    /// [`Component::former_shared_names`](crate::Component::former_shared_names),
+    /// declared with `former = "old::Name"` on `#[resource]`. A reload snapshot
+    /// taken before a rename names the value by its old name, and this is what
+    /// lets the new generation still find it.
+    fn former_shared_names() -> &'static [&'static str]
+    where
+        Self: Sized,
+    {
+        &[]
+    }
+
     /// The stable identity that [`Self::shared_name`] turns into, or `None`.
     ///
     /// The default derives it from `shared_name`, so an implementor writes

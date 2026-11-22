@@ -94,6 +94,20 @@ pub trait Asset: Send + Sync + 'static {
         None
     }
 
+    /// The names this asset type was stored under before its current one, or
+    /// an empty slice.
+    ///
+    /// A `.meta` file or a standalone document written before a rename names
+    /// the type by its old `asset_type`. Declaring that name - with
+    /// `former = "old::Name"` on `#[pill_mirror_object]` - lets the importer
+    /// read those files, and the next write stores the current name.
+    fn former_shared_names() -> &'static [&'static str]
+    where
+        Self: Sized,
+    {
+        &[]
+    }
+
     /// The stable identity that [`Self::shared_name`] hashes to, or `None`.
     ///
     /// This is the same hash a shared component uses. Override it only when

@@ -1,4 +1,4 @@
-asset_type: pill_master_renderer::Texture
+asset_type: pill_rendering::Texture
 format_version: 1
 guid: 49baa75be24f439d9b073209f310ac10
 settings:

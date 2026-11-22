@@ -1091,7 +1091,10 @@ impl World {
         let mut candidates = self
             .component_registry
             .registered_components()
-            .filter(|(_, _, name)| *name == type_name)
+            .filter(|(component_id, _, _)| {
+                self.component_registry
+                    .name_matches(component_id, type_name)
+            })
             .map(|(id, _, _)| id);
 
         let Some(first) = candidates.next() else {

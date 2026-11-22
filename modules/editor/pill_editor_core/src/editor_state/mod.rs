@@ -380,7 +380,7 @@ pub enum AssetKind {
     /// action writes to it.
     Folder,
     /// A file's type, as the host reported it: `Texture`, `file`, or a
-    /// registered path like `pill_master_renderer::Material`.
+    /// registered path like `pill_rendering::Material`.
     Type(String),
 }
 
