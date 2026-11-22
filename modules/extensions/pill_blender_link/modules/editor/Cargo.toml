@@ -1,0 +1,42 @@
+[package]
+name = "pill_blender_link_editor"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The crate's build script emits the function-address inventory the host uses
+# to patch any function of this crate in place instead of reloading it.
+[build-dependencies]
+pill_hot_scan = { path = "../../../../hosting/pill_hot_scan" }
+
+[lib]
+# Named after the crate rather than `lib.rs`, like every extension crate.
+path = "src/pill_blender_link_editor.rs"
+# `rlib` only: the artifact an editor host loads is built by the generated
+# `host_module_pill_blender_link_editor` wrapper in this folder's `generated/`.
+crate-type = ["rlib"]
+
+# A live link between the editor and Blender: a Blender button on the mesh
+# renderer's Inspector header opens the mesh in Blender, and every edit made
+# there is streamed back into the mesh asset in memory. An editor-only
+# extension (the folder holds only this crate): no game build ever links it.
+[dependencies]
+pill_core = { path = "../../../../engine/pill_core" }
+# The engine facade: the module ABI, the system parameters and the asset store.
+pill_engine = { path = "../../../../engine/pill_engine" }
+# The Inspector header action hook, the egui library and the shell's egui
+# context (a repaint request after a streamed edit).
+pill_editor_core = { path = "../../../../editor/pill_editor_core" }
+# The mesh asset and the mesh renderer component. `default-features = false`,
+# like every project that names the renderer's data.
+pill_master_renderer_data = { path = "../../../pill_master_renderer/modules/runtime/data", default-features = false }
+# The material translator reads the cooked fragment WGSL. naga is the WGSL
+# front end wgpu already carries; the link needs only its parser.
+naga = { version = "30", default-features = false, features = ["wgsl-in"] }
+# The node graph the link sends Blender is plain serializable data.
+serde = { version = "1", features = ["derive"] }
+# The link's message headers are JSON, so the Blender side needs nothing but
+# Python's standard library to read them.
+serde_json = "1"
